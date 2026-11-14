@@ -6,6 +6,9 @@ gate. Scope of this step as authorized: one `selftest`, then one
 `run --profile A`. Profile B, the YAML read cases and everything that depends
 on questions N31 and N32 were not run and are pending Josh.
 
+2026-11-14 addition: one `recapture` launch for R1 and R2 of the 16:15 rulings
+(profile A only), recorded under **Recapture for R1 and R2** below.
+
 Nothing here admits a release, binds a provider, changes a reviewed value or
 writes to the registry. No protected path was edited.
 
@@ -15,8 +18,9 @@ writes to the registry. No protected path was edited.
 | --- | --- | --- | --- | --- | --- | --- |
 | selftest-1 | `hamcp371-s6-selftest-1` | 6f10c4a2 | 00:20:52 - 00:21:20 | 28.4 | PASS | heavy_total=1 evidence=1 mem_avail_gb=10.0 load1=5.08 root_free_gb=48.5 |
 | run-a-1 (profile A) | `hamcp371-s6-run-a-1` | 6f10c4a2 | 00:21:48 - 00:25:34 | 225.1 | PASS | heavy_total=1 evidence=1 mem_avail_gb=9.9 load1=5.68 root_free_gb=48.5 |
+| recapture-1 (profile A), 2026-11-14 | `hamcp371-s6-recapture-1` | 3bacd06f | 16:20:12 - 16:23:30 | 197.8 | PASS | heavy_total=0 evidence=0 mem_avail_gb=12.4 load1=0.04 root_free_gb=60.4 |
 
-Two launches, one per command. No gate refusal, no preflight refusal, no
+Two launches on 2026-11-12, one per command, and one on 2026-11-14. No gate refusal, no preflight refusal, no
 relaunch, no interruption. `launches.jsonl` is the harness launch log and
 `gate/` holds the gate receipts.
 
@@ -196,6 +200,11 @@ Differences that follow the version:
   shares two. Both pages are in sorted order and both report 247 services in
   62 domains. Whether page membership follows the version or the Core
   restart was not determined.
+  *Corrected 2026-11-14:* "in sorted order" was read from the stored call
+  files, which are written with sorted keys. On the wire the pages are in
+  Core's catalogue order, not sorted. The recapture attributes the membership
+  difference to the Core start, not to the version (see **Recapture for R1
+  and R2**).
 - `v16-history-offset-free` (`ha_get_history`, start and end without an
   offset). 9.1.2 reads the values as UTC (period echoed with `+00:00`) and
   returns 0 states. 9.2.0 reads them as Core local time (period echoed with
@@ -225,6 +234,9 @@ Not attributed:
   on 9.1.2 and `scene` does not; the reverse on 9.2.0; a different zone is
   listed; the fifth most common domain differs). Counts per domain are equal.
   The repair-issue difference of `r17-overview` appears here as well.
+  *2026-11-14:* the recapture reproduces this exact difference across one Core
+  restart on each version and shows none between the versions on one Core
+  start. It follows the Core start (see **Recapture for R1 and R2**).
 
 ### Transport and socket observations (both versions alike)
 
@@ -262,6 +274,7 @@ object (no -32602, no -32603) was returned on any call.
 This agrees with item 4 of the 23:11 record for the validation case
 (`VALIDATION_FAILED` as a string code inside an `isError` result on both
 versions). `VALIDATION_INVALID_JSON` was not forced and was not observed.
+The 2026-11-14 recapture tried to force it (R1); it was still not observed.
 
 ## Disclosures
 
@@ -284,3 +297,178 @@ versions). `VALIDATION_INVALID_JSON` was not forced and was not observed.
   found).
 - A failed transient unit record from S4 (`hamcp371-s4-selftest.service`)
   remains on the host and was left alone.
+
+## Recapture for R1 and R2 (2026-11-14)
+
+Asked by the 16:15 rulings of 2026-11-14:
+
+- **R1:** force `VALIDATION_INVALID_JSON` with both versions in one run, or
+  record it as not observed.
+- **R2:** run 9.1.2 and 9.2.0 profile A back to back on one disposable Core
+  2026.11.0, after one restart, in the same run. Compare the `ha_get_overview`
+  per-domain listing and the `ha_list_services` page order. State whether the
+  services comparison is order-sensitive, and whether page order is stable
+  across that restart.
+
+### The run
+
+Launch `recapture-1`: harness 3bacd06f (the F1 commit), profile A, one launch,
+PASS. Posture as above:
+
+- images from the local cache by digest, nothing pulled;
+- the holder runs with `--network none`;
+- the egress probe held before every capture and after the restart.
+
+Cleanup is clean. The lane's exact-token scan covered 128 files and removed
+none. All 15 seed steps were `ok`.
+
+The design, as the receipt records it under `captures.design`:
+
+1. Seed once.
+2. Run the 5 `order` cases on 9.1.2, then on 9.2.0, one peer at a time.
+3. Restart Core once.
+4. Run the 51 calls of the `reads`, `variants`, `errors`, `transport`, `forced`
+   and `order` groups on 9.1.2, then on 9.2.0.
+
+Before the restart, each version made 5 calls with no errors. After it, each
+made 51 calls: 7 `isError` and 0 exchange failures.
+
+`comparison/recapture.py` reproduces `comparison/recapture.json` from the run
+directory. It reads list and object order from the text item of each result,
+because that is the only wire-order copy in a stored call file. The call files
+are written with sorted keys, so their `structuredContent` is in storage order.
+On every success, the parsed text item equals `structuredContent` as a value.
+
+### R1: `VALIDATION_INVALID_JSON` not observed
+
+The forced case `f-invalid-json` calls `ha_call_service` with `data` set to a
+string that is not JSON. The domain and service it names do not exist.
+
+Both versions return the same 660-byte response (sha256 `ea8e326e66f8d61f...`):
+an `isError` result with code `VALIDATION_FAILED`, details `value_error` and
+the message "`data`: Value error, Invalid JSON at line 1 column 2".
+
+`VALIDATION_INVALID_JSON` was not observed on either version. It is recorded
+as not observed, and the case was not re-run.
+
+From reading the source (an inference, not a run), argument coercion rejects
+the value before the tool body runs. The `VALIDATION_INVALID_JSON` sites are
+in the control, write and settings paths, and in the coercion of the proxy's
+`arguments` string.
+
+### R2: the differences follow the Core start, not the version
+
+On the same Core start, 9.1.2 and 9.2.0 are equal on everything R2 names:
+
+- **`ha_get_overview`:** the per-domain listing, domain order,
+  `most_common_domains` and pagination, in `o-overview-standard`,
+  `r17-overview` and `v17-overview-standard`.
+- **`ha_list_services`:** every page is in the same order with the same
+  `total_count` (247). That covers `o-services-first-five`,
+  `o-services-default-page`, `o-services-page-1` (200 services),
+  `o-services-page-2` (47), `r24-services`, `t-large-services` and the three
+  `v24-*` calls.
+
+This holds before the restart (the 5 `order` cases) and after it (all 12
+listing calls). The catalogue order hash over pages 1 and 2 is the same on both
+versions: `1abd5ad1...` before the restart and `c0211b37...` after it.
+
+Across the one restart, the same calls change, and alike on both versions.
+
+**Overview.** Per-domain counts are equal, but the listing changes:
+
+- `group` lists its entity before the restart and is truncated after it;
+  `scene` does the reverse.
+- A different zone is listed.
+- The fifth entry of `most_common_domains` changes from `group` to `scene`.
+- The domain order changes.
+
+This is the 2026-11-12 difference between 9.1.2 and 9.2.0 in
+`v17-overview-standard`, so that difference follows the Core start.
+
+**Services.** The same 247 services in 62 domains, in a different order:
+
+- 50 of the 62 domain positions moved.
+- The page of five keeps 2 of its 5 names.
+- The 50-service page keeps all 50 names, in another order.
+- Pages 1 and 2 change membership.
+
+This accounts for the 2026-11-12 difference in page membership.
+
+**Is the `ha_list_services` comparison order-sensitive?** Yes. On the wire,
+every page is an exact slice of Core's catalogue order:
+
+- The page of five and the page of 50 are the first 5 and the first 50
+  services of pages 1 and 2 joined.
+- Each domain forms one contiguous run.
+- The domain order is not alphabetical, and within a domain the services are
+  not all in name order.
+
+So page membership and order are valid only within one Core start. Only the
+full set of 247 services is order-insensitive.
+
+This matches the upstream source at both tags (a reading, not a run).
+`tools_services.py` slices `list(services.keys())` by `offset` and `limit` and
+sorts only the `domains` list: lines 499-505 at 51e3aac7, and 452-458 at
+bab615df.
+
+**Is page order stable across that restart?** No, on either version.
+
+### Per call after the restart
+
+37 of the 51 payloads are identical across the versions, and every call sent
+the same wire arguments. 14 payloads differ.
+
+13 of the 14 follow the version, as recorded for 2026-11-12:
+
+- the content of the eight services pages: `name`, `description` and
+  `response`, plus `fields` in full detail;
+- `r22-zones` and `v22-zone-single`;
+- `v16-history-offset-free`;
+- `r18-skill-guide`.
+
+The fourteenth, `v16-history-relative`, follows the clock.
+
+Six calls that differed on 2026-11-12 are identical when both versions run on
+one Core start: `r08-groups`, `r17-overview`, `r19-state`, `t-new-session`,
+`r20-system-health` and `v17-overview-standard`. This confirms the 2026-11-12
+attribution of those calls to the clock or the Core restart.
+
+### Recapture disclosures
+
+**Committed.** Each of these is byte-identical to the run directory:
+
+- `recapture-1/receipt.json` and its `SHA256SUMS` (129 lines, all verified);
+- the seed plan and the seed report;
+- the four call indexes.
+
+The gate receipt, the launch log and the comparison are committed too. The
+launch log's first two lines are unchanged.
+
+**Not committed.** The 112 call files, the four `_initialize.json` files and
+the logs stay in ignored scratch until S7.
+
+**The gate receipt.** `gate/recapture-1.txt` differs from the gate's own
+receipt only in trailing spaces on three lines. They were stripped so that no
+new trailing-whitespace line enters the tree:
+
+- the gate's own receipt: sha256 `734ea162...`;
+- the committed copy: sha256 `de85d2f5...`.
+
+`gate/run-a-1.txt` and `gate/selftest-1.txt` are unchanged.
+
+**Pattern scan.** Before the commit, `comparison/scan.py` ran over the full run
+directory, the gate receipt, the launch log, the comparison output and the
+staged copy: 145 files, 0 hits.
+
+**Logs.**
+
+- The Core log has 8 ERROR and 6 WARNING lines over its two starts. As on
+  2026-11-12, they come from Core's onboarding flows (Core has no route) and
+  from `system_health`.
+- Each after-restart peer log has three ERROR lines: two for `ha_get_app`
+  (there is no Supervisor) and one for the entity that was not seeded. The
+  before-restart peer logs have none.
+
+**Not built.** The receipt's `not_built` list is unchanged: profile B, the
+Supervisor facade and token revocation.
