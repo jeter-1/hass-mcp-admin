@@ -137,10 +137,12 @@ baseline captured immediately before deploy.
      that window and entity (HAMCP-294).
    - `automation_reliability_batch_analysis` on two or three automations
      returns bounded results (HAMCP-229).
-   - `get_server_health` shows the startup-readiness phase timing
-     (HAMCP-350), the `ordinary_device_configuration` block with no hold and
-     no task, and Core 2026.11.0 admitted from signed sequence 17 with 32
-     references and zero contract mismatches.
+   - The add-on log shows the HAMCP-350 `startup_phase_timing` events,
+     with `readiness_deadline_elapsed` false, as in runbook S7 (architect
+     21:05 ruling B2).
+   - `get_server_health` shows the `ordinary_device_configuration` block
+     with no hold and no task, and Core 2026.11.0 admitted from signed
+     sequence 17 with 32 references and zero contract mismatches.
    - `dashboard_integrity_analysis` on one dashboard completes; any
      compiler-limit refusal carries bounded diagnostics (HAMCP-143,
      HAMCP-337/338, HAMCP-345).

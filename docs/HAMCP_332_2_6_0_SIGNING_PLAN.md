@@ -899,7 +899,9 @@ HAMCP-297 Matter Server stub it uses, not the commit the lane ran [R].
 **Manifest checks [R].** At `3bd5fe3f` the sha256 of
 `ci/core-contract-read-files.json` is `48b8b875…`, the value every receipt
 binds (`manifest_sha256` is that file's hash, for example
-`scripts/core_device_configuration_local.py:411`). The file has the same
+`scripts/core_device_configuration_local.py:411` at `3bd5fe3f`; at the
+HAMCP-297 G5 head it is computed at `:138` and written at `:442`). The
+file has the same
 hash at `5fc40f93`. So no receipt binds a stale manifest hash against
 `3bd5fe3f`. Any later change to that file before the signing commit makes
 every receipt's manifest hash stale; the R8 re-runs bind the signing
@@ -929,7 +931,8 @@ tests, not a failure.
 `3bd5fe3f` has no `profiles` entry for
 `core.device_configuration_entity_operation`. Its lane does not read one:
 it records only the file's SHA-256
-(`scripts/core_device_configuration_local.py:411`), while the other five
+(`scripts/core_device_configuration_local.py:411` at `3bd5fe3f`; the
+HAMCP-297 G5 head reads its own entry at `:118-139`), while the other five
 lanes read their own entry (`scripts/core_marketplace_read_local.py:96`,
 `scripts/core_security_metadata_local.py:96`,
 `scripts/core_created_object_local.py:117`,
@@ -1064,7 +1067,7 @@ prepared candidate; and the approval PC8 needs does not exist yet.
 | PC3 | Reviews are complete for every included row (G1; §8), and the persisted-state gate passes (G6; §7.3) | The six profile PRs are merged into `release/2.6.0` (§5A.3). The release PR's review and G6 are not complete |
 | PC4 | Each included profile has a lane PASS on the signing commit, loading the exact fingerprint to be signed, with cleanup `clean` true (G4). R8 (§9C): every included lane, HAMCP-134's included, re-runs once on the signing commit, and receipts bind that commit. Receipts that exist today are review evidence only | Not met for any profile. The committed receipts bind source commit `5fc40f93`, not the signing commit (§5A.4) |
 | PC5 | Fingerprints are recomputed on the signing commit and equal the reviewed table. All then-current signed references still match the compiled profiles (G3). R-d (§9D): the architect recomputes all 38 on the signing commit before signing; the signing commit is the HAMCP-297 G5 pull request's merge commit (17:05 ruling 2a, §9D), and the 38 must equal the values recomputed on the `release/2.6.0` to `main` merge commit for deploy (17:05 ruling 2b) | True at `3bd5fe3f` [R]: 38 compiled, equal to the `4d68e4d8` values, and the 32 signed references match. Must be repeated on the signing commit |
-| PC6 | The predecessor is re-fetched, verified against the public key, unexpired, and still the one the lanes ran against: sequence 17 with exactly 32 references on 2026.11.0 (G7; each lane requires it: `scripts/core_security_metadata_local.py:143-145`, `scripts/core_marketplace_read_local.py:143`, `scripts/core_created_object_local.py:166`, `scripts/core_thread_matter_topology_local.py:151`, `scripts/core_device_configuration_local.py:133-135`) | The local `origin/registry` ref is still `e486028e` (journal SHA-256 `3f79fce7…`, §5A.2), and every committed receipt binds that journal [R]. The re-fetch and signature check repeat at preparation |
+| PC6 | The predecessor is re-fetched, verified against the public key, unexpired, and still the one the lanes ran against: sequence 17 with exactly 32 references on 2026.11.0 (G7; each lane requires it: `scripts/core_security_metadata_local.py:143-145`, `scripts/core_marketplace_read_local.py:143`, `scripts/core_created_object_local.py:166`, `scripts/core_thread_matter_topology_local.py:151`, `scripts/core_device_configuration_local.py:153-154` (sequence 17 check) and `:164-166` (32-reference refusal, `predecessor_capabilities_mismatch`)) | The local `origin/registry` ref is still `e486028e` (journal SHA-256 `3f79fce7…`, §5A.2), and every committed receipt binds that journal [R]. The re-fetch and signature check repeat at preparation |
 | PC7 | Preparation is no later than 2027-01-22 (§5.4) | 70 days away on 2026-11-13 |
 | PC8 | Authorization for this exact transition follows R10 (§9C): agents prepare the two files and the expected-values sheet; one agent makes the single candidate push, and only after Josh approves both SHA-256 values; Josh dispatches the dry run and the real run. No agent dispatches a workflow. R-f (§9D, §5A.10): Josh signs only after the R-d recomputation, every included lane passing on the signing commit, and the candidate check against R-b | The route is decided (R10). Josh's approval of both SHA-256 values does not exist yet, because the files are not prepared. Nothing is pushed or dispatched |
 | PC9 | Lanes are heavy jobs on the build host and follow its admission limits | Applies when lanes run |
