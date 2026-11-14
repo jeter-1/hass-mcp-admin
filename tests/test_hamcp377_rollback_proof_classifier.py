@@ -33,6 +33,8 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import rollback_proof_lane as lane  # noqa: E402
 
 RECEIPTS = ROOT / "docs/evidence/hamcp377/lane"
+# sha256 of core-candidate.json, the real sequence 18 candidate the 12a comparison records.
+REAL_CANDIDATE_SHA256 = "b1faf1f3c00c8042efc46d538a618dabe915301c31c9817f0af9216d05d2e68c"
 REFUSED_CALL = {"ok": False, "code": lane.REFUSAL_CODE, "status": None, "writes": []}
 
 
@@ -175,13 +177,24 @@ class RecordedReceiptTests(GuardCase):
         self.assertEqual((writer["published_sequence"], writer["candidate"]["sequence"],
                           writer["test_signed"]["sequence"]), (17, 18, 18))
         self.assertEqual(len(writer["reference_objects"]), 38)
-        # No real candidate existed when these were recorded; the receipt must say exactly that.
-        self.assertEqual(receipt["real_candidate_comparison"], {
-            "status": "not yet available: the real candidate does not exist",
-            "compares": lane.COMPARISON_SCOPE, "lane_reference_count": 38,
-            "lane_reference_objects_sha256": lane.reference_digest(writer["reference_objects"])})
-        self.assertIn("Comparison with the real sequence 18 candidate: not yet available: the "
-                      "real candidate does not exist.", receipt["summary"])
+        # Runbook 7.2: compare-candidate --record against the real sequence 18 candidate
+        # (core-candidate.json on registry-candidates/2026.11.0-seq18, signed as sequence 18).
+        comparison = dict(receipt["real_candidate_comparison"])
+        self.assertRegex(comparison.pop("compared_at"), r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\+00:00$")
+        digest = lane.reference_digest(writer["reference_objects"])
+        self.assertEqual(comparison, {
+            "status": "compared", "compares": lane.COMPARISON_SCOPE,
+            "lane_reference_count": 38, "lane_reference_objects_sha256": digest,
+            "candidate_file": "core-candidate.json",
+            "candidate_sha256": REAL_CANDIDATE_SHA256,
+            "candidate_shape": "candidate", "candidate_sequence": 18,
+            "candidate_reference_count": 38, "candidate_reference_objects_sha256": digest,
+            "identical": True, "differences": [],
+            "candidate_authenticity": "not established by the lane: the file is identified by "
+                                      "its sha256 only"})
+        self.assertIn("Comparison with the real sequence 18 candidate: the 38 reference objects "
+                      "are byte-identical to those of the supplied candidate file with sha256 "
+                      f"{REAL_CANDIDATE_SHA256}.", receipt["summary"])
         text = (RECEIPTS / "12a-source.json").read_text(encoding="utf-8")
         for fragment in ("PRIVATE KEY", "SIGNING_KEY", str(Path.home())):
             self.assertNotIn(fragment, text)
@@ -279,8 +292,9 @@ class RegistryTests(GuardCase):
         observed["reader"]["entry_reference_objects_sha256"] = digest
         for name in ("candidate", "journal"):
             observed["lane"][name]["reference_objects_sha256"] = digest
-        receipt["real_candidate_comparison"].update(
-            {"lane_reference_count": len(objects), "lane_reference_objects_sha256": digest})
+        # A recorded comparison was made against the committed objects, not these: a run
+        # writing these objects records a pending comparison.
+        receipt["real_candidate_comparison"] = lane.compare_real_candidate(objects, None)
 
     def test_g3_entry_must_extend_the_published_entry_in_the_ruled_order(self) -> None:
         def swap(receipt: dict) -> None:
@@ -580,6 +594,9 @@ class RealCandidateComparisonTests(GuardCase):
     def compared(self, raw: bytes) -> dict:
         return lane.compare_real_candidate(self.objects, self.file(raw))
 
+    def pending(self, **fields) -> dict:
+        return {**lane.compare_real_candidate(self.objects, None), **fields}
+
     def with_comparison(self, comparison: dict) -> dict:
         receipt = copy.deepcopy(self.receipts["12a"])
         receipt["real_candidate_comparison"] = comparison
@@ -588,8 +605,10 @@ class RealCandidateComparisonTests(GuardCase):
 
     def test_no_candidate_is_reported_as_not_yet_available(self) -> None:
         pending = lane.compare_real_candidate(self.objects, None)
-        self.assertEqual(pending, self.receipts["12a"]["real_candidate_comparison"])
-        self.assertEqual(pending["status"], "not yet available: the real candidate does not exist")
+        recorded = self.receipts["12a"]["real_candidate_comparison"]
+        self.assertEqual(pending, {key: recorded[key] for key in (
+            "compares", "lane_reference_count", "lane_reference_objects_sha256")}
+            | {"status": "not yet available: the real candidate does not exist"})
         self.assertEqual(lane.classify(self.with_comparison(pending)), [])
 
     def test_identical_reference_objects_compare_byte_for_byte_in_every_file_shape(self) -> None:
@@ -682,10 +701,16 @@ class RealCandidateComparisonTests(GuardCase):
                            .update({key: value}), text="not recorded against the reference objects")
         for status in ("identical", "compared", "not applicable", None):
             with self.subTest(status=status):
-                self.guard("G14", "12a", lambda receipt: receipt["real_candidate_comparison"]
-                           .update({"status": status}), text="neither pending nor a recorded")
-        self.guard("G14", "12a", lambda receipt: receipt["real_candidate_comparison"].update(
-            {"identical": True}), text="a pending comparison carries a comparison result")
+                self.guard("G14", "12a", lambda receipt: receipt.update(
+                    real_candidate_comparison=self.pending(status=status)),
+                           text="neither pending nor a recorded")
+        for key in ("identical", "candidate_sha256", "differences"):
+            with self.subTest(key=key):
+                self.guard("G14", "12a", lambda receipt: receipt.update(
+                    real_candidate_comparison=self.pending(
+                        **{key: receipt["real_candidate_comparison"][key]})),
+                           text="a pending comparison carries a comparison result")
+        self.assertEqual(lane.classify(self.with_comparison(self.pending())), [])
 
     def test_g14_the_lanes_own_test_candidate_is_not_a_real_candidate(self) -> None:
         own = self.receipts["12a"]["cases"]["registry"]["observed"]["lane"]
@@ -2091,7 +2116,7 @@ def readme_failures(directory: Path) -> list[str]:
 class ReadmeTests(unittest.TestCase):
     """The README beside the committed receipts repeats them; it does not add to them."""
 
-    HASH_12A = "b7b66591d2620e09063627c4dec6d2aa42ef94846b9f2f1526ce354d78646437"
+    HASH_12A = "d0fbbb0b7ed2a57530cc387889a8d0f83da5c8359c8a541ddccd3b2faff5f67e"
     HASH_12C = "74b26509179b4edfe412e017f90503ecde3fc1aba56d006b68a569a46258d474"
 
     def edited(self, old: str, new: str, name: str = "README.md") -> list[str]:

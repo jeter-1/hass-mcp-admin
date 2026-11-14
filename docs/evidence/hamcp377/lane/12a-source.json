@@ -987,10 +987,20 @@
   "version": "2.4.2-beta.7"
  },
  "real_candidate_comparison": {
+  "candidate_authenticity": "not established by the lane: the file is identified by its sha256 only",
+  "candidate_file": "core-candidate.json",
+  "candidate_reference_count": 38,
+  "candidate_reference_objects_sha256": "33264f99859e011afc512dbcba0f6297446c4d4980afabdfee9ce364cfa303a6",
+  "candidate_sequence": 18,
+  "candidate_sha256": "b1faf1f3c00c8042efc46d538a618dabe915301c31c9817f0af9216d05d2e68c",
+  "candidate_shape": "candidate",
+  "compared_at": "2026-11-14T16:09:39+00:00",
   "compares": "The canonical JSON bytes of each capability reference object of the Core 2026.11.0 entry, in order. Signature fields belong to envelopes and the journal, not to reference objects; they, the timestamps and the evidence digests are not compared.",
+  "differences": [],
+  "identical": true,
   "lane_reference_count": 38,
   "lane_reference_objects_sha256": "33264f99859e011afc512dbcba0f6297446c4d4980afabdfee9ce364cfa303a6",
-  "status": "not yet available: the real candidate does not exist"
+  "status": "compared"
  },
  "result": "PASS",
  "row": "HAMCP-377",
@@ -1015,7 +1025,7 @@
  "summary": [
   "The previous release read a signed journal whose entry carries 38 capability references: 33 admitted including core.marketplace_read, 5 not admitted (core.created_helper_delete_operation, core.device_configuration_entity_operation, core.scene_create_delete_operation, core.security_metadata_read, core.thread_matter_topology_read), 0 quarantined.",
   "The entry was built by scripts/prepare_core_release_registry.py extend-capabilities at commit aeb3b314dd180592874243c9ae370a63f0622c2b as sequence 18 on the published sequence 17 journal under the published public key, and test-signed by scripts/core_registry_one_tap.py dry-run-sign with a key generated in that dry run; the signed content equals the candidate and the published content.",
-  "Comparison with the real sequence 18 candidate: not yet available: the real candidate does not exist."
+  "Comparison with the real sequence 18 candidate: the 38 reference objects are byte-identical to those of the supplied candidate file with sha256 b1faf1f3c00c8042efc46d538a618dabe915301c31c9817f0af9216d05d2e68c."
  ],
  "test_signing_tool": {
   "blob_at_commit": "7524f83d52b53287e0fc1bf0b9d7f0f3621f8918",

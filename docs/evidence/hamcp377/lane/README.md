@@ -6,7 +6,7 @@ and are re-checked by `tests/test_hamcp377_rollback_proof_classifier.py`.
 
 | Receipt | Scenario | Result | sha256 of the committed bytes |
 | --- | --- | --- | --- |
-| `12a-source.json` | Registry entry carrying capability references beta.7 does not compile | PASS | `b7b66591d2620e09063627c4dec6d2aa42ef94846b9f2f1526ce354d78646437` |
+| `12a-source.json` | Registry entry carrying capability references beta.7 does not compile | PASS | `d0fbbb0b7ed2a57530cc387889a8d0f83da5c8359c8a541ddccd3b2faff5f67e` |
 | `12b-source.json` | Device-configuration lock records, with recovery 27a | PASS | `fee3d5250fee91f0210d2ed2e778d132e83d2a468392d2768010ff9a0136fb46` |
 | `12c-source.json` | Scene-create and created-object rollback plans | PASS | `74b26509179b4edfe412e017f90503ecde3fc1aba56d006b68a569a46258d474` |
 
@@ -75,7 +75,7 @@ Recorded `summary` of `12a-source.json`:
 ```text
 The previous release read a signed journal whose entry carries 38 capability references: 33 admitted including core.marketplace_read, 5 not admitted (core.created_helper_delete_operation, core.device_configuration_entity_operation, core.scene_create_delete_operation, core.security_metadata_read, core.thread_matter_topology_read), 0 quarantined.
 The entry was built by scripts/prepare_core_release_registry.py extend-capabilities at commit aeb3b314dd180592874243c9ae370a63f0622c2b as sequence 18 on the published sequence 17 journal under the published public key, and test-signed by scripts/core_registry_one_tap.py dry-run-sign with a key generated in that dry run; the signed content equals the candidate and the published content.
-Comparison with the real sequence 18 candidate: not yet available: the real candidate does not exist.
+Comparison with the real sequence 18 candidate: the 38 reference objects are byte-identical to those of the supplied candidate file with sha256 b1faf1f3c00c8042efc46d538a618dabe915301c31c9817f0af9216d05d2e68c.
 ```
 
 The entry was produced by the route the real sequence 18 candidate takes. The
@@ -103,12 +103,11 @@ the entry's `evidence_sha256` and the candidate's `review_evidence_sha256`; and
 run also re-signs the 17 published envelopes with its own key. The candidate is
 not a published registry entry and neither tool was changed or copied.
 
-The real sequence 18 candidate does not exist yet. The receipt reserves
-`real_candidate_comparison` for it and records the digest of the 38 reference
+The receipt's `real_candidate_comparison` records the digest of the 38 reference
 objects beta.7 read
 (`33264f99859e011afc512dbcba0f6297446c4d4980afabdfee9ce364cfa303a6`, sha256 over
-the canonical JSON of each object joined by newlines). When the real candidate
-exists:
+the canonical JSON of each object joined by newlines) and the comparison with
+the real sequence 18 candidate:
 
 ```
 python scripts/rollback_proof_lane.py compare-candidate \
@@ -122,6 +121,13 @@ evidence digests are not part of a reference object and are not compared. The
 gate fails if any object differs, if the file is not a sequence 18 candidate,
 or if the file is the lane's own test candidate. Without `--record` the receipt
 is left as it is. `run --real-candidate <file>` does the same during a run.
+
+Recorded (runbook 7.2, 2026-11-14): the supplied file was `core-candidate.json`
+from commit `95763112` on `registry-candidates/2026.11.0-seq18`, the candidate
+signed as sequence 18 in registry `917bfa2a`; sha256
+`b1faf1f3c00c8042efc46d538a618dabe915301c31c9817f0af9216d05d2e68c`. All 38
+reference objects are byte-identical, in order, with no differing position.
+The run was on commit `07119996`; the 12a receipt's other fields are unchanged.
 
 The 12a values that carry the sequence 18 proof, and the comparison `check`
 holds each to. Paths without a top-level name are under
@@ -319,8 +325,8 @@ driver hashes `tip_writer.py`
 - 12a: beta.7 read the candidate under the dry run's key, not under the
   published key, and the review evidence is a placeholder.
 - 12a: the reference objects come from the compiled profiles at the writer
-  commit. The real candidate is prepared on its own signing commit; whether its
-  reference objects are the same bytes is what the pending comparison answers.
+  commit. The real candidate was prepared on its own signing commit; the
+  recorded comparison shows its reference objects are the same bytes.
 - 12a: the comparison identifies a supplied candidate by its sha256 only. The
   lane does not establish that the file is the candidate that was or will be
   signed.
