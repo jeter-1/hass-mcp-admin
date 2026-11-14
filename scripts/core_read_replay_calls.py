@@ -7,6 +7,11 @@ in ``providers/upstream_read_gateway.py``), sent as one ``tools/call`` over
 streamable HTTP and stored raw: request, status, headers, body and decoded
 messages.  Nothing here interprets, filters or repairs a result.
 
+One case is not a read: ``f-invalid-json`` sends text that is not JSON to the
+upstream service tool, naming a service that exists in no Core, because the
+``VALIDATION_INVALID_JSON`` result has no other source the lane can reach.
+Upstream refuses it at its parse step, before any dispatch.
+
 The capture runs before a 9.2 adapter exists, so the wire arguments for both
 upstream versions are built from one reviewed policy version (``--policy``)
 and recorded with every result.  The replay tests then assert that the 9.2
@@ -36,6 +41,10 @@ CALLS_FORMAT_VERSION = 1
 SEED = "$seed."
 SKILL = {"skill": "home-assistant-best-practices", "file": "SKILL.md"}
 UNKNOWN_ID = "hamcp371_absent_object"
+# The forced case: a service that exists in no Core, and text no JSON parser
+# accepts.  Upstream parses ``data`` before it dispatches anything.
+ABSENT_DOMAIN, ABSENT_SERVICE = "hamcp371_absent_domain", "hamcp371_absent_service"
+INVALID_JSON = "{hamcp371 not json"
 
 # kind "public": ``tool`` is the Engineering name and the adapter builds the
 # wire arguments.  kind "upstream": ``tool`` and ``arguments`` go to the peer
@@ -145,6 +154,24 @@ CASES: tuple[dict[str, Any], ...] = (
      "arguments": {"entity_id": "$seed.helper_entity"}},
     {"id": "a-floors-areas-after-core-restart", "group": "after_restart",
      "tool": "ha_list_floors_areas", "arguments": {}},
+    # The one call here that is not a read.  ``VALIDATION_INVALID_JSON`` comes
+    # from upstream's JSON parse of a string argument, which no delegated read
+    # has; the service tool has it, ahead of any dispatch.  Selected only by
+    # the lane's control order.
+    {"id": "f-invalid-json", "group": "forced", "kind": "upstream", "tool": "ha_call_service",
+     "arguments": {"domain": ABSENT_DOMAIN, "service": ABSENT_SERVICE, "data": INVALID_JSON}},
+    # The two reads whose results differed between the versions with no known
+    # cause, and the whole service listing in the order upstream pages it.
+    {"id": "o-overview-standard", "group": "order", "tool": "ha_get_overview",
+     "arguments": {"detail_level": "standard", "limit": 5, "include_notifications": False}},
+    {"id": "o-services-first-five", "group": "order", "tool": "ha_list_services",
+     "arguments": {"limit": 5}},
+    {"id": "o-services-default-page", "group": "order", "kind": "upstream",
+     "tool": "ha_list_services", "arguments": {"detail_level": "full"}},
+    {"id": "o-services-page-1", "group": "order", "kind": "upstream",
+     "tool": "ha_list_services", "arguments": {"limit": 200, "offset": 0}},
+    {"id": "o-services-page-2", "group": "order", "kind": "upstream",
+     "tool": "ha_list_services", "arguments": {"limit": 200, "offset": 200}},
     # The YAML read: profile B only, selected by the lane.
     {"id": "y-group", "group": "yaml", "kind": "yaml", "tool": "ha_config_get_yaml",
      "arguments": {"yaml_path": "group"}},
