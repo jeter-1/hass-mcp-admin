@@ -9,8 +9,10 @@ exact images on a dedicated bridge with egress; host ports bind loopback. A new
 run directory and clean committed checkout are mandatory. Failure is WITHHELD.
 The production journal is verified read-only; synthetic test keys stay in memory.
 The run refuses before any container starts unless the compiled profile equals
-the reference recorded here for signing, and unless the stub, its lane entry and
-the three node dumps match their committed provenance and the Core source archive.
+the reference recorded here for signing, unless the manifest profile entry and
+its committed source hashes match the Core source archive (HAMCP-297 G5), and
+unless the stub, its lane entry and the three node dumps match their committed
+provenance and the Core source archive.
 """
 import argparse
 import asyncio
@@ -42,10 +44,13 @@ JOURNAL_SHA256 = "3f79fce76484ff9f9a9c070defe4d1d13865ccbfd24fda0ab8724515c8cc6a
 PREDECESSOR_SEQUENCE, PREDECESSOR_CAPABILITIES = 17, 32
 GROUP = "device_configuration_entity"
 RECEIPT = GROUP + ".json"
+CAPABILITY = "core.device_configuration_entity_operation"
+MANIFEST = ROOT / "ci/core-contract-read-files.json"
+SOURCE_HASHES = ROOT / "docs/evidence/hamcp297/lane/core-device-configuration-source-hashes.json"
 # The profile reference recorded for signing. A build whose compiled profile
 # differs in any of these values is not the signed build and does not run.
 PROFILE = {
-    "capability_id": "core.device_configuration_entity_operation",
+    "capability_id": CAPABILITY,
     "profile_id": "core_device_configuration_entity_operation_v1",
     "profile_version": 1,
     "adapter_id": "compiled-core-device-configuration-entity-operation-v1",
@@ -110,6 +115,31 @@ def sha256(path):
 
 
 @diagnostics.checked("image_verify", "journal_inputs")
+def source_manifest(archive_path, provenance):
+    """Bind the manifest profile, committed source hashes and exact archive."""
+    profile = read_json(MANIFEST).get("profiles", {}).get(CAPABILITY)
+    if not profile or not SOURCE_HASHES.is_file():
+        raise Refusal("device_configuration_manifest_missing")
+    record = read_json(SOURCE_HASHES)
+    rows = {row["path"]: row["sha256"] for row in record["files"]}
+    if (record["core_version"], record["source_commit"], record["source_archive_sha256"]) != (
+            VERSION, provenance["source_commit"], provenance["source_archive_sha256"]):
+        raise Refusal("device_configuration_source_provenance_mismatch")
+    if [row["path"] for row in record["files"]] != profile or len(rows) != len(profile):
+        raise Refusal("device_configuration_manifest_mismatch")
+    prefix, observed = "core-" + provenance["source_commit"] + "/", {}
+    with tarfile.open(archive_path, "r:gz") as tar:
+        for member in tar:
+            name = member.name[len(prefix):] if member.name.startswith(prefix) else None
+            if name in rows and member.isreg():
+                observed[name] = hashlib.sha256(tar.extractfile(member).read()).hexdigest()
+    if observed != rows:
+        raise Refusal("device_configuration_source_hash_mismatch")
+    return {"manifest_sha256": sha256(MANIFEST), "source_hashes_sha256": sha256(SOURCE_HASHES),
+            "profile_paths": len(profile)}
+
+
+@diagnostics.checked("image_verify", "journal_inputs")
 def inputs(journal_path, archive_path):
     from core_registry_one_tap import load_public_key
     from prepare_core_release_registry import parse_journal, require_known_contracts
@@ -117,6 +147,7 @@ def inputs(journal_path, archive_path):
     if (sha256(journal_path) != JOURNAL_SHA256
             or sha256(archive_path) != provenance["source_archive_sha256"]):
         raise Refusal("input_hash_mismatch")
+    sources = source_manifest(archive_path, provenance)
     public = load_public_key((ROOT / "docs/evidence/hamcp222/core-public-key.txt").read_bytes(), pinned=True)
     current = parse_journal(Path(journal_path).read_bytes(), public)
     if current.accepted.sequence != PREDECESSOR_SEQUENCE:
@@ -133,7 +164,7 @@ def inputs(journal_path, archive_path):
     if len(entry["capabilities"]) != PREDECESSOR_CAPABILITIES or any(
             p["capability_id"] == PROFILE["capability_id"] for p in entry["capabilities"]):
         raise Refusal("predecessor_capabilities_mismatch")
-    return entry
+    return entry, sources
 
 
 def loaded_profile():
@@ -354,7 +385,7 @@ def _main(argv=None):
     revision = command("git", "rev-parse", "HEAD").stdout.decode().strip()
     # The signed build only: checked before the journal, any image or any container.
     profile = loaded_profile()
-    entry = inputs(args.journal, args.source_archive)
+    entry, sources = inputs(args.journal, args.source_archive)
     stub_hashes = stub_assets(args.source_archive)
     core_image, upstream_image, fixture_image = images()
     for image in (core_image, upstream_image, fixture_image):
@@ -408,7 +439,7 @@ def _main(argv=None):
     result = {"model": "core-device-configuration-local-evidence-v1", "group": GROUP,
               "result": "WITHHELD", "started_utc": utc(), "source_commit": revision,
               "core_version": VERSION, "signing_profile": profile, "stub_assets": stub_hashes,
-              "journal_sha256": JOURNAL_SHA256, "manifest_sha256": sha256(ROOT / "ci/core-contract-read-files.json"),
+              "journal_sha256": JOURNAL_SHA256, **sources,
               "host_admission": admission, "container_memory": limits, "network_posture": NETWORK_POSTURE,
               "mode": "local", "pull": "never", "cleanup": {"clean": False}}
     def interrupted(_signum, _frame):

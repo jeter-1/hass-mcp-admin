@@ -49,12 +49,18 @@ from .models import (
 )
 from .observability import EventSink, ExecutorMetrics, null_event_sink
 from .persistence import (
+    RECOVERY_DROPPED_CODE_PREFIX,
     BlindRedispatchProhibited,
     DuplicateExecutionActive,
     DurableExecutionRepository,
     ExecutionClaim,
     ExecutionStorageError,
+    recovery_bound_reached,
 )
+
+
+# HAMCP-379: manual-review reason for a task settled at the recovery bound.
+RECOVERY_BOUND_REASON = "recovery_bound_reached"
 
 
 class OperationExecutorError(RuntimeError):
@@ -223,6 +229,7 @@ class SharedOperationExecutor:
         sleep: Callable[[float], Any] = asyncio.sleep,
         fault_hook: FaultHook | None = None,
         final_read_at_deadline: bool = False,
+        recovery_containment: bool = False,
     ):
         lock_timing.validate()
         executor_timing.validate()
@@ -239,6 +246,10 @@ class SharedOperationExecutor:
         # HAMCP-192 (typed fan/power only): never decide the evidence deadline
         # before reading. One final read runs; a match still verifies.
         self.final_read_at_deadline = final_read_at_deadline is True
+        # HAMCP-379 (typed power/fan/helper value/device configuration only):
+        # a task whose recovery claims reach the bound without a completed
+        # observation settles to manual review instead of claiming forever.
+        self.recovery_containment = recovery_containment is True
         self._task_locks: dict[str, asyncio.Lock] = {}
 
     def _inject(self, stage: str) -> None:
@@ -424,6 +435,7 @@ class SharedOperationExecutor:
                 prepared=prepared,
                 timing=self.executor_timing,
                 now=self.now(),
+                recovery_containment=self.recovery_containment,
             )
         except DuplicateExecutionActive as exc:
             self.metrics.increment("duplicate_execution_preventions")
@@ -1029,18 +1041,33 @@ class SharedOperationExecutor:
         record = claim.record
         if record.dispatch_intent is None:
             raise OperationExecutorError("recovery requires durable intent")
-        handle = self._recovery_handle(
-            record=record,
-            claim=claim,
-            identity=identity,
-            prepared=prepared,
-        )
+        # HAMCP-379: at the recovery bound this pass settles the task without
+        # another read.
+        settle = self.recovery_containment and recovery_bound_reached(record)
+        try:
+            handle = self._recovery_handle(
+                record=record,
+                claim=claim,
+                identity=identity,
+                prepared=prepared,
+            )
+        except (DurableLockError, OperationExecutorError):
+            if not settle:
+                raise
+            handle = None
+        if settle and (
+            handle is not None or not self._recovery_lease_live(identity.task_id)
+        ):
+            return self._manual_review(
+                claim, identity, handle, reason_code=RECOVERY_BOUND_REASON
+            )
         if handle is None:
             yielded = self.execution_repository.yield_claim(
                 identity.task_id,
                 owner_id=identity.owner_id,
                 claim_generation=claim.claim_generation,
                 now=self.now(),
+                recovery_containment=self.recovery_containment,
             )
             return self._result(
                 yielded,
@@ -1056,6 +1083,26 @@ class SharedOperationExecutor:
             dispatch=None,
             recovering=True,
         )
+
+    def _recovery_lease_live(self, task_id: str) -> bool:
+        """HAMCP-379: a previous pass still holds this task's lock lease.
+
+        The bound settlement then waits for that lease (appending nothing) so
+        the settling pass owns the locks it retains or releases.
+        """
+        now = self.now()
+        try:
+            return any(
+                item.task_id == task_id
+                and not item.conflict_hold
+                and parse_timestamp(
+                    item.lease_expires_at, field_name="lease_expires_at"
+                )
+                > now
+                for item in self.lock_store.records()
+            )
+        except DurableLockError:
+            return False
 
     def _recovery_handle(
         self,
@@ -1082,11 +1129,32 @@ class SharedOperationExecutor:
         selected = []
         for token in durable_tokens:
             candidate = lock_records.get((token.key, token.generation))
+            if candidate is None and self.recovery_containment:
+                # HAMCP-379: an earlier pass transferred this task's locks in
+                # the lock store and died (or failed) before the record named
+                # the new generations. The same task's record for the same key
+                # and mode is that transfer's result. recover_expired below
+                # still requires an expired lease and re-checks the task,
+                # plan, operation and attempt before any transfer.
+                candidate = next(
+                    (
+                        item
+                        for item in lock_records.values()
+                        if item.key == token.key
+                        and item.mode == token.mode
+                        and item.task_id == identity.task_id
+                    ),
+                    None,
+                )
             if candidate is None:
                 return None
             if candidate.conflict_hold:
                 return None
             selected.append(candidate)
+        current_tokens = tuple(
+            LockToken(key=item.key, generation=item.generation, mode=item.mode)
+            for item in selected
+        )
         old_owner_ids = {item.owner_id for item in selected}
         if len(old_owner_ids) != 1:
             raise OperationExecutorError("durable lock owner set is contradictory")
@@ -1099,7 +1167,7 @@ class SharedOperationExecutor:
         )
         old_handle = LockHandle(
             owner=old_owner,
-            tokens=durable_tokens,
+            tokens=current_tokens,
             acquired_at=min(item.acquired_at for item in selected),
             lease_expires_at=min(
                 selected,
@@ -1111,7 +1179,10 @@ class SharedOperationExecutor:
         )
         try:
             self.lock_store.validate_handle(old_handle, now=self.now())
-            if old_owner.owner_id != identity.owner_id:
+            if (
+                old_owner.owner_id != identity.owner_id
+                or current_tokens != durable_tokens
+            ):
                 return None
             return old_handle
         except LockLeaseExpired:
@@ -1141,6 +1212,7 @@ class SharedOperationExecutor:
             claim_generation=claim.claim_generation,
             handle=handle,
             now=self.now(),
+            recovery_containment=self.recovery_containment,
         )
         return handle
 
@@ -1456,21 +1528,38 @@ class SharedOperationExecutor:
         self,
         claim: ExecutionClaim,
         identity: ExecutionIdentity,
-        handle: LockHandle,
+        handle: LockHandle | None,
         *,
         reason_code: str,
     ) -> ExecutorResult:
+        codes: tuple[str, ...] = (reason_code,)
+        evidence = {"manual_review_reason_code": reason_code}
+        if reason_code == RECOVERY_BOUND_REASON:
+            # Nothing new was read: the last recorded readback, if any, stays.
+            evidence = {**claim.record.evidence, **evidence}
+            # A record trimmed to make room names the number of dropped events.
+            codes += tuple(
+                code
+                for event in claim.record.events
+                if event["event_type"] == "recovery_claimed"
+                for code in event["diagnostic_codes"]
+                if code.startswith(RECOVERY_DROPPED_CODE_PREFIX)
+            )[-1:]
         record = self.execution_repository.record_verification(
             identity.task_id,
             owner_id=identity.owner_id,
             claim_generation=claim.claim_generation,
             outcome="manual_review_required",
             terminal=True,
-            diagnostic_codes=(reason_code,),
-            evidence={"manual_review_reason_code": reason_code},
+            diagnostic_codes=codes,
+            evidence=evidence,
             now=self.now(),
         )
         self.metrics.increment("manual_review_transitions")
+        if handle is None:
+            # No lock record of this task could be taken over: nothing is
+            # promoted or released.
+            return self._result(record)
         try:
             self.lock_store.promote_to_conflict_hold(
                 handle, reason_code="manual_review_unresolved_dispatch"
@@ -1510,6 +1599,7 @@ class SharedOperationExecutor:
             owner_id=identity.owner_id,
             claim_generation=claim.claim_generation,
             now=self.now(),
+            recovery_containment=self.recovery_containment,
         )
         return self._result(yielded)
 

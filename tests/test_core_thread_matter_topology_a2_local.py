@@ -9,6 +9,7 @@ literal ``False``, an extra stub command, a leaked canary, an unresolved
 name. Canary values are parameters made at test time, never the stub's
 literals; the stub itself is never copied into this branch.
 """
+import contextlib
 from copy import deepcopy
 import hashlib
 import json
@@ -25,6 +26,7 @@ sys.path[:0] = [str(ROOT / "hass_mcp_engineering_beta"), str(ROOT / "scripts"), 
 
 import core_thread_matter_topology_a2_local as lane  # noqa: E402
 import core_thread_matter_topology_local as a1  # noqa: E402
+import real_ha_contract_tests as harness  # noqa: E402
 import test_hamcp231_thread_matter_topology as base  # noqa: E402
 import thread_matter_topology_a2_acceptance as a2  # noqa: E402
 from ha_mcp_engineering import thread_matter_topology as tm  # noqa: E402
@@ -233,6 +235,172 @@ class StubPinTests(unittest.TestCase):
 CLOSED_LANE_MARKERS = ("GITHUB_ACTIONS", "CORE_EVIDENCE_CONTEXT")
 
 
+NETWORK_ID, OTHER_NETWORK_ID, RUN_ID = "ab" * 32, "cd" * 32, "run-364"
+SUBNET, CORE_ADDRESS = "172.30.0.0/16", "172.30.0.2"
+
+
+def created(**changes):
+    """``docker network inspect`` of the network this run created, as Docker reports it."""
+    return {"Name": lane.NETWORK, "Id": NETWORK_ID, "Driver": "bridge", "Internal": True,
+            "Labels": {a1.LABEL: RUN_ID}, "IPAM": {"Config": [{"Subnet": SUBNET, "Gateway": "172.30.0.1"}]},
+            **changes}
+
+
+class HandOverTests(unittest.TestCase):
+    """The harness learns this lane's Core only from the network this run created and inspected."""
+
+    def setUp(self):
+        state = mock.patch.multiple(harness, HA_URL=harness.HA_URL, CLIENT_ID=harness.CLIENT_ID, _lane_core=None)
+        state.start()
+        self.addCleanup(state.stop)
+        self.before = (harness.HA_URL, harness.CLIENT_ID)
+        self.commands = []
+
+    def docker(self, network, address=CORE_ADDRESS, attached=NETWORK_ID, reply=None):
+        """Stand-ins for the two Docker reads; any other command fails the test."""
+        def command(*args, check=True):
+            self.commands.append((args, check))
+            if network is None:
+                return mock.Mock(returncode=1, stdout=b"", stderr=b"synthetic: no such network")
+            return mock.Mock(returncode=0, stdout=json.dumps([network]).encode() if reply is None else reply)
+        container = {"NetworkSettings": {"Ports": {"8123/tcp": None}, "Networks": {
+            lane.NETWORK: {"IPAddress": address, "NetworkID": attached}}}}
+        stack = contextlib.ExitStack()
+        stack.enter_context(mock.patch.object(lane, "command", command))
+        stack.enter_context(mock.patch.object(lane, "inspect_owned", return_value=container))
+        return stack
+
+    def refused(self, kind, reason, network_id=NETWORK_ID, **docker):
+        accept = mock.Mock(side_effect=AssertionError("the harness was handed a Core"))
+        with self.docker(**docker), mock.patch.object(harness, "use_internal_lane_core", accept):
+            with self.assertRaises(kind) as caught:
+                lane.hand_over_core(network_id, RUN_ID)
+        self.assertEqual(caught.exception.args, (reason,))
+        accept.assert_not_called()
+        self.assertEqual((harness.HA_URL, harness.CLIENT_ID, harness._lane_core), (*self.before, None))
+
+    def test_the_created_internal_network_hands_its_core_over(self):
+        self.assertEqual(self.before, ("http://127.0.0.1:8123", "http://127.0.0.1:8123/"))
+        with self.docker(created()):
+            origin, record = lane.hand_over_core(NETWORK_ID, RUN_ID)
+        self.assertEqual(origin, "http://172.30.0.2:8123")
+        self.assertEqual(record, {"name": lane.NETWORK, "subnet": SUBNET, "target_address": CORE_ADDRESS})
+        self.assertEqual((harness.HA_URL, harness.CLIENT_ID, harness._lane_core),
+                         (origin, origin + "/", origin))
+        # One inspect of the created id, by id, in this process; nothing else was run.
+        self.assertEqual(self.commands, [(("docker", "network", "inspect", NETWORK_ID), False)])
+
+    def test_a_network_that_is_not_internal_refuses(self):
+        for internal in (False, None, "true", 1):
+            with self.subTest(internal=internal):
+                self.refused(a1.Refusal, "lane_requires_internal_bridge", network=created(Internal=internal))
+        missing = created()
+        del missing["Internal"]
+        self.refused(a1.Refusal, "lane_requires_internal_bridge", network=missing)
+        self.refused(a1.Refusal, "lane_requires_internal_bridge", network=created(Driver="macvlan"))
+
+    def test_a_network_this_run_did_not_create_refuses(self):
+        for network in (None, created(Id=OTHER_NETWORK_ID), created(Name="bridge"), created(Name="homelan"),
+                        created(Labels={a1.LABEL: "another-run"}), created(Labels={}), created(Labels=None)):
+            with self.subTest(network=network):
+                self.refused(a1.Refusal, "lane_network_not_created_by_run", network=network)
+        for reply in (b"", b"not json", b"[]", b"{}", json.dumps([created(), created()]).encode(),
+                      json.dumps([[created()]]).encode()):
+            with self.subTest(reply=reply):
+                self.refused(a1.Refusal, "lane_network_not_created_by_run", network=created(), reply=reply)
+        # Only the 64-hex id printed by this run's create is ever inspected: a name is not.
+        for network_id in ("", lane.NETWORK, "bridge", "host", NETWORK_ID[:12], NETWORK_ID.upper(),
+                           NETWORK_ID + "\n", None, 7):
+            with self.subTest(network_id=network_id):
+                self.commands.clear()
+                self.refused(a1.Refusal, "lane_network_not_created_by_run", network_id=network_id,
+                             network=created())
+                self.assertEqual(self.commands, [])
+
+    def test_a_lan_style_address_with_no_matching_created_network_refuses(self):
+        # A private address on a household network is inside no network this run created.
+        for lan in ("192.168.1.10", "10.0.0.5", "172.16.4.9", "192.168.0.1"):
+            with self.subTest(address=lan):
+                with self.docker(created(), address=lan):
+                    with self.assertRaises(ValueError) as caught:
+                        lane.hand_over_core(NETWORK_ID, RUN_ID)
+                self.assertEqual(caught.exception.args, ("real_ha_lane_core_outside_subnet",))
+                self.assertEqual((harness.HA_URL, harness.CLIENT_ID, harness._lane_core), (*self.before, None))
+        # Nor does an existing LAN network qualify by having the right range.
+        lan_network = created(Id=OTHER_NETWORK_ID, Name="homelan", Labels={}, Driver="macvlan", Internal=False,
+                              IPAM={"Config": [{"Subnet": "192.168.1.0/24"}]})
+        self.refused(a1.Refusal, "lane_network_not_created_by_run", network=lan_network, address="192.168.1.10")
+        self.refused(a1.Refusal, "lane_network_not_created_by_run", network_id=OTHER_NETWORK_ID,
+                     network=lan_network, address="192.168.1.10")
+
+    def test_an_address_outside_the_created_subnet_refuses(self):
+        for outside in ("172.31.0.2", "172.29.255.254", "127.0.0.1", "172.30.0.0", "172.30.255.255"):
+            with self.subTest(address=outside):
+                with self.docker(created(), address=outside):
+                    with self.assertRaises(ValueError) as caught:
+                        lane.hand_over_core(NETWORK_ID, RUN_ID)
+                self.assertEqual(caught.exception.args, ("real_ha_lane_core_outside_subnet",))
+                self.assertIsNone(harness._lane_core)
+        # A container on another network under the lane's name is refused before its address is used.
+        self.refused(a1.Refusal, "lane_container_network_not_created_by_run", network=created(),
+                     attached=OTHER_NETWORK_ID)
+
+    def test_a_subnet_that_cannot_be_read_refuses(self):
+        for ipam in ({}, None, {"Config": []}, {"Config": None}, {"Config": [{}]}, {"Config": [{"Subnet": None}]},
+                     {"Config": [{"Subnet": SUBNET}, {"Subnet": "fd00::/64"}]}, {"Config": [SUBNET]}):
+            with self.subTest(ipam=ipam):
+                self.refused(a1.Refusal, "lane_network_subnet_unreadable", network=created(IPAM=ipam))
+        # A subnet Docker would not report for a bridge pool is the harness's refusal.
+        for subnet in ("10.0.0.0/8", "0.0.0.0/0", "fd00::/64", "172.30.0.2/16"):
+            with self.subTest(subnet=subnet):
+                with self.docker(created(IPAM={"Config": [{"Subnet": subnet}]})):
+                    with self.assertRaises(ValueError) as caught:
+                        lane.hand_over_core(NETWORK_ID, RUN_ID)
+                self.assertEqual(caught.exception.args, ("real_ha_lane_subnet_not_usable",))
+                self.assertIsNone(harness._lane_core)
+
+    def test_the_stub_origin_is_its_address_inside_the_created_subnet(self):
+        with self.docker(created(), address="172.30.0.3"):
+            self.assertEqual(lane.stub_origin(NETWORK_ID, RUN_ID, 5580, SUBNET), "http://172.30.0.3:5580")
+        # The address is read from the stub's own container, on the network this run created.
+        self.assertEqual(self.commands, [])
+
+    def test_a_stub_address_outside_the_created_subnet_refuses(self):
+        for address, subnet in (("192.168.1.10", SUBNET), ("172.31.0.3", SUBNET), ("10.0.0.3", SUBNET),
+                                ("127.0.0.1", SUBNET), ("172.30.0.3", "172.30.1.0/24"),
+                                ("172.30.0.3", "not-a-subnet"), ("172.30.0.3", "172.30.0.1/16"),
+                                ("not-an-address", SUBNET), ("fd00::3", SUBNET), ("172.30.0.3", "fd00::/64")):
+            with self.subTest(address=address, subnet=subnet), self.docker(created(), address=address):
+                with self.assertRaises(a1.Refusal) as caught:
+                    lane.stub_origin(NETWORK_ID, RUN_ID, 5580, subnet)
+                self.assertEqual(caught.exception.args, ("lane_stub_outside_created_network",))
+
+    def test_a_stub_on_a_network_this_run_did_not_create_refuses(self):
+        with self.docker(created(), address="172.30.0.3", attached=OTHER_NETWORK_ID):
+            with self.assertRaises(a1.Refusal) as caught:
+                lane.stub_origin(NETWORK_ID, RUN_ID, 5580, SUBNET)
+        self.assertEqual(caught.exception.args, ("lane_container_network_not_created_by_run",))
+        with self.docker(created(), address=""):
+            with self.assertRaises(a1.Refusal) as caught:
+                lane.stub_origin(NETWORK_ID, RUN_ID, 5580, SUBNET)
+        self.assertEqual(caught.exception.args, ("lane_container_address_missing",))
+
+    def test_the_runner_never_names_its_core_in_the_environment(self):
+        source = Path(lane.__file__).read_text()
+        self.assertNotIn('os.environ["REAL_HA_URL"]', source)
+        self.assertNotIn("REAL_HA_URL=", source)
+        self.assertIn('os.environ.pop("REAL_HA_URL", None)', source)
+        # The id is the one this run's create printed, checked at once and again at the hand-over,
+        # whose record of name, subnet and target address goes into the receipt.
+        posture = source[source.index('"network_create"'):source.index('"stub_start"')]
+        self.assertIn('network_id = command("docker", "network", "create", "--internal"', posture)
+        self.assertIn("created_network(network_id, run_id)", posture)
+        self.assertEqual(source.count("network_id = "), 1)
+        self.assertIn('ha_url, result["lane_network"] = hand_over_core(network_id, run_id)', source)
+        self.assertIn('stub_url = stub_origin(network_id, run_id, stub["port"], result["lane_network"]["subnet"])',
+                      source)
+
+
 class NetworkPostureTests(unittest.TestCase):
     def test_internal_bridge_without_published_ports(self):
         self.assertIs(lane.NETWORK_POSTURE["internal"], True)
@@ -252,15 +420,18 @@ class NetworkPostureTests(unittest.TestCase):
         def inspected(networks, ports=None):
             data = {"NetworkSettings": {"Networks": networks, "Ports": ports or {}}}
             return mock.patch.object(lane, "inspect_owned", return_value=data)
-        with inspected({lane.NETWORK: {"IPAddress": "172.30.0.2"}}, {"8123/tcp": None}):
-            self.assertEqual(lane.address(lane.CORE, "run"), "172.30.0.2")
-        for networks, ports in (({lane.NETWORK: {"IPAddress": "172.30.0.2"}, "bridge": {}}, None),
-                                ({lane.NETWORK: {"IPAddress": "172.30.0.2"}},
-                                 {"8123/tcp": [{"HostIp": "127.0.0.1", "HostPort": "8123"}]}),
-                                ({lane.NETWORK: {"IPAddress": ""}}, None)):
+        own = {"IPAddress": "172.30.0.2", "NetworkID": NETWORK_ID}
+        with inspected({lane.NETWORK: own}, {"8123/tcp": None}):
+            self.assertEqual(lane.address(lane.CORE, "run", NETWORK_ID), "172.30.0.2")
+        for networks, ports in (({lane.NETWORK: own, "bridge": {}}, None),
+                                ({lane.NETWORK: own}, {"8123/tcp": [{"HostIp": "127.0.0.1", "HostPort": "8123"}]}),
+                                ({lane.NETWORK: {**own, "IPAddress": ""}}, None),
+                                # The lane's name, but not the network this run created.
+                                ({lane.NETWORK: {**own, "NetworkID": OTHER_NETWORK_ID}}, None),
+                                ({lane.NETWORK: {"IPAddress": "172.30.0.2"}}, None)):
             with self.subTest(networks=networks, ports=ports), inspected(networks, ports):
                 with self.assertRaises(a1.Refusal):
-                    lane.address(lane.CORE, "run")
+                    lane.address(lane.CORE, "run", NETWORK_ID)
 
     def test_the_stub_is_never_copied_into_this_branch(self):
         """No file outside the committed stub directory carries a pinned stub hash."""

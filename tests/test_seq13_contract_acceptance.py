@@ -423,7 +423,8 @@ class LaneRawRouteTests(unittest.IsolatedAsyncioTestCase):
     """HAMCP-165 review1 M4: the lane's config-entry routes are closed and loopback-only."""
 
     def configured(self, host="127.0.0.1"):
-        return SimpleNamespace(websocket_url="ws://" + host + ":8123/api/websocket",
+        # The websocket URL stays pinned so that only the REST host is under test here.
+        return SimpleNamespace(websocket_url="ws://127.0.0.1:8123/api/websocket",
                                api_url="http://" + host + ":8123/api", ha_token="synthetic")
 
     def test_only_a_loopback_core_is_accepted(self):

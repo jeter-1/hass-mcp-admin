@@ -7,7 +7,7 @@ Exercises ``scripts/exact_image_admission_91_runners.py`` and the lane job in
   step conditioned on that configuration, exactly once, by a real runner;
 * the 9.1 positive endpoint is the full ``/synthetic-upstream-secret/mcp``
   path followed by ``/catalog/full`` and the short form is refused;
-* the Engineering rollback stage runs the previous release 2.4.2-beta.6 by
+* the Engineering rollback stage runs the previous release 2.4.2-beta.7 by
   its published index digest, and only the rollback cases may run it;
 * a runner that does not execute, a wrong endpoint form, and a dormant or
   identity-only lane never produce a passing lane or an ACCEPTED gate.
@@ -161,13 +161,13 @@ def rollback_identity_ok(architecture: str = "amd64") -> dict:
             "revision": runners.ROLLBACK_ENGINEERING_REVISION}
 
 
-# A sample of 2.4.2-beta.6's Engineering-native public tools; none is delegated
+# A sample of 2.4.2-beta.7's Engineering-native public tools; none is delegated
 # (every ha-mcp tool name, and so every delegated read, starts with "ha_").
 ROLLBACK_NATIVE_TOOLS = ["get_change_plan", "get_server_health", "list_capabilities"]
 
 
 def rollback_refused_probe() -> dict:
-    """2.4.2-beta.6's refusal of an unlisted delegated read (routing.py, af5ec837), as the runner records it."""
+    """2.4.2-beta.7's refusal of an unlisted delegated read (routing.py:1038, b614be43), as the runner records it."""
 
     return {"success": False, "operation": runners.PROBE_TOOL, "error": "CoreRequirementUnmapped",
             "error_code": "unsupported_operation",
@@ -528,7 +528,7 @@ class StrictFullEndpointTests(unittest.TestCase):
         self.assertEqual(command[-1], runners.LANE_ENGINEERING_IMAGE)
         cases = {
             "engineering_upstream_url_not_lane_value": dict(upstream_url=SHORT_STRICT),
-            "engineering_image_not_allowed": dict(upstream_url=STRICT, image="ghcr.io/jeter-1/hass-mcp-engineering-beta:2.4.2-beta.6"),
+            "engineering_image_not_allowed": dict(upstream_url=STRICT, image="ghcr.io/jeter-1/hass-mcp-engineering-beta:2.4.2-beta.7"),
             "engineering_container_name_invalid": dict(upstream_url=STRICT, name="other-container"),
             "engineering_port_out_of_range": dict(upstream_url=STRICT, mcp_port=8099),
         }
@@ -579,7 +579,16 @@ class RollbackStageTests(unittest.TestCase):
         env = workflow_job()["env"]
         self.assertEqual(env["ROLLBACK_ENGINEERING_IMAGE"], runners.ROLLBACK_ENGINEERING_IMAGE)
         self.assertEqual(env["ROLLBACK_ENGINEERING_VERSION"], runners.ROLLBACK_ENGINEERING_VERSION)
-        self.assertEqual(runners.ROLLBACK_ENGINEERING_VERSION, "2.4.2-beta.6")
+        # HAMCP-377 (ruling 32), restated from the recorded registry read of tag
+        # v2.4.2-beta.7 (index and per-architecture manifests, revision label).
+        self.assertEqual(runners.ROLLBACK_ENGINEERING_VERSION, "2.4.2-beta.7")
+        self.assertEqual(runners.ROLLBACK_ENGINEERING_INDEX_DIGEST,
+                         "sha256:5801d42fd19bfe813cccfe0a81b218d9f3a8cabf6f12ee044a160c0603c83c47")
+        self.assertEqual(runners.ROLLBACK_ENGINEERING_REVISION, "b614be43f8c56ae06fdec0ac0bcb479b9da39715")
+        self.assertEqual(runners.ROLLBACK_ENGINEERING_PLATFORM_DIGESTS, {
+            "amd64": "sha256:8a60a87c1d1a5a25e8ab0d88925dc022b94cd8da946591b9587980acf2bc814f",
+            "arm64": "sha256:55676da89f782c56c164e5692ab4233faa2dde6936548cc86e7e8594cac97b24",
+        })
         self.assertRegex(runners.ROLLBACK_ENGINEERING_IMAGE,
                          r"^ghcr\.io/jeter-1/hass-mcp-engineering-beta@sha256:[0-9a-f]{64}$")
         self.assertEqual(set(runners.ROLLBACK_ENGINEERING_PLATFORM_DIGESTS), {"amd64", "arm64"})
@@ -598,9 +607,9 @@ class RollbackStageTests(unittest.TestCase):
         steps = {step.get("name"): str(step.get("run", "")) for step in workflow_job()["steps"]}
         identity = steps["Verify the previous Engineering release by digest"]
         self.assertIn("rollback-identity", identity)
-        for name, case in (("Case side-by-side rollback, previous release 2.4.2-beta.6 with 8.5",
+        for name, case in (("Case side-by-side rollback, previous release 2.4.2-beta.7 with 8.5",
                             "sbs_rollback_85_legacy_useful"),
-                           ("Case side-by-side previous release refuses 9.1 on the strict-full value",
+                           ("Case side-by-side previous release does not review 9.1.2 on the strict-full value",
                             "sbs_engineering_rollback_91_refused")):
             with self.subTest(case=case):
                 text = steps[name]
@@ -609,13 +618,13 @@ class RollbackStageTests(unittest.TestCase):
                 self.assertIn("--rollback-identity", text)
                 self.assertIn(f"--case {case}", text)
                 self.assertIn('--data-dir "$RUNNER_TEMP/admission-data-sbs"', text)
-        rollback = steps["Case side-by-side rollback, previous release 2.4.2-beta.6 with 8.5"]
+        rollback = steps["Case side-by-side rollback, previous release 2.4.2-beta.7 with 8.5"]
         self.assertIn("--role baseline", rollback)
         self.assertIn('--upstream-url "$LEGACY_UPSTREAM_URL"', rollback)
         for name, text in steps.items():
             if '--image "$ROLLBACK_ENGINEERING_IMAGE"' in text:
-                self.assertIn(name, ("Case side-by-side rollback, previous release 2.4.2-beta.6 with 8.5",
-                                     "Case side-by-side previous release refuses 9.1 on the strict-full value"))
+                self.assertIn(name, ("Case side-by-side rollback, previous release 2.4.2-beta.7 with 8.5",
+                                     "Case side-by-side previous release does not review 9.1.2 on the strict-full value"))
             elif "ROLLBACK_ENGINEERING_IMAGE" in text:
                 # Stage A again only names it as the outgoing writer it verifies; it never runs it.
                 self.assertEqual(name, "Case side-by-side stage A again, current build with 8.5 on the legacy value")
@@ -625,7 +634,7 @@ class RollbackStageTests(unittest.TestCase):
     def test_rollback_acceptance_passes_only_on_the_previous_release(self) -> None:
         status, reason, observed = gateway_case("side_by_side", "sbs_rollback_85_legacy_useful")
         self.assertEqual((status, reason), ("passed", ""))
-        self.assertEqual(observed["engineering_version"], "2.4.2-beta.6")
+        self.assertEqual(observed["engineering_version"], "2.4.2-beta.7")
         self.assertEqual(observed["engineering_image"], runners.ROLLBACK_ENGINEERING_IMAGE)
         negatives = {
             "rollback_case_not_previous_release": dict(engineering_version=LANE_VERSION,
@@ -670,7 +679,7 @@ class RollbackStageTests(unittest.TestCase):
         self.assertIsNone(runners.rollback_identity_problem(rollback_identity_ok("arm64")))
         self.assertEqual(runners.rollback_identity_problem({**rollback_identity_ok(), "status": "failed"}),
                          "rollback_identity_not_verified")
-        for key, value in (("image", "ghcr.io/jeter-1/hass-mcp-engineering-beta:2.4.2-beta.6"),
+        for key, value in (("image", "ghcr.io/jeter-1/hass-mcp-engineering-beta:2.4.2-beta.7"),
                            ("image_digest", "sha256:" + "0" * 64), ("version", LANE_VERSION),
                            ("revision", "0" * 40), ("architecture", "riscv64")):
             with self.subTest(key=key):
@@ -1147,7 +1156,7 @@ class StrictCatalogExactnessTests(unittest.TestCase):
 # HAMCP-319 #407 F3: transitions between releases on the same persisted data.
 # Records are generated by each release's real writers, read by each actual
 # release's readers in both directions (this checkout's runtime package and
-# 2.4.2-beta.6's, extracted from its exact commit), and the oracle allows
+# 2.4.2-beta.7's, extracted from its exact commit), and the oracle allows
 # only the legitimate awaiting_approval -> superseded plan transition.
 # ---------------------------------------------------------------------------
 
@@ -1307,7 +1316,7 @@ def scratch(prefix: str) -> Path:
 
 
 def release_packages() -> dict[str, str]:
-    """Each release's runtime package root: this checkout's, and 2.4.2-beta.6's from its exact commit."""
+    """Each release's runtime package root: this checkout's, and 2.4.2-beta.7's from its exact commit."""
 
     if _PACKAGES:
         return _PACKAGES
@@ -1318,12 +1327,12 @@ def release_packages() -> dict[str, str]:
                              capture_output=True, check=False).returncode == 0
     if not present:
         if os.environ.get("GITHUB_ACTIONS") == "true":
-            raise AssertionError("the 2.4.2-beta.6 commit is absent from the CI checkout; its readers cannot run")
-        raise unittest.SkipTest("2.4.2-beta.6 commit not available in this clone")
+            raise AssertionError("the 2.4.2-beta.7 commit is absent from the CI checkout; its readers cannot run")
+        raise unittest.SkipTest("2.4.2-beta.7 commit not available in this clone")
     archive = subprocess.run(["git", "-C", str(ROOT), "archive", "--format=tar", revision,
                               "hass_mcp_engineering_beta/ha_mcp_engineering"],
                              capture_output=True, check=True, timeout=300).stdout
-    directory = scratch("hamcp319-beta6-")
+    directory = scratch("hamcp319-previous-release-")
     with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
         tar.extractall(directory, filter="data")
     _PACKAGES.update({W6: str(directory / "hass_mcp_engineering_beta"), W7: str(ROOT / "hass_mcp_engineering_beta")})
@@ -1950,7 +1959,7 @@ class PersistedTransitionWorkflowTests(unittest.TestCase):
     """Both transitions run on the same data directory, with each record taken at its boundary."""
 
     TRANSITIONS = {
-        "Case side-by-side rollback, previous release 2.4.2-beta.6 with 8.5": dict(
+        "Case side-by-side rollback, previous release 2.4.2-beta.7 with 8.5": dict(
             case=runners.ROLLBACK_PERSISTED_CASE, writer='--writer-image engineering-admission-lane:test',
             version='--expected-engineering-version "$ENGINEERING_LANE_VERSION"', automation="gateway_fixture",
             snapshot="admission-persisted-current-release.json", restart="admission-persisted-rollback-restart.json"),
@@ -1997,9 +2006,9 @@ class PersistedTransitionWorkflowTests(unittest.TestCase):
         steps = workflow_job()["steps"]
         names = [step.get("name", "") for step in steps]
         again = next(i for i, name in enumerate(names) if "stage A again" in name)
-        refusal = next(i for i, name in enumerate(names) if "previous release refuses 9.1" in name)
+        refusal = next(i for i, name in enumerate(names) if "previous release does not review 9.1.2" in name)
         rollback = next(i for i, name in enumerate(names) if "side-by-side rollback" in name)
-        self.assertEqual(again, refusal + 1, "no step may run between the beta.6 stage and stage A again")
+        self.assertEqual(again, refusal + 1, "no step may run between the beta.7 stage and stage A again")
         self.assertEqual(refusal, rollback + 1)
         for step in steps:
             if "side_by_side" in str(step.get("if", "")):
@@ -2186,7 +2195,7 @@ class RollbackRefusalOracleTests(unittest.TestCase):
                          ("failed", "health_missing"))
 
     def test_unattributable_refusals_fail_end_to_end(self) -> None:
-        # A refusal must be beta.6's own unmapped-route refusal with no
+        # A refusal must be beta.7's own unmapped-route refusal with no
         # dispatch: a transport error, a generic failure or a dispatching
         # refusal is not evidence that the previous release refused 9.1.
         self.assert_refused_end_to_end("rollback_refusal_not_attributable", probe=RuntimeError("transport"))

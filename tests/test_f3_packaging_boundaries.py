@@ -79,6 +79,9 @@ ALLOWED_EXPLICIT_F3_IMPORTS = {
     # HAMCP-319: 9.1.0 typed power/fan/helper rows through the shared
     # executor (verified readback and rollback-record non-redispatch).
     "tests/test_hamcp319_typed_writes.py",
+    # HAMCP-379: recovery containment for the four typed write families
+    # (claim bound, bookkeeping limits and pure-read checks on f3 records).
+    "tests/test_hamcp379_recovery_containment.py",
     "tests/fixtures/f3_lock_recovery/generate.py",
     "tests/f3_configuration_fixtures.py",
     "tests/test_f3_configuration_identity.py",

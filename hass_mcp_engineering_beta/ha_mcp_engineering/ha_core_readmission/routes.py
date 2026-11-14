@@ -501,9 +501,8 @@ CORE_INDEPENDENT_STATIC_TOOLS: Mapping[str, CoreIndependence] = MappingProxyType
         ),
         "get_execution_task": CoreIndependence(
             CORE_INDEPENDENT_LOCAL_STATE,
-            "Reads one persisted Engineering execution task; a typed fan or "
-            "power task reconciles through its own typed Core authority, and "
-            "no other path makes a Home Assistant call.",
+            "Reads one persisted Engineering execution task; it makes no Home "
+            "Assistant call.",
         ),
         "inspect_governance_record": CoreIndependence(
             CORE_INDEPENDENT_LOCAL_STATE,

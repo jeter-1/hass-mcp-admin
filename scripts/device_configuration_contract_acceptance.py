@@ -57,6 +57,7 @@ from ha_mcp_engineering.signed_registry import canonical_json
 from ha_mcp_engineering.upstream_tool_policy import load_reviewed_upstream_release_registry
 
 import lane_failure_diagnostics as diagnostics
+from lane_session import lane_session, refuse_redirect
 
 CAPABILITY = "core.device_configuration_entity_operation"
 GROUP = "device_configuration_entity"
@@ -84,7 +85,6 @@ CORE_REST_REFUSED = "core_rest_request_not_listed"
 STUB_URL_REFUSED = "stub_url_not_pinned"
 STUB_REQUEST_REFUSED = "stub_request_not_listed"
 UPSTREAM_URL_REFUSED = "upstream_url_not_pinned"
-REDIRECT_REFUSED = "redirect_refused"
 FRAME_BYTES = 8 * 1024 * 1024
 
 # The admitted lane entities Core 2026.11.0 creates from the three pinned dumps.
@@ -225,25 +225,6 @@ def pinned_upstream(configured):
     return replace(configured, upstream_dashboard_mcp_url=UPSTREAM_URL)
 
 
-class RedirectRefused(Exception):
-    """A lane session was answered with a redirect. ``code`` is the fixed refusal, never the target."""
-
-    code = REDIRECT_REFUSED
-
-
-async def _refuse_redirect(_session, _context, _params):
-    raise RedirectRefused(REDIRECT_REFUSED)
-
-
-def lane_session(seconds):
-    """Every lane session: no proxy from the environment, and a redirect ends the request unfollowed."""
-    # Local to this lane for now: HAMCP-364 replaces it with the shared lane-session helper.
-    trace = aiohttp.TraceConfig()
-    trace.on_request_redirect.append(_refuse_redirect)
-    return aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=seconds), trust_env=False,
-                                 trace_configs=[trace])
-
-
 def reference():
     profile, = CORE_DEVICE_CONFIGURATION_PROFILES
     value = profile.to_mapping()
@@ -270,9 +251,13 @@ class LaneWebSocket:
         if not listed(payload, GATEWAY_COMMANDS):
             self.refused.append(CORE_COMMAND_REFUSED)
             raise ValueError(CORE_COMMAND_REFUSED)
-        kind = payload["type"]
+        # Copied with the check, as RawCore.command copies, before a hook or the
+        # product client awaits: what is journalled and what is forwarded are the
+        # command that was checked, whatever the caller does with its payload.
+        checked = copy.deepcopy(payload)
+        kind = checked["type"]
         if kind == "config/entity_registry/get":
-            entity_id = payload["entity_id"]
+            entity_id = checked["entity_id"]
             self.reads[entity_id] = self.reads.get(entity_id, 0) + 1
             self.journal.append(("registry", entity_id))
             armed = self.hooks.get(entity_id)
@@ -280,9 +265,9 @@ class LaneWebSocket:
                 del self.hooks[entity_id]
                 await armed[1]()
         elif kind == "call_service":
-            self.sends.append(copy.deepcopy(payload))
-            self.journal.append(("send", payload["target"]["entity_id"]))
-        return await self.client.command(payload)
+            self.sends.append(copy.deepcopy(checked))
+            self.journal.append(("send", checked["target"]["entity_id"]))
+        return await self.client.command(checked)
 
 
 class LaneRest:
@@ -319,12 +304,16 @@ class RawCore:
     async def command(self, payload, *, seconds=60):
         if not listed(payload, RAW_COMMANDS):
             raise ValueError(CORE_COMMAND_REFUSED)
-        async with lane_session(seconds) as session:
+        # Copied in the same step as the check, before anything is awaited: the
+        # frame sent is the command that was checked, whatever the caller does
+        # with its payload while the socket connects.
+        checked = copy.deepcopy(payload)
+        async with lane_session(timeout=aiohttp.ClientTimeout(total=seconds)) as session:
             async with session.ws_connect(CORE_WS_URL, max_msg_size=FRAME_BYTES) as socket:
                 assert (await socket.receive_json())["type"] == "auth_required"
                 await socket.send_json({"type": "auth", "access_token": self.token})
                 assert (await socket.receive_json())["type"] == "auth_ok"
-                await socket.send_json({"id": 1, **payload})
+                await socket.send_json({"id": 1, **checked})
                 reply = await socket.receive_json()
                 assert reply.get("type") == "result" and reply.get("id") == 1
                 return reply
@@ -370,13 +359,15 @@ class RawRest:
     async def rest(self, method, path, body=None, *, seconds=60):
         if not listed({"method": method, "path": path, "body": body}, RAW_REST):
             raise ValueError(CORE_REST_REFUSED)
+        # Copied with the check, as RawCore.command copies: the body sent is the
+        # body that was checked. The method and the path are exact strings.
+        checked = copy.deepcopy(body)
         headers = {"Authorization": "Bearer " + self.token}
-        options = {} if body is None else {"json": body}
-        async with lane_session(seconds) as session:
+        options = {} if checked is None else {"json": checked}
+        async with lane_session(timeout=aiohttp.ClientTimeout(total=seconds)) as session:
             async with session.request(method, CORE_URL + path, headers=headers,
                                        allow_redirects=False, **options) as response:
-                if 300 <= response.status < 400:
-                    raise RedirectRefused(REDIRECT_REFUSED)
+                refuse_redirect(response.status)
                 value = await response.json(content_type=None) if response.status == 200 else None
                 return response.status, value
 
@@ -390,11 +381,10 @@ class StubControl:
 
     async def _request(self, method, body=None):
         options = {} if body is None else {"json": body}
-        async with lane_session(30) as session:
+        async with lane_session(timeout=aiohttp.ClientTimeout(total=30)) as session:
             async with session.request(method, STUB_CONTROL_URL, allow_redirects=False,
                                        **options) as response:
-                if 300 <= response.status < 400:
-                    raise RedirectRefused(REDIRECT_REFUSED)
+                refuse_redirect(response.status)
                 assert response.status == 200
                 return await response.json(content_type=None)
 
@@ -404,7 +394,8 @@ class StubControl:
     async def post(self, body):
         if not listed(body, STUB_POSTS):
             raise ValueError(STUB_REQUEST_REFUSED)
-        return await self._request("POST", body)
+        # Copied with the check: the body posted is the body that was checked.
+        return await self._request("POST", copy.deepcopy(body))
 
 
 async def stub_ready(url, seconds=30):

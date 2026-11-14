@@ -29,6 +29,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import core_created_object_local as lane
 import created_object_contract_acceptance as acceptance
 from core_release_evidence import groups, manifest, passing_subset, read_json
+from entity_metadata_contract_acceptance import raw_command_listed
 
 import tests.hamcp329_298_fixtures as fixtures
 from ha_mcp_engineering.clients import HomeAssistantRestClient
@@ -309,14 +310,14 @@ class LaneClient(unittest.IsolatedAsyncioTestCase):
                                                   for receipt in receipts]))
 
     def test_only_one_exact_loopback_core_is_accepted_for_rest_and_websocket(self):
-        for host in ("127.0.0.1:18123", "localhost:8123", "[::1]:8123", "127.0.0.1"):
+        for host in ("127.0.0.1:18123",):
             with self.subTest(host=host):
                 settings = configured("http://" + host + "/api", "ws://" + host + "/api/websocket")
                 raw = acceptance.LaneRaw(settings)
                 # A separate guarded Engineering client, and the WebSocket of the same Core.
                 self.assertIs(type(raw.client), HomeAssistantRestClient)
                 self.assertIs(raw.client.settings, settings)
-                self.assertEqual(raw.url, "ws://" + host + "/api/websocket")
+                self.assertEqual(raw.core_url, "ws://" + host + "/api/websocket")
         refused = [
             # REST anywhere but loopback.
             ("http://192.0.2.10:8123/api", "ws://192.0.2.10:8123/api/websocket"),
@@ -512,11 +513,16 @@ class LaneClient(unittest.IsolatedAsyncioTestCase):
                                                   "provider_response_received": True})
         for answer, expected in (({"alias": "x"}, (200, {"alias": "x"})), (None, (200, None)),
                                  (fixtures.ExpectedHttpStatus(404), (404, None)),
-                                 (failure(400), (400, None)), (failure(500), (500, None)),
-                                 # A redirect is a status; the guarded client never follows one.
-                                 (failure(302), (302, None))):
+                                 (failure(400), (400, None)), (failure(500), (500, None))):
             with self.subTest(answer=answer):
                 self.assertEqual(await lane_client(answer).status("DELETE", route), expected)
+        # A redirect is no answer about a fixture: the guarded client never follows one,
+        # and the lane refuses the status it is handed, as every lane session does (HAMCP-364).
+        for status in (301, 302, 307):
+            with self.subTest(status=status), self.assertRaises(Exception) as redirected:
+                await lane_client(failure(status)).status("DELETE", route)
+            self.assertEqual((type(redirected.exception).__name__, redirected.exception.args),
+                             ("LaneRedirectRefused", ("lane_redirect_refused",)))
         # No received status is no answer: the failure is not turned into one.
         for answer in (HomeAssistantApiError(), HomeAssistantApiError(details={"status": "404"}),
                        HomeAssistantApiError(details={"status": True}), HomeAssistantUnavailableError(),
@@ -575,8 +581,11 @@ class OfflineCore(acceptance.LaneRaw):
         self.rest, self.websocket = rest, websocket
         self.stuck = False
         self.client = GuardedStore(self)
+        # Every WebSocket payload the lane handed its client, in order.
+        self.commands_sent = []
 
     async def ok(self, payload):
+        self.commands_sent.append(deepcopy(payload))
         kind = payload["type"]
         if kind == acceptance.REGISTRY_LIST:
             return [deepcopy(entry) for entry in self.websocket.entries.values()]
@@ -585,6 +594,7 @@ class OfflineCore(acceptance.LaneRaw):
         return [deepcopy(item) for item in self.websocket.helpers[domain].values()]
 
     async def call(self, payload):
+        self.commands_sent.append(deepcopy(payload))
         domain = payload["type"].partition("/")[0]
         if payload[domain + "_id"] not in self.websocket.helpers[domain]:
             return {"success": False, "error": {"code": "not_found"}}
@@ -1133,6 +1143,40 @@ class Scenarios(fixtures.CreatedObjectServiceTestCase):
                 del self.ws.entries[entity_id]
         self.assertEqual(await acceptance.cleanup_fixtures(self.raw, owned, attempts=2, delay=0), ABSENT)
         self.assertNotIn(("DELETE", acceptance.SCENE_ROUTE), self.raw.client.sent)
+
+    async def sends_exactly_its_own_list(self, group):
+        """A whole lane run, probe to clean-up: what it hands its client is its list, all of it and no more."""
+        await self.receipt(group)
+        sent, commands = self.raw.commands_sent, acceptance.LANE_CLIENTS[group].commands
+        self.assertTrue(sent)
+        for payload in sent:
+            self.assertTrue(raw_command_listed(payload, commands), payload)
+        for shape in commands:
+            self.assertTrue(any(raw_command_listed(payload, (shape,)) for payload in sent), shape)
+        return sent
+
+    async def test_the_scene_lane_sends_the_registry_read_and_no_other_command(self):
+        sent = await self.sends_exactly_its_own_list("scene_create_delete")
+        self.assertEqual({json.dumps(payload, sort_keys=True) for payload in sent},
+                         {json.dumps({"type": "config/entity_registry/list"})})
+        self.assertIs(acceptance.LANE_CLIENTS["scene_create_delete"].commands, acceptance.SCENE_RAW_COMMANDS)
+
+    async def test_the_helper_lane_sends_each_command_on_its_list_and_no_other(self):
+        sent = await self.sends_exactly_its_own_list("created_helper_delete")
+        self.assertEqual({payload["type"] for payload in sent},
+                         {"config/entity_registry/list", "input_boolean/list", "input_number/list",
+                          "input_boolean/delete", "input_number/delete"})
+        # Each delete names a helper this run owns, under its own domain's key and nothing else.
+        owned = set(self.lane_context.owned["helpers"])
+        deletes = [payload for payload in sent if payload["type"].endswith("/delete")]
+        self.assertEqual({(payload["type"].partition("/")[0], payload[payload["type"].partition("/")[0] + "_id"])
+                          for payload in deletes}, owned)
+        self.assertTrue(all(len(payload) == 2 for payload in deletes))
+        self.assertIs(acceptance.LANE_CLIENTS["created_helper_delete"].commands, acceptance.HELPER_RAW_COMMANDS)
+        # What the scene lane's list would have refused of this run is every helper command in it.
+        self.assertEqual({payload["type"] for payload in sent
+                          if not raw_command_listed(payload, acceptance.SCENE_RAW_COMMANDS)},
+                         {"input_boolean/list", "input_number/list", "input_boolean/delete", "input_number/delete"})
 
 
 class Orchestration(unittest.TestCase):

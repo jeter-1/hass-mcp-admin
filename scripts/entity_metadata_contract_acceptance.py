@@ -13,11 +13,13 @@ Core 2026.10 area/name rule is restored exactly.
 """
 import asyncio
 import base64
+import copy
 from datetime import datetime, timezone
 import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import subprocess
 import sys
@@ -49,6 +51,49 @@ SYNTHETIC_PROVIDER_IDENTITY = {"slug": "hamcp179_disposable_lane",
 # Every owned fixture type whose absence cleanup reads back independently.
 FIXTURE_ABSENCE = ("area", "category", "helper_config", "helper_entity", "labels")
 DUPLICATE_KEY = "receipt_duplicate_key"
+# The raw client of this lane, and of the lanes that build on it, goes to one
+# place: the disposable Core the contract harness publishes on loopback
+# (REAL_HA_URL=http://127.0.0.1:8123 in the workflows that run it, and that
+# harness's own default). The exact string, so no other host, port, scheme,
+# path, userinfo or query, and no name that only resolves to loopback.
+RAW_CORE_URL = "ws://127.0.0.1:8123/api/websocket"
+# Code-owned refusals of that client: never the URL, the token or a payload.
+RAW_URL_REFUSED, RAW_COMMAND_REFUSED = "raw_core_url_not_pinned", "raw_core_command_not_listed"
+
+
+class Each:
+    """A list field of a raw command: every item is the one wanted value."""
+
+    def __init__(self, item):
+        self.item = item
+
+
+# Every command this lane's raw client sends, one entry per shape, with each
+# field it carries: ``str`` for any non-empty string, a pattern for a string it
+# matches in full, a tuple for any one of its members, ``Each`` for a list of
+# such items, and otherwise that exact value. Nothing else is sent.
+RAW_COMMANDS = (
+    {"type": GET, "entity_id": str},
+    # The Core 2026.10 area/name rule on the one kitchen_sink entity, and its restore.
+    {"type": UPDATE, "entity_id": HUB_SWITCH, "area_id": str},
+    {"type": UPDATE, "entity_id": HUB_SWITCH, "name": None},
+    {"type": UPDATE, "entity_id": HUB_SWITCH, "area_id": (str, None), "name": (str, None)},
+    {"type": UPDATE, "entity_id": str, "labels": Each(str)},
+    {"type": UPDATE, "entity_id": str, "aliases": ([" Lamp ", "", None], Each((str, None)))},
+    {"type": "config/area_registry/create", "name": "HAMCP179 Study"},
+    {"type": "config/label_registry/create", "name": ("HAMCP179 Night", "HAMCP179 Outdoor")},
+    {"type": "config/category_registry/create", "scope": CATEGORY_SCOPE, "name": "HAMCP179 Lighting"},
+    {"type": "input_boolean/create", "name": re.compile(re.escape(HELPER_NAME) + " [0-9a-f]{8}")},
+    {"type": "config/device_registry/list"},
+    {"type": "config/area_registry/list"},
+    {"type": "config/category_registry/list", "scope": CATEGORY_SCOPE},
+    {"type": "input_boolean/list"},
+    {"type": "config/label_registry/list"},
+    {"type": "input_boolean/delete", "input_boolean_id": str},
+    {"type": "config/label_registry/delete", "label_id": str},
+    {"type": "config/category_registry/delete", "scope": CATEGORY_SCOPE, "category_id": str},
+    {"type": "config/area_registry/delete", "area_id": str},
+)
 
 
 class DuplicateReceiptKey(ValueError):
@@ -82,25 +127,71 @@ class RawRefusal(AssertionError):
         self.diagnostic = {"command": command, "error_code": code}
 
 
+def _raw_value_listed(value, want):
+    """Whether one value is what a listed command names for it.
+
+    Every type is the built-in one itself: a subclass can answer comparisons as
+    it likes while JSON writes what it really holds.
+    """
+    if want is str:
+        return type(value) is str and value != ""
+    if type(want) is re.Pattern:
+        return type(value) is str and want.fullmatch(value) is not None
+    if type(want) is tuple:
+        return any(_raw_value_listed(value, item) for item in want)
+    if type(want) is Each:
+        return type(value) is list and all(_raw_value_listed(item, want.item) for item in value)
+    if type(value) is not type(want):
+        return False
+    if type(want) is dict:
+        return (all(type(key) is str for key in value) and value.keys() == want.keys()
+                and all(_raw_value_listed(value[key], item) for key, item in want.items()))
+    if type(want) is list:
+        return len(value) == len(want) and all(map(_raw_value_listed, value, want))
+    return value == want
+
+
+def raw_command_listed(payload, commands):
+    """Whether the payload is exactly one of the listed command shapes."""
+    return any(_raw_value_listed(payload, shape) for shape in commands)
+
+
 class RawWebSocket:
     """Lane-owned loopback client for setup, raw controls and independent readback.
 
     The Engineering client deliberately discards Home Assistant error codes; raw
     controls must observe them (``invalid_info``, ``not_found``) exactly.
+
+    Only the class's ``core_url`` is dialled and only one of the lane's listed
+    commands is sent. Anything else is refused with a fixed code before a
+    session exists. ``core_url`` is RAW_CORE_URL unless a lane with a disposable
+    Core of its own names that Core's one socket on its subclass.
     """
 
+    core_url = RAW_CORE_URL
+    commands = RAW_COMMANDS
+
     def __init__(self, configured):
-        self.url = configured.websocket_url
+        url = configured.websocket_url
+        if type(url) is not str or url != type(self).core_url:
+            raise ValueError(RAW_URL_REFUSED)
         self.token = configured.ha_token
 
     async def call(self, payload):
+        if not raw_command_listed(payload, type(self).commands):
+            raise ValueError(RAW_COMMAND_REFUSED)
+        # Copied in the same step as the check, before anything is awaited: the
+        # frame sent is the command that was checked, whatever the caller does
+        # with its payload while the socket connects.
+        checked = copy.deepcopy(payload)
         import aiohttp
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
-            async with session.ws_connect(self.url) as websocket:
+        from lane_session import lane_session
+        async with lane_session(timeout=aiohttp.ClientTimeout(total=30)) as session:
+            async with session.ws_connect(type(self).core_url) as websocket:
                 assert (await websocket.receive_json()).get("type") == "auth_required"
                 await websocket.send_json({"type": "auth", "access_token": self.token})
                 assert (await websocket.receive_json()).get("type") == "auth_ok"
-                await websocket.send_json({"id": 1, **payload})
+                await websocket.send_json({"id": 1, **checked})
                 while True:
                     message = await websocket.receive_json()
                     if message.get("id") == 1 and message.get("type") == "result":

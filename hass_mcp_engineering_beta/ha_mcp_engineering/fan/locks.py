@@ -35,7 +35,13 @@ class FanLockStore(DurableLockStore):
         owned = [item for item in self.records() if item.task_id == identity.task_id]
         expected = {(item["key"], item["generation"], item["mode"]) for item in record.lock_tokens}
         target = "entity:" + prepared.request.entity_id
-        owner = LockOwner(identity.owner_id, identity.task_id, None,
+        # HAMCP-379 ruling 1: the hold's owner is the one owner the record's
+        # lock_tokens name (a handle-less settlement leaves the claim naming
+        # the recovering pass). None or several: the refusal stays.
+        token_owners = {item["owner_id"] for item in record.lock_tokens}
+        if len(token_owners) != 1:
+            raise LockOwnershipError("fan hold owner changed")
+        owner = LockOwner(next(iter(token_owners)), identity.task_id, None,
                           prepared.operation, identity.attempt_id)
         if any(not self._same_owner(item, owner) for item in owned):
             raise LockOwnershipError("fan hold owner changed")
@@ -57,7 +63,11 @@ class FanLockStore(DurableLockStore):
         if prepared is None or prepared.prepared_operation_hash != record.prepared_operation_hash:
             return False
         identity = record.execution_identity()
-        owner = LockOwner(identity.owner_id, identity.task_id, None,
+        # HAMCP-379 ruling 1: bound to the one lock_tokens owner, as above.
+        token_owners = {item["owner_id"] for item in record.lock_tokens}
+        if len(token_owners) != 1:
+            return False
+        owner = LockOwner(next(iter(token_owners)), identity.task_id, None,
                           prepared.operation, identity.attempt_id)
         return (len(owned) == 1 and owned[0].key == "entity:" + prepared.request.entity_id
                 and owned[0].conflict_hold and self._same_owner(owned[0], owner)

@@ -40,6 +40,7 @@ import re
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from alarmo_inspection_contract_acceptance import close_disposable_authority
+from entity_metadata_contract_acceptance import RAW_URL_REFUSED
 from prepare_core_release_registry import prepare_candidate, sign_candidate
 from thread_matter_topology_contract_acceptance import (
     CALLER, CAPABILITY, ObservedReader, RawCore, leaks, reference)
@@ -64,6 +65,38 @@ TOPOLOGY_READS = 2  # the default read and the topology-only read
 SHA256 = re.compile(r"[0-9a-f]{64}")
 REQUIRED_STUB_FILES = ("stub.py", "provenance.json")
 KEPT_HEX = frozenset({"ext_pan_id"})
+
+
+# Exactly the commands the A2 lane's harness sends on its own socket: the raw
+# topology read here and the runner's device registry read.
+DEVICE_REGISTRY_COMMAND = "config/device_registry/list"
+A2_RAW_COMMANDS = (
+    {"type": NETWORK_TOPOLOGY_COMMAND, "refresh": False},
+    {"type": DEVICE_REGISTRY_COMMAND},
+)
+
+
+class AcceptedCore:
+    """The socket of the one Core the harness accepted from the A2 runner.
+
+    Read from the harness at every use, so there is no second place for the A2
+    target to arrive: before use_internal_lane_core has accepted an origin, or
+    for anything it did not accept, there is no socket and the client refuses.
+    """
+
+    def __get__(self, _instance, _owner):
+        import real_ha_contract_tests as harness
+        accepted = harness.accepted_lane_core()
+        if type(accepted) is not str or not accepted.startswith("http://"):
+            raise ValueError(RAW_URL_REFUSED)
+        return "ws://" + accepted[len("http://"):] + "/api/websocket"
+
+
+class A2RawCore(RawCore):
+    """The A2 lane's harness socket: the accepted Core only, and the A2 list only."""
+
+    core_url = AcceptedCore()
+    commands = A2_RAW_COMMANDS
 
 
 class ExpectationsPending(Exception):
@@ -248,7 +281,7 @@ async def run(configured, entry, directory, *, expectations, read_stub_record, r
     old = entry["capabilities"]
     assert len(old) == 32 and CAPABILITY not in {p["capability_id"] for p in old}
     canaries = (*expectations["canaries"], configured.ha_token, configured.access_secret)
-    raw = RawCore(configured)
+    raw = A2RawCore(configured)
     assert dict(PAYLOADS[TOPOLOGY]) == {"type": NETWORK_TOPOLOGY_COMMAND, "refresh": False}
     assert static_tool_requirements(TOOL, {}) == (CAPABILITY,)
 

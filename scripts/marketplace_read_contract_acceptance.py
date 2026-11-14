@@ -41,6 +41,7 @@ from ha_mcp_engineering.request_context import begin_request, end_request
 from ha_mcp_engineering.signed_registry import canonical_json
 
 import lane_failure_diagnostics as diagnostics
+from lane_session import lane_session
 
 CAPABILITY = "core.marketplace_read"
 REFERENCE_KEYS = ("capability_id", "profile_id", "profile_version", "adapter_id", "contract_fingerprint")
@@ -154,7 +155,7 @@ class RawCore:
         if not raw_command_listed(payload):
             raise ValueError(RAW_COMMAND_REFUSED)
         timeout = aiohttp.ClientTimeout(total=seconds)
-        async with aiohttp.ClientSession(timeout=timeout, trust_env=False) as session:
+        async with lane_session(timeout=timeout) as session:
             async with session.ws_connect(RAW_CORE_URL, max_msg_size=HARNESS_FRAME_BYTES) as ws:
                 assert (await ws.receive_json())["type"] == "auth_required"
                 await ws.send_json({"type": "auth", "access_token": self.token})

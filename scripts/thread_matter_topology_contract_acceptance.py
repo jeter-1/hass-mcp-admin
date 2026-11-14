@@ -20,6 +20,7 @@ incomplete until it runs.
 """
 import asyncio
 import base64
+import copy
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -33,6 +34,8 @@ sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 import aiohttp
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from alarmo_inspection_contract_acceptance import close_disposable_authority
+from entity_metadata_contract_acceptance import RAW_COMMAND_REFUSED, RAW_URL_REFUSED, raw_command_listed
+from lane_session import lane_session
 from prepare_core_release_registry import prepare_candidate, sign_candidate
 from ha_mcp_engineering.ha_core_readmission import CoreRuntime
 from ha_mcp_engineering.ha_core_readmission.profiles import CORE_THREAD_MATTER_TOPOLOGY_PROFILES
@@ -52,6 +55,15 @@ HARNESS_FRAME_BYTES = 1024 * 1024
 THREAD_READY_SECONDS = 300
 ADD_DATASET_COMMAND = "thread/add_dataset_tlv"
 CLEAN_SOURCE = "hamcp231-lane"
+# The harness's own socket: this lane's disposable Core, which its runner publishes on
+# loopback port 18124 only, and exactly the commands the lane sends on it. A listed
+# ``str`` is any non-empty string; every other value is the literal shown.
+RAW_CORE_URL = "ws://127.0.0.1:18124/api/websocket"
+RAW_COMMANDS = (
+    {"type": LIST_DATASETS_COMMAND},
+    {"type": ADD_DATASET_COMMAND, "source": str, "tlv": str},
+    {"type": NETWORK_TOPOLOGY_COMMAND, "refresh": False},
+)
 INVALID_ARGUMENTS = ({"refresh": False}, {"refresh": True}, {"sections": []}, {"sections": ["otbr"]},
                      {"sections": [TOPOLOGY, TOPOLOGY]}, {"device_id": "synthetic"}, {"sections": "datasets"})
 ITEM_KEYS = frozenset({"dataset_id", "extended_pan_id", "pan_id", "channel", "preferred", "created",
@@ -115,19 +127,37 @@ class ObservedReader(TopologyReader):
 
 
 class RawCore:
-    """Harness-side authenticated WebSocket; one command per connection."""
+    """Harness-side authenticated WebSocket; one command per connection.
+
+    Only the class's ``core_url`` is dialled, on the shared lane session, which
+    refuses a redirect, and only one of the class's listed commands is sent.
+    Anything else is refused with a fixed code before a session exists.
+    """
+
+    core_url = RAW_CORE_URL
+    commands = RAW_COMMANDS
 
     def __init__(self, configured):
-        self.url, self.token = configured.websocket_url, configured.ha_token
+        url = configured.websocket_url
+        if type(url) is not str or url != type(self).core_url:
+            raise ValueError(RAW_URL_REFUSED)
+        self.token = configured.ha_token
 
     async def command(self, payload):
+        if not raw_command_listed(payload, type(self).commands):
+            raise ValueError(RAW_COMMAND_REFUSED)
+        # Copied in the same step as the check, before anything is awaited: the
+        # frame sent is the command that was checked. The target is read then
+        # too, so a class with no Core to name refuses before a session exists.
+        checked = copy.deepcopy(payload)
+        target = type(self).core_url
         timeout = aiohttp.ClientTimeout(total=60)
-        async with aiohttp.ClientSession(timeout=timeout, trust_env=False) as session:
-            async with session.ws_connect(self.url, max_msg_size=HARNESS_FRAME_BYTES) as ws:
+        async with lane_session(timeout=timeout) as session:
+            async with session.ws_connect(target, max_msg_size=HARNESS_FRAME_BYTES) as ws:
                 assert (await ws.receive_json())["type"] == "auth_required"
                 await ws.send_json({"type": "auth", "access_token": self.token})
                 assert (await ws.receive_json())["type"] == "auth_ok"
-                await ws.send_json({"id": 1, **payload})
+                await ws.send_json({"id": 1, **checked})
                 reply = await ws.receive_json()
                 assert reply.get("type") == "result" and reply.get("id") == 1
                 return reply

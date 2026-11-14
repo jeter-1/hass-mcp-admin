@@ -164,6 +164,33 @@ RAW_ROUTE = re.compile(
     r"|/config/scene/config/(?:seq15_[0-9a-f]{8}|[0-9a-f]{32})"
     r"|/states/(?:input_select|binary_sensor|script|scene)\.seq15_[0-9a-z_]{1,64}")
 _FLOW_ID = re.compile(r"/[0-9a-f]{32}\Z")
+_RAW_SCRIPT, _RAW_URL_PATH = re.compile("seq15_[0-9a-f]{8}"), re.compile("seq15-[0-9a-f]{8}")
+# Every command the lanes' raw client sends over its websocket, one entry per
+# shape (the notation is RawWebSocket's). Nothing else is sent.
+RAW_COMMANDS = (
+    {"type": REGISTRY_LIST},
+    {"type": "config_entries/get"},
+    {"type": "input_select/list"},
+    {"type": DASHBOARD_LIST},
+    {"type": "input_select/create", "name": re.compile("Seq15 (?:Select|Scene Member) [0-9a-f]{8}"),
+     "options": ["Home", "Away", "Night"]},
+    {"type": "input_select/update", "input_select_id": str, "name": re.compile("Seq15 Select [0-9a-f]{8}"),
+     "options": ["Away", "Home", "Night"]},
+    {"type": "call_service", "domain": "script", "service": _RAW_SCRIPT, "service_data": {}},
+    {"type": TRACE_LIST, "domain": "script", "item_id": _RAW_SCRIPT},
+    {"type": "lovelace/dashboards/create", "url_path": _RAW_URL_PATH, "title": "Seq15 Board",
+     "icon": "mdi:view-dashboard", "show_in_sidebar": True, "require_admin": False},
+    {"type": "lovelace/config/save", "url_path": _RAW_URL_PATH,
+     "config": (DASHBOARD_CONFIG, {**DASHBOARD_CONFIG, "title": "Seq15 Drift"})},
+    {"type": LOVELACE_CONFIG, "url_path": _RAW_URL_PATH, "force": True},
+    # Raw controls Core must refuse, and raw drift between a plan and its apply.
+    {"type": DASHBOARD_UPDATE, "dashboard_id": re.compile("seq15_absent_[0-9a-f]{8}"), "title": "No implicit create"},
+    {"type": DASHBOARD_UPDATE, "dashboard_id": str, "url_path": "seq15-other"},
+    {"type": DASHBOARD_UPDATE, "dashboard_id": str, "mode": "yaml"},
+    {"type": DASHBOARD_UPDATE, "dashboard_id": str, "title": "Seq15 Drift"},
+    {"type": "input_select/delete", "input_select_id": str},
+    {"type": "lovelace/dashboards/delete", "dashboard_id": str},
+)
 
 
 def enabled():
@@ -418,6 +445,8 @@ class LaneRaw(RawWebSocket):
     creation and deletion, options flows, one owned script's configuration and
     owned entities' states are reachable, and only on a loopback Core.
     """
+
+    commands = RAW_COMMANDS
 
     def __init__(self, configured):
         super().__init__(configured)

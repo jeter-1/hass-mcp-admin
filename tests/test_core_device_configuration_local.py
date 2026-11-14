@@ -9,6 +9,7 @@ the product service's behaviour through the lane's closed clients.
 """
 import ast
 import asyncio
+import copy
 import errno
 import hashlib
 import importlib.util
@@ -36,8 +37,10 @@ sys.path[:0] = [str(ROOT / "scripts"), str(ROOT / "hass_mcp_engineering_beta"), 
 import core_device_configuration_local as lane  # noqa: E402
 import device_configuration_contract_acceptance as acceptance  # noqa: E402
 import lane_failure_diagnostics as diagnostics  # noqa: E402
+import lane_session as shared  # noqa: E402
 import test_hamcp297_device_configuration as offline  # noqa: E402
-from core_release_evidence import groups, passing_subset  # noqa: E402
+import core_release_evidence  # noqa: E402
+from core_release_evidence import groups, manifest, passing_subset  # noqa: E402
 from ha_mcp_engineering.clients.paths import rest_path  # noqa: E402
 from ha_mcp_engineering.configuration import Settings  # noqa: E402
 from ha_mcp_engineering.device_configuration.contracts import (  # noqa: E402
@@ -53,6 +56,62 @@ from ha_mcp_engineering.ha_core_readmission import profiles as profiles_module  
 from ha_mcp_engineering.request_context import begin_request, end_request  # noqa: E402
 
 ARCHIVE = ROOT / ".artifacts/inputs/core-2026.11.0.tar.gz"
+ARCHIVES = {"2026.10.3": ROOT / ".artifacts/inputs/core-2026.10.3.tar.gz", "2026.11.0": ARCHIVE}
+GENERATOR = ROOT / "docs/evidence/hamcp297/lane/generate_source_records.py"
+PROVENANCE = json.loads(lane.CORE_PROVENANCE.read_text())
+# HAMCP-297 G5: the ruled RELIED Core files the contract depends on at runtime.
+RELIED = [
+    "homeassistant/components/api/__init__.py",
+    "homeassistant/components/config/__init__.py",
+    "homeassistant/components/config/device_registry.py",
+    "homeassistant/components/config/entity_registry.py",
+    "homeassistant/components/matter/__init__.py",
+    "homeassistant/components/matter/adapter.py",
+    "homeassistant/components/matter/discovery.py",
+    "homeassistant/components/matter/entity.py",
+    "homeassistant/components/matter/models.py",
+    "homeassistant/components/matter/number.py",
+    "homeassistant/components/matter/select.py",
+    "homeassistant/components/matter/switch.py",
+    "homeassistant/components/number/__init__.py",
+    "homeassistant/components/number/const.py",
+    "homeassistant/components/number/entity.py",
+    "homeassistant/components/number/services.py",
+    "homeassistant/components/select/__init__.py",
+    "homeassistant/components/select/const.py",
+    "homeassistant/components/select/entity.py",
+    "homeassistant/components/select/services.py",
+    "homeassistant/components/switch/__init__.py",
+    "homeassistant/components/switch/const.py",
+    "homeassistant/components/switch/entity.py",
+    "homeassistant/components/switch/services.py",
+    "homeassistant/components/websocket_api/__init__.py",
+    "homeassistant/components/websocket_api/commands.py",
+    "homeassistant/components/websocket_api/connection.py",
+    "homeassistant/components/websocket_api/const.py",
+    "homeassistant/components/websocket_api/decorators.py",
+    "homeassistant/components/websocket_api/http.py",
+    "homeassistant/components/websocket_api/messages.py",
+    "homeassistant/const.py",
+    "homeassistant/core.py",
+    "homeassistant/helpers/device_registry.py",
+    "homeassistant/helpers/entity.py",
+    "homeassistant/helpers/entity_component.py",
+    "homeassistant/helpers/entity_platform.py",
+    "homeassistant/helpers/entity_registry.py",
+    "homeassistant/helpers/json.py",
+    "homeassistant/helpers/registry.py",
+    "homeassistant/helpers/service.py",
+    "homeassistant/helpers/target.py",
+]
+# The RELIED paths HAMCP-297 added to the manifest (527 -> 535 paths).
+RELIED_ADDED = [
+    "homeassistant/components/matter/discovery.py", "homeassistant/components/matter/entity.py",
+    "homeassistant/components/matter/models.py", "homeassistant/components/matter/number.py",
+    "homeassistant/components/matter/select.py", "homeassistant/components/matter/switch.py",
+    "homeassistant/components/switch/entity.py", "homeassistant/helpers/target.py",
+]
+SOURCES = {"manifest_sha256": "d" * 64, "source_hashes_sha256": "e" * 64, "profile_paths": 42}
 ENTRY_PATH = lane.LANE_ASSET / "stub_entry.py"
 TOKEN = "synthetic-token-7f3a"
 CAPABILITY = "core.device_configuration_entity_operation"
@@ -196,9 +255,12 @@ class NoTransport:
         return not (self.session.called or self.websocket.called or self.rest.called)
 
 
-def lane_tree():
-    """The acceptance module's syntax tree; each node knows its parent and its enclosing ``Class.function``."""
-    module = ast.parse(Path(acceptance.__file__).read_text(encoding="utf-8"))
+def lane_tree(source=None):
+    """The acceptance module's syntax tree; each node knows its parent and its enclosing ``Class.function``.
+
+    ``source`` names another module to read the same way: the shared lane-session helper.
+    """
+    module = ast.parse(Path(source or acceptance.__file__).read_text(encoding="utf-8"))
 
     def mark(node, parent, where):
         node.parent, node.where = parent, where
@@ -484,6 +546,148 @@ class LaneInputs(unittest.TestCase):
                          result.stderr[-500:])
 
 
+class SourceManifest(unittest.TestCase):
+    """HAMCP-297 G5: the lane's own manifest profile entry and committed source hashes."""
+
+    def test_manifest_profile_is_the_ruled_relied_set_and_matches_committed_source_hashes(self):
+        value = manifest()  # valid manifest and full coverage: every path has a bound hash record
+        profile = value["profiles"][lane.CAPABILITY]
+        self.assertEqual(profile, RELIED)
+        self.assertEqual(len(profile), 42)
+        self.assertEqual(len(value["paths"]), 535)
+        self.assertTrue(set(profile) <= set(value["paths"]))
+        self.assertTrue(set(RELIED_ADDED) <= set(profile))
+        proof = json.loads(lane.SOURCE_HASHES.read_text())
+        self.assertEqual([row["path"] for row in proof["files"]], profile)
+        self.assertEqual((proof["core_version"], proof["source_commit"], proof["source_archive_sha256"]),
+                         (lane.VERSION, PROVENANCE["source_commit"], PROVENANCE["source_archive_sha256"]))
+        # The lane record and the O3 source record are the same exact bytes' hashes.
+        record = json.loads((ROOT / "docs/evidence/hamcp315/core-sources/2026.11.0.json").read_text())
+        for row in proof["files"]:
+            self.assertEqual(record["hashes"][row["path"]], row["sha256"])
+
+    def test_coverage_fails_when_a_relied_path_has_no_hash_record(self):
+        real = core_release_evidence.read_json
+        for path in ("homeassistant/components/switch/entity.py", "homeassistant/helpers/target.py"):
+            def without(source, path=path):
+                value = real(source)
+                if Path(source).parent.name == "core-sources":
+                    value = {**value, "hashes": {k: v for k, v in value["hashes"].items() if k != path}}
+                return value
+            with self.subTest(path=path), patch.object(core_release_evidence, "read_json", side_effect=without):
+                with self.assertRaisesRegex(ValueError, "absent from every bound source record: " + re.escape(path)):
+                    manifest()
+
+    @unittest.skipUnless(all(p.is_file() for p in ARCHIVES.values()), "exact Core archives not staged")
+    def test_generator_reproduces_committed_records(self):
+        args = [arg for v, p in ARCHIVES.items() for arg in ("--archive", f"{v}={p}")]
+        result = subprocess.run([sys.executable, "-I", str(GENERATOR), *args, "--check"],
+                                capture_output=True, text=True, timeout=300)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    @unittest.skipUnless(ARCHIVE.is_file(), "exact Core 2026.11.0 archive not staged")
+    def test_exact_archive_accepts_the_committed_entry(self):
+        with diagnostics.lane(lane.GROUP):
+            sources = lane.source_manifest(ARCHIVE, PROVENANCE)
+        self.assertEqual(sources, {"manifest_sha256": lane.sha256(lane.MANIFEST),
+                                   "source_hashes_sha256": lane.sha256(lane.SOURCE_HASHES), "profile_paths": 42})
+
+
+class SourceManifestRefusals(unittest.TestCase):
+    """Synthetic archive and records: the lane fails closed on every source-binding gap."""
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.root = Path(self.directory.name)
+        self.profile = ["homeassistant/a.py", "homeassistant/b.py"]
+        self.content = {p: ("synthetic " + p).encode() for p in self.profile}
+        self.archive = self.root / "archive.tar.gz"
+        prefix = "core-" + PROVENANCE["source_commit"]
+        with tarfile.open(self.archive, "w:gz") as tar:
+            for path, data in self.content.items():
+                info = tarfile.TarInfo(prefix + "/" + path)
+                info.size = len(data)
+                tar.addfile(info, io.BytesIO(data))
+        self.manifest = self.root / "manifest.json"
+        self.hashes = self.root / "hashes.json"
+        self.write(self.profile, self.exact())
+
+    def tearDown(self):
+        self.directory.cleanup()
+
+    def exact(self):
+        return {p: hashlib.sha256(d).hexdigest() for p, d in self.content.items()}
+
+    def write(self, profile, hashes, **overrides):
+        profiles = {} if profile is None else {lane.CAPABILITY: profile}
+        self.manifest.write_text(json.dumps({"paths": self.profile, "profiles": profiles}))
+        record = {"core_version": lane.VERSION, "source_commit": PROVENANCE["source_commit"],
+                  "source_archive_sha256": PROVENANCE["source_archive_sha256"],
+                  "files": [{"path": p, "sha256": h} for p, h in hashes.items()], **overrides}
+        self.hashes.write_text(json.dumps(record))
+
+    def source(self):
+        with diagnostics.lane(lane.GROUP), patch.object(lane, "MANIFEST", self.manifest), \
+                patch.object(lane, "SOURCE_HASHES", self.hashes):
+            return lane.source_manifest(self.archive, PROVENANCE)
+
+    def refused(self, code):
+        with self.assertRaises(lane.Refusal) as caught:
+            self.source()
+        self.assertEqual(caught.exception.args, (code,))
+
+    def test_exact_source_hashes_pass(self):
+        sources = self.source()
+        self.assertEqual(sources["profile_paths"], 2)
+        self.assertEqual(sorted(sources), ["manifest_sha256", "profile_paths", "source_hashes_sha256"])
+
+    def test_missing_or_empty_profile_entry_refuses(self):
+        for profile in (None, []):
+            with self.subTest(profile=profile):
+                self.write(profile, self.exact())
+                self.refused("device_configuration_manifest_missing")
+
+    def test_missing_source_hash_record_refuses(self):
+        self.hashes.unlink()
+        self.refused("device_configuration_manifest_missing")
+
+    def test_record_for_another_core_or_archive_refuses(self):
+        for override in ({"core_version": "2026.10.3"}, {"source_commit": "0" * 40},
+                         {"source_archive_sha256": "0" * 64}):
+            with self.subTest(override=sorted(override)):
+                self.write(self.profile, self.exact(), **override)
+                self.refused("device_configuration_source_provenance_mismatch")
+
+    def test_profile_and_record_must_list_identical_paths(self):
+        for profile, hashes in ((self.profile[:1], self.exact()), (self.profile, {self.profile[0]: "0" * 64}),
+                                (self.profile[::-1], self.exact())):
+            with self.subTest(profile=profile, hashes=sorted(hashes)):
+                self.write(profile, hashes)
+                self.refused("device_configuration_manifest_mismatch")
+
+    def test_hash_mismatch_or_absent_member_refuses(self):
+        changed = {**self.exact(), self.profile[0]: "0" * 64}
+        self.write(self.profile, changed)
+        self.refused("device_configuration_source_hash_mismatch")
+        extra = ["homeassistant/a.py", "homeassistant/b.py", "homeassistant/c.py"]
+        self.write(extra, {**self.exact(), "homeassistant/c.py": "0" * 64})
+        self.refused("device_configuration_source_hash_mismatch")
+
+    def test_inputs_refuse_a_missing_profile_entry_before_the_journal_is_parsed(self):
+        import core_registry_one_tap
+        self.write(None, self.exact())
+        journal = self.root / "journal.json"
+        journal.write_bytes(b"synthetic journal")
+        digests = {journal: lane.JOURNAL_SHA256, self.archive: PROVENANCE["source_archive_sha256"]}
+        with diagnostics.lane(lane.GROUP), patch.object(lane, "MANIFEST", self.manifest), \
+                patch.object(lane, "SOURCE_HASHES", self.hashes), \
+                patch.object(lane, "sha256", side_effect=lambda path: digests[Path(path)]), \
+                patch.object(core_registry_one_tap, "load_public_key", side_effect=AssertionError("journal_parsed")):
+            with self.assertRaises(lane.Refusal) as caught:
+                lane.inputs(journal, self.archive)
+        self.assertEqual(caught.exception.args, ("device_configuration_manifest_missing",))
+
+
 class StubAssets(unittest.TestCase):
     """The stub, its entry and the three dumps are hash-bound before any container."""
 
@@ -616,7 +820,7 @@ class Orchestration(unittest.TestCase):
     def run_lane(self, *, exercise_error=None, cleanup_error=False, dirty=False, existing=False,
                  admission_error=None, memory_args=(), network_override=None, ports_override=None,
                  outcome=None, profile_error=False, assets_error=None, refusal=None,
-                 stub_networks=None, ipam=None, changed=None, run_dir=None):
+                 stub_networks=None, ipam=None, changed=None, run_dir=None, inputs_error=None):
         calls, resources, admitted = [], {}, []
         lane_network = {"Driver": "bridge", "Internal": False,
                         "IPAM": {"Config": [dict(LANE_SUBNET)] if ipam is None else ipam}}
@@ -677,7 +881,8 @@ class Orchestration(unittest.TestCase):
                     "--source-archive", "archive", "--run-dir", str(out), *memory_args]
             with patch.dict(os.environ, {}, clear=True), patch.object(lane, "ROOT", root), \
                     patch.object(lane, "command", side_effect=command), profile_patch, \
-                    patch.object(lane, "inputs", return_value={}) as inputs, \
+                    patch.object(lane, "inputs", side_effect=inputs_error,
+                                 return_value=({}, SOURCES)) as inputs, \
                     patch.object(lane, "stub_assets", side_effect=assets_error,
                                  return_value=json.loads(json.dumps(STUB_HASHES))) as assets, \
                     patch.object(lane, "images", return_value=("core@sha256:a", "up@sha256:b", lane.host.FIXTURE_IMAGE)), \
@@ -747,6 +952,8 @@ class Orchestration(unittest.TestCase):
         self.assertEqual(result["profile"], lane.PROFILE)
         self.assertEqual(result["stub_assets"], STUB_HASHES)
         self.assertEqual(result["source_commit"], "a" * 40)
+        # HAMCP-297 G5: the receipt binds the manifest, its profile entry and the committed source hashes.
+        self.assertEqual({key: result[key] for key in SOURCES}, SOURCES)
         self.assertEqual(result["network_posture"],
                          {"driver": "bridge", "host_bind_address": "127.0.0.1", "egress_allowed": True})
         self.assertEqual(result["container_memory"], {"core": "2g", "upstream": "768m", "stub": "256m", "fixture": "128m"})
@@ -890,6 +1097,16 @@ class Orchestration(unittest.TestCase):
             calls, inputs, _assets = self.run_lane(refusal="profile_fingerprint_mismatch")
         inputs.assert_not_called()
         self.assertTrue(all(call[0] == "git" for call in calls), calls)
+
+    def test_source_manifest_refusal_stops_before_stub_assets_images_or_containers(self):
+        # HAMCP-297 G5: a missing or mismatched manifest profile entry fails closed inside inputs().
+        for code in ("device_configuration_manifest_missing", "device_configuration_source_provenance_mismatch",
+                     "device_configuration_manifest_mismatch", "device_configuration_source_hash_mismatch"):
+            with self.subTest(code=code):
+                calls, inputs, assets = self.run_lane(inputs_error=lane.Refusal(code), refusal=code)
+                inputs.assert_called_once()
+                assets.assert_not_called()
+                self.assertTrue(all(call[0] == "git" for call in calls), calls)
 
     def test_stub_asset_mismatch_refuses_before_images_or_containers(self):
         for code in ("stub_asset_hash_mismatch", "stub_dump_source_mismatch"):
@@ -1374,7 +1591,7 @@ class UrlGuards(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(requests[1][3]["json"], {"mode": "error"})
 
     async def test_stub_redirect_or_error_status_is_a_failure_not_a_follow(self):
-        for status, failure in ((301, acceptance.RedirectRefused), (302, acceptance.RedirectRefused),
+        for status, failure in ((301, shared.LaneRedirectRefused), (302, shared.LaneRedirectRefused),
                                 (400, AssertionError), (500, AssertionError)):
             with self.subTest(status=status), patch.object(
                     acceptance.aiohttp, "ClientSession", new=fake_session([], status=status, value={})):
@@ -1391,10 +1608,12 @@ class UrlGuards(unittest.IsolatedAsyncioTestCase):
             for number, call in enumerate(calls):
                 with self.subTest(status=status, call=number), patch.object(
                         acceptance.aiohttp, "ClientSession", new=fake_session([], status=status, value={})):
-                    with self.assertRaises(acceptance.RedirectRefused) as caught:
+                    with self.assertRaises(shared.LaneRedirectRefused) as caught:
                         await call()
-                    self.assertEqual((caught.exception.code, caught.exception.args),
-                                     ("redirect_refused", ("redirect_refused",)))
+                    # The shared refusal exactly: its one argument is the fixed code and it carries nothing else.
+                    self.assertIs(type(caught.exception), shared.LaneRedirectRefused)
+                    self.assertEqual((caught.exception.args, caught.exception.__dict__),
+                                     (("lane_redirect_refused",), {}))
         # The statuses on either side of the range keep their earlier meaning.
         for status in (299, 400):
             with self.subTest(status=status), patch.object(
@@ -1406,26 +1625,43 @@ class UrlGuards(unittest.IsolatedAsyncioTestCase):
     async def test_a_redirected_stub_wait_fails_at_once_instead_of_retrying(self):
         events = []
         with patch.object(acceptance.aiohttp, "ClientSession", new=fake_session(events, status=302, value={})):
-            with self.assertRaises(acceptance.RedirectRefused):
+            with self.assertRaises(shared.LaneRedirectRefused) as caught:
                 await acceptance.stub_ready(acceptance.STUB_CONTROL_URL, seconds=30)
+        self.assertIs(type(caught.exception), shared.LaneRedirectRefused)
         self.assertEqual([event[0] for event in events], ["session", "request"])
 
     async def test_every_lane_session_is_built_with_the_redirect_refusal(self):
+        # The lane's builder and status check are the shared lane-session helper's own functions,
+        # and nothing of the mechanism the lane had before is left in the module.
+        self.assertIs(acceptance.lane_session, shared.lane_session)
+        self.assertIs(acceptance.refuse_redirect, shared.refuse_redirect)
+        for name in ("RedirectRefused", "REDIRECT_REFUSED", "_refuse_redirect", "LaneRedirectRefused"):
+            self.assertFalse(hasattr(acceptance, name), name)
         built = []
         with patch.object(acceptance.aiohttp, "ClientSession", new=lambda **kwargs: built.append(kwargs)):
-            self.assertIsNone(acceptance.lane_session(45))
+            self.assertIsNone(acceptance.lane_session(timeout=acceptance.aiohttp.ClientTimeout(total=45)))
+            # The timeout is taken by keyword only: seconds passed as before build nothing.
+            with self.assertRaises(TypeError):
+                acceptance.lane_session(45)
         (kwargs,) = built
         self.assertEqual(sorted(kwargs), ["timeout", "trace_configs", "trust_env"])
         self.assertEqual(kwargs["timeout"], acceptance.aiohttp.ClientTimeout(total=45))
         self.assertIs(kwargs["trust_env"], False)
         (trace,) = kwargs["trace_configs"]
         self.assertIs(type(trace), acceptance.aiohttp.TraceConfig)
-        self.assertEqual(list(trace.on_request_redirect), [acceptance._refuse_redirect])
-        with self.assertRaises(acceptance.RedirectRefused) as caught:
-            await acceptance._refuse_redirect(None, None, None)
-        self.assertEqual((caught.exception.code, caught.exception.args, acceptance.REDIRECT_REFUSED),
-                         ("redirect_refused", ("redirect_refused",), "redirect_refused"))
-        self.assertEqual(acceptance.RedirectRefused.__mro__[1:], (Exception, BaseException, object))
+        self.assertEqual(list(trace.on_request_redirect), [shared._refuse_redirect_hop])
+        with self.assertRaises(shared.LaneRedirectRefused) as caught:
+            await shared._refuse_redirect_hop(None, None, None)
+        self.assertIs(type(caught.exception), shared.LaneRedirectRefused)
+        self.assertEqual((caught.exception.args, caught.exception.__dict__, shared.REDIRECT_REFUSED),
+                         (("lane_redirect_refused",), {}, "lane_redirect_refused"))
+        self.assertEqual(shared.LaneRedirectRefused.__mro__[1:], (Exception, BaseException, object))
+        # The status check refuses the whole 3xx range with the same refusal, and nothing outside it.
+        for status in (300, 302, 399):
+            with self.assertRaises(shared.LaneRedirectRefused) as caught:
+                acceptance.refuse_redirect(status)
+            self.assertEqual(caught.exception.args, ("lane_redirect_refused",))
+        self.assertEqual([acceptance.refuse_redirect(status) for status in (200, 299, 400, 500)], [None] * 4)
 
 
 # TEST-NET-1 (RFC 5737): reserved for documentation and never routed.
@@ -1488,8 +1724,8 @@ class LaneRedirectRefusal(unittest.IsolatedAsyncioTestCase):
         # One dial, to the pinned loopback port: nothing was dialled off-host.
         self.assertEqual(peer.dialled, [("127.0.0.1", port)])
         self.assertEqual(len(peer.requests), 1)
-        self.assertIs(type(outcome), acceptance.RedirectRefused, repr(outcome))
-        self.assertEqual((outcome.code, outcome.args), ("redirect_refused", ("redirect_refused",)))
+        self.assertIs(type(outcome), shared.LaneRedirectRefused, repr(outcome))
+        self.assertEqual((outcome.args, outcome.__dict__), (("lane_redirect_refused",), {}))
         shown = str(outcome) + repr(outcome) + repr(outcome.__dict__)
         for private in (TOKEN, OFF_HOST, "127.0.0.1", "http", str(port)):
             self.assertNotIn(private, shown)
@@ -1773,9 +2009,12 @@ class CommandGuards(unittest.IsolatedAsyncioTestCase):
         for payload in listed:
             with self.subTest(payload=payload):
                 ws, _rest, inner, _inner_rest, _journal = self.gateway_clients()
-                self.assertEqual(await ws.command(payload), "reply")
+                handed = copy.deepcopy(payload)
+                self.assertEqual(await ws.command(handed), "reply")
                 inner.command.assert_awaited_once_with(payload)
-                self.assertIs(inner.command.await_args.args[0], payload)
+                # Equal to what was handed over and not that object: the wrapper forwards the copy it checked.
+                self.assertEqual(handed, payload)
+                self.assertIsNot(inner.command.await_args.args[0], handed)
                 self.assertEqual(ws.refused, [])
                 self.assertEqual(len(ws.sends), 1 if payload["type"] == "call_service" else 0)
 
@@ -1861,6 +2100,9 @@ class LaneRawRouteTests(unittest.IsolatedAsyncioTestCase):
     Pins the one ``CORE_URL + path`` exemption in tests/test_hamcp200_path_safety.py.
     """
 
+    # What a session builder is made of. The lane script names none of them: its sessions come
+    # from the shared lane-session helper.
+    BUILDS = ("ClientSession", "TraceConfig", "TCPConnector", "on_request_redirect", "trace_configs")
     FLOW = "/api/config/config_entries/flow"
     STEP = FLOW + "/0123456789abcdef0123456789abcdef"
     RELOAD = "/api/config/config_entries/entry/01JSYNTHETICSYNTHETICSYNTH/reload"
@@ -1945,23 +2187,32 @@ class LaneRawRouteTests(unittest.IsolatedAsyncioTestCase):
         # The module is only ever used as ``aiohttp.<name>``: it has no other name.
         self.assertTrue(all(isinstance(node.parent, ast.Attribute) and isinstance(node.ctx, ast.Load)
                             for node in used))
-        self.assertEqual({node.parent.attr for node in used},
-                         {"ClientError", "ClientSession", "ClientTimeout", "TraceConfig"})
-        # One function builds every session: the class is named once, in its ``return``.
-        built = [node.parent.parent for node in used if node.parent.attr == "ClientSession"]
-        self.assertEqual([(call.where, ast.unparse(call.parent)) for call in built], [
-            ("lane_session", "return aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=seconds), "
-                             "trust_env=False, trace_configs=[trace])")])
+        self.assertEqual({node.parent.attr for node in used}, {"ClientError", "ClientTimeout"})
+        # No function of this script builds a session: it names no session class, connector or trace.
+        self.assertEqual([(node.where, ast.unparse(node)) for node in ast.walk(module)
+                          if (isinstance(node, ast.Attribute) and node.attr in self.BUILDS)
+                          or (isinstance(node, ast.Name) and node.id in self.BUILDS)], [])
+        # Every session is built by the shared lane-session helper, bound once by the module's import.
+        self.assertEqual([(node.where, ast.unparse(node)) for node in ast.walk(module)
+                          if isinstance(node, (ast.Import, ast.ImportFrom)) and "lane_session" in ast.unparse(node)],
+                         [("", "from lane_session import lane_session, refuse_redirect")])
+        (builder,) = [node for node in lane_tree(shared.__file__).body if getattr(node, "name", None) == "lane_session"]
+        self.assertEqual(ast.unparse(builder.body[-1]),
+                         "return aiohttp.ClientSession(timeout=timeout, trust_env=False, trace_configs=[trace])")
         opened = [node.parent for node in ast.walk(module) if isinstance(node, ast.Name) and node.id == "lane_session"]
+        self.assertEqual(len(opened), 3)
         for call in opened:
             # Each session is ``async with lane_session(...) as session`` and nothing else.
             self.assertIsInstance(call, ast.Call)
             self.assertIsInstance(call.parent, ast.withitem)
             self.assertIsInstance(call.parent.parent, ast.AsyncWith)
         self.assertEqual(sorted((call.where, ast.unparse(call.parent)) for call in opened), [
-            ("RawCore.command", "lane_session(seconds) as session"),
-            ("RawRest.rest", "lane_session(seconds) as session"),
-            ("StubControl._request", "lane_session(30) as session")])
+            ("RawCore.command", "lane_session(timeout=aiohttp.ClientTimeout(total=seconds)) as session"),
+            ("RawRest.rest", "lane_session(timeout=aiohttp.ClientTimeout(total=seconds)) as session"),
+            ("StubControl._request", "lane_session(timeout=aiohttp.ClientTimeout(total=30)) as session")])
+        # The timeout class is named at those three places only.
+        self.assertEqual(sorted(node.where for node in used if node.parent.attr == "ClientTimeout"),
+                         ["RawCore.command", "RawRest.rest", "StubControl._request"])
         held = [node for node in ast.walk(module) if isinstance(node, ast.Name) and node.id == "session"]
         self.assertEqual(len([node for node in held if isinstance(node.ctx, ast.Store)]), 3)
         calls = []
@@ -1986,49 +2237,89 @@ class LaneRawRouteTests(unittest.IsolatedAsyncioTestCase):
                          ["self.client.request", "session.request", "session.ws_connect", "stub.post"])
 
     def test_the_one_session_builder_refuses_redirects_and_each_rest_answer_is_checked_first(self):
-        """Source shape: the builder's whole body, the refusal's only uses, and the 3xx check in both REST clients."""
-        module = lane_tree()
-        (builder,) = [node for node in module.body if getattr(node, "name", None) == "lane_session"]
-        (callback,) = [node for node in module.body if getattr(node, "name", None) == "_refuse_redirect"]
-        (refusal,) = [node for node in module.body if getattr(node, "name", None) == "RedirectRefused"]
-        self.assertEqual([type(node) for node in (builder, callback, refusal)],
-                         [ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef])
-        self.assertEqual(builder.decorator_list + callback.decorator_list + refusal.decorator_list, [])
-        self.assertEqual((ast.unparse(builder.args), [ast.unparse(line) for line in builder.body[1:]]), ("seconds", [
+        """Source shape: the shared builder's whole body, the refusal's only uses, and the 3xx check in both REST clients."""
+        module, helper = lane_tree(), lane_tree(shared.__file__)
+        self.assertEqual(Path(shared.__file__).resolve(), (ROOT / "scripts" / "lane_session.py").resolve())
+        # The shared lane-session helper is the only session builder of this script and no local
+        # one remains: nothing the lane's own mechanism was made of is named anywhere in it.
+        gone = {"RedirectRefused", "REDIRECT_REFUSED", "_refuse_redirect", "LaneRedirectRefused",
+                "_refuse_redirect_hop", "trace", *self.BUILDS}
+        self.assertEqual(sorted({str(name) for node in ast.walk(module)
+                                 for name in (getattr(node, field, None) for field in ("id", "name", "attr", "arg"))
+                                 if name in gone}), [])
+        # The two helper names are bound by the one import and by nothing else: no function, class,
+        # assignment or argument of either name, and each use is the function of a call.
+        names = ("lane_session", "refuse_redirect")
+        self.assertEqual([(node.where, ast.unparse(node)) for node in ast.walk(module)
+                          if isinstance(node, (ast.Import, ast.ImportFrom))
+                          and {alias.asname or alias.name for alias in node.names} & set(names)],
+                         [("", "from lane_session import lane_session, refuse_redirect")])
+        self.assertEqual([node.name for node in ast.walk(module)
+                          if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+                          and node.name in names], [])
+        self.assertEqual([node.arg for node in ast.walk(module) if isinstance(node, ast.arg) and node.arg in names], [])
+        loaded = [node for node in ast.walk(module) if isinstance(node, ast.Name) and node.id in names]
+        self.assertTrue(all(isinstance(node.ctx, ast.Load) and isinstance(node.parent, ast.Call)
+                            and node.parent.func is node for node in loaded))
+        self.assertEqual(sorted(node.id for node in loaded), ["lane_session"] * 3 + ["refuse_redirect"] * 2)
+        self.assertIs(acceptance.lane_session, shared.lane_session)
+        self.assertIs(acceptance.refuse_redirect, shared.refuse_redirect)
+        # The shared helper's builder, callback, refusal class and status check, whole.
+        (builder,) = [node for node in helper.body if getattr(node, "name", None) == "lane_session"]
+        (callback,) = [node for node in helper.body if getattr(node, "name", None) == "_refuse_redirect_hop"]
+        (refusal,) = [node for node in helper.body if getattr(node, "name", None) == "LaneRedirectRefused"]
+        (check,) = [node for node in helper.body if getattr(node, "name", None) == "refuse_redirect"]
+        self.assertEqual([type(node) for node in (builder, callback, refusal, check)],
+                         [ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.FunctionDef])
+        self.assertEqual(builder.decorator_list + callback.decorator_list + refusal.decorator_list
+                         + check.decorator_list, [])
+        self.assertEqual((ast.unparse(builder.args), [ast.unparse(line) for line in builder.body[1:]]), ("*, timeout", [
+            "import aiohttp",
             "trace = aiohttp.TraceConfig()",
-            "trace.on_request_redirect.append(_refuse_redirect)",
-            "return aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=seconds), trust_env=False, "
-            "trace_configs=[trace])"]))
+            "trace.on_request_redirect.append(_refuse_redirect_hop)",
+            "return aiohttp.ClientSession(timeout=timeout, trust_env=False, trace_configs=[trace])"]))
         self.assertIsInstance(builder.body[0].value.value, str)
         self.assertEqual((ast.unparse(callback.args), [ast.unparse(line) for line in callback.body]),
-                         ("_session, _context, _params", ["raise RedirectRefused(REDIRECT_REFUSED)"]))
+                         ("_session, _context, _params", ["raise LaneRedirectRefused(REDIRECT_REFUSED)"]))
+        # The refusal class is ``Exception`` with a docstring and nothing else.
         self.assertEqual(([ast.unparse(base) for base in refusal.bases], refusal.keywords,
-                          [ast.unparse(line) for line in refusal.body[1:]]),
-                         (["Exception"], [], ["code = REDIRECT_REFUSED"]))
+                          [ast.unparse(line) for line in refusal.body[1:]]), (["Exception"], [], []))
+        self.assertIsInstance(refusal.body[0].value.value, str)
+        self.assertEqual((ast.unparse(check.args), [ast.unparse(line) for line in check.body[1:]]),
+                         ("status", ["if 300 <= status < 400:\n    raise LaneRedirectRefused(REDIRECT_REFUSED)"]))
+        self.assertIsInstance(check.body[0].value.value, str)
 
-        def uses(name):
-            return sorted((node.where, ast.unparse(node.parent)) for node in ast.walk(module)
+        def uses(tree, name):
+            return sorted((node.where, ast.unparse(node.parent)) for node in ast.walk(tree)
                           if isinstance(node, ast.Name) and node.id == name)
-        self.assertEqual(uses("_refuse_redirect"),
-                         [("lane_session", "trace.on_request_redirect.append(_refuse_redirect)")])
-        self.assertEqual(uses("trace"), [("lane_session", "[trace]"), ("lane_session", "trace = aiohttp.TraceConfig()"),
-                                         ("lane_session", "trace.on_request_redirect")])
-        self.assertEqual(uses("RedirectRefused"), [
-            ("RawRest.rest", "RedirectRefused(REDIRECT_REFUSED)"),
-            ("StubControl._request", "RedirectRefused(REDIRECT_REFUSED)"),
-            ("_refuse_redirect", "RedirectRefused(REDIRECT_REFUSED)")])
-        self.assertEqual([node.value.value for node in module.body if isinstance(node, ast.Assign)
-                          and ast.unparse(node.targets[0]) == "REDIRECT_REFUSED"], ["redirect_refused"])
+        self.assertEqual(uses(helper, "_refuse_redirect_hop"),
+                         [("lane_session", "trace.on_request_redirect.append(_refuse_redirect_hop)")])
+        self.assertEqual(uses(helper, "trace"), [("lane_session", "[trace]"), ("lane_session", "trace = aiohttp.TraceConfig()"),
+                                                 ("lane_session", "trace.on_request_redirect")])
+        self.assertEqual(uses(helper, "LaneRedirectRefused"), [
+            ("_refuse_redirect_hop", "LaneRedirectRefused(REDIRECT_REFUSED)"),
+            ("refuse_redirect", "LaneRedirectRefused(REDIRECT_REFUSED)")])
+        self.assertEqual([node.value.value for node in helper.body if isinstance(node, ast.Assign)
+                          and ast.unparse(node.targets[0]) == "REDIRECT_REFUSED"], ["lane_redirect_refused"])
+        self.assertEqual(uses(helper, "REDIRECT_REFUSED"), [
+            ("", "REDIRECT_REFUSED = 'lane_redirect_refused'"),
+            ("_refuse_redirect_hop", "LaneRedirectRefused(REDIRECT_REFUSED)"),
+            ("refuse_redirect", "LaneRedirectRefused(REDIRECT_REFUSED)")])
         # In both REST clients the check is the first statement under the request, before the body is read.
-        checks = [node for node in ast.walk(module) if isinstance(node, ast.If)
-                  and "status" in ast.unparse(node.test) and node.where in ("RawRest.rest", "StubControl._request")]
-        self.assertEqual(sorted((node.where, ast.unparse(node.test), [ast.unparse(line) for line in node.body],
-                                 node.orelse, node.parent.body[0] is node,
-                                 ast.unparse(node.parent.items[0].context_expr.func)) for node in checks), [
-            ("RawRest.rest", "300 <= response.status < 400", ["raise RedirectRefused(REDIRECT_REFUSED)"], [], True,
-             "session.request"),
-            ("StubControl._request", "300 <= response.status < 400", ["raise RedirectRefused(REDIRECT_REFUSED)"], [],
-             True, "session.request")])
+        checks = [node.parent for node in loaded if node.id == "refuse_redirect"]
+        self.assertEqual(sorted((call.where, ast.unparse(call.parent), type(call.parent).__name__,
+                                 call.parent.parent.body[0] is call.parent, type(call.parent.parent).__name__,
+                                 ast.unparse(call.parent.parent.items[0].context_expr.func),
+                                 ast.unparse(call.parent.parent.items[0].optional_vars)) for call in checks), [
+            ("RawRest.rest", "refuse_redirect(response.status)", "Expr", True, "AsyncWith", "session.request",
+             "response"),
+            ("StubControl._request", "refuse_redirect(response.status)", "Expr", True, "AsyncWith", "session.request",
+             "response")])
+        # The range is tested in the helper only: neither client compares a status to it again.
+        self.assertEqual(sorted((node.where, ast.unparse(node)) for node in ast.walk(module)
+                                if isinstance(node, ast.Compare) and "status" in ast.unparse(node)
+                                and node.where in ("RawRest.rest", "StubControl._request")),
+                         [("RawRest.rest", "response.status == 200"), ("StubControl._request", "response.status == 200")])
 
     def test_no_name_is_bound_from_a_core_url_constant(self):
         """Source shape: the two Core constants are read in five places and bound to no other name."""
@@ -2969,9 +3260,9 @@ class LaneSourceShape(unittest.TestCase):
     """HAMCP-366: what the acceptance module imports, looks up, calls and reads, pinned from its own source.
 
     Every test here reads a syntax tree and runs nothing. The pins cover the
-    acceptance module and the import list of ``lane_failure_diagnostics``.
-    They do not cover what another ``scripts/`` module imports inside a
-    function body.
+    acceptance module and the import lists of ``lane_failure_diagnostics`` and
+    of the shared ``lane_session`` helper. They do not cover what any other
+    ``scripts/`` module imports inside a function body.
     """
 
     IMPORTS = (
@@ -3002,6 +3293,7 @@ class LaneSourceShape(unittest.TestCase):
         "from ha_mcp_engineering.signed_registry import canonical_json",
         "from ha_mcp_engineering.upstream_tool_policy import load_reviewed_upstream_release_registry",
         "import lane_failure_diagnostics as diagnostics",
+        "from lane_session import lane_session, refuse_redirect",
     )
     DIAGNOSTICS_IMPORTS = (
         "from contextlib import contextmanager", "from contextvars import ContextVar", "from functools import wraps",
@@ -3183,7 +3475,7 @@ class LaneSourceShape(unittest.TestCase):
         self.assertEqual(statements, [
             ("LaneWebSocket.__init__", "Store", "self.client",
              "self.client = HomeAssistantWebSocketClient(pinned(configured))"),
-            ("LaneWebSocket.command", "Load", "self.client", "return await self.client.command(payload)"),
+            ("LaneWebSocket.command", "Load", "self.client", "return await self.client.command(checked)"),
             ("LaneRest.__init__", "Store", "self.client", "self.client = HomeAssistantRestClient(pinned(configured))"),
             ("LaneRest.request", "Load", "self.client", "return await self.client.request(method, path)"),
             ("LaneState.__init__", "Store", "self.client", "self.client = HomeAssistantRestClient(pinned(configured))"),
@@ -3335,9 +3627,12 @@ class LaneSourceShape(unittest.TestCase):
         self.assertEqual([node.level for node in top if isinstance(node, ast.ImportFrom) and node.level], [])
 
     def test_no_attribute_reaches_a_url_constant_or_a_session_class_through_another_name(self):
-        """``<name>.CORE_URL``, ``<name>.aiohttp`` and ``<name>.ClientSession`` exist only as the builder's ``aiohttp.ClientSession``."""
+        """``<name>.CORE_URL``, ``<name>.aiohttp`` and ``<name>.ClientSession`` exist nowhere: the builder is not in this script."""
         watched = set(self.URLS) | {"ClientSession", "aiohttp"}
         self.assertEqual(sorted((node.where, ast.unparse(node)) for node in self.nodes
+                                if isinstance(node, ast.Attribute) and node.attr in watched), [])
+        # The one ``aiohttp.ClientSession`` behind the script is the shared helper's, in its builder.
+        self.assertEqual(sorted((node.where, ast.unparse(node)) for node in ast.walk(lane_tree(shared.__file__))
                                 if isinstance(node, ast.Attribute) and node.attr in watched),
                          [("lane_session", "aiohttp.ClientSession")])
 
@@ -3357,6 +3652,20 @@ class LaneSourceShape(unittest.TestCase):
                          len(top))
         names = {node.id for node in ast.walk(module) if isinstance(node, ast.Name)}
         self.assertEqual(sorted(names & {"__import__", "importlib", "import_module"}), [])
+
+    def test_the_session_helper_imports_the_client_library_in_its_builder_and_nothing_else(self):
+        """``lane_session`` imports ``aiohttp`` where it builds the session; no other module, by any route."""
+        module = lane_tree(shared.__file__)
+        imports = [node for node in ast.walk(module) if isinstance(node, (ast.Import, ast.ImportFrom))]
+        self.assertEqual(sorted((node.where, ast.unparse(node)) for node in imports),
+                         [("", "from __future__ import annotations"), ("lane_session", "import aiohttp")])
+        names = {node.id for node in ast.walk(module) if isinstance(node, ast.Name)}
+        self.assertEqual(sorted(names & {"__import__", "importlib", "import_module", "getattr", "eval", "exec",
+                                         "compile", "globals", "locals", "vars", "builtins", "__builtins__"}), [])
+        # Its whole surface: one code, one refusal class, one callback, the builder and the status check.
+        self.assertEqual([getattr(node, "name", None) or ast.unparse(node.targets[0]) for node in module.body[2:]],
+                         ["REDIRECT_REFUSED", "LaneRedirectRefused", "_refuse_redirect_hop", "lane_session",
+                          "refuse_redirect"])
 
 if __name__ == "__main__":
     unittest.main()

@@ -55,6 +55,31 @@ class FailureReceipts(unittest.TestCase):
                     self.assertNotIn(canary, json.dumps(result))
                     self.assertEqual(result['exception_chain'][0]['message'], '[redacted]')
 
+    def test_lane_redirect_refusal_is_shown_only_on_an_exact_match(self):
+        import lane_session
+        code = 'lane_redirect_refused'
+        self.assertEqual(lane_session.REDIRECT_REFUSED, code)
+        self.assertIn(code, diagnostics.SAFE_MESSAGES)
+        with patch.object(diagnostics, '_raw_log', return_value=False):
+            for raised in (lane_session.LaneRedirectRefused(code), RuntimeError(code)):
+                self.assertEqual(diagnostics.failure(raised)['exception_chain'][0]['message'], code)
+            # The type is not exported: only the fixed code is.
+            self.assertEqual(diagnostics.failure(lane_session.LaneRedirectRefused(code))['exception_chain'][0]['type'],
+                             'Exception')
+            # A message that merely contains the code, or the code with anything appended, stays redacted.
+            canary = 'https://user:CANARY_CREDENTIAL@private.invalid/CANARY_PATH'
+            for message in (code + ' ', ' ' + code, code + '\n', code + ':', code + ': ' + canary,
+                            code + ' ' + canary, canary + ' ' + code, 'x' + code, code + 'x', code + code,
+                            code + '_twice', code[:-1], code.upper(), code.title(), repr(code), '', ' '):
+                with self.subTest(message=message):
+                    for raised in (lane_session.LaneRedirectRefused(message), RuntimeError(message),
+                                   lane_session.LaneRedirectRefused(code, canary),
+                                   lane_session.LaneRedirectRefused(message, code)):
+                        result = diagnostics.failure(raised)
+                        self.assertEqual(result['exception_chain'][0]['message'], '[redacted]')
+                        self.assertNotIn('CANARY', json.dumps(result))
+                        self.assertNotIn(code, json.dumps(result))
+
     def test_lane_client_refusal_codes_are_exported_exactly_and_nothing_near_them(self):
         # The fixed reason codes of the lanes' own clients (HAMCP-290 RawCore,
         # HAMCP-329/298 LaneRaw): a withheld receipt names its reason.
@@ -222,7 +247,7 @@ class StartupChecks(unittest.IsolatedAsyncioTestCase):
             async def __aenter__(self): return self
             async def __aexit__(self, *args): pass
         class Session(Response):
-            def get(self, *_args): return Response()
+            def get(self, *_args, **_kwargs): return Response()
         with patch.object(harness.aiohttp, 'ClientSession', return_value=Session()), \
                 patch.object(harness.asyncio, 'sleep', new=AsyncMock()), diagnostics.lane('helper_value'):
             with self.assertRaises(RuntimeError) as caught:
