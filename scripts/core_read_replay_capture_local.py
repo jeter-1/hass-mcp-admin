@@ -22,6 +22,11 @@ Core image: the lane refuses profile B otherwise and never adds a route.
 The committed image inventory shows two such requirements missing, so
 ``run --profile B`` refuses at preflight and the overlay is not built here.
 
+``recapture`` is profile A for R1 and R2 of 2026-11-14: both versions on one
+Core that is restarted once, the order cases with each version before that
+restart, then each version back to back with the capture, forced and order
+cases after it.  ``run`` never selects the forced or order cases.
+
 No pull happens here (``--pull never`` everywhere).  A preflight refusal
 happens before any container, volume or run directory exists.  A failure
 after that point is recorded as WITHHELD and is not a reason to run again for
@@ -372,6 +377,15 @@ ARGUMENT_POLICY = s4.BASELINE_VERSION
 CAPTURE_GROUPS = ("reads", "variants", "errors", "transport")
 RESTART_GROUPS = ("after_restart",)
 PROFILE_B_GROUPS = ("yaml",)
+# ``recapture`` only (R1 and R2, 2026-11-14): the forced VALIDATION_INVALID_JSON
+# case and the order cases, which ``run`` never selects.
+FORCED_GROUPS = ("forced",)
+ORDER_GROUPS = ("order",)
+RECAPTURE_GROUPS = CAPTURE_GROUPS + FORCED_GROUPS + ORDER_GROUPS
+RECAPTURE_DESIGN = (
+    "one disposable Core, seeded once; the order group with each version, one peer at a "
+    "time, before one Core restart; after that restart and no other, each version back to "
+    "back with the capture, forced and order groups, one peer at a time")
 PROFILES = ("A", "B")
 PROFILE_B_INVENTORY = ROOT / "docs/evidence/hamcp371/s5/inventory-3/receipt.json"
 TOKEN_VARIABLE = "HOMEASSISTANT_TOKEN"
@@ -609,30 +623,69 @@ def restart_core(wanted, run_id, holder_id, core_image, token):
     return checked
 
 
-def capture_version(version, wanted, run_id, run_dir, upstream, holder_id, core_image, tokens):
-    """One peer at a time: start it, capture, restart Core under it, capture again, remove it."""
+def start_peer(version, wanted, run_id, upstream, holder_id, tokens):
+    """Posture first, then the one peer, checked, and its endpoint answering."""
     holder, peer = wanted["holder"], wanted["peer-" + version]
-    out_dir = run_dir / "out"
     section = {"network_before_capture": posture(wanted)}
     command(*peer_argv(peer, run_id, holder, upstream["image"]),
             env=with_token(tokens["administrator"]))
     section["peer_network"] = s4.verify_peer(s4.inspect_owned(peer, run_id) or {}, holder_id,
                                              upstream)
     command(*s4.exec_argv(holder, "-c", s4.WAIT_HTTP, s4.ENDPOINT, "120", "any"), timeout=150)
+    return section
+
+
+def remove_peer(version, wanted, run_id, log):
+    """The peer must still be running; its log is kept and it is proven gone."""
+    peer = wanted["peer-" + version]
+    state = (s4.inspect_owned(peer, run_id) or {}).get("State") or {}
+    if state.get("Running") is not True or state.get("OOMKilled"):
+        raise Refusal("peer_did_not_stay_running")
+    s4.bounded_logs(peer, log)
+    command("docker", "rm", "-f", "-v", peer)
+    if s4.inspect_owned(peer, run_id) is not None:
+        raise Refusal("owned_container_remains")
+
+
+def capture_version(version, wanted, run_id, run_dir, upstream, holder_id, core_image, tokens):
+    """One peer at a time: start it, capture, restart Core under it, capture again, remove it."""
+    holder, out_dir = wanted["holder"], run_dir / "out"
+    section = start_peer(version, wanted, run_id, upstream, holder_id, tokens)
     (out_dir / version).mkdir(mode=0o700)
     section["calls"] = run_calls(holder, version, "calls", CAPTURE_GROUPS, out_dir)
     section["network_after_core_restart"] = restart_core(
         wanted, run_id, holder_id, core_image, tokens["administrator"])
     section["calls_after_core_restart"] = run_calls(
         holder, version, "calls-after-core-restart", RESTART_GROUPS, out_dir)
-    state = (s4.inspect_owned(peer, run_id) or {}).get("State") or {}
-    if state.get("Running") is not True or state.get("OOMKilled"):
-        raise Refusal("peer_did_not_stay_running")
-    s4.bounded_logs(peer, run_dir / f"peer-{version}.log")
-    command("docker", "rm", "-f", "-v", peer)
-    if s4.inspect_owned(peer, run_id) is not None:
-        raise Refusal("owned_container_remains")
+    remove_peer(version, wanted, run_id, run_dir / f"peer-{version}.log")
     return section
+
+
+def recapture(wanted, run_id, run_dir, upstream, holder_id, core_image, tokens):
+    """R1 and R2: both versions on one Core, the order group either side of its one restart.
+
+    A step that fails raises; nothing is retried, and a later version never
+    starts after an earlier one failed.
+    """
+    holder, out_dir = wanted["holder"], run_dir / "out"
+    captures = {"design": RECAPTURE_DESIGN, "before_core_restart": {},
+                "after_core_restart": {}}
+    for version in VERSIONS:
+        section = start_peer(version, wanted, run_id, upstream[version], holder_id, tokens)
+        (out_dir / version).mkdir(mode=0o700)
+        section["calls"] = run_calls(holder, version, "order-before-core-restart",
+                                     ORDER_GROUPS, out_dir)
+        remove_peer(version, wanted, run_id, run_dir / f"peer-{version}-before-core-restart.log")
+        captures["before_core_restart"][version] = section
+    captures["network_after_core_restart"] = restart_core(
+        wanted, run_id, holder_id, core_image, tokens["administrator"])
+    for version in VERSIONS:
+        section = start_peer(version, wanted, run_id, upstream[version], holder_id, tokens)
+        section["calls"] = run_calls(holder, version, "calls-after-core-restart",
+                                     RECAPTURE_GROUPS, out_dir)
+        remove_peer(version, wanted, run_id, run_dir / f"peer-{version}-after-core-restart.log")
+        captures["after_core_restart"][version] = section
+    return captures
 
 
 def secret_needles(tokens):
@@ -729,10 +782,10 @@ def require_profile_b(core, inventory=PROFILE_B_INVENTORY):
 
 
 def execute(args, launch):
-    """Shared body of ``selftest`` and ``run``; everything before mkdir is preflight."""
+    """Body of ``selftest``, ``run`` and ``recapture``; everything before mkdir is preflight."""
     if not __debug__:
         raise Refusal("assertions_required")
-    capture = args.command == "run"
+    capture = args.command in ("run", "recapture")
     core = core_binding()
     if capture and args.profile != "A":
         require_profile_b(core)
@@ -823,7 +876,10 @@ def execute(args, launch):
         if seeded.returncode or not complete or set(tokens) != set(TOKEN_NAMES):
             raise Refusal("seed_incomplete")
         wait_running(wanted["holder"], tokens["administrator"])
-        if capture:
+        if args.command == "recapture":
+            result["captures"] = recapture(wanted, run_id, run_dir, upstream, holder_id,
+                                           core_image, tokens)
+        elif capture:
             for version in VERSIONS:
                 result["captures"][version] = capture_version(
                     version, wanted, run_id, run_dir, upstream[version], holder_id, core_image,
@@ -873,7 +929,8 @@ def execute(args, launch):
     return 0 if result["result"] == "PASS" and result["cleanup"]["clean"] else 1
 
 
-COMMANDS = {"inventory": inventory, "selftest": execute, "run": execute}
+COMMANDS = {"inventory": inventory, "selftest": execute, "run": execute,
+            "recapture": execute}
 
 
 def main(argv=None):
@@ -886,6 +943,8 @@ def main(argv=None):
         sub.add_argument("--note", action="append")
         if name == "run":
             sub.add_argument("--profile", choices=PROFILES, required=True)
+        elif name == "recapture":
+            sub.set_defaults(profile="A")  # Profile A only; there is no option.
     args = parser.parse_args(argv)
     launch = {"command": args.command, "run_dir": str(args.run_dir), "started": now(),
               "execution_started": False, "notes": list(args.note or [])}

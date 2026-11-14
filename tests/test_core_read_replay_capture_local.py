@@ -294,7 +294,7 @@ class ArgvTests(unittest.TestCase):
         self.assertLessEqual(lane.memory_total(), lane.s4.host.memory_bytes("3g"))
 
     def test_names_are_distinct_and_carry_the_project(self):
-        for command_name in ("selftest", "run"):
+        for command_name in ("selftest", "run", "recapture"):
             wanted = lane.lane_names(command_name)
             self.assertEqual(len(set(wanted.values())), len(wanted))
             for value in wanted.values():
@@ -527,15 +527,27 @@ class ProfileTests(unittest.TestCase):
                 "profile_b_inventory_stale")
 
     def test_the_groups_are_the_calls_modules_and_profile_a_leaves_the_yaml_read_out(self):
-        every = lane.CAPTURE_GROUPS + lane.RESTART_GROUPS + lane.PROFILE_B_GROUPS
+        every = (lane.CAPTURE_GROUPS + lane.RESTART_GROUPS + lane.PROFILE_B_GROUPS
+                 + lane.FORCED_GROUPS + lane.ORDER_GROUPS)
         self.assertEqual(sorted(every), sorted(lane.calls_step.GROUPS))
+        self.assertEqual(len(every), len(set(every)))
         self.assertNotIn("yaml", lane.CAPTURE_GROUPS + lane.RESTART_GROUPS)
+        self.assertNotIn("yaml", lane.RECAPTURE_GROUPS)
         self.assertIn(lane.ARGUMENT_POLICY, lane.VERSIONS)
+
+    def test_only_recapture_selects_the_forced_and_order_cases(self):
+        run_selects = set(lane.CAPTURE_GROUPS + lane.RESTART_GROUPS)
+        self.assertFalse(run_selects & set(lane.FORCED_GROUPS + lane.ORDER_GROUPS))
+        self.assertEqual(lane.RECAPTURE_GROUPS,
+                         lane.CAPTURE_GROUPS + lane.FORCED_GROUPS + lane.ORDER_GROUPS)
+        forced = [case for case in lane.calls_step.CASES if case["group"] == "forced"]
+        self.assertEqual([case["id"] for case in forced], ["f-invalid-json"])
 
     def test_run_needs_a_profile_and_selftest_takes_none(self):
         common = ["--run-dir", "synthetic", "--launch-log", "synthetic"]
         for argv in (["run", *common], ["run", *common, "--profile", "C"],
-                     ["selftest", *common, "--profile", "A"]):
+                     ["selftest", *common, "--profile", "A"],
+                     ["recapture", *common, "--profile", "A"]):
             with self.subTest(argv=argv), contextlib.redirect_stderr(io.StringIO()):
                 with self.assertRaises(SystemExit):
                     lane.main(argv)
@@ -555,8 +567,10 @@ class FakeDocker:
 
     GOOD_PROBE = {"interfaces": ["lo"], "ipv4_routes": 0, "egress_errno": 101}
 
-    def __init__(self, *, probe=None, peer_log=b"synthetic peer log\n", seed_ok=True):
+    def __init__(self, *, probe=None, peer_log=b"synthetic peer log\n", seed_ok=True,
+                 calls_fail=()):
         self.calls, self.events, self.forwarded = [], [], []
+        self.calls_fail = set(calls_fail)
         self.containers, self.volumes, self.streams = {}, {}, []
         self.probe = probe or (lambda container, count: dict(self.GOOD_PROBE))
         self.probes, self.peer_log, self.seed_ok, self.out_root = 0, peer_log, seed_ok, None
@@ -647,6 +661,8 @@ class FakeDocker:
                 return 0, b""
             target = rest[rest.index("--out") + 1]
             self.events.append("calls:" + target + ":" + rest[rest.index("--groups") + 1])
+            if target in self.calls_fail:
+                return 1, b""
             out = self.host_path(target)
             out.mkdir(parents=False)
             (out / "_index.json").write_text(json.dumps({"sessions_opened": 1, "calls": [
@@ -775,6 +791,64 @@ class LaneFlowTests(unittest.TestCase):
             self.assertIn("  " + name + "\n", sums)
         # The stream that went into Core is the reviewed configuration, nothing else.
         self.assertEqual(docker.streams, [lane.config_archive(lane.seed_step.CONFIG_FILES)])
+
+    def test_recapture_runs_both_versions_either_side_of_one_core_restart(self):
+        docker = FakeDocker()
+        code, launch, receipt, run_dir = self.launch(docker, "recapture")
+        self.assertEqual((code, launch["result"], receipt["result"]), (0, "PASS", "PASS"))
+        self.assertEqual((receipt["command"], receipt["profile"]), ("recapture", "A"))
+        self.assertIs(receipt["cleanup"]["clean"], True)
+        self.assertEqual((docker.containers, docker.volumes), ({}, {}))
+        events = docker.events
+        stem = "hamcp371-s6-recapture-"
+        peers = [item for item in events if item.startswith(("run:", "rm:")) and "-peer-" in item]
+        self.assertEqual(peers, [
+            f"run:{stem}peer-9-1-2", f"rm:{stem}peer-9-1-2",
+            f"run:{stem}peer-9-2-0", f"rm:{stem}peer-9-2-0",
+            f"run:{stem}peer-9-1-2", f"rm:{stem}peer-9-1-2",
+            f"run:{stem}peer-9-2-0", f"rm:{stem}peer-9-2-0"])
+        after = "reads,variants,errors,transport,forced,order"
+        self.assertEqual([item for item in events if item.startswith("calls:")], [
+            "calls:/out/9.1.2/order-before-core-restart:order",
+            "calls:/out/9.2.0/order-before-core-restart:order",
+            "calls:/out/9.1.2/calls-after-core-restart:" + after,
+            "calls:/out/9.2.0/calls-after-core-restart:" + after])
+        # One restart, with no peer in the namespace, between the two halves.
+        self.assertEqual(events.count(f"restart:{stem}core"), 1)
+        restart = events.index(f"restart:{stem}core")
+        self.assertEqual(len([item for item in events[:restart] if item.startswith("rm:")]), 2)
+        self.assertFalse(any(item.startswith("run:") for item in events[restart:]
+                             if "-peer-" not in item))
+        self.assertEqual(sorted(receipt["captures"]["before_core_restart"]), ["9.1.2", "9.2.0"])
+        self.assertEqual(sorted(receipt["captures"]["after_core_restart"]), ["9.1.2", "9.2.0"])
+        self.assertEqual(receipt["captures"]["design"], lane.RECAPTURE_DESIGN)
+        self.assertIn("network_after_core_restart", receipt["captures"])
+        self.assertEqual(
+            receipt["captures"]["after_core_restart"]["9.2.0"]["calls"]["groups"],
+            list(lane.RECAPTURE_GROUPS))
+        sums = (run_dir / "SHA256SUMS").read_text(encoding="utf-8")
+        for name in ("peer-9.1.2-before-core-restart.log", "peer-9.2.0-after-core-restart.log",
+                     "out/9.1.2/order-before-core-restart/_index.json",
+                     "out/9.2.0/calls-after-core-restart/_index.json"):
+            self.assertIn("  " + name + "\n", sums)
+        for path in run_dir.rglob("*"):
+            if path.is_file():
+                self.assertNotIn(SYNTHETIC_TOKEN.encode(), path.read_bytes())
+                self.assertNotIn(OTHER_TOKEN.encode(), path.read_bytes())
+
+    def test_a_failed_recapture_step_withholds_and_nothing_later_runs_or_reruns(self):
+        docker = FakeDocker(calls_fail={"/out/9.1.2/calls-after-core-restart"})
+        code, launch, receipt, _run_dir = self.launch(docker, "recapture")
+        self.assertEqual((code, launch["result"], receipt["failure"]),
+                         (1, "WITHHELD", "calls_step_failed"))
+        calls = [item for item in docker.events if item.startswith("calls:")]
+        self.assertEqual(len(calls), 3)
+        self.assertTrue(calls[-1].startswith("calls:/out/9.1.2/calls-after-core-restart:"))
+        restart = docker.events.index("restart:hamcp371-s6-recapture-core")
+        self.assertNotIn("run:hamcp371-s6-recapture-peer-9-2-0", docker.events[restart:])
+        self.assertEqual(docker.events.count("restart:hamcp371-s6-recapture-core"), 1)
+        self.assertIs(receipt["cleanup"]["clean"], True)
+        self.assertEqual((docker.containers, docker.volumes), ({}, {}))
 
     def test_the_selftest_starts_core_but_no_upstream_image(self):
         docker = FakeDocker()
