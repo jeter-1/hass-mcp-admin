@@ -18,6 +18,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import core_read_replay_calls as calls  # noqa: E402
+import review_upstream_read_release as review  # noqa: E402
 
 POLICY = "9.1.2"
 SEED = {
@@ -133,6 +134,26 @@ class CaseTableTests(unittest.TestCase):
             walk(case["arguments"])
         self.assertEqual(names, set(SEED))
 
+    def test_the_review_probes_are_the_review_scripts_error_probes_word_for_word(self):
+        probes = [case for case in calls.CASES if case["group"] == "review_probes"]
+        self.assertEqual(
+            {case["id"][len("e-"):].replace("-", "_"): (case["tool"], case["arguments"])
+             for case in probes}, review.ERROR_PROBES)
+        self.assertEqual({case["kind"] for case in probes}, {"upstream"})
+        # Sent as written, and planned from no seed value at all.
+        cases = {case["id"]: case for case in calls.plan(POLICY, ["review_probes"], {})}
+        self.assertEqual(len(cases), len(review.ERROR_PROBES))
+        for name, (tool, arguments) in review.ERROR_PROBES.items():
+            with self.subTest(probe=name):
+                case = cases["e-" + name.replace("_", "-")]
+                self.assertEqual((case["upstream_tool"], case["wire_arguments"]),
+                                 (tool, arguments))
+                self.assertEqual(case["arguments_built_by"], "harness, sent as written")
+        # Without a seed any other group is refused, not sent with a gap.
+        with self.assertRaises(calls.CallsError) as raised:
+            calls.plan(POLICY, ["review_probes", "errors"], {})
+        self.assertEqual(str(raised.exception), "seed_value_missing")
+
 
 class WireArgumentTests(unittest.TestCase):
     def test_reads_get_the_reviewed_adapter_arguments(self):
@@ -241,6 +262,33 @@ class RunTests(unittest.TestCase):
         self.assertIsNone(stored["p4-absent-state.json"]["exchange"])
         self.assertIsNone(rows["p4-absent-entity"]["exchange_failure"])
         self.assertEqual(rows["p4-absent-entity"]["http_status"], 200)
+
+    def test_main_sends_the_review_probes_with_no_seed_file(self):
+        with Peer() as peer, tempfile.TemporaryDirectory() as scratch:
+            out = Path(scratch) / "out"
+            code = calls.main(["--endpoint", peer.endpoint, "--out", str(out),
+                               "--policy", POLICY, "--groups", "review_probes"])
+            index = json.loads((out / "_index.json").read_text(encoding="utf-8"))
+            names = sorted(path.name for path in out.iterdir())
+        self.assertEqual(code, 0)
+        self.assertEqual([row["id"] for row in index["calls"]], [
+            "e-invalid-search", "e-missing-state", "e-missing-automation",
+            "e-missing-registry-entity"])
+        self.assertEqual(names, sorted(["_index.json", "_initialize.json"]
+                                       + [row["file"] for row in index["calls"]]))
+        sent = [params for method, _session, params in peer.requests
+                if method == "tools/call"]
+        self.assertEqual([(item["name"], item["arguments"]) for item in sent],
+                         list(review.ERROR_PROBES.values()))
+
+    def test_main_without_a_seed_file_refuses_a_group_that_needs_one(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            out = Path(scratch) / "out"
+            with self.assertRaises(calls.CallsError) as raised:
+                calls.main(["--endpoint", "http://127.0.0.1:9/mcp", "--out", str(out),
+                            "--policy", POLICY, "--groups", "reads"])
+            self.assertFalse(out.exists())
+        self.assertEqual(str(raised.exception), "seed_value_missing")
 
     def test_an_existing_output_directory_is_never_reused(self):
         with Peer() as peer, tempfile.TemporaryDirectory() as scratch:

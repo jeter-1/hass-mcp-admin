@@ -250,6 +250,39 @@ class SeedTests(unittest.TestCase):
         self.assertEqual(report["steps"][0]["failure"], "core_is_not_fresh")
         self.assertIsNone(values)
 
+    def test_the_access_phase_mints_the_two_tokens_and_seeds_no_object(self):
+        world = World()
+
+        async def no_sleep(seconds):
+            world.calls.append(("SLEEP", seconds))
+        report, values, tokens = asyncio.run(seed.seed(
+            FakeCore(world), second_client=lambda: FakeCore(world), sleep=no_sleep,
+            boot_polls=2, phase="access"))
+        self.assertEqual([row["step"] for row in report["steps"]], list(seed.ACCESS_STEPS))
+        self.assertEqual({row["status"] for row in report["steps"]}, {"ok"})
+        self.assertEqual((report["phase"], report["all_steps_ok"]), ("access", True))
+        self.assertEqual(tokens, {"administrator": TOKENS[OWNER_ACCESS],
+                                  "ordinary_user": TOKENS[USER_ACCESS]})
+        self.assertIsNone(values)
+        # No object is created: no registry, helper, configuration or service call.
+        sent = [call[1] for call in world.calls if len(call) > 1 and isinstance(call[1], str)]
+        for marker in ("floor_registry/create", "input_boolean/create", "zone/create",
+                       "/api/config/automation", "/api/services/"):
+            with self.subTest(marker=marker):
+                self.assertFalse([item for item in sent if marker in item])
+        with tempfile.TemporaryDirectory() as scratch:
+            seed.write(scratch, report, values)
+            self.assertEqual([path.name for path in Path(scratch).iterdir()],
+                             ["seed-report.json"])
+
+    def test_the_full_seed_is_the_default_phase_and_an_unknown_phase_is_refused(self):
+        report, _values, _tokens = run_seed(World())
+        self.assertEqual(report["phase"], "all")
+        self.assertEqual(seed.ACCESS_STEPS,
+                         tuple(name for name, _step, _needed in seed.STEPS)[:4])
+        with self.assertRaises(seed.SeedError):
+            asyncio.run(seed.seed(FakeCore(World()), second_client=None, phase="objects"))
+
     def test_an_ordinary_user_that_reads_back_as_administrator_issues_no_token(self):
         world = World(ordinary_is_admin=True)
         report, values, tokens = run_seed(world)

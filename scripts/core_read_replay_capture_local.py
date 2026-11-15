@@ -33,6 +33,11 @@ Core that is restarted once, the order cases with each version before that
 restart, then each version back to back with the capture, forced and order
 cases after it.  ``run`` never selects the forced or order cases.
 
+``probes`` is profile A for N31 of 2026-11-15: the review script's four error
+probes, with each version, one peer at a time, on a Core whose seed ran its
+access phase only (onboarding and the two tokens), so no object is seeded and
+the automation list is empty.  No other case runs and Core is not restarted.
+
 Every peer runs with production's tool flags (D1, 2026-11-14): beta features
 and the filesystem tools on, YAML editing off, the two file writes disabled.
 Each start checks that every flag is set once on the peer's container, then
@@ -801,6 +806,12 @@ PROFILE_B_GROUPS = ("yaml",)
 FORCED_GROUPS = ("forced",)
 ORDER_GROUPS = ("order",)
 RECAPTURE_GROUPS = CAPTURE_GROUPS + FORCED_GROUPS + ORDER_GROUPS
+# ``probes`` only (N31, 2026-11-15): the review script's error probes, before
+# any object is seeded.
+PROBE_GROUPS = ("review_probes",)
+PROBE_DESIGN = (
+    "one disposable Core, onboarded with its two tokens and no seeded object; the review "
+    "script's four error probes with each version, one peer at a time; no Core restart")
 RECAPTURE_DESIGN = (
     "one disposable Core, seeded once; the order group with each version, one peer at a "
     "time, before one Core restart; after that restart and no other, each version back to "
@@ -968,7 +979,8 @@ INSTALL_MARKERS = ("No module named", "Unable to install", "Requirements for",
                    "Attempting install")
 NOT_BUILT = (
     "profile B overlay (component tree, package copy and the two N32 wheels): built only "
-    "by ``run --profile B``, one version per run; profile A and ``recapture`` have none",
+    "by ``run --profile B``, one version per run; profile A, ``recapture`` and "
+    "``probes`` have none",
     "Supervisor facade (form 2): not built; reads that need a Supervisor record what the "
     "peer returns without one",
     "token revocation between calls (P4): not exercised; the unknown-identifier cases only",
@@ -1165,10 +1177,11 @@ def calls_summary(path):
             "arguments_built_with_policy": ARGUMENT_POLICY}
 
 
-def run_calls(holder, version, name, groups, out_dir):
+def run_calls(holder, version, name, groups, out_dir, seeded=True):
+    seed = ["--seed", "/out/seed/seed.json"] if seeded else []
     done = command(*s4.exec_argv(
         holder, "/lane/scripts/core_read_replay_calls.py", "--endpoint", s4.ENDPOINT,
-        "--seed", "/out/seed/seed.json", "--out", f"/out/{version}/{name}",
+        *seed, "--out", f"/out/{version}/{name}",
         "--policy", ARGUMENT_POLICY, "--groups", ",".join(groups)),
         check=False, timeout=CALLS_SECONDS)
     if done.returncode:
@@ -1294,6 +1307,25 @@ def recapture(wanted, run_id, run_dir, upstream, holder_id, core_image, tokens):
                                      RECAPTURE_GROUPS, out_dir)
         remove_peer(version, wanted, run_id, run_dir / f"peer-{version}-after-core-restart.log")
         captures["after_core_restart"][version] = section
+    return captures
+
+
+def probe_versions(wanted, run_id, run_dir, upstream, holder_id, tokens):
+    """N31: the review probes with each version, one peer at a time, nothing seeded.
+
+    A step that fails raises; nothing is retried, and a later version never
+    starts after an earlier one failed.
+    """
+    holder, out_dir = wanted["holder"], run_dir / "out"
+    captures = {"design": PROBE_DESIGN}
+    for version in VERSIONS:
+        section = start_peer(version, wanted, run_id, upstream[version], holder_id, tokens,
+                             run_dir=run_dir)
+        (out_dir / version).mkdir(mode=0o700)
+        section["calls"] = run_calls(holder, version, "review-probes", PROBE_GROUPS, out_dir,
+                                     seeded=False)
+        remove_peer(version, wanted, run_id, run_dir / f"peer-{version}.log")
+        captures[version] = section
     return captures
 
 
@@ -1595,7 +1627,7 @@ def execute(args, launch):
     """Body of ``selftest``, ``run`` and ``recapture``; everything before mkdir is preflight."""
     if not __debug__:
         raise Refusal("assertions_required")
-    capture = args.command in ("run", "recapture")
+    capture = args.command in ("run", "recapture", "probes")
     profile_b = capture and args.profile == "B"
     options = [getattr(args, key, None) for key in ("version", "wheel_dir", "upstream_git")]
     if not profile_b and any(item is not None for item in options):
@@ -1736,8 +1768,11 @@ def execute(args, launch):
             s4.inspect_owned(wanted["core"], run_id) or {}, holder_id, core_image,
             wanted["volume"], overlay=profile_b)
         network["before_seed"] = posture(wanted)
+        # ``probes`` seeds no object: onboarding and the two tokens only (N31).
+        phase = ["--phase", "access"] if args.command == "probes" else []
         seeded = command(*s4.exec_argv(wanted["holder"], "/lane/scripts/core_read_replay_seed.py",
-                                       "--out", "/out/seed"), check=False, timeout=SEED_SECONDS)
+                                       "--out", "/out/seed", *phase),
+                         check=False, timeout=SEED_SECONDS)
         complete, found = seed_output(seeded.stdout)
         tokens.update(found)
         result["seed"] = seed_summary(out_dir / "seed" / "seed-report.json")
@@ -1747,6 +1782,9 @@ def execute(args, launch):
         if args.command == "recapture":
             result["captures"] = recapture(wanted, run_id, run_dir, upstream, holder_id,
                                            core_image, tokens)
+        elif args.command == "probes":
+            result["captures"] = probe_versions(wanted, run_id, run_dir, upstream, holder_id,
+                                                tokens)
         elif profile_b:
             version = args.version
             network["before_component_setup"] = posture(wanted)
@@ -1808,7 +1846,7 @@ def execute(args, launch):
 
 
 COMMANDS = {"inventory": inventory, "selftest": execute, "run": execute,
-            "recapture": execute}
+            "recapture": execute, "probes": execute}
 
 
 def main(argv=None):
@@ -1825,7 +1863,7 @@ def main(argv=None):
             sub.add_argument("--version", choices=VERSIONS)
             sub.add_argument("--wheel-dir", type=Path)
             sub.add_argument("--upstream-git", type=Path)
-        elif name == "recapture":
+        elif name in ("recapture", "probes"):
             sub.set_defaults(profile="A")  # Profile A only; there is no option.
     args = parser.parse_args(argv)
     launch = {"command": args.command, "run_dir": str(args.run_dir), "started": now(),

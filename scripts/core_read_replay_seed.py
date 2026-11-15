@@ -13,7 +13,8 @@ Outputs:
 - standard output: one JSON line with the two tokens, for the host process to
   hold in memory.  The tokens are written nowhere else.
 
-``seed.json`` is written only when every step succeeded.  Core's replies are
+``seed.json`` is written only when every step succeeded.  ``--phase access``
+runs onboarding and the two tokens only and writes no ``seed.json``.  Core's replies are
 untrusted data: they are parsed as JSON and compared, never evaluated.
 
 The host harness imports this module for its constants, so everything outside
@@ -465,12 +466,22 @@ STEPS = (("onboard", onboard, True), ("ready", ready, True),
          ("statistics", statistics, False), ("readback", readback, False))
 
 
-async def seed(core, *, second_client, sleep=asyncio.sleep, boot_polls=240):
-    """Run every step.  Returns ``(report, seed values or None, tokens)``."""
+# ``access`` (N31, 2026-11-15): onboarding and the two tokens only, so the
+# review probes meet a Core with no seeded object.  It writes no seed file.
+ACCESS_STEPS = ("onboard", "ready", "administrator_token", "ordinary_user_token")
+PHASES = ("all", "access")
+
+
+async def seed(core, *, second_client, sleep=asyncio.sleep, boot_polls=240, phase="all"):
+    """Run every step of ``phase``.  Returns ``(report, seed values or None, tokens)``."""
+    if phase not in PHASES:
+        raise SeedError("unknown_phase")
+    steps = STEPS if phase == "all" else tuple(item for item in STEPS
+                                               if item[0] in ACCESS_STEPS)
     ctx = {"core": core, "second_client": second_client, "sleep": sleep,
            "boot_polls": boot_polls, "seed": {}, "tokens": {}}
     rows, stopped = [], False
-    for name, step, needed in STEPS:
+    for name, step, needed in steps:
         if stopped:
             rows.append({"step": name, "status": "not_run"})
             continue
@@ -484,23 +495,26 @@ async def seed(core, *, second_client, sleep=asyncio.sleep, boot_polls=240):
                          "failure_type": type(exc).__name__})
             stopped = needed
     complete = (all(row["status"] == "ok" for row in rows)
-                and set(ctx["seed"]) == set(SEED_KEYS))
-    report = {"seed_format_version": 1, "core_version": CORE_VERSION, "steps": rows,
+                and (phase == "access" or set(ctx["seed"]) == set(SEED_KEYS)))
+    report = {"seed_format_version": 1, "core_version": CORE_VERSION, "phase": phase,
+              "steps": rows,
               "all_steps_ok": complete,
               "tokens_issued": sorted(ctx["tokens"]),
               "token_kind": "long-lived access tokens minted in this disposable Core; "
                             "held in memory by the host, written to no file"}
-    values = {key: ctx["seed"][key] for key in SEED_KEYS} if complete else None
+    values = ({key: ctx["seed"][key] for key in SEED_KEYS}
+              if complete and phase == "all" else None)
     return report, values, ctx["tokens"]
 
 
-async def run(out_dir):
+async def run(out_dir, phase="all"):
     import aiohttp  # The holder image carries it; the host never reaches this line.
 
     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=60)) as session:
         core = AiohttpCore(session)
         try:
-            report, values, tokens = await seed(core, second_client=lambda: AiohttpCore(session))
+            report, values, tokens = await seed(core, second_client=lambda: AiohttpCore(session),
+                                                phase=phase)
         finally:
             await core.disconnect()
     write(out_dir, report, values)
@@ -520,8 +534,9 @@ def write(out_dir, report, values):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--phase", choices=PHASES, default="all")
     args = parser.parse_args(argv)
-    report, tokens = asyncio.run(run(args.out))
+    report, tokens = asyncio.run(run(args.out, args.phase))
     # The only place the tokens appear: this process's standard output.
     sys.stdout.write(json.dumps({"all_steps_ok": report["all_steps_ok"], "tokens": tokens},
                                 sort_keys=True) + "\n")

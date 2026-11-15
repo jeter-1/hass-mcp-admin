@@ -12,6 +12,10 @@ upstream service tool, naming a service that exists in no Core, because the
 ``VALIDATION_INVALID_JSON`` result has no other source the lane can reach.
 Upstream refuses it at its parse step, before any dispatch.
 
+The ``review_probes`` group is the review script's four error probes word for
+word (N31, 2026-11-15).  They reference no seed value, so ``--seed`` may be
+left out when only that group is selected.
+
 The capture runs before a 9.2 adapter exists, so the wire arguments for both
 upstream versions are built from one reviewed policy version (``--policy``)
 and recorded with every result.  The replay tests then assert that the 9.2
@@ -142,6 +146,23 @@ CASES: tuple[dict[str, Any], ...] = (
      "arguments": {"entity_id": "sensor." + UNKNOWN_ID}},
     {"id": "p4-absent-entity", "group": "errors", "tool": "ha_get_entity",
      "arguments": {"entity_id": "sensor." + UNKNOWN_ID}},
+    # N31 (2026-11-15): the review script's four error probes, word for word
+    # (``review_upstream_read_release.ERROR_PROBES``), sent as written.  Only
+    # the lane's ``probes`` command selects them, on a Core that holds the
+    # onboarding and the two tokens and no seeded object, so the automation
+    # list is empty.  They need no seed value.  The id is ``e-`` and the probe
+    # name with hyphens.
+    {"id": "e-invalid-search", "group": "review_probes", "kind": "upstream",
+     "tool": "ha_search", "arguments": {"search_types": []}},
+    {"id": "e-missing-state", "group": "review_probes", "kind": "upstream",
+     "tool": "ha_get_state",
+     "arguments": {"entity_id": "sensor.compatibility_review_missing_state"}},
+    {"id": "e-missing-automation", "group": "review_probes", "kind": "upstream",
+     "tool": "ha_config_get_automation",
+     "arguments": {"identifier": "compatibility_review_missing_automation"}},
+    {"id": "e-missing-registry-entity", "group": "review_probes", "kind": "upstream",
+     "tool": "ha_get_entity",
+     "arguments": {"entity_id": "sensor.compatibility_review_missing_registry_entity"}},
     # P5 and P9: transport observations.
     {"id": "t-large-services", "group": "transport", "kind": "upstream",
      "tool": "ha_list_services", "arguments": {"detail_level": "full"}},
@@ -370,7 +391,9 @@ def run(endpoint: str, planned: list[dict[str, Any]], out_dir: Path, *, idle_sec
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--endpoint", required=True)
-    parser.add_argument("--seed", type=Path, required=True)
+    # Absent only for groups with no seed reference (``review_probes``); a
+    # seed reference without it is ``seed_value_missing``.
+    parser.add_argument("--seed", type=Path)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--policy", required=True)
     parser.add_argument("--groups", required=True)
@@ -379,7 +402,7 @@ def main(argv: list[str] | None = None) -> int:
     groups = args.groups.split(",")
     if not groups or any(group not in GROUPS for group in groups):
         raise SystemExit("unknown group")
-    seed = json.loads(args.seed.read_text(encoding="utf-8"))
+    seed = json.loads(args.seed.read_text(encoding="utf-8")) if args.seed else {}
     planned = plan(args.policy, groups, seed)
     index = run(args.endpoint, planned, args.out, idle_seconds=args.idle_seconds)
     (args.out / "_index.json").write_bytes(raw.serialize(index))

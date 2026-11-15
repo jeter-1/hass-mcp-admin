@@ -691,7 +691,7 @@ class ProfileTests(unittest.TestCase):
 
     def test_the_groups_are_the_calls_modules_and_profile_a_leaves_the_yaml_read_out(self):
         every = (lane.CAPTURE_GROUPS + lane.RESTART_GROUPS + lane.PROFILE_B_GROUPS
-                 + lane.FORCED_GROUPS + lane.ORDER_GROUPS)
+                 + lane.FORCED_GROUPS + lane.ORDER_GROUPS + lane.PROBE_GROUPS)
         self.assertEqual(sorted(every), sorted(lane.calls_step.GROUPS))
         self.assertEqual(len(every), len(set(every)))
         self.assertNotIn("yaml", lane.CAPTURE_GROUPS + lane.RESTART_GROUPS)
@@ -706,11 +706,19 @@ class ProfileTests(unittest.TestCase):
         forced = [case for case in lane.calls_step.CASES if case["group"] == "forced"]
         self.assertEqual([case["id"] for case in forced], ["f-invalid-json"])
 
+    def test_only_probes_selects_the_review_probes(self):
+        others = set(lane.CAPTURE_GROUPS + lane.RESTART_GROUPS + lane.PROFILE_B_GROUPS
+                     + lane.RECAPTURE_GROUPS)
+        self.assertFalse(others & set(lane.PROBE_GROUPS))
+        self.assertEqual(lane.PROBE_GROUPS, ("review_probes",))
+
     def test_run_needs_a_profile_and_selftest_takes_none(self):
         common = ["--run-dir", "synthetic", "--launch-log", "synthetic"]
         for argv in (["run", *common], ["run", *common, "--profile", "C"],
                      ["selftest", *common, "--profile", "A"],
-                     ["recapture", *common, "--profile", "A"]):
+                     ["recapture", *common, "--profile", "A"],
+                     ["probes", *common, "--profile", "A"],
+                     ["probes", *common, "--version", "9.2.0"]):
             with self.subTest(argv=argv), contextlib.redirect_stderr(io.StringIO()):
                 with self.assertRaises(SystemExit):
                     lane.main(argv)
@@ -844,12 +852,14 @@ class FakeDocker:
                 encoding="utf-8")
             return 0, b""
         if script and script.endswith("core_read_replay_seed.py"):
-            self.events.append("seed")
+            access = "--phase" in rest and rest[rest.index("--phase") + 1] == "access"
+            self.events.append("seed:access" if access else "seed")
             out = self.host_path(rest[rest.index("--out") + 1] + "/x").parent
             (out / "seed-report.json").write_text(json.dumps({
                 "all_steps_ok": self.seed_ok, "tokens_issued": list(lane.TOKEN_NAMES),
+                "phase": "access" if access else "all",
                 "steps": [{"step": "onboard", "status": "ok"}]}), encoding="utf-8")
-            if self.seed_ok:
+            if self.seed_ok and not access:
                 (out / "seed.json").write_text("{}", encoding="utf-8")
             tokens = {"administrator": SYNTHETIC_TOKEN, "ordinary_user": OTHER_TOKEN}
             line = json.dumps({"all_steps_ok": self.seed_ok, "tokens": tokens}) + "\n"
@@ -859,7 +869,8 @@ class FakeDocker:
                 self.events.append("calls-help")
                 return 0, b""
             target = rest[rest.index("--out") + 1]
-            self.events.append("calls:" + target + ":" + rest[rest.index("--groups") + 1])
+            self.events.append("calls:" + target + ":" + rest[rest.index("--groups") + 1]
+                               + ("" if "--seed" in rest else ":no-seed"))
             if target in self.calls_fail:
                 return 1, b""
             out = self.host_path(target)
@@ -1112,6 +1123,65 @@ class LaneFlowTests(unittest.TestCase):
         self.assertEqual(docker.events.count("restart:hamcp371-s6-recapture-core"), 1)
         self.assertIs(receipt["cleanup"]["clean"], True)
         self.assertEqual((docker.containers, docker.volumes), ({}, {}))
+
+    def test_probes_run_with_both_versions_on_a_core_with_no_seeded_object(self):
+        docker = FakeDocker()
+        code, launch, receipt, run_dir = self.launch(docker, "probes")
+        self.assertEqual((code, launch["result"], receipt["result"]), (0, "PASS", "PASS"))
+        self.assertEqual((receipt["command"], receipt["profile"]), ("probes", "A"))
+        self.assertEqual(sorted(receipt["captures"]), ["9.1.2", "9.2.0", "design"])
+        self.assertEqual(receipt["captures"]["design"], lane.PROBE_DESIGN)
+        events = docker.events
+        # The access phase only: no full seed, no seed file, before the first peer.
+        self.assertEqual([item for item in events if item.startswith("seed")], ["seed:access"])
+        self.assertFalse((run_dir / "out" / "seed" / "seed.json").exists())
+        self.assertLess(events.index("seed:access"),
+                        events.index("run:hamcp371-s6-probes-peer-9-1-2"))
+        # Each version once, one peer at a time, the probe group alone and no seed file.
+        peers = [item for item in events if item.startswith(("run:", "rm:")) and "-peer-" in item]
+        self.assertEqual(peers, [
+            "run:hamcp371-s6-probes-peer-9-1-2", "rm:hamcp371-s6-probes-peer-9-1-2",
+            "run:hamcp371-s6-probes-peer-9-2-0", "rm:hamcp371-s6-probes-peer-9-2-0"])
+        self.assertEqual([item for item in events if item.startswith("calls:")], [
+            "calls:/out/9.1.2/review-probes:review_probes:no-seed",
+            "calls:/out/9.2.0/review-probes:review_probes:no-seed"])
+        self.assertNotIn("restart:hamcp371-s6-probes-core", events)
+        for version, number in (("9.1.2", 1), ("9.2.0", 2)):
+            capture = receipt["captures"][version]
+            self.assertEqual(capture["peer_flags"], dict(lane.PRODUCTION_FLAGS))
+            self.assertEqual(capture["calls"]["groups"], ["review_probes"])
+            self.assertLess(events.index(f"catalog:/out/catalog/peer-{version}-{number}.json"),
+                            events.index(f"calls:/out/{version}/review-probes:review_probes:"
+                                         "no-seed"))
+        self.assertEqual(receipt["cleanup"]["clean"], True)
+        self.assertEqual((docker.containers, docker.volumes), ({}, {}))
+        self.assertEqual({token for _argv, token in docker.forwarded}, {SYNTHETIC_TOKEN})
+        for path in run_dir.rglob("*"):
+            if path.is_file():
+                self.assertNotIn(SYNTHETIC_TOKEN.encode(), path.read_bytes())
+                self.assertNotIn(OTHER_TOKEN.encode(), path.read_bytes())
+        sums = (run_dir / "SHA256SUMS").read_text(encoding="utf-8")
+        for name in ("receipt.json", "peer-9.1.2.log", "peer-9.2.0.log",
+                     "out/seed/seed-report.json", "out/9.2.0/review-probes/_index.json"):
+            self.assertIn("  " + name + "\n", sums)
+
+    def test_a_failed_probe_step_withholds_and_the_later_version_never_starts(self):
+        docker = FakeDocker(calls_fail={"/out/9.1.2/review-probes"})
+        code, launch, receipt, _run_dir = self.launch(docker, "probes")
+        self.assertEqual((code, launch["result"], receipt["failure"]),
+                         (1, "WITHHELD", "calls_step_failed"))
+        self.assertEqual(len([item for item in docker.events if item.startswith("calls:")]), 1)
+        self.assertNotIn("run:hamcp371-s6-probes-peer-9-2-0", docker.events)
+        self.assertIs(receipt["cleanup"]["clean"], True)
+        self.assertEqual((docker.containers, docker.volumes), ({}, {}))
+
+    def test_a_probe_run_whose_access_phase_fails_starts_no_peer(self):
+        docker = FakeDocker(seed_ok=False)
+        code, launch, receipt, _run_dir = self.launch(docker, "probes")
+        self.assertEqual((code, launch["result"], receipt["failure"]),
+                         (1, "WITHHELD", "seed_incomplete"))
+        self.assertFalse([item for item in docker.events if "-peer-" in item])
+        self.assertIs(receipt["cleanup"]["clean"], True)
 
     def test_a_peer_advertising_a_disabled_tool_withholds_before_its_calls(self):
         docker = FakeDocker(catalog=lambda container: (
