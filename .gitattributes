@@ -39,4 +39,5 @@ docs/evidence/hamcp371/s8/app-reads/raw/inspect-tag-aarch64.txt -text -whitespac
 docs/evidence/hamcp371/s8/app-reads/raw/inspect-tag-amd64.txt -text -whitespace
 docs/evidence/hamcp371/s8/gate/probes-1.txt -text -whitespace
 docs/evidence/hamcp371/s8/gate/profiles-1.txt -text -whitespace
+docs/evidence/hamcp371/s8/gate/profiles-2.txt -text -whitespace
 docs/evidence/hamcp371/s8/gate/pull-app-9.2.0.txt -text -whitespace

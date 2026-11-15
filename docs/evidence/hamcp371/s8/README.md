@@ -257,6 +257,93 @@ check passed on the run directory, the pull directory, both gate receipts,
 both logs and the launch log; `s6/comparison/scan.py` over 25 files gave 0
 hits.
 
+### Q9: the harness fix and profiles-2
+
+Ruling Q9 (a), 2026-11-15 09:35 CST. Harness fix `4a5ec6f9`, committed on its
+own: every filesystem-on profile now passes `ENABLE_BETA_FEATURES=true` and
+`HAMCP_ENABLE_FILESYSTEM_TOOLS=true`. Filesystem-off is unchanged, and the
+profiles-1 App filesystem-off result stands. The test host now applies the
+filesystem flag only with beta on, as upstream does. A new test asserts that
+both flags reach every filesystem-on peer and its recorded definition.
+Mutation check (`q9-mutation/summary.txt`, 09:45 CST, in a `git clone
+--shared` outside the task worktree): with the beta flag removed from
+`profile_environment`, 5 of 33 tests fail, including the new flags test. The
+Fast tier passed with `-TestTarget tests/test_upstream_catalog_capture_local.py`
+(33 tests OK).
+
+Profiles run `profiles-2`, 2026-11-15 09:46:41 to 09:47:21 CST, unit
+`hamcp371-s8-profiles-2` (admission: no other heavy job, 12.6 GB available,
+load 0.21, 60.1 GB root free; `gate/profiles-2.txt`). Harness `4a5ec6f9`,
+clean checkout, `--pull never`, one peer at a time, `--network none` with
+loopback only (egress errno 101), the repository's synthetic fixture. Result
+**`PASS`**, cleanup proven. This was the one authorized launch.
+`profiles-2/check_profiles2.py` rechecks it from committed files only; its
+output is `profiles-2/check-output.txt` (PASS).
+
+| Profile | Tools | Catalogue fingerprint | Capture sha256 | Two captures identical |
+|---|---|---|---|---|
+| `control-standalone-9.1.2-fs-off` | 77 | `7c8ee48b…` | `ce522211…` | yes |
+| `control-standalone-9.1.2-fs-on` | 82 | `5f27a09a…` | `28fcc94d…` | yes |
+| `standalone-9.2.0-fs-on` | 82 | `11115f1c…` | `8a4d3770…` | yes |
+| `app-9.2.0-fs-on` | 82 | `11115f1c…` | `8a4d3770…` | yes |
+
+The control: each 9.1.2 profile reproduces its committed HAMCP-351 response on
+`main` (`docs/evidence/hamcp351/catalogs/standalone-fs-off-tools-response.json`
+and `standalone-fs-on-tools-response.json`). **Method used: the review
+script's fingerprints, not raw bytes.** These are the raw `catalog_fingerprint`
+(tools sorted by name) and the strict, order-preserving
+`schema_fingerprint({"tools": …})` from
+`ha_mcp_engineering.upstream_tool_policy`, which
+`scripts/review_upstream_read_release.py` uses. The check also requires the
+full `tools/list` result to be equal. Raw bytes cannot be compared: the wire
+response carries per-run fields (JSON-RPC id 2 against the committed 1,
+event-stream framing, the Date header), and HAMCP-351 committed a
+re-serialized, indented file. Values:
+
+- fs-off: raw `7c8ee48b…`, strict `c8c44ff3…`. These equal the HAMCP-351
+  README's 9.1.2 fingerprints.
+- fs-on: raw `5f27a09a…`, strict `0783e98b…`.
+
+The control profiles ran first, but the comparisons were made after all four
+profiles.
+
+Disclosed: the 9.1.2 fs-off control records `matches_committed_capture: false`,
+as S4 did for the same image (`s4/ha-mcp-9.1.2/receipt.json`). That field
+compares the capture file's sha256 with the registry row's `capture_sha256`,
+which hashes the registry's own capture format. The capture here is
+`ce522211…`, byte-identical to the S4 9.1.2 capture. Its catalogue
+fingerprint `7c8ee48b…` is the reviewed registry value, which is the match S4
+relied on.
+
+Result for the 9.2.0 App: with the filesystem tools on, the amd64 App 9.2.0
+catalogue is byte-identical to the standalone 9.2.0 catalogue (82 tools,
+capture `8a4d3770…`). With them off it is byte-identical to the standalone S4
+capture (profiles-1, 77 tools). With the filesystem tools on, 9.2.0 adds
+`ha_config_get_yaml`, `ha_delete_file`, `ha_list_files`, `ha_read_file` and
+`ha_write_file`. This is the missing standalone 9.2.0 filesystem-on baseline.
+It is committed as `profiles-2/out/standalone-9.2.0-fs-on/capture.json`, the
+first of the two identical captures, with its `observation.json`.
+
+Profile convention (ruling Q9). This registry capture follows the HAMCP-351
+profile convention: filesystem on, with no tools disabled. Production and the
+SR lane run the D1 flags instead (`scripts/core_read_replay_capture_local.py`
+`PRODUCTION_FLAGS`: beta on, filesystem on, YAML config editing off,
+`DISABLED_TOOLS=ha_write_file,ha_delete_file`). The ruling gives 80 tools
+advertised for D1. That is the 82 here minus the two disabled tools, an
+inference not measured in this run. The two are distinct on purpose.
+
+Committed: `profiles-2/receipt.json`, `profiles-2/SHA256SUMS` (all 21 files of
+the run directory, computed after the run), both control observations, the
+standalone 9.2.0 filesystem-on capture and observation, the gate receipt and
+the launch log. Not committed: the App fs-on capture (the same sha256 as the
+committed standalone one), the other observations, and the peer and fixture
+logs. They stay in the ignored `.artifacts/hamcp371-s8/profiles-2/`, listed in
+`SHA256SUMS`. Secret checks before the copy: the leak check passed on the run
+directory, its log, the sums, the gate receipt and the launch log;
+`s6/comparison/scan.py` gave 0 hits on the committed files. The raw mutation
+output prints the synthetic fixture token in an assertion message, so only its
+summary is committed.
+
 ### What is committed and what is not
 
 Committed, each byte-identical to the run directory (checked against the run's
