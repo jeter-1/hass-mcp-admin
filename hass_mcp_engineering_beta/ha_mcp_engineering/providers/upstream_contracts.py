@@ -460,7 +460,9 @@ EXACT_9_1_PROHIBITED_ARGUMENTS = frozenset({"describe"})
 # HAMCP-351: exact 9.1.2 (bab615df) advertises the byte-identical getter
 # descriptor, so the same fingerprint, prohibited argument and allowed
 # properties bind it. Any other release keeps the base sets.
-EXACT_9_1_DASHBOARD_RELEASES = frozenset({"9.1.0", "9.1.2"})
+# HAMCP-371 SB: exact 9.2.0 (51e3aac7) advertises the byte-identical getter
+# descriptor too (S4 diff; stable_hash 4b3ee50f...), so it joins this set.
+EXACT_9_1_DASHBOARD_RELEASES = frozenset({"9.1.0", "9.1.2", "9.2.0"})
 _EXACT_9_1_ANNOTATIONS = {
     "readOnlyHint": True,
     "destructiveHint": False,

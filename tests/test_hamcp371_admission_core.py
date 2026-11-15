@@ -5,9 +5,10 @@ These tests pin the S8 admission core:
 * the exact reviewed 9.2.0 identity (index, per-platform manifests, image
   revision, source commit, entry id), with 9.1.2's provider dispositions and
   every other registry entry unchanged;
-* the 9.2.0 dashboard stays "admitted" with a quarantined attestation, and the
-  dashboard provider refuses while it is quarantined (07:40/08:05 Q8 ruling;
-  SB replaces this with a positive test once the attestation is reviewed);
+* the 9.2.0 dashboard is "admitted" with a reviewed attestation (Q8 ruling;
+  quarantined at S8, reviewed at SB): the provider authority admits 9.2.0, and
+  a quarantined attestation, a changed setter descriptor or an unreviewed
+  version still refuses;
 * the separate 9.2.0 read-adapter module: its own token, source commit and
   wire fingerprints, a loader gate that refuses crossed tokens and stale
   fingerprints, and the gateway helper that sends only 9.2.0-token entries to
@@ -36,6 +37,7 @@ import unittest
 from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "hass_mcp_engineering_beta"), str(ROOT), str(ROOT / "tests")]
@@ -55,10 +57,12 @@ from ha_mcp_engineering.ha_mcp_readmission.registry import (  # noqa: E402
 )
 from ha_mcp_engineering.history_slices import contracts as history_contracts  # noqa: E402
 from ha_mcp_engineering.history_slices import service as history_service  # noqa: E402
+from ha_mcp_engineering.providers import upstream_dashboard as dashboard_module  # noqa: E402
 from ha_mcp_engineering.providers import upstream_read_gateway as gateway_module  # noqa: E402
 from ha_mcp_engineering.providers import upstream_reads_9_1 as reads_9_1  # noqa: E402
 from ha_mcp_engineering.providers import upstream_reads_9_2 as reads_9_2  # noqa: E402
 from ha_mcp_engineering.providers import upstream_yaml_reader as yaml_reader  # noqa: E402
+from ha_mcp_engineering.providers.upstream_contracts import load_attestations  # noqa: E402
 from ha_mcp_engineering.providers.upstream_dashboard import UpstreamDashboardProvider  # noqa: E402
 from ha_mcp_engineering.providers.upstream_read_gateway import UpstreamReadGateway  # noqa: E402
 from ha_mcp_engineering.request_context import begin_request, end_request  # noqa: E402
@@ -66,8 +70,10 @@ from ha_mcp_engineering.signed_registry.models import RegistryValidationError  #
 from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
     USED_TOOL_ADMISSION_RELEASES,
     UpstreamToolPolicyError,
+    _dashboard_attestation_projection,
     load_reviewed_upstream_release_registry,
     load_upstream_tool_policy,
+    schema_fingerprint,
 )
 from signed_registry_fixtures import NOW, RegistrySigner  # noqa: E402
 from support.ha_mcp_redirect_peer import RedirectPeer  # noqa: E402
@@ -88,6 +94,7 @@ PLATFORMS_920 = {
 }
 REVISION_920 = "4d7148309af7e4d3da95e16ced8bb67d6a43b9c1"
 SOURCE_920 = "51e3aac788482a081807591cd5d58d07dc4e540b"
+ENTRY_920 = "ha-mcp-v9.2.0-9de5bf6c"
 SOURCE_912 = "bab615dfc90cc510f5e19a9118707d0fae03a37c"
 ERROR_AGGREGATE = "4ed5b1b4c0aaad0036b4625206e96739b40fc83ec1c944754fef1ed667a10437"
 # sha256 of the canonical JSON of every registry release other than 9.2.0, as
@@ -143,31 +150,77 @@ class RegistryIdentityTests(unittest.TestCase):
         self.assertEqual(REGISTRY.default_version, "7.14.1")
 
 
-class DashboardQuarantineTests(unittest.TestCase):
-    """Q8 (07:40, amended 08:05): admitted disposition, quarantined attestation."""
+class DashboardAdmissionTests(unittest.TestCase):
+    """Q8 (07:40, amended 08:05), at SB: the reviewed 9.2.0 attestation admits."""
 
-    def test_attestation_is_quarantined_with_null_fields(self):
-        release = REGISTRY.by_version["9.2.0"]
+    @staticmethod
+    def _handshake(version="9.2.0", tools=None):
+        return McpDashboardHandshake(
+            protocol_version="2025-03-26", server_name="ha-mcp", server_version=version,
+            tools=tuple(useful.reviewed_catalog(version) if tools is None else tools),
+            connection_latency_ms=1.0)
+
+    def test_attestation_is_reviewed_like_912(self):
+        release, base = REGISTRY.by_version["9.2.0"], REGISTRY.by_version["9.1.2"]
         self.assertEqual(release.provider_disposition("dashboard"), "admitted")
-        self.assertEqual(release.dashboard_attestation_status, "quarantined")
-        self.assertIsNone(release.dashboard_attestation_entry_id)
-        self.assertIsNone(release.dashboard_attestation_fingerprint)
-        self.assertIsNone(release.dashboard_compiled_constraints_fingerprint)
-        self.assertEqual(REGISTRY.by_version["9.1.2"].dashboard_attestation_status, "reviewed")
+        self.assertEqual(release.dashboard_attestation_status, "reviewed")
+        self.assertEqual(base.dashboard_attestation_status, "reviewed")
+        self.assertEqual(release.dashboard_attestation_entry_id, ENTRY_920)
+        # The registry fingerprints are those of the built-in attestation entry.
+        attestation = {a.upstream_version: a for a in load_attestations()}["9.2.0"]
+        self.assertEqual(attestation.entry_id, ENTRY_920)
+        self.assertEqual(attestation.source_commit, SOURCE_920)
+        self.assertEqual(release.dashboard_attestation_fingerprint,
+                         schema_fingerprint(_dashboard_attestation_projection(attestation)))
+        self.assertEqual(release.dashboard_compiled_constraints_fingerprint,
+                         base.dashboard_compiled_constraints_fingerprint)
+        self.assertNotEqual(release.dashboard_attestation_fingerprint,
+                            base.dashboard_attestation_fingerprint)
 
-    def test_920_dashboard_refuses_while_quarantined(self):
-        handshake = McpDashboardHandshake(
-            protocol_version="2025-03-26", server_name="ha-mcp", server_version="9.2.0",
-            tools=tuple(useful.reviewed_catalog("9.2.0")), connection_latency_ms=1.0)
+    def test_920_dashboard_provider_authority_admits(self):
+        provider = UpstreamDashboardProvider()
+        authority = provider._dashboard_provider_authority(self._handshake())
+        self.assertIn("evidence_hash", authority)
+        self.assertEqual(authority["upstream_version"], "9.2.0")
+        self.assertEqual(authority["compatibility_entry"], ENTRY_920)
+        self.assertEqual(authority["source_commit"], SOURCE_920)
+        self.assertEqual(provider._optional_dashboard_provider_authority(self._handshake()),
+                         authority)
+        # 9.1.2 still admits, under its own authority.
+        reviewed = provider._dashboard_provider_authority(self._handshake("9.1.2"))
+        self.assertEqual(reviewed["upstream_version"], "9.1.2")
+        self.assertNotEqual(reviewed["evidence_hash"], authority["evidence_hash"])
+
+    def test_920_quarantined_attestation_still_refuses(self):
+        release = REGISTRY.by_version["9.2.0"]
+        quarantined = replace(release, dashboard_attestation_status="quarantined")
+        registry = replace(REGISTRY, releases=tuple(
+            quarantined if item.version == "9.2.0" else item for item in REGISTRY.releases))
+        provider = UpstreamDashboardProvider()
+        with patch.object(dashboard_module, "load_reviewed_upstream_release_registry",
+                          return_value=registry):
+            with self.assertRaises(DashboardTransportError) as caught:
+                provider._dashboard_provider_authority(self._handshake())
+            self.assertIsNone(provider._optional_dashboard_provider_authority(self._handshake()))
+        self.assertEqual(caught.exception.category, "upstream_version_mismatch")
+
+    def test_920_changed_setter_descriptor_refuses(self):
+        tools = deepcopy(list(useful.reviewed_catalog("9.2.0")))
+        setter = next(tool for tool in tools if tool["name"] == "ha_config_set_dashboard")
+        setter["description"] += " HAMCP-371 synthetic change."
         provider = UpstreamDashboardProvider()
         with self.assertRaises(DashboardTransportError) as caught:
-            provider._dashboard_provider_authority(handshake)
+            provider._dashboard_provider_authority(self._handshake(tools=tools))
+        self.assertEqual(caught.exception.category, "reviewed_contract_mismatch")
+        self.assertIsNone(provider._optional_dashboard_provider_authority(
+            self._handshake(tools=tools)))
+
+    def test_unreviewed_version_refuses(self):
+        provider = UpstreamDashboardProvider()
+        with self.assertRaises(DashboardTransportError) as caught:
+            provider._dashboard_provider_authority(replace(
+                self._handshake(), server_version="9.2.1"))
         self.assertEqual(caught.exception.category, "upstream_version_mismatch")
-        self.assertIsNone(provider._optional_dashboard_provider_authority(handshake))
-        # The same refusal path still admits the reviewed 9.1.2 attestation.
-        reviewed = replace(handshake, server_version="9.1.2",
-                           tools=tuple(useful.reviewed_catalog("9.1.2")))
-        self.assertIn("evidence_hash", provider._dashboard_provider_authority(reviewed))
 
 
 class ReadAdapterModuleTests(unittest.TestCase):

@@ -33,6 +33,9 @@ here=docs/evidence/hamcp371/s8/registry
   --strict-tools-response "$here/strict-tools-response-9.2.0.json" \
   --strict-full-contract-fingerprint-model ha-mcp-strict-full-contract-v1 \
   --held-tool ha_get_operation_status \
-  --dashboard-status quarantined \
+  --dashboard-status reviewed \
+  --dashboard-entry-id ha-mcp-v9.2.0-9de5bf6c \
+  --dashboard-attestation-fingerprint 8d67aaf073edf3c7025dfef2e43e35eaa6b08fcfa0d6ddc5328028c0a3036a66 \
+  --dashboard-constraints-fingerprint b020f2f3047499706b03856673880c8932b8e061d0e4ddca3c68574ff87a3be2 \
   --output-policy "$outdir/upstream_tool_policy_9_2_0.json" \
   --output-entry "$outdir/registry-entry-9.2.0.json"

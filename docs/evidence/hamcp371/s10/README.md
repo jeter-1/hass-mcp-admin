@@ -125,7 +125,7 @@ Disclosures:
 
 Ruling T129 (2026-11-15 14:45): (a), with the list made complete first.
 
-**The complete list.** Every `tests/test_*.py` module (500) runs as its own
+**The complete list.** Every `tests/test_*.py` module (499 on the branch, 486 on `main`) runs as its own
 `unittest` process, two at a time, on a `git clone --shared` copy at branch
 HEAD `34abf281` and on one at `main` `e741f2ed`. `34abf281` is the committed
 tree before the T129, D5-B and E1-R edits, so a module that fails there only
@@ -134,12 +134,27 @@ because of a 9.2.0 version, row or file list shows up. Outputs:
 committed). A module that passes on `main` and fails on the branch is rerun
 alone on both trees to rule out a timing flake.
 
-**Status at this commit:** both sweeps are still running (about half done).
-The seven rows below are the modules found so far: the six from the S10
-version-pin sweep, confirmed in the full sweep where it has reached them, and
-`test_read_coverage_matrix`, which fails on `34abf281` and passes on `main`.
-The complete list, and the modules that fail on both trees, go in a follow-up
-commit.
+**Result.** Both sweeps finished: 499 modules ran on `34abf281` and 486 on
+`main`; the 13 branch-only modules were added by HAMCP-371 (the
+`test_hamcp371_*` modules and the replay and capture-tool tests). Seven modules pass
+on `main` and fail on `34abf281`; all seven are below. Six have the 9.2.0
+version, row or file-list cause and were edited; `test_read_coverage_matrix`
+is outside those kinds and stopped. No module fails on `main` and passes on
+the branch.
+
+Also recorded, outside the edit set:
+
+- Fail on both trees, with the same summary on each (outside T129, since they
+  do not pass on `main`; cause not investigated here):
+  `test_hamcp189_expired_pre_intent_deadline` (errors=1),
+  `test_hamcp189_expired_unclaimed_declaration` (errors=1),
+  `test_pr314_delta_cleanup` (failures=2).
+- `test_hamcp371_real_core_replay` fails on `34abf281` (failures=1, errors=2)
+  and is not on `main`. Its failing subtests are the pre-D5-B r12 subtests that
+  D5-B turned into the refusal tests; at the D5-B commit it passes (27 OK).
+- `test_hamcp319_used_tool_exact_admission` passes on both sweep trees and
+  fails after SB, which adds 9.2.0 to `EXACT_GETTER_RELEASES`. It is an SB
+  ruling item, recorded in `sb/README.md`, and is not edited.
 
 | Module | Cause | Kind | Disposition |
 | --- | --- | --- | --- |

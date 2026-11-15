@@ -34,6 +34,23 @@ COMMON_OUTPUT_CONTRACT_FINGERPRINT = (
 )
 
 EXACT_CONTRACTS: Final = {
+    # HAMCP-371 SB: the exact 9.2.0 setter values are the S8 registry row's
+    # tool_contracts entry, from the 9.2.0 capture. Against 9.1.2 only the
+    # input schema (python_transform guard documentation, a prohibited
+    # argument) and so the runtime fingerprint differ (SW section 6, SB README).
+    "9.2.0": ProviderRuntimeEvidence(
+        upstream_version="9.2.0",
+        protocol_version=PROTOCOL_VERSION,
+        compatibility_entry="ha-mcp-v9.2.0-9de5bf6c",
+        source_commit="51e3aac788482a081807591cd5d58d07dc4e540b",
+        tool_name=TOOL_NAME,
+        input_schema_fingerprint="6145e9f0784fa405ac4baa325e4b3337d465e8d93c5c182938475977a1554e9f",
+        annotation_fingerprint="2b578f51b9fc46568405d1dd5569e173449ab9e070ee10fb158b215e690f2d2c",
+        description_fingerprint="77fcd6b40eb45f30bba912e737d2bf3f2458684930429247ca9dd5e1a4b5bdc3",
+        output_contract_fingerprint="f35a0cf0ef896a2236d8419cac8a2d85bfb33d12859af555f9cf7825dc785109",
+        runtime_contract_fingerprint="badd67b1075ce69255eff8531b36fd7f3b5a14d032448b7095e7dbda6e31ce9d",
+        policy_classification="persistent_write",
+    ),
     # HAMCP-351: the exact 9.1.2 setter descriptor is byte-identical to 9.1.0
     # (both /catalog/full captures); only the release identity differs.
     "9.1.2": ProviderRuntimeEvidence(

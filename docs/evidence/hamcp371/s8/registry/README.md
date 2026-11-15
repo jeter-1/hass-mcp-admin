@@ -76,6 +76,18 @@ byte-identical to the original one: both the policy and the entry.
    (`upstream_version_mismatch`) and that 9.1.2 stays reviewed. SB replaces
    this with the attestation from the capture. S13 checks that the row and
    the attestation equal 9.1.2's before SR.
+   **SB (Q8 ruling, done):** `run_candidate.sh` now writes the attestation
+   as `reviewed` (entry `ha-mcp-v9.2.0-9de5bf6c`, attestation fingerprint
+   `8d67aaf0…`, constraints fingerprint `b020f2f3…`, equal to 9.1.2's). The
+   contract review's `dashboard` block gained the four exact-provider fields
+   that `upstream_tool_policy` requires for a reviewed attestation
+   (`exact_provider_review_status`, `provider_identity_model`, and the
+   getter and setter runtime fingerprints taken from the release). The
+   generator stops if the setter fingerprint differs from the F3 provider's
+   9.2.0 row. The contract review does not depend on the dashboard status: a
+   quarantined pass 1 and the reviewed pass 1 give byte-identical reviews.
+   The attestation entry and its provenance are in
+   `docs/evidence/hamcp371/sb/README.md`.
 6. **Release page and provenance.** The v9.2.0 release page listed no assets
    (read 2026-11-15). Only the official OCI images are admitted: the
    standalone index `9de5bf6c…` (amd64 `349a3ec6…`, arm64 `5799ff6f…`) and

@@ -8,10 +8,12 @@ shared ``upstream_dashboard.py`` getter. These tests cover:
   partial sentence kept last and uncounted, and the 999 cap;
 * the gate's wiring through the real getter, the real pinned MCP
   ClientSession and the synthetic 9.1 peer of ``test_hamcp319_dashboard``.
-  The 9.2.0 getter is not reachable end-to-end before SB (the dashboard
-  attestation is quarantined and ``EXACT_GETTER_RELEASES`` has no 9.2.0), so
-  the wiring test patches the module's ``RELEASES`` to the peer's 9.1.2. This
-  proves the call site, not 9.2.0 admission;
+  Before SB the 9.2.0 getter was not reachable end-to-end, so the first
+  wiring tests patch the module's ``RELEASES`` to the peer's 9.1.2 (the call
+  site). Since SB (reviewed 9.2.0 attestation, 9.2.0 in
+  ``EXACT_GETTER_RELEASES``) a 9.2.0 peer reaches the gate unpatched: the
+  peer serves the committed 9.2.0 catalog and the 9.1 reply shape, which the
+  byte-identical 9.2.0 getter descriptor (S4 diff) allows;
 * 9.1 behaviour unchanged: on 8.5.0, 9.1.0 and 9.1.2 ``apply`` is never
   called, and the same injected payload returns no count fields and the
   shipped warnings.
@@ -198,6 +200,22 @@ class GetterGate(dash.Harness):
             got.data["estimated_serialized_size"],
             upstream_dashboard._estimated_configuration_response_size(
                 got.data, got.warnings, got.metadata))
+        self.balanced()
+
+    async def test_920_peer_reaches_the_gate_unpatched(self):
+        with patch.dict(dash.URLS, {"9.2.0": dash.STRICT_URL}), patch.object(
+                dash, "NINE_ONE", (*dash.NINE_ONE, "9.2.0")):
+            got = await self._get(self._peer("9.2.0"))
+            self.assertEqual({k: got.data[k] for k in COUNTS}, dict.fromkeys(COUNTS, 0))
+            self.assertEqual(got.completeness, "complete")
+            got = await self._get(self._peer("9.2.0", self.INJECTED))
+        self.assertEqual({k: got.data[k] for k in COUNTS},
+                         {"fields_withheld": 3, "fields_dropped_by_policy": 0,
+                          "upstream_warnings_replaced": 1})
+        self.assertEqual(got.warnings, [FALLBACK, HINT, keys.REPLACED_WARNING,
+                                        keys.REPLACED_PARTIAL])
+        self.assertEqual(got.completeness, "partial")
+        self.assertNotIn("synthetic-not-a-secret-371", json.dumps([got.data, got.warnings]))
         self.balanced()
 
     async def test_gate_still_fails_closed_on_size(self):

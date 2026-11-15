@@ -156,13 +156,14 @@ SPECIAL = {
     "ha_config_get_dashboard": (
         "Generic delegation unavailable; only the compiled list_dashboards and "
         "get_dashboard_config shapes are constructed; mode, query, describe and "
-        "screenshots are prohibited. The 9.2.0 dashboard attestation is "
-        "quarantined until SB, so the dashboard read refuses 9.2.0."
+        "screenshots are prohibited. The 9.2.0 getter descriptor is "
+        "byte-identical to 9.1.2; its dashboard attestation is reviewed at SB "
+        "(entry ha-mcp-v9.2.0-9de5bf6c)."
     ),
     "ha_config_set_dashboard": (
         "Reachable only through the governed F3 dashboard provider with "
-        "readback verification, which refuses 9.2.0 while its dashboard "
-        "attestation is quarantined (until SB). python_transform and "
+        "readback verification, bound to its exact 9.2.0 setter contract at SB "
+        "with a reviewed dashboard attestation. python_transform and "
         "screenshots stay unreachable."
     ),
     "ha_manage_backup": (
@@ -366,7 +367,7 @@ def _review_text(name, classification, changed):
         if name == "ha_get_history":
             tail = "Refused before dispatch until the S9 9.2.0 history module."
     elif name == "ha_config_set_dashboard":
-        tail = "Governed F3 provider only; refuses 9.2.0 while the attestation is quarantined."
+        tail = "Governed F3 provider only, bound to its exact 9.2.0 setter contract (SB)."
     elif classification == "prohibited":
         tail = "Prohibited; never exposed or dispatched."
     elif classification == "mixed_or_requires_wrapper" and name in WRAPPERS:
@@ -431,6 +432,16 @@ def _contract_review_value(release):
         tool["name"]: tool
         for tool in json.loads((EVIDENCE / "ha-mcp-8.0.0.json").read_bytes())["tools"]
     }["ha_config_get_dashboard"]
+    # SB: the reviewed attestation requires the exact getter/setter provider
+    # review fields (upstream_tool_policy._reviewed_artifact_evidence). The
+    # setter value must equal the F3 provider's exact 9.2.0 contract.
+    from ha_mcp_engineering.f3_dashboard import identity as f3_identity
+    from ha_mcp_engineering.f3_dashboard import provider as f3_provider
+    contracts = release.tool_contracts_by_name
+    getter_runtime = contracts["ha_config_get_dashboard"].runtime_contract_fingerprint
+    setter_runtime = contracts["ha_config_set_dashboard"].runtime_contract_fingerprint
+    if setter_runtime != f3_provider.EXACT_CONTRACTS[VERSION].runtime_contract_fingerprint:
+        raise SystemExit("setter runtime contract differs from the F3 provider row")
     value = {
         "artifact_scope": {
             "addon_artifacts": release.addon_artifact_digests_by_platform,
@@ -458,11 +469,15 @@ def _contract_review_value(release):
             "descriptor_equal_to_8_0_0_standalone": (
                 by_name["ha_config_get_dashboard"] == dashboard_8_0_0
             ),
+            "exact_provider_review_status": "reviewed_getter_setter",
+            "getter_runtime_contract_fingerprint": getter_runtime,
+            "provider_identity_model": f3_identity.PROVIDER_AUTHORITY_MODEL,
             "runtime_fingerprint": normalize_runtime_contract(
                 by_name["ha_config_get_dashboard"],
                 protocol_version=policy_module.REVIEWED_UPSTREAM_PROTOCOL,
                 contract_family=CONTRACT_FAMILY_V3,
             ).runtime_fingerprint,
+            "setter_runtime_contract_fingerprint": setter_runtime,
         },
         "decision": (
             "HAMCP-371 exact ha-mcp 9.2.0 admission (51e3aac7, official OCI "
@@ -473,7 +488,7 @@ def _contract_review_value(release):
             "tools); the exact amd64 App image produced byte-identical "
             "catalogues in both (profiles-1, profiles-2); the arm64 App image "
             "is pinned by digest only. No _meta.ha_mcp.policy block. The "
-            "dashboard attestation is quarantined until SB; ha_get_history "
+            "dashboard attestation is reviewed (SB); ha_get_history "
             "refuses before dispatch until S9; ha_get_hacs_info stays "
             "unsupported; ha_get_operation_status stays held; backup, HACS, "
             "issue-report and integration-write tools stay unreachable. The "
