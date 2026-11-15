@@ -188,6 +188,75 @@ Observations recorded with the withdrawn gate:
   commit, not `51e3aac7`. That binding records `label_evidence` as
   `informational_only`.
 
+### Q7-b: the App pull and the filesystem profiles
+
+Harness commit `809e0540` (`pull --image app` and the `profiles` command of
+`scripts/upstream_catalog_capture_local.py`).
+
+Pull, 2026-11-15 08:23:07 to 08:23:11 CST, unit `hamcp371-s8-pull-app`
+(admission: no other heavy job, 12.6 GB available, load 0.01, 60.4 GB root
+free; `gate/pull-app-9.2.0.txt`). Result `PASS` (`pull-app-9.2.0/receipt.json`):
+`docker pull --quiet --platform linux/amd64
+ghcr.io/homeassistant-ai/ha-mcp-addon-amd64@sha256:928c55d6…9244`, with an
+empty `DOCKER_CONFIG`, after the committed reads verified and the provenance
+gate passed. Nothing was pulled by tag. The local image Id is the image
+manifest digest (containerd image store); the manifest's config digest is
+`sha256:9f7fe819…6867`. Root free space 60.36 GB before, 60.17 GB after.
+`ha-mcp-web` is at `/app/.venv/bin/ha-mcp-web`, seen in the listing of a
+created, never started, `--network none` container, which was then removed.
+
+Profiles run `profiles-1`, 2026-11-15 08:23:44 to 08:24:24 CST, unit
+`hamcp371-s8-profiles-1` (admission: no other heavy job, 12.3 GB available,
+load 0.18, 60.2 GB root free; `gate/profiles-1.txt`). One peer at a time,
+two captures per profile, against the repository's synthetic fixture.
+Result **`WITHHELD`**, failure `fs_on_control_differs_from_hamcp351`,
+cleanup proven. `profiles-1/check_profiles.py` reads only committed files;
+its output is `profiles-1/check-output.txt`.
+
+| Profile | Tools | Capture sha256 | Two captures identical |
+|---|---|---|---|
+| `app-9.2.0-fs-off` | 77 | `ed3d6354…`, the S4 standalone capture | yes |
+| `app-9.2.0-fs-on` | 77 | `ed3d6354…` | yes |
+| `standalone-9.2.0-fs-on` | 77 | `ed3d6354…` | yes |
+| `control-standalone-9.1.2-fs-on` | 77 | `ce522211…` | yes |
+
+**The filesystem flag had no effect in any profile.** The 9.1.2 control,
+run with `HAMCP_ENABLE_FILESYSTEM_TOOLS=true`, returned the HAMCP-351
+filesystem-off `tools/list` result exactly (77 tools), not the filesystem-on
+one (82 tools). The three 9.2.0 "fs-on" profiles also returned the
+filesystem-off catalogue.
+
+Cause (read from the upstream source with lazy fetch off, at both
+`bab615df` (v9.1.2) and `51e3aac7` (v9.2.0)): `HAMCP_ENABLE_FILESYSTEM_TOOLS`
+is a beta sub-flag. `src/ha_mcp/config_registry.py` ("Beta sub-flags gated by
+`enable_beta_features`") applies it only when `ENABLE_BETA_FEATURES` is true.
+The harness's fs-on profiles set the filesystem flag without
+`ENABLE_BETA_FEATURES=true`, so they did not use the HAMCP-351 profile
+definition. This is a harness defect in `809e0540`. The control caught it.
+
+What this run does establish: the amd64 App 9.2.0 image's catalogue with the
+filesystem tools off is byte-identical to the standalone S4 capture
+(`ed3d6354…`, two captures each). What it does not establish: any
+filesystem-on catalogue, App or standalone. Per the standing relaunch rule
+(a failure after start is reported, never re-run), nothing was relaunched.
+
+HAMCP-351 does not record its peer environment in committed evidence. The
+repository's 9.1 lane contract
+(`scripts/exact_image_admission_91_runners.py:1803-1806`) sets
+`ENABLE_TOOL_SEARCH=true`, `ENABLE_BETA_FEATURES=true`,
+`HAMCP_ENABLE_FILESYSTEM_TOOLS` (the one toggle) and `READ_ONLY_MODE=false`
+for the candidate. That this is what HAMCP-351 used is an inference.
+
+Committed: `profiles-1/receipt.json`, `profiles-1/SHA256SUMS` (every file of
+the run directory, computed after the run), the control's
+`observation.json`, the pull receipt, both gate receipts and the launch log.
+Not committed: the other captures, the observations, and the peer and
+fixture logs. They stay in the ignored `.artifacts/hamcp371-s8/` and are
+listed in `profiles-1/SHA256SUMS`. Secret checks before the copy: the leak
+check passed on the run directory, the pull directory, both gate receipts,
+both logs and the launch log; `s6/comparison/scan.py` over 25 files gave 0
+hits.
+
 ### What is committed and what is not
 
 Committed, each byte-identical to the run directory (checked against the run's
