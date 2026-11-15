@@ -33,6 +33,12 @@ Core that is restarted once, the order cases with each version before that
 restart, then each version back to back with the capture, forced and order
 cases after it.  ``run`` never selects the forced or order cases.
 
+Every peer runs with production's tool flags (D1, 2026-11-14): beta features
+and the filesystem tools on, YAML editing off, the two file writes disabled.
+Each start checks that every flag is set once on the peer's container, then
+reads the peer catalog raw and refuses if it advertises ``ha_write_file``,
+``ha_delete_file`` or ``ha_config_set_yaml``, or lacks ``ha_config_get_yaml``.
+
 No pull happens here (``--pull never`` everywhere).  A preflight refusal
 happens before any container, volume or run directory exists.  A failure
 after that point is recorded as WITHHELD and is not a reason to run again for
@@ -805,6 +811,19 @@ TOKEN_VARIABLE = "HOMEASSISTANT_TOKEN"
 TOKEN = re.compile(r"[A-Za-z0-9._\-]{32,4096}")
 TOKEN_NAMES = ("administrator", "ordinary_user")
 CONFIG_NAME = re.compile(r"[a-z_]{1,32}\.yaml")
+# Production's peer tool flags, as Josh confirmed them on 2026-11-14 (D1):
+# beta features and the filesystem tools on, YAML editing off, and the two
+# file writes disabled.  Every launch checks that each one reaches the peer.
+PRODUCTION_FLAGS = (
+    ("ENABLE_BETA_FEATURES", "true"),
+    ("HAMCP_ENABLE_FILESYSTEM_TOOLS", "true"),
+    ("ENABLE_YAML_CONFIG_EDITING", "false"),
+    ("DISABLED_TOOLS", "ha_write_file,ha_delete_file"),
+)
+# With those flags the peer catalog must not advertise these, and must
+# advertise the YAML read, which registers only with the filesystem flag.
+ABSENT_FROM_CATALOG = ("ha_write_file", "ha_delete_file", "ha_config_set_yaml")
+PRESENT_IN_CATALOG = ("ha_config_get_yaml",)
 # What the lane sets on the peer.  The token is passed by name only; no
 # redaction option or variable is set, so redaction is the image default.
 PEER_ENVIRONMENT = (
@@ -813,6 +832,7 @@ PEER_ENVIRONMENT = (
     ("MCP_PORT", str(s4.PEER_PORT)),
     ("MCP_SECRET_PATH", "/mcp"),
     ("HA_MCP_DISABLE_SETTINGS_UI", "true"),
+    *PRODUCTION_FLAGS,
 )
 WAIT_RUNNING = r"""import json,os,sys,time,urllib.request
 url,limit=sys.argv[1],float(sys.argv[2])
@@ -1172,16 +1192,52 @@ def restart_core(wanted, run_id, holder_id, core_image, token, overlay=False):
     return checked
 
 
+def peer_flags(data):
+    """Each production flag set on the peer once, to its value; only the flags are read."""
+    entries = (data.get("Config") or {}).get("Env") or []
+    found = {}
+    for name, value in PRODUCTION_FLAGS:
+        values = [entry.split("=", 1)[1] for entry in entries
+                  if isinstance(entry, str) and entry.split("=", 1)[0] == name
+                  and "=" in entry]
+        if values != [value]:
+            raise Refusal("peer_flags_not_set")
+        found[name] = value
+    return found
+
+
+def catalog_check(path):
+    """The peer's advertised tools hold the flags' effect; the raw catalog stays as observed."""
+    stored = path.read_bytes()
+    names = (json.loads(stored) or {}).get("tool_names_in_wire_order")
+    if not isinstance(names, list) or not all(isinstance(name, str) for name in names):
+        raise Refusal("peer_catalog_unreadable")
+    if any(name in names for name in ABSENT_FROM_CATALOG):
+        raise Refusal("peer_catalog_advertises_a_disabled_tool")
+    if not all(name in names for name in PRESENT_IN_CATALOG):
+        raise Refusal("peer_catalog_lacks_the_yaml_read")
+    return {"file": path.name, "sha256": hashlib.sha256(stored).hexdigest(),
+            "tool_count": len(names),
+            "absent": list(ABSENT_FROM_CATALOG), "present": list(PRESENT_IN_CATALOG)}
+
+
 def start_peer(version, wanted, run_id, upstream, holder_id, tokens, key=None,
-               token_name="administrator"):
-    """Posture first, then the one peer, checked, and its endpoint answering."""
+               token_name="administrator", *, run_dir):
+    """Posture first, then the one peer, checked, its flags and catalog, and its endpoint."""
     holder, peer = wanted["holder"], wanted[key or "peer-" + version]
     section = {"network_before_capture": posture(wanted), "token": token_name}
     command(*peer_argv(peer, run_id, holder, upstream["image"]),
             env=with_token(tokens[token_name]))
-    section["peer_network"] = s4.verify_peer(s4.inspect_owned(peer, run_id) or {}, holder_id,
-                                             upstream)
+    data = s4.inspect_owned(peer, run_id) or {}
+    section["peer_network"] = s4.verify_peer(data, holder_id, upstream)
+    section["peer_flags"] = peer_flags(data)
     command(*s4.exec_argv(holder, "-c", s4.WAIT_HTTP, s4.ENDPOINT, "120", "any"), timeout=150)
+    catalogs = run_dir / "out" / "catalog"
+    catalogs.mkdir(mode=0o700, exist_ok=True)
+    name = f"{key or 'peer-' + version}-{len(list(catalogs.iterdir())) + 1}.json"
+    command(*s4.exec_argv(holder, "/lane/scripts/mcp_raw_observation.py", "--endpoint",
+                          s4.ENDPOINT, "--output", "/out/catalog/" + name), timeout=300)
+    section["peer_catalog"] = catalog_check(catalogs / name)
     return section
 
 
@@ -1200,7 +1256,8 @@ def remove_peer(version, wanted, run_id, log, key=None):
 def capture_version(version, wanted, run_id, run_dir, upstream, holder_id, core_image, tokens):
     """One peer at a time: start it, capture, restart Core under it, capture again, remove it."""
     holder, out_dir = wanted["holder"], run_dir / "out"
-    section = start_peer(version, wanted, run_id, upstream, holder_id, tokens)
+    section = start_peer(version, wanted, run_id, upstream, holder_id, tokens,
+                         run_dir=run_dir)
     (out_dir / version).mkdir(mode=0o700)
     section["calls"] = run_calls(holder, version, "calls", CAPTURE_GROUPS, out_dir)
     section["network_after_core_restart"] = restart_core(
@@ -1221,7 +1278,8 @@ def recapture(wanted, run_id, run_dir, upstream, holder_id, core_image, tokens):
     captures = {"design": RECAPTURE_DESIGN, "before_core_restart": {},
                 "after_core_restart": {}}
     for version in VERSIONS:
-        section = start_peer(version, wanted, run_id, upstream[version], holder_id, tokens)
+        section = start_peer(version, wanted, run_id, upstream[version], holder_id, tokens,
+                             run_dir=run_dir)
         (out_dir / version).mkdir(mode=0o700)
         section["calls"] = run_calls(holder, version, "order-before-core-restart",
                                      ORDER_GROUPS, out_dir)
@@ -1230,7 +1288,8 @@ def recapture(wanted, run_id, run_dir, upstream, holder_id, core_image, tokens):
     captures["network_after_core_restart"] = restart_core(
         wanted, run_id, holder_id, core_image, tokens["administrator"])
     for version in VERSIONS:
-        section = start_peer(version, wanted, run_id, upstream[version], holder_id, tokens)
+        section = start_peer(version, wanted, run_id, upstream[version], holder_id, tokens,
+                             run_dir=run_dir)
         section["calls"] = run_calls(holder, version, "calls-after-core-restart",
                                      RECAPTURE_GROUPS, out_dir)
         remove_peer(version, wanted, run_id, run_dir / f"peer-{version}-after-core-restart.log")
@@ -1378,7 +1437,8 @@ def capture_profile_b(section, version, wanted, run_id, run_dir, upstream, holde
     user's token (N29 a).  ``section`` and ``phases`` are already in the receipt.
     """
     holder, out_dir = wanted["holder"], run_dir / "out"
-    section.update(start_peer(version, wanted, run_id, upstream, holder_id, tokens))
+    section.update(start_peer(version, wanted, run_id, upstream, holder_id, tokens,
+                              run_dir=run_dir))
     (out_dir / version).mkdir(mode=0o700)
     section["calls"] = run_calls(holder, version, "calls", CAPTURE_GROUPS + PROFILE_B_GROUPS,
                                  out_dir)
@@ -1394,7 +1454,8 @@ def capture_profile_b(section, version, wanted, run_id, run_dir, upstream, holde
     if ORDINARY_PEER in wanted:
         ordinary = section["ordinary_user"] = {}
         ordinary.update(start_peer(version, wanted, run_id, upstream, holder_id, tokens,
-                                   key=ORDINARY_PEER, token_name="ordinary_user"))
+                                   key=ORDINARY_PEER, token_name="ordinary_user",
+                                   run_dir=run_dir))
         ordinary["calls"] = run_calls(holder, version, "yaml-ordinary-user", PROFILE_B_GROUPS,
                                       out_dir)
         ordinary["component_reads"] = component_reads(out_dir / version / "yaml-ordinary-user")
@@ -1597,6 +1658,12 @@ def execute(args, launch):
                       "peer_command": s4.PEER_COMMAND,
                       "production_setting": "not read by any agent; an entry in the upgrade "
                                             "decision record, filled at upgrade time"},
+        "peer_flags": {"set": [list(item) for item in PRODUCTION_FLAGS],
+                       "source": "production's flags as Josh confirmed them, 2026-11-14 (D1)",
+                       "checked": "each flag once on the peer's container environment, and "
+                                  "the raw peer catalog (tools/list) of every peer start",
+                       "absent_from_catalog": list(ABSENT_FROM_CATALOG),
+                       "present_in_catalog": list(PRESENT_IN_CATALOG)},
         "pass_means": ("the lane ran to its end, every posture check held, nothing stored "
                        "carries a token and cleanup is proven; a call the peer answered with "
                        "an error or broke is a stored result, counted here, not a failure"),

@@ -295,6 +295,18 @@ class ArgvTests(unittest.TestCase):
         for name in names:
             self.assertNotRegex(name, r"(?i)redact|mask|privacy|sanit")
 
+    def test_the_peer_gets_production_flags_once_each(self):
+        environment = flag_values(self.all_argv()["peer"], "--env")
+        for name, value in (("ENABLE_BETA_FEATURES", "true"),
+                            ("HAMCP_ENABLE_FILESYSTEM_TOOLS", "true"),
+                            ("ENABLE_YAML_CONFIG_EDITING", "false"),
+                            ("DISABLED_TOOLS", "ha_write_file,ha_delete_file")):
+            with self.subTest(flag=name):
+                self.assertEqual([item for item in environment
+                                  if item.split("=", 1)[0] == name], [f"{name}={value}"])
+        self.assertEqual(lane.ABSENT_FROM_CATALOG,
+                         ("ha_write_file", "ha_delete_file", "ha_config_set_yaml"))
+
     def test_the_three_containers_fit_under_the_memory_ceiling(self):
         self.assertLessEqual(lane.memory_total(), lane.s4.host.memory_bytes("3g"))
 
@@ -308,6 +320,63 @@ class ArgvTests(unittest.TestCase):
             self.assertNotIn("volume", lane.container_keys(wanted))
         self.assertFalse(set(lane.lane_names("run").values())
                          & set(lane.lane_names("selftest").values()))
+
+
+class PeerFlagTests(unittest.TestCase):
+    GOOD = ["PATH=/usr/bin", "HOMEASSISTANT_TOKEN=" + SYNTHETIC_TOKEN,
+            *(f"{name}={value}" for name, value in lane.PRODUCTION_FLAGS)]
+
+    def test_each_flag_once_with_its_value_passes_and_reads_nothing_else(self):
+        found = lane.peer_flags({"Config": {"Env": list(self.GOOD)}})
+        self.assertEqual(found, dict(lane.PRODUCTION_FLAGS))
+        self.assertNotIn(SYNTHETIC_TOKEN, json.dumps(found))
+
+    def test_a_missing_wrong_or_repeated_flag_is_refused(self):
+        for name, value in lane.PRODUCTION_FLAGS:
+            entry = f"{name}={value}"
+            for case, env in (
+                    ("missing", [item for item in self.GOOD if item != entry]),
+                    ("wrong", [item if item != entry else name + "=other"
+                               for item in self.GOOD]),
+                    ("repeated", [*self.GOOD, entry]),
+                    ("bare", [item if item != entry else name for item in self.GOOD])):
+                with self.subTest(flag=name, case=case):
+                    with self.assertRaisesRegex(lane.Refusal, "^peer_flags_not_set$"):
+                        lane.peer_flags({"Config": {"Env": env}})
+        with self.assertRaisesRegex(lane.Refusal, "^peer_flags_not_set$"):
+            lane.peer_flags({})
+
+
+class PeerCatalogTests(unittest.TestCase):
+    def check(self, value):
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        path = Path(scratch.name) / "peer-9-2-0-1.json"
+        path.write_text(json.dumps(value), encoding="utf-8")
+        return lane.catalog_check(path)
+
+    def test_a_catalog_without_the_disabled_tools_and_with_the_yaml_read_passes(self):
+        result = self.check({"tool_names_in_wire_order": list(SYNTHETIC_CATALOG)})
+        self.assertEqual((result["file"], result["tool_count"]),
+                         ("peer-9-2-0-1.json", len(SYNTHETIC_CATALOG)))
+        self.assertEqual(result["absent"], list(lane.ABSENT_FROM_CATALOG))
+        self.assertRegex(result["sha256"], "^[0-9a-f]{64}$")
+
+    def test_each_disabled_tool_in_the_catalog_is_refused(self):
+        for name in ("ha_write_file", "ha_delete_file", "ha_config_set_yaml"):
+            with self.subTest(tool=name):
+                with self.assertRaisesRegex(lane.Refusal,
+                                            "^peer_catalog_advertises_a_disabled_tool$"):
+                    self.check({"tool_names_in_wire_order": [*SYNTHETIC_CATALOG, name]})
+
+    def test_a_catalog_without_the_yaml_read_or_unreadable_is_refused(self):
+        with self.assertRaisesRegex(lane.Refusal, "^peer_catalog_lacks_the_yaml_read$"):
+            self.check({"tool_names_in_wire_order": ["ha_get_state"]})
+        for value in ({}, {"tool_names_in_wire_order": "ha_get_state"},
+                      {"tool_names_in_wire_order": [1]}):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(lane.Refusal, "^peer_catalog_unreadable$"):
+                    self.check(value)
 
 
 class ConfigurationArchiveTests(unittest.TestCase):
@@ -652,6 +721,9 @@ class ProfileTests(unittest.TestCase):
             self.assertIn(phrase, text)
 
 
+SYNTHETIC_CATALOG = ("ha_get_state", "ha_search", "ha_config_get_yaml", "ha_list_files")
+
+
 def fake_digest(image):
     return "sha256:" + hashlib.sha256(image.encode("utf-8")).hexdigest()
 
@@ -663,8 +735,12 @@ class FakeDocker:
 
     def __init__(self, *, probe=None, peer_log=b"synthetic peer log\n", seed_ok=True,
                  calls_fail=(), core_log=b"synthetic log\n", component="9.2.0", export=b"",
-                 resolved=None):
+                 resolved=None, catalog=None, env_filter=None):
         self.calls, self.events, self.forwarded = [], [], []
+        # The tool names each peer start's tools/list observation reports.
+        self.catalog = catalog or (lambda container: list(SYNTHETIC_CATALOG))
+        # What Docker would report as a container's environment, from its --env.
+        self.env_filter = env_filter or (lambda name, env: env)
         self.calls_fail = set(calls_fail)
         self.containers, self.volumes, self.streams = {}, {}, []
         self.probe = probe or (lambda container, count: dict(self.GOOD_PROBE))
@@ -712,7 +788,8 @@ class FakeDocker:
             "Id": "synthetic-id-" + name, "Image": fake_digest(image),
             "Config": {"Image": image,
                        "Labels": dict(item.split("=", 1) for item in values("--label")),
-                       "Env": [item for item in values("--env") if "=" in item]},
+                       "Env": self.env_filter(
+                           name, [item for item in values("--env") if "=" in item])},
             "State": {"Running": args[1] == "run", "OOMKilled": False,
                       "Status": "running" if args[1] == "run" else "created"},
             "HostConfig": {
@@ -758,6 +835,14 @@ class FakeDocker:
             assert rest[rest.index(lane.RESOLVED) + 1:] == list(lane.RESOLVED_NAMES)
             return 0, json.dumps(self.resolved(self.component)).encode("utf-8")
         script = next((item for item in rest if item.startswith("/lane/scripts/")), None)
+        if script and script.endswith("mcp_raw_observation.py"):
+            out = rest[rest.index("--output") + 1]
+            self.events.append("catalog:" + out)
+            names = self.catalog(container)
+            self.host_path(out).write_text(json.dumps({
+                "tool_count": len(names), "tool_names_in_wire_order": names}),
+                encoding="utf-8")
+            return 0, b""
         if script and script.endswith("core_read_replay_seed.py"):
             self.events.append("seed")
             out = self.host_path(rest[rest.index("--out") + 1] + "/x").parent
@@ -935,6 +1020,18 @@ class LaneFlowTests(unittest.TestCase):
             "calls:/out/9.2.0/calls:reads,variants,errors,transport",
             "calls:/out/9.2.0/calls-after-core-restart:after_restart"])
         self.assertEqual(events.count("restart:hamcp371-s6-run-core"), 2)
+        # Every peer start checks its flags and reads its catalog before any call.
+        self.assertEqual([item for item in events if item.startswith("catalog:")], [
+            "catalog:/out/catalog/peer-9.1.2-1.json", "catalog:/out/catalog/peer-9.2.0-2.json"])
+        for version, number in (("9.1.2", 1), ("9.2.0", 2)):
+            capture = receipt["captures"][version]
+            self.assertEqual(capture["peer_flags"], dict(lane.PRODUCTION_FLAGS))
+            self.assertEqual(capture["peer_catalog"]["file"], f"peer-{version}-{number}.json")
+            self.assertLess(events.index(f"catalog:/out/catalog/peer-{version}-{number}.json"),
+                            events.index(f"calls:/out/{version}/calls:reads,variants,errors,"
+                                         "transport"))
+        self.assertEqual(receipt["peer_flags"]["set"],
+                         [list(item) for item in lane.PRODUCTION_FLAGS])
         # Cleanup removes the Core and then the holder that owned the namespace, last.
         self.assertEqual(events[-2:], ["rm:hamcp371-s6-run-core", "rm:hamcp371-s6-run-holder"])
         # The token is forwarded by environment only and stored nowhere.
@@ -1013,6 +1110,29 @@ class LaneFlowTests(unittest.TestCase):
         restart = docker.events.index("restart:hamcp371-s6-recapture-core")
         self.assertNotIn("run:hamcp371-s6-recapture-peer-9-2-0", docker.events[restart:])
         self.assertEqual(docker.events.count("restart:hamcp371-s6-recapture-core"), 1)
+        self.assertIs(receipt["cleanup"]["clean"], True)
+        self.assertEqual((docker.containers, docker.volumes), ({}, {}))
+
+    def test_a_peer_advertising_a_disabled_tool_withholds_before_its_calls(self):
+        docker = FakeDocker(catalog=lambda container: (
+            [*SYNTHETIC_CATALOG, "ha_write_file"] if container.endswith("holder")
+            and any("peer-9-2-0" in name for name in docker.containers)
+            else list(SYNTHETIC_CATALOG)))
+        code, launch, receipt, _run_dir = self.launch(docker, "run", "--profile", "A")
+        self.assertEqual((code, launch["result"], receipt["failure"]),
+                         (1, "WITHHELD", "peer_catalog_advertises_a_disabled_tool"))
+        self.assertFalse(any(item.startswith("calls:/out/9.2.0/") for item in docker.events))
+        self.assertIs(receipt["cleanup"]["clean"], True)
+        self.assertEqual((docker.containers, docker.volumes), ({}, {}))
+
+    def test_a_peer_without_a_production_flag_withholds_before_its_endpoint(self):
+        docker = FakeDocker(env_filter=lambda name, env: [
+            item for item in env if not item.startswith("DISABLED_TOOLS=")]
+            if "-peer-" in name else env)
+        code, launch, receipt, _run_dir = self.launch(docker, "run", "--profile", "A")
+        self.assertEqual((code, launch["result"], receipt["failure"]),
+                         (1, "WITHHELD", "peer_flags_not_set"))
+        self.assertFalse(any(item.startswith(("calls:", "catalog:")) for item in docker.events))
         self.assertIs(receipt["cleanup"]["clean"], True)
         self.assertEqual((docker.containers, docker.volumes), ({}, {}))
 
@@ -1178,6 +1298,14 @@ class LaneFlowTests(unittest.TestCase):
                           if item.startswith(("run:", "rm:")) and "-peer-" in item], [
             f"run:{stem}peer-9-2-0", f"rm:{stem}peer-9-2-0",
             f"run:{stem}peer-9-2-0-ordinary-user", f"rm:{stem}peer-9-2-0-ordinary-user"])
+        # Both peers, the ordinary user's too, check their flags and catalog.
+        self.assertEqual([item for item in events if item.startswith("catalog:")], [
+            "catalog:/out/catalog/peer-9.2.0-1.json",
+            f"catalog:/out/catalog/{lane.ORDINARY_PEER}-2.json"])
+        capture = receipt["captures"][version]
+        for section in (capture, capture["ordinary_user"]):
+            self.assertEqual(section["peer_flags"], dict(lane.PRODUCTION_FLAGS))
+            self.assertIn("peer_catalog", section)
         # The ordinary user's token goes to its own peer only, by environment.
         ordinary = [argv for argv, token in docker.forwarded if token == OTHER_TOKEN]
         self.assertEqual(len(ordinary), 1)
