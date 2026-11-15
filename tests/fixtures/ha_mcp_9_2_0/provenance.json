@@ -1482,11 +1482,11 @@
   "generation": "docs/evidence/hamcp371/s7/generate_output_key_contract.py over the committed S6 receipts; receipts are never edited",
   "provenance_model": "hamcp371-fixture-provenance-v1",
   "source_files": {
-    "docs/evidence/hamcp371/s7/generate_output_key_contract.py": "a9af7a82fb5f391fac1f940a705473a453d119eadf5e1b4e1ef4e48e49ebcefc",
+    "docs/evidence/hamcp371/s7/generate_output_key_contract.py": "329eb558df9de86d8faf20c66931b46356469250d0344981d25d786fe9b3b741",
     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_blueprint.py": "13bb700ae6c344f48b761174eba889f7127fc6cd12a09fe679ddcad4e96ea862",
     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py": "0663f89c33c95e3d9185be2c68a33dcc6f77a2cd7672b24645623a636897e68a",
     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_history_9_1.py": "8b6263cefc05c05fe497ce980860d8270c43bc4a424493e0606798d809a1309f",
-    "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py": "edf9be752f1aa47ac7144305358d5892e18db9822548d73b9785faa43af80cda",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py": "a3013f9205fb9e9d05a0a8e02e9dccc980b0c68e985723345823bd84db61b052",
     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py": "0b2e59af9732a222e0c076f011d65e4fc6ae46d996d272691c44c7c0ae632388",
     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py": "37886071e3b0074b3fb90138a2e9e4efeb9f899e574d3de7ae419ea759a7340a"
   },

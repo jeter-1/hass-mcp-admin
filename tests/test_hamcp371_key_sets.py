@@ -63,9 +63,17 @@ class RowsEqualTheContract(unittest.TestCase):
             with self.subTest(tool=tool):
                 self.assertIsNotNone(reads_9_2._projection(tool))
 
-    def test_prefix_rules_are_the_three_reviewed_families(self):
+    def test_prefix_rules_are_the_two_reviewed_families(self):
+        # HAMCP-371 E1 (13:25 ruling): the ha_get_state visibility prefix had no
+        # 9.2.0 receipt and was withdrawn with the state ``warnings`` key.
         with_prefixes = {tool for tool, row in keys.ROWS.items() if row.prefixes}
-        self.assertEqual(with_prefixes, {"ha_config_get_automation", "ha_get_state", "ha_list_services"})
+        self.assertEqual(with_prefixes, {"ha_config_get_automation", "ha_list_services"})
+
+    def test_typed_keys_are_the_s10_2_ruling(self):
+        typed = {tool: row.types for tool, row in keys.ROWS.items() if row.types}
+        self.assertEqual(typed, {"ha_list_services": {"collapsed": bool, "integration": str}})
+        self.assertEqual(CONTRACT["reads"]["ha_list_services"]["value_types"],
+                         {"collapsed": "bool", "integration": "str"})
 
 
 class Engine(unittest.TestCase):
@@ -108,24 +116,53 @@ class Engine(unittest.TestCase):
         self.assertEqual(out["fields_withheld"], 1)
 
     def test_unreviewed_warnings_are_replaced_once_and_counted(self):
-        out = self.project("ha_get_overview", {
+        # ha_list_services: E1 withdrew ``warnings`` from the overview row.
+        out = self.project("ha_list_services", {
             "success": True, "warnings": ["hamcp371 one", 7, "hamcp371 two"]})
         self.assertEqual(out["warnings"], [keys.REPLACED_WARNING])
         self.assertEqual(out["upstream_warnings_replaced"], 3)
 
     def test_reviewed_prefixes(self):
-        visibility = keys._STATE_VISIBILITY_PREFIX + "2 entities."
-        out = self.project("ha_get_state", {"success": True, "warnings": [visibility]})
-        self.assertEqual(out["warnings"], [visibility])
-        self.assertEqual(out["upstream_warnings_replaced"], 0)
         language = keys._SERVICES_LANGUAGE_PREFIX + ": synthetic error 371"
         out = self.project("ha_list_services", {"success": True, "warnings": [language, "other"]})
         self.assertEqual(out["warnings"], [keys.SERVICES_LANGUAGE_WARNING, keys.REPLACED_WARNING])
         self.assertNotIn("synthetic error 371", json.dumps(out))
         self.assertEqual(out["upstream_warnings_replaced"], 1)
         # A prefix is not a substring match.
-        out = self.project("ha_get_state", {"success": True, "warnings": ["x " + visibility]})
+        out = self.project("ha_list_services", {"success": True, "warnings": ["x " + language]})
         self.assertEqual(out["warnings"], [keys.REPLACED_WARNING])
+
+    def test_state_warnings_are_withheld_not_reviewed(self):
+        # E1: no 9.2.0 receipt shows ha_get_state ``warnings``; it is withheld
+        # and counted, and no longer marks the read partial.
+        out = self.project("ha_get_state", {"success": True, "warnings": ["hamcp371 w"]})
+        self.assertNotIn("warnings", out)
+        self.assertEqual(out["fields_withheld"], 1)
+        self.assertEqual(out["upstream_warnings_replaced"], 0)
+
+    def test_typed_service_keys(self):
+        # S10-2: target.entity[].integration is a str and a field section's
+        # collapsed is a bool (Core 2026.11.0 selector.py:178,212 and
+        # service.py:996,1004); any other value type is withheld and counted.
+        def services(integration, collapsed):
+            return {"success": True, "services": {"light.turn_on": {
+                "target": {"entity": [{"integration": integration, "domain": ["light"]}]},
+                "fields": {"advanced": {"collapsed": collapsed, "fields": {}}}}}}
+        out = self.project("ha_list_services", services("hue", True))
+        service = out["services"]["light.turn_on"]
+        self.assertEqual(service["target"]["entity"][0]["integration"], "hue")
+        self.assertIs(service["fields"]["advanced"]["collapsed"], True)
+        self.assertEqual(out["fields_withheld"], 0)
+        for integration, collapsed in ((7, True), ("hue", "yes"), (None, 1), (["hue"], False)):
+            with self.subTest(integration=integration, collapsed=collapsed):
+                out = self.project("ha_list_services", services(integration, collapsed))
+                service = out["services"]["light.turn_on"]
+                wrong = (not isinstance(integration, str)) + (type(collapsed) is not bool)
+                self.assertEqual("integration" in service["target"]["entity"][0],
+                                 isinstance(integration, str))
+                self.assertEqual("collapsed" in service["fields"]["advanced"],
+                                 type(collapsed) is bool)
+                self.assertEqual(out["fields_withheld"], wrong)
 
     def test_fails_closed(self):
         for payload in ([], "text", None, 1):

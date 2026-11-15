@@ -13,6 +13,8 @@ from dataclasses import replace
 import re
 from typing import Any
 
+from . import upstream_reads_9_2_platform as _platform_9_2
+
 HEALTH = "ha_get_system_health"
 APP = "ha_get_app"
 INTEGRATION = "ha_get_integration"
@@ -776,6 +778,10 @@ def project_result(entry, payload: Any, arguments: dict) -> dict[str, Any]:
         raise ValueError("platform_response_invalid")
     tool = entry.upstream_name
     values = normalized_arguments(tool, arguments)
+    # HAMCP-371 D5: on ha-mcp 9.2.0 only, the default-withhold counts and the
+    # replaced-warning rule (upstream_reads_9_2_platform).
+    if binding(entry)[1] in _platform_9_2.RELEASES:
+        return _platform_9_2.project(tool, payload, values)
     if tool == HEALTH:
         return _project_health(payload, values)
     if tool == APP:

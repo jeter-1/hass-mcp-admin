@@ -7,8 +7,9 @@
     "keys named by the shipped 9.1 projections but not observed in a 9.1.2 receipt are admitted with that source",
     "reviewed warnings are the exact upstream strings observed in the 9.1.2 receipts; the upstream source-string review is deferred",
     "ha_get_history keeps the shipped 8.5-parity projection on 9.2.0; the keys it drops (summary, statistics_metadata, unit_source, unit_reason, last_reset) are policy drops counted in fields_dropped_by_policy (S9 correction of the S7 row)",
-    "S10 correction: rows name the keys their shipped 9.1 projection type-checks or reads for completeness: warnings and partial on the entity envelope rows, all and unavailable_fields on groups, unavailable_fields on template",
-    "S10: engineering_notes is Engineering-added (the zone location and icon notes, the services type note, item 14 and 15); response and optional on ha_list_services are admitted on a recorded review (item 13); collapsed, filter and integration stay withheld pending review"
+    "S10 E1 (2026-11-15 13:25 ruling): a key justified only by the shipped 9.1 code is reported, not kept; the S10 additions of warnings and partial (entity envelope rows), all and unavailable_fields (groups) and unavailable_fields (template) are withdrawn; unavailable_fields on groups and template is recomputed by Engineering",
+    "S10: engineering_notes is Engineering-added (the zone location and icon notes, the services type note, item 14 and 15); response and optional on ha_list_services are admitted on a recorded review (item 13); integration and collapsed are admitted by the S10-2 ruling with one value type each; filter stays withheld pending review",
+    "D5: the platform rows are closed rebuilds; no open container applies, so a dropped key and the names inside it are counted"
   ],
   "reads": {
     "ha_config_get_automation": {
@@ -177,6 +178,7 @@
         "related"
       ],
       "projection": "closed",
+      "qualified_containers": [],
       "recomputed_by_engineering": [],
       "removed_in_9_2_0": [],
       "reviewed_warnings": [
@@ -186,6 +188,7 @@
         "warnings"
       ],
       "upstream_tool": "ha_config_get_automation",
+      "value_types": {},
       "warnings_new_in_9_2_0": [],
       "withheld_by_rebuild": []
     },
@@ -276,6 +279,7 @@
       ],
       "policy_drops": [],
       "projection": "closed",
+      "qualified_containers": [],
       "recomputed_by_engineering": [],
       "removed_in_9_2_0": [],
       "reviewed_warnings": [],
@@ -283,6 +287,7 @@
         "message"
       ],
       "upstream_tool": "ha_config_get_calendar_events",
+      "value_types": {},
       "warnings_new_in_9_2_0": [],
       "withheld_by_rebuild": []
     },
@@ -353,6 +358,7 @@
       ],
       "policy_drops": [],
       "projection": "closed",
+      "qualified_containers": [],
       "recomputed_by_engineering": [],
       "removed_in_9_2_0": [],
       "reviewed_warnings": [],
@@ -360,6 +366,7 @@
         "message"
       ],
       "upstream_tool": "ha_config_get_category",
+      "value_types": {},
       "warnings_new_in_9_2_0": [],
       "withheld_by_rebuild": []
     },
@@ -433,6 +440,7 @@
       ],
       "policy_drops": [],
       "projection": "closed",
+      "qualified_containers": [],
       "recomputed_by_engineering": [],
       "removed_in_9_2_0": [],
       "reviewed_warnings": [],
@@ -440,6 +448,7 @@
         "message"
       ],
       "upstream_tool": "ha_config_get_label",
+      "value_types": {},
       "warnings_new_in_9_2_0": [],
       "withheld_by_rebuild": []
     },
@@ -496,11 +505,13 @@
       ],
       "policy_drops": [],
       "projection": "closed",
+      "qualified_containers": [],
       "recomputed_by_engineering": [],
       "removed_in_9_2_0": [],
       "reviewed_warnings": [],
       "upstream_text_fields": [],
       "upstream_tool": "ha_config_get_scene",
+      "value_types": {},
       "warnings_new_in_9_2_0": [],
       "withheld_by_rebuild": []
     },
@@ -556,11 +567,13 @@
       ],
       "policy_drops": [],
       "projection": "closed",
+      "qualified_containers": [],
       "recomputed_by_engineering": [],
       "removed_in_9_2_0": [],
       "reviewed_warnings": [],
       "upstream_text_fields": [],
       "upstream_tool": "ha_config_get_script",
+      "value_types": {},
       "warnings_new_in_9_2_0": [],
       "withheld_by_rebuild": []
     },
@@ -651,17 +664,18 @@
       ],
       "policy_drops": [],
       "projection": "closed",
+      "qualified_containers": [],
       "recomputed_by_engineering": [],
       "removed_in_9_2_0": [],
       "reviewed_warnings": [],
       "upstream_text_fields": [],
       "upstream_tool": "ha_config_list_dashboard_resources",
+      "value_types": {},
       "warnings_new_in_9_2_0": [],
       "withheld_by_rebuild": []
     },
     "ha_config_list_groups": {
       "admitted": {
-        "all": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:29,34,285-301 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
         "auto": "receipt 9.1.2 profile A+B",
         "context": "receipt 9.1.2 profile A+B",
         "count": "receipt 9.1.2 profile A+B",
@@ -685,7 +699,6 @@
         "state": "receipt 9.1.2 profile A+B",
         "success": "receipt 9.1.2 profile A+B",
         "total_count": "receipt 9.1.2 profile A+B",
-        "unavailable_fields": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:29,34,285-301 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
         "user_id": "receipt 9.1.2 profile A+B"
       },
       "calls": {
@@ -769,13 +782,17 @@
       ],
       "policy_drops": [],
       "projection": "closed",
-      "recomputed_by_engineering": [],
+      "qualified_containers": [],
+      "recomputed_by_engineering": [
+        "unavailable_fields"
+      ],
       "removed_in_9_2_0": [],
       "reviewed_warnings": [],
       "upstream_text_fields": [
         "message"
       ],
       "upstream_tool": "ha_config_list_groups",
+      "value_types": {},
       "warnings_new_in_9_2_0": [],
       "withheld_by_rebuild": []
     },
@@ -879,6 +896,7 @@
       ],
       "policy_drops": [],
       "projection": "closed",
+      "qualified_containers": [],
       "recomputed_by_engineering": [],
       "removed_in_9_2_0": [],
       "reviewed_warnings": [],
@@ -886,6 +904,7 @@
         "message"
       ],
       "upstream_tool": "ha_config_list_helpers",
+      "value_types": {},
       "warnings_new_in_9_2_0": [],
       "withheld_by_rebuild": []
     },
@@ -899,7 +918,6 @@
         "success": "receipt 9.1.2 profile A+B",
         "template": "receipt 9.1.2 profile A+B",
         "time": "receipt 9.1.2 profile A+B",
-        "unavailable_fields": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:333-345 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
         "warnings": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:333-345 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)"
       },
       "calls": {
@@ -952,16 +970,21 @@
       ],
       "policy_drops": [],
       "projection": "closed",
-      "recomputed_by_engineering": [],
+      "qualified_containers": [],
+      "recomputed_by_engineering": [
+        "unavailable_fields"
+      ],
       "removed_in_9_2_0": [],
       "reviewed_warnings": [],
       "upstream_text_fields": [],
       "upstream_tool": "ha_eval_template",
+      "value_types": {},
       "warnings_new_in_9_2_0": [],
       "withheld_by_rebuild": []
     },
     "ha_get_app": {
       "admitted": {
+        "addons": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:611-673 (shipped rebuild)",
         "cpu_percent": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:611-673 (shipped rebuild)",
         "description": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:611-673 (shipped rebuild)",
         "installed": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:611-673 (shipped rebuild)",
@@ -972,14 +995,18 @@
         "repository": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:611-673 (shipped rebuild)",
         "slug": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:611-673 (shipped rebuild)",
         "state": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:611-673 (shipped rebuild)",
+        "stats": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:611-673 (shipped rebuild)",
+        "success": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:611-673 (shipped rebuild)",
         "update_available": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:611-673 (shipped rebuild)",
-        "version": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:611-673 (shipped rebuild)"
+        "version": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:611-673 (shipped rebuild)",
+        "warnings": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:611-673 (shipped rebuild)"
       },
       "calls": {},
       "consumed_structure": [],
       "map_containers": {},
       "new_in_9_2_0": {},
       "notes": [
+        "D5: the 9.2.0 projection is tested with a synthetic payload only (disclosed)",
         "no successful receipt: r27-apps errors on both versions (the peer logs show supervisor/api: Unknown command); SR records the body and category"
       ],
       "number": 27,
@@ -987,19 +1014,16 @@
         "9.1.2": [],
         "9.2.0": []
       },
-      "open_containers": [
-        "attributes",
-        "config",
-        "filter",
-        "selector"
-      ],
+      "open_containers": [],
       "policy_drops": [],
       "projection": "rebuild",
+      "qualified_containers": [],
       "recomputed_by_engineering": [],
       "removed_in_9_2_0": [],
       "reviewed_warnings": [],
       "upstream_text_fields": [],
       "upstream_tool": "ha_get_app",
+      "value_types": {},
       "warnings_new_in_9_2_0": [],
       "withheld_by_rebuild": []
     },
@@ -1085,6 +1109,7 @@
       ],
       "policy_drops": [],
       "projection": "closed",
+      "qualified_containers": [],
       "recomputed_by_engineering": [],
       "removed_in_9_2_0": [],
       "reviewed_warnings": [],
@@ -1092,6 +1117,7 @@
         "hint"
       ],
       "upstream_tool": "ha_get_automation_traces",
+      "value_types": {},
       "warnings_new_in_9_2_0": [],
       "withheld_by_rebuild": []
     },
@@ -1163,11 +1189,13 @@
       ],
       "policy_drops": [],
       "projection": "closed",
+      "qualified_containers": [],
       "recomputed_by_engineering": [],
       "removed_in_9_2_0": [],
       "reviewed_warnings": [],
       "upstream_text_fields": [],
       "upstream_tool": "ha_manage_blueprints",
+      "value_types": {},
       "warnings_new_in_9_2_0": [],
       "withheld_by_rebuild": []
     },
@@ -1311,11 +1339,13 @@
       ],
       "policy_drops": [],
       "projection": "rebuild",
+      "qualified_containers": [],
       "recomputed_by_engineering": [],
       "removed_in_9_2_0": [],
       "reviewed_warnings": [],
       "upstream_text_fields": [],
       "upstream_tool": "ha_get_device",
+      "value_types": {},
       "warnings_new_in_9_2_0": [],
       "withheld_by_rebuild": []
     },
@@ -1330,10 +1360,10 @@
         "device_id": "receipt 9.1.2 profile A+B",
         "disabled_by": "receipt 9.1.2 profile A+B",
         "enabled": "receipt 9.1.2 profile A+B",
-        "entity_entries": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-69,83-98,103-110 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
+        "entity_entries": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:103-110 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
         "entity_entry": "receipt 9.1.2 profile A+B",
         "entity_id": "receipt 9.1.2 profile A+B",
-        "errors": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-69,83-98,103-110 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
+        "errors": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:103-110 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
         "floor": "receipt 9.1.2 profile B",
         "hidden": "receipt 9.1.2 profile A+B",
         "hidden_by": "receipt 9.1.2 profile A+B",
@@ -1344,12 +1374,10 @@
         "options": "receipt 9.1.2 profile A+B",
         "original_device_class": "receipt 9.1.2 profile A+B",
         "original_name": "receipt 9.1.2 profile A+B",
-        "partial": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-69,83-98,103-110 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
         "platform": "receipt 9.1.2 profile A+B",
         "success": "receipt 9.1.2 profile A+B",
         "unique_id": "receipt 9.1.2 profile A+B",
-        "uses_device_name": "receipt 9.1.2 profile A+B",
-        "warnings": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-69,83-98,103-110 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)"
+        "uses_device_name": "receipt 9.1.2 profile A+B"
       },
       "calls": {
         "A/9.1.2": [
@@ -1445,11 +1473,13 @@
       ],
       "policy_drops": [],
       "projection": "closed",
+      "qualified_containers": [],
       "recomputed_by_engineering": [],
       "removed_in_9_2_0": [],
       "reviewed_warnings": [],
       "upstream_text_fields": [],
       "upstream_tool": "ha_get_entity",
+      "value_types": {},
       "warnings_new_in_9_2_0": [],
       "withheld_by_rebuild": []
     },
@@ -1458,7 +1488,7 @@
         "area": "receipt 9.1.2 profile B",
         "domain": "receipt 9.1.2 profile B",
         "entity_id": "receipt 9.1.2 profile A+B",
-        "exposed_entities": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-69,83-98,122-131 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
+        "exposed_entities": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:122-131 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
         "exposed_to": "receipt 9.1.2 profile A+B",
         "floor": "receipt 9.1.2 profile B",
         "friendly_name": "receipt 9.1.2 profile B",
@@ -1466,10 +1496,8 @@
         "is_exposed_anywhere": "receipt 9.1.2 profile A+B",
         "labels": "receipt 9.1.2 profile B",
         "note": "receipt 9.1.2 profile A+B",
-        "partial": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-69,83-98,122-131 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
         "state": "receipt 9.1.2 profile B",
-        "success": "receipt 9.1.2 profile A+B",
-        "warnings": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-69,83-98,122-131 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)"
+        "success": "receipt 9.1.2 profile A+B"
       },
       "calls": {
         "A/9.1.2": [
@@ -1530,6 +1558,7 @@
       ],
       "policy_drops": [],
       "projection": "closed",
+      "qualified_containers": [],
       "recomputed_by_engineering": [],
       "removed_in_9_2_0": [],
       "reviewed_warnings": [],
@@ -1537,6 +1566,7 @@
         "note"
       ],
       "upstream_tool": "ha_get_entity_exposure",
+      "value_types": {},
       "warnings_new_in_9_2_0": [],
       "withheld_by_rebuild": []
     },
@@ -1710,6 +1740,7 @@
         "unit_source"
       ],
       "projection": "closed",
+      "qualified_containers": [],
       "recomputed_by_engineering": [],
       "removed_in_9_2_0": [],
       "reviewed_warnings": [],
@@ -1717,6 +1748,7 @@
         "metadata.note"
       ],
       "upstream_tool": "ha_get_history",
+      "value_types": {},
       "warnings_new_in_9_2_0": [],
       "withheld_by_rebuild": []
     },
@@ -1855,14 +1887,10 @@
           "unique_id"
         ]
       },
-      "open_containers": [
-        "attributes",
-        "config",
-        "filter",
-        "selector"
-      ],
+      "open_containers": [],
       "policy_drops": [],
       "projection": "rebuild",
+      "qualified_containers": [],
       "recomputed_by_engineering": [
         "count",
         "limit",
@@ -1876,6 +1904,7 @@
       "reviewed_warnings": [],
       "upstream_text_fields": [],
       "upstream_tool": "ha_get_integration",
+      "value_types": {},
       "warnings_new_in_9_2_0": [],
       "withheld_by_rebuild": [
         "created_at",
@@ -1925,7 +1954,7 @@
         "next_offset": "receipt 9.1.2 profile A+B",
         "offset": "receipt 9.1.2 profile A+B",
         "pagination": "receipt 9.1.2 profile A+B",
-        "partial": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-69,83-98,45-47,135-140 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
+        "partial": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:45-47,135-140 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
         "repair_count": "receipt 9.1.2 profile A+B",
         "repairs": "receipt 9.1.2 profile A+B",
         "severity": "receipt 9.1.2 profile A+B",
@@ -1942,8 +1971,7 @@
         "total_services": "receipt 9.1.2 profile A+B",
         "translation_key": "receipt 9.1.2 profile A+B",
         "truncated": "receipt 9.1.2 profile A+B",
-        "version": "receipt 9.1.2 profile A+B",
-        "warnings": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-69,83-98,45-47,135-140 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)"
+        "version": "receipt 9.1.2 profile A+B"
       },
       "calls": {
         "A/9.1.2": [
@@ -2105,11 +2133,13 @@
         "upgrade_command"
       ],
       "projection": "closed",
+      "qualified_containers": [],
       "recomputed_by_engineering": [],
       "removed_in_9_2_0": [],
       "reviewed_warnings": [],
       "upstream_text_fields": [],
       "upstream_tool": "ha_get_overview",
+      "value_types": {},
       "warnings_new_in_9_2_0": [],
       "withheld_by_rebuild": []
     },
@@ -2167,6 +2197,7 @@
         "how_to_use"
       ],
       "projection": "rebuild",
+      "qualified_containers": [],
       "recomputed_by_engineering": [],
       "removed_in_9_2_0": [],
       "reviewed_warnings": [],
@@ -2174,6 +2205,7 @@
         "how_to_use"
       ],
       "upstream_tool": "ha_get_skill_guide",
+      "value_types": {},
       "warnings_new_in_9_2_0": [],
       "withheld_by_rebuild": []
     },
@@ -2181,10 +2213,10 @@
       "admitted": {
         "attributes": "receipt 9.1.2 profile A+B",
         "context": "receipt 9.1.2 profile A+B",
-        "count": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-64,189-232 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
+        "count": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:189-205 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
         "data": "receipt 9.1.2 profile A+B",
         "entity_id": "receipt 9.1.2 profile A+B",
-        "errors": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-64,189-232 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
+        "errors": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:189-205 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
         "home_assistant_timezone": "receipt 9.1.2 profile A+B",
         "id": "receipt 9.1.2 profile A+B",
         "last_changed": "receipt 9.1.2 profile A+B",
@@ -2193,13 +2225,12 @@
         "metadata": "receipt 9.1.2 profile A+B",
         "note": "receipt 9.1.2 profile A+B",
         "parent_id": "receipt 9.1.2 profile A+B",
-        "partial": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-64,189-232 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
+        "partial": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:189-205 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
         "state": "receipt 9.1.2 profile A+B",
-        "states": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-64,189-232 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
-        "success": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-64,189-232 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
+        "states": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:189-205 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
+        "success": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:189-205 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
         "timestamp_format": "receipt 9.1.2 profile A+B",
-        "user_id": "receipt 9.1.2 profile A+B",
-        "warnings": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-64,189-232 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)"
+        "user_id": "receipt 9.1.2 profile A+B"
       },
       "calls": {
         "A/9.1.2": [
@@ -2268,6 +2299,7 @@
       ],
       "policy_drops": [],
       "projection": "closed",
+      "qualified_containers": [],
       "recomputed_by_engineering": [],
       "removed_in_9_2_0": [],
       "reviewed_warnings": [],
@@ -2275,49 +2307,118 @@
         "metadata.note"
       ],
       "upstream_tool": "ha_get_state",
+      "value_types": {},
       "warnings_new_in_9_2_0": [],
       "withheld_by_rebuild": []
     },
     "ha_get_system_health": {
       "admitted": {
-        "cloud.alexa_enabled": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:415-431,475-610 (shipped rebuild)",
-        "cloud.can_reach_cert_server": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:415-431,475-610 (shipped rebuild)",
-        "cloud.can_reach_cloud": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:415-431,475-610 (shipped rebuild)",
-        "cloud.can_reach_cloud_auth": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:415-431,475-610 (shipped rebuild)",
-        "cloud.certificate_status": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:415-431,475-610 (shipped rebuild)",
-        "cloud.google_enabled": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:415-431,475-610 (shipped rebuild)",
-        "cloud.iot_state": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:415-431,475-610 (shipped rebuild)",
-        "cloud.logged_in": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:415-431,475-610 (shipped rebuild)",
-        "cloud.relayer_connected": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:415-431,475-610 (shipped rebuild)",
-        "cloud.remote_connected": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:415-431,475-610 (shipped rebuild)",
-        "cloud.remote_enabled": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:415-431,475-610 (shipped rebuild)",
-        "hassio.agent_version": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:415-431,475-610 (shipped rebuild)",
-        "hassio.board": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:415-431,475-610 (shipped rebuild)",
-        "hassio.disk_life_time": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:415-431,475-610 (shipped rebuild)",
-        "hassio.disk_total": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:415-431,475-610 (shipped rebuild)",
-        "hassio.disk_used": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:415-431,475-610 (shipped rebuild)",
-        "hassio.docker_version": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:415-431,475-610 (shipped rebuild)",
-        "hassio.healthy": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:415-431,475-610 (shipped rebuild)",
-        "hassio.host_connectivity": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:415-431,475-610 (shipped rebuild)",
-        "hassio.host_os": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:415-431,475-610 (shipped rebuild)",
-        "hassio.ntp_synchronized": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:415-431,475-610 (shipped rebuild)",
-        "hassio.supervisor_api": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:415-431,475-610 (shipped rebuild)",
-        "hassio.supervisor_connectivity": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:415-431,475-610 (shipped rebuild)",
-        "hassio.supervisor_version": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:415-431,475-610 (shipped rebuild)",
-        "hassio.supported": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:415-431,475-610 (shipped rebuild)",
-        "hassio.update_channel": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:415-431,475-610 (shipped rebuild)",
-        "hassio.version_api": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:415-431,475-610 (shipped rebuild)",
-        "hassio.virtualization": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:415-431,475-610 (shipped rebuild)",
-        "homeassistant.arch": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:415-431,475-610 (shipped rebuild)",
-        "homeassistant.dev": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:415-431,475-610 (shipped rebuild)",
-        "homeassistant.docker": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:415-431,475-610 (shipped rebuild)",
-        "homeassistant.hassio": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:415-431,475-610 (shipped rebuild)",
-        "homeassistant.installation_type": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:415-431,475-610 (shipped rebuild)",
-        "homeassistant.os_name": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:415-431,475-610 (shipped rebuild)",
-        "homeassistant.os_version": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:415-431,475-610 (shipped rebuild)",
-        "homeassistant.python_version": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:415-431,475-610 (shipped rebuild)",
-        "homeassistant.version": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:415-431,475-610 (shipped rebuild)",
-        "homeassistant.virtualenv": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:415-431,475-610 (shipped rebuild)"
+        "available": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "border_agent_id": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "border_routers": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "breaks_in_ha_version": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "candidate_total": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "channel": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "cloud.alexa_enabled": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "cloud.can_reach_cert_server": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "cloud.can_reach_cloud": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "cloud.can_reach_cloud_auth": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "cloud.certificate_status": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "cloud.google_enabled": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "cloud.iot_state": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "cloud.logged_in": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "cloud.relayer_connected": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "cloud.remote_connected": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "cloud.remote_enabled": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "config_entry_id": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "config_entry_orphans": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "controller": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "created": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "dead_entities": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "default_dark_theme": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "default_theme": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "devices": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "disabled_by": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "dismissed_count": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "dismissed_version": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "domain": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "entity_id": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "error": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "extended_address": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "extended_pan_id": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "firmware_version": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "has_state": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "hassio.agent_version": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "hassio.board": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "hassio.disk_life_time": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "hassio.disk_total": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "hassio.disk_used": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "hassio.docker_version": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "hassio.healthy": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "hassio.host_connectivity": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "hassio.host_os": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "hassio.ntp_synchronized": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "hassio.supervisor_api": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "hassio.supervisor_connectivity": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "hassio.supervisor_version": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "hassio.supported": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "hassio.update_channel": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "hassio.version_api": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "hassio.virtualization": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "home_id": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "homeassistant.arch": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "homeassistant.dev": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "homeassistant.docker": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "homeassistant.hassio": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "homeassistant.installation_type": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "homeassistant.os_name": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "homeassistant.os_version": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "homeassistant.python_version": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "homeassistant.version": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "homeassistant.virtualenv": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "ieee": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "ignored": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "inclusion_state": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "is_controller_node": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "is_fixable": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "is_primary": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "is_rebuilding_routes": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "is_routing": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "is_secure": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "is_suc": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "issue_domain": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "issue_id": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "issues": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "items": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "lqi": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "manufacturer": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "matter_network": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "model": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "name": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "node_id": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "nodes": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "own_node_id": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "platform": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "registry_total": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "repairs": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "rf_region": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "rssi": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "sdk_version": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "severity": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "stale_restored": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "state": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "status": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "summary": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "supports_long_range": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "themes": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "thread_network": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "title": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "total_count": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "translation_key": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "type": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "zha_network": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "zwave_network": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "zwave_plus_version": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)"
       },
       "calls": {
         "A/9.1.2": [
@@ -2342,12 +2443,12 @@
         "type",
         "warnings"
       ],
-      "map_containers": {
-        "data": 1
-      },
+      "map_containers": {},
       "new_in_9_2_0": {},
       "notes": [
-        "domains outside homeassistant, hassio and cloud become other_domains; proposed count unit: qualified domain.key names (pending ruling)"
+        "domains outside homeassistant, hassio and cloud become other_domains",
+        "D5: info is not open; each info key is named domain.key and one outside _PLATFORM_KEYS is withheld and counted (count unit: interpretation, pending ruling); info values are reduced as shipped and not walked",
+        "section keys (SECTIONS, the section specs and their structure names) come from the shipped rebuild only; no S6 receipt requests a section"
       ],
       "number": 20,
       "observed": {
@@ -2355,9 +2456,34 @@
           "component_count",
           "data",
           "health_info",
+          "homeassistant.arch",
+          "homeassistant.config_dir",
+          "homeassistant.container_arch",
+          "homeassistant.dev",
+          "homeassistant.docker",
+          "homeassistant.hassio",
+          "homeassistant.installation_type",
+          "homeassistant.os_name",
+          "homeassistant.os_version",
+          "homeassistant.python_version",
+          "homeassistant.timezone",
+          "homeassistant.user",
+          "homeassistant.version",
+          "homeassistant.virtualenv",
           "info",
+          "lovelace.dashboards",
+          "lovelace.mode",
+          "lovelace.resources",
+          "lovelace.views",
           "manage_url",
+          "marketplace.disabled",
           "message",
+          "network.error",
+          "recorder.current_recorder_run",
+          "recorder.database_engine",
+          "recorder.database_version",
+          "recorder.estimated_db_size",
+          "recorder.oldest_recorder_run",
           "success",
           "type"
         ],
@@ -2365,22 +2491,46 @@
           "component_count",
           "data",
           "health_info",
+          "homeassistant.arch",
+          "homeassistant.config_dir",
+          "homeassistant.container_arch",
+          "homeassistant.dev",
+          "homeassistant.docker",
+          "homeassistant.hassio",
+          "homeassistant.installation_type",
+          "homeassistant.os_name",
+          "homeassistant.os_version",
+          "homeassistant.python_version",
+          "homeassistant.timezone",
+          "homeassistant.user",
+          "homeassistant.version",
+          "homeassistant.virtualenv",
           "info",
+          "lovelace.dashboards",
+          "lovelace.mode",
+          "lovelace.resources",
+          "lovelace.views",
           "manage_url",
+          "marketplace.disabled",
           "message",
+          "network.error",
+          "recorder.current_recorder_run",
+          "recorder.database_engine",
+          "recorder.database_version",
+          "recorder.estimated_db_size",
+          "recorder.oldest_recorder_run",
           "success",
           "type"
         ]
       },
-      "open_containers": [
-        "attributes",
-        "config",
-        "filter",
-        "info",
-        "selector"
-      ],
+      "open_containers": [],
       "policy_drops": [],
       "projection": "rebuild",
+      "qualified_containers": [
+        "health_info",
+        "data",
+        "info"
+      ],
       "recomputed_by_engineering": [],
       "removed_in_9_2_0": [],
       "reviewed_warnings": [],
@@ -2388,11 +2538,27 @@
         "message"
       ],
       "upstream_tool": "ha_get_system_health",
+      "value_types": {},
       "warnings_new_in_9_2_0": [],
       "withheld_by_rebuild": [
         "component_count",
+        "homeassistant.config_dir",
+        "homeassistant.container_arch",
+        "homeassistant.timezone",
+        "homeassistant.user",
+        "lovelace.dashboards",
+        "lovelace.mode",
+        "lovelace.resources",
+        "lovelace.views",
         "manage_url",
-        "message"
+        "marketplace.disabled",
+        "message",
+        "network.error",
+        "recorder.current_recorder_run",
+        "recorder.database_engine",
+        "recorder.database_version",
+        "recorder.estimated_db_size",
+        "recorder.oldest_recorder_run"
       ]
     },
     "ha_get_todo": {
@@ -2403,7 +2569,6 @@
         "icon": "receipt 9.1.2 profile A+B",
         "items": "receipt 9.1.2 profile A+B",
         "message": "receipt 9.1.2 profile A+B",
-        "partial": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-69,83-98,236-245 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
         "state": "receipt 9.1.2 profile A+B",
         "status": "receipt 9.1.2 profile A+B",
         "status_filter": "receipt 9.1.2 profile A+B",
@@ -2411,8 +2576,7 @@
         "summary": "receipt 9.1.2 profile A+B",
         "supported_features": "receipt 9.1.2 profile A+B",
         "todo_lists": "receipt 9.1.2 profile A+B",
-        "uid": "receipt 9.1.2 profile A+B",
-        "warnings": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-69,83-98,236-245 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)"
+        "uid": "receipt 9.1.2 profile A+B"
       },
       "calls": {
         "A/9.1.2": [
@@ -2479,6 +2643,7 @@
       ],
       "policy_drops": [],
       "projection": "closed",
+      "qualified_containers": [],
       "recomputed_by_engineering": [],
       "removed_in_9_2_0": [],
       "reviewed_warnings": [],
@@ -2486,6 +2651,7 @@
         "message"
       ],
       "upstream_tool": "ha_get_todo",
+      "value_types": {},
       "warnings_new_in_9_2_0": [],
       "withheld_by_rebuild": []
     },
@@ -2503,13 +2669,11 @@
         "longitude": "receipt 9.1.2 profile A+B",
         "message": "receipt 9.1.2 profile A+B",
         "name": "receipt 9.1.2 profile A+B",
-        "partial": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-69,83-98,250-259 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
         "passive": "receipt 9.1.2 profile A+B",
         "persons": "research G ruling 2e (Q2, with a disclosure note)",
         "radius": "receipt 9.1.2 profile A+B",
         "source": "receipt 9.1.2 profile A+B",
         "success": "receipt 9.1.2 profile A+B",
-        "warnings": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-69,83-98,250-259 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
         "zone": "receipt 9.1.2 profile A+B",
         "zone_id": "receipt 9.1.2 profile A+B",
         "zones": "receipt 9.1.2 profile A+B"
@@ -2619,6 +2783,7 @@
       ],
       "policy_drops": [],
       "projection": "closed",
+      "qualified_containers": [],
       "recomputed_by_engineering": [],
       "removed_in_9_2_0": [
         "friendly_name"
@@ -2628,6 +2793,7 @@
         "message"
       ],
       "upstream_tool": "ha_get_zone",
+      "value_types": {},
       "warnings_new_in_9_2_0": [],
       "withheld_by_rebuild": []
     },
@@ -2650,13 +2816,11 @@
         "name": "receipt 9.1.2 profile A+B",
         "orphaned_areas": "receipt 9.1.2 profile A+B",
         "orphaned_count": "receipt 9.1.2 profile A+B",
-        "partial": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-69,83-98,263-267 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
         "picture": "receipt 9.1.2 profile A+B",
         "success": "receipt 9.1.2 profile A+B",
         "temperature_entity_id": "receipt 9.1.2 profile A+B",
         "unassigned_areas": "receipt 9.1.2 profile A+B",
-        "unassigned_count": "receipt 9.1.2 profile A+B",
-        "warnings": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-69,83-98,263-267 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)"
+        "unassigned_count": "receipt 9.1.2 profile A+B"
       },
       "calls": {
         "A/9.1.2": [
@@ -2739,6 +2903,7 @@
       ],
       "policy_drops": [],
       "projection": "closed",
+      "qualified_containers": [],
       "recomputed_by_engineering": [],
       "removed_in_9_2_0": [],
       "reviewed_warnings": [],
@@ -2746,11 +2911,13 @@
         "message"
       ],
       "upstream_tool": "ha_list_floors_areas",
+      "value_types": {},
       "warnings_new_in_9_2_0": [],
       "withheld_by_rebuild": []
     },
     "ha_list_services": {
       "admitted": {
+        "collapsed": "S10-2 ruling: Core 2026.11.0 (74cf5a49) helpers/service.py:996,1004 (section collapsed: bool, default False)",
         "count": "receipt 9.1.2 profile A+B",
         "default": "receipt 9.1.2 profile A+B",
         "description": "receipt 9.1.2 profile A+B",
@@ -2762,12 +2929,12 @@
         "fields": "receipt 9.1.2 profile A+B",
         "filters_applied": "receipt 9.1.2 profile A+B",
         "has_more": "receipt 9.1.2 profile A+B",
+        "integration": "S10-2 ruling: Core 2026.11.0 (74cf5a49) helpers/selector.py:178,212 (entity filter integration: str)",
         "limit": "receipt 9.1.2 profile A+B",
         "name": "receipt 9.1.2 profile A+B",
         "next_offset": "receipt 9.1.2 profile A+B",
         "offset": "receipt 9.1.2 profile A+B",
         "optional": "S10 recorded review: Core service response description, tools_services.py:581-585 at 51e3aac7, receipt A/9.2.0 v24-services-response (the only key of response)",
-        "partial": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-69,83-98,271-274 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
         "query": "receipt 9.1.2 profile A+B",
         "required": "receipt 9.1.2 profile A+B",
         "response": "S10 recorded review: Core service response description, tools_services.py:581-585 at 51e3aac7, receipt A/9.2.0 v24-services-response",
@@ -2779,7 +2946,7 @@
         "target": "receipt 9.1.2 profile A+B",
         "total_count": "receipt 9.1.2 profile A+B",
         "type": "receipt 9.1.2 profile A+B",
-        "warnings": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-69,83-98,271-274 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)"
+        "warnings": "research G ruling 2b (language-note prefix, tools_services.py:227-279 at 51e3aac7)"
       },
       "calls": {
         "A/9.1.2": [
@@ -2822,8 +2989,8 @@
           "observed_9_2_0_profiles": [
             "B"
           ],
-          "source": "no recorded review",
-          "status": "withheld_pending_review"
+          "source": "S10-2 ruling: Core 2026.11.0 (74cf5a49) helpers/service.py:996,1004 (section collapsed: bool, default False)",
+          "status": "admitted"
         },
         "filter": {
           "observed_9_1_2_profiles": [],
@@ -2839,8 +3006,8 @@
             "A",
             "B"
           ],
-          "source": "no recorded review",
-          "status": "withheld_pending_review"
+          "source": "S10-2 ruling: Core 2026.11.0 (74cf5a49) helpers/selector.py:178,212 (entity filter integration: str)",
+          "status": "admitted"
         },
         "optional": {
           "observed_9_1_2_profiles": [],
@@ -2859,10 +3026,17 @@
           ],
           "source": "S10 recorded review: Core service response description, tools_services.py:581-585 at 51e3aac7, receipt A/9.2.0 v24-services-response",
           "status": "admitted"
+        },
+        "warnings": {
+          "observed_9_1_2_profiles": [],
+          "observed_9_2_0_profiles": [],
+          "source": "research G ruling 2b (language-note prefix, tools_services.py:227-279 at 51e3aac7)",
+          "status": "admitted"
         }
       },
       "notes": [
-        "type is removed upstream and not synthesized (item 15); language now follows Core with an English fallback warning, matched by a reviewed fixed prefix (research G 2b)"
+        "type is removed upstream and not synthesized (item 15); language now follows Core with an English fallback warning, matched by a reviewed fixed prefix (research G 2b)",
+        "integration (target.entity[] filters) and collapsed (field sections) are Core keys copied unchanged (S10-2 ruling); a value of another type is withheld and counted; filter stays withheld"
       ],
       "number": 24,
       "observed": {
@@ -2935,6 +3109,7 @@
       ],
       "policy_drops": [],
       "projection": "closed",
+      "qualified_containers": [],
       "recomputed_by_engineering": [],
       "removed_in_9_2_0": [
         "type"
@@ -2942,6 +3117,10 @@
       "reviewed_warnings": [],
       "upstream_text_fields": [],
       "upstream_tool": "ha_list_services",
+      "value_types": {
+        "collapsed": "bool",
+        "integration": "str"
+      },
       "warnings_new_in_9_2_0": [],
       "withheld_by_rebuild": []
     },
@@ -3108,6 +3287,7 @@
       ],
       "policy_drops": [],
       "projection": "closed",
+      "qualified_containers": [],
       "recomputed_by_engineering": [],
       "removed_in_9_2_0": [],
       "reviewed_warnings": [],
@@ -3115,6 +3295,7 @@
         "errors"
       ],
       "upstream_tool": "ha_search",
+      "value_types": {},
       "warnings_new_in_9_2_0": [],
       "withheld_by_rebuild": []
     }

@@ -14,6 +14,8 @@ test asserts equality. Each read then runs its unedited 9.1 projection, or the
   user-defined content: kept whole and not counted (item 11).
 - ``maps`` are containers whose dict keys are data (service names, domains);
   their values are closed rows, ``levels`` deep.
+- ``types`` admits a key with one JSON value type only (S10-2 ruling); a value
+  of another type is withheld and counted as one more withheld name.
 - An upstream warning passes when it equals a reviewed string or starts with a
   reviewed prefix; a prefix rule may replace the text with a fixed Engineering
   sentence. Any other warning is removed, counted per occurrence and the fixed
@@ -45,9 +47,6 @@ REPLACED_PARTIAL = (
     "upstream_warning_replaced."
 )
 
-# ha-mcp 9.2.0 Entity Visibility (visibility/enforcement.py:130 at 51e3aac7,
-# unchanged from 9.1.0): the shipped 9.1 state rule reads this family.
-_STATE_VISIBILITY_PREFIX = "Entity Visibility enforce mode omitted "
 # The 9.1 automation projection removes this family (tools_config_automations.py
 # via automation_registry_details.py:59-71 at 51e3aac7).
 _RELATED_PREFIX = "related unavailable: "
@@ -84,6 +83,8 @@ class KeySet:
     warnings: tuple = ()
     # (prefix, fixed replacement or None to keep the upstream text)
     prefixes: tuple = ()
+    # name -> the one admitted value type (S10-2)
+    types: dict = field(default_factory=dict)
 
     @property
     def opened(self) -> frozenset:
@@ -162,11 +163,10 @@ ROWS: dict = {
     # Row 8.
     'ha_config_list_groups': KeySet(
         admitted=frozenset({
-            'all', 'auto', 'context', 'count', 'entity_id', 'entity_ids',
-            'friendly_name', 'groups', 'has_more', 'icon', 'id', 'last_changed',
-            'last_reported', 'last_updated', 'limit', 'message', 'next_offset',
-            'object_id', 'offset', 'order', 'parent_id', 'state', 'success',
-            'total_count', 'unavailable_fields', 'user_id'
+            'auto', 'context', 'count', 'entity_id', 'entity_ids', 'friendly_name',
+            'groups', 'has_more', 'icon', 'id', 'last_changed', 'last_reported',
+            'last_updated', 'limit', 'message', 'next_offset', 'object_id', 'offset',
+            'order', 'parent_id', 'state', 'success', 'total_count', 'user_id'
         }),
     ),
     # Row 9.
@@ -181,7 +181,7 @@ ROWS: dict = {
     'ha_eval_template': KeySet(
         admitted=frozenset({
             'all', 'domains', 'entities', 'listeners', 'result', 'success', 'template',
-            'time', 'unavailable_fields', 'warnings'
+            'time', 'warnings'
         }),
         open=frozenset({'result'}),
     ),
@@ -200,8 +200,7 @@ ROWS: dict = {
             'device_class', 'device_id', 'disabled_by', 'enabled', 'entity_entries',
             'entity_entry', 'entity_id', 'errors', 'floor', 'hidden', 'hidden_by',
             'icon', 'label_names', 'labels', 'name', 'options', 'original_device_class',
-            'original_name', 'partial', 'platform', 'success', 'unique_id',
-            'uses_device_name', 'warnings'
+            'original_name', 'platform', 'success', 'unique_id', 'uses_device_name'
         }),
         open=frozenset({'options'}),
         maps={'categories': 1},
@@ -211,7 +210,7 @@ ROWS: dict = {
         admitted=frozenset({
             'area', 'domain', 'entity_id', 'exposed_entities', 'exposed_to', 'floor',
             'friendly_name', 'has_custom_settings', 'is_exposed_anywhere', 'labels',
-            'note', 'partial', 'state', 'success', 'warnings'
+            'note', 'state', 'success'
         }),
         maps={'exposed_to': 1},
     ),
@@ -228,7 +227,7 @@ ROWS: dict = {
             'severity', 'state', 'states_summary', 'success', 'system_info',
             'system_summary', 'time_zone', 'total_areas', 'total_domains',
             'total_entities', 'total_entity_results', 'total_services',
-            'translation_key', 'truncated', 'version', 'warnings'
+            'translation_key', 'truncated', 'version'
         }),
         drops=frozenset({
             'mcp_client', 'python_required', 'settings_url', 'settings_url_hint',
@@ -249,16 +248,15 @@ ROWS: dict = {
             'attributes', 'context', 'count', 'data', 'entity_id', 'errors',
             'home_assistant_timezone', 'id', 'last_changed', 'last_reported',
             'last_updated', 'metadata', 'note', 'parent_id', 'partial', 'state',
-            'states', 'success', 'timestamp_format', 'user_id', 'warnings'
+            'states', 'success', 'timestamp_format', 'user_id'
         }),
-        prefixes=((_STATE_VISIBILITY_PREFIX, None),),
     ),
     # Row 21.
     'ha_get_todo': KeySet(
         admitted=frozenset({
-            'count', 'entity_id', 'friendly_name', 'icon', 'items', 'message',
-            'partial', 'state', 'status', 'status_filter', 'success', 'summary',
-            'supported_features', 'todo_lists', 'uid', 'warnings'
+            'count', 'entity_id', 'friendly_name', 'icon', 'items', 'message', 'state',
+            'status', 'status_filter', 'success', 'summary', 'supported_features',
+            'todo_lists', 'uid'
         }),
     ),
     # Row 22.
@@ -266,8 +264,8 @@ ROWS: dict = {
         admitted=frozenset({
             'count', 'device_trackers', 'editable', 'entity_icon', 'entity_id',
             'friendly_name', 'icon', 'id', 'latitude', 'longitude', 'message', 'name',
-            'partial', 'passive', 'persons', 'radius', 'source', 'success', 'warnings',
-            'zone', 'zone_id', 'zones'
+            'passive', 'persons', 'radius', 'source', 'success', 'zone', 'zone_id',
+            'zones'
         }),
     ),
     # Row 23.
@@ -276,22 +274,25 @@ ROWS: dict = {
             'aliases', 'area_count', 'area_id', 'areas', 'created_at', 'floor_count',
             'floor_id', 'floors', 'humidity_entity_id', 'icon', 'labels', 'level',
             'message', 'modified_at', 'name', 'orphaned_areas', 'orphaned_count',
-            'partial', 'picture', 'success', 'temperature_entity_id',
-            'unassigned_areas', 'unassigned_count', 'warnings'
+            'picture', 'success', 'temperature_entity_id', 'unassigned_areas',
+            'unassigned_count'
         }),
     ),
     # Row 24.
     'ha_list_services': KeySet(
         admitted=frozenset({
-            'count', 'default', 'description', 'detail_level', 'domain', 'domains',
-            'entity', 'example', 'fields', 'filters_applied', 'has_more', 'limit',
-            'name', 'next_offset', 'offset', 'optional', 'partial', 'query', 'required',
-            'response', 'selector', 'service', 'services', 'success',
+            'collapsed', 'count', 'default', 'description', 'detail_level', 'domain',
+            'domains', 'entity', 'example', 'fields', 'filters_applied', 'has_more',
+            'integration', 'limit', 'name', 'next_offset', 'offset', 'optional', 'query',
+            'required', 'response', 'selector', 'service', 'services', 'success',
             'supported_features', 'target', 'total_count', 'type', 'warnings'
         }),
         open=frozenset({'default', 'example'}),
         maps={'fields': 1, 'services': 1},
         prefixes=((_SERVICES_LANGUAGE_PREFIX, SERVICES_LANGUAGE_WARNING),),
+        # S10-2: Core 2026.11.0 (74cf5a49) helpers/selector.py:178,212 and
+        # helpers/service.py:996,1004.
+        types={'collapsed': bool, 'integration': str},
     ),
     # Row 25.
     'ha_search': KeySet(
@@ -315,6 +316,10 @@ def _names(value: Any, row: KeySet, acc: set) -> set:
     if isinstance(value, dict):
         for key, item in value.items():
             acc.add(key)
+            if key in row.types and type(item) is not row.types[key]:
+                # Not a string, so never an admitted name.
+                acc.add((key, "value_type"))
+                continue
             if key in row.opened or key in row.drops:
                 continue
             if key in row.maps:
@@ -365,6 +370,8 @@ def _keep(value: Any, row: KeySet, warnings: _Warnings) -> Any:
         kept = {}
         for key, item in value.items():
             if key not in row.admitted:
+                continue
+            if key in row.types and type(item) is not row.types[key]:
                 continue
             if key in row.opened:
                 kept[key] = item

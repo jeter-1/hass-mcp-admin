@@ -255,9 +255,22 @@ class OutputKeyContract(unittest.TestCase):
                 self.assertTrue(entry['source'].startswith('S10 recorded review'))
                 self.assertIn(name, READS['ha_list_services']['admitted'])
 
+    def test_services_core_keys_are_admitted_on_the_s10_2_ruling(self):
+        # S10-2 (13:25): Core keys copied unchanged, one value type each.
+        row = READS['ha_list_services']
+        self.assertEqual(row['value_types'], {'collapsed': 'bool', 'integration': 'str'})
+        for name, cite in (('integration', 'helpers/selector.py:178,212'),
+                           ('collapsed', 'helpers/service.py:996,1004')):
+            with self.subTest(name=name):
+                entry = row['new_in_9_2_0'][name]
+                self.assertEqual(entry['status'], 'admitted')
+                self.assertTrue(entry['source'].startswith('S10-2 ruling: Core 2026.11.0 (74cf5a49)'))
+                self.assertIn(cite, entry['source'])
+                self.assertIn(name, row['admitted'])
+
     def test_unreviewed_9_2_0_keys_stay_withheld(self):
         pending = {
-            'ha_list_services': ('collapsed', 'filter', 'integration'),
+            'ha_list_services': ('filter',),
             'ha_config_list_helpers': ('read_only', 'secret', 'later_forms'),
             'ha_get_integration': ('read_only', 'secret', 'later_forms'),
         }
@@ -421,7 +434,7 @@ class RealCoreReplay920(unittest.TestCase):
                     self.assertEqual(data['fields_dropped_by_policy'], len(upstream & set(row['policy_drops'])))
                 if row['projection'] == 'closed':
                     client = generator.names(data, tool) - ADDED
-                    self.assertLessEqual(client, set(row['admitted']))
+                    self.assertLessEqual(client, set(row['admitted']) | set(row['recomputed_by_engineering']))
                     self.assertLessEqual(upstream & set(row['admitted']), client)
 
     def test_an_injected_key_is_withheld_and_counted_once_per_name(self):
@@ -538,8 +551,10 @@ class RealCoreReplay920(unittest.TestCase):
                     client = generator.names(out['data'], 'ha_list_services') - ADDED
                     for name in ('response', 'optional'):
                         self.assertEqual(name in client, name in upstream)
-                    for name in ('collapsed', 'filter', 'integration'):
-                        self.assertNotIn(name, client)
+                    # S10-2: integration and collapsed are admitted; filter is not.
+                    for name in ('collapsed', 'integration'):
+                        self.assertEqual(name in client, name in upstream)
+                    self.assertNotIn('filter', client)
                     self.assertEqual(out['data']['engineering_notes'], [SERVICES_TYPE_NOTE])
                 elif 'name' in upstream:
                     self.assertIn('name', generator.names(out['data'], 'ha_search'))
