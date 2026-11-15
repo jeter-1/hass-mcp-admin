@@ -1,0 +1,10 @@
+== admission for hamcp371-s6-run-b-9-2-0-1 (lane) in /home/josh/repos/hass-mcp-admin/.claude/worktrees/hamcp-371-ha-mcp-9-2-0
+time=2026-11-14 19:14:20 CST
+units:
+
+lanes(containers):
+
+stray:
+heavy_total=0 evidence=0 mem_avail_gb=12.4 load1=0.09 root_free_gb=60.4
+Running as unit: hamcp371-s6-run-b-9-2-0-1.service; invocation ID: 6a9cf94613a040159b1c8434bfe3e422
+launched rc=0 cmd=bash -c python3\ -I\ -B\ scripts/core_read_replay_capture_local.py\ run\ --profile\ B\ --version\ 9.2.0\ --wheel-dir\ /home/josh/repos/hass-mcp-admin/.claude/worktrees/hamcp-371-ha-mcp-9-2-0/.artifacts/hamcp371-n32/wheels\ --upstream-git\ /home/josh/repos/cursor-hass-mcp-admin/.artifacts/cursor-research-2026-11-11-ij/ha-mcp/.git\ --run-dir\ .artifacts/hamcp371-s6/run-b-9.2.0-1\ --launch-log\ .artifacts/hamcp371-s6/launches.jsonl\ --note\ \'S6\ profile\ B\ \(C4\ of\ 2026-11-14\ 16:15\):\ ha-mcp\ 9.2.0\ with\ component\ 9.2.0\ from\ tag\ v9.2.0\ on\ one\ disposable\ Core\ 2026.11.0\;\ N32\ wheels\ from\ the\ pinned\ directory\;\ package\ copied\ from\ the\ pinned\ image\ export\;\ harness\ e9bfa4db\;\ images\ from\ the\ local\ cache\ by\ digest\,\ no\ pull\'\ \>\ .artifacts/hamcp371-s6/run-b-9.2.0-1.log\ 2\>\&1

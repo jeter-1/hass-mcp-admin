@@ -455,7 +455,9 @@ new trailing-whitespace line enters the tree:
 - the gate's own receipt: sha256 `734ea162...`;
 - the committed copy: sha256 `de85d2f5...`.
 
-`gate/run-a-1.txt` and `gate/selftest-1.txt` are unchanged.
+`gate/run-a-1.txt` and `gate/selftest-1.txt` are unchanged. (They were
+unchanged at this recapture. Later, F3 commit e9bfa4db stripped their trailing
+spaces; neither is bound by a SHA256SUMS file.)
 
 **Pattern scan.** Before the commit, `comparison/scan.py` ran over the full run
 directory, the gate receipt, the launch log, the comparison output and the
@@ -472,3 +474,94 @@ staged copy: 145 files, 0 hits.
 
 **Not built.** The receipt's `not_built` list is unchanged: profile B, the
 Supervisor facade and token revocation.
+
+## Profile B on 9.2.0 (2026-11-14)
+
+Asked by C4 and N32 (16:15 rulings): build profile B within N32 and capture
+the 11 component-dependent reads on 9.2.0 with component 9.2.0.
+
+### The run
+
+Launch `run-b-9.2.0-1`: harness e9bfa4db, profile B, version 9.2.0, one
+launch, PASS in 124 seconds. The posture is as for profile A. Cleanup is clean.
+The lane's exact-token scan covered 65 files with 4 needles and removed none.
+All seed steps were `ok`.
+
+**Component.** The component comes from upstream tag `v9.2.0`, commit
+`51e3aac788482a081807591cd5d58d07dc4e540b`, read by git plumbing with lazy
+fetch off: 108 files, 3,689,155 bytes. The receipt records the tag object, the
+root tree, the component tree and the sha256 of every file. It is placed in
+`/config/custom_components`. No HACS, no pip and no fetch by Core or by the
+lane.
+
+**Requirements (N32).** Core resolved the four requirements of the 9.2.0
+manifest as follows:
+
+- `mcp>=1.24.0` from the Core image (2.3.0);
+- `ruamel.yaml>=0.18.0` from the N32 wheel 0.19.1;
+- `voluptuous-openapi>=0.4.1` from the N32 wheel 0.4.1;
+- `ha-mcp==9.2.0` from the pinned 9.2.0 image's package. That container is
+  created, never started.
+
+The receipt records the wheel sha256s and sources. Core asked for none of the
+other ten requirements. All three overlay packages load from
+`/opt/hamcp371-overlay`, which is on `PYTHONPATH` in Core only.
+
+**Package copy.** Both images carry one symbolic link, `settings_ui/CLAUDE.md`
+-> `AGENTS.md`. It is recorded under `symbolic_links_not_copied`, and it is
+neither copied nor counted. Any other link refuses (0308eb73).
+
+**Phases.** Both phases, after setup and after the Core restart, show:
+
+- `check_exit` 0;
+- the entry `ha_mcp_tools` loaded;
+- `info` reporting `component_version` 9.2.0;
+- no refusal in the Core log.
+
+**Calls.** There are 47 calls before the restart, with 8 `isError` and no
+exchange failure, and 2 calls after it. Of the 27 component reads, 22 succeed.
+The 5 errors:
+
+- three are the designed error cases: `p3-wrong-type`,
+  `p3-unknown-argument` and `p4-absent-state`;
+- two are `y-group` and `y-absent-key`. They return `Unknown tool:
+  'ha_config_get_yaml'` for both the administrator and the ordinary-user token.
+
+**The YAML read is not registered.** Upstream registers `ha_config_get_yaml`
+only when `HAMCP_ENABLE_FILESYSTEM_TOOLS` is true (default False). This holds at
+both 9.1.2 and 9.2.0: `tools/tools_yaml_read.py:644-654`,
+`config_settings.py:678-680`. The lane passes no feature flag, so the peer runs
+on image defaults. The N29 conditions on the YAML read are therefore **not
+evaluated** by this run. Setting the flag needs a ruling.
+
+**Committed:**
+
+- `run-b-9.2.0-1/receipt.json` and its `SHA256SUMS` (66 lines; the committed
+  files verify);
+- the seed plan and the seed report;
+- the three call indexes;
+- the two profile B phase records.
+
+Also committed: the gate receipt, with trailing spaces stripped from three
+lines (the gate's own receipt is sha256 `2c06d218...`, the committed copy
+`cf9494d2...`), and the launch log's fourth line.
+
+**Not committed.** The call files, the `_initialize.json` files and the logs
+stay in ignored scratch.
+
+**Scans.** Before the copy, `comparison/scan.py` covered 67 files with 0 hits,
+and the leak check passed. Over the staged copy, the scan covered 11 files with
+0 hits.
+
+**Logs.**
+
+- The Core log has 7 ERROR and 7 WARNING lines over its two starts.
+- The peer log has two WARNING lines (`Invalid arguments for tool`), one for
+  each designed argument error.
+- The ordinary-user peer log has none.
+
+**Not done.** As the receipt records:
+
+- no server entry of the component is created;
+- the component 2.2.1 / ha-mcp 8.5.0 control belongs to SR;
+- 9.1.2 profile B has not run.
