@@ -12,12 +12,17 @@ import io
 import json
 import os
 from pathlib import Path
+import shutil
+import stat
+import subprocess
 import sys
 import tarfile
 import tempfile
 import types
 import unittest
 from unittest import mock
+import warnings
+import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -490,13 +495,42 @@ class StoredFileTests(unittest.TestCase):
                                    "arguments_built_with_policy": "9.1.2"})
 
 
+def inventory_rows(version, **core_versions):
+    """Requirement rows as the inventory writes them: ``mcp`` from Core, two missing."""
+    rows = []
+    for requirement in lane.COMPONENT_REQUIREMENTS[version]:
+        name = lane.parse_requirement(requirement)[0]
+        installed = core_versions.get(name, "2.3.0" if name == "mcp" else None)
+        source = ("pinned ha-mcp image" if name == "ha-mcp"
+                  else "core image" if installed is not None else "missing")
+        rows.append({"requirement": requirement, "core_image_version": installed,
+                     "source": source})
+    return rows
+
+
+# The two N32 pins as ``read_wheels`` reports them; no wheel file is read.
+WHEELS = {"wheels": [{"distribution": pin["distribution"], "version": pin["version"]}
+                     for pin in lane.N32_WHEELS]}
+
+
 class ProfileTests(unittest.TestCase):
-    def inventory(self, scratch, **changes):
+    def inventory(self, scratch, rows=None, **changes):
+        reports = {}
+        for version in lane.VERSIONS:
+            found = (rows or {}).get(version) or inventory_rows(version)
+            reports[version] = {"version": version, "requirements": found,
+                                "missing": [row["requirement"] for row in found
+                                            if row["source"] == "missing"]}
         receipt = {"command": "inventory", "result": "PASS",
-                   "bindings": {"core": {"image": IMAGE["image"]}},
-                   "profile_b": {version: {"missing": []} for version in lane.VERSIONS}}
+                   "bindings": {"core": {"image": IMAGE["image"]}}, "profile_b": reports,
+                   "package_source_in_image": {
+                       version: {"path": lane.PACKAGE_SOURCE, "files": 3, "bytes": 30}
+                       for version in lane.VERSIONS},
+                   "upstream_python": {version: ["3.14"] for version in lane.VERSIONS},
+                   "core_python": ["3.14"]}
         receipt.update(changes)
-        path = Path(scratch) / "receipt.json"
+        # One file per call: a test may hold several inventories at once.
+        path = Path(scratch) / f"receipt-{len(list(Path(scratch).iterdir()))}.json"
         path.write_text(json.dumps(receipt), encoding="utf-8")
         return path
 
@@ -505,26 +539,86 @@ class ProfileTests(unittest.TestCase):
             lane.require_profile_b(*args)
         return str(raised.exception)
 
-    def test_the_committed_inventory_refuses_profile_b_for_a_missing_requirement(self):
-        self.assertEqual(self.refusal(lane.core_binding()), "profile_b_core_requirement_missing")
+    def test_the_committed_inventory_refuses_profile_b_without_the_wheels(self):
+        for version in lane.VERSIONS:
+            with self.subTest(version=version):
+                self.assertEqual(self.refusal(lane.core_binding(), version),
+                                 "profile_b_core_requirement_missing")
 
-    def test_profile_b_refuses_even_when_nothing_is_missing_because_it_is_not_built(self):
-        with tempfile.TemporaryDirectory() as scratch:
-            self.assertEqual(self.refusal(IMAGE, self.inventory(scratch)),
-                             "profile_b_overlay_not_built")
+    def test_the_committed_inventory_with_the_two_n32_wheels_is_feasible(self):
+        for version in lane.VERSIONS:
+            with self.subTest(version=version):
+                built = lane.require_profile_b(lane.core_binding(), version, WHEELS)
+                self.assertEqual([row["source"] for row in built["requirements"]],
+                                 ["core image", lane.WHEEL_SOURCE, lane.WHEEL_SOURCE,
+                                  "pinned ha-mcp image"])
+                self.assertEqual([row.get("wheel_version") for row in built["requirements"]],
+                                 [None, "0.19.1", "0.4.1", None])
+                self.assertEqual(built["package_source"]["path"], lane.PACKAGE_SOURCE)
+                self.assertEqual(built["inventory"],
+                                 "docs/evidence/hamcp371/s5/inventory-3/receipt.json")
+                self.assertEqual(built["core_python"], ["3.14"])
 
     def test_a_missing_failed_or_stale_inventory_is_refused(self):
         with tempfile.TemporaryDirectory() as scratch:
-            self.assertEqual(self.refusal(IMAGE, Path(scratch) / "absent.json"),
-                             "profile_b_inventory_missing")
-            self.assertEqual(self.refusal(IMAGE, self.inventory(scratch, result="WITHHELD")),
-                             "profile_b_inventory_missing")
-            self.assertEqual(self.refusal(IMAGE, self.inventory(scratch, profile_b={})),
-                             "profile_b_inventory_missing")
-            self.assertEqual(
-                self.refusal(IMAGE, self.inventory(
-                    scratch, bindings={"core": {"image": "synthetic.invalid/other"}})),
-                "profile_b_inventory_stale")
+            def refused(path):
+                return self.refusal(IMAGE, "9.2.0", WHEELS, path)
+            self.assertEqual(lane.require_profile_b(
+                IMAGE, "9.2.0", WHEELS, self.inventory(scratch))["package_source"],
+                {"path": lane.PACKAGE_SOURCE, "files": 3, "bytes": 30})
+            reordered = inventory_rows("9.2.0")[::-1]
+            cases = (
+                (Path(scratch) / "absent.json", "profile_b_inventory_missing"),
+                (self.inventory(scratch, result="WITHHELD"), "profile_b_inventory_missing"),
+                (self.inventory(scratch, command="run"), "profile_b_inventory_missing"),
+                (self.inventory(scratch, profile_b={}), "profile_b_inventory_missing"),
+                (self.inventory(scratch, bindings={"core": {"image": "synthetic.invalid/other"}}),
+                 "profile_b_inventory_stale"),
+                (self.inventory(scratch, rows={"9.2.0": reordered}), "profile_b_inventory_stale"),
+                (self.inventory(scratch, package_source_in_image={}),
+                 "profile_b_inventory_missing"),
+                (self.inventory(scratch, package_source_in_image={
+                    "9.2.0": {"path": "/synthetic/", "files": 3, "bytes": 30}}),
+                 "profile_b_inventory_missing"))
+            for path, token in cases:
+                with self.subTest(token=token, path=path.name):
+                    self.assertEqual(refused(path), token)
+            stale = json.loads(self.inventory(scratch).read_text(encoding="utf-8"))
+            stale["profile_b"]["9.2.0"]["missing"] = []
+            path = Path(scratch) / "stale.json"
+            path.write_text(json.dumps(stale), encoding="utf-8")
+            self.assertEqual(refused(path), "profile_b_inventory_stale")
+
+    def test_a_wheel_must_meet_its_requirement_and_never_shadow_the_core_image(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            low = {"wheels": [dict(WHEELS["wheels"][0], version="0.17.9"),
+                              WHEELS["wheels"][1]]}
+            self.assertEqual(self.refusal(IMAGE, "9.2.0", low, self.inventory(scratch)),
+                             "n32_wheel_does_not_meet_requirement")
+            for name, installed in (("ruamel-yaml", "0.18.6"), ("ha-mcp", "9.2.0")):
+                with self.subTest(name=name):
+                    path = self.inventory(
+                        scratch, rows={"9.2.0": inventory_rows("9.2.0", **{name: installed})})
+                    self.assertEqual(self.refusal(IMAGE, "9.2.0", WHEELS, path),
+                                     "overlay_distribution_in_core_image")
+            # Only one wheel: the other requirement is still missing.
+            one = {"wheels": WHEELS["wheels"][:1]}
+            self.assertEqual(self.refusal(IMAGE, "9.2.0", one, self.inventory(scratch)),
+                             "profile_b_core_requirement_missing")
+
+    def test_the_two_pins_are_the_two_missing_requirements_at_versions_that_meet_them(self):
+        missing = [row["requirement"] for row in inventory_rows("9.2.0")
+                   if row["source"] == "missing"]
+        self.assertEqual([pin["requirement"] for pin in lane.N32_WHEELS], missing)
+        for pin in lane.N32_WHEELS:
+            with self.subTest(pin=pin["file"]):
+                self.assertTrue(lane.satisfied(pin["requirement"], pin["version"]))
+                self.assertRegex(pin["sha256"], r"^[0-9a-f]{64}$")
+                self.assertTrue(pin["source"].startswith("https://files.pythonhosted.org/"))
+                self.assertTrue(pin["source"].endswith("/" + pin["file"]))
+                self.assertEqual(pin["tops"][1], pin["file"].split("-py3-")[0] + ".dist-info")
+        self.assertFalse({lane.normalized(pin["distribution"]) for pin in lane.N32_WHEELS}
+                         & {lane.normalized(name) for name in lane.OTHER_REQUIREMENTS})
 
     def test_the_groups_are_the_calls_modules_and_profile_a_leaves_the_yaml_read_out(self):
         every = (lane.CAPTURE_GROUPS + lane.RESTART_GROUPS + lane.PROFILE_B_GROUPS
@@ -568,12 +662,17 @@ class FakeDocker:
     GOOD_PROBE = {"interfaces": ["lo"], "ipv4_routes": 0, "egress_errno": 101}
 
     def __init__(self, *, probe=None, peer_log=b"synthetic peer log\n", seed_ok=True,
-                 calls_fail=()):
+                 calls_fail=(), core_log=b"synthetic log\n", component="9.2.0", export=b"",
+                 resolved=None):
         self.calls, self.events, self.forwarded = [], [], []
         self.calls_fail = set(calls_fail)
         self.containers, self.volumes, self.streams = {}, {}, []
         self.probe = probe or (lambda container, count: dict(self.GOOD_PROBE))
         self.probes, self.peer_log, self.seed_ok, self.out_root = 0, peer_log, seed_ok, None
+        # Profile B: Core's log, the component version the holder's check reports,
+        # the ``docker export`` stream of the package container, what Core resolves.
+        self.core_log, self.component, self.export = core_log, component, export
+        self.resolved = resolved or (lambda version: synthetic_resolved(version))
 
     def __call__(self, *args, check=True, timeout=120, env=None):
         args = list(args)
@@ -612,11 +711,13 @@ class FakeDocker:
         self.containers[name] = {
             "Id": "synthetic-id-" + name, "Image": fake_digest(image),
             "Config": {"Image": image,
-                       "Labels": dict(item.split("=", 1) for item in values("--label"))},
-            "State": {"Running": args[1] == "run", "OOMKilled": False},
+                       "Labels": dict(item.split("=", 1) for item in values("--label")),
+                       "Env": [item for item in values("--env") if "=" in item]},
+            "State": {"Running": args[1] == "run", "OOMKilled": False,
+                      "Status": "running" if args[1] == "run" else "created"},
             "HostConfig": {
                 "Memory": lane.s4.host.memory_bytes(values("--memory")[0]),
-                "PidsLimit": int(values("--pids-limit")[0]),
+                "PidsLimit": int(values("--pids-limit")[0]) if values("--pids-limit") else None,
                 "ReadonlyRootfs": "--read-only" in args, "Privileged": False,
                 "PortBindings": {}, "PublishAllPorts": False, "CapAdd": None, "Devices": [],
                 "SecurityOpt": values("--security-opt"), "Binds": None, "NetworkMode": network,
@@ -629,7 +730,7 @@ class FakeDocker:
 
     def execute(self, args, env):
         rest = args[2:]
-        while rest[0] == "--env":
+        while rest[0] in ("--env", "--workdir"):
             rest = rest[2:]
         container, rest = rest[0], rest[1:]
         if not self.containers.get(container, {}).get("State", {}).get("Running"):
@@ -643,6 +744,19 @@ class FakeDocker:
             return (0 if env.get("HOMEASSISTANT_TOKEN") == SYNTHETIC_TOKEN else 1), b""
         if lane.s4.WAIT_HTTP in rest:
             return 0, b""
+        if lane.COMPONENT_CHECK in rest:
+            # url, mode, limit, out: the report goes where the holder would write it.
+            mode, out = rest[rest.index(lane.COMPONENT_CHECK) + 2], rest[-1]
+            self.events.append("component:" + mode)
+            if env.get("HOMEASSISTANT_TOKEN") != SYNTHETIC_TOKEN:
+                return 1, b""
+            self.host_path(out).write_text(json.dumps(synthetic_component_report(
+                mode, self.component)), encoding="utf-8")
+            return 0, b'{"ok": true}\n'
+        if lane.RESOLVED in rest:
+            self.events.append("resolved:" + container)
+            assert rest[rest.index(lane.RESOLVED) + 1:] == list(lane.RESOLVED_NAMES)
+            return 0, json.dumps(self.resolved(self.component)).encode("utf-8")
         script = next((item for item in rest if item.startswith("/lane/scripts/")), None)
         if script and script.endswith("core_read_replay_seed.py"):
             self.events.append("seed")
@@ -666,7 +780,13 @@ class FakeDocker:
             out = self.host_path(target)
             out.mkdir(parents=False)
             (out / "_index.json").write_text(json.dumps({"sessions_opened": 1, "calls": [
-                {"id": "synthetic", "is_error": False, "exchange_failure": None}]}),
+                {"id": "synthetic", "is_error": False, "exchange_failure": None},
+                {"id": "synthetic-state", "upstream_tool": "ha_get_state",
+                 "file": "synthetic-state.json", "sha256": "0" * 64, "is_error": False,
+                 "exchange_failure": None, "arguments": {"synthetic": True}},
+                {"id": "synthetic-yaml", "upstream_tool": lane.YAML_READ,
+                 "file": "synthetic-yaml.json", "sha256": "1" * 64, "is_error": True,
+                 "exchange_failure": None}]}),
                 encoding="utf-8")
             return 0, b""
         raise AssertionError(rest[:4])
@@ -699,19 +819,65 @@ class FakeDocker:
             del self.volumes[args[3]]
             return 0, b""
         if args[1] == "start":
-            self.containers[args[2]]["State"]["Running"] = True
+            self.containers[args[2]]["State"].update(Running=True, Status="running")
             self.events.append("start:" + args[2])
             return 0, b""
         if args[1] == "restart":
             self.events.append("restart:" + args[-1])
             return 0, b""
         if args[1] == "logs":
-            return 0, self.peer_log if "-peer-" in args[2] else b"synthetic log\n"
+            if "-peer-" in args[2]:
+                return 0, self.peer_log
+            return 0, self.core_log if args[2].endswith("-core") else b"synthetic log\n"
         if args[1] == "rm":
             del self.containers[args[-1]]
             self.events.append("rm:" + args[-1])
             return 0, b""
         raise AssertionError(args[:4])
+
+    def popen(self, argv, **kwargs):
+        """``docker export`` of a created container: the configured stream, once."""
+        assert argv[:2] == ["docker", "export"] and len(argv) == 3, argv
+        assert kwargs.get("stdout") is lane.subprocess.PIPE, kwargs
+        self.calls.append(list(argv))
+        data = self.containers.get(argv[2])
+        assert data is not None and data["State"]["Status"] == "created", argv
+        self.events.append("export:" + argv[2])
+        stream = io.BytesIO(self.export(data["Config"]["Image"]) if callable(self.export)
+                            else self.export)
+        return types.SimpleNamespace(stdout=stream, wait=lambda timeout=None: 0)
+
+
+def synthetic_component_report(mode, component):
+    """What the holder's component check writes when setup and both reads succeed."""
+    report = {"mode": mode, "ok": True,
+              "entries": [{"domain": lane.COMPONENT_DOMAIN, "title": "synthetic",
+                           "source": "user", "state": "loaded", "disabled_by": None,
+                           "reason": None}],
+              "components": {"webhook": True, "ha_mcp_tools": True},
+              "manifest": {"success": True, "error_code": None, "result": {
+                  "version": component, "is_built_in": False,
+                  "requirements": list(lane.COMPONENT_REQUIREMENTS[component])}},
+              "info": {"success": True, "error_code": None, "result": {
+                  "component_version": component, "schema_version": 1,
+                  "tools_services": ["synthetic"], "webhook_auth": "synthetic",
+                  "timezone": "synthetic", "capabilities": {}, "limits": {},
+                  "unlisted": "synthetic-not-kept"}}}
+    if mode == "setup":
+        report["flow"] = {"menu_step": "user", "menu_options": ["tools"], "form_step": "tools",
+                          "fields": [], "result_type": "create_entry", "title": "synthetic"}
+    return report
+
+
+def synthetic_resolved(version):
+    """Core resolves the three from the overlay and ``mcp`` from its own image."""
+    found = {name: None for name in lane.RESOLVED_NAMES}
+    found["ha-mcp"] = {"version": version, "location": lane.OVERLAY_TARGET}
+    for pin in lane.N32_WHEELS:
+        found[pin["requirement"].split(">=")[0]] = {"version": pin["version"],
+                                                    "location": lane.OVERLAY_TARGET}
+    found["mcp"] = {"version": "2.3.0", "location": "/" + SITE.rstrip("/")}
+    return {"distributions": found, "core_python_path": [lane.OVERLAY_TARGET]}
 
 
 class LaneFlowTests(unittest.TestCase):
@@ -905,15 +1071,247 @@ class LaneFlowTests(unittest.TestCase):
         self.assertFalse((run_dir / "peer-9.1.2.log").exists())
         self.assertIs(receipt["cleanup"]["clean"], True)
 
-    def test_profile_b_is_a_preflight_refusal_that_touches_nothing(self):
-        docker = FakeDocker()
-        code, launch, receipt, run_dir = self.launch(docker, "run", "--profile", "B")
-        self.assertEqual((code, launch["result"], launch["failure"]),
-                         (2, "REFUSED", "profile_b_core_requirement_missing"))
+    def assert_preflight(self, docker, result, token):
+        code, launch, receipt, run_dir = result
+        self.assertEqual((code, launch["result"], launch["failure"]), (2, "REFUSED", token))
         self.assertIs(launch["execution_started"], False)
         self.assertEqual(docker.calls, [])
         self.assertIsNone(receipt)
         self.assertFalse(run_dir.exists())
+
+    def test_the_profile_b_options_are_all_three_with_profile_b_and_none_without(self):
+        cases = (
+            (["--profile", "B"], "profile_b_options_missing"),
+            (["--profile", "B", "--version", "9.2.0", "--wheel-dir", "synthetic"],
+             "profile_b_options_missing"),
+            (["--profile", "A", "--version", "9.2.0"], "profile_a_takes_no_profile_b_options"),
+            (["--profile", "A", "--upstream-git", "synthetic"],
+             "profile_a_takes_no_profile_b_options"))
+        for tail, token in cases:
+            with self.subTest(tail=tail):
+                docker = FakeDocker()
+                self.assert_preflight(docker, self.launch(docker, "run", *tail), token)
+
+    def test_profile_b_without_the_wheels_or_the_clone_touches_nothing(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            docker = FakeDocker()
+            self.assert_preflight(docker, self.launch(
+                docker, "run", "--profile", "B", "--version", "9.2.0", "--wheel-dir", scratch,
+                "--upstream-git", str(Path(scratch) / "synthetic.git")), "n32_wheel_missing")
+            # The wheels are read; the clone that is not there is not.
+            pins = synthetic_wheels(Path(scratch))
+            docker = FakeDocker()
+            with mock.patch.object(lane, "N32_WHEELS", pins):
+                self.assert_preflight(docker, self.launch(
+                    docker, "run", "--profile", "B", "--version", "9.2.0", "--wheel-dir",
+                    scratch, "--upstream-git", str(Path(scratch) / "absent.git")),
+                    "upstream_clone_read_failed")
+
+    def launch_b(self, docker, version, figures=None):
+        """``run --profile B`` with synthetic wheels, component and package figures."""
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        wheel_dir, git_dir = Path(scratch.name) / "wheels", Path(scratch.name) / "synthetic.git"
+        wheel_dir.mkdir()
+        pins, read = synthetic_wheels(wheel_dir), []
+        real = lane.require_profile_b
+
+        def component(path, name, bound):
+            read.append((path, name, bound))
+            return synthetic_component(name)
+
+        def profile_b(core, wanted, wheels=None):
+            # The committed inventory, with the synthetic export's own figures.
+            built = real(core, wanted, wheels)
+            built["package_source"] = dict(
+                built["package_source"], **(figures or package_figures(package_entries(wanted))))
+            return built
+        with contextlib.ExitStack() as stack:
+            for name, value in (("subprocess", fake_subprocess(Popen=docker.popen)),
+                                ("N32_WHEELS", pins), ("read_component", component),
+                                ("require_profile_b", profile_b)):
+                stack.enter_context(mock.patch.object(lane, name, value))
+            result = self.launch(docker, "run", "--profile", "B", "--version", version,
+                                 "--wheel-dir", str(wheel_dir), "--upstream-git", str(git_dir))
+        self.assertEqual(read, [(git_dir, version, lane.s4.binding(version)["source_commit"])])
+        return result
+
+    def assert_clean(self, docker, receipt, run_dir):
+        self.assertIs(receipt["cleanup"]["clean"], True)
+        self.assertEqual((docker.containers, docker.volumes), ({}, {}))
+        for argv in docker.calls:
+            self.assertNotIn(SYNTHETIC_TOKEN, " ".join(argv))
+            self.assertNotIn(OTHER_TOKEN, " ".join(argv))
+        for path in run_dir.rglob("*"):
+            if path.is_file():
+                self.assertNotIn(SYNTHETIC_TOKEN.encode(), path.read_bytes())
+                self.assertNotIn(OTHER_TOKEN.encode(), path.read_bytes())
+
+    def test_profile_b_captures_9_2_0_on_its_component_through_the_overlay(self):
+        version, stem = "9.2.0", "hamcp371-s6-run-"
+        docker = FakeDocker(export=tar_stream(package_entries(version)).getvalue())
+        code, launch, receipt, run_dir = self.launch_b(docker, version)
+        self.assertEqual((code, launch["result"], receipt["result"]), (0, "PASS", "PASS"))
+        self.assert_clean(docker, receipt, run_dir)
+        events = docker.events
+        # The package is copied from a container that is created, exported and
+        # removed before anything else is made.
+        self.assertEqual(events[:3], [f"create:{stem}package", f"export:{stem}package",
+                                      f"rm:{stem}package"])
+        self.assertEqual(events[3], f"run:{stem}holder")
+        start = events.index(f"start:{stem}core")
+        self.assertEqual([item for item in events if item.startswith("cp:")],
+                         [f"cp:{stem}core:/config"] * 2 + [f"cp:{stem}core:/"])
+        self.assertLess(events.index(f"cp:{stem}core:/"), start)
+        self.assertEqual([item for item in events if item.startswith("component:")],
+                         ["component:setup", "component:status"])
+        self.assertLess(events.index("seed"), events.index("component:setup"))
+        self.assertLess(events.index("component:setup"), events.index(f"run:{stem}peer-9-2-0"))
+        self.assertEqual(events.count(f"restart:{stem}core"), 1)
+        self.assertLess(events.index(f"restart:{stem}core"), events.index("component:status"))
+        self.assertEqual(events.count(f"resolved:{stem}core"), 2)
+        self.assertEqual([item for item in events if item.startswith("calls:")], [
+            "calls:/out/9.2.0/calls:reads,variants,errors,transport,yaml",
+            "calls:/out/9.2.0/calls-after-core-restart:after_restart",
+            "calls:/out/9.2.0/yaml-ordinary-user:yaml"])
+        self.assertEqual([item for item in events
+                          if item.startswith(("run:", "rm:")) and "-peer-" in item], [
+            f"run:{stem}peer-9-2-0", f"rm:{stem}peer-9-2-0",
+            f"run:{stem}peer-9-2-0-ordinary-user", f"rm:{stem}peer-9-2-0-ordinary-user"])
+        # The ordinary user's token goes to its own peer only, by environment.
+        ordinary = [argv for argv, token in docker.forwarded if token == OTHER_TOKEN]
+        self.assertEqual(len(ordinary), 1)
+        self.assertEqual(ordinary[0][:2], ["docker", "run"])
+        self.assertEqual(flag_values(ordinary[0], "--name"), [f"{stem}peer-9-2-0-ordinary-user"])
+        self.assertEqual({token for _argv, token in docker.forwarded},
+                         {SYNTHETIC_TOKEN, OTHER_TOKEN})
+        # Core's environment names the overlay; the receipt holds every stream's hash.
+        core = next(argv for argv in docker.calls if argv[:2] == ["docker", "create"]
+                    and flag_values(argv, "--name") == [f"{stem}core"])
+        self.assertEqual(flag_values(core, "--env"),
+                         ["TZ=America/Chicago", lane.OVERLAY_ENVIRONMENT])
+        self.assertEqual(receipt["core_container"]["python_path"], [lane.OVERLAY_TARGET])
+        section = receipt["profile_b"]
+        self.assertEqual(section["version"], version)
+        self.assertEqual(section["overlay"]["archives"], {
+            "component": {"into": "/config", "bytes": len(docker.streams[1]),
+                          "sha256": hashlib.sha256(docker.streams[1]).hexdigest()},
+            "overlay": {"into": "/", "bytes": len(docker.streams[2]),
+                        "sha256": hashlib.sha256(docker.streams[2]).hexdigest()}})
+        self.assertEqual(docker.streams[0], lane.config_archive(lane.seed_step.CONFIG_FILES))
+        component = synthetic_component(version)
+        self.assertEqual(tar_files(docker.streams[1]), {
+            lane.COMPONENT_PATH + "/" + path: body for path, body in component["files"].items()})
+        self.assertEqual(section["component"]["records"], component["records"])
+        self.assertEqual(section["component"]["source"]["tag"], "v9.2.0")
+        prefix = lane.OVERLAY_TARGET.lstrip("/") + "/"
+        overlay = tar_files(docker.streams[2])
+        self.assertEqual(sorted(path[len(prefix):] for path in overlay), sorted([
+            "ruamel/__init__.py", "ruamel_yaml-0.19.1.dist-info/METADATA",
+            "ruamel_yaml-0.19.1.dist-info/RECORD", "voluptuous_openapi/__init__.py",
+            "voluptuous_openapi-0.4.1.dist-info/METADATA",
+            "voluptuous_openapi-0.4.1.dist-info/RECORD", "ha_mcp/__init__.py",
+            "ha_mcp/tools/reads.py", "ha_mcp/tools/copy.py",
+            "ha_mcp-9.2.0.dist-info/METADATA", "ha_mcp-9.2.0.dist-info/RECORD"]))
+        self.assertEqual(overlay[prefix + "ha_mcp/tools/copy.py"], b"synthetic reads\n")
+        self.assertEqual(section["wheels"]["records"][0]["wheel"], lane.N32_WHEELS[0]["file"])
+        copied = section["package_copy"]["source"]
+        self.assertEqual(copied["figures_in_image"], package_figures(package_entries(version)))
+        self.assertEqual((copied["files_copied"], copied["site_packages_ha_mcp_members"]), (5, 1))
+        self.assertEqual(copied["dist_info"],
+                         "/" + VENV + "ha_mcp-9.2.0.dist-info")
+        self.assertEqual(sorted(section["phases"]), ["after-core-restart", "after-setup"])
+        for phase in section["phases"].values():
+            self.assertEqual(phase["component"]["info"]["component_version"], version)
+            self.assertNotIn("unlisted", phase["component"]["info"])
+            self.assertIsNone(phase["core_log"]["refused"])
+            self.assertIs(phase["resolved"]["readable"], True)
+        capture = receipt["captures"][version]
+        self.assertEqual(capture["token"], "administrator")
+        self.assertEqual(capture["calls"]["groups"],
+                         list(lane.CAPTURE_GROUPS + lane.PROFILE_B_GROUPS))
+        self.assertEqual([row["upstream_tool"] for row in capture["component_reads"]],
+                         ["ha_get_state", lane.YAML_READ])
+        self.assertEqual(capture["ordinary_user"]["token"], "ordinary_user")
+        self.assertEqual(capture["ordinary_user"]["calls"]["groups"], ["yaml"])
+        self.assertEqual(receipt["secret_scan"]["needles"], 3)
+        sums = (run_dir / "SHA256SUMS").read_text(encoding="utf-8")
+        for name in ("receipt.json", "peer-9.2.0.log", "peer-9.2.0-ordinary-user.log",
+                     "out/profile-b/component-after-setup.json",
+                     "out/profile-b/component-after-core-restart.json",
+                     "out/9.2.0/yaml-ordinary-user/_index.json"):
+            self.assertIn("  " + name + "\n", sums)
+
+    def test_profile_b_captures_9_1_2_without_an_ordinary_user_peer(self):
+        version, stem = "9.1.2", "hamcp371-s6-run-"
+        docker = FakeDocker(export=tar_stream(package_entries(version)).getvalue(),
+                            component=version)
+        code, launch, receipt, run_dir = self.launch_b(docker, version)
+        self.assertEqual((code, launch["result"], receipt["result"]), (0, "PASS", "PASS"))
+        self.assert_clean(docker, receipt, run_dir)
+        self.assertEqual([item for item in docker.events
+                          if item.startswith(("run:", "rm:")) and "-peer-" in item],
+                         [f"run:{stem}peer-9-1-2", f"rm:{stem}peer-9-1-2"])
+        self.assertEqual([item for item in docker.events if item.startswith("calls:")], [
+            "calls:/out/9.1.2/calls:reads,variants,errors,transport,yaml",
+            "calls:/out/9.1.2/calls-after-core-restart:after_restart"])
+        self.assertEqual({token for _argv, token in docker.forwarded}, {SYNTHETIC_TOKEN})
+        self.assertNotIn("ordinary_user", receipt["captures"][version])
+        self.assertEqual(sorted(receipt["captures"]), [version])
+
+    def test_a_core_that_asks_for_an_install_withholds_before_any_peer(self):
+        for line, token in (
+                (b"WARNING Unable to install package ruamel.yaml==0.19.1\n",
+                 "core_requested_a_requirement"),
+                (b"ERROR Unable to install package cyclopts\n", "core_requested_one_of_the_ten"),
+                (b"ERROR No module named 'synthetic'\n", "core_reported_a_missing_module")):
+            with self.subTest(token=token):
+                docker = FakeDocker(export=tar_stream(package_entries("9.2.0")).getvalue(),
+                                    core_log=b"synthetic log\n" + line)
+                code, launch, receipt, run_dir = self.launch_b(docker, "9.2.0")
+                self.assertEqual((code, launch["result"], receipt["failure"]),
+                                 (1, "WITHHELD", token))
+                self.assertFalse(any("-peer-" in item for item in docker.events))
+                phase = receipt["profile_b"]["phases"]["after-setup"]
+                self.assertEqual(phase["core_log"]["refused"], token)
+                self.assertEqual(phase["component"]["info"]["component_version"], "9.2.0")
+                self.assert_clean(docker, receipt, run_dir)
+
+    def test_a_package_copy_unlike_the_inventory_withholds_before_the_holder(self):
+        docker = FakeDocker(export=tar_stream(package_entries("9.2.0")).getvalue())
+        code, launch, receipt, run_dir = self.launch_b(docker, "9.2.0",
+                                                       figures={"files": 4, "bytes": 44})
+        self.assertEqual((code, launch["result"], receipt["failure"]),
+                         (1, "WITHHELD", "package_copy_does_not_match_inventory"))
+        self.assertEqual(docker.events, ["create:hamcp371-s6-run-package",
+                                         "export:hamcp371-s6-run-package",
+                                         "rm:hamcp371-s6-run-package"])
+        self.assertIsNone(receipt["profile_b"]["package_copy"])
+        self.assert_clean(docker, receipt, run_dir)
+
+    def test_a_component_of_another_version_withholds_before_any_peer(self):
+        docker = FakeDocker(export=tar_stream(package_entries("9.2.0")).getvalue(),
+                            component="9.1.2")
+        code, launch, receipt, run_dir = self.launch_b(docker, "9.2.0")
+        self.assertEqual((code, launch["result"], receipt["failure"]),
+                         (1, "WITHHELD", "component_version_mismatch"))
+        self.assertFalse(any("-peer-" in item for item in docker.events))
+        self.assert_clean(docker, receipt, run_dir)
+
+    def test_a_failed_ordinary_user_read_is_reported_and_not_run_again(self):
+        docker = FakeDocker(export=tar_stream(package_entries("9.2.0")).getvalue(),
+                            calls_fail={"/out/9.2.0/yaml-ordinary-user"})
+        code, launch, receipt, run_dir = self.launch_b(docker, "9.2.0")
+        self.assertEqual((code, launch["result"], receipt["failure"]),
+                         (1, "WITHHELD", "calls_step_failed"))
+        self.assertEqual(len([item for item in docker.events if item.startswith("calls:")]), 3)
+        capture = receipt["captures"]["9.2.0"]
+        self.assertEqual(len(capture["component_reads"]), 2)
+        self.assertEqual(capture["ordinary_user"]["token"], "ordinary_user")
+        self.assertNotIn("calls", capture["ordinary_user"])
+        # The ordinary peer still running at the failure is logged and removed.
+        self.assertTrue((run_dir / "peer-9.2.0-ordinary-user.log").exists())
+        self.assert_clean(docker, receipt, run_dir)
 
     def test_a_name_already_in_use_is_a_preflight_refusal(self):
         docker = FakeDocker()
@@ -922,6 +1320,797 @@ class LaneFlowTests(unittest.TestCase):
         self.assertEqual((code, launch["failure"]), (2, "disposable_name_already_exists"))
         self.assertFalse(run_dir.exists())
         self.assertEqual(docker.volumes, {"hamcp371-s6-run-config": {"Labels": {}}})
+
+
+# --- Profile B sources: synthetic export streams, wheels and component clones ---
+
+def tar_stream(entries):
+    """A synthetic tar stream: ``(name, kind, value)``, kind ``file|dir|link|symlink``."""
+    raw = io.BytesIO()
+    with tarfile.open(fileobj=raw, mode="w") as archive:
+        for name, kind, value in entries:
+            info = tarfile.TarInfo(name)
+            if kind == "file":
+                info.size = len(value)
+                archive.addfile(info, io.BytesIO(value))
+                continue
+            if kind == "dir":
+                info.type = tarfile.DIRTYPE
+            else:
+                info.type = tarfile.LNKTYPE if kind == "link" else tarfile.SYMTYPE
+                info.linkname = value
+            archive.addfile(info)
+    raw.seek(0)
+    return raw
+
+
+def tar_files(raw):
+    """Regular-file bodies of one tar stream, by name."""
+    with tarfile.open(fileobj=io.BytesIO(raw), mode="r") as archive:
+        return {member.name: archive.extractfile(member).read()
+                for member in archive.getmembers() if member.isreg()}
+
+
+VENV = "app/.venv/lib/python3.14/site-packages/"
+
+
+def package_entries(version, metadata_version=None):
+    """An image export with the package source, its dist-info and a site-packages copy."""
+    metadata = ("Metadata-Version: 2.4\nName: ha-mcp\nVersion: " + (metadata_version or version)
+                + "\n\nsynthetic body\n").encode("ascii")
+    return [("app/", "dir", None), ("app/src/ha_mcp/", "dir", None),
+            ("app/src/ha_mcp/__init__.py", "file", b"synthetic = 1\n"),
+            ("app/src/ha_mcp/tools/reads.py", "file", b"synthetic reads\n"),
+            ("app/src/ha_mcp/__pycache__/__init__.cpython-314.pyc", "file", b"synthetic-pyc"),
+            ("app/src/ha_mcp/tools/copy.py", "link", "app/src/ha_mcp/tools/reads.py"),
+            (VENV + f"ha_mcp-{version}.dist-info/METADATA", "file", metadata),
+            (VENV + f"ha_mcp-{version}.dist-info/RECORD", "file", b"synthetic record\n"),
+            (VENV + "ha_mcp/__init__.py", "file", b"synthetic site copy\n"),
+            ("usr/bin/synthetic", "file", b"synthetic binary")]
+
+
+def package_figures(entries):
+    """What the inventory counts below the package source: files and links, file bytes."""
+    kept = [(kind, value) for name, kind, value in entries
+            if name.startswith(lane.PACKAGE_SOURCE.lstrip("/")) and kind in ("file", "link")]
+    return {"files": len(kept), "bytes": sum(len(value) for kind, value in kept
+                                             if kind == "file")}
+
+
+def fake_subprocess(**over):
+    return types.SimpleNamespace(
+        PIPE=subprocess.PIPE, DEVNULL=subprocess.DEVNULL,
+        SubprocessError=subprocess.SubprocessError, TimeoutExpired=subprocess.TimeoutExpired,
+        **over)
+
+
+def wheel_bytes(members, symlinks=()):
+    """A synthetic wheel: ``(name, body)`` members, fixed dates; duplicates allowed."""
+    raw = io.BytesIO()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")  # A duplicate member name is written on purpose.
+        with zipfile.ZipFile(raw, "w") as archive:
+            for name, body in members:
+                info = zipfile.ZipInfo(name, (1980, 1, 1, 0, 0, 0))
+                if name in symlinks:
+                    info.external_attr = (stat.S_IFLNK | 0o777) << 16
+                archive.writestr(info, body)
+    return raw.getvalue()
+
+
+def wheel_members(pin, version=None, name=None):
+    """A package file and the dist-info; the display name is not the distribution name."""
+    top, info = pin["tops"]
+    display = name or {"ruamel-yaml": "ruamel.yaml"}.get(pin["distribution"],
+                                                          pin["distribution"].replace("-", "_"))
+    metadata = (f"Metadata-Version: 2.1\nName: {display}\nVersion: {version or pin['version']}"
+                "\n\nsynthetic\n").encode("ascii")
+    return [(top + "/__init__.py", b"synthetic\n"), (info + "/METADATA", metadata),
+            (info + "/RECORD", b"synthetic\n")]
+
+
+def synthetic_wheels(directory, members=None, symlinks=()):
+    """Both wheel files written; ``members`` replaces the first.  Pins with their real hashes."""
+    pins = []
+    for index, pin in enumerate(lane.N32_WHEELS):
+        first = index == 0
+        raw = wheel_bytes(members if first and members is not None else wheel_members(pin),
+                          symlinks if first else ())
+        (Path(directory) / pin["file"]).write_bytes(raw)
+        pins.append(dict(pin, sha256=hashlib.sha256(raw).hexdigest()))
+    return tuple(pins)
+
+
+GIT = shutil.which("git", path="/usr/bin:/bin")
+GIT_FIXTURE_ENVIRONMENT = {
+    "PATH": "/usr/bin:/bin", "HOME": "/nonexistent", "LC_ALL": "C", "GIT_CONFIG_NOSYSTEM": "1",
+    "GIT_CONFIG_GLOBAL": os.devnull,
+    **{f"GIT_{role}_{field}": value for role in ("AUTHOR", "COMMITTER")
+       for field, value in (("NAME", "synthetic"), ("EMAIL", "synthetic@example.invalid"),
+                            ("DATE", "2026-01-01T00:00:00+0000"))}}
+
+
+def git(directory, *args):
+    done = subprocess.run(
+        [GIT, "-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false",
+         "-c", "init.defaultBranch=main", "-C", str(directory), *args],
+        env=dict(GIT_FIXTURE_ENVIRONMENT), capture_output=True, check=True)
+    return done.stdout.decode("ascii").strip()
+
+
+def component_repo(scratch, component="9.2.0", manifest=None, extra=None, executable=(),
+                   links=()):
+    """A disposable clone with one annotated tag over a synthetic component tree.
+
+    Returns the git directory and ``COMPONENT_SOURCES[component]`` with this
+    clone's own ids.  ``extra`` adds or replaces files; ``None`` removes one.
+    """
+    top = Path(scratch) / "upstream"
+    base = top / lane.COMPONENT_PATH
+    body = {"domain": lane.COMPONENT_DOMAIN, "name": "synthetic", "version": component,
+            "requirements": list(lane.COMPONENT_REQUIREMENTS[component]),
+            "dependencies": ["webhook"], **(manifest or {})}
+    files = {"manifest.json": json.dumps(body).encode("utf-8"), "__init__.py": b"synthetic\n",
+             "tools/sub.py": b"synthetic sub\n",
+             "translations/en.json": '{"title": "synthétique"}\n'.encode("utf-8")}
+    for path, value in (extra or {}).items():
+        if value is None:
+            files.pop(path, None)
+        else:
+            files[path] = value
+    for path, value in files.items():
+        (base / path).parent.mkdir(parents=True, exist_ok=True)
+        (base / path).write_bytes(value)
+        (base / path).chmod(0o755 if path in executable else 0o644)
+    for path, target in links:
+        (base / path).symlink_to(target)
+    (top / "README.md").write_bytes(b"synthetic\n")
+    git(top, "init", "-q")
+    git(top, "add", "-A")
+    git(top, "commit", "-q", "-m", "synthetic")
+    tag = lane.COMPONENT_SOURCES[component]["tag"]
+    git(top, "tag", "-a", tag, "-m", "synthetic")
+    source = dict(lane.COMPONENT_SOURCES[component],
+                  tag_object=git(top, "rev-parse", "refs/tags/" + tag),
+                  commit=git(top, "rev-parse", "HEAD"),
+                  root_tree=git(top, "rev-parse", "HEAD^{tree}"),
+                  tree=git(top, "rev-parse", "HEAD:" + lane.COMPONENT_PATH))
+    return top / ".git", source
+
+
+def git_id(kind, body):
+    return hashlib.sha1(f"{kind} {len(body)}\0".encode("ascii") + body).hexdigest()
+
+
+def batch(objects):
+    """``git cat-file --batch`` output for ``{oid: (kind, body)}``, in id order."""
+    return b"".join(f"{oid} {kind} {len(body)}\n".encode("ascii") + body + b"\n"
+                    for oid, (kind, body) in sorted(objects.items()))
+
+
+def synthetic_component(component):
+    """What ``read_component`` returns, without a clone."""
+    files = {"manifest.json": json.dumps({"domain": lane.COMPONENT_DOMAIN,
+                                          "version": component}).encode("ascii"),
+             "__init__.py": b"synthetic\n", "tools/sub.py": b"synthetic sub\n"}
+    return {"files": files,
+            "records": [{"path": path, "size": len(body),
+                         "sha256": hashlib.sha256(body).hexdigest(), "git_blob": "0" * 40}
+                        for path, body in sorted(files.items())],
+            "manifest": {"domain": lane.COMPONENT_DOMAIN, "version": component,
+                         "requirements": list(lane.COMPONENT_REQUIREMENTS[component]),
+                         "dependencies": list(lane.COMPONENT_DEPENDENCIES)},
+            "source": dict(lane.COMPONENT_SOURCES[component], component=component,
+                           path=lane.COMPONENT_PATH, files=len(files),
+                           bytes=sum(map(len, files.values())), read="synthetic")}
+
+
+@unittest.skipUnless(GIT, "git is needed for the disposable component clone")
+class ComponentSourceTests(unittest.TestCase):
+    """The component tree from a disposable local clone; nothing is fetched."""
+
+    def setUp(self):
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        self.scratch = Path(scratch.name)
+
+    def clone(self, component="9.2.0", **repo):
+        return component_repo(tempfile.mkdtemp(dir=self.scratch), component, **repo)
+
+    def read(self, component="9.2.0", bound=None, source_changes=None, **repo):
+        git_dir, source = self.clone(component, **repo)
+        source.update(source_changes or {})
+        with mock.patch.dict(lane.COMPONENT_SOURCES, {component: source}):
+            return lane.read_component(git_dir, component, bound), source, git_dir
+
+    def refused(self, token, **options):
+        with self.assertRaises(lane.Refusal) as caught:
+            self.read(**options)
+        self.assertEqual(str(caught.exception), token)
+
+    def test_the_tree_is_read_from_the_tag_down_with_a_record_per_file(self):
+        for component in ("9.2.0", "2.2.1"):
+            with self.subTest(component=component):
+                found, source, git_dir = self.read(component)
+                self.assertEqual([row["path"] for row in found["records"]], [
+                    "__init__.py", "manifest.json", "tools/sub.py", "translations/en.json"])
+                for row in found["records"]:
+                    body = found["files"][row["path"]]
+                    self.assertEqual((row["size"], row["sha256"]),
+                                     (len(body), hashlib.sha256(body).hexdigest()))
+                    self.assertEqual(row["git_blob"], git(
+                        git_dir.parent, "rev-parse", f"HEAD:{lane.COMPONENT_PATH}/{row['path']}"))
+                self.assertEqual(found["manifest"], {
+                    "domain": lane.COMPONENT_DOMAIN, "version": component,
+                    "requirements": list(lane.COMPONENT_REQUIREMENTS[component]),
+                    "dependencies": ["webhook"]})
+                for key in ("tag", "tag_object", "commit", "root_tree", "tree"):
+                    self.assertEqual(found["source"][key], source[key])
+                self.assertEqual((found["source"]["component"], found["source"]["path"],
+                                  found["source"]["files"], found["source"]["bytes"]),
+                                 (component, lane.COMPONENT_PATH, 4,
+                                  sum(map(len, found["files"].values()))))
+                self.assertIn("synthétique",
+                              found["files"]["translations/en.json"].decode("utf-8"))
+
+    def test_a_commit_other_than_the_bound_one_is_refused_before_any_read(self):
+        with mock.patch.object(lane, "git_objects", side_effect=AssertionError):
+            with self.assertRaises(lane.Refusal) as caught:
+                lane.read_component(self.scratch / "absent.git", "9.2.0", "f" * 40)
+        self.assertEqual(str(caught.exception), "component_source_not_the_bound_commit")
+
+    def test_every_id_on_the_chain_must_be_the_one_bound(self):
+        git_dir, source = self.clone()
+        for key, value in (("tag", "v0.0.0"), ("commit", "0" * 39 + "1"),
+                           ("root_tree", source["tree"]), ("tree", source["root_tree"]),
+                           ("tag_object", source["commit"])):
+            with self.subTest(key=key), mock.patch.dict(
+                    lane.COMPONENT_SOURCES, {"9.2.0": dict(source, **{key: value})}):
+                with self.assertRaises(lane.Refusal) as caught:
+                    lane.read_component(git_dir, "9.2.0")
+                self.assertEqual(str(caught.exception), "component_source_mismatch")
+
+    def test_the_manifest_must_be_the_one_the_lane_expects(self):
+        reversed_requirements = list(reversed(lane.COMPONENT_REQUIREMENTS["9.2.0"]))
+        for repo in ({"manifest": {"version": "9.1.2"}},
+                     {"manifest": {"requirements": reversed_requirements}},
+                     {"manifest": {"dependencies": []}},
+                     {"manifest": {"domain": "synthetic"}},
+                     {"extra": {"manifest.json": None}},
+                     {"extra": {"manifest.json": b"not json"}},
+                     {"extra": {"manifest.json": b"[]"}}):
+            with self.subTest(repo=repo):
+                self.refused("component_manifest_mismatch", **repo)
+
+    def test_an_executable_a_link_or_an_unreviewed_name_is_refused(self):
+        for token, repo in (
+                ("component_entry_not_reviewed", {"executable": ("__init__.py",)}),
+                ("component_entry_not_reviewed", {"links": (("link.py", "__init__.py"),)}),
+                ("component_name_not_reviewed", {"extra": {"tools/a\\b.py": b"synthetic\n"}})):
+            with self.subTest(repo=repo):
+                self.refused(token, **repo)
+
+    def test_the_bounds_on_files_bytes_and_depth_are_refusals(self):
+        for name, value in (("COMPONENT_FILES", 1), ("COMPONENT_BYTES", 10),
+                            ("COMPONENT_DEPTH", 1)):
+            with self.subTest(name=name), mock.patch.object(lane, name, value):
+                self.refused("component_above_bounds")
+
+    def test_a_missing_object_an_unreviewed_id_or_no_clone_is_refused(self):
+        self.refused("component_object_missing", source_changes={"tag_object": "0" * 40})
+        self.refused("component_object_id_not_reviewed", source_changes={"tag_object": "Z" * 40})
+        with self.assertRaises(lane.Refusal) as caught:
+            lane.read_component(self.scratch / "absent.git", "9.2.0")
+        self.assertEqual(str(caught.exception), "upstream_clone_read_failed")
+
+
+class GitObjectTests(unittest.TestCase):
+    """``git cat-file --batch`` output, parsed and checked id by id; no git is run."""
+
+    OBJECTS = {git_id("blob", b"one\n"): ("blob", b"one\n"),
+               git_id("blob", b"two\n"): ("blob", b"two\n")}
+
+    def objects(self, output=None, returncode=0, raises=None, ids=None):
+        seen = []
+
+        def run(argv, **kwargs):
+            seen.append((argv, kwargs))
+            if raises is not None:
+                raise raises
+            return types.SimpleNamespace(returncode=returncode, stderr=b"",
+                                         stdout=batch(self.OBJECTS) if output is None else output)
+        with mock.patch.object(lane, "subprocess", fake_subprocess(run=run)):
+            return lane.git_objects(Path("/synthetic.git"), ids or list(self.OBJECTS)), seen
+
+    def refused(self, token, **options):
+        with self.assertRaises(lane.Refusal) as caught:
+            self.objects(**options)
+        self.assertEqual(str(caught.exception), token)
+
+    def test_objects_are_read_once_each_with_the_fixed_environment(self):
+        ids = sorted(self.OBJECTS)
+        found, seen = self.objects(ids=[ids[1], ids[0], ids[1]])
+        self.assertEqual(found, self.OBJECTS)
+        (argv, kwargs), = seen
+        self.assertEqual(argv, ["git", "--no-replace-objects", "-c", "protocol.allow=never",
+                                "-c", "core.fsmonitor=false", "--git-dir=/synthetic.git",
+                                "cat-file", "--batch"])
+        self.assertEqual(kwargs, {"cwd": "/", "env": lane.GIT_ENVIRONMENT, "capture_output": True,
+                                  "timeout": lane.GIT_SECONDS,
+                                  "input": "".join(oid + "\n" for oid in ids).encode("ascii")})
+        self.assertEqual(lane.GIT_ENVIRONMENT["GIT_NO_LAZY_FETCH"], "1")
+
+    def test_a_body_that_is_not_its_id_is_refused(self):
+        oid = git_id("blob", b"one\n")
+        self.refused("component_object_hash_mismatch", ids=[oid],
+                     output=f"{oid} blob 4\n".encode("ascii") + b"onf\n\n")
+
+    def test_malformed_output_or_a_failed_git_is_refused(self):
+        oid, other = sorted(self.OBJECTS)
+        for options in (
+                {"output": f"{oid} blob 4\n".encode("ascii") + b"one"},
+                {"output": f"{oid} blob 4\n".encode("ascii") + b"one\n\nextra"},
+                {"output": f"{other} blob 4\n".encode("ascii") + b"two\n\n"},
+                {"output": f"{oid} blob four\n".encode("ascii") + b"one\n\n"},
+                {"returncode": 128, "output": b""},
+                {"raises": OSError("synthetic")},
+                {"raises": subprocess.TimeoutExpired("git", 1)}):
+            with self.subTest(options=options):
+                self.refused("upstream_clone_read_failed", ids=[oid], **options)
+
+    def test_a_missing_object_is_never_fetched_and_is_refused(self):
+        oid = "0" * 40
+        self.refused("component_object_missing", ids=[oid], output=f"{oid} missing\n".encode())
+        self.refused("component_object_id_not_reviewed", ids=["0" * 39])
+
+    def test_tree_entries_are_parsed_or_refused(self):
+        body = (b"100644 a.py\0" + bytes.fromhex("1" * 40)
+                + b"40000 sub\0" + bytes.fromhex("2" * 40))
+        self.assertEqual(lane.tree_entries(body), [("100644", "a.py", "1" * 40),
+                                                   ("40000", "sub", "2" * 40)])
+        for token, raw in (("component_tree_unreadable", body[:-1]),
+                           ("component_tree_unreadable", b"100644 a.py"),
+                           ("component_name_not_reviewed",
+                            b"100644 \xff\0" + bytes.fromhex("1" * 40))):
+            with self.subTest(raw=raw), self.assertRaises(lane.Refusal) as caught:
+                lane.tree_entries(raw)
+            self.assertEqual(str(caught.exception), token)
+
+
+class WheelTests(unittest.TestCase):
+    """The two N32 wheels by hash, member by member; nothing is installed."""
+
+    def setUp(self):
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        self.directory = Path(scratch.name)
+
+    def read(self, pins):
+        with mock.patch.object(lane, "N32_WHEELS", pins):
+            return lane.read_wheels(self.directory)
+
+    def refused(self, token, pins):
+        with self.assertRaises(lane.Refusal) as caught:
+            self.read(pins)
+        self.assertEqual(str(caught.exception), token)
+
+    def test_both_wheels_are_read_with_a_record_per_member(self):
+        pins = synthetic_wheels(self.directory)
+        found = self.read(pins)
+        self.assertEqual(sorted(found["files"]), sorted(
+            name for pin in pins for name, _body in wheel_members(pin)))
+        self.assertEqual([row["wheel"] for row in found["records"]],
+                         [pins[0]["file"]] * 3 + [pins[1]["file"]] * 3)
+        for row in found["records"]:
+            body = found["files"][row["path"]]
+            self.assertEqual(row["sha256"], hashlib.sha256(body).hexdigest())
+        self.assertEqual(found["wheels"], [
+            {key: pin[key] for key in ("file", "sha256", "source", "version", "distribution",
+                                       "requirement")} for pin in pins])
+
+    def test_a_wheel_that_is_absent_or_not_the_pinned_bytes_is_refused(self):
+        self.refused("n32_wheel_missing", lane.N32_WHEELS)
+        synthetic_wheels(self.directory)
+        self.refused("n32_wheel_hash_mismatch", lane.N32_WHEELS)
+
+    def test_a_link_a_directory_a_fifo_an_oversize_or_a_non_zip_is_unreadable(self):
+        pins = synthetic_wheels(self.directory)
+        first = self.directory / pins[0]["file"]
+        first.unlink()
+        first.symlink_to(self.directory / pins[1]["file"])
+        self.refused("n32_wheel_unreadable", pins)
+        first.unlink()
+        first.mkdir()
+        self.refused("n32_wheel_unreadable", pins)
+        first.rmdir()
+        os.mkfifo(first)
+        self.refused("n32_wheel_unreadable", pins)
+        first.unlink()
+        pins = synthetic_wheels(self.directory)
+        with mock.patch.object(lane, "WHEEL_BYTES", 10):
+            self.refused("n32_wheel_unreadable", pins)
+        first.write_bytes(b"not a zip")
+        self.refused("n32_wheel_unreadable", (dict(pins[0], sha256=hashlib.sha256(
+            b"not a zip").hexdigest()), pins[1]))
+
+    def test_a_member_outside_the_reviewed_form_is_refused(self):
+        pin = lane.N32_WHEELS[0]
+        good = wheel_members(pin)
+        for name, symlinks in (("other/x.py", ()), ("ruamel/sub/", ()),
+                               ("ruamel/link.py", ("ruamel/link.py",)), ("ruamel", ()),
+                               ("ruamel/../x.py", ()), ("ruamel/a\\b.py", ()),
+                               ("ruamel//x.py", ())):
+            with self.subTest(name=name):
+                pins = synthetic_wheels(self.directory, [*good, (name, b"")], symlinks)
+                self.refused("n32_wheel_member_not_reviewed", pins)
+
+    def test_the_metadata_must_name_the_pinned_distribution_and_version(self):
+        pin = lane.N32_WHEELS[0]
+        info = pin["tops"][1] + "/METADATA"
+        twice = b"Metadata-Version: 2.1\nName: ruamel.yaml\nName: other\nVersion: 0.19.1\n\n"
+        for members in (wheel_members(pin, version="0.18.0"),
+                        wheel_members(pin, name="other"),
+                        [item for item in wheel_members(pin) if item[0] != info],
+                        [*(item for item in wheel_members(pin) if item[0] != info),
+                         (info, twice)]):
+            with self.subTest(members=members):
+                self.refused("n32_wheel_metadata_mismatch",
+                             synthetic_wheels(self.directory, members))
+
+    def test_a_member_named_twice_is_a_collision(self):
+        pin = lane.N32_WHEELS[0]
+        members = wheel_members(pin)
+        self.refused("overlay_member_collision",
+                     synthetic_wheels(self.directory, [*members, members[0]]))
+
+
+class PackageMemberTests(unittest.TestCase):
+    """The ``ha_mcp`` package from an export stream; nothing is extracted."""
+
+    def members(self, entries, version="9.2.0", figures=None):
+        return lane.package_members(tar_stream(entries), version,
+                                    figures or package_figures(entries))
+
+    def refused(self, token, entries, **options):
+        with self.assertRaises(lane.Refusal) as caught:
+            self.members(entries, **options)
+        self.assertEqual(str(caught.exception), token)
+
+    def test_the_source_and_dist_info_are_copied_and_compiled_files_counted_only(self):
+        entries = package_entries("9.2.0")
+        found = self.members(entries)
+        self.assertEqual(sorted(found["files"]), [
+            "ha_mcp-9.2.0.dist-info/METADATA", "ha_mcp-9.2.0.dist-info/RECORD",
+            "ha_mcp/__init__.py", "ha_mcp/tools/copy.py", "ha_mcp/tools/reads.py"])
+        self.assertEqual(found["files"]["ha_mcp/tools/copy.py"], b"synthetic reads\n")
+        self.assertEqual([row["path"] for row in found["records"]], sorted(found["files"]))
+        self.assertEqual(found["source"], {
+            "package_source": lane.PACKAGE_SOURCE,
+            "dist_info": "/" + VENV + "ha_mcp-9.2.0.dist-info",
+            "figures_in_image": {"files": 4, "bytes": 43}, "files_copied": 5,
+            "pycache_counted_not_copied": True, "symbolic_links_not_copied": [],
+            "site_packages_ha_mcp_members": 1})
+
+    def test_a_markdown_link_to_a_sibling_is_recorded_not_copied_or_counted(self):
+        entries = package_entries("9.2.0") + [
+            ("app/src/ha_mcp/settings_ui/AGENTS.md", "file", b"synthetic\n"),
+            ("app/src/ha_mcp/settings_ui/CLAUDE.md", "symlink", "AGENTS.md")]
+        found = self.members(entries, figures={"files": 5, "bytes": 53})
+        self.assertNotIn("ha_mcp/settings_ui/CLAUDE.md", found["files"])
+        self.assertEqual(found["files"]["ha_mcp/settings_ui/AGENTS.md"], b"synthetic\n")
+        self.assertEqual(found["source"]["symbolic_links_not_copied"],
+                         [{"path": "ha_mcp/settings_ui/CLAUDE.md", "link": "AGENTS.md"}])
+        self.assertEqual(found["source"]["figures_in_image"], {"files": 5, "bytes": 53})
+
+    def test_any_other_symbolic_link_is_refused(self):
+        entries = package_entries("9.2.0")
+        for name, link in (("app/src/ha_mcp/tools/s.py", "reads.py"),
+                           ("app/src/ha_mcp/tools/s.md", "reads.py"),
+                           ("app/src/ha_mcp/tools/s.py", "AGENTS.md"),
+                           ("app/src/ha_mcp/tools/s.md", "../AGENTS.md"),
+                           ("app/src/ha_mcp/tools/s.md", "/etc/AGENTS.md"),
+                           ("app/src/ha_mcp/tools/s.md", ".."),
+                           ("app/src/ha_mcp/a\\b.md", "AGENTS.md"),
+                           (VENV + "ha_mcp-9.2.0.dist-info/s.md", "METADATA.md")):
+            with self.subTest(name=name, link=link):
+                self.refused("package_member_not_reviewed",
+                             entries + [(name, "symlink", link)])
+
+    def test_a_hard_link_to_the_site_packages_copy_resolves(self):
+        # The link comes after the site-packages member it names, as in an export.
+        entries = [item for item in package_entries("9.2.0")
+                   if item[0] != "app/src/ha_mcp/tools/copy.py"]
+        entries.append(("app/src/ha_mcp/tools/copy.py", "link", VENV + "ha_mcp/__init__.py"))
+        found = self.members(entries)
+        self.assertEqual(found["files"]["ha_mcp/tools/copy.py"], b"synthetic site copy\n")
+
+    def test_figures_unlike_the_inventory_are_refused(self):
+        entries = package_entries("9.2.0")
+        for figures in ({"files": 5, "bytes": 43}, {"files": 4, "bytes": 44}):
+            with self.subTest(figures=figures):
+                self.refused("package_copy_does_not_match_inventory", entries, figures=figures)
+
+    def test_the_dist_info_must_be_one_and_name_the_bound_version(self):
+        entries = package_entries("9.2.0")
+        self.refused("package_dist_info_version_mismatch", entries, version="9.1.2")
+        self.refused("package_dist_info_version_mismatch",
+                     package_entries("9.2.0", metadata_version="9.1.2"))
+        other = [(VENV + "ha_mcp-9.1.2.dist-info/METADATA", "file", b"synthetic\n")]
+        self.refused("package_dist_info_not_unique", entries + other)
+        self.refused("package_dist_info_not_unique",
+                     [item for item in entries if ".dist-info/" not in item[0]])
+
+    def test_a_link_out_of_reach_a_symlink_or_an_unreviewed_name_is_refused(self):
+        entries = package_entries("9.2.0")
+        self.refused("package_member_not_reviewed",
+                     entries + [("app/src/ha_mcp/tools/s.py", "symlink", "reads.py")])
+        self.refused("package_member_link_unresolved",
+                     entries + [("app/src/ha_mcp/tools/bin.py", "link", "usr/bin/synthetic")])
+        self.refused("package_member_not_reviewed",
+                     entries + [("app/src/ha_mcp/a\\b.py", "file", b"synthetic\n")])
+        self.refused("package_member_not_reviewed",
+                     entries + [("app/src/ha_mcp/__init__.py", "file", b"synthetic = 1\n")])
+
+
+class PackageCopyTests(unittest.TestCase):
+    """The package container is created, exported and removed; it never starts."""
+
+    UPSTREAM = {"image": "synthetic.invalid/ha-mcp@sha256:" + "3" * 64}
+
+    def copy(self, docker, version="9.2.0", figures=None):
+        with contextlib.ExitStack() as stack:
+            for target, name, value in ((lane, "command", docker), (lane.s4, "command", docker),
+                                        (lane, "subprocess", fake_subprocess(Popen=docker.popen))):
+                stack.enter_context(mock.patch.object(target, name, value))
+            return lane.copy_package("synthetic-package", RUN, self.UPSTREAM, version,
+                                     figures or package_figures(package_entries(version)))
+
+    def refused(self, token, docker, **options):
+        with self.assertRaises(lane.Refusal) as caught:
+            self.copy(docker, **options)
+        self.assertEqual(str(caught.exception), token)
+        self.assertEqual(docker.containers, {})
+
+    def test_the_container_is_created_exported_and_removed(self):
+        docker = FakeDocker(export=tar_stream(package_entries("9.2.0")).getvalue())
+        found = self.copy(docker)
+        self.assertEqual(found["source"]["files_copied"], 5)
+        self.assertEqual(docker.events, ["create:synthetic-package", "export:synthetic-package",
+                                         "rm:synthetic-package"])
+        self.assertEqual(docker.containers, {})
+        create = docker.calls[0]
+        self.assertEqual(create[:2], ["docker", "create"])
+        self.assertEqual(flag_values(create, "--pull"), ["never"])
+        self.assertEqual(flag_values(create, "--network"), ["none"])
+        self.assertEqual(flag_values(create, "--memory"), ["64m"])
+        self.assertEqual(create[-1], self.UPSTREAM["image"])
+
+    def test_a_refused_copy_still_removes_the_container(self):
+        docker = FakeDocker(export=tar_stream(package_entries("9.2.0")).getvalue())
+        self.refused("package_copy_does_not_match_inventory", docker,
+                     figures={"files": 4, "bytes": 44})
+        self.assertEqual(docker.events[-1], "rm:synthetic-package")
+
+    def test_a_started_container_an_unreadable_or_a_failed_export_is_refused(self):
+        stream = tar_stream(package_entries("9.2.0")).getvalue()
+        docker = FakeDocker()
+
+        def started(_image):
+            docker.containers["synthetic-package"]["State"].update(Running=True,
+                                                                  Status="running")
+            return stream
+        docker.export = started
+        self.refused("inspection_container_was_started", docker)
+        self.refused("image_export_unreadable", FakeDocker(export=b"not a tar stream"))
+        failed = FakeDocker(export=stream)
+
+        def popen(argv, **kwargs):
+            process = FakeDocker.popen(failed, argv, **kwargs)
+            return types.SimpleNamespace(stdout=process.stdout, wait=lambda timeout=None: 1)
+        failed.popen = popen
+        self.refused("image_export_failed", failed)
+
+
+class OverlayArchiveTests(unittest.TestCase):
+    """The component and overlay streams for ``docker cp -``; built in memory."""
+
+    def test_the_stream_is_deterministic_directories_first_with_fixed_modes(self):
+        files = {"base/b/two.py": b"two\n", "base/one.py": b"one\n"}
+        raw = lane.tree_archive(["base"], files)
+        self.assertEqual(raw, lane.tree_archive(["base"], dict(reversed(files.items()))))
+        with tarfile.open(fileobj=io.BytesIO(raw), mode="r") as archive:
+            members = archive.getmembers()
+        self.assertEqual([(item.name, item.isdir(), item.mode, item.mtime) for item in members], [
+            ("base", True, 0o755, 0), ("base/b", True, 0o755, 0),
+            ("base/b/two.py", False, 0o644, 0), ("base/one.py", False, 0o644, 0)])
+        self.assertEqual(tar_files(raw), files)
+
+    def test_the_component_stream_adds_its_parent_but_nothing_above(self):
+        raw = lane.tree_archive(["custom_components", lane.COMPONENT_PATH],
+                                {lane.COMPONENT_PATH + "/tools/sub.py": b"synthetic\n"})
+        with tarfile.open(fileobj=io.BytesIO(raw), mode="r") as archive:
+            self.assertEqual(archive.getnames(), [
+                "custom_components", lane.COMPONENT_PATH, lane.COMPONENT_PATH + "/tools",
+                lane.COMPONENT_PATH + "/tools/sub.py"])
+
+    def test_a_member_outside_the_base_or_unreviewed_or_colliding_is_refused(self):
+        for token, files in (("archive_member_outside_base", {"elsewhere/x.py": b""}),
+                             ("archive_member_outside_base", {"basement/x.py": b""}),
+                             ("archive_member_not_reviewed", {"base/../x.py": b""}),
+                             ("archive_member_not_reviewed", {"base//x.py": b""}),
+                             ("overlay_member_collision", {"base/a": b"", "base/a/b": b""})):
+            with self.subTest(files=files), self.assertRaises(lane.Refusal) as caught:
+                lane.tree_archive(["base"], files)
+            self.assertEqual(str(caught.exception), token)
+
+    def test_the_overlay_holds_the_wheels_and_the_package_below_its_target(self):
+        prefix = lane.OVERLAY_TARGET.lstrip("/") + "/"
+        merged = lane.overlay_files({"files": {"ruamel/__init__.py": b"one"}},
+                                    {"files": {"ha_mcp/__init__.py": b"two"}})
+        self.assertEqual(merged, {prefix + "ruamel/__init__.py": b"one",
+                                  prefix + "ha_mcp/__init__.py": b"two"})
+        with self.assertRaises(lane.Refusal) as caught:
+            lane.overlay_files({"files": {"ha_mcp/__init__.py": b"one"}},
+                               {"files": {"ha_mcp/__init__.py": b"two"}})
+        self.assertEqual(str(caught.exception), "overlay_member_collision")
+
+
+class OverlayCoreTests(unittest.TestCase):
+    """Core is told about the overlay by one environment entry, and checked for it."""
+
+    def test_core_is_created_with_the_overlay_on_its_path_in_profile_b_only(self):
+        for overlay, expected in ((False, ["TZ=America/Chicago"]),
+                                  (True, ["TZ=America/Chicago", lane.OVERLAY_ENVIRONMENT])):
+            argv = lane.core_argv("synthetic-core", RUN, "synthetic-holder", "synthetic-volume",
+                                  IMAGE["image"], overlay=overlay)
+            self.assertEqual(flag_values(argv, "--env"), expected)
+
+    def test_the_overlay_entry_must_be_there_exactly_when_expected(self):
+        inspect = lambda env: core_inspect(Config={"Image": IMAGE["image"], "Env": env})  # noqa: E731
+        found = lane.verify_core(inspect(["TZ=x", lane.OVERLAY_ENVIRONMENT]), HOLDER_ID, IMAGE,
+                                 "synthetic-volume", overlay=True)
+        self.assertEqual(found["python_path"], [lane.OVERLAY_TARGET])
+        self.assertEqual(lane.verify_core(inspect(["TZ=x"]), HOLDER_ID, IMAGE,
+                                          "synthetic-volume")["python_path"], [])
+        for env, overlay in (([], True), ([lane.OVERLAY_ENVIRONMENT], False),
+                             ([lane.OVERLAY_ENVIRONMENT, "PYTHONPATH=/elsewhere"], True),
+                             (["PYTHONPATH=/elsewhere"], True)):
+            with self.subTest(env=env), self.assertRaises(lane.Refusal) as caught:
+                lane.verify_core(inspect(env), HOLDER_ID, IMAGE, "synthetic-volume",
+                                 overlay=overlay)
+            self.assertEqual(str(caught.exception), "core_overlay_environment_mismatch")
+
+
+class ProfileBCheckTests(unittest.TestCase):
+    """Core's log, the component report and what Core resolves, each reduced and judged."""
+
+    def test_each_log_rule_refuses_with_its_token_and_the_ten_come_first(self):
+        domain = lane.COMPONENT_DOMAIN
+        for token, line in (
+                ("core_requested_one_of_the_ten", "Unable to install package watchfiles"),
+                ("core_requested_one_of_the_ten", "No module named 'jsonschema_path'"),
+                ("core_requested_a_requirement", "Unable to install package ruamel.yaml"),
+                ("core_requested_a_requirement", f"Requirements for {domain} not found"),
+                ("core_reported_a_missing_module", "No module named 'synthetic'"),
+                ("core_component_setup_failed",
+                 f"Setup failed for custom integration '\x1b[1m{domain}\x1b[0m'"),
+                ("core_component_setup_failed", f"Error setting up entry synthetic for {domain}")):
+            with self.subTest(line=line):
+                summary, failure = lane.core_log_check("2026 ERROR (synthetic) " + line + "\n")
+                self.assertEqual((failure, summary["refused"]), (token, token))
+        _summary, failure = lane.core_log_check(
+            "Unable to install package ruamel.yaml\nUnable to install package cyclopts\n")
+        self.assertEqual(failure, "core_requested_one_of_the_ten")
+
+    def test_other_lines_are_counted_not_refused(self):
+        text = ("2026 WARNING (MainThread) We found a custom integration "
+                f"{lane.COMPONENT_DOMAIN} which has not been tested\n"
+                "2026 ERROR (MainThread) [synthetic.other] Synthetic failure\n"
+                "\x1b[31m2026 INFO (MainThread) Synthetic\x1b[0m\n")
+        summary, failure = lane.core_log_check(text)
+        self.assertIsNone(failure)
+        self.assertEqual(summary, {"lines": 3, "custom_integration_warnings": 1,
+                                   "component_lines": 1, "error_lines": 1, "refused": None})
+
+    def test_the_component_report_is_reduced_and_judged(self):
+        report = synthetic_component_report("setup", "9.2.0")
+        summary, failure = lane.component_check(report, "9.2.0")
+        self.assertIsNone(failure)
+        self.assertEqual(summary["info"]["component_version"], "9.2.0")
+        self.assertNotIn("unlisted", summary["info"])
+        self.assertEqual(summary["manifest"]["requirements"],
+                         list(lane.COMPONENT_REQUIREMENTS["9.2.0"]))
+        self.assertEqual(lane.component_check(None, "9.2.0"),
+                         ({"readable": False}, "component_check_unreadable"))
+        failed = dict(report, ok=False, failure="entry_not_loaded")
+        self.assertEqual(lane.component_check(failed, "9.2.0")[0]["failure"], "entry_not_loaded")
+        self.assertEqual(lane.component_check(dict(failed, failure="synthetic"), "9.2.0")[0][
+            "failure"], None)
+        for changed, token in (
+                (failed, "component_setup_failed"),
+                (dict(report, info=dict(report["info"], success=False)), "component_info_failed"),
+                (dict(report, manifest=dict(report["manifest"], success=False)),
+                 "component_info_failed"),
+                (synthetic_component_report("setup", "9.1.2"), "component_version_mismatch")):
+            with self.subTest(token=token):
+                self.assertEqual(lane.component_check(changed, "9.2.0")[1], token)
+
+    def test_the_overlay_must_supply_the_three_and_the_image_mcp(self):
+        good = synthetic_resolved("9.2.0")
+        summary, failure = lane.resolved_check(json.dumps(good).encode(), "9.2.0")
+        self.assertIsNone(failure)
+        self.assertIs(summary["readable"], True)
+        unreadable = dict(good, core_python_path="unreadable")
+        self.assertIsNone(lane.resolved_check(json.dumps(unreadable).encode(), "9.2.0")[1])
+
+        def changed(name, value):
+            return dict(good, distributions=dict(good["distributions"], **{name: value}))
+        for value in (
+                changed("ha-mcp", {"version": "9.1.2", "location": lane.OVERLAY_TARGET}),
+                changed("ruamel.yaml", {"version": "0.19.1", "location": "/" + SITE}),
+                changed("voluptuous-openapi", None),
+                changed("mcp", {"version": "2.3.0", "location": lane.OVERLAY_TARGET}),
+                changed("mcp", None), dict(good, core_python_path=[]),
+                dict(good, distributions=None), "synthetic"):
+            with self.subTest(value=value):
+                self.assertEqual(lane.resolved_check(json.dumps(value).encode(), "9.2.0")[1],
+                                 "overlay_not_resolved_in_core")
+        self.assertEqual(lane.resolved_check(b"\xff", "9.2.0"),
+                         ({"readable": False}, "overlay_not_resolved_in_core"))
+
+
+class ProfileBPlanTests(unittest.TestCase):
+    """The calls plan, the bound sources and the names a profile B run uses."""
+
+    SEED = {
+        "automation_id": "synthetic_automation", "automation_entity": "automation.synthetic",
+        "calendar_entity": "calendar.synthetic", "scene_id": "synthetic_scene",
+        "script_id": "synthetic_script", "template": "{{ 1 + 1 }}",
+        "helper_entity": "input_boolean.synthetic", "statistics_entity": "sensor.synthetic",
+        "todo_entity": "todo.synthetic", "zone_id": "synthetic_zone", "search_text": "synthetic",
+        "window_start": "2026-01-01T00:00:00-06:00", "window_end": "2026-01-02T00:00:00-06:00",
+        "window_start_offset_free": "2026-01-01T00:00:00",
+        "window_end_offset_free": "2026-01-02T00:00:00",
+    }
+
+    def test_the_profile_b_plan_covers_every_component_read_and_the_yaml_read(self):
+        groups = list(lane.CAPTURE_GROUPS + lane.PROFILE_B_GROUPS)
+        cases = lane.calls_step.plan(lane.ARGUMENT_POLICY, groups, self.SEED)
+        self.assertEqual(len(cases), 47)
+        tools = {case["upstream_tool"] for case in cases}
+        self.assertEqual(set(lane.COMPONENT_READS) - tools, set())
+        yaml = lane.calls_step.plan(lane.ARGUMENT_POLICY, list(lane.PROFILE_B_GROUPS), self.SEED)
+        self.assertEqual([case["id"] for case in yaml], ["y-group", "y-absent-key"])
+        self.assertEqual({case["upstream_tool"] for case in yaml}, {lane.YAML_READ})
+
+    def test_each_component_source_is_the_bound_upstream_commit(self):
+        for version in lane.VERSIONS:
+            self.assertEqual(lane.COMPONENT_FOR[version], version)
+            self.assertEqual(lane.s4.binding(version)["source_commit"],
+                             lane.COMPONENT_SOURCES[version]["commit"])
+        self.assertEqual(lane.COMPONENT_SOURCES["2.2.1"]["tag"], "v8.6.0")
+
+    def test_the_names_and_the_removal_order_of_a_profile_b_run(self):
+        candidate = lane.lane_names("run", "9.2.0")
+        self.assertEqual(candidate[lane.ORDINARY_PEER],
+                         "hamcp371-s6-run-peer-9-2-0-ordinary-user")
+        self.assertEqual(candidate["package"], "hamcp371-s6-run-package")
+        baseline = lane.lane_names("run", "9.1.2")
+        self.assertIn("package", baseline)
+        self.assertNotIn(lane.ORDINARY_PEER, baseline)
+        self.assertNotIn("package", lane.lane_names("run"))
+        self.assertEqual(lane.container_keys(candidate), [
+            "peer-9.1.2", "peer-9.2.0", lane.ORDINARY_PEER, "package", "core", "holder"])
+
+    def test_profile_b_options_belong_to_run_and_name_a_bound_version(self):
+        common = ["--run-dir", "synthetic", "--launch-log", "synthetic"]
+        for argv in (["selftest", *common, "--version", "9.2.0"],
+                     ["recapture", *common, "--wheel-dir", "synthetic"],
+                     ["recapture", *common, "--upstream-git", "synthetic"],
+                     ["run", *common, "--profile", "B", "--version", "9.0.0"]):
+            with self.subTest(argv=argv), contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit):
+                    lane.main(argv)
 
 
 if __name__ == "__main__":
