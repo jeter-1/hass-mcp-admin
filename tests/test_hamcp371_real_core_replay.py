@@ -13,8 +13,9 @@ contract generated from them, its provenance and the hashes it binds.
 - 9.1.2 replay: each real-Core receipt replayed through the real gateway on the
   shipped 9.1.2 route sends the recorded wire arguments and succeeds, except the
   designed failures, which fail closed without upstream text.
-- 9.2.0 replay (ruling 2, items 7-15, N29): these fail by design until S8 to
-  S10 land the 9.2.0 capture, admission and closed key sets (step table S7).
+- 9.2.0 replay (ruling 2, items 7-15, N29): history passes from S9 (an
+  offset-free time refuses before dispatch); the other reads fail by design
+  until S10 lands their closed key sets (step table S7).
 
 Offline and deterministic; no live Home Assistant, no network.
 """
@@ -56,6 +57,11 @@ EXPECTED_FAILURES = {
     'p4-absent-automation': 'automation_not_found',
     'p4-absent-state': 'entity_not_found',
     'p4-absent-entity': 'entity_not_found',
+}
+# 9.2.0 only: refused before dispatch (S9; 21:36 record, item 6). 9.1.2
+# forwards the same offset-free value unchanged.
+REFUSED_BEFORE_DISPATCH_920 = {
+    'v16-history-offset-free': 'history_time_offset_required',
 }
 INJECTED = 'hamcp371_injected_key'
 CANARY = 'hamcp371 unlisted upstream warning canary'
@@ -107,6 +113,9 @@ class _Transport(_GatewayTransport):
         return replace(exchange, call_result=deepcopy(self.override))
 
 
+REPLAY_URL = 'http://synthetic-host-371:9583/synthetic-replay-secret-371/mcp'
+
+
 async def _replay(version, cases, tools=None):
     """[(public tool, public arguments, upstream result)] -> [(output, sent)].
 
@@ -117,7 +126,11 @@ async def _replay(version, cases, tools=None):
     transport = _Transport(tools, version)
     gateway = UpstreamReadGateway()
     gateway.configure(
-        replace(_settings('synthetic-no-key'), ha_mcp_release_registry_enabled=False),
+        # The configured upstream host is a known secret (configuration.py):
+        # the shared fixture's bare host ``upstream`` would redact
+        # Engineering's own ``upstream_warnings_replaced`` key (S9 README).
+        replace(_settings('synthetic-no-key'), ha_mcp_release_registry_enabled=False,
+                upstream_dashboard_mcp_url=REPLAY_URL),
         transport=transport,
     )
     await gateway.initialize(FastMCP('hamcp371-replay'))
@@ -335,7 +348,8 @@ def _cases_920(sets=('A/9.2.0', 'B/9.2.0')):
     for set_name in sets:
         for sub in CALL_DIRS:
             for call, rec in public_calls(set_name, sub):
-                if call['id'] in EXPECTED_FAILURES or call['public_tool'] not in READS:
+                if (call['id'] in EXPECTED_FAILURES or call['id'] in REFUSED_BEFORE_DISPATCH_920
+                        or call['public_tool'] not in READS):
                     continue
                 yield set_name, call, rec['exchange']['response']['result']
 
@@ -358,6 +372,12 @@ class RealCoreReplay920(unittest.TestCase):
             ])
             for (call, _rec), (out, sent) in zip(calls, outputs):
                 with self.subTest(set=set_name, call=call['id']):
+                    refused = REFUSED_BEFORE_DISPATCH_920.get(call['id'])
+                    if refused is not None:
+                        self.assertEqual(sent, [])
+                        self.assertIs(out['success'], False)
+                        self.assertEqual(out['details']['failure_category'], refused)
+                        continue
                     self.assertEqual(sent, [(call['upstream_tool'], call['wire_arguments'])])
                     expected = EXPECTED_FAILURES.get(call['id'])
                     if expected is None:
@@ -446,7 +466,9 @@ class RealCoreReplay920(unittest.TestCase):
         for (call, _), (out, _sent) in zip(cases, outputs):
             with self.subTest(call=call['id']):
                 self.assertNotIn(CANARY, json.dumps(out))
-                self.assertIn(REPLACED, out['data']['warnings'])
+                # History keeps the 8.5 shape: its warnings sit in the inner data.
+                data = out['data']['data'] if call['public_tool'] == 'ha_get_history' else out['data']
+                self.assertIn(REPLACED, data['warnings'])
                 self.assertGreaterEqual(out['data']['upstream_warnings_replaced'], 1)
 
     def test_history_withholds_an_unknown_key_instead_of_refusing(self):

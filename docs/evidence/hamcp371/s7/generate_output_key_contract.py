@@ -97,8 +97,17 @@ READS = {
         'entity_entry', 'entity_entries', 'errors')), open=('options',), maps={'categories': 1}),
     'ha_get_entity_exposure': dict(n=15, upstream='ha_get_entity_exposure', named=(f'{E}:122-131', (
         'exposed_to', 'entity_id', 'exposed_entities')), maps={'exposed_to': 1}),
-    'ha_get_history': dict(n=16, upstream='ha_get_history', named=(f'{H}:498-505', ('data', 'metadata', 'warnings')),
-        notes=('on 9.2.0 an unknown key is withheld and counted, not a whole-read refusal (item 7); offset-free start and end times are refused (research G 2a)',)),
+    'ha_get_history': dict(n=16, upstream='ha_get_history', named=(f'{H}:37-52,206-224,243-245,331-332,421,498-505', (
+        'data', 'metadata', 'warnings', 'success', 'source', 'entities', 'period', 'query_params',
+        'period_type', 'time_range', 'statistic_types', 'entity_id', 'states', 'statistics',
+        'unit_of_measurement', 'total_count', 'offset', 'limit', 'count', 'has_more', 'next_offset',
+        'state', 'attributes', 'last_updated', 'last_changed', 'start', 'end',
+        'mean', 'min', 'max', 'sum', 'change', 'minimal_response', 'significant_changes_only', 'order',
+        'home_assistant_timezone', 'timestamp_format', 'note')),
+        drops=('summary', 'statistics_metadata', 'unit_source', 'unit_reason', 'last_reset'),
+        notes=('on 9.2.0 an unknown key is withheld and counted, not a whole-read refusal (item 7); offset-free start and end times are refused (research G 2a)',
+               f'policy drops are the shipped 8.5-parity drops of {H}:17-20,329-339,388-396 (S9 correction, pending ruling)',
+               'a statistics row keeps start and the requested types; its end is removed too, but the name stays admitted through period and time_range, so distinct-name counts do not include it')),
     'ha_get_overview': dict(n=17, upstream='ha_get_overview', named=(f'{E}:45-47,135-140', (
         'system_summary', 'domain_stats', 'area_analysis', 'ai_insights', 'partial')),
         drops=('mcp_client', 'tool_discovery', 'settings_url', 'settings_url_hint', 'python_required', 'upgrade_command'),
@@ -142,6 +151,8 @@ PROPOSALS = (
     'info (system health), example and default (service fields)',
     'keys named by the shipped 9.1 projections but not observed in a 9.1.2 receipt are admitted with that source',
     'reviewed warnings are the exact upstream strings observed in the 9.1.2 receipts; the upstream source-string review is deferred',
+    'ha_get_history keeps the shipped 8.5-parity projection on 9.2.0; the keys it drops (summary, statistics_metadata, '
+    'unit_source, unit_reason, last_reset) are policy drops counted in fields_dropped_by_policy (S9 correction of the S7 row)',
 )
 
 

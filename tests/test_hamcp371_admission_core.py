@@ -12,8 +12,9 @@ These tests pin the S8 admission core:
   wire fingerprints, a loader gate that refuses crossed tokens and stale
   fingerprints, and the gateway helper that sends only 9.2.0-token entries to
   it (9.1.0 and 9.1.2 keep the 9.1 module);
-* the S8 interim history refusal (ha_get_history refuses on 9.2.0 before any
-  upstream call until S9);
+* ha_get_history on 9.2.0 goes through the S9 module: an offset-free time
+  refuses before any upstream call (the time semantics and the closed key set
+  are tests/test_hamcp371_history_offsets.py);
 * the 9.2.0 error adapter is version bound and records a real-Core capture
   (N31), and the history parser row is release bound;
 * the YAML read is admitted on 9.2.0 under the unchanged 9.1 contract, bound
@@ -211,15 +212,19 @@ class ReadAdapterModuleTests(unittest.TestCase):
                 self.assertNotEqual(entry.classification, "automatic_read")
                 self.assertEqual(entry.argument_restrictions, ())
 
-    def test_history_refuses_before_dispatch_in_the_s8_interim(self):
+    def test_history_uses_the_s9_module(self):
+        from ha_mcp_engineering.providers import upstream_history_9_2 as history_9_2
+
         entry = _policy("9.2.0").by_name[HISTORY]
         self.assertTrue(reads_9_2.is_adapter(entry))
-        with self.assertRaises(reads_9_2.ReadTierUnavailable):
-            reads_9_2.read_arguments(entry, {"entity_ids": "sensor.synthetic_temperature",
-                                             "start_time": "2026-11-01T00:00:00+00:00"})
+        arguments = {"entity_ids": "sensor.synthetic_temperature",
+                     "start_time": "2026-11-01T00:00:00+00:00"}
+        self.assertEqual(reads_9_2.read_arguments(entry, arguments),
+                         history_9_2.dispatch_arguments(arguments))
+        with self.assertRaises(history_9_2.HistoryTimeOffsetRequired):
+            reads_9_2.read_arguments(entry, {**arguments, "start_time": "2026-11-01T00:00:00"})
         with self.assertRaises(ValueError):
             reads_9_2.project_result(entry, {}, {})
-        self.assertEqual(reads_9_2.completeness(entry, {})[0], True)
 
 
 class GatewayHelperTests(unittest.TestCase):
@@ -406,16 +411,17 @@ class GatewaySurfaceTests(unittest.TestCase):
         self.assertEqual(result["data"]["config"], case.structured["config"])
         self.assertEqual(peer.calls, [case.upstream])
 
-    def test_920_history_refuses_with_no_upstream_call(self):
+    def test_920_offset_free_history_refuses_with_no_upstream_call(self):
         def handler(name, arguments):  # pragma: no cover - must never run
             raise AssertionError(f"unexpected upstream call {name}")
 
         _health, _exposed, result, peer = asyncio.run(_gateway(
             "9.2.0", useful.reviewed_catalog("9.2.0"), handler,
             call=(HISTORY, {"entity_ids": "sensor.synthetic_temperature",
-                            "start_time": "2026-11-01T00:00:00+00:00"})))
+                            "start_time": "2026-11-01T00:00:00"})))
         self.assertIs(result.get("success"), False, result)
-        self.assertEqual(result["error_code"], "unsupported_operation")
+        self.assertEqual(result["error_code"], "invalid_request")
+        self.assertEqual(result["details"]["failure_category"], "history_time_offset_required")
         self.assertEqual(peer.calls, [])
 
     def test_921_peer_is_refused_with_no_delegated_exposure(self):

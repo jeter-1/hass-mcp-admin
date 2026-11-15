@@ -108,6 +108,7 @@ from .upstream_reads_8_6 import (
 from .upstream_search_8_6 import search_catalog_view
 from . import upstream_reads_9_1 as reads_9_1
 from . import upstream_reads_9_2 as reads_9_2
+from .upstream_history_9_2 import HistoryTimeOffsetRequired
 from .upstream_device_projection import project_device_result
 from .upstream_blueprint import (
     is_blueprint_adapter, public_schema as blueprint_public_schema,
@@ -242,6 +243,7 @@ _FAILURE_CATEGORIES = frozenset(
         "schema_mismatch",
         "argument_validation",
         "invalid_request",
+        "history_time_offset_required",
         "capability_unavailable",
         "entity_not_found",
         "automation_not_found",
@@ -346,6 +348,11 @@ _UPSTREAM_DOMAIN_MESSAGES = {
     ),
     ("ha_get_entity", "entity_not_found"): (
         "The requested entity registry entry was not found."
+    ),
+    ("ha_get_history", "history_time_offset_required"): (
+        "start_time and end_time need a full date and time with an explicit "
+        "UTC offset, for example 2026-11-10T08:00:00-06:00 or "
+        "2026-11-10T14:00:00Z."
     ),
     ("ha_get_integration", "resource_not_found"): (
         "The requested config entry was not found in the reviewed listing."
@@ -3344,6 +3351,11 @@ class UpstreamReadGateway:
                 dispatch_arguments = yaml_reader.upstream_arguments(
                     yaml_reader.validate_arguments(arguments), entry=policy_entry
                 )
+        except HistoryTimeOffsetRequired:
+            # HAMCP-371 R1: a 9.2.0 time whose meaning changed (no offset).
+            raise _GatewayFailure(
+                "history_time_offset_required", dispatched=False
+            ) from None
         except _reads(policy_entry).ReadTierUnavailable:
             # HAMCP-319 R4: a shipped 8.5 tier 9.1 cannot serve; never synthesized.
             raise _GatewayFailure(
@@ -6698,7 +6710,9 @@ def _recommended_action(compatibility_status: str) -> str:
 
 
 def _public_failure(category: str) -> tuple[str, bool]:
-    if category in {"argument_validation", "invalid_request"}:
+    if category in {
+        "argument_validation", "invalid_request", "history_time_offset_required",
+    }:
         return "invalid_request", False
     if category == "capability_unavailable":
         return "unsupported_operation", False

@@ -16,10 +16,10 @@ surface as a 9.1 caller. ``upstream_reads_9_1.py`` is not edited and gives this
 module nothing but its public schemas, its skill-file check, its refusal class
 and, until S10 closes the 9.2.0 key sets, its compiled projections.
 
-S8 interim (S9 replaces it): ``ha_get_history`` refuses before dispatch. 9.2.0
-resolves an ISO time without an offset in HA local time, where 9.1 forced UTC
-(``tools_history.py`` at 51e3aac7), and the 9.2.0 history module that handles
-that change is S9. No history request reaches 9.2.0 until then.
+``ha_get_history`` (S9) is the 9.2.0 history module ``upstream_history_9_2``:
+9.2.0 resolves an ISO time without an offset in HA local time, where 9.1
+forced UTC (``tools_history.py`` at 51e3aac7), so such a time refuses before
+dispatch, and the result has its own closed key set.
 """
 from copy import deepcopy
 
@@ -66,7 +66,7 @@ if (len(_RELEASE_BY_ADAPTER) != len(RELEASES)
         or set(RELEASES) & set(_reads_9_1.RELEASES)):
     raise RuntimeError("upstream_reads_9_2_release_table_invalid")
 
-# S8 interim: refused before dispatch until the S9 history module exists.
+# Row 16 on 9.2.0: the S9 history module (time check, closed key set).
 _HISTORY = "ha_get_history"
 # Section 6.5: ha_get_device is projected by the compiled device allowlist
 # after the composite adapter (upstream_device_projection), not here.
@@ -148,7 +148,9 @@ def read_arguments(entry, arguments: dict) -> dict:
     ):
         raise ValueError("read_arguments_invalid")
     if name == _HISTORY:
-        raise ReadTierUnavailable("history_9_2_unreviewed")
+        # Row 16 / rule 3 plus the 9.2.0 time check (21:36 record, item 6).
+        from .upstream_history_9_2 import dispatch_arguments
+        return dispatch_arguments(arguments)
     if name == "ha_config_get_automation":
         # Row 1: public ``identifier`` -> wire ``entity_id`` (same identity).
         identifier = arguments.get("identifier")
@@ -194,9 +196,10 @@ def read_arguments(entry, arguments: dict) -> dict:
 
 def _projection(name):
     # S8 interim: the compiled 9.1 projections; S10 replaces them with the
-    # closed 9.2.0 key sets. History has no 9.2.0 projection before S9.
+    # closed 9.2.0 key sets. History has its own 9.2.0 projection (S9).
     if name == _HISTORY:
-        return None
+        from .upstream_history_9_2 import PROJECTIONS
+        return PROJECTIONS[_HISTORY]
     return _reads_9_1._projector_tables().get(name)
 
 
