@@ -1,0 +1,1446 @@
+{
+ "images": {
+  "9.1.2": {
+   "dist_info": "/app/.venv/lib/python3.13/site-packages/ha_mcp-9.1.2.dist-info",
+   "ha_mcp/_vendor/requirements.txt": "c0daa762a785edcb256da4aae23aa21cba7a59c5772f6a4af06537f6a6b51327",
+   "ha_mcp/_vendor/websockets/VENDORED": "a6c00001a575dfb862e0d167e507325c4639b0c87ee7a337b0c734422727a404",
+   "python_version": "3.13.18"
+  },
+  "9.2.0": {
+   "dist_info": "/app/.venv/lib/python3.14/site-packages/ha_mcp-9.2.0.dist-info",
+   "ha_mcp/_vendor/requirements.txt": "9af7f688fd85d48ec6c77fed51fba3521761e8febafc5244fa101ef5ee4a62b1",
+   "ha_mcp/_vendor/websockets/VENDORED": "85472f7f77c3ac0108711ab756774070b0218425f9e9f3d8b5ed26746ad658c1",
+   "python_version": "3.14.10"
+  }
+ },
+ "runs": {
+  "A 9.1.2": {
+   "after_core_restart": [
+    {
+     "date": "Thu, 12 Nov 2026 06:23:48 GMT",
+     "exchange_failure": null,
+     "id": "a-entity-after-core-restart",
+     "is_error": false,
+     "seconds": 0.028,
+     "success": true,
+     "tool": "ha_get_entity"
+    },
+    {
+     "date": "Thu, 12 Nov 2026 06:23:48 GMT",
+     "exchange_failure": null,
+     "id": "a-floors-areas-after-core-restart",
+     "is_error": false,
+     "seconds": 0.008,
+     "success": true,
+     "tool": "ha_list_floors_areas"
+    }
+   ],
+   "largest_socket_read": "r26-integrations",
+   "network_after_core_restart_checked": "2026-11-12T00:23:43-06:00",
+   "peer_log": {
+    "file": "run-a-1/peer-9.1.2.log",
+    "lines": 165,
+    "sha256": "00cc370f2b974f5875491927fb43c7024500ab2a6032c83cacfed2b1eb319b37",
+    "socket_lines": [
+     "2026-11-12 06:22:10 ha_mcp.client.websocket_client INFO: Connecting to Home Assistant WebSocket: ws://127.0.0.1:8123/api/websocket",
+     "2026-11-12 06:22:10 ha_mcp.client.websocket_client INFO: WebSocket connected and authenticated successfully",
+     "2026-11-12 06:22:10 ha_mcp.client.websocket_client INFO: WebSocket disconnected",
+     "2026-11-12 06:22:12 ha_mcp.client.websocket_client INFO: Connecting to Home Assistant WebSocket: ws://127.0.0.1:8123/api/websocket",
+     "2026-11-12 06:22:12 ha_mcp.client.websocket_client INFO: WebSocket connected and authenticated successfully",
+     "2026-11-12 06:22:12 ha_mcp.client.websocket_client INFO: Connecting to Home Assistant WebSocket: ws://127.0.0.1:8123/api/websocket",
+     "2026-11-12 06:22:13 ha_mcp.client.websocket_client INFO: WebSocket connected and authenticated successfully",
+     "2026-11-12 06:22:13 ha_mcp.client.websocket_client INFO: WebSocket disconnected",
+     "2026-11-12 06:22:13 ha_mcp.client.websocket_client INFO: Connecting to Home Assistant WebSocket: ws://127.0.0.1:8123/api/websocket",
+     "2026-11-12 06:22:13 ha_mcp.client.websocket_client INFO: WebSocket connected and authenticated successfully",
+     "2026-11-12 06:22:13 ha_mcp.client.websocket_client INFO: WebSocket disconnected",
+     "2026-11-12 06:22:13 ha_mcp.client.rest_client ERROR: WebSocket message failed (supervisor/api): Command failed: Unknown command.",
+     "2026-11-12 06:22:13 ha_mcp.client.rest_client ERROR: WebSocket message failed (config/entity_registry/get): Command failed: Entity not found",
+     "2026-11-12 06:23:49 ha_mcp.client.websocket_client INFO: WebSocket disconnected",
+     "2026-11-12 06:23:49 ha_mcp.client.websocket_client INFO: Connecting to Home Assistant WebSocket: ws://127.0.0.1:8123/api/websocket",
+     "2026-11-12 06:23:49 ha_mcp.client.websocket_client INFO: WebSocket connected and authenticated successfully"
+    ]
+   },
+   "socket_reads": [
+    {
+     "body_bytes": 3264,
+     "date": "Thu, 12 Nov 2026 06:22:12 GMT",
+     "exchange_failure": null,
+     "id": "r01-automation",
+     "is_error": false,
+     "seconds": 0.338,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_config_get_automation"
+    },
+    {
+     "body_bytes": 698,
+     "date": "Thu, 12 Nov 2026 06:22:12 GMT",
+     "exchange_failure": null,
+     "id": "r03-category",
+     "is_error": false,
+     "seconds": 0.006,
+     "socket_class": "websocket only",
+     "success": true,
+     "tool": "ha_config_get_category"
+    },
+    {
+     "body_bytes": 620,
+     "date": "Thu, 12 Nov 2026 06:22:12 GMT",
+     "exchange_failure": null,
+     "id": "r04-label",
+     "is_error": false,
+     "seconds": 0.005,
+     "socket_class": "websocket only",
+     "success": true,
+     "tool": "ha_config_get_label"
+    },
+    {
+     "body_bytes": 566,
+     "date": "Thu, 12 Nov 2026 06:22:12 GMT",
+     "exchange_failure": null,
+     "id": "r05-scene",
+     "is_error": false,
+     "seconds": 0.011,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_config_get_scene"
+    },
+    {
+     "body_bytes": 672,
+     "date": "Thu, 12 Nov 2026 06:22:12 GMT",
+     "exchange_failure": null,
+     "id": "r06-script",
+     "is_error": false,
+     "seconds": 0.009,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_config_get_script"
+    },
+    {
+     "body_bytes": 758,
+     "date": "Thu, 12 Nov 2026 06:22:12 GMT",
+     "exchange_failure": null,
+     "id": "r07-dashboard-resources",
+     "is_error": false,
+     "seconds": 0.006,
+     "socket_class": "websocket only",
+     "success": true,
+     "tool": "ha_config_list_dashboard_resources"
+    },
+    {
+     "body_bytes": 804,
+     "date": "Thu, 12 Nov 2026 06:22:12 GMT",
+     "exchange_failure": null,
+     "id": "r09-helpers",
+     "is_error": false,
+     "seconds": 0.007,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_config_list_helpers"
+    },
+    {
+     "body_bytes": 532,
+     "date": "Thu, 12 Nov 2026 06:22:12 GMT",
+     "exchange_failure": null,
+     "id": "r10-template",
+     "is_error": false,
+     "seconds": 0.011,
+     "socket_class": "websocket only",
+     "success": true,
+     "tool": "ha_eval_template"
+    },
+    {
+     "body_bytes": 1012,
+     "date": "Thu, 12 Nov 2026 06:22:12 GMT",
+     "exchange_failure": null,
+     "id": "r11-automation-traces",
+     "is_error": false,
+     "seconds": 0.007,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_get_automation_traces"
+    },
+    {
+     "body_bytes": 1634,
+     "date": "Thu, 12 Nov 2026 06:22:12 GMT",
+     "exchange_failure": null,
+     "id": "r12-blueprints",
+     "is_error": false,
+     "seconds": 0.011,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_manage_blueprints"
+    },
+    {
+     "body_bytes": 2010,
+     "date": "Thu, 12 Nov 2026 06:22:12 GMT",
+     "exchange_failure": null,
+     "id": "r13-devices",
+     "is_error": false,
+     "seconds": 0.01,
+     "socket_class": "websocket only",
+     "success": true,
+     "tool": "ha_get_device"
+    },
+    {
+     "body_bytes": 1308,
+     "date": "Thu, 12 Nov 2026 06:22:12 GMT",
+     "exchange_failure": null,
+     "id": "r14-entity",
+     "is_error": false,
+     "seconds": 0.007,
+     "socket_class": "websocket only",
+     "success": true,
+     "tool": "ha_get_entity"
+    },
+    {
+     "body_bytes": 582,
+     "date": "Thu, 12 Nov 2026 06:22:12 GMT",
+     "exchange_failure": null,
+     "id": "r15-entity-exposure",
+     "is_error": false,
+     "seconds": 0.006,
+     "socket_class": "websocket only",
+     "success": true,
+     "tool": "ha_get_entity_exposure"
+    },
+    {
+     "body_bytes": 2998,
+     "date": "Thu, 12 Nov 2026 06:22:12 GMT",
+     "exchange_failure": null,
+     "id": "r16-history",
+     "is_error": false,
+     "seconds": 0.016,
+     "socket_class": "websocket and REST",
+     "success": null,
+     "tool": "ha_get_history"
+    },
+    {
+     "body_bytes": 2742,
+     "date": "Thu, 12 Nov 2026 06:22:12 GMT",
+     "exchange_failure": null,
+     "id": "r17-overview",
+     "is_error": false,
+     "seconds": 0.09,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_get_overview"
+    },
+    {
+     "body_bytes": 1644,
+     "date": "Thu, 12 Nov 2026 06:22:12 GMT",
+     "exchange_failure": null,
+     "id": "r19-state",
+     "is_error": false,
+     "seconds": 0.011,
+     "socket_class": "websocket and REST",
+     "success": null,
+     "tool": "ha_get_state"
+    },
+    {
+     "body_bytes": 2380,
+     "date": "Thu, 12 Nov 2026 06:22:12 GMT",
+     "exchange_failure": null,
+     "id": "r20-system-health",
+     "is_error": false,
+     "seconds": 0.041,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_get_system_health"
+    },
+    {
+     "body_bytes": 790,
+     "date": "Thu, 12 Nov 2026 06:22:12 GMT",
+     "exchange_failure": null,
+     "id": "r21-todo",
+     "is_error": false,
+     "seconds": 0.009,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_get_todo"
+    },
+    {
+     "body_bytes": 1234,
+     "date": "Thu, 12 Nov 2026 06:22:12 GMT",
+     "exchange_failure": null,
+     "id": "r22-zones",
+     "is_error": false,
+     "seconds": 0.01,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_get_zone"
+    },
+    {
+     "body_bytes": 2924,
+     "date": "Thu, 12 Nov 2026 06:22:12 GMT",
+     "exchange_failure": null,
+     "id": "r23-floors-areas",
+     "is_error": false,
+     "seconds": 0.006,
+     "socket_class": "websocket only",
+     "success": true,
+     "tool": "ha_list_floors_areas"
+    },
+    {
+     "body_bytes": 3466,
+     "date": "Thu, 12 Nov 2026 06:22:12 GMT",
+     "exchange_failure": null,
+     "id": "r24-services",
+     "is_error": false,
+     "seconds": 0.016,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_list_services"
+    },
+    {
+     "body_bytes": 1356,
+     "date": "Thu, 12 Nov 2026 06:22:12 GMT",
+     "exchange_failure": null,
+     "id": "r25-search",
+     "is_error": false,
+     "seconds": 0.011,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_search"
+    },
+    {
+     "body_bytes": 11834,
+     "date": "Thu, 12 Nov 2026 06:22:13 GMT",
+     "exchange_failure": null,
+     "id": "r26-integrations",
+     "is_error": false,
+     "seconds": 0.013,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_get_integration"
+    },
+    {
+     "body_bytes": 698,
+     "date": "Thu, 12 Nov 2026 06:22:13 GMT",
+     "exchange_failure": null,
+     "id": "r27-apps",
+     "is_error": true,
+     "seconds": 0.008,
+     "socket_class": "websocket only",
+     "success": false,
+     "tool": "ha_get_app"
+    }
+   ],
+   "socket_reads_summary": {
+    "exchange_failures": 0,
+    "is_error": 1,
+    "reads": 24,
+    "success_false": 1
+   },
+   "transport": [
+    {
+     "body_bytes": 36672,
+     "date": "Thu, 12 Nov 2026 06:22:13 GMT",
+     "exchange_failure": null,
+     "id": "t-large-services",
+     "idle_seconds_before": 0,
+     "is_error": false,
+     "new_session": false,
+     "seconds": 0.015,
+     "success": true,
+     "tool": "ha_list_services"
+    },
+    {
+     "body_bytes": 1308,
+     "date": "Thu, 12 Nov 2026 06:23:27 GMT",
+     "exchange_failure": null,
+     "id": "t-after-idle",
+     "idle_seconds_before": 75.0,
+     "is_error": false,
+     "new_session": false,
+     "seconds": 0.006,
+     "success": true,
+     "tool": "ha_get_entity"
+    },
+    {
+     "body_bytes": 1644,
+     "date": "Thu, 12 Nov 2026 06:23:28 GMT",
+     "exchange_failure": null,
+     "id": "t-new-session",
+     "idle_seconds_before": 0,
+     "is_error": false,
+     "new_session": true,
+     "seconds": 0.015,
+     "success": null,
+     "tool": "ha_get_state"
+    }
+   ]
+  },
+  "A 9.2.0": {
+   "after_core_restart": [
+    {
+     "date": "Thu, 12 Nov 2026 06:25:32 GMT",
+     "exchange_failure": null,
+     "id": "a-entity-after-core-restart",
+     "is_error": false,
+     "seconds": 0.029,
+     "success": true,
+     "tool": "ha_get_entity"
+    },
+    {
+     "date": "Thu, 12 Nov 2026 06:25:32 GMT",
+     "exchange_failure": null,
+     "id": "a-floors-areas-after-core-restart",
+     "is_error": false,
+     "seconds": 0.006,
+     "success": true,
+     "tool": "ha_list_floors_areas"
+    }
+   ],
+   "largest_socket_read": "r26-integrations",
+   "network_after_core_restart_checked": "2026-11-12T00:25:26-06:00",
+   "peer_log": {
+    "file": "run-a-1/peer-9.2.0.log",
+    "lines": 171,
+    "sha256": "7ab7644275a8bb0c06509f6dd05a6cf4f96eb619913fef729675770a68ccfac7",
+    "socket_lines": [
+     "2026-11-12 06:23:54 ha_mcp.client.websocket_client INFO: Connecting to Home Assistant WebSocket: ws://127.0.0.1:8123/api/websocket",
+     "2026-11-12 06:23:54 ha_mcp.client.websocket_client INFO: WebSocket connected and authenticated successfully",
+     "2026-11-12 06:23:54 ha_mcp.client.websocket_client INFO: WebSocket disconnected",
+     "2026-11-12 06:23:56 ha_mcp.client.websocket_client INFO: Connecting to Home Assistant WebSocket: ws://127.0.0.1:8123/api/websocket",
+     "2026-11-12 06:23:56 ha_mcp.client.websocket_client INFO: WebSocket connected and authenticated successfully",
+     "2026-11-12 06:23:56 ha_mcp.client.websocket_client INFO: Connecting to Home Assistant WebSocket: ws://127.0.0.1:8123/api/websocket",
+     "2026-11-12 06:23:56 ha_mcp.client.websocket_client INFO: WebSocket connected and authenticated successfully",
+     "2026-11-12 06:23:56 ha_mcp.client.websocket_client INFO: WebSocket disconnected",
+     "2026-11-12 06:23:56 ha_mcp.client.websocket_client INFO: Connecting to Home Assistant WebSocket: ws://127.0.0.1:8123/api/websocket",
+     "2026-11-12 06:23:56 ha_mcp.client.websocket_client INFO: WebSocket connected and authenticated successfully",
+     "2026-11-12 06:23:56 ha_mcp.client.websocket_client INFO: WebSocket disconnected",
+     "2026-11-12 06:23:57 ha_mcp.client.rest_client ERROR: WebSocket message failed (supervisor/api): Command failed: Unknown command.",
+     "2026-11-12 06:23:57 ha_mcp.client.rest_client ERROR: WebSocket message failed (config/entity_registry/get): Command failed: Entity not found",
+     "2026-11-12 06:25:32 ha_mcp.client.websocket_client INFO: WebSocket disconnected",
+     "2026-11-12 06:25:32 ha_mcp.client.websocket_client INFO: Connecting to Home Assistant WebSocket: ws://127.0.0.1:8123/api/websocket",
+     "2026-11-12 06:25:32 ha_mcp.client.websocket_client INFO: WebSocket connected and authenticated successfully"
+    ]
+   },
+   "socket_reads": [
+    {
+     "body_bytes": 3264,
+     "date": "Thu, 12 Nov 2026 06:23:55 GMT",
+     "exchange_failure": null,
+     "id": "r01-automation",
+     "is_error": false,
+     "seconds": 0.515,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_config_get_automation"
+    },
+    {
+     "body_bytes": 698,
+     "date": "Thu, 12 Nov 2026 06:23:55 GMT",
+     "exchange_failure": null,
+     "id": "r03-category",
+     "is_error": false,
+     "seconds": 0.008,
+     "socket_class": "websocket only",
+     "success": true,
+     "tool": "ha_config_get_category"
+    },
+    {
+     "body_bytes": 620,
+     "date": "Thu, 12 Nov 2026 06:23:55 GMT",
+     "exchange_failure": null,
+     "id": "r04-label",
+     "is_error": false,
+     "seconds": 0.008,
+     "socket_class": "websocket only",
+     "success": true,
+     "tool": "ha_config_get_label"
+    },
+    {
+     "body_bytes": 566,
+     "date": "Thu, 12 Nov 2026 06:23:55 GMT",
+     "exchange_failure": null,
+     "id": "r05-scene",
+     "is_error": false,
+     "seconds": 0.01,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_config_get_scene"
+    },
+    {
+     "body_bytes": 672,
+     "date": "Thu, 12 Nov 2026 06:23:55 GMT",
+     "exchange_failure": null,
+     "id": "r06-script",
+     "is_error": false,
+     "seconds": 0.009,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_config_get_script"
+    },
+    {
+     "body_bytes": 758,
+     "date": "Thu, 12 Nov 2026 06:23:55 GMT",
+     "exchange_failure": null,
+     "id": "r07-dashboard-resources",
+     "is_error": false,
+     "seconds": 0.006,
+     "socket_class": "websocket only",
+     "success": true,
+     "tool": "ha_config_list_dashboard_resources"
+    },
+    {
+     "body_bytes": 804,
+     "date": "Thu, 12 Nov 2026 06:23:55 GMT",
+     "exchange_failure": null,
+     "id": "r09-helpers",
+     "is_error": false,
+     "seconds": 0.008,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_config_list_helpers"
+    },
+    {
+     "body_bytes": 532,
+     "date": "Thu, 12 Nov 2026 06:23:55 GMT",
+     "exchange_failure": null,
+     "id": "r10-template",
+     "is_error": false,
+     "seconds": 0.012,
+     "socket_class": "websocket only",
+     "success": true,
+     "tool": "ha_eval_template"
+    },
+    {
+     "body_bytes": 1012,
+     "date": "Thu, 12 Nov 2026 06:23:55 GMT",
+     "exchange_failure": null,
+     "id": "r11-automation-traces",
+     "is_error": false,
+     "seconds": 0.008,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_get_automation_traces"
+    },
+    {
+     "body_bytes": 1634,
+     "date": "Thu, 12 Nov 2026 06:23:55 GMT",
+     "exchange_failure": null,
+     "id": "r12-blueprints",
+     "is_error": false,
+     "seconds": 0.013,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_manage_blueprints"
+    },
+    {
+     "body_bytes": 2010,
+     "date": "Thu, 12 Nov 2026 06:23:55 GMT",
+     "exchange_failure": null,
+     "id": "r13-devices",
+     "is_error": false,
+     "seconds": 0.006,
+     "socket_class": "websocket only",
+     "success": true,
+     "tool": "ha_get_device"
+    },
+    {
+     "body_bytes": 1308,
+     "date": "Thu, 12 Nov 2026 06:23:55 GMT",
+     "exchange_failure": null,
+     "id": "r14-entity",
+     "is_error": false,
+     "seconds": 0.006,
+     "socket_class": "websocket only",
+     "success": true,
+     "tool": "ha_get_entity"
+    },
+    {
+     "body_bytes": 582,
+     "date": "Thu, 12 Nov 2026 06:23:55 GMT",
+     "exchange_failure": null,
+     "id": "r15-entity-exposure",
+     "is_error": false,
+     "seconds": 0.006,
+     "socket_class": "websocket only",
+     "success": true,
+     "tool": "ha_get_entity_exposure"
+    },
+    {
+     "body_bytes": 2998,
+     "date": "Thu, 12 Nov 2026 06:23:55 GMT",
+     "exchange_failure": null,
+     "id": "r16-history",
+     "is_error": false,
+     "seconds": 0.016,
+     "socket_class": "websocket and REST",
+     "success": null,
+     "tool": "ha_get_history"
+    },
+    {
+     "body_bytes": 2818,
+     "date": "Thu, 12 Nov 2026 06:23:55 GMT",
+     "exchange_failure": null,
+     "id": "r17-overview",
+     "is_error": false,
+     "seconds": 0.074,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_get_overview"
+    },
+    {
+     "body_bytes": 1582,
+     "date": "Thu, 12 Nov 2026 06:23:55 GMT",
+     "exchange_failure": null,
+     "id": "r19-state",
+     "is_error": false,
+     "seconds": 0.013,
+     "socket_class": "websocket and REST",
+     "success": null,
+     "tool": "ha_get_state"
+    },
+    {
+     "body_bytes": 2380,
+     "date": "Thu, 12 Nov 2026 06:23:55 GMT",
+     "exchange_failure": null,
+     "id": "r20-system-health",
+     "is_error": false,
+     "seconds": 0.039,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_get_system_health"
+    },
+    {
+     "body_bytes": 790,
+     "date": "Thu, 12 Nov 2026 06:23:55 GMT",
+     "exchange_failure": null,
+     "id": "r21-todo",
+     "is_error": false,
+     "seconds": 0.01,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_get_todo"
+    },
+    {
+     "body_bytes": 1226,
+     "date": "Thu, 12 Nov 2026 06:23:55 GMT",
+     "exchange_failure": null,
+     "id": "r22-zones",
+     "is_error": false,
+     "seconds": 0.014,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_get_zone"
+    },
+    {
+     "body_bytes": 2924,
+     "date": "Thu, 12 Nov 2026 06:23:55 GMT",
+     "exchange_failure": null,
+     "id": "r23-floors-areas",
+     "is_error": false,
+     "seconds": 0.008,
+     "socket_class": "websocket only",
+     "success": true,
+     "tool": "ha_list_floors_areas"
+    },
+    {
+     "body_bytes": 3970,
+     "date": "Thu, 12 Nov 2026 06:23:55 GMT",
+     "exchange_failure": null,
+     "id": "r24-services",
+     "is_error": false,
+     "seconds": 0.018,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_list_services"
+    },
+    {
+     "body_bytes": 1356,
+     "date": "Thu, 12 Nov 2026 06:23:57 GMT",
+     "exchange_failure": null,
+     "id": "r25-search",
+     "is_error": false,
+     "seconds": 0.01,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_search"
+    },
+    {
+     "body_bytes": 11834,
+     "date": "Thu, 12 Nov 2026 06:23:57 GMT",
+     "exchange_failure": null,
+     "id": "r26-integrations",
+     "is_error": false,
+     "seconds": 0.012,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_get_integration"
+    },
+    {
+     "body_bytes": 698,
+     "date": "Thu, 12 Nov 2026 06:23:57 GMT",
+     "exchange_failure": null,
+     "id": "r27-apps",
+     "is_error": true,
+     "seconds": 0.007,
+     "socket_class": "websocket only",
+     "success": false,
+     "tool": "ha_get_app"
+    }
+   ],
+   "socket_reads_summary": {
+    "exchange_failures": 0,
+    "is_error": 1,
+    "reads": 24,
+    "success_false": 1
+   },
+   "transport": [
+    {
+     "body_bytes": 42952,
+     "date": "Thu, 12 Nov 2026 06:23:57 GMT",
+     "exchange_failure": null,
+     "id": "t-large-services",
+     "idle_seconds_before": 0,
+     "is_error": false,
+     "new_session": false,
+     "seconds": 0.02,
+     "success": true,
+     "tool": "ha_list_services"
+    },
+    {
+     "body_bytes": 1308,
+     "date": "Thu, 12 Nov 2026 06:25:12 GMT",
+     "exchange_failure": null,
+     "id": "t-after-idle",
+     "idle_seconds_before": 75.0,
+     "is_error": false,
+     "new_session": false,
+     "seconds": 0.007,
+     "success": true,
+     "tool": "ha_get_entity"
+    },
+    {
+     "body_bytes": 1582,
+     "date": "Thu, 12 Nov 2026 06:25:12 GMT",
+     "exchange_failure": null,
+     "id": "t-new-session",
+     "idle_seconds_before": 0,
+     "is_error": false,
+     "new_session": true,
+     "seconds": 0.019,
+     "success": null,
+     "tool": "ha_get_state"
+    }
+   ]
+  },
+  "B-9.1.2 9.1.2": {
+   "after_core_restart": [
+    {
+     "date": "Sun, 15 Nov 2026 05:09:12 GMT",
+     "exchange_failure": null,
+     "id": "a-entity-after-core-restart",
+     "is_error": false,
+     "seconds": 0.028,
+     "success": true,
+     "tool": "ha_get_entity"
+    },
+    {
+     "date": "Sun, 15 Nov 2026 05:09:12 GMT",
+     "exchange_failure": null,
+     "id": "a-floors-areas-after-core-restart",
+     "is_error": false,
+     "seconds": 0.004,
+     "success": true,
+     "tool": "ha_list_floors_areas"
+    }
+   ],
+   "largest_socket_read": "r26-integrations",
+   "network_after_core_restart_checked": "2026-11-14T23:09:07-06:00",
+   "peer_log": {
+    "file": "run-b-9.1.2-1/peer-9.1.2.log",
+    "lines": 147,
+    "sha256": "03e2c8db4d9c58d2b17bebcc648ebd8837935865f22f8459c060f8d39c6e747e",
+    "socket_lines": [
+     "2026-11-15 05:07:35 ha_mcp.client.websocket_client INFO: Connecting to Home Assistant WebSocket: ws://127.0.0.1:8123/api/websocket",
+     "2026-11-15 05:07:35 ha_mcp.client.websocket_client INFO: WebSocket connected and authenticated successfully",
+     "2026-11-15 05:07:35 ha_mcp.client.websocket_client INFO: WebSocket disconnected",
+     "2026-11-15 05:07:36 ha_mcp.client.websocket_client INFO: Connecting to Home Assistant WebSocket: ws://127.0.0.1:8123/api/websocket",
+     "2026-11-15 05:07:36 ha_mcp.client.websocket_client INFO: WebSocket connected and authenticated successfully",
+     "2026-11-15 05:07:37 ha_mcp.client.websocket_client INFO: Connecting to Home Assistant WebSocket: ws://127.0.0.1:8123/api/websocket",
+     "2026-11-15 05:07:37 ha_mcp.client.websocket_client INFO: WebSocket connected and authenticated successfully",
+     "2026-11-15 05:07:37 ha_mcp.client.websocket_client INFO: WebSocket disconnected",
+     "2026-11-15 05:07:38 ha_mcp.client.websocket_client INFO: Connecting to Home Assistant WebSocket: ws://127.0.0.1:8123/api/websocket",
+     "2026-11-15 05:07:38 ha_mcp.client.websocket_client INFO: WebSocket connected and authenticated successfully",
+     "2026-11-15 05:07:38 ha_mcp.client.websocket_client INFO: WebSocket disconnected",
+     "2026-11-15 05:07:38 ha_mcp.client.rest_client ERROR: WebSocket message failed (supervisor/api): Command failed: Unknown command.",
+     "2026-11-15 05:07:38 ha_mcp.client.rest_client ERROR: WebSocket message failed (config/entity_registry/get): Command failed: Entity not found",
+     "2026-11-15 05:09:12 ha_mcp.client.websocket_client INFO: WebSocket disconnected",
+     "2026-11-15 05:09:12 ha_mcp.client.websocket_client INFO: Connecting to Home Assistant WebSocket: ws://127.0.0.1:8123/api/websocket",
+     "2026-11-15 05:09:12 ha_mcp.client.websocket_client INFO: WebSocket connected and authenticated successfully"
+    ]
+   },
+   "socket_reads": [
+    {
+     "body_bytes": 2800,
+     "date": "Sun, 15 Nov 2026 05:07:37 GMT",
+     "exchange_failure": null,
+     "id": "r01-automation",
+     "is_error": false,
+     "seconds": 0.033,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_config_get_automation"
+    },
+    {
+     "body_bytes": 698,
+     "date": "Sun, 15 Nov 2026 05:07:37 GMT",
+     "exchange_failure": null,
+     "id": "r03-category",
+     "is_error": false,
+     "seconds": 0.004,
+     "socket_class": "websocket only",
+     "success": true,
+     "tool": "ha_config_get_category"
+    },
+    {
+     "body_bytes": 620,
+     "date": "Sun, 15 Nov 2026 05:07:37 GMT",
+     "exchange_failure": null,
+     "id": "r04-label",
+     "is_error": false,
+     "seconds": 0.003,
+     "socket_class": "websocket only",
+     "success": true,
+     "tool": "ha_config_get_label"
+    },
+    {
+     "body_bytes": 566,
+     "date": "Sun, 15 Nov 2026 05:07:37 GMT",
+     "exchange_failure": null,
+     "id": "r05-scene",
+     "is_error": false,
+     "seconds": 0.008,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_config_get_scene"
+    },
+    {
+     "body_bytes": 672,
+     "date": "Sun, 15 Nov 2026 05:07:37 GMT",
+     "exchange_failure": null,
+     "id": "r06-script",
+     "is_error": false,
+     "seconds": 0.006,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_config_get_script"
+    },
+    {
+     "body_bytes": 758,
+     "date": "Sun, 15 Nov 2026 05:07:37 GMT",
+     "exchange_failure": null,
+     "id": "r07-dashboard-resources",
+     "is_error": false,
+     "seconds": 0.004,
+     "socket_class": "websocket only",
+     "success": true,
+     "tool": "ha_config_list_dashboard_resources"
+    },
+    {
+     "body_bytes": 804,
+     "date": "Sun, 15 Nov 2026 05:07:37 GMT",
+     "exchange_failure": null,
+     "id": "r09-helpers",
+     "is_error": false,
+     "seconds": 0.004,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_config_list_helpers"
+    },
+    {
+     "body_bytes": 532,
+     "date": "Sun, 15 Nov 2026 05:07:37 GMT",
+     "exchange_failure": null,
+     "id": "r10-template",
+     "is_error": false,
+     "seconds": 0.007,
+     "socket_class": "websocket only",
+     "success": true,
+     "tool": "ha_eval_template"
+    },
+    {
+     "body_bytes": 1012,
+     "date": "Sun, 15 Nov 2026 05:07:37 GMT",
+     "exchange_failure": null,
+     "id": "r11-automation-traces",
+     "is_error": false,
+     "seconds": 0.005,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_get_automation_traces"
+    },
+    {
+     "body_bytes": 1634,
+     "date": "Sun, 15 Nov 2026 05:07:37 GMT",
+     "exchange_failure": null,
+     "id": "r12-blueprints",
+     "is_error": false,
+     "seconds": 0.008,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_manage_blueprints"
+    },
+    {
+     "body_bytes": 2614,
+     "date": "Sun, 15 Nov 2026 05:07:37 GMT",
+     "exchange_failure": null,
+     "id": "r13-devices",
+     "is_error": false,
+     "seconds": 0.006,
+     "socket_class": "websocket only",
+     "success": true,
+     "tool": "ha_get_device"
+    },
+    {
+     "body_bytes": 1482,
+     "date": "Sun, 15 Nov 2026 05:07:37 GMT",
+     "exchange_failure": null,
+     "id": "r14-entity",
+     "is_error": false,
+     "seconds": 0.005,
+     "socket_class": "websocket only",
+     "success": true,
+     "tool": "ha_get_entity"
+    },
+    {
+     "body_bytes": 902,
+     "date": "Sun, 15 Nov 2026 05:07:37 GMT",
+     "exchange_failure": null,
+     "id": "r15-entity-exposure",
+     "is_error": false,
+     "seconds": 0.003,
+     "socket_class": "websocket only",
+     "success": true,
+     "tool": "ha_get_entity_exposure"
+    },
+    {
+     "body_bytes": 2998,
+     "date": "Sun, 15 Nov 2026 05:07:37 GMT",
+     "exchange_failure": null,
+     "id": "r16-history",
+     "is_error": false,
+     "seconds": 0.009,
+     "socket_class": "websocket and REST",
+     "success": null,
+     "tool": "ha_get_history"
+    },
+    {
+     "body_bytes": 2742,
+     "date": "Sun, 15 Nov 2026 05:07:37 GMT",
+     "exchange_failure": null,
+     "id": "r17-overview",
+     "is_error": false,
+     "seconds": 0.011,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_get_overview"
+    },
+    {
+     "body_bytes": 1644,
+     "date": "Sun, 15 Nov 2026 05:07:37 GMT",
+     "exchange_failure": null,
+     "id": "r19-state",
+     "is_error": false,
+     "seconds": 0.005,
+     "socket_class": "websocket and REST",
+     "success": null,
+     "tool": "ha_get_state"
+    },
+    {
+     "body_bytes": 2380,
+     "date": "Sun, 15 Nov 2026 05:07:37 GMT",
+     "exchange_failure": null,
+     "id": "r20-system-health",
+     "is_error": false,
+     "seconds": 0.033,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_get_system_health"
+    },
+    {
+     "body_bytes": 790,
+     "date": "Sun, 15 Nov 2026 05:07:37 GMT",
+     "exchange_failure": null,
+     "id": "r21-todo",
+     "is_error": false,
+     "seconds": 0.006,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_get_todo"
+    },
+    {
+     "body_bytes": 1082,
+     "date": "Sun, 15 Nov 2026 05:07:37 GMT",
+     "exchange_failure": null,
+     "id": "r22-zones",
+     "is_error": false,
+     "seconds": 0.004,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_get_zone"
+    },
+    {
+     "body_bytes": 2920,
+     "date": "Sun, 15 Nov 2026 05:07:37 GMT",
+     "exchange_failure": null,
+     "id": "r23-floors-areas",
+     "is_error": false,
+     "seconds": 0.005,
+     "socket_class": "websocket only",
+     "success": true,
+     "tool": "ha_list_floors_areas"
+    },
+    {
+     "body_bytes": 3388,
+     "date": "Sun, 15 Nov 2026 05:07:37 GMT",
+     "exchange_failure": null,
+     "id": "r24-services",
+     "is_error": false,
+     "seconds": 0.052,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_list_services"
+    },
+    {
+     "body_bytes": 1356,
+     "date": "Sun, 15 Nov 2026 05:07:37 GMT",
+     "exchange_failure": null,
+     "id": "r25-search",
+     "is_error": false,
+     "seconds": 0.007,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_search"
+    },
+    {
+     "body_bytes": 13518,
+     "date": "Sun, 15 Nov 2026 05:07:37 GMT",
+     "exchange_failure": null,
+     "id": "r26-integrations",
+     "is_error": false,
+     "seconds": 0.007,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_get_integration"
+    },
+    {
+     "body_bytes": 698,
+     "date": "Sun, 15 Nov 2026 05:07:37 GMT",
+     "exchange_failure": null,
+     "id": "r27-apps",
+     "is_error": true,
+     "seconds": 0.005,
+     "socket_class": "websocket only",
+     "success": false,
+     "tool": "ha_get_app"
+    }
+   ],
+   "socket_reads_summary": {
+    "exchange_failures": 0,
+    "is_error": 1,
+    "reads": 24,
+    "success_false": 1
+   },
+   "transport": [
+    {
+     "body_bytes": 34042,
+     "date": "Sun, 15 Nov 2026 05:07:37 GMT",
+     "exchange_failure": null,
+     "id": "t-large-services",
+     "idle_seconds_before": 0,
+     "is_error": false,
+     "new_session": false,
+     "seconds": 0.012,
+     "success": true,
+     "tool": "ha_list_services"
+    },
+    {
+     "body_bytes": 1482,
+     "date": "Sun, 15 Nov 2026 05:08:53 GMT",
+     "exchange_failure": null,
+     "id": "t-after-idle",
+     "idle_seconds_before": 75.0,
+     "is_error": false,
+     "new_session": false,
+     "seconds": 0.005,
+     "success": true,
+     "tool": "ha_get_entity"
+    },
+    {
+     "body_bytes": 1644,
+     "date": "Sun, 15 Nov 2026 05:08:53 GMT",
+     "exchange_failure": null,
+     "id": "t-new-session",
+     "idle_seconds_before": 0,
+     "is_error": false,
+     "new_session": true,
+     "seconds": 0.006,
+     "success": null,
+     "tool": "ha_get_state"
+    }
+   ]
+  },
+  "B-9.2.0 9.2.0": {
+   "after_core_restart": [
+    {
+     "date": "Sun, 15 Nov 2026 05:04:56 GMT",
+     "exchange_failure": null,
+     "id": "a-entity-after-core-restart",
+     "is_error": false,
+     "seconds": 0.027,
+     "success": true,
+     "tool": "ha_get_entity"
+    },
+    {
+     "date": "Sun, 15 Nov 2026 05:04:56 GMT",
+     "exchange_failure": null,
+     "id": "a-floors-areas-after-core-restart",
+     "is_error": false,
+     "seconds": 0.004,
+     "success": true,
+     "tool": "ha_list_floors_areas"
+    }
+   ],
+   "largest_socket_read": "r26-integrations",
+   "network_after_core_restart_checked": "2026-11-14T23:04:51-06:00",
+   "peer_log": {
+    "file": "run-b-9.2.0-2/peer-9.2.0.log",
+    "lines": 147,
+    "sha256": "68dd76853ff7c96e2ff648004085cab8e11262ad8df6bdb4b6224f508087ab8c",
+    "socket_lines": [
+     "2026-11-15 05:03:19 ha_mcp.client.websocket_client INFO: Connecting to Home Assistant WebSocket: ws://127.0.0.1:8123/api/websocket",
+     "2026-11-15 05:03:19 ha_mcp.client.websocket_client INFO: WebSocket connected and authenticated successfully",
+     "2026-11-15 05:03:19 ha_mcp.client.websocket_client INFO: WebSocket disconnected",
+     "2026-11-15 05:03:20 ha_mcp.client.websocket_client INFO: Connecting to Home Assistant WebSocket: ws://127.0.0.1:8123/api/websocket",
+     "2026-11-15 05:03:20 ha_mcp.client.websocket_client INFO: WebSocket connected and authenticated successfully",
+     "2026-11-15 05:03:21 ha_mcp.client.websocket_client INFO: Connecting to Home Assistant WebSocket: ws://127.0.0.1:8123/api/websocket",
+     "2026-11-15 05:03:21 ha_mcp.client.websocket_client INFO: WebSocket connected and authenticated successfully",
+     "2026-11-15 05:03:21 ha_mcp.client.websocket_client INFO: WebSocket disconnected",
+     "2026-11-15 05:03:21 ha_mcp.client.websocket_client INFO: Connecting to Home Assistant WebSocket: ws://127.0.0.1:8123/api/websocket",
+     "2026-11-15 05:03:21 ha_mcp.client.websocket_client INFO: WebSocket connected and authenticated successfully",
+     "2026-11-15 05:03:21 ha_mcp.client.websocket_client INFO: WebSocket disconnected",
+     "2026-11-15 05:03:21 ha_mcp.client.rest_client ERROR: WebSocket message failed (supervisor/api): Command failed: Unknown command.",
+     "2026-11-15 05:03:22 ha_mcp.client.rest_client ERROR: WebSocket message failed (config/entity_registry/get): Command failed: Entity not found",
+     "2026-11-15 05:04:56 ha_mcp.client.websocket_client INFO: WebSocket disconnected",
+     "2026-11-15 05:04:56 ha_mcp.client.websocket_client INFO: Connecting to Home Assistant WebSocket: ws://127.0.0.1:8123/api/websocket",
+     "2026-11-15 05:04:56 ha_mcp.client.websocket_client INFO: WebSocket connected and authenticated successfully"
+    ]
+   },
+   "socket_reads": [
+    {
+     "body_bytes": 2798,
+     "date": "Sun, 15 Nov 2026 05:03:21 GMT",
+     "exchange_failure": null,
+     "id": "r01-automation",
+     "is_error": false,
+     "seconds": 0.033,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_config_get_automation"
+    },
+    {
+     "body_bytes": 698,
+     "date": "Sun, 15 Nov 2026 05:03:21 GMT",
+     "exchange_failure": null,
+     "id": "r03-category",
+     "is_error": false,
+     "seconds": 0.004,
+     "socket_class": "websocket only",
+     "success": true,
+     "tool": "ha_config_get_category"
+    },
+    {
+     "body_bytes": 620,
+     "date": "Sun, 15 Nov 2026 05:03:21 GMT",
+     "exchange_failure": null,
+     "id": "r04-label",
+     "is_error": false,
+     "seconds": 0.003,
+     "socket_class": "websocket only",
+     "success": true,
+     "tool": "ha_config_get_label"
+    },
+    {
+     "body_bytes": 566,
+     "date": "Sun, 15 Nov 2026 05:03:21 GMT",
+     "exchange_failure": null,
+     "id": "r05-scene",
+     "is_error": false,
+     "seconds": 0.008,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_config_get_scene"
+    },
+    {
+     "body_bytes": 672,
+     "date": "Sun, 15 Nov 2026 05:03:21 GMT",
+     "exchange_failure": null,
+     "id": "r06-script",
+     "is_error": false,
+     "seconds": 0.006,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_config_get_script"
+    },
+    {
+     "body_bytes": 758,
+     "date": "Sun, 15 Nov 2026 05:03:21 GMT",
+     "exchange_failure": null,
+     "id": "r07-dashboard-resources",
+     "is_error": false,
+     "seconds": 0.004,
+     "socket_class": "websocket only",
+     "success": true,
+     "tool": "ha_config_list_dashboard_resources"
+    },
+    {
+     "body_bytes": 804,
+     "date": "Sun, 15 Nov 2026 05:03:21 GMT",
+     "exchange_failure": null,
+     "id": "r09-helpers",
+     "is_error": false,
+     "seconds": 0.005,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_config_list_helpers"
+    },
+    {
+     "body_bytes": 532,
+     "date": "Sun, 15 Nov 2026 05:03:21 GMT",
+     "exchange_failure": null,
+     "id": "r10-template",
+     "is_error": false,
+     "seconds": 0.007,
+     "socket_class": "websocket only",
+     "success": true,
+     "tool": "ha_eval_template"
+    },
+    {
+     "body_bytes": 1012,
+     "date": "Sun, 15 Nov 2026 05:03:21 GMT",
+     "exchange_failure": null,
+     "id": "r11-automation-traces",
+     "is_error": false,
+     "seconds": 0.005,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_get_automation_traces"
+    },
+    {
+     "body_bytes": 1634,
+     "date": "Sun, 15 Nov 2026 05:03:21 GMT",
+     "exchange_failure": null,
+     "id": "r12-blueprints",
+     "is_error": false,
+     "seconds": 0.008,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_manage_blueprints"
+    },
+    {
+     "body_bytes": 2614,
+     "date": "Sun, 15 Nov 2026 05:03:21 GMT",
+     "exchange_failure": null,
+     "id": "r13-devices",
+     "is_error": false,
+     "seconds": 0.006,
+     "socket_class": "websocket only",
+     "success": true,
+     "tool": "ha_get_device"
+    },
+    {
+     "body_bytes": 1482,
+     "date": "Sun, 15 Nov 2026 05:03:21 GMT",
+     "exchange_failure": null,
+     "id": "r14-entity",
+     "is_error": false,
+     "seconds": 0.005,
+     "socket_class": "websocket only",
+     "success": true,
+     "tool": "ha_get_entity"
+    },
+    {
+     "body_bytes": 902,
+     "date": "Sun, 15 Nov 2026 05:03:21 GMT",
+     "exchange_failure": null,
+     "id": "r15-entity-exposure",
+     "is_error": false,
+     "seconds": 0.004,
+     "socket_class": "websocket only",
+     "success": true,
+     "tool": "ha_get_entity_exposure"
+    },
+    {
+     "body_bytes": 2998,
+     "date": "Sun, 15 Nov 2026 05:03:21 GMT",
+     "exchange_failure": null,
+     "id": "r16-history",
+     "is_error": false,
+     "seconds": 0.012,
+     "socket_class": "websocket and REST",
+     "success": null,
+     "tool": "ha_get_history"
+    },
+    {
+     "body_bytes": 2742,
+     "date": "Sun, 15 Nov 2026 05:03:21 GMT",
+     "exchange_failure": null,
+     "id": "r17-overview",
+     "is_error": false,
+     "seconds": 0.013,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_get_overview"
+    },
+    {
+     "body_bytes": 1644,
+     "date": "Sun, 15 Nov 2026 05:03:21 GMT",
+     "exchange_failure": null,
+     "id": "r19-state",
+     "is_error": false,
+     "seconds": 0.005,
+     "socket_class": "websocket and REST",
+     "success": null,
+     "tool": "ha_get_state"
+    },
+    {
+     "body_bytes": 2380,
+     "date": "Sun, 15 Nov 2026 05:03:21 GMT",
+     "exchange_failure": null,
+     "id": "r20-system-health",
+     "is_error": false,
+     "seconds": 0.033,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_get_system_health"
+    },
+    {
+     "body_bytes": 790,
+     "date": "Sun, 15 Nov 2026 05:03:21 GMT",
+     "exchange_failure": null,
+     "id": "r21-todo",
+     "is_error": false,
+     "seconds": 0.006,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_get_todo"
+    },
+    {
+     "body_bytes": 1226,
+     "date": "Sun, 15 Nov 2026 05:03:21 GMT",
+     "exchange_failure": null,
+     "id": "r22-zones",
+     "is_error": false,
+     "seconds": 0.005,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_get_zone"
+    },
+    {
+     "body_bytes": 2924,
+     "date": "Sun, 15 Nov 2026 05:03:21 GMT",
+     "exchange_failure": null,
+     "id": "r23-floors-areas",
+     "is_error": false,
+     "seconds": 0.004,
+     "socket_class": "websocket only",
+     "success": true,
+     "tool": "ha_list_floors_areas"
+    },
+    {
+     "body_bytes": 4314,
+     "date": "Sun, 15 Nov 2026 05:03:21 GMT",
+     "exchange_failure": null,
+     "id": "r24-services",
+     "is_error": false,
+     "seconds": 0.055,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_list_services"
+    },
+    {
+     "body_bytes": 1410,
+     "date": "Sun, 15 Nov 2026 05:03:21 GMT",
+     "exchange_failure": null,
+     "id": "r25-search",
+     "is_error": false,
+     "seconds": 0.007,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_search"
+    },
+    {
+     "body_bytes": 13520,
+     "date": "Sun, 15 Nov 2026 05:03:21 GMT",
+     "exchange_failure": null,
+     "id": "r26-integrations",
+     "is_error": false,
+     "seconds": 0.007,
+     "socket_class": "websocket and REST",
+     "success": true,
+     "tool": "ha_get_integration"
+    },
+    {
+     "body_bytes": 698,
+     "date": "Sun, 15 Nov 2026 05:03:21 GMT",
+     "exchange_failure": null,
+     "id": "r27-apps",
+     "is_error": true,
+     "seconds": 0.005,
+     "socket_class": "websocket only",
+     "success": false,
+     "tool": "ha_get_app"
+    }
+   ],
+   "socket_reads_summary": {
+    "exchange_failures": 0,
+    "is_error": 1,
+    "reads": 24,
+    "success_false": 1
+   },
+   "transport": [
+    {
+     "body_bytes": 70046,
+     "date": "Sun, 15 Nov 2026 05:03:21 GMT",
+     "exchange_failure": null,
+     "id": "t-large-services",
+     "idle_seconds_before": 0,
+     "is_error": false,
+     "new_session": false,
+     "seconds": 0.014,
+     "success": true,
+     "tool": "ha_list_services"
+    },
+    {
+     "body_bytes": 1482,
+     "date": "Sun, 15 Nov 2026 05:04:36 GMT",
+     "exchange_failure": null,
+     "id": "t-after-idle",
+     "idle_seconds_before": 75.0,
+     "is_error": false,
+     "new_session": false,
+     "seconds": 0.008,
+     "success": true,
+     "tool": "ha_get_entity"
+    },
+    {
+     "body_bytes": 1644,
+     "date": "Sun, 15 Nov 2026 05:04:36 GMT",
+     "exchange_failure": null,
+     "id": "t-new-session",
+     "idle_seconds_before": 0,
+     "is_error": false,
+     "new_session": true,
+     "seconds": 0.008,
+     "success": null,
+     "tool": "ha_get_state"
+    }
+   ]
+  }
+ }
+}
