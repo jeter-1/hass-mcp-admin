@@ -1,0 +1,15 @@
+Name:      ghcr.io/homeassistant-ai/ha-mcp-addon-amd64:9.2.0
+MediaType: application/vnd.oci.image.index.v1+json
+Digest:    sha256:e0fd8903915be64f65744f7fa78d8d46432388159bc000ff0807079f494fe3ba
+           
+Manifests: 
+  Name:        ghcr.io/homeassistant-ai/ha-mcp-addon-amd64:9.2.0@sha256:928c55d6ba38d0219058be2e0ae4ae36375eb3db7aad0cb21c5b573848ed9244
+  MediaType:   application/vnd.oci.image.manifest.v1+json
+  Platform:    linux/amd64
+               
+  Name:        ghcr.io/homeassistant-ai/ha-mcp-addon-amd64:9.2.0@sha256:d6fa8a799f2f292a5a7438cf5bbfef9a615ca738fa734228f1e6f530fa208b72
+  MediaType:   application/vnd.oci.image.manifest.v1+json
+  Platform:    unknown/unknown
+  Annotations: 
+    vnd.docker.reference.digest: sha256:928c55d6ba38d0219058be2e0ae4ae36375eb3db7aad0cb21c5b573848ed9244
+    vnd.docker.reference.type:   attestation-manifest

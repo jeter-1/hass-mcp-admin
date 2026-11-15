@@ -1,0 +1,1256 @@
+{
+  "SLSA": {
+    "buildDefinition": {
+      "buildType": "https://github.com/moby/buildkit/blob/master/docs/attestations/slsa-definitions.md",
+      "externalParameters": {
+        "configSource": {
+          "path": "Dockerfile"
+        },
+        "request": {
+          "args": {
+            "build-arg:BUILD_ARCH": "amd64",
+            "build-arg:BUILD_VERSION": "9.2.0",
+            "build-arg:PYTHON_BASE": "ghcr.io/homeassistant-ai/ha-mcp-python-base@sha256:9aaa474097d094040649f2162a627c0049b408f52138d980916788d80f04802f",
+            "label:io.hass.arch": "amd64",
+            "label:io.hass.description": "AI assistant integration via Model Context Protocol",
+            "label:io.hass.name": "Home Assistant MCP Server",
+            "label:io.hass.type": "addon",
+            "label:io.hass.version": "9.2.0"
+          },
+          "compatibilityVersion": 30,
+          "frontend": "dockerfile.v0",
+          "locals": [
+            {
+              "name": "context"
+            },
+            {
+              "name": "dockerfile"
+            }
+          ],
+          "root": {
+            "configSource": {
+              "path": "Dockerfile"
+            },
+            "request": {
+              "args": {
+                "build-arg:BUILD_ARCH": "amd64",
+                "build-arg:BUILD_VERSION": "9.2.0",
+                "build-arg:PYTHON_BASE": "ghcr.io/homeassistant-ai/ha-mcp-python-base@sha256:9aaa474097d094040649f2162a627c0049b408f52138d980916788d80f04802f",
+                "label:io.hass.arch": "amd64",
+                "label:io.hass.description": "AI assistant integration via Model Context Protocol",
+                "label:io.hass.name": "Home Assistant MCP Server",
+                "label:io.hass.type": "addon",
+                "label:io.hass.version": "9.2.0",
+                "vcs:localdir:context": ".",
+                "vcs:localdir:dockerfile": "homeassistant-addon",
+                "vcs:revision": "51e3aac788482a081807591cd5d58d07dc4e540b",
+                "vcs:source": "https://github.com/homeassistant-ai/ha-mcp"
+              }
+            }
+          }
+        }
+      },
+      "internalParameters": {
+        "buildConfig": {
+          "digestMapping": {
+            "sha256:054a4132e45c5879a63c65f70179d4893eb3fc6ec0e907511dd463d262f635e7": "step13",
+            "sha256:09bf493958f25cb04448e37ac077dadced5dab855663a1c863d513ea3822e202": "step11",
+            "sha256:2359eb527ef78faf42ff450fe6c8da6ade2d2cb9808a19bddeb2ebabecb37588": "step14",
+            "sha256:2a86efd0ab04ba13e912de65424fedf7a7a3e8d4d03d7be82322199cf16ea143": "step10",
+            "sha256:4360d5caec2974f525cc618a3596dc6a902a38c8775cc54e6f4ddf90183f6ec6": "step9",
+            "sha256:46cc680a44c7122407333d24d6ef80f13f4a597eff6775009bf08eb04e5777c5": "step1",
+            "sha256:480c42148be35ca2749d3a2eb97e651f55e781f126fb34119641cc0a2f37b59c": "step4",
+            "sha256:9ae557d28db03a5e688c43b8c84c8d3630e8d7ea0c020eb8d7c3c7810c0102af": "step2",
+            "sha256:ae6c9e31a56358a021b5fe7789d05b2272a48332b301c37116380ea9fc48ff89": "step8",
+            "sha256:b6389e60fb7959f1cb53d82aeda28b334e154e975da55a8fad57783c0d6e851c": "step3",
+            "sha256:bce5592689cae74de3d59968be1dfff7631aa9243ac1f390fd9e5383fc2aaac6": "step12",
+            "sha256:cdef698e52a2432108ff5336f7ab1e767bf2a292b104abd6233ad1697bb12994": "step7",
+            "sha256:dedf5083a71319320bbf22392399a12cdfabf4a278375837df0d3546067f6419": "step6",
+            "sha256:def330d5afbd6f3315aaea3a5fd2c53b0aba585ad58cbe9763c584d1ecb0d722": "step5",
+            "sha256:f92862cf649df92fa8149cf94e7340df5a5881c05d9459221db3e80a5a342467": "step0"
+          },
+          "llbDefinition": [
+            {
+              "id": "step0",
+              "op": {
+                "Op": {
+                  "source": {
+                    "identifier": "docker-image://ghcr.io/homeassistant-ai/ha-mcp-python-base@sha256:9aaa474097d094040649f2162a627c0049b408f52138d980916788d80f04802f"
+                  }
+                },
+                "constraints": {},
+                "platform": {
+                  "Architecture": "amd64",
+                  "OS": "linux"
+                }
+              }
+            },
+            {
+              "id": "step1",
+              "inputs": [
+                "step0:0"
+              ],
+              "op": {
+                "Op": {
+                  "file": {
+                    "actions": [
+                      {
+                        "Action": {
+                          "mkdir": {
+                            "makeParents": true,
+                            "mode": 493,
+                            "path": "/app",
+                            "timestamp": -1
+                          }
+                        },
+                        "input": 0,
+                        "output": 0,
+                        "secondaryInput": -1
+                      }
+                    ]
+                  }
+                },
+                "constraints": {}
+              }
+            },
+            {
+              "id": "step2",
+              "op": {
+                "Op": {
+                  "source": {
+                    "identifier": "docker-image://ghcr.io/astral-sh/uv:0.13.7-python3.14-trixie-slim@sha256:e80c05a310400cfc90af00b5b7271ef9ad24816e3265e1162af8a678e1aad099"
+                  }
+                },
+                "constraints": {},
+                "platform": {
+                  "Architecture": "amd64",
+                  "OS": "linux"
+                }
+              }
+            },
+            {
+              "id": "step3",
+              "inputs": [
+                "step2:0"
+              ],
+              "op": {
+                "Op": {
+                  "file": {
+                    "actions": [
+                      {
+                        "Action": {
+                          "mkdir": {
+                            "makeParents": true,
+                            "mode": 493,
+                            "path": "/app",
+                            "timestamp": -1
+                          }
+                        },
+                        "input": 0,
+                        "output": 0,
+                        "secondaryInput": -1
+                      }
+                    ]
+                  }
+                },
+                "constraints": {}
+              }
+            },
+            {
+              "id": "step4",
+              "op": {
+                "Op": {
+                  "source": {
+                    "attrs": {
+                      "local.excludepatterns": "[\"__pycache__\",\"*.py[cod]\",\"*$py.class\",\"*.so\",\".Python\",\"*.egg-info\",\"dist\",\"build\",\".eggs\",\".pytest_cache\",\".mypy_cache\",\".ruff_cache\",\".venv\",\"venv\",\"ENV\",\".vscode\",\".idea\",\"*.swp\",\"*.swo\",\"*~\",\".coverage\",\"htmlcov\",\".tox\",\"tests/data\",\"tests/haconfig\",\".env\",\".env.*\",\"!.env.example\",\".local\",\".git\",\".gitignore\",\".gitattributes\",\"src/ha_mcp/resources/skills-vendor/*\",\"!src/ha_mcp/resources/skills-vendor/skills\",\"!src/ha_mcp/resources/skills-vendor/LICENSE\",\"docs\",\"*.md\",\"!README.md\",\".github\",\"lefthook.yml\",\"docker-compose*.yml\",\"Dockerfile.*\",\"homeassistant-addon/*.md\"]",
+                      "local.followpaths": "[\"LICENSE\",\"README.md\",\"homeassistant-addon/app_options.json\",\"homeassistant-addon/start.py\",\"pyproject.toml\",\"src\",\"tests/test-env/pyproject.toml\",\"uv.lock\"]",
+                      "local.sharedkeyhint": "context"
+                    },
+                    "identifier": "local://context"
+                  }
+                },
+                "constraints": {}
+              }
+            },
+            {
+              "id": "step5",
+              "inputs": [
+                "step3:0",
+                "step4:0"
+              ],
+              "op": {
+                "Op": {
+                  "file": {
+                    "actions": [
+                      {
+                        "Action": {
+                          "copy": {
+                            "allowEmptyWildcard": true,
+                            "allowWildcard": true,
+                            "createDestPath": true,
+                            "dest": "/app/",
+                            "dirCopyContents": true,
+                            "followSymlink": true,
+                            "mode": -1,
+                            "src": "/pyproject.toml",
+                            "timestamp": -1
+                          }
+                        },
+                        "input": 0,
+                        "output": -1,
+                        "secondaryInput": 1
+                      },
+                      {
+                        "Action": {
+                          "copy": {
+                            "allowEmptyWildcard": true,
+                            "allowWildcard": true,
+                            "createDestPath": true,
+                            "dest": "/app/",
+                            "dirCopyContents": true,
+                            "followSymlink": true,
+                            "mode": -1,
+                            "src": "/uv.lock",
+                            "timestamp": -1
+                          }
+                        },
+                        "input": 2,
+                        "output": 0,
+                        "secondaryInput": 1
+                      }
+                    ]
+                  }
+                },
+                "constraints": {}
+              }
+            },
+            {
+              "id": "step6",
+              "inputs": [
+                "step5:0",
+                "step4:0"
+              ],
+              "op": {
+                "Op": {
+                  "file": {
+                    "actions": [
+                      {
+                        "Action": {
+                          "copy": {
+                            "allowEmptyWildcard": true,
+                            "allowWildcard": true,
+                            "createDestPath": true,
+                            "dest": "/app/tests/test-env/",
+                            "dirCopyContents": true,
+                            "followSymlink": true,
+                            "mode": -1,
+                            "src": "/tests/test-env/pyproject.toml",
+                            "timestamp": -1
+                          }
+                        },
+                        "input": 0,
+                        "output": 0,
+                        "secondaryInput": 1
+                      }
+                    ]
+                  }
+                },
+                "constraints": {}
+              }
+            },
+            {
+              "id": "step7",
+              "inputs": [
+                "step6:0"
+              ],
+              "op": {
+                "Op": {
+                  "exec": {
+                    "meta": {
+                      "args": [
+                        "/bin/sh",
+                        "-c",
+                        "uv sync --locked --no-install-project --no-dev"
+                      ],
+                      "cwd": "/app",
+                      "env": [
+                        "PATH=/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                        "LANG=C.UTF-8",
+                        "PYTHON_VERSION=3.14.10",
+                        "PYTHON_SHA256=de414a57119abef52784d8993e341d53aed635fc2b05c2607d9f98a2c5b72032",
+                        "UV_TOOL_BIN_DIR=/usr/local/bin",
+                        "UV_COMPILE_BYTECODE=1",
+                        "UV_LINK_MODE=copy"
+                      ],
+                      "removeMountStubsRecursive": true
+                    },
+                    "mounts": [
+                      {
+                        "dest": "/"
+                      },
+                      {
+                        "cacheOpt": {
+                          "ID": "//root/.cache/uv"
+                        },
+                        "dest": "/root/.cache/uv",
+                        "input": -1,
+                        "mountType": 3,
+                        "output": -1
+                      }
+                    ]
+                  }
+                },
+                "constraints": {},
+                "platform": {
+                  "Architecture": "amd64",
+                  "OS": "linux"
+                }
+              }
+            },
+            {
+              "id": "step8",
+              "inputs": [
+                "step7:0",
+                "step4:0"
+              ],
+              "op": {
+                "Op": {
+                  "file": {
+                    "actions": [
+                      {
+                        "Action": {
+                          "copy": {
+                            "allowEmptyWildcard": true,
+                            "allowWildcard": true,
+                            "createDestPath": true,
+                            "dest": "/app/",
+                            "dirCopyContents": true,
+                            "followSymlink": true,
+                            "mode": -1,
+                            "src": "/README.md",
+                            "timestamp": -1
+                          }
+                        },
+                        "input": 0,
+                        "output": -1,
+                        "secondaryInput": 1
+                      },
+                      {
+                        "Action": {
+                          "copy": {
+                            "allowEmptyWildcard": true,
+                            "allowWildcard": true,
+                            "createDestPath": true,
+                            "dest": "/app/",
+                            "dirCopyContents": true,
+                            "followSymlink": true,
+                            "mode": -1,
+                            "src": "/LICENSE",
+                            "timestamp": -1
+                          }
+                        },
+                        "input": 2,
+                        "output": 0,
+                        "secondaryInput": 1
+                      }
+                    ]
+                  }
+                },
+                "constraints": {}
+              }
+            },
+            {
+              "id": "step9",
+              "inputs": [
+                "step8:0",
+                "step4:0"
+              ],
+              "op": {
+                "Op": {
+                  "file": {
+                    "actions": [
+                      {
+                        "Action": {
+                          "copy": {
+                            "allowEmptyWildcard": true,
+                            "allowWildcard": true,
+                            "createDestPath": true,
+                            "dest": "/app/src/",
+                            "dirCopyContents": true,
+                            "followSymlink": true,
+                            "mode": -1,
+                            "src": "/src",
+                            "timestamp": -1
+                          }
+                        },
+                        "input": 0,
+                        "output": 0,
+                        "secondaryInput": 1
+                      }
+                    ]
+                  }
+                },
+                "constraints": {}
+              }
+            },
+            {
+              "id": "step10",
+              "inputs": [
+                "step9:0"
+              ],
+              "op": {
+                "Op": {
+                  "exec": {
+                    "meta": {
+                      "args": [
+                        "/bin/sh",
+                        "-c",
+                        "uv sync --locked --no-dev --no-editable"
+                      ],
+                      "cwd": "/app",
+                      "env": [
+                        "PATH=/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                        "LANG=C.UTF-8",
+                        "PYTHON_VERSION=3.14.10",
+                        "PYTHON_SHA256=de414a57119abef52784d8993e341d53aed635fc2b05c2607d9f98a2c5b72032",
+                        "UV_TOOL_BIN_DIR=/usr/local/bin",
+                        "UV_COMPILE_BYTECODE=1",
+                        "UV_LINK_MODE=copy"
+                      ],
+                      "removeMountStubsRecursive": true
+                    },
+                    "mounts": [
+                      {
+                        "dest": "/"
+                      },
+                      {
+                        "cacheOpt": {
+                          "ID": "//root/.cache/uv"
+                        },
+                        "dest": "/root/.cache/uv",
+                        "input": -1,
+                        "mountType": 3,
+                        "output": -1
+                      }
+                    ]
+                  }
+                },
+                "constraints": {},
+                "platform": {
+                  "Architecture": "amd64",
+                  "OS": "linux"
+                }
+              }
+            },
+            {
+              "id": "step11",
+              "inputs": [
+                "step1:0",
+                "step10:0"
+              ],
+              "op": {
+                "Op": {
+                  "file": {
+                    "actions": [
+                      {
+                        "Action": {
+                          "copy": {
+                            "allowEmptyWildcard": true,
+                            "allowWildcard": true,
+                            "createDestPath": true,
+                            "dest": "/app/.venv",
+                            "dirCopyContents": true,
+                            "followSymlink": true,
+                            "mode": -1,
+                            "src": "/app/.venv",
+                            "timestamp": -1
+                          }
+                        },
+                        "input": 0,
+                        "output": 0,
+                        "secondaryInput": 1
+                      }
+                    ]
+                  }
+                },
+                "constraints": {}
+              }
+            },
+            {
+              "id": "step12",
+              "inputs": [
+                "step11:0",
+                "step4:0"
+              ],
+              "op": {
+                "Op": {
+                  "file": {
+                    "actions": [
+                      {
+                        "Action": {
+                          "copy": {
+                            "allowEmptyWildcard": true,
+                            "allowWildcard": true,
+                            "createDestPath": true,
+                            "dest": "/",
+                            "dirCopyContents": true,
+                            "followSymlink": true,
+                            "mode": -1,
+                            "src": "/homeassistant-addon/start.py",
+                            "timestamp": -1
+                          }
+                        },
+                        "input": 0,
+                        "output": 0,
+                        "secondaryInput": 1
+                      }
+                    ]
+                  }
+                },
+                "constraints": {}
+              }
+            },
+            {
+              "id": "step13",
+              "inputs": [
+                "step12:0",
+                "step4:0"
+              ],
+              "op": {
+                "Op": {
+                  "file": {
+                    "actions": [
+                      {
+                        "Action": {
+                          "copy": {
+                            "allowEmptyWildcard": true,
+                            "allowWildcard": true,
+                            "createDestPath": true,
+                            "dest": "/",
+                            "dirCopyContents": true,
+                            "followSymlink": true,
+                            "mode": -1,
+                            "src": "/homeassistant-addon/app_options.json",
+                            "timestamp": -1
+                          }
+                        },
+                        "input": 0,
+                        "output": 0,
+                        "secondaryInput": 1
+                      }
+                    ]
+                  }
+                },
+                "constraints": {}
+              }
+            },
+            {
+              "id": "step14",
+              "inputs": [
+                "step13:0"
+              ],
+              "op": {
+                "Op": {}
+              }
+            }
+          ]
+        },
+        "builderPlatform": "linux/amd64",
+        "dockerfileVersion": "1.28.0",
+        "github_actor": "kingpanther13",
+        "github_actor_id": "25392815",
+        "github_event_name": "workflow_dispatch",
+        "github_event_payload": {
+          "inputs": {
+            "force": "false"
+          },
+          "organization": {
+            "avatar_url": "https://avatars.githubusercontent.com/u/232192432?v=4",
+            "description": "Community-built MCP server for AI-powered smart home control and skills for Agents, Unofficial but awesome! 🏠🤖",
+            "events_url": "https://api.github.com/orgs/homeassistant-ai/events",
+            "hooks_url": "https://api.github.com/orgs/homeassistant-ai/hooks",
+            "id": 232192432,
+            "issues_url": "https://api.github.com/orgs/homeassistant-ai/issues",
+            "login": "homeassistant-ai",
+            "members_url": "https://api.github.com/orgs/homeassistant-ai/members{/member}",
+            "node_id": "O_kgDODdb5sA",
+            "public_members_url": "https://api.github.com/orgs/homeassistant-ai/public_members{/member}",
+            "repos_url": "https://api.github.com/orgs/homeassistant-ai/repos",
+            "url": "https://api.github.com/orgs/homeassistant-ai"
+          },
+          "ref": "refs/heads/master",
+          "repository": {
+            "allow_forking": true,
+            "archive_url": "https://api.github.com/repos/homeassistant-ai/ha-mcp/{archive_format}{/ref}",
+            "archived": false,
+            "assignees_url": "https://api.github.com/repos/homeassistant-ai/ha-mcp/assignees{/user}",
+            "blobs_url": "https://api.github.com/repos/homeassistant-ai/ha-mcp/git/blobs{/sha}",
+            "branches_url": "https://api.github.com/repos/homeassistant-ai/ha-mcp/branches{/branch}",
+            "clone_url": "https://github.com/homeassistant-ai/ha-mcp.git",
+            "collaborators_url": "https://api.github.com/repos/homeassistant-ai/ha-mcp/collaborators{/collaborator}",
+            "comments_url": "https://api.github.com/repos/homeassistant-ai/ha-mcp/comments{/number}",
+            "commits_url": "https://api.github.com/repos/homeassistant-ai/ha-mcp/commits{/sha}",
+            "compare_url": "https://api.github.com/repos/homeassistant-ai/ha-mcp/compare/{base}...{head}",
+            "contents_url": "https://api.github.com/repos/homeassistant-ai/ha-mcp/contents/{+path}",
+            "contributors_url": "https://api.github.com/repos/homeassistant-ai/ha-mcp/contributors",
+            "created_at": "2025-09-14T13:23:45Z",
+            "custom_properties": {},
+            "default_branch": "master",
+            "deployments_url": "https://api.github.com/repos/homeassistant-ai/ha-mcp/deployments",
+            "description": "Configure and automate Home Assistant with Claude, ChatGPT, and other AI assistants.",
+            "disabled": false,
+            "downloads_url": "https://api.github.com/repos/homeassistant-ai/ha-mcp/downloads",
+            "events_url": "https://api.github.com/repos/homeassistant-ai/ha-mcp/events",
+            "fork": false,
+            "forks": 446,
+            "forks_count": 446,
+            "forks_url": "https://api.github.com/repos/homeassistant-ai/ha-mcp/forks",
+            "full_name": "homeassistant-ai/ha-mcp",
+            "git_commits_url": "https://api.github.com/repos/homeassistant-ai/ha-mcp/git/commits{/sha}",
+            "git_refs_url": "https://api.github.com/repos/homeassistant-ai/ha-mcp/git/refs{/sha}",
+            "git_tags_url": "https://api.github.com/repos/homeassistant-ai/ha-mcp/git/tags{/sha}",
+            "git_url": "git://github.com/homeassistant-ai/ha-mcp.git",
+            "has_discussions": true,
+            "has_downloads": false,
+            "has_issues": true,
+            "has_pages": true,
+            "has_projects": true,
+            "has_pull_requests": true,
+            "has_wiki": false,
+            "homepage": "https://homeassistant-ai.github.io/ha-mcp/",
+            "hooks_url": "https://api.github.com/repos/homeassistant-ai/ha-mcp/hooks",
+            "html_url": "https://github.com/homeassistant-ai/ha-mcp",
+            "id": 1056618941,
+            "is_template": false,
+            "issue_comment_url": "https://api.github.com/repos/homeassistant-ai/ha-mcp/issues/comments{/number}",
+            "issue_events_url": "https://api.github.com/repos/homeassistant-ai/ha-mcp/issues/events{/number}",
+            "issues_url": "https://api.github.com/repos/homeassistant-ai/ha-mcp/issues{/number}",
+            "keys_url": "https://api.github.com/repos/homeassistant-ai/ha-mcp/keys{/key_id}",
+            "labels_url": "https://api.github.com/repos/homeassistant-ai/ha-mcp/labels{/name}",
+            "language": "Python",
+            "languages_url": "https://api.github.com/repos/homeassistant-ai/ha-mcp/languages",
+            "license": {
+              "key": "mit",
+              "name": "MIT License",
+              "node_id": "MDc6TGljZW5zZTEz",
+              "spdx_id": "MIT",
+              "url": "https://api.github.com/licenses/mit"
+            },
+            "merges_url": "https://api.github.com/repos/homeassistant-ai/ha-mcp/merges",
+            "milestones_url": "https://api.github.com/repos/homeassistant-ai/ha-mcp/milestones{/number}",
+            "mirror_url": null,
+            "name": "ha-mcp",
+            "node_id": "R_kgDOPvq5vQ",
+            "notifications_url": "https://api.github.com/repos/homeassistant-ai/ha-mcp/notifications{?since,all,participating}",
+            "open_issues": 18,
+            "open_issues_count": 18,
+            "owner": {
+              "avatar_url": "https://avatars.githubusercontent.com/u/232192432?v=4",
+              "events_url": "https://api.github.com/users/homeassistant-ai/events{/privacy}",
+              "followers_url": "https://api.github.com/users/homeassistant-ai/followers",
+              "following_url": "https://api.github.com/users/homeassistant-ai/following{/other_user}",
+              "gists_url": "https://api.github.com/users/homeassistant-ai/gists{/gist_id}",
+              "gravatar_id": "",
+              "html_url": "https://github.com/homeassistant-ai",
+              "id": 232192432,
+              "login": "homeassistant-ai",
+              "node_id": "O_kgDODdb5sA",
+              "organizations_url": "https://api.github.com/users/homeassistant-ai/orgs",
+              "received_events_url": "https://api.github.com/users/homeassistant-ai/received_events",
+              "repos_url": "https://api.github.com/users/homeassistant-ai/repos",
+              "site_admin": false,
+              "starred_url": "https://api.github.com/users/homeassistant-ai/starred{/owner}{/repo}",
+              "subscriptions_url": "https://api.github.com/users/homeassistant-ai/subscriptions",
+              "type": "Organization",
+              "url": "https://api.github.com/users/homeassistant-ai",
+              "user_view_type": "public"
+            },
+            "private": false,
+            "pull_request_creation_policy": "all",
+            "pulls_url": "https://api.github.com/repos/homeassistant-ai/ha-mcp/pulls{/number}",
+            "pushed_at": "2026-11-11T16:12:16Z",
+            "releases_url": "https://api.github.com/repos/homeassistant-ai/ha-mcp/releases{/id}",
+            "size": 58224,
+            "ssh_url": "git@github.com:homeassistant-ai/ha-mcp.git",
+            "stargazers_count": 7091,
+            "stargazers_url": "https://api.github.com/repos/homeassistant-ai/ha-mcp/stargazers",
+            "statuses_url": "https://api.github.com/repos/homeassistant-ai/ha-mcp/statuses/{sha}",
+            "subscribers_url": "https://api.github.com/repos/homeassistant-ai/ha-mcp/subscribers",
+            "subscription_url": "https://api.github.com/repos/homeassistant-ai/ha-mcp/subscription",
+            "svn_url": "https://github.com/homeassistant-ai/ha-mcp",
+            "tags_url": "https://api.github.com/repos/homeassistant-ai/ha-mcp/tags",
+            "teams_url": "https://api.github.com/repos/homeassistant-ai/ha-mcp/teams",
+            "topics": [
+              "ai",
+              "claude",
+              "hacs",
+              "home-assistant",
+              "home-automation",
+              "llm",
+              "mcp",
+              "model-context-protocol"
+            ],
+            "trees_url": "https://api.github.com/repos/homeassistant-ai/ha-mcp/git/trees{/sha}",
+            "updated_at": "2026-11-11T16:14:46Z",
+            "url": "https://api.github.com/repos/homeassistant-ai/ha-mcp",
+            "visibility": "public",
+            "watchers": 7091,
+            "watchers_count": 7091,
+            "web_commit_signoff_required": false
+          },
+          "sender": {
+            "avatar_url": "https://avatars.githubusercontent.com/u/25392815?v=4",
+            "events_url": "https://api.github.com/users/kingpanther13/events{/privacy}",
+            "followers_url": "https://api.github.com/users/kingpanther13/followers",
+            "following_url": "https://api.github.com/users/kingpanther13/following{/other_user}",
+            "gists_url": "https://api.github.com/users/kingpanther13/gists{/gist_id}",
+            "gravatar_id": "",
+            "html_url": "https://github.com/kingpanther13",
+            "id": 25392815,
+            "login": "kingpanther13",
+            "node_id": "MDQ6VXNlcjI1MzkyODE1",
+            "organizations_url": "https://api.github.com/users/kingpanther13/orgs",
+            "received_events_url": "https://api.github.com/users/kingpanther13/received_events",
+            "repos_url": "https://api.github.com/users/kingpanther13/repos",
+            "site_admin": false,
+            "starred_url": "https://api.github.com/users/kingpanther13/starred{/owner}{/repo}",
+            "subscriptions_url": "https://api.github.com/users/kingpanther13/subscriptions",
+            "type": "User",
+            "url": "https://api.github.com/users/kingpanther13",
+            "user_view_type": "public"
+          },
+          "workflow": ".github/workflows/semver-release.yml"
+        },
+        "github_job": "build-addon",
+        "github_ref": "refs/heads/master",
+        "github_ref_name": "master",
+        "github_ref_protected": "true",
+        "github_ref_type": "branch",
+        "github_repository": "homeassistant-ai/ha-mcp",
+        "github_repository_id": "1056618941",
+        "github_repository_owner": "homeassistant-ai",
+        "github_repository_owner_id": "232192432",
+        "github_run_attempt": "1",
+        "github_run_id": "43056483558",
+        "github_run_number": "237",
+        "github_runner_arch": "X64",
+        "github_runner_environment": "github-hosted",
+        "github_runner_image_os": "ubuntu26",
+        "github_runner_image_version": "20261101.186.1",
+        "github_runner_name": "GitHub Actions 1000227505",
+        "github_runner_os": "Linux",
+        "github_runner_tracking_id": "github_e35b40b4-03ea-4893-b5b7-c7987ed5a780",
+        "github_server_url": "https://github.com",
+        "github_triggering_actor": "kingpanther13",
+        "github_workflow": "SemVer Release",
+        "github_workflow_ref": "homeassistant-ai/ha-mcp/.github/workflows/semver-release.yml@refs/heads/master",
+        "github_workflow_sha": "e664ece999585b64e936a887d1be474d8fa9988a",
+        "targetPlatform": "linux/amd64"
+      },
+      "resolvedDependencies": [
+        {
+          "digest": {
+            "sha256": "e80c05a310400cfc90af00b5b7271ef9ad24816e3265e1162af8a678e1aad099"
+          },
+          "uri": "pkg:docker/ghcr.io/astral-sh/uv@0.13.7-python3.14-trixie-slim?digest=sha256:e80c05a310400cfc90af00b5b7271ef9ad24816e3265e1162af8a678e1aad099\u0026platform=linux%2Famd64"
+        },
+        {
+          "digest": {
+            "sha256": "9aaa474097d094040649f2162a627c0049b408f52138d980916788d80f04802f"
+          },
+          "uri": "pkg:docker/ghcr.io/homeassistant-ai/ha-mcp-python-base?digest=sha256:9aaa474097d094040649f2162a627c0049b408f52138d980916788d80f04802f\u0026platform=linux%2Famd64"
+        }
+      ]
+    },
+    "runDetails": {
+      "builder": {
+        "id": "https://github.com/homeassistant-ai/ha-mcp/actions/runs/43056483558/attempts/1"
+      },
+      "metadata": {
+        "buildkit_completeness": {
+          "request": true,
+          "resolvedDependencies": false
+        },
+        "buildkit_metadata": {
+          "layers": {
+            "step0:0": [
+              [
+                {
+                  "digest": "sha256:37fb86c2a767b88d500c6872195f88078f64765fe0d2f9cc375cc2efbd4c0a41",
+                  "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                  "size": 29856132
+                },
+                {
+                  "digest": "sha256:d6d089a6c0a2543e3dd748a4ffcbfe409ab93f2049d42640588be3a3f67acffe",
+                  "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                  "size": 1289801
+                },
+                {
+                  "digest": "sha256:0e665593ff40197b851364fab0389fc6f5fa35bc74814ddfad07f96f417fc574",
+                  "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                  "size": 12411778
+                },
+                {
+                  "digest": "sha256:ce3c2a9291f81f0f8349de8621c9878a424552bfc64d0e4f20a4ac6006489fe1",
+                  "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                  "size": 249
+                }
+              ]
+            ],
+            "step11:0": [
+              [
+                {
+                  "digest": "sha256:37fb86c2a767b88d500c6872195f88078f64765fe0d2f9cc375cc2efbd4c0a41",
+                  "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                  "size": 29856132
+                },
+                {
+                  "digest": "sha256:d6d089a6c0a2543e3dd748a4ffcbfe409ab93f2049d42640588be3a3f67acffe",
+                  "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                  "size": 1289801
+                },
+                {
+                  "digest": "sha256:0e665593ff40197b851364fab0389fc6f5fa35bc74814ddfad07f96f417fc574",
+                  "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                  "size": 12411778
+                },
+                {
+                  "digest": "sha256:ce3c2a9291f81f0f8349de8621c9878a424552bfc64d0e4f20a4ac6006489fe1",
+                  "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                  "size": 249
+                },
+                {
+                  "digest": "sha256:96dfc3a39e382af12dbbe509f2df904a50f8ecb8f3d079bc47125ffcfe9af3fd",
+                  "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                  "size": 93
+                },
+                {
+                  "digest": "sha256:fcabacaea852d55f6f85b39660205754ecc260d61d724096968fd473f617e35c",
+                  "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                  "size": 44803375
+                }
+              ]
+            ],
+            "step12:0": [
+              [
+                {
+                  "digest": "sha256:37fb86c2a767b88d500c6872195f88078f64765fe0d2f9cc375cc2efbd4c0a41",
+                  "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                  "size": 29856132
+                },
+                {
+                  "digest": "sha256:d6d089a6c0a2543e3dd748a4ffcbfe409ab93f2049d42640588be3a3f67acffe",
+                  "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                  "size": 1289801
+                },
+                {
+                  "digest": "sha256:0e665593ff40197b851364fab0389fc6f5fa35bc74814ddfad07f96f417fc574",
+                  "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                  "size": 12411778
+                },
+                {
+                  "digest": "sha256:ce3c2a9291f81f0f8349de8621c9878a424552bfc64d0e4f20a4ac6006489fe1",
+                  "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                  "size": 249
+                },
+                {
+                  "digest": "sha256:96dfc3a39e382af12dbbe509f2df904a50f8ecb8f3d079bc47125ffcfe9af3fd",
+                  "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                  "size": 93
+                },
+                {
+                  "digest": "sha256:fcabacaea852d55f6f85b39660205754ecc260d61d724096968fd473f617e35c",
+                  "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                  "size": 44803375
+                },
+                {
+                  "digest": "sha256:514d1f064312972262fc3ca5a482148740e4986f8a63e4fd4ffa0c4a2fe116d2",
+                  "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                  "size": 10134
+                }
+              ]
+            ],
+            "step13:0": [
+              [
+                {
+                  "digest": "sha256:37fb86c2a767b88d500c6872195f88078f64765fe0d2f9cc375cc2efbd4c0a41",
+                  "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                  "size": 29856132
+                },
+                {
+                  "digest": "sha256:d6d089a6c0a2543e3dd748a4ffcbfe409ab93f2049d42640588be3a3f67acffe",
+                  "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                  "size": 1289801
+                },
+                {
+                  "digest": "sha256:0e665593ff40197b851364fab0389fc6f5fa35bc74814ddfad07f96f417fc574",
+                  "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                  "size": 12411778
+                },
+                {
+                  "digest": "sha256:ce3c2a9291f81f0f8349de8621c9878a424552bfc64d0e4f20a4ac6006489fe1",
+                  "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                  "size": 249
+                },
+                {
+                  "digest": "sha256:96dfc3a39e382af12dbbe509f2df904a50f8ecb8f3d079bc47125ffcfe9af3fd",
+                  "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                  "size": 93
+                },
+                {
+                  "digest": "sha256:fcabacaea852d55f6f85b39660205754ecc260d61d724096968fd473f617e35c",
+                  "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                  "size": 44803375
+                },
+                {
+                  "digest": "sha256:514d1f064312972262fc3ca5a482148740e4986f8a63e4fd4ffa0c4a2fe116d2",
+                  "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                  "size": 10134
+                },
+                {
+                  "digest": "sha256:149f5988ae2c8d81fe99ebb970da812c9f3e268312053322bdeab215203a82c3",
+                  "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                  "size": 1080
+                }
+              ]
+            ],
+            "step1:0": [
+              [
+                {
+                  "digest": "sha256:37fb86c2a767b88d500c6872195f88078f64765fe0d2f9cc375cc2efbd4c0a41",
+                  "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                  "size": 29856132
+                },
+                {
+                  "digest": "sha256:d6d089a6c0a2543e3dd748a4ffcbfe409ab93f2049d42640588be3a3f67acffe",
+                  "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                  "size": 1289801
+                },
+                {
+                  "digest": "sha256:0e665593ff40197b851364fab0389fc6f5fa35bc74814ddfad07f96f417fc574",
+                  "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                  "size": 12411778
+                },
+                {
+                  "digest": "sha256:ce3c2a9291f81f0f8349de8621c9878a424552bfc64d0e4f20a4ac6006489fe1",
+                  "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                  "size": 249
+                },
+                {
+                  "digest": "sha256:96dfc3a39e382af12dbbe509f2df904a50f8ecb8f3d079bc47125ffcfe9af3fd",
+                  "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                  "size": 93
+                }
+              ]
+            ],
+            "step2:0": [
+              [
+                {
+                  "digest": "sha256:6fc242d221a673263eabd14a9ad9584d3177c96e5cb504c891497338e2f912f5",
+                  "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                  "size": 29855236
+                },
+                {
+                  "digest": "sha256:646d37df0c533921d82512bef9ce6a5d2948e4e98c8c61689e9961e269c30282",
+                  "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                  "size": 1289744
+                },
+                {
+                  "digest": "sha256:57257d6d8137dab325b25390b3711f8dd1a2a3a45fef1686d0177e058fc68403",
+                  "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                  "size": 12412045
+                },
+                {
+                  "digest": "sha256:40a79f5805ed632260bcefb9f20f1db1f62ba605ded5fe5b350795e17d6f9704",
+                  "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                  "size": 250
+                },
+                {
+                  "digest": "sha256:423f5013c42db97d2df7ac9bea04454380580d5c0a1d743831570b47fba80151",
+                  "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                  "size": 19355277
+                }
+              ]
+            ]
+          },
+          "source": {
+            "infos": [
+              {
+                "data": "IyBIb21lIEFzc2lzdGFudCBNQ1AgU2VydmVyIEFkZC1vbgojIE11bHRpLXN0YWdlIGJ1aWxkOiB1diBmb3IgZGVwZW5kZW5jeSByZXNvbHV0aW9uLCBzbGltIFB5dGhvbiBmb3IgcnVudGltZQojIFB5dGhvbiAzLjE0IC0gU2VjdXJpdHkgc3VwcG9ydCB1bnRpbCAyMDMwLTEwCiMgTm8gYmFzaGlvIG5lZWRlZCAtIHB1cmUgUHl0aG9uIHN0YXJ0dXAgc2NyaXB0CgojIFBZVEhPTl9CQVNFIGxldHMgQ0kgcG9pbnQgdGhlIHJ1bnRpbWUgYmFzZSBhdCBhbm90aGVyIHJlZ2lzdHJ5IGhvbGRpbmcgdGhlCiMgc2FtZSBkaWdlc3Qgd2hlbiBFQ1IgUHVibGljIHJhdGUtbGltaXRzIHRoZSBwdWxsOyB0aGUgZGVmYXVsdCBpcyB0aGUgcGluLgpBUkcgUFlUSE9OX0JBU0U9cHVibGljLmVjci5hd3MvZG9ja2VyL2xpYnJhcnkvcHl0aG9uOjMuMTQtc2xpbUBzaGEyNTY6OWFhYTQ3NDA5N2QwOTQwNDA2NDlmMjE2MmE2MjdjMDA0OWI0MDhmNTIxMzhkOTgwOTE2Nzg4ZDgwZjA0ODAyZgoKIyAtLS0gQnVpbGQgc3RhZ2U6IGluc3RhbGwgZGVwZW5kZW5jaWVzIHdpdGggdXYgLS0tCkZST00gZ2hjci5pby9hc3RyYWwtc2gvdXY6MC4xMy43LXB5dGhvbjMuMTQtdHJpeGllLXNsaW1Ac2hhMjU2OmU4MGMwNWEzMTA0MDBjZmM5MGFmMDBiNWI3MjcxZWY5YWQyNDgxNmUzMjY1ZTExNjJhZjhhNjc4ZTFhYWQwOTkgQVMgYnVpbGRlcgoKV09SS0RJUiAvYXBwCgojIENvbXBpbGUgYnl0ZWNvZGUgZm9yIGZhc3RlciBzdGFydHVwOyBjb3B5IG1vZGUgcmVxdWlyZWQgd2l0aCBjYWNoZSBtb3VudHMKRU5WIFVWX0NPTVBJTEVfQllURUNPREU9MSBVVl9MSU5LX01PREU9Y29weQoKIyBJbnN0YWxsIGRlcGVuZGVuY2llcyBmaXJzdCAoY2FjaGVkIHNlcGFyYXRlbHkgZnJvbSBzb3VyY2UgY2hhbmdlcykuIFRoZQojIGRldi1vbmx5IHRlc3QtZW52IHB5cHJvamVjdCBpcyBjb3BpZWQgYmVjYXVzZSAtLWxvY2tlZCByZWFkcyBldmVyeQojIHBhY2thZ2UgaW4gdGhlIGxvY2sgZmlsZSwgaW5jbHVkaW5nIGRldiBvbmVzIHRoYXQgYXJlIG5vdCBpbnN0YWxsZWQuCkNPUFkgcHlwcm9qZWN0LnRvbWwgdXYubG9jayAuLwpDT1BZIHRlc3RzL3Rlc3QtZW52L3B5cHJvamVjdC50b21sIC4vdGVzdHMvdGVzdC1lbnYvClJVTiAtLW1vdW50PXR5cGU9Y2FjaGUsdGFyZ2V0PS9yb290Ly5jYWNoZS91diBcCiAgICB1diBzeW5jIC0tbG9ja2VkIC0tbm8taW5zdGFsbC1wcm9qZWN0IC0tbm8tZGV2CgojIENvcHkgc291cmNlIGFuZCBpbnN0YWxsIHRoZSBwcm9qZWN0IGl0c2VsZgpDT1BZIFJFQURNRS5tZCBMSUNFTlNFIC4vCkNPUFkgc3JjLyAuL3NyYy8KUlVOIC0tbW91bnQ9dHlwZT1jYWNoZSx0YXJnZXQ9L3Jvb3QvLmNhY2hlL3V2IFwKICAgIHV2IHN5bmMgLS1sb2NrZWQgLS1uby1kZXYgLS1uby1lZGl0YWJsZQoKIyAtLS0gUnVudGltZSBzdGFnZTogY2xlYW4gaW1hZ2Ugd2l0aG91dCB1diAtLS0KRlJPTSAke1BZVEhPTl9CQVNFfQoKV09SS0RJUiAvYXBwCgojIENvcHkgdGhlIHZpcnR1YWwgZW52aXJvbm1lbnQgYW5kIHN0YXJ0dXAgc2NyaXB0IGZyb20gYnVpbGRlcgpDT1BZIC0tZnJvbT1idWlsZGVyIC9hcHAvLnZlbnYgL2FwcC8udmVudgpDT1BZIGhvbWVhc3Npc3RhbnQtYWRkb24vc3RhcnQucHkgLwpDT1BZIGhvbWVhc3Npc3RhbnQtYWRkb24vYXBwX29wdGlvbnMuanNvbiAvCgojIEFjdGl2YXRlIHZpcnR1YWwgZW52aXJvbm1lbnQgdmlhIFBBVEgKRU5WIFBBVEg9Ii9hcHAvLnZlbnYvYmluOiRQQVRIIgoKIyBQcm9wYWdhdGUgdGhlIGJ1aWxkIHZlcnNpb24gaW50byB0aGUgcnVudGltZSBzbyBzdGFydHVwIGxvZ3MgcmVwb3J0IHRoZQojIGNvcnJlY3QgdmVyc2lvbi4gVGhlIGFkZG9uIHdvcmtmbG93IGFsd2F5cyBwYXNzZXMgQlVJTERfVkVSU0lPTjsgc3RhbmRhbG9uZQojIERvY2tlciBwdWxscyB0aGF0IGRvbid0IHBhc3MgaXQgZmFsbCB0aHJvdWdoIHRvIHBhY2thZ2UgbWV0YWRhdGEuCkFSRyBCVUlMRF9WRVJTSU9OCkFSRyBCVUlMRF9BUkNICkVOViBIQV9NQ1BfQlVJTERfVkVSU0lPTj0ke0JVSUxEX1ZFUlNJT059CgpMQUJFTCBcCiAgICBpby5oYXNzLm5hbWU9IkhvbWUgQXNzaXN0YW50IE1DUCBTZXJ2ZXIiIFwKICAgIGlvLmhhc3MuZGVzY3JpcHRpb249IkFJIGFzc2lzdGFudCBpbnRlZ3JhdGlvbiB2aWEgTW9kZWwgQ29udGV4dCBQcm90b2NvbCIgXAogICAgaW8uaGFzcy52ZXJzaW9uPSIke0JVSUxEX1ZFUlNJT059IiBcCiAgICBpby5oYXNzLnR5cGU9ImFkZG9uIiBcCiAgICBpby5oYXNzLmFyY2g9IiR7QlVJTERfQVJDSH0iCgpDTUQgWyJweXRob24zIiwgIi9zdGFydC5weSJdCg==",
+                "digestMapping": {
+                  "sha256:53da519e34110436ca7979e64004409241c6029674039c5519b43f759afcb3dd": "step0",
+                  "sha256:b8d387ea1ea06b28ae0df258d5b09d4afe59c826cb964c024a911b9f8298afca": "step1"
+                },
+                "filename": "Dockerfile",
+                "language": "Dockerfile",
+                "llbDefinition": [
+                  {
+                    "id": "step0",
+                    "op": {
+                      "Op": {
+                        "source": {
+                          "attrs": {
+                            "local.differ": "none",
+                            "local.followpaths": "[\"Dockerfile\",\"Dockerfile.dockerignore\",\"dockerfile\"]",
+                            "local.sharedkeyhint": "dockerfile"
+                          },
+                          "identifier": "local://dockerfile"
+                        }
+                      },
+                      "constraints": {}
+                    }
+                  },
+                  {
+                    "id": "step1",
+                    "inputs": [
+                      "step0:0"
+                    ],
+                    "op": {
+                      "Op": {}
+                    }
+                  }
+                ]
+              }
+            ],
+            "locations": {
+              "step0": {
+                "locations": [
+                  {
+                    "ranges": [
+                      {
+                        "end": {
+                          "line": 33
+                        },
+                        "start": {
+                          "line": 33
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              "step1": {
+                "locations": [
+                  {
+                    "ranges": [
+                      {
+                        "end": {
+                          "line": 35
+                        },
+                        "start": {
+                          "line": 35
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              "step10": {
+                "locations": [
+                  {
+                    "ranges": [
+                      {
+                        "end": {
+                          "line": 29
+                        },
+                        "start": {
+                          "line": 29
+                        }
+                      },
+                      {
+                        "end": {
+                          "line": 30
+                        },
+                        "start": {
+                          "line": 30
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              "step11": {
+                "locations": [
+                  {
+                    "ranges": [
+                      {
+                        "end": {
+                          "line": 38
+                        },
+                        "start": {
+                          "line": 38
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              "step12": {
+                "locations": [
+                  {
+                    "ranges": [
+                      {
+                        "end": {
+                          "line": 39
+                        },
+                        "start": {
+                          "line": 39
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              "step13": {
+                "locations": [
+                  {
+                    "ranges": [
+                      {
+                        "end": {
+                          "line": 40
+                        },
+                        "start": {
+                          "line": 40
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              "step2": {
+                "locations": [
+                  {
+                    "ranges": [
+                      {
+                        "end": {
+                          "line": 11
+                        },
+                        "start": {
+                          "line": 11
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              "step3": {
+                "locations": [
+                  {
+                    "ranges": [
+                      {
+                        "end": {
+                          "line": 13
+                        },
+                        "start": {
+                          "line": 13
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              "step4": {},
+              "step5": {
+                "locations": [
+                  {
+                    "ranges": [
+                      {
+                        "end": {
+                          "line": 21
+                        },
+                        "start": {
+                          "line": 21
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              "step6": {
+                "locations": [
+                  {
+                    "ranges": [
+                      {
+                        "end": {
+                          "line": 22
+                        },
+                        "start": {
+                          "line": 22
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              "step7": {
+                "locations": [
+                  {
+                    "ranges": [
+                      {
+                        "end": {
+                          "line": 23
+                        },
+                        "start": {
+                          "line": 23
+                        }
+                      },
+                      {
+                        "end": {
+                          "line": 24
+                        },
+                        "start": {
+                          "line": 24
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              "step8": {
+                "locations": [
+                  {
+                    "ranges": [
+                      {
+                        "end": {
+                          "line": 27
+                        },
+                        "start": {
+                          "line": 27
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              "step9": {
+                "locations": [
+                  {
+                    "ranges": [
+                      {
+                        "end": {
+                          "line": 28
+                        },
+                        "start": {
+                          "line": 28
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "vcs": {
+            "localdir:context": ".",
+            "localdir:dockerfile": "homeassistant-addon",
+            "revision": "51e3aac788482a081807591cd5d58d07dc4e540b",
+            "source": "https://github.com/homeassistant-ai/ha-mcp"
+          }
+        },
+        "finishedOn": "2026-11-11T16:26:45.934065546Z",
+        "invocationId": "mkawn9yjj00vr07xsnrblzty8",
+        "startedOn": "2026-11-11T16:26:27.830832453Z"
+      }
+    }
+  }
+}

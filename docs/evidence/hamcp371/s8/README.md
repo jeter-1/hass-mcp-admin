@@ -67,6 +67,84 @@ a different `missing_automation` fingerprint and a different aggregate, and no
 compiled adapter would match it. This affects review-time captures only;
 Engineering does not send these probes at runtime (see the S8 report, Q6).
 
+Q6, ruled 2026-11-15 07:40 CST: the error_contract recorded on failed live
+calls (`upstream_read_gateway.py:6923-6943`, `:4744`) is logged only and not
+compared. On a Core with automations it can show a `25357453`-class value,
+with no effect on admission. Admission compares two registry values
+(`ha_mcp_readmission/ha_mcp.py:872-879`, `upstream_tool_policy.py:2864-2866`,
+`signed_registry/models.py:651-654`).
+
+## Q7: the 9.2.0 App image reads and the revision gate
+
+Ruling Q7 (a), 2026-11-15 07:40 CST: read
+`ghcr.io/homeassistant-ai/ha-mcp-addon-{amd64,aarch64}:9.2.0` anonymously.
+Require the `org.opencontainers.image.revision` label on both architectures to
+equal `51e3aac788482a081807591cd5d58d07dc4e540b`. Stop if it differs or is
+missing.
+
+### Reads
+
+- Ran 2026-11-15 07:38:34 to 07:38:35 CST (`raw/started.txt`,
+  `raw/ended.txt`), with an empty `DOCKER_CONFIG`. No credentials were used,
+  nothing was pulled and nothing was pushed.
+- Commands, for each `$arch` in `amd64 aarch64`, prefixed with
+  `env -i PATH=/usr/bin:/bin HOME=$HOME DOCKER_CONFIG=<empty dir> timeout 120`:
+  - `docker buildx imagetools inspect ghcr.io/homeassistant-ai/ha-mcp-addon-$arch:9.2.0`
+    (`inspect-tag-$arch.txt`), and the same with `--raw`
+    (`index-$arch.raw.json`);
+  - `docker buildx imagetools inspect ghcr.io/homeassistant-ai/ha-mcp-addon-$arch@<image manifest digest> --format '{{json .Image}}'`
+    (`config-$arch.json`), and the same with `--raw`
+    (`manifest-$arch.raw.json`);
+  - `docker buildx imagetools inspect ghcr.io/homeassistant-ai/ha-mcp-addon-$arch@<index digest> --format '{{json .Provenance}}'`
+    (`provenance-$arch.json`).
+- Every raw file and its empty `.err` file is committed under `raw/` and listed
+  in `SHA256SUMS`. `check_app_reads.py` reads only those files. Its output is
+  `check-output.txt` (exit 1, the gate fails).
+- Secret checks before the copy: the leak check passed on every file.
+  `s6/comparison/scan.py` over the 20 read files gave 2 hits, one
+  `long_base64url` in each `provenance-$arch.json`. Each is the base64
+  Dockerfile that BuildKit embeds (`buildkit_metadata.source.infos[0].data`).
+  Decoded, it is the public 59-line Dockerfile (git blob `119a01c0…`), with no
+  credential.
+
+### Result
+
+| | amd64 | aarch64 |
+|---|---|---|
+| Index digest | `sha256:e0fd8903…94fe3ba` | `sha256:54459403…9c326a` |
+| Image manifest | `sha256:928c55d6…ed9244` (linux/amd64) | `sha256:de36201e…9010dc` (linux/arm64) |
+| `org.opencontainers.image.revision` | absent | absent |
+| Labels present | `io.hass.{arch,description,name,type,version}` only; version `9.2.0` | the same, arch `aarch64` |
+| Cmd | `["python3","/start.py"]` | the same |
+| SLSA `vcs:revision` | `51e3aac7…` | `51e3aac7…` |
+| SLSA `vcs:source` | `https://github.com/homeassistant-ai/ha-mcp` | the same |
+| Dockerfile in provenance, git blob | `119a01c0…` | `119a01c0…` |
+
+The full digests are in `check-output.txt`. Each digest is the sha256 of the
+raw bytes the registry served.
+
+**Q7 revision gate: FAIL. The label is absent on both architectures.** Per
+the ruling, the pull and the App catalogue capture were not done.
+
+Observations, not admission evidence:
+
+- The provenance on both architectures is an unsigned BuildKit in-toto
+  statement. It names run `43056483558`, workflow
+  `.github/workflows/semver-release.yml@refs/heads/master` at workflow commit
+  `e664ece9…` (job `build-addon`, `workflow_dispatch`, a GitHub-hosted
+  runner, protected ref). Its build arguments carry the `io.hass.*` labels and
+  no `org.opencontainers.image.*` label.
+- The Dockerfile embedded in that provenance has git blob id `119a01c0…`, the
+  same as `homeassistant-addon/Dockerfile` in the tree of `51e3aac7`, read
+  from the upstream clone's tree with lazy fetch off. The blob itself is
+  absent from the partial clone, so the match is by object id only.
+- The standalone 9.2.0 image (S4 `provenance-9.2.0.json`) was built by a
+  different run, `43058645294`, of `release-publish.yml` at workflow commit
+  `4d714830…`, from the same source commit `51e3aac7`. Its
+  `org.opencontainers.image.revision` label is `4d714830…`, the workflow
+  commit, not `51e3aac7`. That binding records `label_evidence` as
+  `informational_only`.
+
 ### What is committed and what is not
 
 Committed, each byte-identical to the run directory (checked against the run's
