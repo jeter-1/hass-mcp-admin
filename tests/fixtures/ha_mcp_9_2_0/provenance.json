@@ -1,0 +1,1498 @@
+{
+  "consumer": "tests/test_hamcp371_real_core_replay.py",
+  "fixture_file": "tests/fixtures/ha_mcp_9_2_0/output-key-contract.json",
+  "fixtures": {
+    "receipt/A/9.1.2/a-entity-after-core-restart": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.1.2/calls-after-core-restart/a-entity-after-core-restart.json",
+      "sha256": "9d4c5cb65aa76ae5a632338297cc0b7cd237da9ddb0f1ff2b06851423c2d4a28",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.1.2/a-floors-areas-after-core-restart": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.1.2/calls-after-core-restart/a-floors-areas-after-core-restart.json",
+      "sha256": "e2d88ba7356912bd3c74d667d1e3bdf81b4089f77f981397421e3ed2e8c33b74",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.1.2/r01-automation": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.1.2/calls/r01-automation.json",
+      "sha256": "66a48e778c0a4ec6da2c8c0b224e46c1845b49a8a1dd89baca8f6cf41eab8380",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.1.2/r02-calendar-events": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.1.2/calls/r02-calendar-events.json",
+      "sha256": "f96be8e7e2e50c173aed7122ffcde53899828ebd968395432aa96999c1a3e7e2",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.1.2/r03-category": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.1.2/calls/r03-category.json",
+      "sha256": "e574fffbc0ff61d9007fa641891b699b2d6fc1081562cfdf6a17d8f11f9bbb32",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.1.2/r04-label": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.1.2/calls/r04-label.json",
+      "sha256": "9133703e334fa8416cba04d96a374c1968d7da8b07761540121046536f7fc4d6",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.1.2/r05-scene": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.1.2/calls/r05-scene.json",
+      "sha256": "8c8e7c24ef8583cba5dbd21ef4e811a6dfe9d32ab93293348a76bafd08f2b2c5",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.1.2/r06-script": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.1.2/calls/r06-script.json",
+      "sha256": "a8d08ad209347522a686dd442de8b7c171c721e15c5d856fc56b275e772c9c09",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.1.2/r07-dashboard-resources": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.1.2/calls/r07-dashboard-resources.json",
+      "sha256": "3bbb978bd3c5cda14a1e0faeb3e0f7347181ba42f55084f170925e04ea3def27",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.1.2/r08-groups": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.1.2/calls/r08-groups.json",
+      "sha256": "d12635ce5b2b93b7d4bf24d0a1a39a492d04159d6dbc3949ea2cc936f60e7476",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.1.2/r09-helpers": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.1.2/calls/r09-helpers.json",
+      "sha256": "afce8ad8487bf4af8dd1143d2944b7937722dd5442cdf7a10e1a727beb572349",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.1.2/r10-template": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.1.2/calls/r10-template.json",
+      "sha256": "57ebcaa8493db598a2eb805f8fd559008be499549a840f8c366619c4e1cab645",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.1.2/r11-automation-traces": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.1.2/calls/r11-automation-traces.json",
+      "sha256": "59c109202309d4feaed9907b988a398513cdb912503f16129d50c089c7c9efa0",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.1.2/r12-blueprints": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.1.2/calls/r12-blueprints.json",
+      "sha256": "1c6ab31dcc4452870df01d11d98d1c5fb88acca04a12b1dd83fa1f759a55cf9f",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.1.2/r13-devices": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.1.2/calls/r13-devices.json",
+      "sha256": "3e49b1971925eea0ac425dcd605a7bc48bcc906ba45e47b4750943cad1522d9f",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.1.2/r14-entity": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.1.2/calls/r14-entity.json",
+      "sha256": "aefd6807404b5753eaab61fd9ecfab3bcd224c06a03ad5263d38cdbea3cd6c62",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.1.2/r15-entity-exposure": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.1.2/calls/r15-entity-exposure.json",
+      "sha256": "02edb6c6fcfc55d22294f4e42927e4787bdef64bafa25f508c5bef7b67a30fa1",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.1.2/r16-history": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.1.2/calls/r16-history.json",
+      "sha256": "0d034163cdf6ff161a19124de698df73f3b84f666ecabcc582c7141b0e73efb8",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.1.2/r17-overview": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.1.2/calls/r17-overview.json",
+      "sha256": "523cb450df94b56d2691455da7828f0b9125f0afc632bad0a35fd4eb5836a71f",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.1.2/r18-skill-guide": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.1.2/calls/r18-skill-guide.json",
+      "sha256": "c5e0b188af11414d9f924e6297a74fe8b8f202928fc6ba5758863c0f90f9d8bd",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.1.2/r19-state": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.1.2/calls/r19-state.json",
+      "sha256": "db5eb63fac056d0905f00b4bb92cd429f06fd255308f00cfccfc4b950cf00817",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.1.2/r20-system-health": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.1.2/calls/r20-system-health.json",
+      "sha256": "361403c7b495a5a45e07a16d624cfa18ff4645a3fe99945ed3c474bb86c57bf1",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.1.2/r21-todo": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.1.2/calls/r21-todo.json",
+      "sha256": "5a08ae3b37a01546852abafdea29e60d95de432e5e5946ed742dc33c14191150",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.1.2/r22-zones": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.1.2/calls/r22-zones.json",
+      "sha256": "dc31bb733f8467ea141c6844cd760fc9d2cdc9349d03ae188f478e353b8e726d",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.1.2/r23-floors-areas": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.1.2/calls/r23-floors-areas.json",
+      "sha256": "fbcde981073a1f8523d6262e8b5a9c20da7198ed40317dac978e1a43e2a0f984",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.1.2/r24-services": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.1.2/calls/r24-services.json",
+      "sha256": "b973e43023bf62bf82be2b7fc2f05f3db6a74eb091c472456dc8c8459e728611",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.1.2/r25-search": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.1.2/calls/r25-search.json",
+      "sha256": "c8205bb6b36690b2e769354ab9a2e95f0dbc74bea38fbeb3710d91fb2989548e",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.1.2/r26-integrations": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.1.2/calls/r26-integrations.json",
+      "sha256": "e302281feb71ec898fed3b768025306d2b1868ed586b535f8788ae2379cb590e",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.1.2/t-after-idle": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.1.2/calls/t-after-idle.json",
+      "sha256": "0bf1a0d95b45bca5c2e20857cb45e8cd94af95e12951cf332e891d5b4524dc06",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.1.2/t-large-services": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.1.2/calls/t-large-services.json",
+      "sha256": "045cf38e22c935ef08db253abf46a2b6843ab75976f098ce0f0c1c34895fffb2",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.1.2/t-new-session": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.1.2/calls/t-new-session.json",
+      "sha256": "5466bb7a6a9aea0853183bd28ca8f963939b92f65d63c4ce855c1393f1d3d222",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.1.2/v16-history-offset-free": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.1.2/calls/v16-history-offset-free.json",
+      "sha256": "3477495fa0dcc7c19fce1ccd44400d224f6ef0a8607cf516c0f339736ce8fa0a",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.1.2/v16-history-relative": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.1.2/calls/v16-history-relative.json",
+      "sha256": "d1528e0b366eb2ffd2afb1e4c930c13779d89e6d1446a7982dc529d032de5616",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.1.2/v16-history-statistics": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.1.2/calls/v16-history-statistics.json",
+      "sha256": "aadde7f6ddb726aad2cc8136c0cb499cb315e92edabbc64e2be3c8021fe824b5",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.1.2/v17-overview-standard": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.1.2/calls/v17-overview-standard.json",
+      "sha256": "99c1738d18657a3a96503a7eb6b1a2b4a558a9f2d1d74df09e92561ac8e246c0",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.1.2/v21-todo-list": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.1.2/calls/v21-todo-list.json",
+      "sha256": "73c88bf456d560f6bbf8a20fe497157b22b384fde22152d0ba8eea0abe38c257",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.1.2/v22-zone-single": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.1.2/calls/v22-zone-single.json",
+      "sha256": "05b0c637eaacfbb5a832622e49451bf2ae21b325d63dde937418991733a7ec37",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.1.2/v24-services-domain-full": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.1.2/calls/v24-services-domain-full.json",
+      "sha256": "32933902bfa6ae1bb544af8f1993dc6f73c1e1a5b9e1613d2cf68bc2fcb66169",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.1.2/v24-services-domain-summary": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.1.2/calls/v24-services-domain-summary.json",
+      "sha256": "8583e2406d0167e19559bba84a1628be0067fc05eb1f09a395d95ba558ae265f",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.1.2/v24-services-response": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.1.2/calls/v24-services-response.json",
+      "sha256": "a1d8529d235f7a6157c5b702836d65a42d07707b7e790e72549e8a98cb9d97f2",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.1.2/v25-search-text": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.1.2/calls/v25-search-text.json",
+      "sha256": "b6be8ec6f351fea4987fdadf7155780ea42011c75414d31eeadee2ca6bd57c0f",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.2.0/a-entity-after-core-restart": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.2.0/calls-after-core-restart/a-entity-after-core-restart.json",
+      "sha256": "65c614d3002ef359f6f0f1f45b2d2ee4bf89934554c5a7a5d215901ccff992d8",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.2.0/a-floors-areas-after-core-restart": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.2.0/calls-after-core-restart/a-floors-areas-after-core-restart.json",
+      "sha256": "4a847896d5afdef9779dd7bf2bd0d8023e701abbdb18a7d3a9a714d8daa0cee0",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.2.0/r01-automation": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.2.0/calls/r01-automation.json",
+      "sha256": "0021f7beedda9795c954714f666204df5240108b976d76509c00360aeb477023",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.2.0/r02-calendar-events": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.2.0/calls/r02-calendar-events.json",
+      "sha256": "2acf6a8ef0fba7fc54a00db68a77d66c4ec2657f7241a353f79db91f02c5f698",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.2.0/r03-category": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.2.0/calls/r03-category.json",
+      "sha256": "b802b410f72e3e76ecaf0ea7a96728a26839f294f7325e1fd399213c4dce0417",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.2.0/r04-label": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.2.0/calls/r04-label.json",
+      "sha256": "5d898189383c785cff433c8bd7d54af40034b81f63a04390ac71e5288afe5b70",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.2.0/r05-scene": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.2.0/calls/r05-scene.json",
+      "sha256": "f7592ecb33cb0e3bcc9eb2dfc6d886f7ca5bbf234a17e9df26328e9e858ccda4",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.2.0/r06-script": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.2.0/calls/r06-script.json",
+      "sha256": "901ccba3fbfffbb3e9242b0f194566a3a7927ba58058ce4c6ff24603c35e960f",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.2.0/r07-dashboard-resources": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.2.0/calls/r07-dashboard-resources.json",
+      "sha256": "80cefa32700619353aee1e75233dfe62f65e5b254aed508c5e6b53087031f07a",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.2.0/r08-groups": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.2.0/calls/r08-groups.json",
+      "sha256": "c2f1aab5739cca6069d06fa5ad93d7cd9dd693df61738dd8a325cf784ad3da0b",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.2.0/r09-helpers": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.2.0/calls/r09-helpers.json",
+      "sha256": "d23bb09801ad4bdfbcce0fb01af43027ceffdf64df9057b53ec6b74b718c426e",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.2.0/r10-template": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.2.0/calls/r10-template.json",
+      "sha256": "02c4ec6f470ca196fbb82b71b9445be7d45dc790c4162d3a80e70c309063a654",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.2.0/r11-automation-traces": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.2.0/calls/r11-automation-traces.json",
+      "sha256": "69226e739f25e1014f7dc7e910a9c6f74a41c6782094a2506d513a8628975edd",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.2.0/r12-blueprints": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.2.0/calls/r12-blueprints.json",
+      "sha256": "7a2040466de3981d07666ab50a3f9536b1af945870c2a75ff0b53545105ce44d",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.2.0/r13-devices": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.2.0/calls/r13-devices.json",
+      "sha256": "b20fd08acc31f1f886f455e9e856061f642b5bae040078883c5c61ec9d67aa4f",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.2.0/r14-entity": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.2.0/calls/r14-entity.json",
+      "sha256": "fadee8fc429ce9762d203dba6bccc4ea830fb7de59717a4c65ce6a495b904939",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.2.0/r15-entity-exposure": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.2.0/calls/r15-entity-exposure.json",
+      "sha256": "6ca76ec8579b8b2686c6fca14bb4b9d51f4fd312c714853f601e4a3c377610d3",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.2.0/r16-history": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.2.0/calls/r16-history.json",
+      "sha256": "1aa6d63b86c70e76bbb719306d738419b985f2c4d167fc6e93880e356aee5e77",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.2.0/r17-overview": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.2.0/calls/r17-overview.json",
+      "sha256": "8af9bddf01f6a187bd186096a9473cdb178a821f51d08927ae2517af11d12d63",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.2.0/r18-skill-guide": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.2.0/calls/r18-skill-guide.json",
+      "sha256": "2ca872c856fd2461877ad74e7d0975f7e296e0e5ab5007b08ad26e254f039f6f",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.2.0/r19-state": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.2.0/calls/r19-state.json",
+      "sha256": "a801f2ac0e6418a42a07c92221911d79b5725ddfa03b38de2f3af3b858695743",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.2.0/r20-system-health": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.2.0/calls/r20-system-health.json",
+      "sha256": "a69057c88637f5ae8564b661bd671e37c42e01a313a478ae21d0183a37bf4c24",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.2.0/r21-todo": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.2.0/calls/r21-todo.json",
+      "sha256": "87c25cbf5f8b2299b5296c73348db7c24dc770e1cdebebfe87e32a8f742beb8e",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.2.0/r22-zones": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.2.0/calls/r22-zones.json",
+      "sha256": "812ccc60f6ceddd75b6aec4f81d3e3dcdf1ba157739661d142ee080ce6807fee",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.2.0/r23-floors-areas": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.2.0/calls/r23-floors-areas.json",
+      "sha256": "520441bd3be75b93f3bb903078d69b2ea855710d96d8b2871e9a798547ec5cfe",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.2.0/r24-services": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.2.0/calls/r24-services.json",
+      "sha256": "4a6444dcc3bb98015a964f6dc4cfac8ac11a9e7dab72082e66b0f97867e80646",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.2.0/r25-search": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.2.0/calls/r25-search.json",
+      "sha256": "edf415dffef6bdd2ab589038b68f45d2fe6560577a4c63b7294d40820e7883d8",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.2.0/r26-integrations": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.2.0/calls/r26-integrations.json",
+      "sha256": "368bfb667ea607e2d76d031ba67979b5763f1c05d52707fdcf18b4afc5b1c423",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.2.0/t-after-idle": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.2.0/calls/t-after-idle.json",
+      "sha256": "4e7820b53500722a29ad5e3f007d9fe286efed875c524ba568d1a50fe4305601",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.2.0/t-large-services": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.2.0/calls/t-large-services.json",
+      "sha256": "77f39b6922c3424578607c02e008a81fa0d3293b86eda180cbe8d5503e8d7804",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.2.0/t-new-session": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.2.0/calls/t-new-session.json",
+      "sha256": "2a6696995de9fe757701e21056b5655cc351b59442130f4d0d88eb744c685322",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.2.0/v16-history-offset-free": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.2.0/calls/v16-history-offset-free.json",
+      "sha256": "c2723b083183ae66ba612adb7ff02e0be475786fa51a36cbdb391bc2f9761b42",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.2.0/v16-history-relative": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.2.0/calls/v16-history-relative.json",
+      "sha256": "e92ce0bd9c2fd71ff805157a7d70f06177aed57cef0ce3c9bfd5d3475be3505b",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.2.0/v16-history-statistics": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.2.0/calls/v16-history-statistics.json",
+      "sha256": "f251cf93ce53c3cb3f685295aea0ca76eb23a150b35afd744ed8fb4ef5dd4660",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.2.0/v17-overview-standard": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.2.0/calls/v17-overview-standard.json",
+      "sha256": "4e8d58e4660e331b5e4bb021aa25c0a6f8a0d4839583192f34ba577d43c9b667",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.2.0/v21-todo-list": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.2.0/calls/v21-todo-list.json",
+      "sha256": "a3dffa4e2d16178f533473aa179e0db8983dc86a9ee51edbefd595fb3799964e",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.2.0/v22-zone-single": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.2.0/calls/v22-zone-single.json",
+      "sha256": "0ac33b1815b3aba3201b71f8310f96c291ac6b7f1e471e91cd134885c1d1cea6",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.2.0/v24-services-domain-full": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.2.0/calls/v24-services-domain-full.json",
+      "sha256": "3c5855d6bf3ed5630cc68788bafe38dcb6052518954599b2eeba8aa906a86e0f",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.2.0/v24-services-domain-summary": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.2.0/calls/v24-services-domain-summary.json",
+      "sha256": "7c34c7128d3b2b7fe3d2b73e658680c1cf096a604363e60212ade24e3d1aa774",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.2.0/v24-services-response": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.2.0/calls/v24-services-response.json",
+      "sha256": "dabb48033fdca5489183540d575954b192cc231e7b71ff4d9478dce2edeeb4c9",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/A/9.2.0/v25-search-text": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-a-1/out/9.2.0/calls/v25-search-text.json",
+      "sha256": "f94610c58caef3f0751b31943881c7cba8ff94e2145db6bf849c3d89b9ff8c24",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.1.2/a-entity-after-core-restart": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.1.2-1/out/9.1.2/calls-after-core-restart/a-entity-after-core-restart.json",
+      "sha256": "e4a7b30f7bed9fe5639b86d3c7150dba674b80989b29f50043ab7992241eebeb",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.1.2/a-floors-areas-after-core-restart": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.1.2-1/out/9.1.2/calls-after-core-restart/a-floors-areas-after-core-restart.json",
+      "sha256": "4f8e81494ec05c5cdc658e94d82f3824776b52befed50c8936a0f75822c04ea4",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.1.2/r01-automation": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.1.2-1/out/9.1.2/calls/r01-automation.json",
+      "sha256": "dd4c899056e82b5e62ea3474aec82d85f4197dfe8045b9cd07a3bf55a20a3315",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.1.2/r02-calendar-events": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.1.2-1/out/9.1.2/calls/r02-calendar-events.json",
+      "sha256": "73d2da2920e770bceb3518e956bb40222d4001bbe9090b2953f84c79a9e3c6b6",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.1.2/r03-category": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.1.2-1/out/9.1.2/calls/r03-category.json",
+      "sha256": "e2c4e774ccd52d045c9b1d3e5a3e36d10aaba08dacfdde16cdae797698f5685c",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.1.2/r04-label": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.1.2-1/out/9.1.2/calls/r04-label.json",
+      "sha256": "c2f797ca0387c95cd819679a5df94c83ac209fdf767ceee859bd44c597a49741",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.1.2/r05-scene": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.1.2-1/out/9.1.2/calls/r05-scene.json",
+      "sha256": "ddc49121b88710b91709e06da88f0625d6d5b4704a70745265b0783fd8f408bb",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.1.2/r06-script": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.1.2-1/out/9.1.2/calls/r06-script.json",
+      "sha256": "8ccadb9c0993d454858d84e02fc6af754e592bedeea5bc63e1159e8922693d75",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.1.2/r07-dashboard-resources": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.1.2-1/out/9.1.2/calls/r07-dashboard-resources.json",
+      "sha256": "edbcee05f99ff7baab1bb1c878ad892b33881f51eabe8a0209b3def306df1c50",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.1.2/r08-groups": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.1.2-1/out/9.1.2/calls/r08-groups.json",
+      "sha256": "335e4284269c6b1122ab5dd6f25fef13787fe85675f595383ceba55f84b8de38",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.1.2/r09-helpers": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.1.2-1/out/9.1.2/calls/r09-helpers.json",
+      "sha256": "2d00da0418629d186949ced116fe0d8395b7fbf8da46f3356a03efe3e92fda12",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.1.2/r10-template": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.1.2-1/out/9.1.2/calls/r10-template.json",
+      "sha256": "631bd8a937e823c0c8c39c9a8abbaa301d0b061096b4615bf3cba633b100e107",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.1.2/r11-automation-traces": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.1.2-1/out/9.1.2/calls/r11-automation-traces.json",
+      "sha256": "db5eb2f7f14788551449de1b3f7342b82d627f46447bdf8a36e96593bd613bfb",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.1.2/r12-blueprints": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.1.2-1/out/9.1.2/calls/r12-blueprints.json",
+      "sha256": "ef87c87fecb5f1bb6c056dfb260b494780e91da32fd1f2249b09b83a4db9658e",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.1.2/r13-devices": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.1.2-1/out/9.1.2/calls/r13-devices.json",
+      "sha256": "2c91c9f4c1c17ab279f9565650755cc71f6142c8522c26fe361416f5b5351692",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.1.2/r14-entity": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.1.2-1/out/9.1.2/calls/r14-entity.json",
+      "sha256": "82476ee796bad7c9f95268dc4ca00cd47d7acd5de8db035d737721d38d3fcd4f",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.1.2/r15-entity-exposure": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.1.2-1/out/9.1.2/calls/r15-entity-exposure.json",
+      "sha256": "3925c8a6639c2c95832e1bddcf7c6409c4f1dba15f1c25f90d65430a660033fa",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.1.2/r16-history": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.1.2-1/out/9.1.2/calls/r16-history.json",
+      "sha256": "d950ec493d8c1cf54ea2e45175d7e048133590ae33879796ac906e9edaf85224",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.1.2/r17-overview": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.1.2-1/out/9.1.2/calls/r17-overview.json",
+      "sha256": "c9b2edb0013cb6c683547ee313f1b372583b2b70e1a9135789dafa39341f231c",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.1.2/r18-skill-guide": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.1.2-1/out/9.1.2/calls/r18-skill-guide.json",
+      "sha256": "65002dbc6f234b19b392f0d6954b074fced9aca642e3e637e6bd48d95a57f953",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.1.2/r19-state": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.1.2-1/out/9.1.2/calls/r19-state.json",
+      "sha256": "0bc732671512c36cf1312fca30a27accfbd21b52a3f09286d95c1c5d7174d75e",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.1.2/r20-system-health": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.1.2-1/out/9.1.2/calls/r20-system-health.json",
+      "sha256": "9e44f845bde75a51d164aff973f4fd61e1b757409a213e541b79743cac7712b1",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.1.2/r21-todo": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.1.2-1/out/9.1.2/calls/r21-todo.json",
+      "sha256": "6ab98f870048fcef656255bbf3d9c269148e7c621f69627f75fbeb5f981399a6",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.1.2/r22-zones": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.1.2-1/out/9.1.2/calls/r22-zones.json",
+      "sha256": "7228019703e5296e176b7dea35a540e878e7b75ec6299f8af30d3456b0161377",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.1.2/r23-floors-areas": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.1.2-1/out/9.1.2/calls/r23-floors-areas.json",
+      "sha256": "e08d5d8da99aaba872694773dee8663e6c4b9ce45851026d3e879606c4e7a8a6",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.1.2/r24-services": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.1.2-1/out/9.1.2/calls/r24-services.json",
+      "sha256": "25edea1f0e26ec63f867bdf52ed1a0546c6149aca24eb1032babb33a4183afcc",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.1.2/r25-search": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.1.2-1/out/9.1.2/calls/r25-search.json",
+      "sha256": "6307365ade6286f8275a76ded18d63285768834366303dbd595392f949ca7b2a",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.1.2/r26-integrations": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.1.2-1/out/9.1.2/calls/r26-integrations.json",
+      "sha256": "7c9d2ff0a19e85844de56270713a67b2019732ae4e34e72d9001144a9249637f",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.1.2/t-after-idle": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.1.2-1/out/9.1.2/calls/t-after-idle.json",
+      "sha256": "80363724079279179903b7e0663527a51b0ddc423f58ff4f1d9e181d3e92d747",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.1.2/t-large-services": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.1.2-1/out/9.1.2/calls/t-large-services.json",
+      "sha256": "1379538482893d9eeb4698fdf3b53fe318059431538f600fb5539b0e288e6e16",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.1.2/t-new-session": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.1.2-1/out/9.1.2/calls/t-new-session.json",
+      "sha256": "b58dd3fd573eccb433dad16a9de4a2f1a1da09ab59abb9753054313a62309cd1",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.1.2/v16-history-offset-free": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.1.2-1/out/9.1.2/calls/v16-history-offset-free.json",
+      "sha256": "f35d5092aee05be5bf0d4251f2f94ada728592714984cd2b76a79819d6c9b6c0",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.1.2/v16-history-relative": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.1.2-1/out/9.1.2/calls/v16-history-relative.json",
+      "sha256": "7a2892f4635f15d606600bec92579f3210aae8fd1cbf379809d1db13828aaaa7",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.1.2/v16-history-statistics": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.1.2-1/out/9.1.2/calls/v16-history-statistics.json",
+      "sha256": "15b2579837ece8a8079041fd003993cce97bf9dff909cec7d29e8ed7f4db465b",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.1.2/v17-overview-standard": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.1.2-1/out/9.1.2/calls/v17-overview-standard.json",
+      "sha256": "7095573ee135879affa0513561ddc23c216ea75fab312e39683856a6327c3ea3",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.1.2/v21-todo-list": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.1.2-1/out/9.1.2/calls/v21-todo-list.json",
+      "sha256": "d037d8c6a537d8605cfa2e82de4c432aa8e3d3a7879aa8264f868d604ca7a2f9",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.1.2/v22-zone-single": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.1.2-1/out/9.1.2/calls/v22-zone-single.json",
+      "sha256": "ed0afc30aa309c8959d1243df2981e6abe3f471f74e25be7d39ad91ea840cd25",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.1.2/v24-services-domain-full": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.1.2-1/out/9.1.2/calls/v24-services-domain-full.json",
+      "sha256": "d61171aee2f1d7b015e081be364d1ecfb00b62609756faae78b1006eb96c0d29",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.1.2/v24-services-domain-summary": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.1.2-1/out/9.1.2/calls/v24-services-domain-summary.json",
+      "sha256": "b3049acaadb007d0545e98dbed5c996503397bcae99d317bfc82ae43b9171ac3",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.1.2/v24-services-response": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.1.2-1/out/9.1.2/calls/v24-services-response.json",
+      "sha256": "eb9d1eb9224b77cf1eaea14517585c68cf5e3ce5f822e231a88c6b3ec7d06fe0",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.1.2/v25-search-text": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.1.2-1/out/9.1.2/calls/v25-search-text.json",
+      "sha256": "fb72c95e18a4340a363392cce04ff1a92f45c9d2334f63c93d638aa7ea4214a5",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.2.0/a-entity-after-core-restart": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls-after-core-restart/a-entity-after-core-restart.json",
+      "sha256": "169ebcbfa62fc92fedc1f75e99f7575165760f9c63a48d06f188a95430014f4a",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.2.0/a-floors-areas-after-core-restart": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls-after-core-restart/a-floors-areas-after-core-restart.json",
+      "sha256": "ab186b298a6e61cdc5915caf55c48dc4ef32724b3336570cdbc289085cf99c13",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.2.0/r01-automation": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls/r01-automation.json",
+      "sha256": "01bcdfafc2aec7b7181d852a251ed539754b26cb705acc3cb601d816597c5ba7",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.2.0/r02-calendar-events": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls/r02-calendar-events.json",
+      "sha256": "99f355487d122dec3d4292209c7ba7ca13d84280d33323cbf5829e3ac527dada",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.2.0/r03-category": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls/r03-category.json",
+      "sha256": "29159ffa360f25da6161773a2a1c7319f90cf71605800eca441276e55ddf985d",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.2.0/r04-label": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls/r04-label.json",
+      "sha256": "27dd017983ba11b3fe2e7ac0c5e7686f4dbb7b3e182cd9300674a0ab0963c9f5",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.2.0/r05-scene": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls/r05-scene.json",
+      "sha256": "c7857e7659857b1b35fe0c870a7576bcfff7f8f229e00d169ef714f3431029e3",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.2.0/r06-script": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls/r06-script.json",
+      "sha256": "acb40b2ca8c0667e9f62d9cbca1357c5d03fc2792b7fbefe402b6d49191fce5d",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.2.0/r07-dashboard-resources": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls/r07-dashboard-resources.json",
+      "sha256": "a93841980122bcfdb8956848c498ad8fa82228843a4db75cb8b0e6b11fe087b6",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.2.0/r08-groups": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls/r08-groups.json",
+      "sha256": "259849b82c2efc756d282533f6a9ad765698919491066f9bcc350339086ee959",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.2.0/r09-helpers": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls/r09-helpers.json",
+      "sha256": "cd7fd8cedaab74497427ec15673f659d116d429ba119a50d60cd04304fe8d263",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.2.0/r10-template": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls/r10-template.json",
+      "sha256": "fed9539addd86910b33fb0588cf8a0f817cc4fbaedce558f31730d0564d3f734",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.2.0/r11-automation-traces": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls/r11-automation-traces.json",
+      "sha256": "53b42271224fcf7abb08eb0781c00fd8a88d5d2e713e13eb9ffe07998606f2be",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.2.0/r12-blueprints": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls/r12-blueprints.json",
+      "sha256": "b76554ce3b7354ddb84c8a91a8237d654a953b15e04fa20d9959b1252d3a8793",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.2.0/r13-devices": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls/r13-devices.json",
+      "sha256": "68624622ef53d78d05b52a723ea6bf5c7b4eef41251b5743bca0571dcebb4144",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.2.0/r14-entity": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls/r14-entity.json",
+      "sha256": "e5e11c1c05bdb00ca00d2fb537af08cfbcb4eef1e09a07a4792457cf2a61d207",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.2.0/r15-entity-exposure": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls/r15-entity-exposure.json",
+      "sha256": "77ab6e5a13705819b02061814b90f4bf566174782fa0face9af3e07c923cbc36",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.2.0/r16-history": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls/r16-history.json",
+      "sha256": "04afb9b0d1361406a7eaef93eeb00ce4902133a15dcb8b8bfcd591752319d265",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.2.0/r17-overview": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls/r17-overview.json",
+      "sha256": "51b858d0fb4e748af43054433c1505338fe87e4e0c3bdae70d35592e13c06655",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.2.0/r18-skill-guide": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls/r18-skill-guide.json",
+      "sha256": "c3c30c494e870a15e2b76bcdd535474c440e1177dd5f940f7d2dd1b3ad4a2b29",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.2.0/r19-state": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls/r19-state.json",
+      "sha256": "e91a40fca9facfb4328fbe51ad233657bfb3c633ed503fd6543db57425697803",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.2.0/r20-system-health": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls/r20-system-health.json",
+      "sha256": "ec2221aba197125cd8606c0f8ad2075efd055180a41e33594a1a450d57c7806e",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.2.0/r21-todo": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls/r21-todo.json",
+      "sha256": "2c8964478e35b46336429cdbbbb3638e9ae6fd2e109b13a8f645a171706566cc",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.2.0/r22-zones": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls/r22-zones.json",
+      "sha256": "38b3eb3a2489f4a77788cb78c0603852c3945d2baec4316d78daf416d978df9e",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.2.0/r23-floors-areas": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls/r23-floors-areas.json",
+      "sha256": "baa58443d4f2ec0adce3d797cf83ed9c7890f568d08901e3ef68771abd5837f1",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.2.0/r24-services": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls/r24-services.json",
+      "sha256": "ce934bad08e2d6af5dcf5e2714a576fe9cd5cd28dbd2991354ca8690ca63cdde",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.2.0/r25-search": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls/r25-search.json",
+      "sha256": "5d3ed6191e3976f042681e9db6edb476d4fdd3068da58b690863e332bdd5a6fc",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.2.0/r26-integrations": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls/r26-integrations.json",
+      "sha256": "d1a594783b144fe1fded7566d047af54a6d04063a4f0a47cc277b81910839ed2",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.2.0/t-after-idle": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls/t-after-idle.json",
+      "sha256": "c633bf1b8cfbab5f1c2dc2571454b41f12b7de70c8e7afe70f84b9226faa88bc",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.2.0/t-large-services": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls/t-large-services.json",
+      "sha256": "eb601c698457875f7885d7b48449c37c2f3cb03849695e9853f086f0fdcc11e9",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.2.0/t-new-session": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls/t-new-session.json",
+      "sha256": "90c3acfd0a384a393fbbd35c6ee122bcaa5064a6a75e66c5acede13e4372f804",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.2.0/v16-history-offset-free": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls/v16-history-offset-free.json",
+      "sha256": "cedf45425c0c0cb28a2a9835cfa9b65e978d814cae032b11024003943457ee96",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.2.0/v16-history-relative": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls/v16-history-relative.json",
+      "sha256": "4dabc77a965ff2d6c03939b86c84aff495603486d9c3433cc7cd15353b3651fe",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.2.0/v16-history-statistics": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls/v16-history-statistics.json",
+      "sha256": "cf6f8f91b2c2cea8f0e054c76a5175b25815fab10bd7078d1c246ec8d0ce3da1",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.2.0/v17-overview-standard": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls/v17-overview-standard.json",
+      "sha256": "8d356276db1c3fae895ea08b55b20c3430a8e0a8688505e71994583266dc9cfe",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.2.0/v21-todo-list": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls/v21-todo-list.json",
+      "sha256": "b1813910de26de981f4d4fbdc1f4940ae4ea1a9159b0ef53657a69ad78935cf1",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.2.0/v22-zone-single": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls/v22-zone-single.json",
+      "sha256": "789c520bae8e6b6c796552cbad3914df8ae452f32d89a41c784047bb2b4d573b",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.2.0/v24-services-domain-full": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls/v24-services-domain-full.json",
+      "sha256": "75bbf09bebfd1c9aa8bc0d1441cb7de10d405b8b575ff1a3897f2d98495c1beb",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.2.0/v24-services-domain-summary": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls/v24-services-domain-summary.json",
+      "sha256": "34ab95d0c35c5fcc12c70d7cff1a0b1590f8f1d2e1cefdc8f3743d92eca2ef0f",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.2.0/v24-services-response": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls/v24-services-response.json",
+      "sha256": "19111a6c2c4fe77566c8c7494e42f9181962299401f292663891c15cee716a77",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    },
+    "receipt/B/9.2.0/v25-search-text": {
+      "class": "C",
+      "pointers": [
+        "/exchange/response/result"
+      ],
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls/v25-search-text.json",
+      "sha256": "34a008baa7b1a853ce60e50bc933aa3616c06e39d8832ae1d476e9f9e44a31dc",
+      "use": "S7 offline replay through the real gateway and the output-key contract"
+    }
+  },
+  "generation": "docs/evidence/hamcp371/s7/generate_output_key_contract.py over the committed S6 receipts; receipts are never edited",
+  "provenance_model": "hamcp371-fixture-provenance-v1",
+  "source_files": {
+    "docs/evidence/hamcp371/s7/generate_output_key_contract.py": "9c1d26dd03ca908dc34a1a15d7bbf16dae964268821d25835f34640a5872e25c",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_blueprint.py": "47cf88d38ea75c4a7af58fcf36d058412f8309f5eeeb2afd3212bb3a409ec55c",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py": "af639164da20d834635ebf1595a9ccbd4fd84735528c8734f15021b7ebb2fc5c",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_history_9_1.py": "8b6263cefc05c05fe497ce980860d8270c43bc4a424493e0606798d809a1309f",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py": "fe58f8b8515c68907ef350a55630cf9eea6d78de3252f91ceadd980bff8ad695",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py": "0b2e59af9732a222e0c076f011d65e4fc6ae46d996d272691c44c7c0ae632388",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py": "37886071e3b0074b3fb90138a2e9e4efeb9f899e574d3de7ae419ea759a7340a"
+  },
+  "upstream": {
+    "baseline_version": "9.1.2",
+    "name": "ha-mcp",
+    "version": "9.2.0"
+  }
+}
