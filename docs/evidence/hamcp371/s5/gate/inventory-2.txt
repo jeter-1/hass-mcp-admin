@@ -4,8 +4,8 @@ units:
   evidence-hamcp377-478a3d95.service
   hamcp-research-k.service
 lanes(containers):
-  
+
 stray:
 heavy_total=2 evidence=1 mem_avail_gb=10.5 load1=5.58 root_free_gb=49.3
 Running as unit: hamcp371-s5-inventory-2.service; invocation ID: 5dedd66d15424566a81fa547b66ce381
-launched rc=0 cmd=/bin/bash -c python3\ -I\ -B\ scripts/core_read_replay_capture_local.py\ inventory\ --run-dir\ /home/josh/repos/hass-mcp-admin/.claude/worktrees/hamcp-371-ha-mcp-9-2-0/.artifacts/hamcp371-s5/inventory-2\ --launch-log\ /home/josh/repos/hass-mcp-admin/.claude/worktrees/hamcp-371-ha-mcp-9-2-0/.artifacts/hamcp371-s5/launches.jsonl\ --note\ \'second\ inventory\;\ inventory-1\ \(harness\ 0ccde47b\)\ passed\ but\ its\ scan\ counted\ only\ regular-file\ METADATA\ members\ and\ listed\ neither\ fastmcp\ nor\ mcp\ in\ the\ ha-mcp\ images\;\ fix:\ commit\ c14c5369\ \(tracked\ harness\ change\ with\ tests\,\ not\ an\ environmental\ fix\)\;\ no\ container\ was\ started\ by\ either\ launch\'\ \>\ .artifacts/hamcp371-s5/inventory-2.log\ 2\>\&1 
+launched rc=0 cmd=/bin/bash -c python3\ -I\ -B\ scripts/core_read_replay_capture_local.py\ inventory\ --run-dir\ /home/josh/repos/hass-mcp-admin/.claude/worktrees/hamcp-371-ha-mcp-9-2-0/.artifacts/hamcp371-s5/inventory-2\ --launch-log\ /home/josh/repos/hass-mcp-admin/.claude/worktrees/hamcp-371-ha-mcp-9-2-0/.artifacts/hamcp371-s5/launches.jsonl\ --note\ \'second\ inventory\;\ inventory-1\ \(harness\ 0ccde47b\)\ passed\ but\ its\ scan\ counted\ only\ regular-file\ METADATA\ members\ and\ listed\ neither\ fastmcp\ nor\ mcp\ in\ the\ ha-mcp\ images\;\ fix:\ commit\ c14c5369\ \(tracked\ harness\ change\ with\ tests\,\ not\ an\ environmental\ fix\)\;\ no\ container\ was\ started\ by\ either\ launch\'\ \>\ .artifacts/hamcp371-s5/inventory-2.log\ 2\>\&1
