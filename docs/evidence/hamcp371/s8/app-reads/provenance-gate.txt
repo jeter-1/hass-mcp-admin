@@ -1,0 +1,47 @@
+amd64: PASS index digest sha256:e0fd8903915be64f65744f7fa78d8d46432388159bc000ff0807079f494fe3ba
+amd64: PASS image manifest digest sha256:928c55d6ba38d0219058be2e0ae4ae36375eb3db7aad0cb21c5b573848ed9244
+amd64: PASS index image manifests ['sha256:928c55d6ba38d0219058be2e0ae4ae36375eb3db7aad0cb21c5b573848ed9244']
+amd64: PASS attestation manifest refers to ['sha256:928c55d6ba38d0219058be2e0ae4ae36375eb3db7aad0cb21c5b573848ed9244']
+amd64: PASS vcs:revision 51e3aac788482a081807591cd5d58d07dc4e540b
+amd64: PASS vcs:source https://github.com/homeassistant-ai/ha-mcp
+amd64: PASS github_server_url https://github.com
+amd64: PASS github_repository homeassistant-ai/ha-mcp
+amd64: PASS github_repository_id 1056618941
+amd64: PASS github_repository_owner_id 232192432
+amd64: PASS event repository ('homeassistant-ai/ha-mcp', '1056618941')
+amd64: PASS builder id https://github.com/homeassistant-ai/ha-mcp/actions/runs/43056483558/attempts/1
+amd64: PASS github_runner_environment github-hosted
+amd64: PASS github_ref refs/heads/master
+amd64: PASS github_ref_type branch
+amd64: PASS github_ref_protected true
+amd64: PASS targetPlatform linux/amd64
+amd64: PASS vcs:localdir:dockerfile homeassistant-addon
+amd64: PASS embedded Dockerfile git blob ['119a01c01755c3b681afeb415c4ebb0ebb7fbb09']
+amd64: run 43056483558 attempt 1 workflow homeassistant-ai/ha-mcp/.github/workflows/semver-release.yml@refs/heads/master job build-addon event workflow_dispatch default branch master
+amd64: DISCLOSED workflow file commit e664ece999585b64e936a887d1be474d8fa9988a differs from the source commit 51e3aac788482a081807591cd5d58d07dc4e540b
+amd64: PASS workflow file commit (recorded) e664ece999585b64e936a887d1be474d8fa9988a
+aarch64: PASS index digest sha256:54459403f8bc0c77d108d8df5f3f64cc64f98eaf0d79dafdb7df5832fc9c326a
+aarch64: PASS image manifest digest sha256:de36201ee267e111cb7f675ea978aef8861bd5ddc812f86976425c572e9010dc
+aarch64: PASS index image manifests ['sha256:de36201ee267e111cb7f675ea978aef8861bd5ddc812f86976425c572e9010dc']
+aarch64: PASS attestation manifest refers to ['sha256:de36201ee267e111cb7f675ea978aef8861bd5ddc812f86976425c572e9010dc']
+aarch64: PASS vcs:revision 51e3aac788482a081807591cd5d58d07dc4e540b
+aarch64: PASS vcs:source https://github.com/homeassistant-ai/ha-mcp
+aarch64: PASS github_server_url https://github.com
+aarch64: PASS github_repository homeassistant-ai/ha-mcp
+aarch64: PASS github_repository_id 1056618941
+aarch64: PASS github_repository_owner_id 232192432
+aarch64: PASS event repository ('homeassistant-ai/ha-mcp', '1056618941')
+aarch64: PASS builder id https://github.com/homeassistant-ai/ha-mcp/actions/runs/43056483558/attempts/1
+aarch64: PASS github_runner_environment github-hosted
+aarch64: PASS github_ref refs/heads/master
+aarch64: PASS github_ref_type branch
+aarch64: PASS github_ref_protected true
+aarch64: PASS targetPlatform linux/arm64
+aarch64: PASS vcs:localdir:dockerfile homeassistant-addon
+aarch64: PASS embedded Dockerfile git blob ['119a01c01755c3b681afeb415c4ebb0ebb7fbb09']
+aarch64: run 43056483558 attempt 1 workflow homeassistant-ai/ha-mcp/.github/workflows/semver-release.yml@refs/heads/master job build-addon event workflow_dispatch default branch master
+aarch64: DISCLOSED workflow file commit e664ece999585b64e936a887d1be474d8fa9988a differs from the source commit 51e3aac788482a081807591cd5d58d07dc4e540b
+aarch64: PASS workflow file commit (recorded) e664ece999585b64e936a887d1be474d8fa9988a
+both: PASS same run, attempt and workflow commit 1
+DISCLOSED provenance: unsigned BuildKit in-toto statement, read anonymously from the registry; the HAMCP-351 evidence class, which relies on upstream's registry write control
+Q7-b provenance gate PASS

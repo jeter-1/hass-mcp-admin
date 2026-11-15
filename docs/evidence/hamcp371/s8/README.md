@@ -126,7 +126,50 @@ raw bytes the registry served.
 **Q7 revision gate: FAIL. The label is absent on both architectures.** Per
 the ruling, the pull and the App catalogue capture were not done.
 
-Observations, not admission evidence:
+Ruled 2026-11-15 08:05 CST: the label gate was an architect error and is
+withdrawn. HAMCP-351 records the 9.1.2 standalone label as `b35a3d22…`, not
+the source commit `bab615df…`: upstream's label is the workflow commit, so
+the gate could not pass on either image type. The reads above are accepted.
+`check_app_reads.py` and `check-output.txt` stay as the record of the
+withdrawn gate. The provenance gate below replaces it.
+
+### Q7-b: the provenance gate
+
+Ruling Q7-b (a), 2026-11-15 08:05 CST. `app-reads/provenance_gate.py` reads
+the same committed raw files, after checking them against `SHA256SUMS`. Its
+output is `app-reads/provenance-gate.txt` (exit 0). On both architectures it
+requires:
+
+| Gate | amd64 | aarch64 |
+|---|---|---|
+| Index and image manifest digests, as recorded above; the index's attestation manifest refers to that image manifest | PASS | PASS |
+| SLSA `vcs:revision` `51e3aac788482a081807591cd5d58d07dc4e540b` | PASS | PASS |
+| Repository `homeassistant-ai/ha-mcp` (`vcs:source`, `github_repository`, repository id `1056618941`, owner id `232192432`, the event payload's repository) | PASS | PASS |
+| Builder id is run `43056483558` attempt 1 in that repository; runner environment `github-hosted` | PASS | PASS |
+| `github_ref` `refs/heads/master`, the default branch named in the event payload; ref type `branch`; `github_ref_protected` `true` | PASS | PASS |
+| `targetPlatform` `linux/amd64` / `linux/arm64`; `vcs:localdir:dockerfile` `homeassistant-addon` | PASS | PASS |
+| Embedded Dockerfile git blob `119a01c01755c3b681afeb415c4ebb0ebb7fbb09`, the v9.2.0 tree entry | PASS | PASS |
+| Same run, attempt and workflow commit on both | PASS | |
+
+**Q7-b provenance gate: PASS.**
+
+Disclosed differences, not gated:
+
+- The workflow file commit is `e664ece999585b64e936a887d1be474d8fa9988a`
+  (`semver-release.yml`, job `build-addon`, `workflow_dispatch`), not the
+  source commit `51e3aac7…`.
+- The provenance is unsigned: a BuildKit in-toto statement read anonymously
+  from the registry. This is the HAMCP-351 evidence class, which relies on
+  upstream's registry write control. The default branch and the protected
+  flag come from the same unsigned statement.
+
+Negative check (not committed, run in `.artifacts/` on a copy with
+`SHA256SUMS` rewritten for the changed file): changing the aarch64
+`vcs:revision`, runner environment, protected flag, ref, event repository,
+embedded Dockerfile or run id each made the gate exit 1 with that field
+named.
+
+Observations recorded with the withdrawn gate:
 
 - The provenance on both architectures is an unsigned BuildKit in-toto
   statement. It names run `43056483558`, workflow
