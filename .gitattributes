@@ -32,3 +32,9 @@ docs/evidence/hamcp371/s4/receipts/gate-run-9.1.2.txt -text -whitespace
 docs/evidence/hamcp371/s4/receipts/gate-run-9.2.0.txt -text -whitespace
 docs/evidence/hamcp371/s4/receipts/gate-selftest-2.txt -text -whitespace
 docs/evidence/hamcp371/s4/receipts/gate-selftest.txt -text -whitespace
+# HAMCP-371 S8: registry inspect output, hash-bound by
+# docs/evidence/hamcp371/s8/app-reads/SHA256SUMS, and the probes-1 heavy-gate
+# receipt; each is byte-identical to its run output and its trailing spaces stay.
+docs/evidence/hamcp371/s8/app-reads/raw/inspect-tag-aarch64.txt -text -whitespace
+docs/evidence/hamcp371/s8/app-reads/raw/inspect-tag-amd64.txt -text -whitespace
+docs/evidence/hamcp371/s8/gate/probes-1.txt -text -whitespace

@@ -1,4 +1,4 @@
-"""Offline tests of the S4 catalog capture lane (HAMCP-371).
+"""Offline tests of the S4 and S8 catalog capture lane (HAMCP-371).
 
 Docker is replaced by a scripted stand-in; no container, network, registry or
 Home Assistant is used.  Every value is synthetic.
@@ -535,6 +535,301 @@ class LaneTests(unittest.TestCase):
         self.assertEqual((code, entry["failure"]),
                          (2, "pull_requires_committed_provenance_record"))
         self.assertFalse([call for call in fake.calls if call[:2] == ["docker", "pull"]])
+
+
+def fake_tools(version, filesystem):
+    tools = [{"name": "ha_get_state"}, {"name": "ha_search"}]
+    if filesystem:
+        tools.append({"name": "ha_read_file"})
+    if version == "9.1.2":
+        tools.append({"name": "ha_synthetic_older"})
+    return tools
+
+
+def fake_capture(version, filesystem, extra=False):
+    tools = fake_tools(version, filesystem) + ([{"name": "ha_extra"}] if extra else [])
+    return json.dumps({"capture_format_version": 1, "server_name": "ha-mcp",
+                       "server_version": version, "protocol_version": "2025-03-26",
+                       "tool_count": len(tools), "catalog_fingerprint": "f" * 64,
+                       "tools": tools, "error_shapes": {}}, sort_keys=True).encode()
+
+
+def fake_observation(version, filesystem, extra=False):
+    tools = fake_tools(version, filesystem) + ([{"name": "ha_extra"}] if extra else [])
+    return json.dumps({"tool_count": len(tools), "negotiated_protocol_version": "2025-03-26",
+                       "requested_protocol_version": "2025-03-26",
+                       "tools_list_pages": [{"messages": [
+                           {"jsonrpc": "2.0", "id": 2, "result": {"tools": tools}}]}]}).encode()
+
+
+def write_evidence(base, files, prefix=""):
+    """Synthetic committed evidence: the files and a ``SHA256SUMS`` that lists them."""
+    lines = []
+    for relative, raw in files.items():
+        (base / relative).parent.mkdir(parents=True, exist_ok=True)
+        (base / relative).write_bytes(raw)
+        lines.append(f"{lane.hashlib.sha256(raw).hexdigest()}  {prefix}{relative}")
+    (base / "SHA256SUMS").write_text("\n".join(lines) + "\n")
+
+
+class ProfileHost(FakeHost):
+    """The scripted host for ``profiles`` and ``pull --image app``."""
+
+    STANDALONE = {lane.binding("9.2.0")["image"]: "9.2.0", lane.binding("9.1.2")["image"]: "9.1.2"}
+    APP = lane.APP_REPOSITORY + "@" + lane.APP_MANIFEST_DIGEST
+
+    def __init__(self, test, **options) -> None:
+        super().__init__(test, **options)
+        self.peers: list[list[str]] = []
+        self.current = None
+        self.environments: list[dict] = []
+
+    def image(self, reference):
+        if reference == lane.HELPER_IMAGE:
+            return super().image(reference)
+        if reference == self.APP:
+            config = {"Labels": dict(lane.APP_LABELS), "Cmd": ["python3", "/start.py"],
+                      "Env": ["PATH=/x"]}
+            if "app_user" in self.options:
+                config["User"] = self.options["app_user"]
+            identity = self.options.get("app_id", lane.APP_MANIFEST_DIGEST)
+            return {"Id": identity, "RepoDigests": [reference], "Size": 1,
+                    "Architecture": "amd64", "Config": config}
+        version = self.STANDALONE[reference]
+        return {"Id": "sha256:" + lane.hashlib.sha256(reference.encode()).hexdigest(),
+                "RepoDigests": [reference], "Size": 1, "Architecture": "amd64",
+                "Config": {"Labels": dict(lane.binding(version)["labels"]), "User": "mcpuser",
+                           "Cmd": ["ha-mcp"], "Env": ["PATH=/x"]}}
+
+    def run(self, argv, **kwargs):
+        if argv[:1] == [sys.executable] and argv[-1].endswith("provenance_gate.py"):
+            self.calls.append(list(argv))
+            verdict = b"FAIL" if self.options.get("gate_fails") else b"PASS"
+            return Completed(returncode=int(bool(self.options.get("gate_fails"))),
+                             stdout=b"synthetic\nQ7-b provenance gate " + verdict + b"\n")
+        if argv[:2] == ["docker", "pull"]:
+            self.calls.append(list(argv))
+            self.environments.append(dict(kwargs.get("env") or {}))
+            return Completed()
+        if argv[:3] == ["docker", "image", "inspect"] and argv[3] in (
+                self.options.get("uncached"),):
+            self.calls.append(list(argv))
+            return Completed(returncode=1)
+        return super().run(argv, **kwargs)
+
+    def start(self, argv):
+        if argv[argv.index("--network") + 1] == "none":
+            return super().start(argv)
+        # One peer at a time: no other peer exists when one starts.
+        self.test.assertFalse([name for name in self.containers if name.endswith("-peer")])
+        reference = argv[-2]
+        self.peers.append(list(argv))
+        environment = dict(argv[i + 1].split("=", 1) for i, item in enumerate(argv)
+                           if item == "--env")
+        kind = "app" if reference == self.APP else "standalone"
+        version = lane.APP_VERSION if kind == "app" else self.STANDALONE[reference]
+        self.current = (kind, version, environment.get("HAMCP_ENABLE_FILESYSTEM_TOOLS") == "true")
+        image = {"image": reference, "config_digest": self.image(reference)["Id"]}
+        data = container(image, argv[argv.index("--memory") + 1], "container:" + HOLDER_ID, {})
+        data["Config"]["Labels"] = self.labels(argv)
+        self.containers[argv[argv.index("--name") + 1]] = data
+        return Completed()
+
+    def execute(self, argv):
+        text = " ".join(argv)
+        if "capture --endpoint" in text or "mcp_raw_observation.py --endpoint" in text:
+            kind, version, filesystem = self.current
+            extra = ((kind, filesystem) == ("app", True) and self.options.get("app_differs")
+                     or (kind, filesystem) == ("app", False) and self.options.get("app_off_differs")
+                     or version == "9.1.2" and self.options.get("control_differs"))
+            target = self.out / argv[-1].removeprefix("/out/")
+            if "capture --endpoint" in text:
+                index = int(target.name.split("-")[1].split(".")[0])
+                unstable = index == 2 and self.options.get("unstable") == (kind, filesystem)
+                target.write_bytes(fake_capture(version, filesystem, extra or unstable))
+            else:
+                target.write_bytes(fake_observation(version, filesystem, extra))
+            return Completed()
+        return super().execute(argv)
+
+
+class ProfileTests(unittest.TestCase):
+    def launch(self, *argv, references=None, **options):
+        fake = ProfileHost(self, **options)
+        scratch = tempfile.TemporaryDirectory(dir=ROOT / ".artifacts")
+        self.addCleanup(scratch.cleanup)
+        base = Path(scratch.name)
+        s4, hamcp351 = base / "s4", base / "hamcp351"
+        write_evidence(s4, {"ha-mcp-9.2.0/capture.json": fake_capture("9.2.0", False),
+                            "ha-mcp-9.2.0/observation.json": fake_observation("9.2.0", False)})
+        write_evidence(hamcp351, {"catalogs/standalone-fs-on-tools-response.json": json.dumps(
+            {"jsonrpc": "2.0", "id": 2, "result": {"tools": fake_tools("9.1.2", True)}}).encode()},
+            prefix="./")
+        if options.get("tampered_reference"):
+            (s4 / "ha-mcp-9.2.0/capture.json").write_bytes(b"{}")
+        table = references or {
+            "standalone-9.2.0-fs-off-capture": (s4, "ha-mcp-9.2.0/capture.json"),
+            "standalone-9.2.0-fs-off-observation": (s4, "ha-mcp-9.2.0/observation.json"),
+            "hamcp351-9.1.2-fs-on-tools": (hamcp351, "catalogs/standalone-fs-on-tools-response.json")}
+        run_dir, log = base / "run", base / "launch-log.jsonl"
+        with mock.patch.object(lane.subprocess, "run", fake.run), \
+                mock.patch.object(lane.subprocess, "Popen", FakeExport), \
+                mock.patch.object(lane, "REFERENCES", table), \
+                mock.patch.object(lane, "host_figures", lambda: {
+                    "memory_available_gb": 12.0, "load_1m": 1.0, "root_free_gb": 50.0,
+                    "root_total_gb": 140.0}), \
+                mock.patch("builtins.print"):
+            for name in ("GITHUB_ACTIONS", "CI"):
+                lane.os.environ.pop(name, None)
+            code = lane.main([*argv, "--run-dir", str(run_dir), "--launch-log", str(log)])
+        entry = json.loads(log.read_text().splitlines()[-1])
+        receipt = (json.loads((run_dir / "receipt.json").read_text())
+                   if (run_dir / "receipt.json").is_file() else None)
+        return code, entry, receipt, fake, run_dir
+
+    def test_profiles_pass_one_peer_at_a_time_with_the_hamcp351_definitions(self) -> None:
+        code, entry, receipt, fake, run_dir = self.launch("profiles")
+        self.assertEqual((code, entry["result"], receipt["result"]), (0, "PASS", "PASS"))
+        self.assertEqual(fake.containers, {})
+        self.assertTrue(receipt["cleanup"]["clean"])
+        self.assertEqual(sorted(receipt["profiles"]), sorted(item[0] for item in lane.PROFILES))
+        self.assertTrue(all(receipt["comparisons"].values()))
+        self.assertEqual(receipt["tool_differences"],
+                         {"standalone_9.2.0_fs_on_only": ["ha_read_file"],
+                          "standalone_9.2.0_fs_off_only": []})
+        self.assertEqual(len(fake.peers), 4)
+        for argv, (profile, kind, version, filesystem) in zip(fake.peers, lane.PROFILES):
+            with self.subTest(profile=profile):
+                environment = [argv[i + 1] for i, item in enumerate(argv) if item == "--env"]
+                expected = [f"{key}={value}" for key, value in lane.PEER_ENVIRONMENT]
+                if filesystem:
+                    expected.append("HAMCP_ENABLE_FILESYSTEM_TOOLS=true")
+                self.assertEqual(environment, expected)
+                self.assertEqual(argv[-1], "ha-mcp-web")
+                tmpfs = [argv[i + 1] for i, item in enumerate(argv) if item == "--tmpfs"]
+                self.assertEqual(tmpfs, ["/tmp", "/root/.ha-mcp" if kind == "app"
+                                         else "/home/mcpuser/.ha-mcp"])
+                if kind == "app":
+                    self.assertEqual(argv[-2], ProfileHost.APP)
+                self.assertEqual(argv[argv.index("--pull") + 1], "never")
+                self.assertTrue((run_dir / "out" / profile / "capture-2.json").is_file())
+        # Nothing is pulled; the App image is named by manifest digest, never by tag.
+        flat = [" ".join(call) for call in fake.calls]
+        self.assertFalse([text for text in flat if text.startswith(("docker pull", "docker network"))])
+        self.assertFalse([text for text in flat if "ha-mcp-addon-amd64:" in text])
+        self.assertIn([sys.executable, "-I", "-B", str(lane.APP_READS / "provenance_gate.py")],
+                      fake.calls)
+        self.assertEqual(receipt["bindings"]["app-9.2.0"]["manifest_digest"],
+                         lane.APP_MANIFEST_DIGEST)
+        # Only the filesystem-off 9.1.2 catalogue is the registry's committed capture.
+        self.assertNotIn("matches_committed_capture",
+                         receipt["profiles"]["control-standalone-9.1.2-fs-on"])
+
+    def test_catalog_differences_and_unstable_captures_are_withheld(self) -> None:
+        cases = (({"app_differs": True}, "app_catalog_differs_from_standalone"),
+                 ({"app_off_differs": True}, "app_catalog_differs_from_standalone"),
+                 ({"control_differs": True}, "fs_on_control_differs_from_hamcp351"),
+                 ({"unstable": ("app", True)}, "capture_not_deterministic"))
+        for options, reason in cases:
+            with self.subTest(reason=reason, options=sorted(options)):
+                code, entry, receipt, fake, _ = self.launch("profiles", **options)
+                self.assertEqual((code, entry["result"], receipt["result"], receipt["failure"]),
+                                 (1, "WITHHELD", "WITHHELD", reason))
+                self.assertTrue(receipt["cleanup"]["clean"])
+                self.assertEqual(fake.containers, {})
+                if reason != "capture_not_deterministic":
+                    self.assertFalse(all(receipt["comparisons"].values()))
+
+    def test_profile_preflight_refusals_start_nothing(self) -> None:
+        cases = (({"gate_fails": True}, "app_provenance_gate_failed"),
+                 ({"app_user": "mcpuser"}, "image_user_unexpected"),
+                 ({"app_id": "sha256:" + "9" * 64}, "cached_image_digest_mismatch"),
+                 ({"uncached": ProfileHost.APP}, "image_not_cached_by_digest"),
+                 ({"tampered_reference": True}, "committed_evidence_mismatch"),
+                 ({"dirty": True}, "clean_committed_checkout_required"))
+        for options, reason in cases:
+            with self.subTest(reason=reason):
+                code, entry, receipt, fake, run_dir = self.launch("profiles", **options)
+                self.assertEqual((code, entry["result"], entry["failure"]), (2, "REFUSED", reason))
+                self.assertIsNone(receipt)
+                self.assertFalse(run_dir.exists())
+                self.assertFalse([call for call in fake.calls
+                                  if call[:2] in (["docker", "run"], ["docker", "create"])])
+
+    def test_app_pull_is_by_manifest_digest_and_anonymous(self) -> None:
+        code, entry, receipt, fake, run_dir = self.launch(
+            "pull", "--version", "9.2.0", "--image", "app")
+        self.assertEqual((code, entry["result"], receipt["result"]), (0, "PASS", "PASS"))
+        pulls = [call for call in fake.calls if call[:2] == ["docker", "pull"]]
+        self.assertEqual(pulls, [["docker", "pull", "--quiet", "--platform", "linux/amd64",
+                                  ProfileHost.APP]])
+        config = Path(fake.environments[0]["DOCKER_CONFIG"])
+        self.assertEqual((config, list(config.iterdir())), (run_dir / "docker-config-empty", []))
+        self.assertEqual(receipt["image_kind"], "app")
+        self.assertEqual(receipt["upstream_image"]["config_digest"], lane.APP_MANIFEST_DIGEST)
+        for argv, reason in ((("--version", "9.1.2"), "version_not_bound"),
+                             (("--version", "9.2.0"), "app_provenance_gate_failed")):
+            with self.subTest(reason=reason):
+                code, entry, _, fake, _ = self.launch(
+                    "pull", *argv, "--image", "app", gate_fails=reason != "version_not_bound")
+                self.assertEqual((code, entry["failure"]), (2, reason))
+                self.assertFalse([call for call in fake.calls if call[:2] == ["docker", "pull"]])
+
+
+class AppBindingTests(unittest.TestCase):
+    def copy(self):
+        scratch = tempfile.TemporaryDirectory(dir=ROOT / ".artifacts")
+        self.addCleanup(scratch.cleanup)
+        target = Path(scratch.name) / "app-reads"
+        lane.shutil.copytree(lane.APP_READS, target)
+        return target
+
+    def refused(self, reads):
+        with self.assertRaises(lane.Refusal) as caught:
+            lane.app_binding(reads)
+        return str(caught.exception)
+
+    def test_the_committed_reads_bind_the_manifest_digest(self) -> None:
+        bound = lane.app_binding()
+        self.assertEqual(bound["image"], lane.APP_REPOSITORY + "@" + lane.APP_MANIFEST_DIGEST)
+        self.assertEqual(bound["provenance_gate"], "PASS")
+        self.assertEqual(bound["labels"], lane.APP_LABELS)
+
+    def test_changed_reads_or_a_failing_gate_are_refused(self) -> None:
+        reads = self.copy()
+        (reads / "raw/manifest-amd64.raw.json").write_bytes(b"{}")
+        self.assertEqual(self.refused(reads), "committed_evidence_mismatch")
+        reads = self.copy()
+        write_evidence(reads / "raw", {"manifest-amd64.raw.json": b"{}"})
+        # The rewritten sum is listed last, so it is the one that applies.
+        (reads / "SHA256SUMS").write_bytes((lane.APP_READS / "SHA256SUMS").read_bytes()
+                                           + (reads / "raw/SHA256SUMS").read_bytes())
+        self.assertEqual(self.refused(reads), "app_reads_digest_mismatch")
+        for script in ('print("Q7-b provenance gate FAIL")\nraise SystemExit(1)\n',
+                       'print("Q7-b provenance gate PASS")\nraise SystemExit(1)\n',
+                       'print("nothing")\n'):
+            with self.subTest(script=script):
+                reads = self.copy()
+                (reads / "provenance_gate.py").write_text(script)
+                self.assertEqual(self.refused(reads), "app_provenance_gate_failed")
+
+    def test_profile_argv_and_observation_shape(self) -> None:
+        self.assertEqual(lane.profile_environment(False), lane.PEER_ENVIRONMENT)
+        argv = lane.peer_argv("p", RUN_ID, "h", ProfileHost.APP,
+                              environment=lane.profile_environment(True),
+                              data_directory=lane.DATA_DIRECTORIES[""])
+        self.assertIn("HAMCP_ENABLE_FILESYSTEM_TOOLS=true", argv)
+        self.assertEqual([argv[i + 1] for i, item in enumerate(argv) if item == "--tmpfs"],
+                         ["/tmp", "/root/.ha-mcp"])
+        good = json.loads(fake_observation("9.2.0", False))
+        self.assertEqual(lane.tool_names(lane.tools_result(good)), ["ha_get_state", "ha_search"])
+        for bad in ({}, {"tools_list_pages": []},
+                    {"tools_list_pages": [good["tools_list_pages"][0]] * 2},
+                    {"tools_list_pages": [{"messages": []}]},
+                    {"tools_list_pages": [{"messages": [{"error": {}}]}]}):
+            with self.subTest(bad=bad), self.assertRaises(lane.Refusal) as caught:
+                lane.tools_result(bad)
+            self.assertEqual(str(caught.exception), "observation_shape_unexpected")
 
 
 class SourceTests(unittest.TestCase):

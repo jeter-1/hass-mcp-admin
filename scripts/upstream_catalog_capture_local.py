@@ -17,11 +17,21 @@ No Home Assistant Core is started here.  The peer's Home Assistant is the
 synthetic fixture ``fake_ha_read_gateway_contract_server.py``; observations
 against a disposable real Core belong to the later capture step.
 
-No pull happens in ``selftest`` or ``run`` (``--pull never`` everywhere).  The
-``pull`` command fetches one image by its index digest, anonymously, after the
-committed provenance record has been checked.  A preflight refusal happens
+No pull happens in ``selftest``, ``run`` or ``profiles`` (``--pull never``
+everywhere).  The ``pull`` command fetches one image anonymously: the
+standalone candidate by its index digest after the committed provenance record
+has been checked, or (``--image app``) the App amd64 image by its image
+manifest digest after the S8 reads and provenance gate have been checked.  A preflight refusal happens
 before any container or run directory exists.  A failure after that point is
 recorded as WITHHELD and is not a reason to run again for a pass.
+
+The ``profiles`` command (S8, ruling Q7-b) runs the HAMCP-351 filesystem
+profiles in one launch: the 9.2.0 App amd64 image with the filesystem flag off
+and on, the standalone 9.2.0 image with it on, and a standalone 9.1.2 control
+with it on whose raw catalogue must equal the committed HAMCP-351 one.  The App
+image is bound by its image manifest digest from the committed S8 registry
+reads, after the S8 provenance gate passes.  Each profile gets its own holder
+and peer, and the captures are compared byte for byte at the end.
 
 Everything a container produces is untrusted data: it is written under the run
 directory, parsed as JSON at most and never executed.  Standard library only.
@@ -85,6 +95,36 @@ PEER_ENVIRONMENT = (
     ("HA_MCP_DISABLE_SETTINGS_UI", "true"),
 )
 PEER_COMMAND = "ha-mcp-web"
+# The HAMCP-351 filesystem profiles: off is PEER_ENVIRONMENT as it is; on adds
+# this one flag.  The 9.1.2 control proves the "on" definition against the
+# committed HAMCP-351 catalogue.
+FILESYSTEM_FLAG = ("HAMCP_ENABLE_FILESYSTEM_TOOLS", "true")
+# Each image's own user and the data directory under its home, kept as a tmpfs.
+DATA_DIRECTORIES = {"mcpuser": "/home/mcpuser/.ha-mcp", "": "/root/.ha-mcp"}
+# The 9.2.0 App (add-on) amd64 image, bound by image manifest digest from the
+# committed S8 registry reads (ruling Q7-b; never by tag).
+APP_REPOSITORY = "ghcr.io/homeassistant-ai/ha-mcp-addon-amd64"
+APP_VERSION = "9.2.0"
+APP_INDEX_DIGEST = "sha256:e0fd8903915be64f65744f7fa78d8d46432388159bc000ff0807079f494fe3ba"
+APP_MANIFEST_DIGEST = "sha256:928c55d6ba38d0219058be2e0ae4ae36375eb3db7aad0cb21c5b573848ed9244"
+APP_READS = ROOT / "docs/evidence/hamcp371/s8/app-reads"
+APP_LABELS = {"io.hass.arch": "amd64", "io.hass.type": "addon", "io.hass.version": APP_VERSION}
+# (profile, image kind, version, filesystem tools), run in this order.
+PROFILES = (
+    ("standalone-9.2.0-fs-on", "standalone", "9.2.0", True),
+    ("app-9.2.0-fs-off", "app", "9.2.0", False),
+    ("app-9.2.0-fs-on", "app", "9.2.0", True),
+    ("control-standalone-9.1.2-fs-on", "standalone", "9.1.2", True),
+)
+# Committed references, each checked against its own SHA256SUMS before use.
+S4_EVIDENCE = ROOT / "docs/evidence/hamcp371/s4"
+HAMCP351_EVIDENCE = ROOT / "docs/evidence/hamcp351"
+REFERENCES = {
+    "standalone-9.2.0-fs-off-capture": (S4_EVIDENCE, "ha-mcp-9.2.0/capture.json"),
+    "standalone-9.2.0-fs-off-observation": (S4_EVIDENCE, "ha-mcp-9.2.0/observation.json"),
+    "hamcp351-9.1.2-fs-on-tools": (HAMCP351_EVIDENCE,
+                                   "catalogs/standalone-fs-on-tools-response.json"),
+}
 HOLDER_MEMORY, PEER_MEMORY, INSPECT_MEMORY = "384m", "768m", "64m"
 MUTATION_COUNTERS = ("http_mutations", "websocket_mutations",
                      "operational_backup_creates", "approval_notification_calls")
@@ -222,6 +262,58 @@ def cached_image(image, labels):
                                "environment": sorted(config.get("Env") or [])}}
 
 
+def verified_file(base, relative, files=None):
+    """Bytes of one committed file, checked against ``SHA256SUMS`` in ``base``.
+
+    ``files`` is the directory the listed names are relative to (``base`` by default).
+    """
+    sums = {}
+    for line in (Path(base) / "SHA256SUMS").read_text(encoding="utf-8").splitlines():
+        digest, name = line.split("  ", 1)
+        sums[name[2:] if name.startswith("./") else name] = digest
+    raw = (Path(files or base) / relative).read_bytes()
+    if relative not in sums or hashlib.sha256(raw).hexdigest() != sums[relative]:
+        raise Refusal("committed_evidence_mismatch")
+    return raw
+
+
+def app_binding(reads=APP_READS):
+    """The 9.2.0 App amd64 image: by image manifest digest, after the S8 provenance gate."""
+    try:
+        index_raw = verified_file(reads, "index-amd64.raw.json", reads / "raw")
+        manifest_raw = verified_file(reads, "manifest-amd64.raw.json", reads / "raw")
+    except (OSError, ValueError):
+        raise Refusal("app_reads_missing") from None
+    if (sha256_bytes(index_raw) != APP_INDEX_DIGEST
+            or sha256_bytes(manifest_raw) != APP_MANIFEST_DIGEST):
+        raise Refusal("app_reads_digest_mismatch")
+    images = [item.get("digest") for item in json.loads(index_raw).get("manifests") or []
+              if (item.get("platform") or {}).get("architecture") == "amd64"]
+    if images != [APP_MANIFEST_DIGEST]:
+        raise Refusal("app_index_does_not_name_the_manifest")
+    gate = command(sys.executable, "-I", "-B", str(reads / "provenance_gate.py"), check=False)
+    if gate.returncode or not gate.stdout.rstrip().endswith(b"Q7-b provenance gate PASS"):
+        raise Refusal("app_provenance_gate_failed")
+    config_digest = (json.loads(manifest_raw).get("config") or {}).get("digest")
+    if not re.fullmatch(r"sha256:[0-9a-f]{64}", str(config_digest)):
+        raise Refusal("binding_malformed")
+    return {"version": APP_VERSION, "image": f"{APP_REPOSITORY}@{APP_MANIFEST_DIGEST}",
+            "index_digest": APP_INDEX_DIGEST, "manifest_digest": APP_MANIFEST_DIGEST,
+            "manifest_config_digest": config_digest, "source_commit": CANDIDATE_SOURCE_COMMIT,
+            "bound_by": "committed S8 registry reads and provenance gate",
+            "provenance_gate": "PASS", "labels": dict(APP_LABELS)}
+
+
+def cached_app_image(bound):
+    """The App image, cached by its manifest digest; the store's id is that or the config."""
+    image = cached_image(bound["image"], bound["labels"])
+    if image["config_digest"] not in (bound["manifest_digest"], bound["manifest_config_digest"]):
+        raise Refusal("cached_image_digest_mismatch")
+    if image["architecture"] != "amd64":
+        raise Refusal("cached_image_platform_mismatch")
+    return image
+
+
 def host_figures():
     meminfo = dict(line.split(":", 1) for line in Path("/proc/meminfo").read_text().splitlines())
     usage = shutil.disk_usage("/")
@@ -286,16 +378,21 @@ def holder_argv(name, run_id, out_dir, version, memory=HOLDER_MEMORY):
     return argv
 
 
-def peer_argv(name, run_id, holder, image, memory=PEER_MEMORY, stand_in=False):
+def profile_environment(filesystem):
+    return PEER_ENVIRONMENT + ((FILESYSTEM_FLAG,) if filesystem else ())
+
+
+def peer_argv(name, run_id, holder, image, memory=PEER_MEMORY, stand_in=False,
+              environment=PEER_ENVIRONMENT, data_directory=DATA_DIRECTORIES["mcpuser"]):
     """The ha-mcp peer; ``stand_in`` is the selftest's idle helper in the same position."""
     argv = ["docker", "run", "--detach", "--pull", "never", "--name", name, *labels_argv(run_id),
             "--network", "container:" + holder, "--read-only", "--tmpfs", "/tmp",
-            "--tmpfs", "/home/mcpuser/.ha-mcp", "--memory", memory, "--pids-limit", "256",
+            "--tmpfs", data_directory, "--memory", memory, "--pids-limit", "256",
             "--cap-drop", "ALL", "--security-opt", "no-new-privileges"]
     if stand_in:
         argv += ["--entrypoint", "python", image, "-I", "-c", "import time; time.sleep(900)"]
     else:
-        for key, value in PEER_ENVIRONMENT:
+        for key, value in environment:
             argv += ["--env", f"{key}={value}"]
         argv += [image, PEER_COMMAND]
     host.require_memory(argv)
@@ -474,18 +571,20 @@ def fixture_stats(holder):
     return stats
 
 
-def observe(wanted, run_id, out_dir, bound, upstream, holder_id):
+def observe(wanted, run_id, out_dir, bound, upstream, holder_id, subdir="", **peer_options):
     """Start the peer in the holder's namespace and take P1, P2 and the capture twice."""
     holder, peer = wanted["holder"], wanted["peer"]
-    command(*peer_argv(peer, run_id, holder, upstream["image"]))
+    command(*peer_argv(peer, run_id, holder, upstream["image"], **peer_options))
     posture = verify_peer(inspect_owned(peer, run_id) or {}, holder_id, upstream)
     command(*exec_argv(holder, "-c", WAIT_HTTP, ENDPOINT, "120", "any"), timeout=150)
     review = "/lane/scripts/review_upstream_read_release.py"
+    target = "/out/" + (subdir + "/" if subdir else "")
+    out_dir = out_dir / subdir if subdir else out_dir
     for index in (1, 2):
         command(*exec_argv(holder, review, "capture", "--endpoint", ENDPOINT,
-                           "--output", f"/out/capture-{index}.json"), timeout=300)
+                           "--output", f"{target}capture-{index}.json"), timeout=300)
     command(*exec_argv(holder, "/lane/scripts/mcp_raw_observation.py", "--endpoint", ENDPOINT,
-                       "--output", "/out/observation.json"), timeout=300)
+                       "--output", f"{target}observation.json"), timeout=300)
     stats = fixture_stats(holder)
     state = (inspect_owned(peer, run_id) or {}).get("State") or {}
     if state.get("Running") is not True or state.get("OOMKilled"):
@@ -614,12 +713,172 @@ def execute(args, launch):
     return 0 if result["result"] == "PASS" and result["cleanup"]["clean"] else 1
 
 
+def tools_result(observation):
+    """The raw ``tools/list`` result: exactly one page with exactly one message."""
+    pages = observation.get("tools_list_pages") if isinstance(observation, dict) else None
+    if (not isinstance(pages, list) or len(pages) != 1
+            or len(pages[0].get("messages") or []) != 1
+            or not isinstance(pages[0]["messages"][0].get("result"), dict)):
+        raise Refusal("observation_shape_unexpected")
+    return pages[0]["messages"][0]["result"]
+
+
+def tool_names(result):
+    return [tool.get("name") for tool in result.get("tools") or []]
+
+
+def compare_profiles(taken, references):
+    """The Q7-b stop conditions, from the bytes and raw results each profile produced."""
+    s4_capture = references["standalone-9.2.0-fs-off-capture"]
+    s4_result = tools_result(json.loads(references["standalone-9.2.0-fs-off-observation"]))
+    hamcp351 = json.loads(references["hamcp351-9.1.2-fs-on-tools"]).get("result")
+    on, off = taken["standalone-9.2.0-fs-on"], taken["app-9.2.0-fs-off"]
+    comparisons = {
+        "control_fs_on_tools_result_equals_hamcp351":
+            taken["control-standalone-9.1.2-fs-on"]["result"] == hamcp351,
+        "app_fs_off_capture_equals_standalone_s4": off["capture"] == s4_capture,
+        "app_fs_off_tools_result_equals_standalone_s4": off["result"] == s4_result,
+        "app_fs_on_capture_equals_standalone_fs_on":
+            taken["app-9.2.0-fs-on"]["capture"] == on["capture"],
+        "app_fs_on_tools_result_equals_standalone_fs_on":
+            taken["app-9.2.0-fs-on"]["result"] == on["result"],
+    }
+    differences = {
+        "standalone_9.2.0_fs_on_only": sorted(set(tool_names(on["result"]))
+                                              - set(tool_names(s4_result))),
+        "standalone_9.2.0_fs_off_only": sorted(set(tool_names(s4_result))
+                                               - set(tool_names(on["result"]))),
+    }
+    return comparisons, differences
+
+
+def profiles(args, launch):
+    """The Q7-b filesystem profiles; one holder and one peer at a time."""
+    if not __debug__:
+        raise Refusal("assertions_required")
+    revision = require_clean_checkout()
+    bindings = {"standalone-9.2.0": binding(CANDIDATE_VERSION),
+                "standalone-9.1.2": binding(BASELINE_VERSION), "app-9.2.0": app_binding()}
+    helper = cached_image(HELPER_IMAGE, HELPER_LABELS)
+    images = {key: (cached_app_image(bound) if key.startswith("app-")
+                    else cached_image(bound["image"], bound["labels"]))
+              for key, bound in bindings.items()}
+    for key, image in images.items():
+        user = image["image_defaults"]["user"] or ""
+        if user != ("" if key.startswith("app-") else "mcpuser"):
+            raise Refusal("image_user_unexpected")
+    references = {name: verified_file(base, relative)
+                  for name, (base, relative) in REFERENCES.items()}
+    figures = host_figures()
+    require_host_floors(figures)
+    wanted = {profile: names(profile) for profile, *_ in PROFILES}
+    require_names_free({f"{profile}-{key}": name for profile, value in wanted.items()
+                        for key, name in value.items()})
+    run_dir = new_run_directory(args.run_dir)
+    run_dir.mkdir(mode=0o700, parents=False)  # Exclusive; evidence is never overwritten.
+    launch["execution_started"] = True
+    out_dir = run_dir / "out"
+    out_dir.mkdir(mode=0o700)
+    run_id = uuid4().hex
+    definitions = []
+    for profile, kind, version, filesystem in PROFILES:
+        image = images[f"{kind}-{version}"]
+        definitions.append({
+            "profile": profile, "image": image["image"], "fixture_version": version,
+            "filesystem_tools": filesystem,
+            "peer_environment": [list(item) for item in profile_environment(filesystem)],
+            "peer_command": PEER_COMMAND,
+            "data_directory_tmpfs": DATA_DIRECTORIES[image["image_defaults"]["user"] or ""]})
+    result = {
+        "model": MODEL, "command": "profiles", "result": "WITHHELD", "started": now(),
+        "harness_commit": revision, "run_id": run_id, "notes": list(args.note or []),
+        "helper_image": helper, "host_at_start": figures, "pull": "never",
+        "home_assistant": ("synthetic read-only fixture "
+                           "scripts/fake_ha_read_gateway_contract_server.py; "
+                           "no Home Assistant Core was started"),
+        "container_memory": {"holder": HOLDER_MEMORY, "peer": PEER_MEMORY},
+        "bindings": {key: {item: bound[item] for item in sorted(bound) if item != "image"}
+                     for key, bound in bindings.items()},
+        "upstream_images": images, "profile_definitions": definitions,
+        "references": {name: {"path": str((base / relative).relative_to(ROOT)),
+                              "sha256": sha256_bytes(references[name])}
+                       for name, (base, relative) in REFERENCES.items()},
+        "image_resources": "not taken (not part of ruling Q7-b)",
+        "profiles": {}, "cleanup": {"clean": False}}
+
+    def interrupted(_signum, _frame):
+        raise Refusal("lane_interrupted")
+    previous = signal.signal(signal.SIGTERM, interrupted)
+    started = time.monotonic()
+    taken = {}
+    try:
+        for definition, (profile, kind, version, filesystem) in zip(definitions, PROFILES):
+            names_now, bound = wanted[profile], bindings[f"{kind}-{version}"]
+            if filesystem:
+                # The committed registry capture is the filesystem-off catalogue.
+                bound = {key: value for key, value in bound.items()
+                         if key != "committed_capture_sha256"}
+            (out_dir / profile).mkdir(mode=0o700)
+            try:
+                holder_id, posture = start_holder(names_now, run_id, out_dir, version, helper)
+                entry = {"network_posture": posture,
+                         "helper_runtime": helper_runtime(names_now["holder"])}
+                entry.update(observe(names_now, run_id, out_dir, bound,
+                                     images[f"{kind}-{version}"], holder_id, subdir=profile,
+                                     environment=profile_environment(filesystem),
+                                     data_directory=definition["data_directory_tmpfs"]))
+                capture = (out_dir / profile / "capture-1.json").read_bytes()
+                found = tools_result(read_json(out_dir / profile / "observation.json"))
+                taken[profile] = {"capture": capture, "result": found}
+                entry.update(tools_result_sha256=sha256_bytes(canonical(found)),
+                             tool_names_in_wire_order=tool_names(found))
+                result["profiles"][profile] = entry
+            finally:
+                for key, target in (("peer", "peer.log"), ("holder", "fixture.log")):
+                    if inspect_owned(names_now[key], run_id) is not None:
+                        bounded_logs(names_now[key], run_dir / f"{profile}-{target}")
+                cleanup(names_now, run_id)
+        comparisons, differences = compare_profiles(taken, references)
+        result.update(comparisons=comparisons, tool_differences=differences)
+        if not comparisons["control_fs_on_tools_result_equals_hamcp351"]:
+            raise Refusal("fs_on_control_differs_from_hamcp351")
+        if not all(comparisons.values()):
+            raise Refusal("app_catalog_differs_from_standalone")
+        result["result"] = "PASS"
+    except BaseException as exc:  # WITHHELD, with a fixed token only.
+        result.update(result="WITHHELD", failure_type=type(exc).__name__,
+                      failure=str(exc) if isinstance(exc, Refusal) else "unexpected_error")
+    finally:
+        try:
+            for profile in wanted:
+                cleanup(wanted[profile], run_id)
+            result["cleanup"] = {"clean": True, "containers_absent": True,
+                                 "docker_networks_created": 0, "profiles": list(wanted)}
+        except BaseException as exc:
+            result.update(result="WITHHELD",
+                          cleanup={"clean": False, "failure_type": type(exc).__name__})
+        result.update(ended=now(), seconds=round(time.monotonic() - started, 1),
+                      host_at_end=host_figures())
+        (run_dir / "receipt.json").write_bytes(canonical(result))
+        signal.signal(signal.SIGTERM, previous)
+    launch.update(result=result["result"], failure=result.get("failure"),
+                  cleanup_clean=result["cleanup"]["clean"])
+    return 0 if result["result"] == "PASS" and result["cleanup"]["clean"] else 1
+
+
 def pull(args, launch):
-    """Fetch the bound candidate by index digest, anonymously, after the binding check."""
+    """Fetch one bound image anonymously, by digest, after its binding check."""
     require_clean_checkout()
-    bound = binding(args.version)
-    if "provenance_record_sha256" not in bound:
-        raise Refusal("pull_requires_committed_provenance_record")
+    if args.image == "app":
+        if args.version != APP_VERSION:
+            raise Refusal("version_not_bound")
+        bound = app_binding()
+        verify = lambda: cached_app_image(bound)  # noqa: E731
+    else:
+        bound = binding(args.version)
+        if "provenance_record_sha256" not in bound:
+            raise Refusal("pull_requires_committed_provenance_record")
+        verify = lambda: cached_image(bound["image"], bound["labels"])  # noqa: E731
     figures = host_figures()
     require_host_floors(figures)
     record_dir = new_run_directory(args.run_dir)
@@ -631,6 +890,7 @@ def pull(args, launch):
                    if key in ("PATH", "HOME", "LANG", "XDG_RUNTIME_DIR", "DOCKER_HOST")}
     environment["DOCKER_CONFIG"] = str(empty)
     result = {"model": MODEL, "command": "pull", "result": "WITHHELD", "started": now(),
+              "image_kind": args.image,
               "binding": {key: bound[key] for key in sorted(bound) if key != "labels"},
               "platform": "linux/amd64", "registry_authentication": "none (empty DOCKER_CONFIG)",
               "host_before": figures, "notes": list(args.note or [])}
@@ -639,7 +899,7 @@ def pull(args, launch):
                           bound["image"], check=False, timeout=1500, env=environment)
         if outcome.returncode:
             raise Refusal("pull_failed")
-        result["upstream_image"] = cached_image(bound["image"], bound["labels"])
+        result["upstream_image"] = verify()
         result["result"] = "PASS"
     except BaseException as exc:
         result.update(failure_type=type(exc).__name__,
@@ -653,19 +913,21 @@ def pull(args, launch):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("selftest", "run", "pull"):
+    for name in ("selftest", "run", "pull", "profiles"):
         sub = commands.add_parser(name)
         sub.add_argument("--run-dir", type=Path, required=True)
         sub.add_argument("--launch-log", type=Path, required=True)
         sub.add_argument("--note", action="append")
-        if name != "selftest":
+        if name in ("run", "pull"):
             sub.add_argument("--version", required=True)
+        if name == "pull":
+            sub.add_argument("--image", choices=("standalone", "app"), default="standalone")
     args = parser.parse_args(argv)
     launch = {"command": args.command, "version": getattr(args, "version", None),
               "run_dir": str(args.run_dir), "started": now(), "execution_started": False,
               "notes": list(args.note or [])}
     try:
-        code = (pull if args.command == "pull" else execute)(args, launch)
+        code = {"pull": pull, "profiles": profiles}.get(args.command, execute)(args, launch)
     except Refusal as exc:
         # Before the run directory exists this is a preflight refusal, not a lane result.
         launch.update(result="REFUSED" if not launch["execution_started"] else "WITHHELD",
