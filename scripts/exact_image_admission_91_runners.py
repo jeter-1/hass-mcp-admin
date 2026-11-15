@@ -47,9 +47,9 @@ from exact_image_admission_lanes import (  # noqa: E402
     write_json,
 )
 
-# HAMCP-351: the admission candidate is the reviewed ha-mcp 9.1.2 release
+# HAMCP-371: the admission candidate is the reviewed ha-mcp 9.2.0 release
 # (ci/support-window.yaml admission.candidate_version).
-CANDIDATE_VERSION = "9.1.2"
+CANDIDATE_VERSION = "9.2.0"
 BASELINE_VERSION = "8.5.0"
 # The peer is launched with MCP_SECRET_PATH set to this value. The 9.1
 # full-catalog selector is that whole path followed by /catalog/full; the

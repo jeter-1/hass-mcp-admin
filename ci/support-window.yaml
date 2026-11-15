@@ -103,6 +103,9 @@ ha_mcp:
 # from that reviewed registry row, never from this file.
 # HAMCP-351 (Josh 2026-11-09): the candidate is ha-mcp 9.1.2; 9.1.0 stays
 # admitted in the registry but no longer runs these admission lanes.
+# HAMCP-371 (plan authorization item 5, owner acceptance): the candidate is
+# ha-mcp 9.2.0; 9.1.2 stays admitted in the registry but no longer runs these
+# admission lanes. The 8.5.0 baseline lanes keep running.
 admission:
   baseline_version: "8.5.0"
-  candidate_version: "9.1.2"
+  candidate_version: "9.2.0"
