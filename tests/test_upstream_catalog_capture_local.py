@@ -628,7 +628,11 @@ class ProfileHost(FakeHost):
                            if item == "--env")
         kind = "app" if reference == self.APP else "standalone"
         version = lane.APP_VERSION if kind == "app" else self.STANDALONE[reference]
-        self.current = (kind, version, environment.get("HAMCP_ENABLE_FILESYSTEM_TOOLS") == "true")
+        # As upstream does: the filesystem flag is a beta sub-flag, applied only
+        # with ENABLE_BETA_FEATURES on (src/ha_mcp/config_registry.py).
+        self.current = (kind, version,
+                        environment.get("ENABLE_BETA_FEATURES") == "true"
+                        and environment.get("HAMCP_ENABLE_FILESYSTEM_TOOLS") == "true")
         image = {"image": reference, "config_digest": self.image(reference)["Id"]}
         data = container(image, argv[argv.index("--memory") + 1], "container:" + HOLDER_ID, {})
         data["Config"]["Labels"] = self.labels(argv)
@@ -640,8 +644,7 @@ class ProfileHost(FakeHost):
         if "capture --endpoint" in text or "mcp_raw_observation.py --endpoint" in text:
             kind, version, filesystem = self.current
             extra = ((kind, filesystem) == ("app", True) and self.options.get("app_differs")
-                     or (kind, filesystem) == ("app", False) and self.options.get("app_off_differs")
-                     or version == "9.1.2" and self.options.get("control_differs"))
+                     or version == "9.1.2" and self.options.get("control_differs") == filesystem)
             target = self.out / argv[-1].removeprefix("/out/")
             if "capture --endpoint" in text:
                 index = int(target.name.split("-")[1].split(".")[0])
@@ -662,14 +665,16 @@ class ProfileTests(unittest.TestCase):
         s4, hamcp351 = base / "s4", base / "hamcp351"
         write_evidence(s4, {"ha-mcp-9.2.0/capture.json": fake_capture("9.2.0", False),
                             "ha-mcp-9.2.0/observation.json": fake_observation("9.2.0", False)})
-        write_evidence(hamcp351, {"catalogs/standalone-fs-on-tools-response.json": json.dumps(
-            {"jsonrpc": "2.0", "id": 2, "result": {"tools": fake_tools("9.1.2", True)}}).encode()},
-            prefix="./")
+        write_evidence(hamcp351, {
+            f"catalogs/standalone-fs-{state}-tools-response.json": json.dumps(
+                {"jsonrpc": "2.0", "id": 1, "result": {"tools": fake_tools("9.1.2", on)}},
+                indent=1).encode()
+            for state, on in (("off", False), ("on", True))}, prefix="./")
         if options.get("tampered_reference"):
-            (s4 / "ha-mcp-9.2.0/capture.json").write_bytes(b"{}")
+            (s4 / "ha-mcp-9.2.0/observation.json").write_bytes(b"{}")
         table = references or {
-            "standalone-9.2.0-fs-off-capture": (s4, "ha-mcp-9.2.0/capture.json"),
             "standalone-9.2.0-fs-off-observation": (s4, "ha-mcp-9.2.0/observation.json"),
+            "hamcp351-9.1.2-fs-off-tools": (hamcp351, "catalogs/standalone-fs-off-tools-response.json"),
             "hamcp351-9.1.2-fs-on-tools": (hamcp351, "catalogs/standalone-fs-on-tools-response.json")}
         run_dir, log = base / "run", base / "launch-log.jsonl"
         with mock.patch.object(lane.subprocess, "run", fake.run), \
@@ -703,7 +708,7 @@ class ProfileTests(unittest.TestCase):
                 environment = [argv[i + 1] for i, item in enumerate(argv) if item == "--env"]
                 expected = [f"{key}={value}" for key, value in lane.PEER_ENVIRONMENT]
                 if filesystem:
-                    expected.append("HAMCP_ENABLE_FILESYSTEM_TOOLS=true")
+                    expected += ["ENABLE_BETA_FEATURES=true", "HAMCP_ENABLE_FILESYSTEM_TOOLS=true"]
                 self.assertEqual(environment, expected)
                 self.assertEqual(argv[-1], "ha-mcp-web")
                 tmpfs = [argv[i + 1] for i, item in enumerate(argv) if item == "--tmpfs"]
@@ -724,12 +729,55 @@ class ProfileTests(unittest.TestCase):
         # Only the filesystem-off 9.1.2 catalogue is the registry's committed capture.
         self.assertNotIn("matches_committed_capture",
                          receipt["profiles"]["control-standalone-9.1.2-fs-on"])
+        self.assertIn("matches_committed_capture",
+                      receipt["profiles"]["control-standalone-9.1.2-fs-off"])
+        # The controls are judged on the review script's fingerprints and the full result.
+        self.assertEqual(sorted(receipt["controls"]), sorted(lane.CONTROLS))
+        for profile, control in receipt["controls"].items():
+            with self.subTest(control=profile):
+                self.assertEqual(control["comparison_used"], "review_fingerprints_and_result")
+                self.assertEqual(control["expected"], control["found"])
+                self.assertTrue(control["result_equal"] and control["fingerprints_equal"])
+        self.assertEqual(
+            [receipt["controls"][name]["found"]["tool_count"] for name in lane.CONTROLS], [3, 4])
+
+    def test_every_filesystem_on_profile_passes_the_beta_and_filesystem_flags(self) -> None:
+        """Ruling Q9: the filesystem flag is a beta sub-flag; both reach every on-peer."""
+        self.assertEqual({filesystem for *_, filesystem in lane.PROFILES}, {True, False})
+        code, _, receipt, fake, _ = self.launch("profiles")
+        self.assertEqual(code, 0)
+        for argv, (profile, *_, filesystem) in zip(fake.peers, lane.PROFILES):
+            with self.subTest(profile=profile):
+                environment = dict(argv[i + 1].split("=", 1) for i, item in enumerate(argv)
+                                   if item == "--env")
+                recorded = dict(next(item["peer_environment"] for item in
+                                     receipt["profile_definitions"] if item["profile"] == profile))
+                for passed in (environment, recorded):
+                    if filesystem:
+                        self.assertEqual(passed.get("ENABLE_BETA_FEATURES"), "true")
+                        self.assertEqual(passed.get("HAMCP_ENABLE_FILESYSTEM_TOOLS"), "true")
+                    else:
+                        self.assertNotIn("ENABLE_BETA_FEATURES", passed)
+                        self.assertNotIn("HAMCP_ENABLE_FILESYSTEM_TOOLS", passed)
+
+    def test_a_filesystem_flag_without_beta_fails_the_control(self) -> None:
+        """The profiles-1 defect: without the beta flag the control is withheld."""
+        def without_beta(filesystem):
+            return lane.PEER_ENVIRONMENT + ((lane.FILESYSTEM_FLAG,) if filesystem else ())
+        with mock.patch.object(lane, "profile_environment", without_beta):
+            code, entry, receipt, fake, _ = self.launch("profiles")
+        self.assertEqual((code, entry["result"], receipt["failure"]),
+                         (1, "WITHHELD", "control_differs_from_hamcp351"))
+        self.assertFalse(receipt["comparisons"]["control-standalone-9.1.2-fs-on_reproduces_hamcp351"])
+        self.assertTrue(receipt["comparisons"]["control-standalone-9.1.2-fs-off_reproduces_hamcp351"])
+        self.assertEqual(fake.containers, {})
 
     def test_catalog_differences_and_unstable_captures_are_withheld(self) -> None:
         cases = (({"app_differs": True}, "app_catalog_differs_from_standalone"),
-                 ({"app_off_differs": True}, "app_catalog_differs_from_standalone"),
-                 ({"control_differs": True}, "fs_on_control_differs_from_hamcp351"),
-                 ({"unstable": ("app", True)}, "capture_not_deterministic"))
+                 ({"control_differs": True}, "control_differs_from_hamcp351"),
+                 ({"control_differs": False}, "control_differs_from_hamcp351"),
+                 ({"unstable": ("app", True)}, "capture_not_deterministic"),
+                 ({"unstable": ("standalone", False)}, "capture_not_deterministic"))
         for options, reason in cases:
             with self.subTest(reason=reason, options=sorted(options)):
                 code, entry, receipt, fake, _ = self.launch("profiles", **options)
@@ -819,6 +867,7 @@ class AppBindingTests(unittest.TestCase):
                               environment=lane.profile_environment(True),
                               data_directory=lane.DATA_DIRECTORIES[""])
         self.assertIn("HAMCP_ENABLE_FILESYSTEM_TOOLS=true", argv)
+        self.assertIn("ENABLE_BETA_FEATURES=true", argv)
         self.assertEqual([argv[i + 1] for i, item in enumerate(argv) if item == "--tmpfs"],
                          ["/tmp", "/root/.ha-mcp"])
         good = json.loads(fake_observation("9.2.0", False))

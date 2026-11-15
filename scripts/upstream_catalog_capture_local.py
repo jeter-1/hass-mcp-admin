@@ -25,13 +25,18 @@ manifest digest after the S8 reads and provenance gate have been checked.  A pre
 before any container or run directory exists.  A failure after that point is
 recorded as WITHHELD and is not a reason to run again for a pass.
 
-The ``profiles`` command (S8, ruling Q7-b) runs the HAMCP-351 filesystem
-profiles in one launch: the 9.2.0 App amd64 image with the filesystem flag off
-and on, the standalone 9.2.0 image with it on, and a standalone 9.1.2 control
-with it on whose raw catalogue must equal the committed HAMCP-351 one.  The App
-image is bound by its image manifest digest from the committed S8 registry
-reads, after the S8 provenance gate passes.  Each profile gets its own holder
-and peer, and the captures are compared byte for byte at the end.
+The ``profiles`` command (S8, rulings Q7-b and Q9) runs the HAMCP-351
+filesystem profiles in one launch: a standalone 9.1.2 control with the
+filesystem tools off and on, whose ``tools/list`` results must reproduce the
+committed HAMCP-351 responses, then the standalone 9.2.0 image and the 9.2.0
+App amd64 image with the filesystem tools on.  (The App filesystem-off profile
+ran in ``profiles-1`` and stands, ruling Q9.)  Filesystem on means
+``ENABLE_BETA_FEATURES=true`` and ``HAMCP_ENABLE_FILESYSTEM_TOOLS=true``:
+upstream applies the filesystem flag only as a beta sub-flag
+(``src/ha_mcp/config_registry.py`` at v9.1.2 and v9.2.0).  The App image is
+bound by its image manifest digest from the committed S8 registry reads, after
+the S8 provenance gate passes.  Each profile gets its own holder and peer, and
+the captures are compared byte for byte at the end.
 
 Everything a container produces is untrusted data: it is written under the run
 directory, parsed as JSON at most and never executed.  Standard library only.
@@ -96,8 +101,10 @@ PEER_ENVIRONMENT = (
 )
 PEER_COMMAND = "ha-mcp-web"
 # The HAMCP-351 filesystem profiles: off is PEER_ENVIRONMENT as it is; on adds
-# this one flag.  The 9.1.2 control proves the "on" definition against the
-# committed HAMCP-351 catalogue.
+# these two flags (the filesystem flag is a beta sub-flag upstream, ruling Q9).
+# The 9.1.2 control proves both definitions against the committed HAMCP-351
+# catalogues.
+BETA_FLAG = ("ENABLE_BETA_FEATURES", "true")
 FILESYSTEM_FLAG = ("HAMCP_ENABLE_FILESYSTEM_TOOLS", "true")
 # Each image's own user and the data directory under its home, kept as a tmpfs.
 DATA_DIRECTORIES = {"mcpuser": "/home/mcpuser/.ha-mcp", "": "/root/.ha-mcp"}
@@ -111,17 +118,21 @@ APP_READS = ROOT / "docs/evidence/hamcp371/s8/app-reads"
 APP_LABELS = {"io.hass.arch": "amd64", "io.hass.type": "addon", "io.hass.version": APP_VERSION}
 # (profile, image kind, version, filesystem tools), run in this order.
 PROFILES = (
-    ("standalone-9.2.0-fs-on", "standalone", "9.2.0", True),
-    ("app-9.2.0-fs-off", "app", "9.2.0", False),
-    ("app-9.2.0-fs-on", "app", "9.2.0", True),
+    ("control-standalone-9.1.2-fs-off", "standalone", "9.1.2", False),
     ("control-standalone-9.1.2-fs-on", "standalone", "9.1.2", True),
+    ("standalone-9.2.0-fs-on", "standalone", "9.2.0", True),
+    ("app-9.2.0-fs-on", "app", "9.2.0", True),
 )
+# The control profiles and the HAMCP-351 response each must reproduce.
+CONTROLS = {"control-standalone-9.1.2-fs-off": "hamcp351-9.1.2-fs-off-tools",
+            "control-standalone-9.1.2-fs-on": "hamcp351-9.1.2-fs-on-tools"}
 # Committed references, each checked against its own SHA256SUMS before use.
 S4_EVIDENCE = ROOT / "docs/evidence/hamcp371/s4"
 HAMCP351_EVIDENCE = ROOT / "docs/evidence/hamcp351"
 REFERENCES = {
-    "standalone-9.2.0-fs-off-capture": (S4_EVIDENCE, "ha-mcp-9.2.0/capture.json"),
     "standalone-9.2.0-fs-off-observation": (S4_EVIDENCE, "ha-mcp-9.2.0/observation.json"),
+    "hamcp351-9.1.2-fs-off-tools": (HAMCP351_EVIDENCE,
+                                    "catalogs/standalone-fs-off-tools-response.json"),
     "hamcp351-9.1.2-fs-on-tools": (HAMCP351_EVIDENCE,
                                    "catalogs/standalone-fs-on-tools-response.json"),
 }
@@ -379,7 +390,7 @@ def holder_argv(name, run_id, out_dir, version, memory=HOLDER_MEMORY):
 
 
 def profile_environment(filesystem):
-    return PEER_ENVIRONMENT + ((FILESYSTEM_FLAG,) if filesystem else ())
+    return PEER_ENVIRONMENT + ((BETA_FLAG, FILESYSTEM_FLAG) if filesystem else ())
 
 
 def peer_argv(name, run_id, holder, image, memory=PEER_MEMORY, stand_in=False,
@@ -727,33 +738,64 @@ def tool_names(result):
     return [tool.get("name") for tool in result.get("tools") or []]
 
 
+def review_fingerprints(result):
+    """The review script's catalogue fingerprints of one ``tools/list`` result.
+
+    ``raw`` is ``catalog_fingerprint`` (the tools sorted by name) and ``strict``
+    the order-preserving ``schema_fingerprint({"tools": ...})``, both from
+    ``ha_mcp_engineering.upstream_tool_policy`` as
+    ``scripts/review_upstream_read_release.py`` computes them.  They stand in
+    for raw bytes, which carry per-run fields (the JSON-RPC id, the event-stream
+    framing, the Date header) and which HAMCP-351 committed re-serialized.
+    """
+    sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
+    try:
+        from ha_mcp_engineering.upstream_tool_policy import (
+            catalog_fingerprint, schema_fingerprint)
+    finally:
+        sys.path.remove(str(ROOT / "hass_mcp_engineering_beta"))
+    tools = result.get("tools") if isinstance(result, dict) else None
+    if not isinstance(tools, list):
+        raise Refusal("observation_shape_unexpected")
+    return {"tool_count": len(tools), "raw": catalog_fingerprint(tools),
+            "strict": schema_fingerprint({"tools": tools})}
+
+
 def compare_profiles(taken, references):
-    """The Q7-b stop conditions, from the bytes and raw results each profile produced."""
-    s4_capture = references["standalone-9.2.0-fs-off-capture"]
+    """The Q7-b and Q9 stop conditions, from the bytes and results each profile produced."""
     s4_result = tools_result(json.loads(references["standalone-9.2.0-fs-off-observation"]))
-    hamcp351 = json.loads(references["hamcp351-9.1.2-fs-on-tools"]).get("result")
-    on, off = taken["standalone-9.2.0-fs-on"], taken["app-9.2.0-fs-off"]
+    on = taken["standalone-9.2.0-fs-on"]
+    controls = {}
+    for profile, reference in CONTROLS.items():
+        expected = json.loads(references[reference]).get("result")
+        found = taken[profile]["result"]
+        controls[profile] = {
+            "reference": reference, "comparison_used": "review_fingerprints_and_result",
+            "expected": review_fingerprints(expected), "found": review_fingerprints(found),
+            "result_equal": found == expected}
+        controls[profile]["fingerprints_equal"] = (
+            controls[profile]["expected"] == controls[profile]["found"])
     comparisons = {
-        "control_fs_on_tools_result_equals_hamcp351":
-            taken["control-standalone-9.1.2-fs-on"]["result"] == hamcp351,
-        "app_fs_off_capture_equals_standalone_s4": off["capture"] == s4_capture,
-        "app_fs_off_tools_result_equals_standalone_s4": off["result"] == s4_result,
+        f"{profile}_reproduces_hamcp351":
+            entry["fingerprints_equal"] and entry["result_equal"]
+        for profile, entry in controls.items()}
+    comparisons.update({
         "app_fs_on_capture_equals_standalone_fs_on":
             taken["app-9.2.0-fs-on"]["capture"] == on["capture"],
         "app_fs_on_tools_result_equals_standalone_fs_on":
             taken["app-9.2.0-fs-on"]["result"] == on["result"],
-    }
+    })
     differences = {
         "standalone_9.2.0_fs_on_only": sorted(set(tool_names(on["result"]))
                                               - set(tool_names(s4_result))),
         "standalone_9.2.0_fs_off_only": sorted(set(tool_names(s4_result))
                                                - set(tool_names(on["result"]))),
     }
-    return comparisons, differences
+    return comparisons, differences, controls
 
 
 def profiles(args, launch):
-    """The Q7-b filesystem profiles; one holder and one peer at a time."""
+    """The Q7-b and Q9 filesystem profiles; one holder and one peer at a time."""
     if not __debug__:
         raise Refusal("assertions_required")
     revision = require_clean_checkout()
@@ -803,7 +845,7 @@ def profiles(args, launch):
         "references": {name: {"path": str((base / relative).relative_to(ROOT)),
                               "sha256": sha256_bytes(references[name])}
                        for name, (base, relative) in REFERENCES.items()},
-        "image_resources": "not taken (not part of ruling Q7-b)",
+        "image_resources": "not taken (not part of rulings Q7-b and Q9)",
         "profiles": {}, "cleanup": {"clean": False}}
 
     def interrupted(_signum, _frame):
@@ -838,10 +880,11 @@ def profiles(args, launch):
                     if inspect_owned(names_now[key], run_id) is not None:
                         bounded_logs(names_now[key], run_dir / f"{profile}-{target}")
                 cleanup(names_now, run_id)
-        comparisons, differences = compare_profiles(taken, references)
-        result.update(comparisons=comparisons, tool_differences=differences)
-        if not comparisons["control_fs_on_tools_result_equals_hamcp351"]:
-            raise Refusal("fs_on_control_differs_from_hamcp351")
+        comparisons, differences, controls = compare_profiles(taken, references)
+        result.update(comparisons=comparisons, tool_differences=differences,
+                      controls=controls)
+        if not all(comparisons[f"{profile}_reproduces_hamcp351"] for profile in CONTROLS):
+            raise Refusal("control_differs_from_hamcp351")
         if not all(comparisons.values()):
             raise Refusal("app_catalog_differs_from_standalone")
         result["result"] = "PASS"
