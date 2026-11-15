@@ -229,7 +229,8 @@ class ReviewedKeySet(unittest.TestCase):
         self.assertEqual(history_9_2.OPEN, frozenset(CONTRACT_ROW["open_containers"]))
         self.assertEqual(history_9_2.COUNT_CAP, real.CONTRACT["rules"]["count_cap"])
         self.assertEqual(history_9_2.REPLACED_WARNING, real.REPLACED)
-        self.assertEqual(set(ADDED), set(real.ADDED))
+        # The history read adds the three counts; engineering_notes (S10) is zone and services only.
+        self.assertEqual(set(ADDED), set(real.ADDED) - {"engineering_notes"})
         self.assertEqual(CONTRACT_ROW["reviewed_warnings"], [])
 
     def test_9_1_scenarios_project_identically_plus_the_counts(self):

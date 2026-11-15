@@ -14,7 +14,8 @@ The public schema of every read is the 9.1 public surface (the shipped 8.5.0
 schemas), bound below by the same fingerprint, so a 9.2.0 caller sees the same
 surface as a 9.1 caller. ``upstream_reads_9_1.py`` is not edited and gives this
 module nothing but its public schemas, its skill-file check, its refusal class
-and, until S10 closes the 9.2.0 key sets, its compiled projections.
+and its compiled projections, which run after the closed 9.2.0 key sets of
+``upstream_reads_9_2_keys`` (S10).
 
 ``ha_get_history`` (S9) is the 9.2.0 history module ``upstream_history_9_2``:
 9.2.0 resolves an ISO time without an offset in HA local time, where 9.1
@@ -195,12 +196,16 @@ def read_arguments(entry, arguments: dict) -> dict:
 
 
 def _projection(name):
-    # S8 interim: the compiled 9.1 projections; S10 replaces them with the
-    # closed 9.2.0 key sets. History has its own 9.2.0 projection (S9).
+    # S10: the closed 9.2.0 key set, then the compiled 9.1 projection or the
+    # 9.2.0 zone and services override. History has its own module (S9).
     if name == _HISTORY:
         from .upstream_history_9_2 import PROJECTIONS
         return PROJECTIONS[_HISTORY]
-    return _reads_9_1._projector_tables().get(name)
+    from . import upstream_reads_9_2_entities as _entities, upstream_reads_9_2_keys as _keys
+    if name not in _keys.ROWS:
+        return None
+    inner, rule = _entities.PROJECTIONS.get(name) or _reads_9_1._projector_tables()[name]
+    return _keys.projection(name, inner), _keys.completeness(rule, _keys.TEXTS)
 
 
 def project_result(entry, payload, arguments: dict):

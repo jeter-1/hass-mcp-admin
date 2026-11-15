@@ -33,6 +33,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / 'hass_mcp_engineering_beta'), str(ROOT / 'tests')]
 from mcp.server.fastmcp import FastMCP
 from ha_mcp_engineering.providers.upstream_read_gateway import UpstreamReadGateway
+from ha_mcp_engineering.providers.upstream_reads_9_2_entities import (
+    SERVICES_TYPE_NOTE, ZONE_ICON_NOTE, ZONE_LOCATION_NOTE,
+)
 from ha_mcp_engineering.request_context import begin_request, end_request
 from test_ha_mcp_production_readmission import _GatewayTransport, _settings
 import test_upstream_8_5_compatibility as previous
@@ -49,6 +52,10 @@ _spec.loader.exec_module(generator)
 READS = CONTRACT['reads']
 ADDED = frozenset(CONTRACT['rules']['engineering_added'])
 REPLACED = CONTRACT['rules']['replaced_warning_code']
+# N26: the device read keeps its shipped per-occurrence count and closed codes.
+DEVICE = 'ha_get_device'
+DEVICE_UNRECOGNIZED = 'enrichment_warning_unrecognized'
+DEVICE_UNKNOWN = 'unknown_fields_withheld'
 CALL_DIRS = ('calls', 'calls-after-core-restart')
 # Designed or environment failures recorded identically on 9.1.2 and 9.2.0.
 # r27-apps: the bare Core has no Supervisor (inference; SR records the body).
@@ -239,9 +246,18 @@ class OutputKeyContract(unittest.TestCase):
                     self.assertTrue(entry['source'].startswith('research G ruling'))
                     self.assertIn(name, READS[tool]['admitted'])
 
+    def test_services_response_is_admitted_on_the_recorded_review(self):
+        # 21:36 record, item 13: reviewed on the 9.2.0 receipt (S10).
+        for name in ('response', 'optional'):
+            with self.subTest(name=name):
+                entry = READS['ha_list_services']['new_in_9_2_0'][name]
+                self.assertEqual(entry['status'], 'admitted')
+                self.assertTrue(entry['source'].startswith('S10 recorded review'))
+                self.assertIn(name, READS['ha_list_services']['admitted'])
+
     def test_unreviewed_9_2_0_keys_stay_withheld(self):
         pending = {
-            'ha_list_services': ('response', 'optional', 'collapsed', 'filter', 'integration'),
+            'ha_list_services': ('collapsed', 'filter', 'integration'),
             'ha_config_list_helpers': ('read_only', 'secret', 'later_forms'),
             'ha_get_integration': ('read_only', 'secret', 'later_forms'),
         }
@@ -395,11 +411,14 @@ class RealCoreReplay920(unittest.TestCase):
                 data = out['data']
                 upstream = generator.names(result['structuredContent'], tool)
                 withheld = _withheld_names(row, upstream)
-                if tool == 'ha_get_device':
-                    self.assertGreaterEqual(data['fields_withheld'], len(withheld))
+                if tool == DEVICE:
+                    # N26: the shipped per-occurrence count, absent when zero,
+                    # and no policy-drop or replaced-warning count.
+                    self.assertGreaterEqual(data.get('fields_withheld', 0), len(withheld))
+                    self.assertFalse({'fields_dropped_by_policy', 'upstream_warnings_replaced'} & set(data))
                 else:
                     self.assertEqual(data['fields_withheld'], min(len(withheld), CONTRACT['rules']['count_cap']))
-                self.assertEqual(data['fields_dropped_by_policy'], len(upstream & set(row['policy_drops'])))
+                    self.assertEqual(data['fields_dropped_by_policy'], len(upstream & set(row['policy_drops'])))
                 if row['projection'] == 'closed':
                     client = generator.names(data, tool) - ADDED
                     self.assertLessEqual(client, set(row['admitted']))
@@ -428,10 +447,12 @@ class RealCoreReplay920(unittest.TestCase):
             with self.subTest(tool=call['public_tool']):
                 self.assertNotIn(INJECTED, json.dumps(one))
                 self.assertNotIn(INJECTED, json.dumps(two))
-                self.assertEqual(one['data']['fields_withheld'], base['data']['fields_withheld'] + 1)
+                # N26: the device count is per occurrence and absent when zero.
+                counted = base['data'].get('fields_withheld', 0)
+                self.assertEqual(one['data']['fields_withheld'], counted + 1)
                 if has_nested:
-                    step = 2 if call['public_tool'] == 'ha_get_device' else 1
-                    self.assertEqual(two['data']['fields_withheld'], base['data']['fields_withheld'] + step)
+                    step = 2 if call['public_tool'] == DEVICE else 1
+                    self.assertEqual(two['data']['fields_withheld'], counted + step)
 
     def test_a_key_inside_an_open_container_passes_uncounted(self):
         cases = []
@@ -468,6 +489,14 @@ class RealCoreReplay920(unittest.TestCase):
                 self.assertNotIn(CANARY, json.dumps(out))
                 # History keeps the 8.5 shape: its warnings sit in the inner data.
                 data = out['data']['data'] if call['public_tool'] == 'ha_get_history' else out['data']
+                if call['public_tool'] == DEVICE:
+                    # N26: the device read keeps its shipped closed warning codes.
+                    # The single read maps an unlisted warning to a closed code;
+                    # the list read has no warnings key and withholds it as unknown.
+                    code = DEVICE_UNRECOGNIZED if 'device' in data else DEVICE_UNKNOWN
+                    self.assertIn(code, data['warnings'])
+                    self.assertNotIn('upstream_warnings_replaced', out['data'])
+                    continue
                 self.assertIn(REPLACED, data['warnings'])
                 self.assertGreaterEqual(out['data']['upstream_warnings_replaced'], 1)
 
@@ -500,10 +529,18 @@ class RealCoreReplay920(unittest.TestCase):
                         self.assertEqual(zone.get('friendly_name'), zone.get('name'))
                     for name in ('persons', 'device_trackers') if 'persons' in upstream else ():
                         self.assertIn(f'"{name}"', text)
+                    if 'persons' in upstream or 'device_trackers' in upstream:
+                        self.assertIn(ZONE_LOCATION_NOTE, out['data']['engineering_notes'])
+                    if 'icon' in upstream or 'entity_icon' in upstream:
+                        self.assertIn(ZONE_ICON_NOTE, out['data']['engineering_notes'])
                 elif call['public_tool'] == 'ha_list_services':
                     self.assertNotIn('type', generator.names(out['data'], 'ha_list_services'))
+                    client = generator.names(out['data'], 'ha_list_services') - ADDED
                     for name in ('response', 'optional'):
-                        self.assertNotIn(name, generator.names(out['data'], 'ha_list_services') - ADDED)
+                        self.assertEqual(name in client, name in upstream)
+                    for name in ('collapsed', 'filter', 'integration'):
+                        self.assertNotIn(name, client)
+                    self.assertEqual(out['data']['engineering_notes'], [SERVICES_TYPE_NOTE])
                 elif 'name' in upstream:
                     self.assertIn('name', generator.names(out['data'], 'ha_search'))
 

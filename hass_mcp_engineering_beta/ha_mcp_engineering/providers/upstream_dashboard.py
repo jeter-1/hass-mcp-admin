@@ -67,6 +67,7 @@ from .upstream_contracts import (
     decide_admission,
 )
 from .upstream_registry import UpstreamTrustRegistry
+from . import upstream_reads_9_2_dashboard as _dashboard_9_2
 
 
 PROVIDER_ID = "upstream_dashboard"
@@ -738,6 +739,12 @@ class UpstreamDashboardProvider:
             metadata["completeness"] = completeness
             if redactions.applied:
                 metadata["redaction"] = redactions.summary()
+            # HAMCP-371 N30: on ha-mcp 9.2.0 only, the default-withhold counts
+            # and the reviewed-warning rule (upstream_reads_9_2_dashboard).
+            if exchange.handshake.server_version in _dashboard_9_2.RELEASES:
+                warnings, completeness = _dashboard_9_2.apply(
+                    payload, data, metadata, warnings, completeness
+                )
             warnings = warnings[:20]
             # HAMCP-306: the check and the reported size are one measure, the
             # one the general response limit admits a response by.

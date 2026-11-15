@@ -6,7 +6,9 @@
     "extra open containers: capabilities and options (automation entity, entity registry), result (template), info (system health), example and default (service fields)",
     "keys named by the shipped 9.1 projections but not observed in a 9.1.2 receipt are admitted with that source",
     "reviewed warnings are the exact upstream strings observed in the 9.1.2 receipts; the upstream source-string review is deferred",
-    "ha_get_history keeps the shipped 8.5-parity projection on 9.2.0; the keys it drops (summary, statistics_metadata, unit_source, unit_reason, last_reset) are policy drops counted in fields_dropped_by_policy (S9 correction of the S7 row)"
+    "ha_get_history keeps the shipped 8.5-parity projection on 9.2.0; the keys it drops (summary, statistics_metadata, unit_source, unit_reason, last_reset) are policy drops counted in fields_dropped_by_policy (S9 correction of the S7 row)",
+    "S10 correction: rows name the keys their shipped 9.1 projection type-checks or reads for completeness: warnings and partial on the entity envelope rows, all and unavailable_fields on groups, unavailable_fields on template",
+    "S10: engineering_notes is Engineering-added (the zone location and icon notes, the services type note, item 14 and 15); response and optional on ha_list_services are admitted on a recorded review (item 13); collapsed, filter and integration stay withheld pending review"
   ],
   "reads": {
     "ha_config_get_automation": {
@@ -659,6 +661,7 @@
     },
     "ha_config_list_groups": {
       "admitted": {
+        "all": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:29,34,285-301 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
         "auto": "receipt 9.1.2 profile A+B",
         "context": "receipt 9.1.2 profile A+B",
         "count": "receipt 9.1.2 profile A+B",
@@ -682,6 +685,7 @@
         "state": "receipt 9.1.2 profile A+B",
         "success": "receipt 9.1.2 profile A+B",
         "total_count": "receipt 9.1.2 profile A+B",
+        "unavailable_fields": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:29,34,285-301 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
         "user_id": "receipt 9.1.2 profile A+B"
       },
       "calls": {
@@ -895,6 +899,7 @@
         "success": "receipt 9.1.2 profile A+B",
         "template": "receipt 9.1.2 profile A+B",
         "time": "receipt 9.1.2 profile A+B",
+        "unavailable_fields": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:333-345 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
         "warnings": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:333-345 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)"
       },
       "calls": {
@@ -1250,7 +1255,8 @@
       "map_containers": {},
       "new_in_9_2_0": {},
       "notes": [
-        "the shared device projection counts unknown keys per occurrence, not distinct names; kept as shipped on 9.2.0 (22:59 record, item 2)"
+        "the shared device projection counts unknown keys per occurrence, not distinct names; kept as shipped on 9.2.0 (22:59 record, item 2)",
+        "N26 difference from ruling 10: fields_withheld is per occurrence and absent when zero; there is no fields_dropped_by_policy or upstream_warnings_replaced; an unlisted warning becomes a shipped closed code (enrichment_warning_unrecognized on the single read; unknown_fields_withheld on the list read, which has no warnings key), not upstream_warning_replaced"
       ],
       "number": 13,
       "observed": {
@@ -1324,10 +1330,10 @@
         "device_id": "receipt 9.1.2 profile A+B",
         "disabled_by": "receipt 9.1.2 profile A+B",
         "enabled": "receipt 9.1.2 profile A+B",
-        "entity_entries": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:103-110 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
+        "entity_entries": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-69,83-98,103-110 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
         "entity_entry": "receipt 9.1.2 profile A+B",
         "entity_id": "receipt 9.1.2 profile A+B",
-        "errors": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:103-110 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
+        "errors": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-69,83-98,103-110 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
         "floor": "receipt 9.1.2 profile B",
         "hidden": "receipt 9.1.2 profile A+B",
         "hidden_by": "receipt 9.1.2 profile A+B",
@@ -1338,10 +1344,12 @@
         "options": "receipt 9.1.2 profile A+B",
         "original_device_class": "receipt 9.1.2 profile A+B",
         "original_name": "receipt 9.1.2 profile A+B",
+        "partial": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-69,83-98,103-110 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
         "platform": "receipt 9.1.2 profile A+B",
         "success": "receipt 9.1.2 profile A+B",
         "unique_id": "receipt 9.1.2 profile A+B",
-        "uses_device_name": "receipt 9.1.2 profile A+B"
+        "uses_device_name": "receipt 9.1.2 profile A+B",
+        "warnings": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-69,83-98,103-110 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)"
       },
       "calls": {
         "A/9.1.2": [
@@ -1450,7 +1458,7 @@
         "area": "receipt 9.1.2 profile B",
         "domain": "receipt 9.1.2 profile B",
         "entity_id": "receipt 9.1.2 profile A+B",
-        "exposed_entities": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:122-131 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
+        "exposed_entities": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-69,83-98,122-131 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
         "exposed_to": "receipt 9.1.2 profile A+B",
         "floor": "receipt 9.1.2 profile B",
         "friendly_name": "receipt 9.1.2 profile B",
@@ -1458,8 +1466,10 @@
         "is_exposed_anywhere": "receipt 9.1.2 profile A+B",
         "labels": "receipt 9.1.2 profile B",
         "note": "receipt 9.1.2 profile A+B",
+        "partial": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-69,83-98,122-131 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
         "state": "receipt 9.1.2 profile B",
-        "success": "receipt 9.1.2 profile A+B"
+        "success": "receipt 9.1.2 profile A+B",
+        "warnings": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-69,83-98,122-131 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)"
       },
       "calls": {
         "A/9.1.2": [
@@ -1915,7 +1925,7 @@
         "next_offset": "receipt 9.1.2 profile A+B",
         "offset": "receipt 9.1.2 profile A+B",
         "pagination": "receipt 9.1.2 profile A+B",
-        "partial": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:45-47,135-140 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
+        "partial": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-69,83-98,45-47,135-140 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
         "repair_count": "receipt 9.1.2 profile A+B",
         "repairs": "receipt 9.1.2 profile A+B",
         "severity": "receipt 9.1.2 profile A+B",
@@ -1932,7 +1942,8 @@
         "total_services": "receipt 9.1.2 profile A+B",
         "translation_key": "receipt 9.1.2 profile A+B",
         "truncated": "receipt 9.1.2 profile A+B",
-        "version": "receipt 9.1.2 profile A+B"
+        "version": "receipt 9.1.2 profile A+B",
+        "warnings": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-69,83-98,45-47,135-140 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)"
       },
       "calls": {
         "A/9.1.2": [
@@ -2170,10 +2181,10 @@
       "admitted": {
         "attributes": "receipt 9.1.2 profile A+B",
         "context": "receipt 9.1.2 profile A+B",
-        "count": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:189-205 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
+        "count": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-64,189-232 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
         "data": "receipt 9.1.2 profile A+B",
         "entity_id": "receipt 9.1.2 profile A+B",
-        "errors": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:189-205 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
+        "errors": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-64,189-232 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
         "home_assistant_timezone": "receipt 9.1.2 profile A+B",
         "id": "receipt 9.1.2 profile A+B",
         "last_changed": "receipt 9.1.2 profile A+B",
@@ -2182,12 +2193,13 @@
         "metadata": "receipt 9.1.2 profile A+B",
         "note": "receipt 9.1.2 profile A+B",
         "parent_id": "receipt 9.1.2 profile A+B",
-        "partial": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:189-205 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
+        "partial": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-64,189-232 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
         "state": "receipt 9.1.2 profile A+B",
-        "states": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:189-205 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
-        "success": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:189-205 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
+        "states": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-64,189-232 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
+        "success": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-64,189-232 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
         "timestamp_format": "receipt 9.1.2 profile A+B",
-        "user_id": "receipt 9.1.2 profile A+B"
+        "user_id": "receipt 9.1.2 profile A+B",
+        "warnings": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-64,189-232 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)"
       },
       "calls": {
         "A/9.1.2": [
@@ -2391,6 +2403,7 @@
         "icon": "receipt 9.1.2 profile A+B",
         "items": "receipt 9.1.2 profile A+B",
         "message": "receipt 9.1.2 profile A+B",
+        "partial": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-69,83-98,236-245 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
         "state": "receipt 9.1.2 profile A+B",
         "status": "receipt 9.1.2 profile A+B",
         "status_filter": "receipt 9.1.2 profile A+B",
@@ -2398,7 +2411,8 @@
         "summary": "receipt 9.1.2 profile A+B",
         "supported_features": "receipt 9.1.2 profile A+B",
         "todo_lists": "receipt 9.1.2 profile A+B",
-        "uid": "receipt 9.1.2 profile A+B"
+        "uid": "receipt 9.1.2 profile A+B",
+        "warnings": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-69,83-98,236-245 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)"
       },
       "calls": {
         "A/9.1.2": [
@@ -2489,11 +2503,13 @@
         "longitude": "receipt 9.1.2 profile A+B",
         "message": "receipt 9.1.2 profile A+B",
         "name": "receipt 9.1.2 profile A+B",
+        "partial": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-69,83-98,250-259 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
         "passive": "receipt 9.1.2 profile A+B",
         "persons": "research G ruling 2e (Q2, with a disclosure note)",
         "radius": "receipt 9.1.2 profile A+B",
         "source": "receipt 9.1.2 profile A+B",
         "success": "receipt 9.1.2 profile A+B",
+        "warnings": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-69,83-98,250-259 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
         "zone": "receipt 9.1.2 profile A+B",
         "zone_id": "receipt 9.1.2 profile A+B",
         "zones": "receipt 9.1.2 profile A+B"
@@ -2634,11 +2650,13 @@
         "name": "receipt 9.1.2 profile A+B",
         "orphaned_areas": "receipt 9.1.2 profile A+B",
         "orphaned_count": "receipt 9.1.2 profile A+B",
+        "partial": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-69,83-98,263-267 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
         "picture": "receipt 9.1.2 profile A+B",
         "success": "receipt 9.1.2 profile A+B",
         "temperature_entity_id": "receipt 9.1.2 profile A+B",
         "unassigned_areas": "receipt 9.1.2 profile A+B",
-        "unassigned_count": "receipt 9.1.2 profile A+B"
+        "unassigned_count": "receipt 9.1.2 profile A+B",
+        "warnings": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-69,83-98,263-267 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)"
       },
       "calls": {
         "A/9.1.2": [
@@ -2748,8 +2766,11 @@
         "name": "receipt 9.1.2 profile A+B",
         "next_offset": "receipt 9.1.2 profile A+B",
         "offset": "receipt 9.1.2 profile A+B",
+        "optional": "S10 recorded review: Core service response description, tools_services.py:581-585 at 51e3aac7, receipt A/9.2.0 v24-services-response (the only key of response)",
+        "partial": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-69,83-98,271-274 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
         "query": "receipt 9.1.2 profile A+B",
         "required": "receipt 9.1.2 profile A+B",
+        "response": "S10 recorded review: Core service response description, tools_services.py:581-585 at 51e3aac7, receipt A/9.2.0 v24-services-response",
         "selector": "receipt 9.1.2 profile A+B",
         "service": "receipt 9.1.2 profile A+B",
         "services": "receipt 9.1.2 profile A+B",
@@ -2757,7 +2778,8 @@
         "supported_features": "receipt 9.1.2 profile A+B",
         "target": "receipt 9.1.2 profile A+B",
         "total_count": "receipt 9.1.2 profile A+B",
-        "type": "receipt 9.1.2 profile A+B"
+        "type": "receipt 9.1.2 profile A+B",
+        "warnings": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:59-69,83-98,271-274 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)"
       },
       "calls": {
         "A/9.1.2": [
@@ -2826,8 +2848,8 @@
             "A",
             "B"
           ],
-          "source": "no recorded review",
-          "status": "withheld_pending_review"
+          "source": "S10 recorded review: Core service response description, tools_services.py:581-585 at 51e3aac7, receipt A/9.2.0 v24-services-response (the only key of response)",
+          "status": "admitted"
         },
         "response": {
           "observed_9_1_2_profiles": [],
@@ -2835,8 +2857,8 @@
             "A",
             "B"
           ],
-          "source": "no recorded review",
-          "status": "withheld_pending_review"
+          "source": "S10 recorded review: Core service response description, tools_services.py:581-585 at 51e3aac7, receipt A/9.2.0 v24-services-response",
+          "status": "admitted"
         }
       },
       "notes": [
@@ -3109,7 +3131,8 @@
     "engineering_added": [
       "fields_withheld",
       "fields_dropped_by_policy",
-      "upstream_warnings_replaced"
+      "upstream_warnings_replaced",
+      "engineering_notes"
     ],
     "open_containers_ruled": [
       "config",

@@ -41,13 +41,17 @@ CALL_DIRS = ('calls', 'calls-after-core-restart')
 YAML_DIRS = ('yaml-ordinary-user',)
 POINTER = '/exchange/response/result'
 
-ENGINEERING_ADDED = ('fields_withheld', 'fields_dropped_by_policy', 'upstream_warnings_replaced')
+ENGINEERING_ADDED = ('fields_withheld', 'fields_dropped_by_policy', 'upstream_warnings_replaced', 'engineering_notes')
 REPLACED_WARNING_CODE = 'upstream_warning_replaced'
 COUNT_CAP = 999
 # Item 11: integration- or user-defined content; the key is reviewed, its
 # contents pass as values within response bounds and are not counted.
 OPEN_RULED = ('config', 'attributes', 'selector', 'filter')
 PAGINATION = ('total_count', 'count', 'offset', 'limit', 'has_more', 'next_offset')
+# S10 recorded review (item 13): ha-mcp 9.2.0 copies Core's service response
+# description unchanged (tools_services.py:581-585 at 51e3aac7); receipt
+# A/9.2.0 v24-services-response shows calendar.get_events response {optional: false}.
+RESPONSE_REVIEW = 'S10 recorded review: Core service response description, tools_services.py:581-585 at 51e3aac7, receipt A/9.2.0 v24-services-response'
 SHIPPED_NOTE = 'interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt'
 
 C = f'{P}/upstream_reads_9_1_config.py'
@@ -55,6 +59,10 @@ E = f'{P}/upstream_reads_9_1_entities.py'
 H = f'{P}/upstream_history_9_1.py'
 PL = f'{P}/upstream_platform_reads.py'
 D = f'{P}/upstream_device_projection.py'
+# S10: the 9.1 entity envelope type-checks warnings (_check_warnings,
+# _success_envelope) and _generic reads partial and warnings for completeness.
+ENVELOPE = '59-69,83-98'
+GENERIC = ('warnings', 'partial')
 
 # Per read: number, upstream tool, projection kind, the reviewed specification.
 # "named": keys the shipped 9.1 projection requires or type-checks (file:line).
@@ -77,14 +85,14 @@ READS = {
     'ha_config_list_dashboard_resources': dict(n=7, upstream='ha_config_list_dashboard_resources', named=(f'{C}:251-281', (
         'action', 'resources', 'inline_count', 'by_type', 'content_truncated', 'content_truncation_note',
         'migration_hint', 'resource_mode', 'note') + PAGINATION), maps={'by_type': 1}),
-    'ha_config_list_groups': dict(n=8, upstream='ha_config_list_groups', named=(f'{C}:285-301', (
-        'groups', 'message', 'entity_id', 'object_id', 'entity_ids') + PAGINATION)),
+    'ha_config_list_groups': dict(n=8, upstream='ha_config_list_groups', named=(f'{C}:29,34,285-301', (
+        'groups', 'message', 'entity_id', 'object_id', 'entity_ids', 'all', 'unavailable_fields') + PAGINATION)),
     'ha_config_list_helpers': dict(n=9, upstream='ha_config_list_helpers', named=(f'{C}:316-327', (
         'helper_type', 'helpers', 'message', 'warnings') + PAGINATION),
         pending=('read_only', 'secret', 'later_forms'),
         notes=('describe=True is not exercised by the S6 receipts; read_only, secret and later_forms stay withheld until reviewed (research G 2f)',)),
     'ha_eval_template': dict(n=10, upstream='ha_eval_template', named=(f'{C}:333-345', (
-        'template', 'result', 'listeners', 'warnings')), open=('result',)),
+        'template', 'result', 'listeners', 'warnings', 'unavailable_fields')), open=('result',)),
     'ha_get_automation_traces': dict(n=11, upstream='ha_get_automation_traces', named=(f'{C}:354-390', (
         'automation_id', 'trace_count', 'total_available', 'offset', 'order', 'has_more', 'traces', 'hint',
         'diagnostics', 'run_id', 'timestamp', 'state'))),
@@ -92,11 +100,14 @@ READS = {
         notes=('shape-only validation today; the closed set is drafted from the 9.1.2 receipts',)),
     'ha_get_device': dict(n=13, upstream='ha_get_device', kind='rebuild', rebuild=(f'{D}:476-748', (
         '_ENTITY_KEYS', '_NODE_DIAGNOSTICS_KEYS', '_FABRIC_KEYS', '_DEVICE_KEYS', '_SINGLE_KEYS', '_LIST_KEYS', '_BRIDGE_KEYS')),
-        notes=('the shared device projection counts unknown keys per occurrence, not distinct names; kept as shipped on 9.2.0 (22:59 record, item 2)',)),
-    'ha_get_entity': dict(n=14, upstream='ha_get_entity', named=(f'{E}:103-110', (
-        'entity_entry', 'entity_entries', 'errors')), open=('options',), maps={'categories': 1}),
-    'ha_get_entity_exposure': dict(n=15, upstream='ha_get_entity_exposure', named=(f'{E}:122-131', (
-        'exposed_to', 'entity_id', 'exposed_entities')), maps={'exposed_to': 1}),
+        notes=('the shared device projection counts unknown keys per occurrence, not distinct names; kept as shipped on 9.2.0 (22:59 record, item 2)',
+               'N26 difference from ruling 10: fields_withheld is per occurrence and absent when zero; there is no fields_dropped_by_policy '
+               'or upstream_warnings_replaced; an unlisted warning becomes a shipped closed code (enrichment_warning_unrecognized on the '
+               'single read; unknown_fields_withheld on the list read, which has no warnings key), not upstream_warning_replaced',)),
+    'ha_get_entity': dict(n=14, upstream='ha_get_entity', named=(f'{E}:{ENVELOPE},103-110', (
+        'entity_entry', 'entity_entries', 'errors') + GENERIC), open=('options',), maps={'categories': 1}),
+    'ha_get_entity_exposure': dict(n=15, upstream='ha_get_entity_exposure', named=(f'{E}:{ENVELOPE},122-131', (
+        'exposed_to', 'entity_id', 'exposed_entities') + GENERIC), maps={'exposed_to': 1}),
     'ha_get_history': dict(n=16, upstream='ha_get_history', named=(f'{H}:37-52,206-224,243-245,331-332,421,498-505', (
         'data', 'metadata', 'warnings', 'success', 'source', 'entities', 'period', 'query_params',
         'period_type', 'time_range', 'statistic_types', 'entity_id', 'states', 'statistics',
@@ -108,30 +119,30 @@ READS = {
         notes=('on 9.2.0 an unknown key is withheld and counted, not a whole-read refusal (item 7); offset-free start and end times are refused (research G 2a)',
                f'policy drops are the shipped 8.5-parity drops of {H}:17-20,329-339,388-396 (S9 correction, pending ruling)',
                'a statistics row keeps start and the requested types; its end is removed too, but the name stays admitted through period and time_range, so distinct-name counts do not include it')),
-    'ha_get_overview': dict(n=17, upstream='ha_get_overview', named=(f'{E}:45-47,135-140', (
-        'system_summary', 'domain_stats', 'area_analysis', 'ai_insights', 'partial')),
+    'ha_get_overview': dict(n=17, upstream='ha_get_overview', named=(f'{E}:{ENVELOPE},45-47,135-140', (
+        'system_summary', 'domain_stats', 'area_analysis', 'ai_insights') + GENERIC),
         drops=('mcp_client', 'tool_discovery', 'settings_url', 'settings_url_hint', 'python_required', 'upgrade_command'),
         maps={'domain_stats': 1, 'area_analysis': 1, 'states_summary': 1, 'domains': 1},
         ruled={'name': 'research G ruling 2d (overview rows)'},
         notes=('ha_mcp_update is closed to current, latest and update_available; python_required and upgrade_command are policy drops (research G 2d, non-add-on installs only)',)),
     'ha_get_skill_guide': dict(n=18, upstream='ha_get_skill_guide', kind='rebuild', rebuild=(f'{E}:157-179', (
         'skill_content_hint', 'success', 'skill', 'file', 'uri', 'content')), drops=('how_to_use',)),
-    'ha_get_state': dict(n=19, upstream='ha_get_state', named=(f'{E}:189-205', (
-        'data', 'metadata', 'states', 'success', 'count', 'errors', 'partial', 'attributes'))),
+    'ha_get_state': dict(n=19, upstream='ha_get_state', named=(f'{E}:59-64,189-232', (
+        'data', 'metadata', 'states', 'success', 'count', 'errors', 'partial', 'attributes', 'warnings'))),
     'ha_get_system_health': dict(n=20, upstream='ha_get_system_health', kind='rebuild', rebuild=(f'{PL}:415-431,475-610', (
         '_PLATFORM_KEYS',)), open=('info',), maps={'data': 1},
         consumed=('success', 'baseline_available', 'health_info', 'type', 'data', 'info', 'warnings'),
         notes=('domains outside homeassistant, hassio and cloud become other_domains; proposed count unit: qualified domain.key names (pending ruling)',)),
-    'ha_get_todo': dict(n=21, upstream='ha_get_todo', named=(f'{E}:236-245', ('todo_lists', 'items', 'entity_id'))),
-    'ha_get_zone': dict(n=22, upstream='ha_get_zone', named=(f'{E}:250-259', ('zones', 'zone')),
+    'ha_get_todo': dict(n=21, upstream='ha_get_todo', named=(f'{E}:{ENVELOPE},236-245', ('todo_lists', 'items', 'entity_id') + GENERIC)),
+    'ha_get_zone': dict(n=22, upstream='ha_get_zone', named=(f'{E}:{ENVELOPE},250-259', ('zones', 'zone') + GENERIC),
         ruled={'entity_icon': 'research G ruling 2e', 'persons': 'research G ruling 2e (Q2, with a disclosure note)',
                'device_trackers': 'research G ruling 2e (Q2, with a disclosure note)'},
         notes=('friendly_name is gone from YAML and home zone rows upstream; Engineering restores it from name on 9.2.0 (item 15); the changed icon meaning is documented (research G 2e)',)),
-    'ha_list_floors_areas': dict(n=23, upstream='ha_list_floors_areas', named=(f'{E}:263-267', (
-        'floors', 'unassigned_areas', 'orphaned_areas'))),
-    'ha_list_services': dict(n=24, upstream='ha_list_services', named=(f'{E}:271-274', ('services',)),
+    'ha_list_floors_areas': dict(n=23, upstream='ha_list_floors_areas', named=(f'{E}:{ENVELOPE},263-267', (
+        'floors', 'unassigned_areas', 'orphaned_areas') + GENERIC)),
+    'ha_list_services': dict(n=24, upstream='ha_list_services', named=(f'{E}:{ENVELOPE},271-274', ('services',) + GENERIC),
         open=('example', 'default'), maps={'services': 1, 'fields': 1},
-        pending=('response', 'optional'),
+        ruled={'response': RESPONSE_REVIEW, 'optional': RESPONSE_REVIEW + ' (the only key of response)'},
         notes=('type is removed upstream and not synthesized (item 15); language now follows Core with an English fallback warning, matched by a reviewed fixed prefix (research G 2b)',)),
     'ha_search': dict(n=25, upstream='ha_search', named=(f'{E}:49-51,282-290', (
         'partial', 'errors', 'warnings', 'entities', 'automations', 'scripts', 'scenes', 'helpers', 'dashboards')),
@@ -153,6 +164,11 @@ PROPOSALS = (
     'reviewed warnings are the exact upstream strings observed in the 9.1.2 receipts; the upstream source-string review is deferred',
     'ha_get_history keeps the shipped 8.5-parity projection on 9.2.0; the keys it drops (summary, statistics_metadata, '
     'unit_source, unit_reason, last_reset) are policy drops counted in fields_dropped_by_policy (S9 correction of the S7 row)',
+    'S10 correction: rows name the keys their shipped 9.1 projection type-checks or reads for completeness: warnings and '
+    'partial on the entity envelope rows, all and unavailable_fields on groups, unavailable_fields on template',
+    'S10: engineering_notes is Engineering-added (the zone location and icon notes, the services type note, item 14 and 15); '
+    'response and optional on ha_list_services are admitted on a recorded review (item 13); collapsed, filter and '
+    'integration stay withheld pending review',
 )
 
 
