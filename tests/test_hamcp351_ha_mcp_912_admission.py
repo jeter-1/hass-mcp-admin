@@ -114,7 +114,7 @@ class RegistryIdentityTests(unittest.TestCase):
         self.assertEqual(kept.entry_id, "ha-mcp-v9.1.0-4259f247")
         self.assertFalse(kept.revoked)
         self.assertNotIn("9.1.1", REGISTRY.by_version)
-        self.assertEqual(USED_TOOL_ADMISSION_RELEASES, frozenset({"9.1.0", "9.1.2"}))
+        self.assertEqual(USED_TOOL_ADMISSION_RELEASES, frozenset({"9.1.0", "9.1.2", "9.2.0"}))  # HAMCP-371 appends 9.2.0
 
     def test_provider_dispositions_equal_910(self):
         self.assertEqual(REGISTRY.by_version["9.1.2"].provider_dispositions,

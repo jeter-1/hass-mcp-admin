@@ -208,6 +208,7 @@ def expected_contract_family(upstream_version: str) -> str:
             "8.6.0",
             "9.1.0",
             "9.1.2",
+            "9.2.0",
         }
         else CONTRACT_FAMILY
     )

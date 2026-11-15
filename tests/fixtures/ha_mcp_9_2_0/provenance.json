@@ -1483,10 +1483,10 @@
   "provenance_model": "hamcp371-fixture-provenance-v1",
   "source_files": {
     "docs/evidence/hamcp371/s7/generate_output_key_contract.py": "9c1d26dd03ca908dc34a1a15d7bbf16dae964268821d25835f34640a5872e25c",
-    "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_blueprint.py": "47cf88d38ea75c4a7af58fcf36d058412f8309f5eeeb2afd3212bb3a409ec55c",
-    "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py": "af639164da20d834635ebf1595a9ccbd4fd84735528c8734f15021b7ebb2fc5c",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_blueprint.py": "13bb700ae6c344f48b761174eba889f7127fc6cd12a09fe679ddcad4e96ea862",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py": "0663f89c33c95e3d9185be2c68a33dcc6f77a2cd7672b24645623a636897e68a",
     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_history_9_1.py": "8b6263cefc05c05fe497ce980860d8270c43bc4a424493e0606798d809a1309f",
-    "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py": "fe58f8b8515c68907ef350a55630cf9eea6d78de3252f91ceadd980bff8ad695",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py": "edf9be752f1aa47ac7144305358d5892e18db9822548d73b9785faa43af80cda",
     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py": "0b2e59af9732a222e0c076f011d65e4fc6ae46d996d272691c44c7c0ae632388",
     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py": "37886071e3b0074b3fb90138a2e9e4efeb9f899e574d3de7ae419ea759a7340a"
   },

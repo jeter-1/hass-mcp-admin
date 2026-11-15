@@ -107,9 +107,14 @@ class _Transport(_GatewayTransport):
         return replace(exchange, call_result=deepcopy(self.override))
 
 
-async def _replay(version, cases):
-    """[(public tool, public arguments, upstream result)] -> [(output, sent)]."""
-    transport = _Transport(previous.capture(version)['tools'], version)
+async def _replay(version, cases, tools=None):
+    """[(public tool, public arguments, upstream result)] -> [(output, sent)].
+
+    ``tools`` defaults to the stock registry capture (no optional tools).
+    """
+    if tools is None:
+        tools = previous.capture(version)['tools']
+    transport = _Transport(tools, version)
     gateway = UpstreamReadGateway()
     gateway.configure(
         replace(_settings('synthetic-no-key'), ha_mcp_release_registry_enabled=False),
@@ -130,8 +135,8 @@ async def _replay(version, cases):
     return outputs
 
 
-def replay(version, cases):
-    return asyncio.run(_replay(version, cases))
+def replay(version, cases, tools=None):
+    return asyncio.run(_replay(version, cases, tools))
 
 
 class ReceiptIntegrity(unittest.TestCase):
@@ -484,12 +489,21 @@ class RealCoreReplay920(unittest.TestCase):
 class YamlReadN29(unittest.TestCase):
     """N29 conditions (a) and (b) on the 9.2.0 YAML read (profile B receipts)."""
 
+    def _catalog(self):
+        # The stock capture does not advertise the optional YAML read, so the
+        # replay serves the exact filesystem-on 9.2.0 catalog the YAML reader
+        # binds (upstream_yaml_reader._CAPTURES), after its sha256 is checked.
+        from ha_mcp_engineering.providers import upstream_yaml_reader
+        _source, path, digest = upstream_yaml_reader._CAPTURES['9.2.0']
+        self.assertEqual(sha(ROOT / path), digest)
+        return json.loads((ROOT / path).read_text(encoding='utf-8'))['tools']
+
     def _yaml(self, sub):
         calls = list(public_calls('B/9.2.0', sub, kinds=('yaml',)))
         return calls, replay('9.2.0', [
             (c['public_tool'], c['public_arguments'], r['exchange']['response']['result'])
             for c, r in calls
-        ])
+        ], self._catalog())
 
     def test_administrator_read_succeeds_with_non_ascii_content(self):
         calls, outputs = self._yaml('calls')

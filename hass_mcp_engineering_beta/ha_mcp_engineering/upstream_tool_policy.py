@@ -75,6 +75,9 @@ EXACT_RUNTIME_TOOL_ORDER_FINGERPRINTS = {
     "9.1.0": "0aab73755d36e877b4ae6ed35683e7232974b04c98edb4fb4a0ea1f0bc8f6c8e",
     # HAMCP-351: exact 9.1.2 advertises the same 77 names in the same order.
     "9.1.2": "0aab73755d36e877b4ae6ed35683e7232974b04c98edb4fb4a0ea1f0bc8f6c8e",
+    # HAMCP-371: exact 9.2.0 advertises the same 77 names in the same order
+    # (docs/evidence/hamcp371/s4/ha-mcp-9.2.0/observation.json).
+    "9.2.0": "0aab73755d36e877b4ae6ed35683e7232974b04c98edb4fb4a0ea1f0bc8f6c8e",
     "8.6.0": "0aab73755d36e877b4ae6ed35683e7232974b04c98edb4fb4a0ea1f0bc8f6c8e",
     "8.5.0": "0aab73755d36e877b4ae6ed35683e7232974b04c98edb4fb4a0ea1f0bc8f6c8e",
     "8.4.1": "b78ae4ddde97e9db9250830c96a666fbaa8561abe747fcab1223d43754bead34",
@@ -87,8 +90,9 @@ EXACT_RUNTIME_TOOL_ORDER_FINGERPRINTS = {
 # and the CI exact-image lanes keep the strict full-catalog comparison.
 # 9.1.0 only: the pre-existing order gate of every other release, 8.5.0
 # included, is deliberately unchanged (architect ruling 2026-11-08: outside
-# #406 scope). HAMCP-351 adds exact 9.1.2 under the same used-tool rule.
-USED_TOOL_ADMISSION_RELEASES = frozenset({"9.1.0", "9.1.2"})
+# #406 scope). HAMCP-351 adds exact 9.1.2 and HAMCP-371 exact 9.2.0 under the
+# same used-tool rule.
+USED_TOOL_ADMISSION_RELEASES = frozenset({"9.1.0", "9.1.2", "9.2.0"})
 STRICT_FULL_CONTRACT_FINGERPRINT_MODEL_V1 = (
     "ha-mcp-strict-full-contract-v1"
 )
@@ -1369,6 +1373,7 @@ def load_upstream_tool_policy(
     )
     from .providers.upstream_reads_8_6 import ADAPTER as READ_ADAPTER, SOURCE as READ_SOURCE, is_adapter
     from .providers import upstream_reads_9_1 as reads_9_1
+    from .providers import upstream_reads_9_2 as reads_9_2
     from .providers.upstream_search_8_6 import ADAPTER as SEARCH_ADAPTER, is_search_entry
     from .providers.upstream_yaml_reader import ADAPTER_TOKENS as YAML_ADAPTERS, ALL_OPTIONAL_NAMES
     for entry in entries:
@@ -1407,6 +1412,14 @@ def load_upstream_tool_policy(
             reads_9_1.adapter_release(entry) != named_9_1
             or expected_version != named_9_1
             or expected_source_commit != reads_9_1.RELEASES[named_9_1][1]
+        ):
+            raise UpstreamToolPolicyError("policy_uncompiled_read_adapter")
+        # HAMCP-371: the second gate, for the separate 9.2.0 adapter module.
+        named_9_2 = reads_9_2.names_adapter(entry)
+        if named_9_2 is not None and (
+            reads_9_2.adapter_release(entry) != named_9_2
+            or expected_version != named_9_2
+            or expected_source_commit != reads_9_2.RELEASES[named_9_2][1]
         ):
             raise UpstreamToolPolicyError("policy_uncompiled_read_adapter")
     if len(entries) != stock_tool_count:
@@ -2467,10 +2480,10 @@ def _reviewed_artifact_evidence(
     )
     addon_tools = json.loads(canonical_json(standalone_tools))
     policy_differences = []
-    # 8.6.0, 9.1.0 and 9.1.2 publish no private ``_meta.ha_mcp.policy`` block;
-    # their exact standalone and app catalogs are byte-identical (HAMCP-319 and
-    # HAMCP-351 captures).
-    if release.version not in {"8.6.0", "9.1.0", "9.1.2"}:
+    # 8.6.0, 9.1.0, 9.1.2 and 9.2.0 publish no private ``_meta.ha_mcp.policy``
+    # block; their exact standalone and app catalogs are byte-identical
+    # (HAMCP-319, HAMCP-351 and HAMCP-371 profiles-1/profiles-2 captures).
+    if release.version not in {"8.6.0", "9.1.0", "9.1.2", "9.2.0"}:
         for tool in addon_tools:
             policy_state = tool["_meta"]["ha_mcp"]["policy"]
             policy_state.update(
