@@ -1,0 +1,103 @@
+{
+ "arguments_built_by": "harness, sent as written",
+ "calls_format_version": 1,
+ "exchange": {
+  "body_bytes": 488,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":103,\"result\":{\"content\":[{\"text\":\"{\\n  \\\"success\\\": false,\\n  \\\"error\\\": {\\n    \\\"code\\\": \\\"RESOURCE_NOT_FOUND\\\",\\n    \\\"message\\\": \\\"Automation not found: compatibility_review_missing_automation\\\",\\n    \\\"suggestion\\\": \\\"Use ha_search(domain_filter='automation') to find existing automations\\\"\\n  },\\n  \\\"automation_id\\\": \\\"compatibility_review_missing_automation\\\",\\n  \\\"available_automation_ids\\\": []\\n}\",\"type\":\"text\"}],\"isError\":true}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 103,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\n  \"success\": false,\n  \"error\": {\n    \"code\": \"RESOURCE_NOT_FOUND\",\n    \"message\": \"Automation not found: compatibility_review_missing_automation\",\n    \"suggestion\": \"Use ha_search(domain_filter='automation') to find existing automations\"\n  },\n  \"automation_id\": \"compatibility_review_missing_automation\",\n  \"available_automation_ids\": []\n}",
+       "type": "text"
+      }
+     ],
+     "isError": true
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 103,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "identifier": "compatibility_review_missing_automation"
+     },
+     "name": "ha_config_get_automation"
+    }
+   },
+   "method": "POST",
+   "path": "/mcp"
+  },
+  "response": {
+   "id": 103,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\n  \"success\": false,\n  \"error\": {\n    \"code\": \"RESOURCE_NOT_FOUND\",\n    \"message\": \"Automation not found: compatibility_review_missing_automation\",\n    \"suggestion\": \"Use ha_search(domain_filter='automation') to find existing automations\"\n  },\n  \"automation_id\": \"compatibility_review_missing_automation\",\n  \"available_automation_ids\": []\n}",
+      "type": "text"
+     }
+    ],
+    "isError": true
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Sun, 15 Nov 2026 13:06:03 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null,
+ "group": "review_probes",
+ "id": "e-missing-automation",
+ "idle": false,
+ "kind": "upstream",
+ "new_session": false,
+ "public_arguments": {
+  "identifier": "compatibility_review_missing_automation"
+ },
+ "public_tool": "ha_config_get_automation",
+ "upstream_tool": "ha_config_get_automation",
+ "wire_arguments": {
+  "identifier": "compatibility_review_missing_automation"
+ }
+}
