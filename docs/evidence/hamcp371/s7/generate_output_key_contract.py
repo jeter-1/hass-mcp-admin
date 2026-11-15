@@ -57,7 +57,36 @@ PLATFORM_STRUCTURE = (
 # description unchanged (tools_services.py:581-585 at 51e3aac7); receipt
 # A/9.2.0 v24-services-response shows calendar.get_events response {optional: false}.
 RESPONSE_REVIEW = 'S10 recorded review: Core service response description, tools_services.py:581-585 at 51e3aac7, receipt A/9.2.0 v24-services-response'
-SHIPPED_NOTE = 'interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt'
+# S10 E1-R (2026-11-15 14:45 ruling): a key named only by the shipped 9.1 code
+# stays only with the 9.2.0 upstream line that can write it on that read
+# (ha-mcp 51e3aac7, src/ha_mcp/tools/; call paths in the S10 README). A named
+# key with neither a 9.1.2 receipt nor a citation stops the build.
+E1R = 'E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/'
+E1R_SOURCES = {
+    'ha_config_get_category': {'category': 'tools_categories.py:124'},
+    'ha_config_get_label': {'label': 'tools_labels.py:647'},
+    'ha_config_get_scene': {'category': 'tools_config_scenes.py:455', 'warnings': 'tools_config_scenes.py:457'},
+    'ha_config_get_script': {'warnings': 'tools_config_scripts.py:255'},
+    'ha_config_list_dashboard_resources': {
+        'content_truncated': 'tools_resources.py:265', 'content_truncation_note': 'tools_resources.py:266',
+        'migration_hint': 'tools_resources.py:274', 'note': 'tools_resources.py:279'},
+    'ha_config_list_helpers': {'warnings': 'config_helpers/listing.py:231 (also :182)'},
+    'ha_eval_template': {'warnings': 'tools_utility.py:163'},
+    'ha_get_automation_traces': {'diagnostics': 'tools_traces.py:596'},
+    'ha_get_entity': {'entity_entries': 'tools_entities.py:1997', 'errors': 'tools_entities.py:2000'},
+    'ha_get_entity_exposure': {'exposed_entities': 'tools_voice_assistant.py:191'},
+    'ha_get_history': {
+        'attributes': 'history_response.py:10,36',
+        'max': 'statistics_helpers.py:74,84; Core 74cf5a49 recorder/statistics.py:344',
+        'mean': 'statistics_helpers.py:74,84; Core 74cf5a49 recorder/statistics.py:342',
+        'min': 'statistics_helpers.py:74,84; Core 74cf5a49 recorder/statistics.py:343',
+        'warnings': 'tools_history.py:984,1099'},
+    'ha_get_overview': {'partial': 'smart_search/_overview.py:556'},
+    'ha_get_state': {
+        'success': 'search/state.py:89', 'count': 'search/state.py:90', 'states': 'search/state.py:91',
+        'errors': 'search/state.py:102', 'partial': 'search/state.py:109'},
+    'ha_search': {'dashboards': 'search/component.py:523', 'warnings': 'search/modes.py:688'},
+}
 
 C = f'{P}/upstream_reads_9_1_config.py'
 E = f'{P}/upstream_reads_9_1_entities.py'
@@ -105,7 +134,10 @@ READS = {
         'automation_id', 'trace_count', 'total_available', 'offset', 'order', 'has_more', 'traces', 'hint',
         'diagnostics', 'run_id', 'timestamp', 'state'))),
     'ha_get_blueprint': dict(n=12, upstream='ha_manage_blueprints', named=(f'{P}/upstream_blueprint.py:81-105', ()),
-        notes=('shape-only validation today; the closed set is drafted from the 9.1.2 receipts',)),
+        notes=('shape-only validation on 8.x and 9.1.x (HAMCP-402); the closed set is drafted from the 9.1.2 receipts',
+               'D5-B: on 9.2.0 a key directly under data outside upstream_reads_9_2_blueprint LIST_KEYS (capture) or GET_KEYS '
+               '(source review of tools_blueprints.py at 51e3aac7) is refused as invalid_response and never counted; nested keys, '
+               'config and yaml are not closed, and a key at the payload top level passes as shipped',)),
     'ha_get_device': dict(n=13, upstream='ha_get_device', kind='rebuild', rebuild=(f'{D}:476-748', (
         '_ENTITY_KEYS', '_NODE_DIAGNOSTICS_KEYS', '_FABRIC_KEYS', '_DEVICE_KEYS', '_SINGLE_KEYS', '_LIST_KEYS', '_BRIDGE_KEYS')),
         notes=('the shared device projection counts unknown keys per occurrence, not distinct names; kept as shipped on 9.2.0 (22:59 record, item 2)',
@@ -179,7 +211,8 @@ PROPOSALS = (
     'states_summary, domains (overview), exposed_to, categories, by_type, data (system health)',
     'extra open containers: capabilities and options (automation entity, entity registry), result (template), '
     'info (system health), example and default (service fields)',
-    'keys named by the shipped 9.1 projections but not observed in a 9.1.2 receipt are admitted with that source',
+    'S10 E1-R (2026-11-15 14:45 ruling): a key named by the shipped 9.1 projections but not observed in a 9.1.2 receipt '
+    'stays only as a source-review key, cited to the 9.2.0 upstream line that can write it; none is observed in a lane receipt',
     'reviewed warnings are the exact upstream strings observed in the 9.1.2 receipts; the upstream source-string review is deferred',
     'ha_get_history keeps the shipped 8.5-parity projection on 9.2.0; the keys it drops (summary, statistics_metadata, '
     'unit_source, unit_reason, last_reset) are policy drops counted in fields_dropped_by_policy (S9 correction of the S7 row)',
@@ -366,7 +399,12 @@ def build():
                 admitted[name] = 'receipt 9.1.2 profile ' + '+'.join(sorted(observed['9.1.2'][name]))
             source, named = s['named']
             for name in named:
-                admitted.setdefault(name, f'{source} ({SHIPPED_NOTE})')
+                if name in admitted or name in s.get('ruled', {}):
+                    continue
+                cite = E1R_SOURCES.get(tool, {}).get(name)
+                if cite is None:
+                    raise SystemExit(f'E1-R: {tool}.{name} has neither a receipt nor a 9.2.0 citation')
+                admitted[name] = f'{E1R}{cite} (source-review key; shipped {source})'
             for name, ruling in s.get('ruled', {}).items():
                 admitted[name] = ruling
         else:

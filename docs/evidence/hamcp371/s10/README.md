@@ -8,8 +8,10 @@ the dashboard getter's counts and warning rule behind one 9.2.0 gate (N30).
 The architect's rulings of 2026-11-15 13:25 CST, relayed by Josh, accepted S9
 (`31f35229`) and the first S10 commit (`265168bf`) with evidence conditions
 E1 to E3, ruled D5 (question S10-1) and ruled S10-2. The second S10 commit
-records E1 to E3 below and adds the D5 platform gate and the S10-2 value
-types. **D5 for the blueprint read is not done: see question D5-B.**
+(`34abf281`) recorded E1 to E3 and added the D5 platform gate and the S10-2
+value types. The architect's rulings of 2026-11-15 14:45 CST, relayed by Josh,
+accepted `34abf281` and ruled the three questions it raised: D5-B, T129 and
+E1-R. This third S10 commit carries out those rulings.
 
 This is a local candidate only. Nothing was signed, published, pushed or
 deployed, and no Home Assistant instance was accessed.
@@ -17,123 +19,224 @@ deployed, and no Home Assistant instance was accessed.
 ## Rulings record
 
 - **S10-1** is answered by D5 (Josh's ruling by relaying the 13:25 block).
-  Platform reads: done (section D5 below). Blueprint: blocked (question D5-B).
+  Platform reads: done (section D5). Blueprint: done under D5-B (section
+  D5-B).
 - **S10-2** is ruled: `integration` (in `target.entity[]` filters) is admitted
   as a string and `collapsed` (on field sections) as a boolean, as Core keys
   copied unchanged. Any other value type is withheld and counted. Done
-  (section S10-2 below).
+  (section S10-2).
 - **New register row**: HAMCP-402 (on `main`, `upstream_blueprint.validate_result`
   validates but does not project, so unknown top-level keys under `data` pass
   through on every admitted version, including live 8.5.0). It was filed with
   Status Proposed; Josh sets the priority (the architect proposes Medium).
+  D5-B closes the keys under `data` on 9.2.0 only; HAMCP-402 still owns 8.x,
+  9.1.x and the payload top level.
+- **14:45 correction** (architect, verbatim): "D5's blueprint part granted a
+  version gate inside validate_result without checking that its signature
+  carries no version. As ruled, it could not be built. The stop was correct."
+- **D5-B** is ruled (a), as one bounded exception: done (section D5-B).
+- **T129** is ruled (a), with the list made complete first: done (section
+  T129).
+- **E1-R** is ruled: done (section E1-R).
 
-## Rulings questions for Josh (S10 stops here; S11 waits on D5-B)
+The 14:45 rulings are held verbatim in
+`~/handoffs/hass-mcp-admin-agent-release-2.7.0.md` (section "Architect
+rulings 2026-11-15 14:45 CST on 34abf281"), a local handoff file.
 
-**Question D5-B (blueprint gate cannot learn the version).** D5 grants "one
-exact-9.2.0 gate and one call in each of `upstream_platform_reads.project_result`
-and `upstream_blueprint.validate_result`. No other change in either file." The
-platform gate is possible because `project_result(entry, payload, arguments)`
-receives the policy entry, whose binding names the version. The blueprint
-function does not:
+## D5-B: the blueprint read on 9.2.0
 
-- `upstream_blueprint.validate_result(payload, arguments)`
-  (`upstream_blueprint.py:81-100`) takes only the upstream payload and the
-  public arguments. Neither carries the ha-mcp version.
-- The gateway calls it as `validate_blueprint_result(payload, arguments)` at
-  `upstream_read_gateway.py:4253-4257`, after `is_blueprint_adapter(policy_entry)`,
-  and does not pass `policy_entry`.
-- No request-scoped value carries the version: the only context variables in
-  the Engineering package are request telemetry, provider-send observers,
-  dependency, F3, helper-value and device-configuration state (searched with
-  `grep -rn ContextVar`).
+The ruling, in part (verbatim): "Gateway: change only the call
+validate_blueprint_result(payload, arguments) (main :4225; cite the branch
+line) to also pass policy_entry. No other gateway change." and
+"upstream_blueprint.py: validate_result takes policy_entry, and its body adds
+one exact-9.2.0 gate and one call to a 9.2 validator in a new module."
 
-So a 9.2.0 gate inside `validate_result` cannot be written within the grant.
-The options, none of which is authorized now:
+Runtime changes (all under `P` = `hass_mcp_engineering_beta/ha_mcp_engineering/`):
 
-- (a) One gateway edit at `:4255` that passes `policy_entry` (or its version)
-  to the blueprint validator, plus the matching signature in
-  `upstream_blueprint.py`. This is a fifth gateway change, which the R1 rule
-  makes a stop and report, and a second change in `upstream_blueprint.py`
-  beyond the one gate and call.
-- (b) A version-selecting change in `upstream_blueprint.py` only, for example
-  a new function that `is_blueprint_adapter` or `validate_result` reaches
-  through the entry. The gateway passes no entry to `validate_result`, so this
-  also needs the gateway, and "No other change" forbids it.
-- (c) Leave 9.2.0 blueprint on its shipped behaviour in HAMCP-371 (unknown
-  top-level keys under `data` pass through, as on every admitted version
-  today) and fix all versions together in HAMCP-402, which has the same
-  version-input problem.
+| File | Change |
+| --- | --- |
+| `P/providers/upstream_read_gateway.py:4255` (main `:4225`) | `validate_blueprint_result(payload, arguments)` becomes `validate_blueprint_result(payload, arguments, policy_entry)`. The only gateway change; the fifth and last authorized gateway edit. |
+| `P/providers/upstream_blueprint.py:9` | one import: `from . import upstream_reads_9_2_blueprint as _blueprint_9_2` |
+| `P/providers/upstream_blueprint.py:89` | signature: `def validate_result(payload, arguments: dict, policy_entry) -> None:` |
+| `P/providers/upstream_blueprint.py:112-114` | at the end of the body, after every shipped check: a one-line comment, the gate `if ADAPTER_BINDINGS[policy_entry.argument_restrictions[0]][0] in _blueprint_9_2.RELEASES:` and the call `_blueprint_9_2.validate(payload, expected["action"])` |
+| `P/providers/upstream_reads_9_2_blueprint.py` (new) | `RELEASES = {"9.2.0"}`, `LIST_KEYS`, `GET_KEYS` and `validate`, which raises `ValueError("blueprint_read_response_key_unreviewed")` for any key directly under `data` outside the set for the mode. It never changes the payload. |
 
-Recommendation (inference): (a), ruled as one bounded gateway exception
-naming the line, because (c) admits 9.2.0 with the pass-through D5 meant to
-close, and HAMCP-402 will need the same version input for 8.x and 9.1.x.
+Behaviour:
 
-Facts for the ruling:
+- On 9.2.0, list and get mode, with and without the component: a key directly
+  under `data` outside the reviewed set is refused through the existing path
+  (`ValueError`, which the gateway reports as `invalid_response`, never
+  counted). `config` and `yaml` stay open as user content; nested keys are not
+  closed.
+- 8.x and 9.1.x: unchanged. The gate reads the version from the entry's
+  adapter binding; no other binding reaches the new module (test
+  `SharedGate.test_every_other_binding_never_calls_the_module`).
+- A key at the payload top level, outside `data`, is not covered by the
+  ruling and passes as shipped on every version, 9.2.0 included. HAMCP-402
+  owns it.
 
-- Only list mode is captured on 9.2.0 (`r12-blueprints`, `{"domain": ...}`).
-  There is no 9.2.0 get-mode receipt, so the "reviewed 9.2.0 set ... captured
-  with and without the component" exists for list mode only. Get mode would
-  rest on the source review of `tools_blueprints.py` at `51e3aac7` (the file
-  is unchanged from 9.1.2), not on a capture.
-- D5's refusal (`ValueError`, then `invalid_response`) produces no count
-  fields. HAMCP-371's replay test still expects `fields_withheld` on r12
-  (2 errors in `test_admitted_keys_and_withheld_counts`) and injects its key
-  at the top level of the payload, outside `data` (1 failure in
-  `test_an_injected_key_is_withheld_and_counted_once_per_name`). Under (a)
-  those expectations change to a refusal test for a key under `data` and an
-  unchanged top-level case; the change is to HAMCP-371's own test.
+Key sets:
 
-Until D5-B is ruled the 3 r12 subtests stay failing, not marked expected.
+- `LIST_KEYS = {domain, count, blueprints}` is the 9.2.0 capture: every
+  `r12-blueprints` receipt (profile A without the component, profile B with
+  component 9.2.0) has exactly these keys under `data`. It matches
+  `_format_blueprint_list` (`src/ha_mcp/tools/tools_blueprints.py:123-127`
+  at `51e3aac7`).
+- `GET_KEYS = {path, domain, name, metadata, inputs, used_by, config, yaml,
+  yaml_source}` is a **source-review key set**, not a capture: the lane has no
+  9.2.0 get-mode receipt. Source: `_get_blueprint` and
+  `_merge_blueprint_body` in `src/ha_mcp/tools/tools_blueprints.py` at
+  `51e3aac7` (byte-identical to 9.1.2 `bab615df`): `path`, `domain`, `name`
+  (:449-455), `metadata` (:461), `inputs` (:470), `used_by` (:482), `config`
+  (:696), `yaml` and `yaml_source` (:698-699).
+- **SR requirement (ruled):** SR includes `ha_get_blueprint` get mode on a
+  default Core blueprint, with the component. If that read is refused, SR
+  stops and reports.
 
-**Question T129 (six shipped tests have failed since S8).** Six unmodified
-shipped test modules fail on this branch. Each passes at `origin/main`
-`e741f2ed`, and fails at S8 `eb6c6b32` and on the current tree. Five were
-also run at `9e91000a`, the parent of S8, and pass there
-(`test_upstream_release_registry` was not run there). In every case the cause is the S8 9.2.0 registry row
-(list A row 8): each test pins the reviewed version set, a per-version table,
-or the list of policy files it copies into a temporary tree. HAMCP-351 edited
-the same files for 9.1.2 (`bcdff105`). The six were outside the S9 regression
-set of 28 modules, so S8 and S9 did not report them; the S10 sweep found them.
+Tests:
 
-| Module | Failing tests | Cause (file:line) |
+- The shipped blueprint and gateway tests pass unmodified (Validation).
+- `tests/test_hamcp371_blueprint_9_2.py` (new, 11 tests): the module's sets,
+  refusal and non-mutation; the shared gate on every binding; and the real
+  gateway replayed on the stock registry capture of 9.2.0, 9.1.2 and 8.5.0
+  with the committed `r12-blueprints` receipts and a synthetic get answer per
+  profile. A key injected under `data` is refused on 9.2.0 in list and get
+  mode and passes as before on 9.1.2 and 8.5.0. The top-level case gives the
+  same result on all three. The get answers are synthetic, shaped from the
+  source review.
+- Mutation check (not committed): with `RELEASES` emptied, 7 tests fail across
+  the two modules (the four 9.2.0 refusal subtests, the set and gate tests,
+  and the r12 replay subtest), so the refusal tests detect a disabled gate.
+- The 3 r12 subtests of `tests/test_hamcp371_real_core_replay.py` became the
+  refusal tests, as proposed: the key under `data` is refused on 9.2.0 and the
+  top-level key passes.
+
+Disclosures:
+
+- The new import makes `upstream_blueprint.py` import a 9.2 module. The
+  ruling names the gate and the call; the import is the line the call needs.
+- The contract row 12 `named` citation `upstream_blueprint.py:81-105` is
+  relative to `main`; on this branch the function is at `:89-114`.
+- **S15 Cursor review item (ruled):** the gateway line `:4255`, the
+  `upstream_blueprint.py` gate and call (`:113-114`) and the signature change
+  (`:89`).
+
+## T129: shipped tests that pin the reviewed versions
+
+Ruling T129 (2026-11-15 14:45): (a), with the list made complete first.
+
+**The complete list.** Every `tests/test_*.py` module (500) runs as its own
+`unittest` process, two at a time, on a `git clone --shared` copy at branch
+HEAD `34abf281` and on one at `main` `e741f2ed`. `34abf281` is the committed
+tree before the T129, D5-B and E1-R edits, so a module that fails there only
+because of a 9.2.0 version, row or file list shows up. Outputs:
+`.artifacts/s10e/allmods-34abf281.txt` and `allmods-e741f2ed.txt` (not
+committed). A module that passes on `main` and fails on the branch is rerun
+alone on both trees to rule out a timing flake.
+
+**Status at this commit:** both sweeps are still running (about half done).
+The seven rows below are the modules found so far: the six from the S10
+version-pin sweep, confirmed in the full sweep where it has reached them, and
+`test_read_coverage_matrix`, which fails on `34abf281` and passes on `main`.
+The complete list, and the modules that fail on both trees, go in a follow-up
+commit.
+
+| Module | Cause | Kind | Disposition |
+| --- | --- | --- | --- |
+| `test_hamcp129_platform_reads` | `BINDING_VERSIONS` and `SOURCES` have no 9.2.0 | version list, row | edited |
+| `test_beta11_upstream_8_compatibility` | supported-version tuple ends at 9.1.2 | version list | edited |
+| `test_ha_core_2026_9_integration` | `reviewed_upstream_version` is 9.1.2; the context reports 9.2.0 | row | edited |
+| `test_hamcp184_provider_dispositions_fail_closed` | `REVIEWED_AFTER_HAMCP184` has no 9.2.0 row | row | edited |
+| `test_ha_mcp_850_candidate_lane` | version set ends at 9.1.2 | version list | edited |
+| `test_upstream_release_registry` | version tuple, tool-count and v2-model sets, `expected_automatic_reads` and the copied policy and evidence files have no 9.2.0 | version list, row, file list | edited |
+| `test_read_coverage_matrix` | `docs/read_coverage_matrix.json` is stale: the 9.2.0 adapters and tools are not in it, and four `provider_matrix` entries changed (`ha_config_get_yaml`, `ha_get_app`, `ha_get_integration`, `ha_get_system_health`) | generated inventory, outside the ruled kinds | **stopped; not edited.** The approved plan's S13 (authorization item 5) regenerates the matrix with `tests/read_coverage_inventory.py --write`. It fails until then. |
+
+**The edits, module by module.** Each 9.2.0 value comes from the S8 capture
+(the 9.2.0 registry row, `upstream_tool_policy_9_2_0.json` and
+`ha-mcp-9.2.0-contract-review.json`). None is copied from 9.1.2. Each
+edit carries a comment that names its source. No 8.x or 9.1.x expectation
+changed, and no assertion was removed or weakened.
+
+| Module | Edit (branch line) | 9.2.0 source |
 | --- | --- | --- |
-| `test_hamcp129_platform_reads` | `test_bindings_cover_exactly_three_tools_at_each_version` (`18 != 15`) | `BINDING_VERSIONS` `:52` and the local `SOURCES` table have no 9.2.0 |
-| `test_beta11_upstream_8_compatibility` | `test_exact_release_evidence_and_policy_accounting` | supported-version tuple `:63` ends at 9.1.2 |
-| `test_ha_core_2026_9_integration` | `test_repository_context_reports_current_exact_catalog` | `:3117` expects `reviewed_upstream_version` 9.1.2; the context now reports 9.2.0. The other counts are unchanged (77 stock, 27 delegated reads, 113 connector total) |
-| `test_hamcp184_provider_dispositions_fail_closed` | 1 failure, 2 errors | version list `:102`; `EFFECTIVE_AFTER` (`:88`) has no 9.2.0 row (`:115`, `KeyError`); the fixture copy lacks `upstream_tool_policy_9_2_0.json` (`test_fixture_baseline_loads`) |
-| `test_ha_mcp_850_candidate_lane` | `test_matrix_installs_locked_contract_dependencies_before_loading_registry` | version set `:460` |
-| `test_upstream_release_registry` | 3 failures, 1 error | version tuple `:264`; `expected_automatic_reads` has no 9.2.0 (`:958`, `KeyError`); two temporary-tree tests do not copy `upstream_tool_policy_9_2_0.json` |
+| `test_beta11_upstream_8_compatibility` | `"9.2.0"` added to the supported tuple (`:80-81`) | S8 registry row |
+| `test_ha_core_2026_9_integration` | `reviewed_upstream_version` `"9.1.2"` → `"9.2.0"` (`:3117-3121`) | S8 registry row is the newest reviewed row; its `advertised_tool_count` is 77 and the 9.2.0 policy marks `ha_get_hacs_info` unsupported, so the test's other counts hold as written |
+| `test_ha_mcp_850_candidate_lane` | `"9.2.0"` added to the version set (`:467-468`) | S8 registry row |
+| `test_hamcp129_platform_reads` | `BINDING_VERSIONS` gains 9.2.0 (`:52-54`); `SOURCES["9.2.0"] = ("v9.2.0", "51e3aac7…")` (`:64-65`) | `release_tag` and `source_commit` of the S8 row; the bindings are `upstream_platform_reads.py` `ADAPTER_BINDINGS` from the S8 capture |
+| `test_hamcp184_provider_dispositions_fail_closed` | `REVIEWED_AFTER_HAMCP184["9.2.0"] = OPERATIONAL_HELD` (`:84-87`) | S8 row `provider_dispositions`: read gateway and dashboard admitted, backup and lifecycle held |
+| `test_upstream_release_registry` | `POLICY_9200` and `ARTIFACT_EVIDENCE_9200` (`:56-57`, `:80`); 9.2.0 added to the `captured_tools` set (`:104`), the fixture policy list (`:150`), the fixture version list (`:175`), the evidence copy (`:206`), the supported tuple (`:285-286`), the tool-count-77 set (`:295`), and the v2-model set (`:333-334`); `expected_automatic_reads["9.2.0"] = 27` (`:311-312`, `:967-968`) | S8 row `advertised_tool_count` 77 and `contract_model`; 27 automatic reads counted in `upstream_tool_policy_9_2_0.json` |
 
-Two kinds of edit would fix them:
+Disclosures:
 
-- version lists and copied-file lists: add `"9.2.0"` or the 9.2.0 policy
-  file, as HAMCP-351 did; and
-- per-version expectations about 9.2.0 (`SOURCES`, `EFFECTIVE_AFTER`,
-  `expected_automatic_reads`, `reviewed_upstream_version`). Under the owner
-  condition, each would be written from the S8 capture or a recorded review,
-  not copied from 9.1.2. Each row would cite its source.
+- `test_ha_core_2026_9_integration` replaces a value instead of adding a row:
+  the test asserts the newest reviewed version, which is now 9.2.0. The ruling
+  names `reviewed_upstream_version` among the allowed rows. 9.1.2 stays
+  admitted in the registry and in every other test.
+- **S15 Cursor review item (ruled):** the diff of each of the six modules.
 
-D5 says "the shipped tests for both files pass unmodified", and the owner
-conditions say the 9.1 tests pass unmodified. Choose one:
+## E1-R: re-admission and the 28 S7 keys
 
-- (a) Authorize these edits in the six named modules: list additions plus
-  9.2.0 rows written from the S8 capture. No 8.x or 9.1.x expectation would
-  change. Each edit would be a named E2-style row in the S15 Cursor request.
-- (b) Leave them failing until SB or S16, disclosed.
+Ruling E1-R (2026-11-15 14:45).
 
-Recommendation (inference): (a). Every other test in the six modules passes,
-and no 8.x or 9.1.x expectation would change. The full sweep is in the
-Validation section.
+**Item 1 (re-admission of an E1-withdrawn key).** No key is re-admitted.
+For every read with an E1 withdrawal (groups, template, the entity-envelope
+rows, overview, state, services), the lane reaches the read: the S6 receipt
+sets hold calls to each. The withdrawals therefore stay; a re-admission needs a
+receipt. The branch-level question, whether the lane can reach the exact
+branch that writes `warnings` or `partial` (for example a failed services
+fetch inside the overview), was not argued key by key. Keeping a withdrawal
+is the fail-closed default; this is an agent choice and is disclosed.
 
-**Question E1-R (re-admission and the S7 keys).** E1 withdrew the S10
-additions with no receipt (section E1). Two follow-ups:
+**Item 2 (the 28 keys named only by the shipped 9.1 code).** Each key now has
+a 9.2.0 source citation: the line in ha-mcp `51e3aac7` that writes it, on the
+named tool's own call path (the chain is in the last column). All 28 stay,
+recorded in the contract as source-review keys
+(`E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/<file:line>`).
+None is withdrawn. The generator stops if a named key has neither a 9.1.2
+receipt nor an E1-R citation, so a future one cannot be admitted silently.
+Paths are under `src/ha_mcp/tools/`. Read with `GIT_NO_LAZY_FETCH=1` and git
+plumbing only.
 
-- May a withdrawn key be re-admitted on a recorded 9.2.0 source review (as
-  `response` was), or does it need a receipt?
-- The S7 contract still admits 28 keys whose only source is the shipped 9.1
-  code ("interpretation, pending ruling" in the row; listed in section E1).
-  E1 covers the S10 edits only, so these are reported and kept unchanged. Are
-  they to be withdrawn as well?
+| # | Read | Key | 9.2.0 source (writes it) | Call path at `51e3aac7` |
+| --- | --- | --- | --- | --- |
+| 3 | `ha_config_get_category` | `category` | `tools_categories.py:124` | in `ha_config_get_category` (:45) |
+| 4 | `ha_config_get_label` | `label` | `tools_labels.py:647` | in `ha_config_get_label` (:592) |
+| 5 | `ha_config_get_scene` | `category` | `tools_config_scenes.py:455` | `_legacy_get_scene` (:418) <- `ha_config_get_scene` :383 |
+| 5 | `ha_config_get_scene` | `warnings` | `tools_config_scenes.py:457` | same |
+| 6 | `ha_config_get_script` | `warnings` | `tools_config_scripts.py:255` | `_legacy_get_script` (:198) <- `ha_config_get_script` :183 |
+| 7 | `ha_config_list_dashboard_resources` | `content_truncated` | `tools_resources.py:265` | in `ha_config_list_dashboard_resources` (:175) |
+| 7 | `ha_config_list_dashboard_resources` | `content_truncation_note` | `tools_resources.py:266` | same |
+| 7 | `ha_config_list_dashboard_resources` | `migration_hint` | `tools_resources.py:274` | same |
+| 7 | `ha_config_list_dashboard_resources` | `note` | `tools_resources.py:279` | same |
+| 9 | `ha_config_list_helpers` | `warnings` | `config_helpers/listing.py:231` (also :182) | `_shape_component_helpers_response` <- `tools_config_helpers.py:377` (`_list_helpers_via_component`) <- `ha_config_list_helpers` :229; :182 is `_paginate_helpers_response` <- :207 |
+| 10 | `ha_eval_template` | `warnings` | `tools_utility.py:163` | `_render_template` (:135) <- `eval_template` :104 <- `ha_eval_template` :415 |
+| 11 | `ha_get_automation_traces` | `diagnostics` | `tools_traces.py:596` | `_format_trace_list` (:528) <- `_fetch_trace_list` :304 <- `ha_get_automation_traces` :199 |
+| 14 | `ha_get_entity` | `entity_entries` | `tools_entities.py:1997` | `_get_by_entity_id` <- `ha_get_entity` :1908 |
+| 14 | `ha_get_entity` | `errors` | `tools_entities.py:2000` | same |
+| 15 | `ha_get_entity_exposure` | `exposed_entities` | `tools_voice_assistant.py:191` | `_list_exposures` <- `ha_get_entity_exposure` :282 |
+| 16 | `ha_get_history` | `attributes` | `history_response.py:10,36` | Core's compact `a` renamed; `tools_history.py:35` imports it |
+| 16 | `ha_get_history` | `max`, `mean`, `min` | `statistics_helpers.py:74,84` | Core's statistics rows passed unchanged (`"statistics": page`); the names are Core's `StatisticsRow` fields, Core 2026.11.0 `74cf5a49` `homeassistant/components/recorder/statistics.py:342-344` |
+| 16 | `ha_get_history` | `warnings` | `tools_history.py:984` (history), `:1099` (statistics) | `_fetch_history`, `_fetch_statistics` <- `ha_get_history` |
+| 17 | `ha_get_overview` | `partial` | `smart_search/_overview.py:556` | `_assemble_overview_response` <- `get_system_overview` :201 <- `search/overview.py:538` (`_assemble_overview`) <- `_collect_overview` :450 <- `tools_search.py:655` (`ha_get_overview`) |
+| 19 | `ha_get_state` | `success`, `count`, `states` | `search/state.py:89,90,91` | `_build_bulk_states_response` <- `_get_bulk_entity_states` :206 <- `tools_search.py:848` (`ha_get_state`) |
+| 19 | `ha_get_state` | `errors` | `search/state.py:102` | same |
+| 19 | `ha_get_state` | `partial` | `search/state.py:109` | same |
+| 25 | `ha_search` | `dashboards` | `search/component.py:523` | `_component_config_payload` <- `_shape_component_search_response` :633 <- `_ha_search_via_component` :751 <- `tools_search.py:442` (`ha_search`) |
+| 25 | `ha_search` | `warnings` | `search/modes.py:688` | `_search_regular` <- `search/legacy.py:386` <- `_legacy_ha_search` :88 <- `tools_search.py:410` |
+
+Notes:
+
+- A citation shows the 9.2.0 code can write the key on that read. It is not an
+  observation. SR or live acceptance observes it, or it stays unobserved; the
+  lane receipts did not carry any of the 28.
+- Row 16 `max`, `mean`, `min`: ha-mcp writes no literal for these names; it
+  passes Core's statistics rows unchanged. The Core citation was read from the
+  GitHub contents API at the exact commit (copy in `.artifacts/s10e/core/`,
+  not committed).
+- Several citations sit in the no-component (`_legacy_*`) path of a read that
+  also has a component path. Either path is a 9.2.0 path the read can take.
+- No runtime change: `ROWS` in `upstream_reads_9_2_keys.py` holds names only,
+  and the names are unchanged. Only the contract's source strings change.
 
 ## E1: the S10 contract edits, key by key
 
@@ -170,19 +273,11 @@ Consequences of the withdrawals (behaviour on 9.2.0 only):
 - Groups always reports `all` in Engineering's recomputed `unavailable_fields`,
   because an upstream `all` is withheld. An upstream `unavailable_fields` on
   groups or template is withheld and counted rather than refused.
-- `partial` on overview and state remains admitted from S7 (two of the 28
-  keys of question E1-R).
+- `partial` on overview and state remains admitted from S7; under E1-R both
+  are source-review keys (section E1-R).
 
-The 28 S7 keys whose only source is the shipped 9.1 code (unchanged, reported):
-`ha_config_get_category.category`, `ha_config_get_label.label`,
-`ha_config_get_scene.{category, warnings}`, `ha_config_get_script.warnings`,
-`ha_config_list_dashboard_resources.{content_truncated, content_truncation_note, migration_hint, note}`,
-`ha_config_list_helpers.warnings`, `ha_eval_template.warnings`,
-`ha_get_automation_traces.diagnostics`, `ha_get_entity.{entity_entries, errors}`,
-`ha_get_entity_exposure.exposed_entities`,
-`ha_get_history.{attributes, max, mean, min, warnings}`, `ha_get_overview.partial`,
-`ha_get_state.{count, errors, partial, states, success}`,
-`ha_search.{dashboards, warnings}`.
+The 28 S7 keys whose only source was the shipped 9.1 code are tabled, with
+their 9.2.0 citations, in section E1-R.
 
 ## E2: edits to HAMCP-371's own test expectations
 
@@ -431,34 +526,34 @@ key), not `upstream_warning_replaced`.
    - The reviewed large-config hint names upstream write tools
      (`ha_config_set_dashboard(python_transform=...)`). It is passed through
      as on 9.1; Engineering does not expose those tools.
-7. **Edits to HAMCP-371's own tests**: see E2. No shipped test was edited.
-8. **Authorizations.** `_platform.py` was created under D5. `_blueprint.py`
-   was not created (question D5-B). `_config.py` was not needed (the config
+7. **Edits to HAMCP-371's own tests**: see E2. Shipped test modules were
+   edited only under T129 (version, row and file lists; see that section).
+8. **Authorizations.** `_platform.py` was created under D5 and `_blueprint.py`
+   under D5-B, with the one D5-B gateway call change and the
+   `validate_result` signature change. `_config.py` was not needed (the config
    reads run through `ROWS`).
 9. **Scratch.** An early scratch copy of the upstream dashboard file was
    written to `/tmp`; it was moved to the research area outside the worktree.
-10. **Six shipped test modules have failed since S8** (question T129): see
-    the T129 table. They are not edited and not marked expected.
+10. **Shipped test modules that failed since S8** are edited under T129 only
+    within the ruled kinds: see the T129 section for the full list and diffs.
 
-## Validation (2026-11-15, local, uncommitted tree on `265168bf`)
+## Validation (2026-11-15, local, uncommitted tree on `34abf281`)
+
+The S10 final run: one `unittest` process per module, in sequence, on the
+working tree that this commit records (`.artifacts/s10e/s10-final.txt`).
 
 | Check | Result |
 | --- | --- |
-| `tests.test_hamcp371_key_sets` | 16 tests OK |
-| `tests.test_hamcp371_platform_9_2` (new, D5 platform reads; r27 synthetic) | 13 tests OK |
-| `tests.test_hamcp371_unreachable_modes` | 9 tests OK |
-| `tests.test_hamcp371_dashboard_getter` | 9 tests OK |
-| `tests.test_hamcp371_history_offsets` | 28 tests OK |
-| `tests.test_hamcp371_admission_core` | 30 tests OK |
-| `tests.test_hamcp371_real_core_replay` | 27 tests; 1 failure and 2 errors, all r12 in `RealCoreReplay920` (question D5-B): `test_admitted_keys_and_withheld_counts` sets A and B (`KeyError: 'fields_withheld'`), and `test_an_injected_key_is_withheld_and_counted_once_per_name` for `ha_get_blueprint` (the key passes through). The r20 and r26 subtests pass after D5. |
-| Unmodified S9 regression set, one module per run (every `test_hamcp319_*` module, `test_hamcp131_history_*`, `test_hamcp351_ha_mcp_912_admission`, `test_hamcp162_yaml_admission`, `test_hamcp371_error_classification`, `test_ha_mcp_production_readmission`, `test_upstream_8_5_compatibility`) | 28 modules, 2,257 tests, all OK. This includes `test_hamcp319_dashboard` (33) unmodified. |
-| Further unmodified modules: `test_hamcp231_thread_matter_topology`, `test_upstream_8_6_compatibility`, `test_beta_v2` | 3 modules, 252 tests, all OK |
-| `tests.test_hamcp129_platform_reads` (unmodified) | 39 tests, 1 failure (question T129) |
-| Sweep of the other shipped tests that pin version sets (`.artifacts`-local list of 53 files; modules already above skipped) | 33 modules, 915 tests: 28 OK, 5 FAILED (`test_beta11_upstream_8_compatibility`, `test_ha_core_2026_9_integration`, `test_hamcp184_provider_dispositions_fail_closed`, `test_ha_mcp_850_candidate_lane`, `test_upstream_release_registry`; question T129) |
-| The 6 failing shipped modules on `git clone --shared` copies | all 6 pass at `origin/main` `e741f2ed`; 5 pass at `9e91000a` (`test_upstream_release_registry` was not run there); all 6 fail at S8 `eb6c6b32` with the same failures as the current tree |
-| `generate_output_key_contract.py --check` | up to date |
+| Every `tests/test_hamcp371_*` module (9, including the new `test_hamcp371_blueprint_9_2`, 11 tests) | all OK. `test_hamcp371_real_core_replay` 27 tests OK, including the r12 refusal tests (D5-B) |
+| Shipped modules, unmodified: `test_readonly_upstream_gateway`, `test_upstream_8_5_compatibility`, `test_upstream_8_6_compatibility`, `test_hamcp319_parity_entities`, `test_hamcp319_used_tool_exact_admission`, `test_hamcp319_side_by_side`, `test_hamcp319_no_redirect_useful`, `test_core_read_replay_calls`, `test_rc2dev9_upstream_admission`, `test_codex_workflow` (53 skipped), `test_ha_mcp_production_readmission` | all OK. These include the shipped blueprint and gateway tests (D5-B: they pass unmodified) |
+| The six T129 modules, edited | all OK: `test_hamcp129_platform_reads` 39, `test_beta11_upstream_8_compatibility` 6, `test_ha_core_2026_9_integration` 72, `test_hamcp184_provider_dispositions_fail_closed` 16, `test_ha_mcp_850_candidate_lane` 47, `test_upstream_release_registry` 17 |
+| `test_read_coverage_matrix` (unmodified) | **FAILED (4 failures), stopped under T129.** The generated inventory is stale; S13 regenerates it (see T129) |
+| Totals | 27 modules: 26 OK with 1,006 tests, 1 FAILED |
+| Full-module sweeps (T129) | still running at this commit; see T129 |
+| `generate_output_key_contract.py --check` | exit 0, up to date |
 | `scripts/review_upstream_read_release.py validate` | passes, 13 releases including 9.2.0 |
-| Fast tier (`-BaseRef origin/main`, 23 declared protected paths: the 22 of S10 plus `providers/upstream_reads_9_2_platform.py`; test targets `test_hamcp371_platform_9_2`, `test_hamcp371_key_sets`, `test_hamcp371_dashboard_getter`, `test_hamcp371_unreachable_modes`, `test_hamcp319_dashboard`) | passed, 80 tests |
-| Repository scan (`docs/evidence/hamcp371/s6/comparison/scan.py`) and leak check, run on each changed file including this README | 14 files, 0 hits; each file PASS |
+| Fast tier (`-BaseRef origin/main`, 24 declared protected paths: the 23 of S10 plus `providers/upstream_reads_9_2_blueprint.py`; test targets `test_hamcp371_blueprint_9_2`, `test_hamcp371_key_sets`, `test_hamcp371_platform_9_2`, `test_hamcp371_unreachable_modes`, `test_beta11_upstream_8_compatibility`, `test_hamcp184_provider_dispositions_fail_closed`, `test_ha_mcp_850_candidate_lane`) | passed, 118 tests |
+| Repository scan (`docs/evidence/hamcp371/s6/comparison/scan.py`) on each changed file | 15 files, 4 hits, all pre-existing on `main`: `test_ha_core_2026_9_integration.py` (token_value 1, long_base64url 1) and `test_ha_mcp_850_candidate_lane.py` (token_value 2) give the same 4 hits at `e741f2ed`; the lines this change adds to those two files give 0. Every other file gives 0 |
+| Leak check on each changed file, including this README | 15 files, each PASS |
 
 The Full and Evidence tiers were not run: they are not part of S10.

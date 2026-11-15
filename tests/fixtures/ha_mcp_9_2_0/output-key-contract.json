@@ -4,7 +4,7 @@
   "proposals_pending_ruling": [
     "map containers (dict keys are data, values are closed rows): services, fields, domain_stats, area_analysis, states_summary, domains (overview), exposed_to, categories, by_type, data (system health)",
     "extra open containers: capabilities and options (automation entity, entity registry), result (template), info (system health), example and default (service fields)",
-    "keys named by the shipped 9.1 projections but not observed in a 9.1.2 receipt are admitted with that source",
+    "S10 E1-R (2026-11-15 14:45 ruling): a key named by the shipped 9.1 projections but not observed in a 9.1.2 receipt stays only as a source-review key, cited to the 9.2.0 upstream line that can write it; none is observed in a lane receipt",
     "reviewed warnings are the exact upstream strings observed in the 9.1.2 receipts; the upstream source-string review is deferred",
     "ha_get_history keeps the shipped 8.5-parity projection on 9.2.0; the keys it drops (summary, statistics_metadata, unit_source, unit_reason, last_reset) are policy drops counted in fields_dropped_by_policy (S9 correction of the S7 row)",
     "S10 E1 (2026-11-15 13:25 ruling): a key justified only by the shipped 9.1 code is reported, not kept; the S10 additions of warnings and partial (entity envelope rows), all and unavailable_fields (groups) and unavailable_fields (template) are withdrawn; unavailable_fields on groups and template is recomputed by Engineering",
@@ -294,7 +294,7 @@
     "ha_config_get_category": {
       "admitted": {
         "categories": "receipt 9.1.2 profile A+B",
-        "category": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:178-194 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
+        "category": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/tools_categories.py:124 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:178-194)",
         "category_id": "receipt 9.1.2 profile A+B",
         "count": "receipt 9.1.2 profile A+B",
         "created_at": "receipt 9.1.2 profile A+B",
@@ -377,7 +377,7 @@
         "created_at": "receipt 9.1.2 profile A+B",
         "description": "receipt 9.1.2 profile A+B",
         "icon": "receipt 9.1.2 profile A+B",
-        "label": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:198-213 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
+        "label": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/tools_labels.py:647 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:198-213)",
         "label_id": "receipt 9.1.2 profile A+B",
         "labels": "receipt 9.1.2 profile A+B",
         "message": "receipt 9.1.2 profile A+B",
@@ -455,12 +455,12 @@
     "ha_config_get_scene": {
       "admitted": {
         "action": "receipt 9.1.2 profile A+B",
-        "category": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:219-230 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
+        "category": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/tools_config_scenes.py:455 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:219-230)",
         "config": "receipt 9.1.2 profile A+B",
         "config_hash": "receipt 9.1.2 profile A+B",
         "scene_id": "receipt 9.1.2 profile A+B",
         "success": "receipt 9.1.2 profile A+B",
-        "warnings": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:219-230 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)"
+        "warnings": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/tools_config_scenes.py:457 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:219-230)"
       },
       "calls": {
         "A/9.1.2": [
@@ -522,7 +522,7 @@
         "config_hash": "receipt 9.1.2 profile A+B",
         "script_id": "receipt 9.1.2 profile A+B",
         "success": "receipt 9.1.2 profile A+B",
-        "warnings": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:237-247 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)"
+        "warnings": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/tools_config_scripts.py:255 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:237-247)"
       },
       "calls": {
         "A/9.1.2": [
@@ -581,16 +581,16 @@
       "admitted": {
         "action": "receipt 9.1.2 profile A+B",
         "by_type": "receipt 9.1.2 profile A+B",
-        "content_truncated": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:251-281 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
-        "content_truncation_note": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:251-281 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
+        "content_truncated": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/tools_resources.py:265 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:251-281)",
+        "content_truncation_note": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/tools_resources.py:266 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:251-281)",
         "count": "receipt 9.1.2 profile A+B",
         "has_more": "receipt 9.1.2 profile A+B",
         "id": "receipt 9.1.2 profile A+B",
         "inline_count": "receipt 9.1.2 profile A+B",
         "limit": "receipt 9.1.2 profile A+B",
-        "migration_hint": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:251-281 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
+        "migration_hint": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/tools_resources.py:274 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:251-281)",
         "next_offset": "receipt 9.1.2 profile A+B",
-        "note": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:251-281 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
+        "note": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/tools_resources.py:279 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:251-281)",
         "offset": "receipt 9.1.2 profile A+B",
         "resource_mode": "receipt 9.1.2 profile A+B",
         "resources": "receipt 9.1.2 profile A+B",
@@ -812,7 +812,7 @@
         "original_name": "receipt 9.1.2 profile A+B",
         "success": "receipt 9.1.2 profile A+B",
         "total_count": "receipt 9.1.2 profile A+B",
-        "warnings": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:316-327 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)"
+        "warnings": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/config_helpers/listing.py:231 (also :182) (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:316-327)"
       },
       "calls": {
         "A/9.1.2": [
@@ -918,7 +918,7 @@
         "success": "receipt 9.1.2 profile A+B",
         "template": "receipt 9.1.2 profile A+B",
         "time": "receipt 9.1.2 profile A+B",
-        "warnings": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:333-345 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)"
+        "warnings": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/tools_utility.py:163 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:333-345)"
       },
       "calls": {
         "A/9.1.2": [
@@ -1030,7 +1030,7 @@
     "ha_get_automation_traces": {
       "admitted": {
         "automation_id": "receipt 9.1.2 profile A+B",
-        "diagnostics": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:354-390 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
+        "diagnostics": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/tools_traces.py:596 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:354-390)",
         "execution": "receipt 9.1.2 profile A+B",
         "finish": "receipt 9.1.2 profile A+B",
         "has_more": "receipt 9.1.2 profile A+B",
@@ -1152,7 +1152,8 @@
       "map_containers": {},
       "new_in_9_2_0": {},
       "notes": [
-        "shape-only validation today; the closed set is drafted from the 9.1.2 receipts"
+        "shape-only validation on 8.x and 9.1.x (HAMCP-402); the closed set is drafted from the 9.1.2 receipts",
+        "D5-B: on 9.2.0 a key directly under data outside upstream_reads_9_2_blueprint LIST_KEYS (capture) or GET_KEYS (source review of tools_blueprints.py at 51e3aac7) is refused as invalid_response and never counted; nested keys, config and yaml are not closed, and a key at the payload top level passes as shipped"
       ],
       "number": 12,
       "observed": {
@@ -1360,10 +1361,10 @@
         "device_id": "receipt 9.1.2 profile A+B",
         "disabled_by": "receipt 9.1.2 profile A+B",
         "enabled": "receipt 9.1.2 profile A+B",
-        "entity_entries": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:103-110 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
+        "entity_entries": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/tools_entities.py:1997 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:103-110)",
         "entity_entry": "receipt 9.1.2 profile A+B",
         "entity_id": "receipt 9.1.2 profile A+B",
-        "errors": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:103-110 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
+        "errors": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/tools_entities.py:2000 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:103-110)",
         "floor": "receipt 9.1.2 profile B",
         "hidden": "receipt 9.1.2 profile A+B",
         "hidden_by": "receipt 9.1.2 profile A+B",
@@ -1488,7 +1489,7 @@
         "area": "receipt 9.1.2 profile B",
         "domain": "receipt 9.1.2 profile B",
         "entity_id": "receipt 9.1.2 profile A+B",
-        "exposed_entities": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:122-131 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
+        "exposed_entities": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/tools_voice_assistant.py:191 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:122-131)",
         "exposed_to": "receipt 9.1.2 profile A+B",
         "floor": "receipt 9.1.2 profile B",
         "friendly_name": "receipt 9.1.2 profile B",
@@ -1572,7 +1573,7 @@
     },
     "ha_get_history": {
       "admitted": {
-        "attributes": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_history_9_1.py:37-52,206-224,243-245,331-332,421,498-505 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
+        "attributes": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/history_response.py:10,36 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_history_9_1.py:37-52,206-224,243-245,331-332,421,498-505)",
         "change": "receipt 9.1.2 profile A+B",
         "count": "receipt 9.1.2 profile A+B",
         "data": "receipt 9.1.2 profile A+B",
@@ -1584,10 +1585,10 @@
         "last_changed": "receipt 9.1.2 profile A+B",
         "last_updated": "receipt 9.1.2 profile A+B",
         "limit": "receipt 9.1.2 profile A+B",
-        "max": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_history_9_1.py:37-52,206-224,243-245,331-332,421,498-505 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
-        "mean": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_history_9_1.py:37-52,206-224,243-245,331-332,421,498-505 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
+        "max": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/statistics_helpers.py:74,84; Core 74cf5a49 recorder/statistics.py:344 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_history_9_1.py:37-52,206-224,243-245,331-332,421,498-505)",
+        "mean": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/statistics_helpers.py:74,84; Core 74cf5a49 recorder/statistics.py:342 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_history_9_1.py:37-52,206-224,243-245,331-332,421,498-505)",
         "metadata": "receipt 9.1.2 profile A+B",
-        "min": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_history_9_1.py:37-52,206-224,243-245,331-332,421,498-505 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
+        "min": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/statistics_helpers.py:74,84; Core 74cf5a49 recorder/statistics.py:343 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_history_9_1.py:37-52,206-224,243-245,331-332,421,498-505)",
         "minimal_response": "receipt 9.1.2 profile A+B",
         "next_offset": "receipt 9.1.2 profile A+B",
         "note": "receipt 9.1.2 profile A+B",
@@ -1609,7 +1610,7 @@
         "timestamp_format": "receipt 9.1.2 profile A+B",
         "total_count": "receipt 9.1.2 profile A+B",
         "unit_of_measurement": "receipt 9.1.2 profile A+B",
-        "warnings": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_history_9_1.py:37-52,206-224,243-245,331-332,421,498-505 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)"
+        "warnings": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/tools_history.py:984,1099 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_history_9_1.py:37-52,206-224,243-245,331-332,421,498-505)"
       },
       "calls": {
         "A/9.1.2": [
@@ -1954,7 +1955,7 @@
         "next_offset": "receipt 9.1.2 profile A+B",
         "offset": "receipt 9.1.2 profile A+B",
         "pagination": "receipt 9.1.2 profile A+B",
-        "partial": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:45-47,135-140 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
+        "partial": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/smart_search/_overview.py:556 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:45-47,135-140)",
         "repair_count": "receipt 9.1.2 profile A+B",
         "repairs": "receipt 9.1.2 profile A+B",
         "severity": "receipt 9.1.2 profile A+B",
@@ -2213,10 +2214,10 @@
       "admitted": {
         "attributes": "receipt 9.1.2 profile A+B",
         "context": "receipt 9.1.2 profile A+B",
-        "count": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:189-205 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
+        "count": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/search/state.py:90 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:189-205)",
         "data": "receipt 9.1.2 profile A+B",
         "entity_id": "receipt 9.1.2 profile A+B",
-        "errors": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:189-205 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
+        "errors": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/search/state.py:102 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:189-205)",
         "home_assistant_timezone": "receipt 9.1.2 profile A+B",
         "id": "receipt 9.1.2 profile A+B",
         "last_changed": "receipt 9.1.2 profile A+B",
@@ -2225,10 +2226,10 @@
         "metadata": "receipt 9.1.2 profile A+B",
         "note": "receipt 9.1.2 profile A+B",
         "parent_id": "receipt 9.1.2 profile A+B",
-        "partial": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:189-205 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
+        "partial": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/search/state.py:109 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:189-205)",
         "state": "receipt 9.1.2 profile A+B",
-        "states": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:189-205 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
-        "success": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:189-205 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
+        "states": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/search/state.py:91 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:189-205)",
+        "success": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/search/state.py:89 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:189-205)",
         "timestamp_format": "receipt 9.1.2 profile A+B",
         "user_id": "receipt 9.1.2 profile A+B"
       },
@@ -3131,7 +3132,7 @@
         "config_next_offset": "receipt 9.1.2 profile A+B",
         "config_total_matches": "receipt 9.1.2 profile A+B",
         "count": "receipt 9.1.2 profile A+B",
-        "dashboards": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:49-51,282-290 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)",
+        "dashboards": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/search/component.py:523 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:49-51,282-290)",
         "domain": "receipt 9.1.2 profile A+B",
         "domain_filter": "receipt 9.1.2 profile A+B",
         "entities": "receipt 9.1.2 profile A+B",
@@ -3163,7 +3164,7 @@
         "search_types": "receipt 9.1.2 profile A+B",
         "state": "receipt 9.1.2 profile A+B",
         "success": "receipt 9.1.2 profile A+B",
-        "warnings": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:49-51,282-290 (interpretation, pending ruling: named by the shipped 9.1 projection, not observed in a 9.1.2 receipt)"
+        "warnings": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/search/modes.py:688 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:49-51,282-290)"
       },
       "calls": {
         "A/9.1.2": [

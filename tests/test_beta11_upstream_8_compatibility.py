@@ -77,6 +77,8 @@ class Beta11ReleaseEvidenceTests(unittest.TestCase):
                 "9.1.0",
                 # HAMCP-351: exact 9.1.2 reviewed release.
                 "9.1.2",
+                # HAMCP-371: exact 9.2.0 reviewed release (S8 registry row).
+                "9.2.0",
             ),
         )
         seven = registry.by_version["7.14.2"]

@@ -6,6 +6,8 @@ argument shapes can reach an exact compiled release; upstream data cannot select
 from copy import deepcopy
 import re
 
+from . import upstream_reads_9_2_blueprint as _blueprint_9_2
+
 VERSION = "8.5.0"
 ADAPTER = "ha-mcp-8.5.0-blueprint-list-get-v1"
 SOURCE = "311d6dc273fb4e9a5b8cde0de15f69472a64fe44"
@@ -84,7 +86,7 @@ def read_arguments(arguments: dict) -> dict:
     return {"action": "get", "domain": domain, "path": path}
 
 
-def validate_result(payload, arguments: dict) -> None:
+def validate_result(payload, arguments: dict, policy_entry) -> None:
     expected = read_arguments(arguments)
     if not isinstance(payload, dict) or payload.get("success") is not True:
         raise ValueError("blueprint_read_response_invalid")
@@ -107,6 +109,9 @@ def validate_result(payload, arguments: dict) -> None:
         or data["count"] != len(data["blueprints"])
     ):
         raise ValueError("blueprint_read_list_incomplete")
+    # HAMCP-371 D5-B: on 9.2.0 only, keys under data are closed.
+    if ADAPTER_BINDINGS[policy_entry.argument_restrictions[0]][0] in _blueprint_9_2.RELEASES:
+        _blueprint_9_2.validate(payload, expected["action"])
 
 
 def completeness(payload) -> tuple[bool, list[str]]:

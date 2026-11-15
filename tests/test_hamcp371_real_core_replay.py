@@ -36,6 +36,7 @@ from ha_mcp_engineering.providers.upstream_read_gateway import UpstreamReadGatew
 from ha_mcp_engineering.providers.upstream_reads_9_2_entities import (
     SERVICES_TYPE_NOTE, ZONE_ICON_NOTE, ZONE_LOCATION_NOTE,
 )
+from ha_mcp_engineering.providers import upstream_reads_9_2_blueprint as blueprint_9_2
 from ha_mcp_engineering.request_context import begin_request, end_request
 from test_ha_mcp_production_readmission import _GatewayTransport, _settings
 import test_upstream_8_5_compatibility as previous
@@ -54,6 +55,8 @@ ADDED = frozenset(CONTRACT['rules']['engineering_added'])
 REPLACED = CONTRACT['rules']['replaced_warning_code']
 # N26: the device read keeps its shipped per-occurrence count and closed codes.
 DEVICE = 'ha_get_device'
+BLUEPRINT = 'ha_get_blueprint'
+COUNT_FIELDS = ('fields_withheld', 'fields_dropped_by_policy', 'upstream_warnings_replaced')
 DEVICE_UNRECOGNIZED = 'enrichment_warning_unrecognized'
 DEVICE_UNKNOWN = 'unknown_fields_withheld'
 CALL_DIRS = ('calls', 'calls-after-core-restart')
@@ -424,6 +427,12 @@ class RealCoreReplay920(unittest.TestCase):
                 data = out['data']
                 upstream = generator.names(result['structuredContent'], tool)
                 withheld = _withheld_names(row, upstream)
+                if tool == BLUEPRINT:
+                    # D5-B: validated and refused, never projected or counted.
+                    self.assertFalse(set(COUNT_FIELDS) & set(data))
+                    self.assertEqual(generator.names(data, tool), upstream)
+                    self.assertLessEqual(set(data['data']), blueprint_9_2.LIST_KEYS)
+                    continue
                 if tool == DEVICE:
                     # N26: the shipped per-occurrence count, absent when zero,
                     # and no policy-drop or replaced-warning count.
@@ -458,6 +467,17 @@ class RealCoreReplay920(unittest.TestCase):
             call, has_nested = cases[i][0], cases[i][1]
             base, one, two = (outputs[i + j][0] for j in range(3))
             with self.subTest(tool=call['public_tool']):
+                if call['public_tool'] == BLUEPRINT:
+                    # D5-B: a key under data is refused; the top-level key
+                    # (outside data) passes as shipped (HAMCP-402).
+                    self.assertTrue(has_nested)
+                    self.assertIs(one['success'], True, one.get('details'))
+                    self.assertEqual(one['data'][INJECTED], 'x')
+                    self.assertIs(two['success'], False)
+                    self.assertEqual(two['details']['failure_category'], 'invalid_response')
+                    self.assertNotIn(INJECTED, json.dumps(two))
+                    self.assertFalse(set(COUNT_FIELDS) & set(base['data']))
+                    continue
                 self.assertNotIn(INJECTED, json.dumps(one))
                 self.assertNotIn(INJECTED, json.dumps(two))
                 # N26: the device count is per occurrence and absent when zero.

@@ -4252,7 +4252,7 @@ class UpstreamReadGateway:
                 )
                 if is_blueprint_adapter(policy_entry):
                     try:
-                        validate_blueprint_result(payload, arguments)
+                        validate_blueprint_result(payload, arguments, policy_entry)
                     except ValueError:
                         raise _GatewayFailure("invalid_response", dispatched=True) from None
                 if is_platform_adapter(policy_entry):

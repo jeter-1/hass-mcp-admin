@@ -3114,7 +3114,11 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         # HAMCP-351: the newest reviewed registry row is ha-mcp 9.1.2 (the
         # HAMCP-319 9.1.0 row stays admitted), whose policy, like 9.1.0's,
         # admits 27 automatic reads (ha_get_hacs_info is unsupported).
-        self.assertEqual(counts["reviewed_upstream_version"], "9.1.2")
+        # HAMCP-371: the newest reviewed registry row is now the S8 ha-mcp 9.2.0
+        # row (9.1.0 and 9.1.2 stay admitted). Its advertised_tool_count is 77
+        # and upstream_tool_policy_9_2_0.json marks ha_get_hacs_info
+        # unsupported, so the counts below hold for 9.2.0 as written.
+        self.assertEqual(counts["reviewed_upstream_version"], "9.2.0")
         self.assertEqual(counts["reviewed_stock_catalog"], 77)
         # HAMCP-290: the retired delegated ha_get_hacs_info is subtracted
         # only when the newest policy classifies it automatic_read; 9.1.2
