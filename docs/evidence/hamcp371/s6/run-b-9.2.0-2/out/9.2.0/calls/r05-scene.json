@@ -1,0 +1,129 @@
+{
+ "arguments_built_by": "adapter code, policy 9.1.2",
+ "calls_format_version": 1,
+ "exchange": {
+  "body_bytes": 566,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":105,\"result\":{\"content\":[{\"text\":\"{\\\"success\\\":true,\\\"action\\\":\\\"get\\\",\\\"scene_id\\\":\\\"hamcp371_scene\\\",\\\"config\\\":{\\\"id\\\":\\\"hamcp371_scene\\\",\\\"name\\\":\\\"HAMCP371 scene\\\",\\\"entities\\\":{\\\"input_boolean.hamcp371_helper\\\":\\\"on\\\"}},\\\"config_hash\\\":\\\"77981084a78eb607\\\"}\",\"type\":\"text\"}],\"isError\":false,\"structuredContent\":{\"success\":true,\"action\":\"get\",\"scene_id\":\"hamcp371_scene\",\"config\":{\"id\":\"hamcp371_scene\",\"name\":\"HAMCP371 scene\",\"entities\":{\"input_boolean.hamcp371_helper\":\"on\"}},\"config_hash\":\"77981084a78eb607\"}}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 105,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\"success\":true,\"action\":\"get\",\"scene_id\":\"hamcp371_scene\",\"config\":{\"id\":\"hamcp371_scene\",\"name\":\"HAMCP371 scene\",\"entities\":{\"input_boolean.hamcp371_helper\":\"on\"}},\"config_hash\":\"77981084a78eb607\"}",
+       "type": "text"
+      }
+     ],
+     "isError": false,
+     "structuredContent": {
+      "action": "get",
+      "config": {
+       "entities": {
+        "input_boolean.hamcp371_helper": "on"
+       },
+       "id": "hamcp371_scene",
+       "name": "HAMCP371 scene"
+      },
+      "config_hash": "77981084a78eb607",
+      "scene_id": "hamcp371_scene",
+      "success": true
+     }
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 105,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "scene_id": "hamcp371_scene"
+     },
+     "name": "ha_config_get_scene"
+    }
+   },
+   "method": "POST",
+   "path": "/mcp"
+  },
+  "response": {
+   "id": 105,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\"success\":true,\"action\":\"get\",\"scene_id\":\"hamcp371_scene\",\"config\":{\"id\":\"hamcp371_scene\",\"name\":\"HAMCP371 scene\",\"entities\":{\"input_boolean.hamcp371_helper\":\"on\"}},\"config_hash\":\"77981084a78eb607\"}",
+      "type": "text"
+     }
+    ],
+    "isError": false,
+    "structuredContent": {
+     "action": "get",
+     "config": {
+      "entities": {
+       "input_boolean.hamcp371_helper": "on"
+      },
+      "id": "hamcp371_scene",
+      "name": "HAMCP371 scene"
+     },
+     "config_hash": "77981084a78eb607",
+     "scene_id": "hamcp371_scene",
+     "success": true
+    }
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Sun, 15 Nov 2026 05:03:21 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null,
+ "group": "reads",
+ "id": "r05-scene",
+ "idle": false,
+ "kind": "public",
+ "new_session": false,
+ "public_arguments": {
+  "scene_id": "hamcp371_scene"
+ },
+ "public_tool": "ha_config_get_scene",
+ "upstream_tool": "ha_config_get_scene",
+ "wire_arguments": {
+  "scene_id": "hamcp371_scene"
+ }
+}

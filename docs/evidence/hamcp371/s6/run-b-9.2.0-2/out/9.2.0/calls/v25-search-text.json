@@ -1,0 +1,334 @@
+{
+ "arguments_built_by": "adapter code, policy 9.1.2",
+ "calls_format_version": 1,
+ "exchange": {
+  "body_bytes": 4492,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":137,\"result\":{\"content\":[{\"text\":\"{\\\"success\\\":true,\\\"query\\\":\\\"HAMCP371\\\",\\\"entities\\\":[{\\\"entity_id\\\":\\\"automation.hamcp371_automation\\\",\\\"friendly_name\\\":\\\"HAMCP371 automation\\\",\\\"domain\\\":\\\"automation\\\",\\\"state\\\":\\\"on\\\",\\\"score\\\":80,\\\"match_type\\\":\\\"exact_match\\\",\\\"name\\\":\\\"HAMCP371 automation\\\"},{\\\"entity_id\\\":\\\"calendar.hamcp371_calendar\\\",\\\"friendly_name\\\":\\\"HAMCP371 calendar\\\",\\\"domain\\\":\\\"calendar\\\",\\\"state\\\":\\\"off\\\",\\\"score\\\":80,\\\"match_type\\\":\\\"exact_match\\\",\\\"name\\\":\\\"HAMCP371 calendar\\\"},{\\\"entity_id\\\":\\\"group.hamcp371_group\\\",\\\"friendly_name\\\":\\\"HAMCP371 groupe \u00e9\u00fc \u96ea\\\",\\\"domain\\\":\\\"group\\\",\\\"state\\\":\\\"unknown\\\",\\\"score\\\":80,\\\"match_type\\\":\\\"exact_match\\\",\\\"name\\\":\\\"HAMCP371 groupe \u00e9\u00fc \u96ea\\\"},{\\\"entity_id\\\":\\\"input_boolean.hamcp371_helper\\\",\\\"friendly_name\\\":\\\"HAMCP371 helper\\\",\\\"domain\\\":\\\"input_boolean\\\",\\\"state\\\":\\\"on\\\",\\\"score\\\":80,\\\"match_type\\\":\\\"exact_match\\\",\\\"name\\\":\\\"HAMCP371 helper\\\"},{\\\"entity_id\\\":\\\"person.hamcp371_owner\\\",\\\"friendly_name\\\":\\\"HAMCP371 owner\\\",\\\"domain\\\":\\\"person\\\",\\\"state\\\":\\\"unknown\\\",\\\"score\\\":80,\\\"match_type\\\":\\\"exact_match\\\",\\\"name\\\":\\\"HAMCP371 owner\\\"}],\\\"entity_total_matches\\\":12,\\\"automations\\\":[{\\\"entity_id\\\":\\\"automation.hamcp371_automation\\\",\\\"friendly_name\\\":\\\"HAMCP371 automation\\\",\\\"score\\\":100,\\\"match_in_name\\\":true,\\\"match_in_config\\\":true,\\\"match_in_references\\\":false}],\\\"scripts\\\":[{\\\"entity_id\\\":\\\"script.hamcp371_script\\\",\\\"script_id\\\":\\\"hamcp371_script\\\",\\\"friendly_name\\\":\\\"HAMCP371 script\\\",\\\"score\\\":100,\\\"match_in_name\\\":true,\\\"match_in_config\\\":true,\\\"match_in_references\\\":false}],\\\"scenes\\\":[{\\\"entity_id\\\":\\\"scene.hamcp371_scene\\\",\\\"scene_id\\\":\\\"hamcp371_scene\\\",\\\"friendly_name\\\":\\\"HAMCP371 scene\\\",\\\"score\\\":100,\\\"match_in_name\\\":true,\\\"match_in_config\\\":true,\\\"match_in_references\\\":false}],\\\"helpers\\\":[{\\\"entity_id\\\":\\\"input_boolean.hamcp371_helper\\\",\\\"helper_type\\\":\\\"input_boolean\\\",\\\"name\\\":\\\"HAMCP371 helper\\\",\\\"score\\\":100,\\\"match_in_name\\\":true,\\\"match_in_config\\\":true,\\\"match_in_references\\\":false}],\\\"search_types\\\":[\\\"automation\\\",\\\"script\\\",\\\"scene\\\",\\\"helper\\\"],\\\"config_total_matches\\\":4,\\\"partial\\\":false,\\\"errors\\\":[],\\\"entity_has_more\\\":true,\\\"entity_next_offset\\\":5,\\\"offset\\\":0,\\\"limit\\\":5,\\\"count\\\":9,\\\"search_type\\\":\\\"exact_match\\\",\\\"config_has_more\\\":false,\\\"config_next_offset\\\":null,\\\"has_more\\\":true,\\\"next_offset\\\":5}\",\"type\":\"text\"}],\"isError\":false,\"structuredContent\":{\"success\":true,\"query\":\"HAMCP371\",\"entities\":[{\"entity_id\":\"automation.hamcp371_automation\",\"friendly_name\":\"HAMCP371 automation\",\"domain\":\"automation\",\"state\":\"on\",\"score\":80,\"match_type\":\"exact_match\",\"name\":\"HAMCP371 automation\"},{\"entity_id\":\"calendar.hamcp371_calendar\",\"friendly_name\":\"HAMCP371 calendar\",\"domain\":\"calendar\",\"state\":\"off\",\"score\":80,\"match_type\":\"exact_match\",\"name\":\"HAMCP371 calendar\"},{\"entity_id\":\"group.hamcp371_group\",\"friendly_name\":\"HAMCP371 groupe \u00e9\u00fc \u96ea\",\"domain\":\"group\",\"state\":\"unknown\",\"score\":80,\"match_type\":\"exact_match\",\"name\":\"HAMCP371 groupe \u00e9\u00fc \u96ea\"},{\"entity_id\":\"input_boolean.hamcp371_helper\",\"friendly_name\":\"HAMCP371 helper\",\"domain\":\"input_boolean\",\"state\":\"on\",\"score\":80,\"match_type\":\"exact_match\",\"name\":\"HAMCP371 helper\"},{\"entity_id\":\"person.hamcp371_owner\",\"friendly_name\":\"HAMCP371 owner\",\"domain\":\"person\",\"state\":\"unknown\",\"score\":80,\"match_type\":\"exact_match\",\"name\":\"HAMCP371 owner\"}],\"entity_total_matches\":12,\"automations\":[{\"entity_id\":\"automation.hamcp371_automation\",\"friendly_name\":\"HAMCP371 automation\",\"score\":100,\"match_in_name\":true,\"match_in_config\":true,\"match_in_references\":false}],\"scripts\":[{\"entity_id\":\"script.hamcp371_script\",\"script_id\":\"hamcp371_script\",\"friendly_name\":\"HAMCP371 script\",\"score\":100,\"match_in_name\":true,\"match_in_config\":true,\"match_in_references\":false}],\"scenes\":[{\"entity_id\":\"scene.hamcp371_scene\",\"scene_id\":\"hamcp371_scene\",\"friendly_name\":\"HAMCP371 scene\",\"score\":100,\"match_in_name\":true,\"match_in_config\":true,\"match_in_references\":false}],\"helpers\":[{\"entity_id\":\"input_boolean.hamcp371_helper\",\"helper_type\":\"input_boolean\",\"name\":\"HAMCP371 helper\",\"score\":100,\"match_in_name\":true,\"match_in_config\":true,\"match_in_references\":false}],\"search_types\":[\"automation\",\"script\",\"scene\",\"helper\"],\"config_total_matches\":4,\"partial\":false,\"errors\":[],\"entity_has_more\":true,\"entity_next_offset\":5,\"offset\":0,\"limit\":5,\"count\":9,\"search_type\":\"exact_match\",\"config_has_more\":false,\"config_next_offset\":null,\"has_more\":true,\"next_offset\":5}}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 137,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\"success\":true,\"query\":\"HAMCP371\",\"entities\":[{\"entity_id\":\"automation.hamcp371_automation\",\"friendly_name\":\"HAMCP371 automation\",\"domain\":\"automation\",\"state\":\"on\",\"score\":80,\"match_type\":\"exact_match\",\"name\":\"HAMCP371 automation\"},{\"entity_id\":\"calendar.hamcp371_calendar\",\"friendly_name\":\"HAMCP371 calendar\",\"domain\":\"calendar\",\"state\":\"off\",\"score\":80,\"match_type\":\"exact_match\",\"name\":\"HAMCP371 calendar\"},{\"entity_id\":\"group.hamcp371_group\",\"friendly_name\":\"HAMCP371 groupe \u00e9\u00fc \u96ea\",\"domain\":\"group\",\"state\":\"unknown\",\"score\":80,\"match_type\":\"exact_match\",\"name\":\"HAMCP371 groupe \u00e9\u00fc \u96ea\"},{\"entity_id\":\"input_boolean.hamcp371_helper\",\"friendly_name\":\"HAMCP371 helper\",\"domain\":\"input_boolean\",\"state\":\"on\",\"score\":80,\"match_type\":\"exact_match\",\"name\":\"HAMCP371 helper\"},{\"entity_id\":\"person.hamcp371_owner\",\"friendly_name\":\"HAMCP371 owner\",\"domain\":\"person\",\"state\":\"unknown\",\"score\":80,\"match_type\":\"exact_match\",\"name\":\"HAMCP371 owner\"}],\"entity_total_matches\":12,\"automations\":[{\"entity_id\":\"automation.hamcp371_automation\",\"friendly_name\":\"HAMCP371 automation\",\"score\":100,\"match_in_name\":true,\"match_in_config\":true,\"match_in_references\":false}],\"scripts\":[{\"entity_id\":\"script.hamcp371_script\",\"script_id\":\"hamcp371_script\",\"friendly_name\":\"HAMCP371 script\",\"score\":100,\"match_in_name\":true,\"match_in_config\":true,\"match_in_references\":false}],\"scenes\":[{\"entity_id\":\"scene.hamcp371_scene\",\"scene_id\":\"hamcp371_scene\",\"friendly_name\":\"HAMCP371 scene\",\"score\":100,\"match_in_name\":true,\"match_in_config\":true,\"match_in_references\":false}],\"helpers\":[{\"entity_id\":\"input_boolean.hamcp371_helper\",\"helper_type\":\"input_boolean\",\"name\":\"HAMCP371 helper\",\"score\":100,\"match_in_name\":true,\"match_in_config\":true,\"match_in_references\":false}],\"search_types\":[\"automation\",\"script\",\"scene\",\"helper\"],\"config_total_matches\":4,\"partial\":false,\"errors\":[],\"entity_has_more\":true,\"entity_next_offset\":5,\"offset\":0,\"limit\":5,\"count\":9,\"search_type\":\"exact_match\",\"config_has_more\":false,\"config_next_offset\":null,\"has_more\":true,\"next_offset\":5}",
+       "type": "text"
+      }
+     ],
+     "isError": false,
+     "structuredContent": {
+      "automations": [
+       {
+        "entity_id": "automation.hamcp371_automation",
+        "friendly_name": "HAMCP371 automation",
+        "match_in_config": true,
+        "match_in_name": true,
+        "match_in_references": false,
+        "score": 100
+       }
+      ],
+      "config_has_more": false,
+      "config_next_offset": null,
+      "config_total_matches": 4,
+      "count": 9,
+      "entities": [
+       {
+        "domain": "automation",
+        "entity_id": "automation.hamcp371_automation",
+        "friendly_name": "HAMCP371 automation",
+        "match_type": "exact_match",
+        "name": "HAMCP371 automation",
+        "score": 80,
+        "state": "on"
+       },
+       {
+        "domain": "calendar",
+        "entity_id": "calendar.hamcp371_calendar",
+        "friendly_name": "HAMCP371 calendar",
+        "match_type": "exact_match",
+        "name": "HAMCP371 calendar",
+        "score": 80,
+        "state": "off"
+       },
+       {
+        "domain": "group",
+        "entity_id": "group.hamcp371_group",
+        "friendly_name": "HAMCP371 groupe \u00e9\u00fc \u96ea",
+        "match_type": "exact_match",
+        "name": "HAMCP371 groupe \u00e9\u00fc \u96ea",
+        "score": 80,
+        "state": "unknown"
+       },
+       {
+        "domain": "input_boolean",
+        "entity_id": "input_boolean.hamcp371_helper",
+        "friendly_name": "HAMCP371 helper",
+        "match_type": "exact_match",
+        "name": "HAMCP371 helper",
+        "score": 80,
+        "state": "on"
+       },
+       {
+        "domain": "person",
+        "entity_id": "person.hamcp371_owner",
+        "friendly_name": "HAMCP371 owner",
+        "match_type": "exact_match",
+        "name": "HAMCP371 owner",
+        "score": 80,
+        "state": "unknown"
+       }
+      ],
+      "entity_has_more": true,
+      "entity_next_offset": 5,
+      "entity_total_matches": 12,
+      "errors": [],
+      "has_more": true,
+      "helpers": [
+       {
+        "entity_id": "input_boolean.hamcp371_helper",
+        "helper_type": "input_boolean",
+        "match_in_config": true,
+        "match_in_name": true,
+        "match_in_references": false,
+        "name": "HAMCP371 helper",
+        "score": 100
+       }
+      ],
+      "limit": 5,
+      "next_offset": 5,
+      "offset": 0,
+      "partial": false,
+      "query": "HAMCP371",
+      "scenes": [
+       {
+        "entity_id": "scene.hamcp371_scene",
+        "friendly_name": "HAMCP371 scene",
+        "match_in_config": true,
+        "match_in_name": true,
+        "match_in_references": false,
+        "scene_id": "hamcp371_scene",
+        "score": 100
+       }
+      ],
+      "scripts": [
+       {
+        "entity_id": "script.hamcp371_script",
+        "friendly_name": "HAMCP371 script",
+        "match_in_config": true,
+        "match_in_name": true,
+        "match_in_references": false,
+        "score": 100,
+        "script_id": "hamcp371_script"
+       }
+      ],
+      "search_type": "exact_match",
+      "search_types": [
+       "automation",
+       "script",
+       "scene",
+       "helper"
+      ],
+      "success": true
+     }
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 137,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "limit": 5,
+      "query": "HAMCP371"
+     },
+     "name": "ha_search"
+    }
+   },
+   "method": "POST",
+   "path": "/mcp"
+  },
+  "response": {
+   "id": 137,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\"success\":true,\"query\":\"HAMCP371\",\"entities\":[{\"entity_id\":\"automation.hamcp371_automation\",\"friendly_name\":\"HAMCP371 automation\",\"domain\":\"automation\",\"state\":\"on\",\"score\":80,\"match_type\":\"exact_match\",\"name\":\"HAMCP371 automation\"},{\"entity_id\":\"calendar.hamcp371_calendar\",\"friendly_name\":\"HAMCP371 calendar\",\"domain\":\"calendar\",\"state\":\"off\",\"score\":80,\"match_type\":\"exact_match\",\"name\":\"HAMCP371 calendar\"},{\"entity_id\":\"group.hamcp371_group\",\"friendly_name\":\"HAMCP371 groupe \u00e9\u00fc \u96ea\",\"domain\":\"group\",\"state\":\"unknown\",\"score\":80,\"match_type\":\"exact_match\",\"name\":\"HAMCP371 groupe \u00e9\u00fc \u96ea\"},{\"entity_id\":\"input_boolean.hamcp371_helper\",\"friendly_name\":\"HAMCP371 helper\",\"domain\":\"input_boolean\",\"state\":\"on\",\"score\":80,\"match_type\":\"exact_match\",\"name\":\"HAMCP371 helper\"},{\"entity_id\":\"person.hamcp371_owner\",\"friendly_name\":\"HAMCP371 owner\",\"domain\":\"person\",\"state\":\"unknown\",\"score\":80,\"match_type\":\"exact_match\",\"name\":\"HAMCP371 owner\"}],\"entity_total_matches\":12,\"automations\":[{\"entity_id\":\"automation.hamcp371_automation\",\"friendly_name\":\"HAMCP371 automation\",\"score\":100,\"match_in_name\":true,\"match_in_config\":true,\"match_in_references\":false}],\"scripts\":[{\"entity_id\":\"script.hamcp371_script\",\"script_id\":\"hamcp371_script\",\"friendly_name\":\"HAMCP371 script\",\"score\":100,\"match_in_name\":true,\"match_in_config\":true,\"match_in_references\":false}],\"scenes\":[{\"entity_id\":\"scene.hamcp371_scene\",\"scene_id\":\"hamcp371_scene\",\"friendly_name\":\"HAMCP371 scene\",\"score\":100,\"match_in_name\":true,\"match_in_config\":true,\"match_in_references\":false}],\"helpers\":[{\"entity_id\":\"input_boolean.hamcp371_helper\",\"helper_type\":\"input_boolean\",\"name\":\"HAMCP371 helper\",\"score\":100,\"match_in_name\":true,\"match_in_config\":true,\"match_in_references\":false}],\"search_types\":[\"automation\",\"script\",\"scene\",\"helper\"],\"config_total_matches\":4,\"partial\":false,\"errors\":[],\"entity_has_more\":true,\"entity_next_offset\":5,\"offset\":0,\"limit\":5,\"count\":9,\"search_type\":\"exact_match\",\"config_has_more\":false,\"config_next_offset\":null,\"has_more\":true,\"next_offset\":5}",
+      "type": "text"
+     }
+    ],
+    "isError": false,
+    "structuredContent": {
+     "automations": [
+      {
+       "entity_id": "automation.hamcp371_automation",
+       "friendly_name": "HAMCP371 automation",
+       "match_in_config": true,
+       "match_in_name": true,
+       "match_in_references": false,
+       "score": 100
+      }
+     ],
+     "config_has_more": false,
+     "config_next_offset": null,
+     "config_total_matches": 4,
+     "count": 9,
+     "entities": [
+      {
+       "domain": "automation",
+       "entity_id": "automation.hamcp371_automation",
+       "friendly_name": "HAMCP371 automation",
+       "match_type": "exact_match",
+       "name": "HAMCP371 automation",
+       "score": 80,
+       "state": "on"
+      },
+      {
+       "domain": "calendar",
+       "entity_id": "calendar.hamcp371_calendar",
+       "friendly_name": "HAMCP371 calendar",
+       "match_type": "exact_match",
+       "name": "HAMCP371 calendar",
+       "score": 80,
+       "state": "off"
+      },
+      {
+       "domain": "group",
+       "entity_id": "group.hamcp371_group",
+       "friendly_name": "HAMCP371 groupe \u00e9\u00fc \u96ea",
+       "match_type": "exact_match",
+       "name": "HAMCP371 groupe \u00e9\u00fc \u96ea",
+       "score": 80,
+       "state": "unknown"
+      },
+      {
+       "domain": "input_boolean",
+       "entity_id": "input_boolean.hamcp371_helper",
+       "friendly_name": "HAMCP371 helper",
+       "match_type": "exact_match",
+       "name": "HAMCP371 helper",
+       "score": 80,
+       "state": "on"
+      },
+      {
+       "domain": "person",
+       "entity_id": "person.hamcp371_owner",
+       "friendly_name": "HAMCP371 owner",
+       "match_type": "exact_match",
+       "name": "HAMCP371 owner",
+       "score": 80,
+       "state": "unknown"
+      }
+     ],
+     "entity_has_more": true,
+     "entity_next_offset": 5,
+     "entity_total_matches": 12,
+     "errors": [],
+     "has_more": true,
+     "helpers": [
+      {
+       "entity_id": "input_boolean.hamcp371_helper",
+       "helper_type": "input_boolean",
+       "match_in_config": true,
+       "match_in_name": true,
+       "match_in_references": false,
+       "name": "HAMCP371 helper",
+       "score": 100
+      }
+     ],
+     "limit": 5,
+     "next_offset": 5,
+     "offset": 0,
+     "partial": false,
+     "query": "HAMCP371",
+     "scenes": [
+      {
+       "entity_id": "scene.hamcp371_scene",
+       "friendly_name": "HAMCP371 scene",
+       "match_in_config": true,
+       "match_in_name": true,
+       "match_in_references": false,
+       "scene_id": "hamcp371_scene",
+       "score": 100
+      }
+     ],
+     "scripts": [
+      {
+       "entity_id": "script.hamcp371_script",
+       "friendly_name": "HAMCP371 script",
+       "match_in_config": true,
+       "match_in_name": true,
+       "match_in_references": false,
+       "score": 100,
+       "script_id": "hamcp371_script"
+      }
+     ],
+     "search_type": "exact_match",
+     "search_types": [
+      "automation",
+      "script",
+      "scene",
+      "helper"
+     ],
+     "success": true
+    }
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Sun, 15 Nov 2026 05:03:21 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null,
+ "group": "variants",
+ "id": "v25-search-text",
+ "idle": false,
+ "kind": "public",
+ "new_session": false,
+ "public_arguments": {
+  "limit": 5,
+  "query": "HAMCP371"
+ },
+ "public_tool": "ha_search",
+ "upstream_tool": "ha_search",
+ "wire_arguments": {
+  "limit": 5,
+  "query": "HAMCP371"
+ }
+}

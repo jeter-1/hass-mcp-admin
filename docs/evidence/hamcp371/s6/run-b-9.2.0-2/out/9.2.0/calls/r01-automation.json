@@ -1,0 +1,247 @@
+{
+ "arguments_built_by": "adapter code, policy 9.1.2",
+ "calls_format_version": 1,
+ "exchange": {
+  "body_bytes": 2798,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":101,\"result\":{\"content\":[{\"text\":\"{\\\"success\\\":true,\\\"action\\\":\\\"get\\\",\\\"automation_id\\\":\\\"automation.hamcp371_automation\\\",\\\"config\\\":{\\\"id\\\":\\\"hamcp371_automation\\\",\\\"alias\\\":\\\"HAMCP371 automation\\\",\\\"description\\\":\\\"disposable seed\\\",\\\"triggers\\\":[],\\\"conditions\\\":[],\\\"actions\\\":[{\\\"action\\\":\\\"input_boolean.toggle\\\",\\\"target\\\":{\\\"entity_id\\\":\\\"input_boolean.hamcp371_helper\\\"}}],\\\"mode\\\":\\\"single\\\",\\\"category\\\":\\\"01M7ESCZS195TMNY14JZB4R7JQ\\\"},\\\"config_hash\\\":\\\"7b4d8eac8cffc83e\\\",\\\"entity\\\":{\\\"area_id\\\":null,\\\"categories\\\":{\\\"automation\\\":\\\"01M7ESCZS195TMNY14JZB4R7JQ\\\"},\\\"config_entry_id\\\":null,\\\"config_subentry_id\\\":null,\\\"created_at\\\":1794718990.13557,\\\"device_id\\\":null,\\\"disabled_by\\\":null,\\\"entity_category\\\":null,\\\"entity_id\\\":\\\"automation.hamcp371_automation\\\",\\\"hidden_by\\\":null,\\\"icon\\\":null,\\\"id\\\":\\\"2187b859893e6df1ba832d3a8c12225e\\\",\\\"labels\\\":[],\\\"modified_at\\\":1794718990.736853,\\\"name\\\":null,\\\"next_name_part\\\":null,\\\"options\\\":{\\\"conversation\\\":{\\\"should_expose\\\":false}},\\\"original_name\\\":\\\"HAMCP371 automation\\\",\\\"platform\\\":\\\"automation\\\",\\\"translation_key\\\":null,\\\"unique_id\\\":\\\"hamcp371_automation\\\",\\\"aliases\\\":[null],\\\"capabilities\\\":{\\\"id\\\":\\\"hamcp371_automation\\\"},\\\"device_class\\\":null,\\\"original_device_class\\\":null,\\\"original_icon\\\":null},\\\"validation\\\":null,\\\"references\\\":{\\\"entities\\\":[\\\"input_boolean.hamcp371_helper\\\"],\\\"devices\\\":[],\\\"areas\\\":[],\\\"floors\\\":[],\\\"labels\\\":[],\\\"blueprint\\\":null}}\",\"type\":\"text\"}],\"isError\":false,\"structuredContent\":{\"success\":true,\"action\":\"get\",\"automation_id\":\"automation.hamcp371_automation\",\"config\":{\"id\":\"hamcp371_automation\",\"alias\":\"HAMCP371 automation\",\"description\":\"disposable seed\",\"triggers\":[],\"conditions\":[],\"actions\":[{\"action\":\"input_boolean.toggle\",\"target\":{\"entity_id\":\"input_boolean.hamcp371_helper\"}}],\"mode\":\"single\",\"category\":\"01M7ESCZS195TMNY14JZB4R7JQ\"},\"config_hash\":\"7b4d8eac8cffc83e\",\"entity\":{\"area_id\":null,\"categories\":{\"automation\":\"01M7ESCZS195TMNY14JZB4R7JQ\"},\"config_entry_id\":null,\"config_subentry_id\":null,\"created_at\":1794718990.13557,\"device_id\":null,\"disabled_by\":null,\"entity_category\":null,\"entity_id\":\"automation.hamcp371_automation\",\"hidden_by\":null,\"icon\":null,\"id\":\"2187b859893e6df1ba832d3a8c12225e\",\"labels\":[],\"modified_at\":1794718990.736853,\"name\":null,\"next_name_part\":null,\"options\":{\"conversation\":{\"should_expose\":false}},\"original_name\":\"HAMCP371 automation\",\"platform\":\"automation\",\"translation_key\":null,\"unique_id\":\"hamcp371_automation\",\"aliases\":[null],\"capabilities\":{\"id\":\"hamcp371_automation\"},\"device_class\":null,\"original_device_class\":null,\"original_icon\":null},\"validation\":null,\"references\":{\"entities\":[\"input_boolean.hamcp371_helper\"],\"devices\":[],\"areas\":[],\"floors\":[],\"labels\":[],\"blueprint\":null}}}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 101,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\"success\":true,\"action\":\"get\",\"automation_id\":\"automation.hamcp371_automation\",\"config\":{\"id\":\"hamcp371_automation\",\"alias\":\"HAMCP371 automation\",\"description\":\"disposable seed\",\"triggers\":[],\"conditions\":[],\"actions\":[{\"action\":\"input_boolean.toggle\",\"target\":{\"entity_id\":\"input_boolean.hamcp371_helper\"}}],\"mode\":\"single\",\"category\":\"01M7ESCZS195TMNY14JZB4R7JQ\"},\"config_hash\":\"7b4d8eac8cffc83e\",\"entity\":{\"area_id\":null,\"categories\":{\"automation\":\"01M7ESCZS195TMNY14JZB4R7JQ\"},\"config_entry_id\":null,\"config_subentry_id\":null,\"created_at\":1794718990.13557,\"device_id\":null,\"disabled_by\":null,\"entity_category\":null,\"entity_id\":\"automation.hamcp371_automation\",\"hidden_by\":null,\"icon\":null,\"id\":\"2187b859893e6df1ba832d3a8c12225e\",\"labels\":[],\"modified_at\":1794718990.736853,\"name\":null,\"next_name_part\":null,\"options\":{\"conversation\":{\"should_expose\":false}},\"original_name\":\"HAMCP371 automation\",\"platform\":\"automation\",\"translation_key\":null,\"unique_id\":\"hamcp371_automation\",\"aliases\":[null],\"capabilities\":{\"id\":\"hamcp371_automation\"},\"device_class\":null,\"original_device_class\":null,\"original_icon\":null},\"validation\":null,\"references\":{\"entities\":[\"input_boolean.hamcp371_helper\"],\"devices\":[],\"areas\":[],\"floors\":[],\"labels\":[],\"blueprint\":null}}",
+       "type": "text"
+      }
+     ],
+     "isError": false,
+     "structuredContent": {
+      "action": "get",
+      "automation_id": "automation.hamcp371_automation",
+      "config": {
+       "actions": [
+        {
+         "action": "input_boolean.toggle",
+         "target": {
+          "entity_id": "input_boolean.hamcp371_helper"
+         }
+        }
+       ],
+       "alias": "HAMCP371 automation",
+       "category": "01M7ESCZS195TMNY14JZB4R7JQ",
+       "conditions": [],
+       "description": "disposable seed",
+       "id": "hamcp371_automation",
+       "mode": "single",
+       "triggers": []
+      },
+      "config_hash": "7b4d8eac8cffc83e",
+      "entity": {
+       "aliases": [
+        null
+       ],
+       "area_id": null,
+       "capabilities": {
+        "id": "hamcp371_automation"
+       },
+       "categories": {
+        "automation": "01M7ESCZS195TMNY14JZB4R7JQ"
+       },
+       "config_entry_id": null,
+       "config_subentry_id": null,
+       "created_at": 1794718990.13557,
+       "device_class": null,
+       "device_id": null,
+       "disabled_by": null,
+       "entity_category": null,
+       "entity_id": "automation.hamcp371_automation",
+       "hidden_by": null,
+       "icon": null,
+       "id": "2187b859893e6df1ba832d3a8c12225e",
+       "labels": [],
+       "modified_at": 1794718990.736853,
+       "name": null,
+       "next_name_part": null,
+       "options": {
+        "conversation": {
+         "should_expose": false
+        }
+       },
+       "original_device_class": null,
+       "original_icon": null,
+       "original_name": "HAMCP371 automation",
+       "platform": "automation",
+       "translation_key": null,
+       "unique_id": "hamcp371_automation"
+      },
+      "references": {
+       "areas": [],
+       "blueprint": null,
+       "devices": [],
+       "entities": [
+        "input_boolean.hamcp371_helper"
+       ],
+       "floors": [],
+       "labels": []
+      },
+      "success": true,
+      "validation": null
+     }
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 101,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "entity_id": "hamcp371_automation"
+     },
+     "name": "ha_config_get_automation"
+    }
+   },
+   "method": "POST",
+   "path": "/mcp"
+  },
+  "response": {
+   "id": 101,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\"success\":true,\"action\":\"get\",\"automation_id\":\"automation.hamcp371_automation\",\"config\":{\"id\":\"hamcp371_automation\",\"alias\":\"HAMCP371 automation\",\"description\":\"disposable seed\",\"triggers\":[],\"conditions\":[],\"actions\":[{\"action\":\"input_boolean.toggle\",\"target\":{\"entity_id\":\"input_boolean.hamcp371_helper\"}}],\"mode\":\"single\",\"category\":\"01M7ESCZS195TMNY14JZB4R7JQ\"},\"config_hash\":\"7b4d8eac8cffc83e\",\"entity\":{\"area_id\":null,\"categories\":{\"automation\":\"01M7ESCZS195TMNY14JZB4R7JQ\"},\"config_entry_id\":null,\"config_subentry_id\":null,\"created_at\":1794718990.13557,\"device_id\":null,\"disabled_by\":null,\"entity_category\":null,\"entity_id\":\"automation.hamcp371_automation\",\"hidden_by\":null,\"icon\":null,\"id\":\"2187b859893e6df1ba832d3a8c12225e\",\"labels\":[],\"modified_at\":1794718990.736853,\"name\":null,\"next_name_part\":null,\"options\":{\"conversation\":{\"should_expose\":false}},\"original_name\":\"HAMCP371 automation\",\"platform\":\"automation\",\"translation_key\":null,\"unique_id\":\"hamcp371_automation\",\"aliases\":[null],\"capabilities\":{\"id\":\"hamcp371_automation\"},\"device_class\":null,\"original_device_class\":null,\"original_icon\":null},\"validation\":null,\"references\":{\"entities\":[\"input_boolean.hamcp371_helper\"],\"devices\":[],\"areas\":[],\"floors\":[],\"labels\":[],\"blueprint\":null}}",
+      "type": "text"
+     }
+    ],
+    "isError": false,
+    "structuredContent": {
+     "action": "get",
+     "automation_id": "automation.hamcp371_automation",
+     "config": {
+      "actions": [
+       {
+        "action": "input_boolean.toggle",
+        "target": {
+         "entity_id": "input_boolean.hamcp371_helper"
+        }
+       }
+      ],
+      "alias": "HAMCP371 automation",
+      "category": "01M7ESCZS195TMNY14JZB4R7JQ",
+      "conditions": [],
+      "description": "disposable seed",
+      "id": "hamcp371_automation",
+      "mode": "single",
+      "triggers": []
+     },
+     "config_hash": "7b4d8eac8cffc83e",
+     "entity": {
+      "aliases": [
+       null
+      ],
+      "area_id": null,
+      "capabilities": {
+       "id": "hamcp371_automation"
+      },
+      "categories": {
+       "automation": "01M7ESCZS195TMNY14JZB4R7JQ"
+      },
+      "config_entry_id": null,
+      "config_subentry_id": null,
+      "created_at": 1794718990.13557,
+      "device_class": null,
+      "device_id": null,
+      "disabled_by": null,
+      "entity_category": null,
+      "entity_id": "automation.hamcp371_automation",
+      "hidden_by": null,
+      "icon": null,
+      "id": "2187b859893e6df1ba832d3a8c12225e",
+      "labels": [],
+      "modified_at": 1794718990.736853,
+      "name": null,
+      "next_name_part": null,
+      "options": {
+       "conversation": {
+        "should_expose": false
+       }
+      },
+      "original_device_class": null,
+      "original_icon": null,
+      "original_name": "HAMCP371 automation",
+      "platform": "automation",
+      "translation_key": null,
+      "unique_id": "hamcp371_automation"
+     },
+     "references": {
+      "areas": [],
+      "blueprint": null,
+      "devices": [],
+      "entities": [
+       "input_boolean.hamcp371_helper"
+      ],
+      "floors": [],
+      "labels": []
+     },
+     "success": true,
+     "validation": null
+    }
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Sun, 15 Nov 2026 05:03:21 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null,
+ "group": "reads",
+ "id": "r01-automation",
+ "idle": false,
+ "kind": "public",
+ "new_session": false,
+ "public_arguments": {
+  "identifier": "hamcp371_automation"
+ },
+ "public_tool": "ha_config_get_automation",
+ "upstream_tool": "ha_config_get_automation",
+ "wire_arguments": {
+  "entity_id": "hamcp371_automation"
+ }
+}

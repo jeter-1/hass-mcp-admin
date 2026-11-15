@@ -1,0 +1,103 @@
+{
+ "arguments_built_by": "adapter code, policy 9.1.2",
+ "calls_format_version": 1,
+ "exchange": {
+  "body_bytes": 698,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":127,\"result\":{\"content\":[{\"text\":\"{\\n  \\\"success\\\": false,\\n  \\\"error\\\": {\\n    \\\"code\\\": \\\"SERVICE_CALL_FAILED\\\",\\n    \\\"message\\\": \\\"Command failed: Unknown command.\\\",\\n    \\\"suggestion\\\": \\\"Check the service parameters are correct\\\",\\n    \\\"suggestions\\\": [\\n      \\\"Check the service parameters are correct\\\",\\n      \\\"Verify the target entity supports this service\\\",\\n      \\\"Check Home Assistant logs for detailed error\\\",\\n      \\\"Check that this installation supports apps (add-ons).\\\"\\n    ]\\n  },\\n  \\\"endpoint\\\": \\\"/addons\\\",\\n  \\\"operation\\\": \\\"Supervisor API /addons\\\",\\n  \\\"timeout_seconds\\\": 30.0\\n}\",\"type\":\"text\"}],\"isError\":true}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 127,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\n  \"success\": false,\n  \"error\": {\n    \"code\": \"SERVICE_CALL_FAILED\",\n    \"message\": \"Command failed: Unknown command.\",\n    \"suggestion\": \"Check the service parameters are correct\",\n    \"suggestions\": [\n      \"Check the service parameters are correct\",\n      \"Verify the target entity supports this service\",\n      \"Check Home Assistant logs for detailed error\",\n      \"Check that this installation supports apps (add-ons).\"\n    ]\n  },\n  \"endpoint\": \"/addons\",\n  \"operation\": \"Supervisor API /addons\",\n  \"timeout_seconds\": 30.0\n}",
+       "type": "text"
+      }
+     ],
+     "isError": true
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 127,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "include_stats": false,
+      "source": "installed"
+     },
+     "name": "ha_get_app"
+    }
+   },
+   "method": "POST",
+   "path": "/mcp"
+  },
+  "response": {
+   "id": 127,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\n  \"success\": false,\n  \"error\": {\n    \"code\": \"SERVICE_CALL_FAILED\",\n    \"message\": \"Command failed: Unknown command.\",\n    \"suggestion\": \"Check the service parameters are correct\",\n    \"suggestions\": [\n      \"Check the service parameters are correct\",\n      \"Verify the target entity supports this service\",\n      \"Check Home Assistant logs for detailed error\",\n      \"Check that this installation supports apps (add-ons).\"\n    ]\n  },\n  \"endpoint\": \"/addons\",\n  \"operation\": \"Supervisor API /addons\",\n  \"timeout_seconds\": 30.0\n}",
+      "type": "text"
+     }
+    ],
+    "isError": true
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Sun, 15 Nov 2026 05:07:37 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null,
+ "group": "reads",
+ "id": "r27-apps",
+ "idle": false,
+ "kind": "public",
+ "new_session": false,
+ "public_arguments": {},
+ "public_tool": "ha_get_app",
+ "upstream_tool": "ha_get_app",
+ "wire_arguments": {
+  "include_stats": false,
+  "source": "installed"
+ }
+}

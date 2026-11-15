@@ -1,0 +1,155 @@
+{
+ "arguments_built_by": "adapter code, policy 9.1.2",
+ "calls_format_version": 1,
+ "exchange": {
+  "body_bytes": 1634,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":112,\"result\":{\"content\":[{\"text\":\"{\\\"success\\\":true,\\\"data\\\":{\\\"domain\\\":\\\"automation\\\",\\\"count\\\":2,\\\"blueprints\\\":[{\\\"path\\\":\\\"homeassistant/motion_light.yaml\\\",\\\"domain\\\":\\\"automation\\\",\\\"name\\\":\\\"motion_light\\\",\\\"description\\\":\\\"Turn on a light when motion is detected.\\\",\\\"source_url\\\":\\\"https://github.com/home-assistant/core/blob/dev/homeassistant/components/automation/blueprints/motion_light.yaml\\\",\\\"author\\\":\\\"Home Assistant\\\"},{\\\"path\\\":\\\"homeassistant/notify_leaving_zone.yaml\\\",\\\"domain\\\":\\\"automation\\\",\\\"name\\\":\\\"notify_leaving_zone\\\",\\\"description\\\":\\\"Send a notification to a device when a person leaves a specific zone.\\\",\\\"source_url\\\":\\\"https://github.com/home-assistant/core/blob/dev/homeassistant/components/automation/blueprints/notify_leaving_zone.yaml\\\",\\\"author\\\":\\\"Home Assistant\\\"}]}}\",\"type\":\"text\"}],\"isError\":false,\"structuredContent\":{\"success\":true,\"data\":{\"domain\":\"automation\",\"count\":2,\"blueprints\":[{\"path\":\"homeassistant/motion_light.yaml\",\"domain\":\"automation\",\"name\":\"motion_light\",\"description\":\"Turn on a light when motion is detected.\",\"source_url\":\"https://github.com/home-assistant/core/blob/dev/homeassistant/components/automation/blueprints/motion_light.yaml\",\"author\":\"Home Assistant\"},{\"path\":\"homeassistant/notify_leaving_zone.yaml\",\"domain\":\"automation\",\"name\":\"notify_leaving_zone\",\"description\":\"Send a notification to a device when a person leaves a specific zone.\",\"source_url\":\"https://github.com/home-assistant/core/blob/dev/homeassistant/components/automation/blueprints/notify_leaving_zone.yaml\",\"author\":\"Home Assistant\"}]}}}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 112,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\"success\":true,\"data\":{\"domain\":\"automation\",\"count\":2,\"blueprints\":[{\"path\":\"homeassistant/motion_light.yaml\",\"domain\":\"automation\",\"name\":\"motion_light\",\"description\":\"Turn on a light when motion is detected.\",\"source_url\":\"https://github.com/home-assistant/core/blob/dev/homeassistant/components/automation/blueprints/motion_light.yaml\",\"author\":\"Home Assistant\"},{\"path\":\"homeassistant/notify_leaving_zone.yaml\",\"domain\":\"automation\",\"name\":\"notify_leaving_zone\",\"description\":\"Send a notification to a device when a person leaves a specific zone.\",\"source_url\":\"https://github.com/home-assistant/core/blob/dev/homeassistant/components/automation/blueprints/notify_leaving_zone.yaml\",\"author\":\"Home Assistant\"}]}}",
+       "type": "text"
+      }
+     ],
+     "isError": false,
+     "structuredContent": {
+      "data": {
+       "blueprints": [
+        {
+         "author": "Home Assistant",
+         "description": "Turn on a light when motion is detected.",
+         "domain": "automation",
+         "name": "motion_light",
+         "path": "homeassistant/motion_light.yaml",
+         "source_url": "https://github.com/home-assistant/core/blob/dev/homeassistant/components/automation/blueprints/motion_light.yaml"
+        },
+        {
+         "author": "Home Assistant",
+         "description": "Send a notification to a device when a person leaves a specific zone.",
+         "domain": "automation",
+         "name": "notify_leaving_zone",
+         "path": "homeassistant/notify_leaving_zone.yaml",
+         "source_url": "https://github.com/home-assistant/core/blob/dev/homeassistant/components/automation/blueprints/notify_leaving_zone.yaml"
+        }
+       ],
+       "count": 2,
+       "domain": "automation"
+      },
+      "success": true
+     }
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 112,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "action": "list",
+      "domain": "automation"
+     },
+     "name": "ha_manage_blueprints"
+    }
+   },
+   "method": "POST",
+   "path": "/mcp"
+  },
+  "response": {
+   "id": 112,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\"success\":true,\"data\":{\"domain\":\"automation\",\"count\":2,\"blueprints\":[{\"path\":\"homeassistant/motion_light.yaml\",\"domain\":\"automation\",\"name\":\"motion_light\",\"description\":\"Turn on a light when motion is detected.\",\"source_url\":\"https://github.com/home-assistant/core/blob/dev/homeassistant/components/automation/blueprints/motion_light.yaml\",\"author\":\"Home Assistant\"},{\"path\":\"homeassistant/notify_leaving_zone.yaml\",\"domain\":\"automation\",\"name\":\"notify_leaving_zone\",\"description\":\"Send a notification to a device when a person leaves a specific zone.\",\"source_url\":\"https://github.com/home-assistant/core/blob/dev/homeassistant/components/automation/blueprints/notify_leaving_zone.yaml\",\"author\":\"Home Assistant\"}]}}",
+      "type": "text"
+     }
+    ],
+    "isError": false,
+    "structuredContent": {
+     "data": {
+      "blueprints": [
+       {
+        "author": "Home Assistant",
+        "description": "Turn on a light when motion is detected.",
+        "domain": "automation",
+        "name": "motion_light",
+        "path": "homeassistant/motion_light.yaml",
+        "source_url": "https://github.com/home-assistant/core/blob/dev/homeassistant/components/automation/blueprints/motion_light.yaml"
+       },
+       {
+        "author": "Home Assistant",
+        "description": "Send a notification to a device when a person leaves a specific zone.",
+        "domain": "automation",
+        "name": "notify_leaving_zone",
+        "path": "homeassistant/notify_leaving_zone.yaml",
+        "source_url": "https://github.com/home-assistant/core/blob/dev/homeassistant/components/automation/blueprints/notify_leaving_zone.yaml"
+       }
+      ],
+      "count": 2,
+      "domain": "automation"
+     },
+     "success": true
+    }
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Thu, 12 Nov 2026 06:23:55 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null,
+ "group": "reads",
+ "id": "r12-blueprints",
+ "idle": false,
+ "kind": "public",
+ "new_session": false,
+ "public_arguments": {
+  "domain": "automation"
+ },
+ "public_tool": "ha_get_blueprint",
+ "upstream_tool": "ha_manage_blueprints",
+ "wire_arguments": {
+  "action": "list",
+  "domain": "automation"
+ }
+}

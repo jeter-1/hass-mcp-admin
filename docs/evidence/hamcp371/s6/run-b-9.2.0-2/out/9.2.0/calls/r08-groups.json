@@ -1,0 +1,167 @@
+{
+ "arguments_built_by": "adapter code, policy 9.1.2",
+ "calls_format_version": 1,
+ "exchange": {
+  "body_bytes": 1316,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":108,\"result\":{\"content\":[{\"text\":\"{\\\"success\\\":true,\\\"groups\\\":[{\\\"friendly_name\\\":\\\"HAMCP371 groupe \u00e9\u00fc \u96ea\\\",\\\"icon\\\":null,\\\"auto\\\":false,\\\"order\\\":0,\\\"entity_id\\\":\\\"group.hamcp371_group\\\",\\\"state\\\":\\\"unknown\\\",\\\"last_changed\\\":\\\"2026-11-15T05:03:07.749006+00:00\\\",\\\"last_reported\\\":\\\"2026-11-15T05:03:09.211078+00:00\\\",\\\"last_updated\\\":\\\"2026-11-15T05:03:07.749006+00:00\\\",\\\"context\\\":{\\\"id\\\":\\\"01M7ESCXF5PM6TCSGS2F5Y0BE6\\\",\\\"parent_id\\\":null,\\\"user_id\\\":null},\\\"object_id\\\":\\\"hamcp371_group\\\",\\\"entity_ids\\\":[\\\"sun.sun\\\"]}],\\\"total_count\\\":1,\\\"offset\\\":0,\\\"limit\\\":5,\\\"count\\\":1,\\\"has_more\\\":false,\\\"next_offset\\\":null,\\\"message\\\":\\\"Found 1 group(s)\\\"}\",\"type\":\"text\"}],\"isError\":false,\"structuredContent\":{\"success\":true,\"groups\":[{\"friendly_name\":\"HAMCP371 groupe \u00e9\u00fc \u96ea\",\"icon\":null,\"auto\":false,\"order\":0,\"entity_id\":\"group.hamcp371_group\",\"state\":\"unknown\",\"last_changed\":\"2026-11-15T05:03:07.749006+00:00\",\"last_reported\":\"2026-11-15T05:03:09.211078+00:00\",\"last_updated\":\"2026-11-15T05:03:07.749006+00:00\",\"context\":{\"id\":\"01M7ESCXF5PM6TCSGS2F5Y0BE6\",\"parent_id\":null,\"user_id\":null},\"object_id\":\"hamcp371_group\",\"entity_ids\":[\"sun.sun\"]}],\"total_count\":1,\"offset\":0,\"limit\":5,\"count\":1,\"has_more\":false,\"next_offset\":null,\"message\":\"Found 1 group(s)\"}}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 108,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\"success\":true,\"groups\":[{\"friendly_name\":\"HAMCP371 groupe \u00e9\u00fc \u96ea\",\"icon\":null,\"auto\":false,\"order\":0,\"entity_id\":\"group.hamcp371_group\",\"state\":\"unknown\",\"last_changed\":\"2026-11-15T05:03:07.749006+00:00\",\"last_reported\":\"2026-11-15T05:03:09.211078+00:00\",\"last_updated\":\"2026-11-15T05:03:07.749006+00:00\",\"context\":{\"id\":\"01M7ESCXF5PM6TCSGS2F5Y0BE6\",\"parent_id\":null,\"user_id\":null},\"object_id\":\"hamcp371_group\",\"entity_ids\":[\"sun.sun\"]}],\"total_count\":1,\"offset\":0,\"limit\":5,\"count\":1,\"has_more\":false,\"next_offset\":null,\"message\":\"Found 1 group(s)\"}",
+       "type": "text"
+      }
+     ],
+     "isError": false,
+     "structuredContent": {
+      "count": 1,
+      "groups": [
+       {
+        "auto": false,
+        "context": {
+         "id": "01M7ESCXF5PM6TCSGS2F5Y0BE6",
+         "parent_id": null,
+         "user_id": null
+        },
+        "entity_id": "group.hamcp371_group",
+        "entity_ids": [
+         "sun.sun"
+        ],
+        "friendly_name": "HAMCP371 groupe \u00e9\u00fc \u96ea",
+        "icon": null,
+        "last_changed": "2026-11-15T05:03:07.749006+00:00",
+        "last_reported": "2026-11-15T05:03:09.211078+00:00",
+        "last_updated": "2026-11-15T05:03:07.749006+00:00",
+        "object_id": "hamcp371_group",
+        "order": 0,
+        "state": "unknown"
+       }
+      ],
+      "has_more": false,
+      "limit": 5,
+      "message": "Found 1 group(s)",
+      "next_offset": null,
+      "offset": 0,
+      "success": true,
+      "total_count": 1
+     }
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 108,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "limit": 5
+     },
+     "name": "ha_config_list_groups"
+    }
+   },
+   "method": "POST",
+   "path": "/mcp"
+  },
+  "response": {
+   "id": 108,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\"success\":true,\"groups\":[{\"friendly_name\":\"HAMCP371 groupe \u00e9\u00fc \u96ea\",\"icon\":null,\"auto\":false,\"order\":0,\"entity_id\":\"group.hamcp371_group\",\"state\":\"unknown\",\"last_changed\":\"2026-11-15T05:03:07.749006+00:00\",\"last_reported\":\"2026-11-15T05:03:09.211078+00:00\",\"last_updated\":\"2026-11-15T05:03:07.749006+00:00\",\"context\":{\"id\":\"01M7ESCXF5PM6TCSGS2F5Y0BE6\",\"parent_id\":null,\"user_id\":null},\"object_id\":\"hamcp371_group\",\"entity_ids\":[\"sun.sun\"]}],\"total_count\":1,\"offset\":0,\"limit\":5,\"count\":1,\"has_more\":false,\"next_offset\":null,\"message\":\"Found 1 group(s)\"}",
+      "type": "text"
+     }
+    ],
+    "isError": false,
+    "structuredContent": {
+     "count": 1,
+     "groups": [
+      {
+       "auto": false,
+       "context": {
+        "id": "01M7ESCXF5PM6TCSGS2F5Y0BE6",
+        "parent_id": null,
+        "user_id": null
+       },
+       "entity_id": "group.hamcp371_group",
+       "entity_ids": [
+        "sun.sun"
+       ],
+       "friendly_name": "HAMCP371 groupe \u00e9\u00fc \u96ea",
+       "icon": null,
+       "last_changed": "2026-11-15T05:03:07.749006+00:00",
+       "last_reported": "2026-11-15T05:03:09.211078+00:00",
+       "last_updated": "2026-11-15T05:03:07.749006+00:00",
+       "object_id": "hamcp371_group",
+       "order": 0,
+       "state": "unknown"
+      }
+     ],
+     "has_more": false,
+     "limit": 5,
+     "message": "Found 1 group(s)",
+     "next_offset": null,
+     "offset": 0,
+     "success": true,
+     "total_count": 1
+    }
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Sun, 15 Nov 2026 05:03:21 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null,
+ "group": "reads",
+ "id": "r08-groups",
+ "idle": false,
+ "kind": "public",
+ "new_session": false,
+ "public_arguments": {
+  "limit": 5
+ },
+ "public_tool": "ha_config_list_groups",
+ "upstream_tool": "ha_config_list_groups",
+ "wire_arguments": {
+  "limit": 5
+ }
+}

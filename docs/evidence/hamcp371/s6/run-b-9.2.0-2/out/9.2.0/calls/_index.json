@@ -1,0 +1,1832 @@
+{
+ "calls": [
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 2798,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "r01-automation.json",
+   "group": "reads",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "r01-automation",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {
+    "identifier": "hamcp371_automation"
+   },
+   "public_tool": "ha_config_get_automation",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.033,
+   "session": 0,
+   "sha256": "01bcdfafc2aec7b7181d852a251ed539754b26cb705acc3cb601d816597c5ba7",
+   "upstream_tool": "ha_config_get_automation",
+   "wire_arguments": {
+    "entity_id": "hamcp371_automation"
+   }
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 1196,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "r02-calendar-events.json",
+   "group": "reads",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "r02-calendar-events",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {
+    "end": "2026-11-15T00:03:09-06:00",
+    "entity_id": "calendar.hamcp371_calendar",
+    "max_results": 5,
+    "start": "2026-11-14T21:03:09-06:00"
+   },
+   "public_tool": "ha_config_get_calendar_events",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.006,
+   "session": 0,
+   "sha256": "99f355487d122dec3d4292209c7ba7ca13d84280d33323cbf5829e3ac527dada",
+   "upstream_tool": "ha_config_get_calendar_events",
+   "wire_arguments": {
+    "end": "2026-11-15T00:03:09-06:00",
+    "entity_id": "calendar.hamcp371_calendar",
+    "max_results": 5,
+    "start": "2026-11-14T21:03:09-06:00"
+   }
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 698,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "r03-category.json",
+   "group": "reads",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "r03-category",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {
+    "scope": "automation"
+   },
+   "public_tool": "ha_config_get_category",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.004,
+   "session": 0,
+   "sha256": "29159ffa360f25da6161773a2a1c7319f90cf71605800eca441276e55ddf985d",
+   "upstream_tool": "ha_config_get_category",
+   "wire_arguments": {
+    "scope": "automation"
+   }
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 620,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "r04-label.json",
+   "group": "reads",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "r04-label",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {},
+   "public_tool": "ha_config_get_label",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.003,
+   "session": 0,
+   "sha256": "27dd017983ba11b3fe2e7ac0c5e7686f4dbb7b3e182cd9300674a0ab0963c9f5",
+   "upstream_tool": "ha_config_get_label",
+   "wire_arguments": {}
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 566,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "r05-scene.json",
+   "group": "reads",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "r05-scene",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {
+    "scene_id": "hamcp371_scene"
+   },
+   "public_tool": "ha_config_get_scene",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.008,
+   "session": 0,
+   "sha256": "c7857e7659857b1b35fe0c870a7576bcfff7f8f229e00d169ef714f3431029e3",
+   "upstream_tool": "ha_config_get_scene",
+   "wire_arguments": {
+    "scene_id": "hamcp371_scene"
+   }
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 672,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "r06-script.json",
+   "group": "reads",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "r06-script",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {
+    "script_id": "hamcp371_script"
+   },
+   "public_tool": "ha_config_get_script",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.006,
+   "session": 0,
+   "sha256": "acb40b2ca8c0667e9f62d9cbca1357c5d03fc2792b7fbefe402b6d49191fce5d",
+   "upstream_tool": "ha_config_get_script",
+   "wire_arguments": {
+    "script_id": "hamcp371_script"
+   }
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 758,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "r07-dashboard-resources.json",
+   "group": "reads",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "r07-dashboard-resources",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {
+    "limit": 5
+   },
+   "public_tool": "ha_config_list_dashboard_resources",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.004,
+   "session": 0,
+   "sha256": "a93841980122bcfdb8956848c498ad8fa82228843a4db75cb8b0e6b11fe087b6",
+   "upstream_tool": "ha_config_list_dashboard_resources",
+   "wire_arguments": {
+    "limit": 5
+   }
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 1316,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "r08-groups.json",
+   "group": "reads",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "r08-groups",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {
+    "limit": 5
+   },
+   "public_tool": "ha_config_list_groups",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.006,
+   "session": 0,
+   "sha256": "259849b82c2efc756d282533f6a9ad765698919491066f9bcc350339086ee959",
+   "upstream_tool": "ha_config_list_groups",
+   "wire_arguments": {
+    "limit": 5
+   }
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 804,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "r09-helpers.json",
+   "group": "reads",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "r09-helpers",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {
+    "helper_type": "input_boolean",
+    "limit": 5
+   },
+   "public_tool": "ha_config_list_helpers",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.005,
+   "session": 0,
+   "sha256": "cd7fd8cedaab74497427ec15673f659d116d429ba119a50d60cd04304fe8d263",
+   "upstream_tool": "ha_config_list_helpers",
+   "wire_arguments": {
+    "describe": false,
+    "helper_type": "input_boolean",
+    "limit": 5
+   }
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 532,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "r10-template.json",
+   "group": "reads",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "r10-template",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {
+    "template": "{{ states('input_boolean.hamcp371_helper') }}"
+   },
+   "public_tool": "ha_eval_template",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.007,
+   "session": 0,
+   "sha256": "fed9539addd86910b33fb0588cf8a0f817cc4fbaedce558f31730d0564d3f734",
+   "upstream_tool": "ha_eval_template",
+   "wire_arguments": {
+    "condition": null,
+    "report_errors": true,
+    "strict": false,
+    "template": "{{ states('input_boolean.hamcp371_helper') }}",
+    "timeout": 3,
+    "variables": null
+   }
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 1012,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "r11-automation-traces.json",
+   "group": "reads",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "r11-automation-traces",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {
+    "automation_id": "automation.hamcp371_automation",
+    "limit": 5
+   },
+   "public_tool": "ha_get_automation_traces",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.005,
+   "session": 0,
+   "sha256": "53b42271224fcf7abb08eb0781c00fd8a88d5d2e713e13eb9ffe07998606f2be",
+   "upstream_tool": "ha_get_automation_traces",
+   "wire_arguments": {
+    "automation_id": "automation.hamcp371_automation",
+    "limit": 5
+   }
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 1634,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "r12-blueprints.json",
+   "group": "reads",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "r12-blueprints",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {
+    "domain": "automation"
+   },
+   "public_tool": "ha_get_blueprint",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.008,
+   "session": 0,
+   "sha256": "b76554ce3b7354ddb84c8a91a8237d654a953b15e04fa20d9959b1252d3a8793",
+   "upstream_tool": "ha_manage_blueprints",
+   "wire_arguments": {
+    "action": "list",
+    "domain": "automation"
+   }
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 2614,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "r13-devices.json",
+   "group": "reads",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "r13-devices",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {
+    "limit": 5
+   },
+   "public_tool": "ha_get_device",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.006,
+   "session": 0,
+   "sha256": "68624622ef53d78d05b52a723ea6bf5c7b4eef41251b5743bca0571dcebb4144",
+   "upstream_tool": "ha_get_device",
+   "wire_arguments": {
+    "limit": 5
+   }
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 1482,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "r14-entity.json",
+   "group": "reads",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "r14-entity",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {
+    "entity_id": "input_boolean.hamcp371_helper"
+   },
+   "public_tool": "ha_get_entity",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.005,
+   "session": 0,
+   "sha256": "e5e11c1c05bdb00ca00d2fb537af08cfbcb4eef1e09a07a4792457cf2a61d207",
+   "upstream_tool": "ha_get_entity",
+   "wire_arguments": {
+    "entity_id": "input_boolean.hamcp371_helper"
+   }
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 902,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "r15-entity-exposure.json",
+   "group": "reads",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "r15-entity-exposure",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {
+    "entity_id": "input_boolean.hamcp371_helper"
+   },
+   "public_tool": "ha_get_entity_exposure",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.004,
+   "session": 0,
+   "sha256": "77ab6e5a13705819b02061814b90f4bf566174782fa0face9af3e07c923cbc36",
+   "upstream_tool": "ha_get_entity_exposure",
+   "wire_arguments": {
+    "entity_id": "input_boolean.hamcp371_helper"
+   }
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 2998,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "r16-history.json",
+   "group": "reads",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "r16-history",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {
+    "end_time": "2026-11-15T00:03:09-06:00",
+    "entity_ids": "input_boolean.hamcp371_helper",
+    "limit": 5,
+    "start_time": "2026-11-14T21:03:09-06:00"
+   },
+   "public_tool": "ha_get_history",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.012,
+   "session": 0,
+   "sha256": "04afb9b0d1361406a7eaef93eeb00ce4902133a15dcb8b8bfcd591752319d265",
+   "upstream_tool": "ha_get_history",
+   "wire_arguments": {
+    "core_options": null,
+    "end_time": "2026-11-15T00:03:09-06:00",
+    "entity_ids": "input_boolean.hamcp371_helper",
+    "include_schema": false,
+    "limit": 5,
+    "start_time": "2026-11-14T21:03:09-06:00",
+    "summary": false
+   }
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 2742,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "r17-overview.json",
+   "group": "reads",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "r17-overview",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {
+    "detail_level": "minimal",
+    "domains": [
+     "input_boolean"
+    ],
+    "include_notifications": false,
+    "limit": 5
+   },
+   "public_tool": "ha_get_overview",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.013,
+   "session": 0,
+   "sha256": "51b858d0fb4e748af43054433c1505338fe87e4e0c3bdae70d35592e13c06655",
+   "upstream_tool": "ha_get_overview",
+   "wire_arguments": {
+    "detail_level": "minimal",
+    "domains": [
+     "input_boolean"
+    ],
+    "include_notifications": false,
+    "limit": 5
+   }
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 48021,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "r18-skill-guide.json",
+   "group": "reads",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "r18-skill-guide",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {
+    "file": "SKILL.md",
+    "skill": "home-assistant-best-practices"
+   },
+   "public_tool": "ha_get_skill_guide",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.009,
+   "session": 0,
+   "sha256": "c3c30c494e870a15e2b76bcdd535474c440e1177dd5f940f7d2dd1b3ad4a2b29",
+   "upstream_tool": "ha_get_skill_guide",
+   "wire_arguments": {
+    "file": "SKILL.md"
+   }
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 1644,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "r19-state.json",
+   "group": "reads",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "r19-state",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {
+    "entity_id": "input_boolean.hamcp371_helper"
+   },
+   "public_tool": "ha_get_state",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.005,
+   "session": 0,
+   "sha256": "e91a40fca9facfb4328fbe51ad233657bfb3c633ed503fd6543db57425697803",
+   "upstream_tool": "ha_get_state",
+   "wire_arguments": {
+    "entity_id": "input_boolean.hamcp371_helper"
+   }
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 2380,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "r20-system-health.json",
+   "group": "reads",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "r20-system-health",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {},
+   "public_tool": "ha_get_system_health",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.033,
+   "session": 0,
+   "sha256": "ec2221aba197125cd8606c0f8ad2075efd055180a41e33594a1a450d57c7806e",
+   "upstream_tool": "ha_get_system_health",
+   "wire_arguments": {}
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 790,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "r21-todo.json",
+   "group": "reads",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "r21-todo",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {},
+   "public_tool": "ha_get_todo",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.006,
+   "session": 0,
+   "sha256": "2c8964478e35b46336429cdbbbb3638e9ae6fd2e109b13a8f645a171706566cc",
+   "upstream_tool": "ha_get_todo",
+   "wire_arguments": {}
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 1226,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "r22-zones.json",
+   "group": "reads",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "r22-zones",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {},
+   "public_tool": "ha_get_zone",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.005,
+   "session": 0,
+   "sha256": "38b3eb3a2489f4a77788cb78c0603852c3945d2baec4316d78daf416d978df9e",
+   "upstream_tool": "ha_get_zone",
+   "wire_arguments": {}
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 2924,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "r23-floors-areas.json",
+   "group": "reads",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "r23-floors-areas",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {},
+   "public_tool": "ha_list_floors_areas",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.004,
+   "session": 0,
+   "sha256": "baa58443d4f2ec0adce3d797cf83ed9c7890f568d08901e3ef68771abd5837f1",
+   "upstream_tool": "ha_list_floors_areas",
+   "wire_arguments": {}
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 4314,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "r24-services.json",
+   "group": "reads",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "r24-services",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {
+    "limit": 5
+   },
+   "public_tool": "ha_list_services",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.055,
+   "session": 0,
+   "sha256": "ce934bad08e2d6af5dcf5e2714a576fe9cd5cd28dbd2991354ca8690ca63cdde",
+   "upstream_tool": "ha_list_services",
+   "wire_arguments": {
+    "limit": 5
+   }
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 1410,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "r25-search.json",
+   "group": "reads",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "r25-search",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {
+    "domain_filter": "input_boolean",
+    "limit": 5
+   },
+   "public_tool": "ha_search",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.007,
+   "session": 0,
+   "sha256": "5d3ed6191e3976f042681e9db6edb476d4fdd3068da58b690863e332bdd5a6fc",
+   "upstream_tool": "ha_search",
+   "wire_arguments": {
+    "domain_filter": "input_boolean",
+    "limit": 5
+   }
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 13520,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "r26-integrations.json",
+   "group": "reads",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "r26-integrations",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {
+    "limit": 5
+   },
+   "public_tool": "ha_get_integration",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.007,
+   "session": 0,
+   "sha256": "d1a594783b144fe1fded7566d047af54a6d04063a4f0a47cc277b81910839ed2",
+   "upstream_tool": "ha_get_integration",
+   "wire_arguments": {
+    "exact_match": true,
+    "include_options": false,
+    "limit": 200,
+    "offset": 0
+   }
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 698,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "r27-apps.json",
+   "group": "reads",
+   "has_structured_content": false,
+   "http_status": 200,
+   "id": "r27-apps",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": true,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {},
+   "public_tool": "ha_get_app",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.005,
+   "session": 0,
+   "sha256": "5ae84f96253f78965e7fcbdd6d687d31f4b00fb7f6ebcb616b89746e8d9eacdd",
+   "upstream_tool": "ha_get_app",
+   "wire_arguments": {
+    "include_stats": false,
+    "source": "installed"
+   }
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 3054,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "v16-history-relative.json",
+   "group": "variants",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "v16-history-relative",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {
+    "entity_ids": "input_boolean.hamcp371_helper",
+    "limit": 5,
+    "start_time": "24h"
+   },
+   "public_tool": "ha_get_history",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.004,
+   "session": 0,
+   "sha256": "4dabc77a965ff2d6c03939b86c84aff495603486d9c3433cc7cd15353b3651fe",
+   "upstream_tool": "ha_get_history",
+   "wire_arguments": {
+    "core_options": null,
+    "entity_ids": "input_boolean.hamcp371_helper",
+    "include_schema": false,
+    "limit": 5,
+    "start_time": "24h",
+    "summary": false
+   }
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 2998,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "v16-history-offset-free.json",
+   "group": "variants",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "v16-history-offset-free",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {
+    "end_time": "2026-11-15T00:03:09",
+    "entity_ids": "input_boolean.hamcp371_helper",
+    "limit": 5,
+    "start_time": "2026-11-14T21:03:09"
+   },
+   "public_tool": "ha_get_history",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.004,
+   "session": 0,
+   "sha256": "cedf45425c0c0cb28a2a9835cfa9b65e978d814cae032b11024003943457ee96",
+   "upstream_tool": "ha_get_history",
+   "wire_arguments": {
+    "core_options": null,
+    "end_time": "2026-11-15T00:03:09",
+    "entity_ids": "input_boolean.hamcp371_helper",
+    "include_schema": false,
+    "limit": 5,
+    "start_time": "2026-11-14T21:03:09",
+    "summary": false
+   }
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 2280,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "v16-history-statistics.json",
+   "group": "variants",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "v16-history-statistics",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {
+    "end_time": "2026-11-15T00:03:09-06:00",
+    "entity_ids": "sensor.hamcp371_energy",
+    "limit": 5,
+    "source": "statistics",
+    "start_time": "2026-11-14T21:03:09-06:00"
+   },
+   "public_tool": "ha_get_history",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.012,
+   "session": 0,
+   "sha256": "cf6f8f91b2c2cea8f0e054c76a5175b25815fab10bd7078d1c246ec8d0ce3da1",
+   "upstream_tool": "ha_get_history",
+   "wire_arguments": {
+    "core_options": null,
+    "end_time": "2026-11-15T00:03:09-06:00",
+    "entity_ids": "sensor.hamcp371_energy",
+    "include_schema": false,
+    "limit": 5,
+    "source": "statistics",
+    "start_time": "2026-11-14T21:03:09-06:00",
+    "summary": false
+   }
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 6062,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "v17-overview-standard.json",
+   "group": "variants",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "v17-overview-standard",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {
+    "detail_level": "standard",
+    "include_notifications": false,
+    "limit": 5
+   },
+   "public_tool": "ha_get_overview",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.006,
+   "session": 0,
+   "sha256": "8d356276db1c3fae895ea08b55b20c3430a8e0a8688505e71994583266dc9cfe",
+   "upstream_tool": "ha_get_overview",
+   "wire_arguments": {
+    "detail_level": "standard",
+    "include_notifications": false,
+    "limit": 5
+   }
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 640,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "v21-todo-list.json",
+   "group": "variants",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "v21-todo-list",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {
+    "entity_id": "todo.hamcp371_todo"
+   },
+   "public_tool": "ha_get_todo",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.006,
+   "session": 0,
+   "sha256": "b1813910de26de981f4d4fbdc1f4940ae4ea1a9159b0ef53657a69ad78935cf1",
+   "upstream_tool": "ha_get_todo",
+   "wire_arguments": {
+    "entity_id": "todo.hamcp371_todo"
+   }
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 736,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "v22-zone-single.json",
+   "group": "variants",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "v22-zone-single",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {
+    "zone_id": "hamcp371_zone"
+   },
+   "public_tool": "ha_get_zone",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.005,
+   "session": 0,
+   "sha256": "789c520bae8e6b6c796552cbad3914df8ae452f32d89a41c784047bb2b4d573b",
+   "upstream_tool": "ha_get_zone",
+   "wire_arguments": {
+    "zone_id": "hamcp371_zone"
+   }
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 2224,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "v24-services-domain-summary.json",
+   "group": "variants",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "v24-services-domain-summary",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {
+    "detail_level": "summary",
+    "domain": "input_boolean",
+    "limit": 5
+   },
+   "public_tool": "ha_list_services",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.004,
+   "session": 0,
+   "sha256": "34ab95d0c35c5fcc12c70d7cff1a0b1590f8f1d2e1cefdc8f3743d92eca2ef0f",
+   "upstream_tool": "ha_list_services",
+   "wire_arguments": {
+    "detail_level": "summary",
+    "domain": "input_boolean",
+    "limit": 5
+   }
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 2322,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "v24-services-domain-full.json",
+   "group": "variants",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "v24-services-domain-full",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {
+    "detail_level": "full",
+    "domain": "input_boolean",
+    "limit": 5
+   },
+   "public_tool": "ha_list_services",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.004,
+   "session": 0,
+   "sha256": "75bbf09bebfd1c9aa8bc0d1441cb7de10d405b8b575ff1a3897f2d98495c1beb",
+   "upstream_tool": "ha_list_services",
+   "wire_arguments": {
+    "detail_level": "full",
+    "domain": "input_boolean",
+    "limit": 5
+   }
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 5634,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "v24-services-response.json",
+   "group": "variants",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "v24-services-response",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {
+    "detail_level": "full",
+    "domain": "calendar",
+    "limit": 5
+   },
+   "public_tool": "ha_list_services",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.004,
+   "session": 0,
+   "sha256": "19111a6c2c4fe77566c8c7494e42f9181962299401f292663891c15cee716a77",
+   "upstream_tool": "ha_list_services",
+   "wire_arguments": {
+    "detail_level": "full",
+    "domain": "calendar",
+    "limit": 5
+   }
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 4492,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "v25-search-text.json",
+   "group": "variants",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "v25-search-text",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {
+    "limit": 5,
+    "query": "HAMCP371"
+   },
+   "public_tool": "ha_search",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.005,
+   "session": 0,
+   "sha256": "34a008baa7b1a853ce60e50bc933aa3616c06e39d8832ae1d476e9f9e44a31dc",
+   "upstream_tool": "ha_search",
+   "wire_arguments": {
+    "limit": 5,
+    "query": "HAMCP371"
+   }
+  },
+  {
+   "arguments_built_by": "harness, sent as written",
+   "body_bytes": 594,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "p3-wrong-type.json",
+   "group": "errors",
+   "has_structured_content": false,
+   "http_status": 200,
+   "id": "p3-wrong-type",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": true,
+   "json_rpc_error_code": null,
+   "kind": "upstream",
+   "new_session": false,
+   "public_arguments": {
+    "limit": {
+     "synthetic": true
+    },
+    "query": "hamcp371"
+   },
+   "public_tool": "ha_search",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.005,
+   "session": 0,
+   "sha256": "9852f1cdcc345985192bf51d62f5f2e5b79c84e898c9de9a411c63085e394f55",
+   "upstream_tool": "ha_search",
+   "wire_arguments": {
+    "limit": {
+     "synthetic": true
+    },
+    "query": "hamcp371"
+   }
+  },
+  {
+   "arguments_built_by": "harness, sent as written",
+   "body_bytes": 1054,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "p3-unknown-argument.json",
+   "group": "errors",
+   "has_structured_content": false,
+   "http_status": 200,
+   "id": "p3-unknown-argument",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": true,
+   "json_rpc_error_code": null,
+   "kind": "upstream",
+   "new_session": false,
+   "public_arguments": {
+    "entity_id": "input_boolean.hamcp371_helper",
+    "hamcp371_unknown_argument": true
+   },
+   "public_tool": "ha_get_state",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.004,
+   "session": 0,
+   "sha256": "8625b6f3bda84851f6dcfc063b265fc324dfb30f4c67a155eb0d40161a1552a8",
+   "upstream_tool": "ha_get_state",
+   "wire_arguments": {
+    "entity_id": "input_boolean.hamcp371_helper",
+    "hamcp371_unknown_argument": true
+   }
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 498,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "p4-absent-automation.json",
+   "group": "errors",
+   "has_structured_content": false,
+   "http_status": 200,
+   "id": "p4-absent-automation",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": true,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {
+    "identifier": "hamcp371_absent_object"
+   },
+   "public_tool": "ha_config_get_automation",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.009,
+   "session": 0,
+   "sha256": "947b631c543222345cfd4f39088027000a01573be6fcb3f9dc3264802c397cc7",
+   "upstream_tool": "ha_config_get_automation",
+   "wire_arguments": {
+    "entity_id": "hamcp371_absent_object"
+   }
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 722,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "p4-absent-state.json",
+   "group": "errors",
+   "has_structured_content": false,
+   "http_status": 200,
+   "id": "p4-absent-state",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": true,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {
+    "entity_id": "sensor.hamcp371_absent_object"
+   },
+   "public_tool": "ha_get_state",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.004,
+   "session": 0,
+   "sha256": "83c0c60b17e6b92a5173ad288ab526a97c8b028a2dbcd0cb5dd0eb4d97d243bc",
+   "upstream_tool": "ha_get_state",
+   "wire_arguments": {
+    "entity_id": "sensor.hamcp371_absent_object"
+   }
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 562,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "p4-absent-entity.json",
+   "group": "errors",
+   "has_structured_content": false,
+   "http_status": 200,
+   "id": "p4-absent-entity",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": true,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {
+    "entity_id": "sensor.hamcp371_absent_object"
+   },
+   "public_tool": "ha_get_entity",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.004,
+   "session": 0,
+   "sha256": "c56de2372ce56db7f8695601087cab6327f6b9764e740d0c3937773549fd7ac5",
+   "upstream_tool": "ha_get_entity",
+   "wire_arguments": {
+    "entity_id": "sensor.hamcp371_absent_object"
+   }
+  },
+  {
+   "arguments_built_by": "harness, sent as written",
+   "body_bytes": 70046,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "t-large-services.json",
+   "group": "transport",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "t-large-services",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "upstream",
+   "new_session": false,
+   "public_arguments": {
+    "detail_level": "full"
+   },
+   "public_tool": "ha_list_services",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.014,
+   "session": 0,
+   "sha256": "eb601c698457875f7885d7b48449c37c2f3cb03849695e9853f086f0fdcc11e9",
+   "upstream_tool": "ha_list_services",
+   "wire_arguments": {
+    "detail_level": "full"
+   }
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 1482,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "t-after-idle.json",
+   "group": "transport",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "t-after-idle",
+   "idle": true,
+   "idle_seconds_before": 75.0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {
+    "entity_id": "input_boolean.hamcp371_helper"
+   },
+   "public_tool": "ha_get_entity",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.008,
+   "session": 0,
+   "sha256": "c633bf1b8cfbab5f1c2dc2571454b41f12b7de70c8e7afe70f84b9226faa88bc",
+   "upstream_tool": "ha_get_entity",
+   "wire_arguments": {
+    "entity_id": "input_boolean.hamcp371_helper"
+   }
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 1644,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "t-new-session.json",
+   "group": "transport",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "t-new-session",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": true,
+   "public_arguments": {
+    "entity_id": "input_boolean.hamcp371_helper"
+   },
+   "public_tool": "ha_get_state",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.008,
+   "session": 1,
+   "sha256": "90c3acfd0a384a393fbbd35c6ee122bcaa5064a6a75e66c5acede13e4372f804",
+   "upstream_tool": "ha_get_state",
+   "wire_arguments": {
+    "entity_id": "input_boolean.hamcp371_helper"
+   }
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 842,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "y-group.json",
+   "group": "yaml",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "y-group",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "yaml",
+   "new_session": false,
+   "public_arguments": {
+    "yaml_path": "group"
+   },
+   "public_tool": "ha_config_get_yaml",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.036,
+   "session": 0,
+   "sha256": "966bf452d3bf874e9f800c00247e88cf23e08e3e795b0eb28bfc273450000556",
+   "upstream_tool": "ha_config_get_yaml",
+   "wire_arguments": {
+    "file": "configuration.yaml",
+    "include_content": true,
+    "include_parsed": true,
+    "yaml_path": "group"
+   }
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 384,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "y-absent-key.json",
+   "group": "yaml",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "y-absent-key",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "yaml",
+   "new_session": false,
+   "public_arguments": {
+    "yaml_path": "hamcp371_absent_object"
+   },
+   "public_tool": "ha_config_get_yaml",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.011,
+   "session": 0,
+   "sha256": "17bf464f286b3a3c4d1786a3df8bec342082dc57967441113c61bfb0bbcfd882",
+   "upstream_tool": "ha_config_get_yaml",
+   "wire_arguments": {
+    "file": "configuration.yaml",
+    "include_content": true,
+    "include_parsed": true,
+    "yaml_path": "hamcp371_absent_object"
+   }
+  }
+ ],
+ "calls_format_version": 1,
+ "endpoint": "http://127.0.0.1:18086/mcp",
+ "negotiated_protocol_version": "2025-03-26",
+ "session_delete_status": [
+  null,
+  null
+ ],
+ "session_header_present": false,
+ "sessions_opened": 2
+}

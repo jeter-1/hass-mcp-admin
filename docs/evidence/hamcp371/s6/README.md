@@ -565,3 +565,112 @@ and the leak check passed. Over the staged copy, the scan covered 11 files with
 - no server entry of the component is created;
 - the component 2.2.1 / ha-mcp 8.5.0 control belongs to SR;
 - 9.1.2 profile B has not run.
+
+## D1 flags, profile B on 9.2.0 and 9.1.2 (2026-11-14)
+
+Asked by D1 and D2 (22:55 rulings): run the peer with production's flags,
+then capture profile B again on 9.2.0 and once on 9.1.2.
+
+**D1 flags.** Harness b2596af2 gives the peer the four flags Josh confirmed
+for production on 2026-11-14:
+
+- `ENABLE_BETA_FEATURES=true`;
+- `HAMCP_ENABLE_FILESYSTEM_TOOLS=true`;
+- `ENABLE_YAML_CONFIG_EDITING=false`;
+- `DISABLED_TOOLS=ha_write_file,ha_delete_file`.
+
+At every peer start the lane checks that each flag appears exactly once on the
+peer's container environment. It then saves the raw `tools/list` catalog. It
+refuses when `ha_write_file`, `ha_delete_file` or `ha_config_set_yaml` is
+present, or when `ha_config_get_yaml` is absent. The receipt records this
+under `peer_flags`.
+
+### The runs
+
+| Launch | Version | Seconds | Calls | `isError` | Exchange failures |
+|---|---|---|---|---|---|
+| `run-b-9.2.0-2` | 9.2.0, component 9.2.0 | 125.1 | 47 + 2 after restart | 6 | 0 |
+| `run-b-9.1.2-1` | 9.1.2, component 9.1.2 | 118.6 | 47 + 2 after restart | 6 | 0 |
+
+Both launches PASS, with harness b2596af2 and profile B. Cleanup is clean. The
+component of each run comes from its own upstream tag, as in `run-b-9.2.0-1`.
+The N32 requirements resolve as they did there.
+
+**Catalogs.** Every peer catalog has 80 tools. The three write tools are
+absent and `ha_config_get_yaml` is present.
+
+- `run-b-9.2.0-2/out/catalog/peer-9.2.0-1.json` (administrator): sha256
+  `c707f5f7...`;
+- `run-b-9.2.0-2/out/catalog/peer-9.2.0-ordinary-user-2.json` (ordinary
+  user): sha256 `f783a152...`;
+- `run-b-9.1.2-1/out/catalog/peer-9.1.2-1.json`: sha256 `2b824bbc...`.
+
+**Errors.** The error set is the same on both versions:
+
+- `p3-wrong-type`, `p3-unknown-argument`, `p4-absent-automation`,
+  `p4-absent-state` and `p4-absent-entity` are the designed error cases;
+- `r27-apps` fails on both versions. Each peer log has the same two ERROR
+  lines for it: `supervisor/api: Unknown command` and `Error calling
+  Supervisor API /addons`. Inference: this Core has no Supervisor. SR records
+  the response body and its error category, as ruled 2026-11-15.
+
+**The YAML read.** With the flags set, the read is registered:
+
+- for the administrator token, `y-group` returns the seeded group and
+  `y-absent-key` returns `success` with no match;
+- for the ordinary-user token (9.2.0 only), both refuse with
+  `AUTH_INSUFFICIENT_PERMISSIONS`. The service `ha_mcp_tools.get_caller_token`
+  is admin-only.
+
+Compared with `run-b-9.2.0-1`, the only status changes are `y-group` and
+`y-absent-key`, from error to a structured result.
+
+**Scans.** The lane's exact-token scan covered 67 files (9.2.0) and 61 files
+(9.1.2), with 4 needles. It removed none.
+
+**Logs.**
+
+- Core logs: 17 ERROR and WARNING lines (9.2.0) and 14 (9.1.2) over the two
+  starts. They come from the onboarding flows, `system_health`, and, in the
+  9.2.0 run, the ordinary user's two unauthorized service calls.
+- Each administrator peer log has three ERROR lines (two for `r27-apps`, one
+  for the entity that was not seeded) and two WARNING lines (the designed
+  argument errors).
+- The ordinary-user peer log has two WARNING lines (a non-admin token) and two
+  ERROR lines (`call_service: Unauthorized`).
+
+## Promoted raw calls (S7, 2026-11-15)
+
+R3 kept the raw call files in ignored scratch until S7. S7 commits them,
+bound by the run's committed `SHA256SUMS`:
+
+- `run-a-1`: every file in its `SHA256SUMS` except the logs (105 files), with
+  the call files and `_initialize.json` of both versions;
+- `run-b-9.2.0-2`: 64 files, with the receipt, the seed, the profile B phase
+  records, both catalogs and the call files;
+- `run-b-9.1.2-1`: 59 files, likewise.
+
+The logs stay in scratch. `run-b-9.2.0-1` is not promoted further: D1
+replaced it with `run-b-9.2.0-2`. `recapture-1` and `selftest-1` are unchanged.
+
+Every committed file verifies with `sha256sum -c` against its run's
+`SHA256SUMS`. The gate receipts of the two new launches are committed with
+trailing spaces stripped from three lines:
+
+| Receipt | Gate's own sha256 | Committed sha256 |
+|---|---|---|
+| `gate/run-b-9.2.0-2.txt` | `8bfe2516...` | `72b77279...` |
+| `gate/run-b-9.1.2-1.txt` | `0fd2dbcb...` | `21541aad...` |
+
+The launch log gains its fifth and sixth lines. Its first four lines are
+unchanged.
+
+**Checks before the copy.** The leak check passed on each of the three run
+directories. `comparison/scan.py` covered 231 files (the files to promote, the
+two gate receipts and the 2.2.1 tree list) with 0 hits. After the copy, the
+leak check passed on the whole `s6` directory.
+
+In each profile B run, two files have no final newline:
+`out/profile-b/component-after-setup.json` and
+`component-after-core-restart.json`, as in `run-b-9.2.0-1`. They are bound
+by `SHA256SUMS` and are not edited.

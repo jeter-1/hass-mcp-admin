@@ -1,0 +1,233 @@
+{
+ "arguments_built_by": "adapter code, policy 9.1.2",
+ "calls_format_version": 1,
+ "exchange": {
+  "body_bytes": 2614,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":113,\"result\":{\"content\":[{\"text\":\"{\\\"success\\\":true,\\\"total_count\\\":4,\\\"offset\\\":0,\\\"limit\\\":5,\\\"count\\\":4,\\\"has_more\\\":false,\\\"next_offset\\\":null,\\\"total_devices\\\":4,\\\"devices\\\":[{\\\"device_id\\\":\\\"610362732945f549591f99b89c5ec071\\\",\\\"name\\\":\\\"Sun\\\",\\\"manufacturer\\\":null,\\\"model\\\":null,\\\"sw_version\\\":null,\\\"area_id\\\":null,\\\"integration_type\\\":\\\"sun\\\",\\\"integration_sources\\\":[\\\"sun\\\"],\\\"via_device_id\\\":null},{\\\"device_id\\\":\\\"90d8e89b26aead999460b6cb8f998b4c\\\",\\\"name\\\":\\\"Google Translate en com\\\",\\\"manufacturer\\\":\\\"Google\\\",\\\"model\\\":\\\"Google Translate TTS\\\",\\\"sw_version\\\":null,\\\"area_id\\\":null,\\\"integration_type\\\":\\\"google_translate\\\",\\\"integration_sources\\\":[\\\"google_translate\\\"],\\\"via_device_id\\\":null},{\\\"device_id\\\":\\\"d2dc63cd2131ec9c5f47a9b80eeb6992\\\",\\\"name\\\":\\\"Backup\\\",\\\"manufacturer\\\":\\\"Home Assistant\\\",\\\"model\\\":\\\"Home Assistant Backup\\\",\\\"sw_version\\\":\\\"2026.11.0\\\",\\\"area_id\\\":null,\\\"integration_type\\\":\\\"backup\\\",\\\"integration_sources\\\":[\\\"backup\\\"],\\\"via_device_id\\\":null},{\\\"device_id\\\":\\\"200b5c472453c2ed135bd8ade99229ab\\\",\\\"name\\\":\\\"HA-MCP File & YAML Tools\\\",\\\"manufacturer\\\":\\\"homeassistant-ai\\\",\\\"model\\\":\\\"File & YAML editing services\\\",\\\"sw_version\\\":\\\"9.2.0\\\",\\\"area_id\\\":null,\\\"integration_type\\\":\\\"ha_mcp_tools\\\",\\\"integration_sources\\\":[\\\"ha_mcp_tools\\\"],\\\"via_device_id\\\":null}],\\\"detail_level\\\":\\\"summary\\\"}\",\"type\":\"text\"}],\"isError\":false,\"structuredContent\":{\"success\":true,\"total_count\":4,\"offset\":0,\"limit\":5,\"count\":4,\"has_more\":false,\"next_offset\":null,\"total_devices\":4,\"devices\":[{\"device_id\":\"610362732945f549591f99b89c5ec071\",\"name\":\"Sun\",\"manufacturer\":null,\"model\":null,\"sw_version\":null,\"area_id\":null,\"integration_type\":\"sun\",\"integration_sources\":[\"sun\"],\"via_device_id\":null},{\"device_id\":\"90d8e89b26aead999460b6cb8f998b4c\",\"name\":\"Google Translate en com\",\"manufacturer\":\"Google\",\"model\":\"Google Translate TTS\",\"sw_version\":null,\"area_id\":null,\"integration_type\":\"google_translate\",\"integration_sources\":[\"google_translate\"],\"via_device_id\":null},{\"device_id\":\"d2dc63cd2131ec9c5f47a9b80eeb6992\",\"name\":\"Backup\",\"manufacturer\":\"Home Assistant\",\"model\":\"Home Assistant Backup\",\"sw_version\":\"2026.11.0\",\"area_id\":null,\"integration_type\":\"backup\",\"integration_sources\":[\"backup\"],\"via_device_id\":null},{\"device_id\":\"200b5c472453c2ed135bd8ade99229ab\",\"name\":\"HA-MCP File & YAML Tools\",\"manufacturer\":\"homeassistant-ai\",\"model\":\"File & YAML editing services\",\"sw_version\":\"9.2.0\",\"area_id\":null,\"integration_type\":\"ha_mcp_tools\",\"integration_sources\":[\"ha_mcp_tools\"],\"via_device_id\":null}],\"detail_level\":\"summary\"}}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 113,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\"success\":true,\"total_count\":4,\"offset\":0,\"limit\":5,\"count\":4,\"has_more\":false,\"next_offset\":null,\"total_devices\":4,\"devices\":[{\"device_id\":\"610362732945f549591f99b89c5ec071\",\"name\":\"Sun\",\"manufacturer\":null,\"model\":null,\"sw_version\":null,\"area_id\":null,\"integration_type\":\"sun\",\"integration_sources\":[\"sun\"],\"via_device_id\":null},{\"device_id\":\"90d8e89b26aead999460b6cb8f998b4c\",\"name\":\"Google Translate en com\",\"manufacturer\":\"Google\",\"model\":\"Google Translate TTS\",\"sw_version\":null,\"area_id\":null,\"integration_type\":\"google_translate\",\"integration_sources\":[\"google_translate\"],\"via_device_id\":null},{\"device_id\":\"d2dc63cd2131ec9c5f47a9b80eeb6992\",\"name\":\"Backup\",\"manufacturer\":\"Home Assistant\",\"model\":\"Home Assistant Backup\",\"sw_version\":\"2026.11.0\",\"area_id\":null,\"integration_type\":\"backup\",\"integration_sources\":[\"backup\"],\"via_device_id\":null},{\"device_id\":\"200b5c472453c2ed135bd8ade99229ab\",\"name\":\"HA-MCP File & YAML Tools\",\"manufacturer\":\"homeassistant-ai\",\"model\":\"File & YAML editing services\",\"sw_version\":\"9.2.0\",\"area_id\":null,\"integration_type\":\"ha_mcp_tools\",\"integration_sources\":[\"ha_mcp_tools\"],\"via_device_id\":null}],\"detail_level\":\"summary\"}",
+       "type": "text"
+      }
+     ],
+     "isError": false,
+     "structuredContent": {
+      "count": 4,
+      "detail_level": "summary",
+      "devices": [
+       {
+        "area_id": null,
+        "device_id": "610362732945f549591f99b89c5ec071",
+        "integration_sources": [
+         "sun"
+        ],
+        "integration_type": "sun",
+        "manufacturer": null,
+        "model": null,
+        "name": "Sun",
+        "sw_version": null,
+        "via_device_id": null
+       },
+       {
+        "area_id": null,
+        "device_id": "90d8e89b26aead999460b6cb8f998b4c",
+        "integration_sources": [
+         "google_translate"
+        ],
+        "integration_type": "google_translate",
+        "manufacturer": "Google",
+        "model": "Google Translate TTS",
+        "name": "Google Translate en com",
+        "sw_version": null,
+        "via_device_id": null
+       },
+       {
+        "area_id": null,
+        "device_id": "d2dc63cd2131ec9c5f47a9b80eeb6992",
+        "integration_sources": [
+         "backup"
+        ],
+        "integration_type": "backup",
+        "manufacturer": "Home Assistant",
+        "model": "Home Assistant Backup",
+        "name": "Backup",
+        "sw_version": "2026.11.0",
+        "via_device_id": null
+       },
+       {
+        "area_id": null,
+        "device_id": "200b5c472453c2ed135bd8ade99229ab",
+        "integration_sources": [
+         "ha_mcp_tools"
+        ],
+        "integration_type": "ha_mcp_tools",
+        "manufacturer": "homeassistant-ai",
+        "model": "File & YAML editing services",
+        "name": "HA-MCP File & YAML Tools",
+        "sw_version": "9.2.0",
+        "via_device_id": null
+       }
+      ],
+      "has_more": false,
+      "limit": 5,
+      "next_offset": null,
+      "offset": 0,
+      "success": true,
+      "total_count": 4,
+      "total_devices": 4
+     }
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 113,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "limit": 5
+     },
+     "name": "ha_get_device"
+    }
+   },
+   "method": "POST",
+   "path": "/mcp"
+  },
+  "response": {
+   "id": 113,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\"success\":true,\"total_count\":4,\"offset\":0,\"limit\":5,\"count\":4,\"has_more\":false,\"next_offset\":null,\"total_devices\":4,\"devices\":[{\"device_id\":\"610362732945f549591f99b89c5ec071\",\"name\":\"Sun\",\"manufacturer\":null,\"model\":null,\"sw_version\":null,\"area_id\":null,\"integration_type\":\"sun\",\"integration_sources\":[\"sun\"],\"via_device_id\":null},{\"device_id\":\"90d8e89b26aead999460b6cb8f998b4c\",\"name\":\"Google Translate en com\",\"manufacturer\":\"Google\",\"model\":\"Google Translate TTS\",\"sw_version\":null,\"area_id\":null,\"integration_type\":\"google_translate\",\"integration_sources\":[\"google_translate\"],\"via_device_id\":null},{\"device_id\":\"d2dc63cd2131ec9c5f47a9b80eeb6992\",\"name\":\"Backup\",\"manufacturer\":\"Home Assistant\",\"model\":\"Home Assistant Backup\",\"sw_version\":\"2026.11.0\",\"area_id\":null,\"integration_type\":\"backup\",\"integration_sources\":[\"backup\"],\"via_device_id\":null},{\"device_id\":\"200b5c472453c2ed135bd8ade99229ab\",\"name\":\"HA-MCP File & YAML Tools\",\"manufacturer\":\"homeassistant-ai\",\"model\":\"File & YAML editing services\",\"sw_version\":\"9.2.0\",\"area_id\":null,\"integration_type\":\"ha_mcp_tools\",\"integration_sources\":[\"ha_mcp_tools\"],\"via_device_id\":null}],\"detail_level\":\"summary\"}",
+      "type": "text"
+     }
+    ],
+    "isError": false,
+    "structuredContent": {
+     "count": 4,
+     "detail_level": "summary",
+     "devices": [
+      {
+       "area_id": null,
+       "device_id": "610362732945f549591f99b89c5ec071",
+       "integration_sources": [
+        "sun"
+       ],
+       "integration_type": "sun",
+       "manufacturer": null,
+       "model": null,
+       "name": "Sun",
+       "sw_version": null,
+       "via_device_id": null
+      },
+      {
+       "area_id": null,
+       "device_id": "90d8e89b26aead999460b6cb8f998b4c",
+       "integration_sources": [
+        "google_translate"
+       ],
+       "integration_type": "google_translate",
+       "manufacturer": "Google",
+       "model": "Google Translate TTS",
+       "name": "Google Translate en com",
+       "sw_version": null,
+       "via_device_id": null
+      },
+      {
+       "area_id": null,
+       "device_id": "d2dc63cd2131ec9c5f47a9b80eeb6992",
+       "integration_sources": [
+        "backup"
+       ],
+       "integration_type": "backup",
+       "manufacturer": "Home Assistant",
+       "model": "Home Assistant Backup",
+       "name": "Backup",
+       "sw_version": "2026.11.0",
+       "via_device_id": null
+      },
+      {
+       "area_id": null,
+       "device_id": "200b5c472453c2ed135bd8ade99229ab",
+       "integration_sources": [
+        "ha_mcp_tools"
+       ],
+       "integration_type": "ha_mcp_tools",
+       "manufacturer": "homeassistant-ai",
+       "model": "File & YAML editing services",
+       "name": "HA-MCP File & YAML Tools",
+       "sw_version": "9.2.0",
+       "via_device_id": null
+      }
+     ],
+     "has_more": false,
+     "limit": 5,
+     "next_offset": null,
+     "offset": 0,
+     "success": true,
+     "total_count": 4,
+     "total_devices": 4
+    }
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Sun, 15 Nov 2026 05:03:21 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null,
+ "group": "reads",
+ "id": "r13-devices",
+ "idle": false,
+ "kind": "public",
+ "new_session": false,
+ "public_arguments": {
+  "limit": 5
+ },
+ "public_tool": "ha_get_device",
+ "upstream_tool": "ha_get_device",
+ "wire_arguments": {
+  "limit": 5
+ }
+}

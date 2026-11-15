@@ -1,0 +1,131 @@
+{
+ "arguments_built_by": "adapter code, policy 9.1.2",
+ "calls_format_version": 1,
+ "exchange": {
+  "body_bytes": 640,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":132,\"result\":{\"content\":[{\"text\":\"{\\\"success\\\":true,\\\"entity_id\\\":\\\"todo.hamcp371_todo\\\",\\\"status_filter\\\":null,\\\"count\\\":1,\\\"items\\\":[{\\\"summary\\\":\\\"HAMCP371 item\\\",\\\"uid\\\":\\\"daa5635a-e0b1-11f1-888d-87020acfbf4c\\\",\\\"status\\\":\\\"needs_action\\\"}],\\\"message\\\":\\\"Found 1 item(s) in todo.hamcp371_todo\\\"}\",\"type\":\"text\"}],\"isError\":false,\"structuredContent\":{\"success\":true,\"entity_id\":\"todo.hamcp371_todo\",\"status_filter\":null,\"count\":1,\"items\":[{\"summary\":\"HAMCP371 item\",\"uid\":\"daa5635a-e0b1-11f1-888d-87020acfbf4c\",\"status\":\"needs_action\"}],\"message\":\"Found 1 item(s) in todo.hamcp371_todo\"}}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 132,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\"success\":true,\"entity_id\":\"todo.hamcp371_todo\",\"status_filter\":null,\"count\":1,\"items\":[{\"summary\":\"HAMCP371 item\",\"uid\":\"daa5635a-e0b1-11f1-888d-87020acfbf4c\",\"status\":\"needs_action\"}],\"message\":\"Found 1 item(s) in todo.hamcp371_todo\"}",
+       "type": "text"
+      }
+     ],
+     "isError": false,
+     "structuredContent": {
+      "count": 1,
+      "entity_id": "todo.hamcp371_todo",
+      "items": [
+       {
+        "status": "needs_action",
+        "summary": "HAMCP371 item",
+        "uid": "daa5635a-e0b1-11f1-888d-87020acfbf4c"
+       }
+      ],
+      "message": "Found 1 item(s) in todo.hamcp371_todo",
+      "status_filter": null,
+      "success": true
+     }
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 132,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "entity_id": "todo.hamcp371_todo"
+     },
+     "name": "ha_get_todo"
+    }
+   },
+   "method": "POST",
+   "path": "/mcp"
+  },
+  "response": {
+   "id": 132,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\"success\":true,\"entity_id\":\"todo.hamcp371_todo\",\"status_filter\":null,\"count\":1,\"items\":[{\"summary\":\"HAMCP371 item\",\"uid\":\"daa5635a-e0b1-11f1-888d-87020acfbf4c\",\"status\":\"needs_action\"}],\"message\":\"Found 1 item(s) in todo.hamcp371_todo\"}",
+      "type": "text"
+     }
+    ],
+    "isError": false,
+    "structuredContent": {
+     "count": 1,
+     "entity_id": "todo.hamcp371_todo",
+     "items": [
+      {
+       "status": "needs_action",
+       "summary": "HAMCP371 item",
+       "uid": "daa5635a-e0b1-11f1-888d-87020acfbf4c"
+      }
+     ],
+     "message": "Found 1 item(s) in todo.hamcp371_todo",
+     "status_filter": null,
+     "success": true
+    }
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Sun, 15 Nov 2026 05:03:21 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null,
+ "group": "variants",
+ "id": "v21-todo-list",
+ "idle": false,
+ "kind": "public",
+ "new_session": false,
+ "public_arguments": {
+  "entity_id": "todo.hamcp371_todo"
+ },
+ "public_tool": "ha_get_todo",
+ "upstream_tool": "ha_get_todo",
+ "wire_arguments": {
+  "entity_id": "todo.hamcp371_todo"
+ }
+}

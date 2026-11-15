@@ -1,0 +1,125 @@
+{
+ "arguments_built_by": "adapter code, policy 9.1.2",
+ "calls_format_version": 1,
+ "exchange": {
+  "body_bytes": 384,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":146,\"result\":{\"content\":[{\"text\":\"{\\\"success\\\":true,\\\"yaml_path\\\":\\\"hamcp371_absent_object\\\",\\\"matches\\\":[],\\\"count\\\":0,\\\"files_searched\\\":1,\\\"files_unreadable\\\":0}\",\"type\":\"text\"}],\"isError\":false,\"structuredContent\":{\"success\":true,\"yaml_path\":\"hamcp371_absent_object\",\"matches\":[],\"count\":0,\"files_searched\":1,\"files_unreadable\":0}}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 146,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\"success\":true,\"yaml_path\":\"hamcp371_absent_object\",\"matches\":[],\"count\":0,\"files_searched\":1,\"files_unreadable\":0}",
+       "type": "text"
+      }
+     ],
+     "isError": false,
+     "structuredContent": {
+      "count": 0,
+      "files_searched": 1,
+      "files_unreadable": 0,
+      "matches": [],
+      "success": true,
+      "yaml_path": "hamcp371_absent_object"
+     }
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 146,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "file": "configuration.yaml",
+      "include_content": true,
+      "include_parsed": true,
+      "yaml_path": "hamcp371_absent_object"
+     },
+     "name": "ha_config_get_yaml"
+    }
+   },
+   "method": "POST",
+   "path": "/mcp"
+  },
+  "response": {
+   "id": 146,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\"success\":true,\"yaml_path\":\"hamcp371_absent_object\",\"matches\":[],\"count\":0,\"files_searched\":1,\"files_unreadable\":0}",
+      "type": "text"
+     }
+    ],
+    "isError": false,
+    "structuredContent": {
+     "count": 0,
+     "files_searched": 1,
+     "files_unreadable": 0,
+     "matches": [],
+     "success": true,
+     "yaml_path": "hamcp371_absent_object"
+    }
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Sun, 15 Nov 2026 05:04:36 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null,
+ "group": "yaml",
+ "id": "y-absent-key",
+ "idle": false,
+ "kind": "yaml",
+ "new_session": false,
+ "public_arguments": {
+  "yaml_path": "hamcp371_absent_object"
+ },
+ "public_tool": "ha_config_get_yaml",
+ "upstream_tool": "ha_config_get_yaml",
+ "wire_arguments": {
+  "file": "configuration.yaml",
+  "include_content": true,
+  "include_parsed": true,
+  "yaml_path": "hamcp371_absent_object"
+ }
+}

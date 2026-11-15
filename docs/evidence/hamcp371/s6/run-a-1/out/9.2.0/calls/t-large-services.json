@@ -1,0 +1,2443 @@
+{
+ "arguments_built_by": "harness, sent as written",
+ "calls_format_version": 1,
+ "exchange": {
+  "body_bytes": 42952,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":143,\"result\":{\"content\":[{\"text\":\"{\\\"success\\\":true,\\\"domains\\\":[\\\"ai_task\\\",\\\"alarm_control_panel\\\",\\\"assist_satellite\\\",\\\"automation\\\",\\\"backup\\\",\\\"button\\\",\\\"calendar\\\",\\\"camera\\\",\\\"climate\\\",\\\"conversation\\\",\\\"counter\\\",\\\"cover\\\",\\\"date\\\",\\\"datetime\\\",\\\"device_tracker\\\",\\\"fan\\\",\\\"ffmpeg\\\",\\\"frontend\\\",\\\"group\\\",\\\"homeassistant\\\",\\\"humidifier\\\",\\\"image\\\",\\\"image_processing\\\",\\\"input_boolean\\\",\\\"input_button\\\",\\\"input_datetime\\\",\\\"input_number\\\",\\\"input_select\\\",\\\"input_text\\\",\\\"lawn_mower\\\",\\\"light\\\",\\\"lock\\\",\\\"logbook\\\",\\\"logger\\\",\\\"lovelace\\\",\\\"media_player\\\",\\\"notify\\\",\\\"number\\\",\\\"persistent_notification\\\",\\\"person\\\",\\\"recorder\\\",\\\"remote\\\",\\\"scene\\\",\\\"schedule\\\",\\\"script\\\",\\\"select\\\",\\\"shopping_list\\\",\\\"siren\\\",\\\"switch\\\",\\\"system_log\\\",\\\"template\\\",\\\"text\\\",\\\"time\\\",\\\"timer\\\",\\\"todo\\\",\\\"tts\\\",\\\"update\\\",\\\"vacuum\\\",\\\"valve\\\",\\\"water_heater\\\",\\\"weather\\\",\\\"zone\\\"],\\\"services\\\":{\\\"homeassistant.save_persistent_states\\\":{\\\"name\\\":\\\"Save persistent states\\\",\\\"description\\\":\\\"Saves the persistent states immediately. Maintains the normal periodic saving interval.\\\",\\\"domain\\\":\\\"homeassistant\\\",\\\"service\\\":\\\"save_persistent_states\\\",\\\"fields\\\":{}},\\\"homeassistant.turn_off\\\":{\\\"name\\\":\\\"Generic turn off\\\",\\\"description\\\":\\\"Generic action to turn devices off under any domain.\\\",\\\"domain\\\":\\\"homeassistant\\\",\\\"service\\\":\\\"turn_off\\\",\\\"fields\\\":{},\\\"target\\\":{}},\\\"homeassistant.turn_on\\\":{\\\"name\\\":\\\"Generic turn on\\\",\\\"description\\\":\\\"Generic action to turn devices on under any domain.\\\",\\\"domain\\\":\\\"homeassistant\\\",\\\"service\\\":\\\"turn_on\\\",\\\"fields\\\":{},\\\"target\\\":{}},\\\"homeassistant.toggle\\\":{\\\"name\\\":\\\"Generic toggle\\\",\\\"description\\\":\\\"Generic action to toggle devices on/off under any domain.\\\",\\\"domain\\\":\\\"homeassistant\\\",\\\"service\\\":\\\"toggle\\\",\\\"fields\\\":{},\\\"target\\\":{}},\\\"homeassistant.stop\\\":{\\\"name\\\":\\\"Stop Home Assistant\\\",\\\"description\\\":\\\"Stops Home Assistant.\\\",\\\"domain\\\":\\\"homeassistant\\\",\\\"service\\\":\\\"stop\\\",\\\"fields\\\":{}},\\\"homeassistant.restart\\\":{\\\"name\\\":\\\"Restart Home Assistant\\\",\\\"description\\\":\\\"Restarts Home Assistant.\\\",\\\"domain\\\":\\\"homeassistant\\\",\\\"service\\\":\\\"restart\\\",\\\"fields\\\":{}},\\\"homeassistant.check_config\\\":{\\\"name\\\":\\\"Check Home Assistant configuration\\\",\\\"description\\\":\\\"Checks the Home Assistant YAML-configuration files for errors. Errors will be shown in the Home Assistant logs.\\\",\\\"domain\\\":\\\"homeassistant\\\",\\\"service\\\":\\\"check_config\\\",\\\"fields\\\":{}},\\\"homeassistant.update_entity\\\":{\\\"name\\\":\\\"Update entity\\\",\\\"description\\\":\\\"Forces one or more entities to update their data.\\\",\\\"domain\\\":\\\"homeassistant\\\",\\\"service\\\":\\\"update_entity\\\",\\\"fields\\\":{\\\"entity_id\\\":{\\\"required\\\":true,\\\"selector\\\":{\\\"entity\\\":{\\\"multiple\\\":true,\\\"reorder\\\":false}},\\\"name\\\":\\\"Entities to update\\\",\\\"description\\\":\\\"List of entities to force update.\\\"}}},\\\"homeassistant.reload_core_config\\\":{\\\"name\\\":\\\"Reload Core configuration\\\",\\\"description\\\":\\\"Reloads the Core configuration from the YAML-configuration.\\\",\\\"domain\\\":\\\"homeassistant\\\",\\\"service\\\":\\\"reload_core_config\\\",\\\"fields\\\":{}},\\\"homeassistant.set_location\\\":{\\\"name\\\":\\\"Set Home Assistant location\\\",\\\"description\\\":\\\"Updates the Home Assistant location.\\\",\\\"domain\\\":\\\"homeassistant\\\",\\\"service\\\":\\\"set_location\\\",\\\"fields\\\":{\\\"latitude\\\":{\\\"required\\\":true,\\\"example\\\":32.87336,\\\"selector\\\":{\\\"number\\\":{\\\"mode\\\":\\\"box\\\",\\\"min\\\":-90.0,\\\"max\\\":90.0,\\\"step\\\":\\\"any\\\"}},\\\"name\\\":\\\"Latitude\\\",\\\"description\\\":\\\"Latitude of your location.\\\"},\\\"longitude\\\":{\\\"required\\\":true,\\\"example\\\":117.22743,\\\"selector\\\":{\\\"number\\\":{\\\"mode\\\":\\\"box\\\",\\\"min\\\":-180.0,\\\"max\\\":180.0,\\\"step\\\":\\\"any\\\"}},\\\"name\\\":\\\"Longitude\\\",\\\"description\\\":\\\"Longitude of your location.\\\"},\\\"elevation\\\":{\\\"required\\\":false,\\\"example\\\":120,\\\"selector\\\":{\\\"number\\\":{\\\"mode\\\":\\\"box\\\",\\\"step\\\":\\\"any\\\",\\\"unit_of_measurement\\\":\\\"m\\\"}},\\\"name\\\":\\\"Elevation\\\",\\\"description\\\":\\\"Elevation of your location above sea level.\\\"}}},\\\"homeassistant.reload_custom_templates\\\":{\\\"name\\\":\\\"Reload custom Jinja2 templates\\\",\\\"description\\\":\\\"Reloads Jinja2 templates found in the `custom_templates` folder in your config. New values will be applied on the next render of the template.\\\",\\\"domain\\\":\\\"homeassistant\\\",\\\"service\\\":\\\"reload_custom_templates\\\",\\\"fields\\\":{}},\\\"homeassistant.reload_config_entry\\\":{\\\"name\\\":\\\"Reload config entry\\\",\\\"description\\\":\\\"Reloads the config entry of the provided config entry ID.\\\",\\\"domain\\\":\\\"homeassistant\\\",\\\"service\\\":\\\"reload_config_entry\\\",\\\"fields\\\":{\\\"entry_id\\\":{\\\"required\\\":true,\\\"selector\\\":{\\\"config_entry\\\":{}},\\\"name\\\":\\\"Config entry ID\\\",\\\"description\\\":\\\"The configuration entry to reload.\\\"}}},\\\"homeassistant.reload_all\\\":{\\\"name\\\":\\\"Reload all Home Assistant configuration\\\",\\\"description\\\":\\\"Reloads all YAML configuration that can be reloaded without restarting Home Assistant.\\\",\\\"domain\\\":\\\"homeassistant\\\",\\\"service\\\":\\\"reload_all\\\",\\\"fields\\\":{}},\\\"persistent_notification.create\\\":{\\\"name\\\":\\\"Create persistent notification\\\",\\\"description\\\":\\\"Shows a persistent notification on the notifications panel.\\\",\\\"domain\\\":\\\"persistent_notification\\\",\\\"service\\\":\\\"create\\\",\\\"fields\\\":{\\\"message\\\":{\\\"required\\\":true,\\\"example\\\":\\\"Please check your configuration.yaml.\\\",\\\"selector\\\":{\\\"text\\\":{\\\"multiline\\\":false,\\\"multiple\\\":false}},\\\"name\\\":\\\"Message\\\",\\\"description\\\":\\\"Message body of the notification.\\\"},\\\"title\\\":{\\\"example\\\":\\\"Test notification\\\",\\\"selector\\\":{\\\"text\\\":{\\\"multiline\\\":false,\\\"multiple\\\":false}},\\\"name\\\":\\\"Title\\\",\\\"description\\\":\\\"Optional title of the notification.\\\"},\\\"notification_id\\\":{\\\"example\\\":1234,\\\"selector\\\":{\\\"text\\\":{\\\"multiline\\\":false,\\\"multiple\\\":false}},\\\"name\\\":\\\"Notification ID\\\",\\\"description\\\":\\\"ID of the notification. This new notification will overwrite an existing notification with the same ID.\\\"}}},\\\"persistent_notification.dismiss\\\":{\\\"name\\\":\\\"Dismiss persistent notification\\\",\\\"description\\\":\\\"Deletes a persistent notification from the notifications panel.\\\",\\\"domain\\\":\\\"persistent_notification\\\",\\\"service\\\":\\\"dismiss\\\",\\\"fields\\\":{\\\"notification_id\\\":{\\\"required\\\":true,\\\"example\\\":1234,\\\"selector\\\":{\\\"text\\\":{\\\"multiline\\\":false,\\\"multiple\\\":false}},\\\"name\\\":\\\"Notification ID\\\",\\\"description\\\":\\\"ID of the notification to be deleted.\\\"}}},\\\"persistent_notification.dismiss_all\\\":{\\\"name\\\":\\\"Dismiss all persistent notifications\\\",\\\"description\\\":\\\"Deletes all persistent notifications from the notifications panel.\\\",\\\"domain\\\":\\\"persistent_notification\\\",\\\"service\\\":\\\"dismiss_all\\\",\\\"fields\\\":{}},\\\"system_log.clear\\\":{\\\"name\\\":\\\"Clear system log\\\",\\\"description\\\":\\\"Deletes all system log entries.\\\",\\\"domain\\\":\\\"system_log\\\",\\\"service\\\":\\\"clear\\\",\\\"fields\\\":{}},\\\"system_log.write\\\":{\\\"name\\\":\\\"Write to system log\\\",\\\"description\\\":\\\"Writes a system log entry.\\\",\\\"domain\\\":\\\"system_log\\\",\\\"service\\\":\\\"write\\\",\\\"fields\\\":{\\\"message\\\":{\\\"required\\\":true,\\\"example\\\":\\\"Something went wrong\\\",\\\"selector\\\":{\\\"text\\\":{\\\"multiline\\\":false,\\\"multiple\\\":false}},\\\"name\\\":\\\"Message\\\",\\\"description\\\":\\\"Message to log.\\\"},\\\"level\\\":{\\\"default\\\":\\\"error\\\",\\\"selector\\\":{\\\"select\\\":{\\\"options\\\":[\\\"debug\\\",\\\"info\\\",\\\"warning\\\",\\\"error\\\",\\\"critical\\\"],\\\"translation_key\\\":\\\"level\\\",\\\"multiple\\\":false,\\\"custom_value\\\":false,\\\"sort\\\":false}},\\\"name\\\":\\\"Level\\\",\\\"description\\\":\\\"Log level.\\\"},\\\"logger\\\":{\\\"example\\\":\\\"mycomponent.myplatform\\\",\\\"selector\\\":{\\\"text\\\":{\\\"multiline\\\":false,\\\"multiple\\\":false}},\\\"name\\\":\\\"Logger\\\",\\\"description\\\":\\\"Logger name under which to log the message. Defaults to `system_log.external`.\\\"}}},\\\"logger.set_default_level\\\":{\\\"name\\\":\\\"Set logger default level\\\",\\\"description\\\":\\\"Sets the default log level for integrations.\\\",\\\"domain\\\":\\\"logger\\\",\\\"service\\\":\\\"set_default_level\\\",\\\"fields\\\":{\\\"level\\\":{\\\"selector\\\":{\\\"select\\\":{\\\"options\\\":[\\\"debug\\\",\\\"info\\\",\\\"warning\\\",\\\"error\\\",\\\"fatal\\\",\\\"critical\\\"],\\\"translation_key\\\":\\\"level\\\",\\\"multiple\\\":false,\\\"custom_value\\\":false,\\\"sort\\\":false}},\\\"name\\\":\\\"Level\\\",\\\"description\\\":\\\"Default severity level for all integrations.\\\"}}},\\\"logger.set_level\\\":{\\\"name\\\":\\\"Set logger level\\\",\\\"description\\\":\\\"Sets the log level for one or more integrations.\\\",\\\"domain\\\":\\\"logger\\\",\\\"service\\\":\\\"set_level\\\",\\\"fields\\\":{}},\\\"lovelace.reload_resources\\\":{\\\"name\\\":\\\"Reload dashboard resources\\\",\\\"description\\\":\\\"Reloads dashboard resources from the YAML-configuration.\\\",\\\"domain\\\":\\\"lovelace\\\",\\\"service\\\":\\\"reload_resources\\\",\\\"fields\\\":{}},\\\"frontend.set_theme\\\":{\\\"name\\\":\\\"Set theme\\\",\\\"description\\\":\\\"Sets the theme Home Assistant uses. Can be overridden by a user.\\\",\\\"domain\\\":\\\"frontend\\\",\\\"service\\\":\\\"set_theme\\\",\\\"fields\\\":{\\\"name\\\":{\\\"required\\\":false,\\\"example\\\":\\\"default\\\",\\\"selector\\\":{\\\"theme\\\":{\\\"include_default\\\":true}},\\\"name\\\":\\\"Theme\\\",\\\"description\\\":\\\"Name of the theme that is used by default.\\\"},\\\"name_dark\\\":{\\\"required\\\":false,\\\"example\\\":\\\"default\\\",\\\"selector\\\":{\\\"theme\\\":{\\\"include_default\\\":true}},\\\"name\\\":\\\"Dark theme override\\\",\\\"description\\\":\\\"Alternative dark-mode theme that is used by default.\\\"}}},\\\"frontend.reload_themes\\\":{\\\"name\\\":\\\"Reload themes\\\",\\\"description\\\":\\\"Reloads themes from the YAML-configuration.\\\",\\\"domain\\\":\\\"frontend\\\",\\\"service\\\":\\\"reload_themes\\\",\\\"fields\\\":{}},\\\"recorder.purge\\\":{\\\"name\\\":\\\"Purge Recorder database\\\",\\\"description\\\":\\\"Starts purge task - to clean up old data from your database.\\\",\\\"domain\\\":\\\"recorder\\\",\\\"service\\\":\\\"purge\\\",\\\"fields\\\":{\\\"keep_days\\\":{\\\"selector\\\":{\\\"number\\\":{\\\"min\\\":0.0,\\\"max\\\":365.0,\\\"unit_of_measurement\\\":\\\"days\\\",\\\"step\\\":1.0,\\\"mode\\\":\\\"slider\\\"}},\\\"name\\\":\\\"Days to keep\\\",\\\"description\\\":\\\"Number of days to keep the data in the database. Starting today, counting backward. A value of `7` means that everything older than a week will be purged.\\\"},\\\"repack\\\":{\\\"default\\\":false,\\\"selector\\\":{\\\"boolean\\\":{}},\\\"name\\\":\\\"Repack\\\",\\\"description\\\":\\\"Attempt to save disk space by rewriting the entire database file.\\\"},\\\"apply_filter\\\":{\\\"default\\\":false,\\\"selector\\\":{\\\"boolean\\\":{}},\\\"name\\\":\\\"Apply filter\\\",\\\"description\\\":\\\"Apply `entity_id` and `event_type` filters in addition to time-based purge.\\\"}}},\\\"recorder.purge_entities\\\":{\\\"name\\\":\\\"Purge Recorder entities\\\",\\\"description\\\":\\\"Starts a purge task to remove the data related to specific entities from your database.\\\",\\\"domain\\\":\\\"recorder\\\",\\\"service\\\":\\\"purge_entities\\\",\\\"fields\\\":{\\\"entity_id\\\":{\\\"required\\\":false,\\\"selector\\\":{\\\"entity\\\":{\\\"multiple\\\":true,\\\"reorder\\\":false}},\\\"name\\\":\\\"Entities to remove\\\",\\\"description\\\":\\\"List of entities for which the data is to be removed from the Recorder database.\\\"},\\\"domains\\\":{\\\"example\\\":\\\"sun\\\",\\\"required\\\":false,\\\"selector\\\":{\\\"object\\\":{\\\"multiple\\\":false}},\\\"name\\\":\\\"Domains to remove\\\",\\\"description\\\":\\\"List of domains for which the data needs to be removed from the Recorder database.\\\"},\\\"entity_globs\\\":{\\\"example\\\":\\\"domain*.object_id*\\\",\\\"required\\\":false,\\\"selector\\\":{\\\"object\\\":{\\\"multiple\\\":false}},\\\"name\\\":\\\"Entity globs to remove\\\",\\\"description\\\":\\\"List of glob patterns used to select the entities for which the data is to be removed from the Recorder database.\\\"},\\\"keep_days\\\":{\\\"default\\\":0,\\\"selector\\\":{\\\"number\\\":{\\\"min\\\":0.0,\\\"max\\\":365.0,\\\"unit_of_measurement\\\":\\\"days\\\",\\\"step\\\":1.0,\\\"mode\\\":\\\"slider\\\"}},\\\"name\\\":\\\"Days to keep\\\",\\\"description\\\":\\\"Number of days to keep the data for rows matching the filter. Starting today, counting backward. A value of `7` means that everything older than a week will be purged. The default of 0 days will remove all matching rows immediately.\\\"}}},\\\"recorder.enable\\\":{\\\"name\\\":\\\"Enable Recorder\\\",\\\"description\\\":\\\"Starts the recording of events and state changes.\\\",\\\"domain\\\":\\\"recorder\\\",\\\"service\\\":\\\"enable\\\",\\\"fields\\\":{}},\\\"recorder.disable\\\":{\\\"name\\\":\\\"Disable Recorder\\\",\\\"description\\\":\\\"Stops the recording of events and state changes.\\\",\\\"domain\\\":\\\"recorder\\\",\\\"service\\\":\\\"disable\\\",\\\"fields\\\":{}},\\\"recorder.get_statistics\\\":{\\\"name\\\":\\\"Get Recorder statistics\\\",\\\"description\\\":\\\"Retrieves statistics data for entities within a specific time period.\\\",\\\"domain\\\":\\\"recorder\\\",\\\"service\\\":\\\"get_statistics\\\",\\\"fields\\\":{\\\"start_time\\\":{\\\"required\\\":true,\\\"example\\\":\\\"2025-01-01 00:00:00\\\",\\\"selector\\\":{\\\"datetime\\\":{}},\\\"name\\\":\\\"Start time\\\",\\\"description\\\":\\\"The start time for the statistics query.\\\"},\\\"end_time\\\":{\\\"required\\\":false,\\\"example\\\":\\\"2025-01-02 00:00:00\\\",\\\"selector\\\":{\\\"datetime\\\":{}},\\\"name\\\":\\\"End time\\\",\\\"description\\\":\\\"The end time for the statistics query. If omitted, returns all statistics from start time onward.\\\"},\\\"statistic_ids\\\":{\\\"required\\\":true,\\\"example\\\":[\\\"sensor.energy_consumption\\\",\\\"sensor.temperature\\\"],\\\"selector\\\":{\\\"statistic\\\":{\\\"multiple\\\":true}},\\\"name\\\":\\\"Statistic IDs\\\",\\\"description\\\":\\\"The entity IDs or statistic IDs to return statistics for.\\\"},\\\"period\\\":{\\\"required\\\":true,\\\"example\\\":\\\"hour\\\",\\\"selector\\\":{\\\"select\\\":{\\\"options\\\":[\\\"5minute\\\",\\\"hour\\\",\\\"day\\\",\\\"week\\\",\\\"month\\\",\\\"year\\\"],\\\"multiple\\\":false,\\\"custom_value\\\":false,\\\"sort\\\":false}},\\\"name\\\":\\\"Period\\\",\\\"description\\\":\\\"The time period to group statistics by.\\\"},\\\"types\\\":{\\\"required\\\":true,\\\"example\\\":[\\\"mean\\\",\\\"sum\\\"],\\\"selector\\\":{\\\"select\\\":{\\\"options\\\":[\\\"change\\\",\\\"last_reset\\\",\\\"max\\\",\\\"mean\\\",\\\"min\\\",\\\"state\\\",\\\"sum\\\"],\\\"multiple\\\":true,\\\"custom_value\\\":false,\\\"sort\\\":false}},\\\"name\\\":\\\"Types\\\",\\\"description\\\":\\\"The types of statistics values to return.\\\"},\\\"units\\\":{\\\"required\\\":false,\\\"example\\\":{\\\"energy\\\":\\\"kWh\\\",\\\"temperature\\\":\\\"\u00b0C\\\"},\\\"selector\\\":{\\\"object\\\":{\\\"multiple\\\":false}},\\\"name\\\":\\\"Units\\\",\\\"description\\\":\\\"Optional unit conversion mapping.\\\"}},\\\"response\\\":{\\\"optional\\\":false}},\\\"scene.reload\\\":{\\\"name\\\":\\\"Reload scenes\\\",\\\"description\\\":\\\"Reloads the scenes from the YAML-configuration.\\\",\\\"domain\\\":\\\"scene\\\",\\\"service\\\":\\\"reload\\\",\\\"fields\\\":{}},\\\"scene.apply\\\":{\\\"name\\\":\\\"Apply scene\\\",\\\"description\\\":\\\"Activates a scene with configuration.\\\",\\\"domain\\\":\\\"scene\\\",\\\"service\\\":\\\"apply\\\",\\\"fields\\\":{\\\"entities\\\":{\\\"required\\\":true,\\\"example\\\":\\\"light.kitchen: \\\\\\\"on\\\\\\\"\\\\nlight.ceiling:\\\\n  state: \\\\\\\"on\\\\\\\"\\\\n  brightness: 80\\\\n\\\",\\\"selector\\\":{\\\"object\\\":{\\\"multiple\\\":false}},\\\"name\\\":\\\"Entities state\\\",\\\"description\\\":\\\"List of entities and their target state.\\\"},\\\"transition\\\":{\\\"selector\\\":{\\\"number\\\":{\\\"min\\\":0.0,\\\"max\\\":300.0,\\\"unit_of_measurement\\\":\\\"seconds\\\",\\\"step\\\":1.0,\\\"mode\\\":\\\"slider\\\"}},\\\"name\\\":\\\"Transition\\\",\\\"description\\\":\\\"Time it takes the devices to transition into the states defined in the scene.\\\"}}},\\\"scene.create\\\":{\\\"name\\\":\\\"Create scene\\\",\\\"description\\\":\\\"Creates a new scene.\\\",\\\"domain\\\":\\\"scene\\\",\\\"service\\\":\\\"create\\\",\\\"fields\\\":{\\\"scene_id\\\":{\\\"required\\\":true,\\\"example\\\":\\\"all_lights\\\",\\\"selector\\\":{\\\"text\\\":{\\\"multiline\\\":false,\\\"multiple\\\":false}},\\\"name\\\":\\\"Scene entity ID\\\",\\\"description\\\":\\\"The entity ID of the new scene.\\\"},\\\"entities\\\":{\\\"example\\\":\\\"light.tv_back_light: \\\\\\\"on\\\\\\\"\\\\nlight.ceiling:\\\\n  state: \\\\\\\"on\\\\\\\"\\\\n  brightness: 200\\\\n\\\",\\\"selector\\\":{\\\"object\\\":{\\\"multiple\\\":false}},\\\"name\\\":\\\"Entity states\\\",\\\"description\\\":\\\"List of entities and their target state. If your entities are already in the target state right now, use 'Entities snapshot' instead.\\\"},\\\"snapshot_entities\\\":{\\\"example\\\":\\\"- light.ceiling\\\\n- light.kitchen\\\\n\\\",\\\"selector\\\":{\\\"entity\\\":{\\\"multiple\\\":true,\\\"reorder\\\":false}},\\\"name\\\":\\\"Entities snapshot\\\",\\\"description\\\":\\\"List of entities to be included in the snapshot. By taking a snapshot, you record the current state of those entities. If you do not want to use the current state of all your entities for this scene, you can combine 'Entities snapshot' with 'Entity states'.\\\"}}},\\\"scene.delete\\\":{\\\"name\\\":\\\"Delete scene\\\",\\\"description\\\":\\\"Deletes a dynamically created scene.\\\",\\\"domain\\\":\\\"scene\\\",\\\"service\\\":\\\"delete\\\",\\\"fields\\\":{},\\\"target\\\":{\\\"entity\\\":[{\\\"integration\\\":\\\"homeassistant\\\",\\\"domain\\\":[\\\"scene\\\"]}]}},\\\"scene.turn_on\\\":{\\\"name\\\":\\\"Activate scene\\\",\\\"description\\\":\\\"Activates a scene.\\\",\\\"domain\\\":\\\"scene\\\",\\\"service\\\":\\\"turn_on\\\",\\\"fields\\\":{\\\"transition\\\":{\\\"selector\\\":{\\\"number\\\":{\\\"min\\\":0.0,\\\"max\\\":300.0,\\\"unit_of_measurement\\\":\\\"seconds\\\",\\\"step\\\":1.0,\\\"mode\\\":\\\"slider\\\"}},\\\"name\\\":\\\"Transition\\\",\\\"description\\\":\\\"Time it takes the devices to transition into the states defined in the scene.\\\"}},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"scene\\\"]}]}},\\\"media_player.turn_on\\\":{\\\"name\\\":\\\"Turn on media player\\\",\\\"description\\\":\\\"Turns on the power of a media player.\\\",\\\"domain\\\":\\\"media_player\\\",\\\"service\\\":\\\"turn_on\\\",\\\"fields\\\":{},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"media_player\\\"],\\\"supported_features\\\":[128]}]}},\\\"media_player.turn_off\\\":{\\\"name\\\":\\\"Turn off media player\\\",\\\"description\\\":\\\"Turns off the power of a media player.\\\",\\\"domain\\\":\\\"media_player\\\",\\\"service\\\":\\\"turn_off\\\",\\\"fields\\\":{},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"media_player\\\"],\\\"supported_features\\\":[256]}]}},\\\"media_player.toggle\\\":{\\\"name\\\":\\\"Toggle media player\\\",\\\"description\\\":\\\"Toggles a media player on/off.\\\",\\\"domain\\\":\\\"media_player\\\",\\\"service\\\":\\\"toggle\\\",\\\"fields\\\":{},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"media_player\\\"],\\\"supported_features\\\":[384]}]}},\\\"media_player.volume_up\\\":{\\\"name\\\":\\\"Turn up media player volume\\\",\\\"description\\\":\\\"Turns up the volume of a media player.\\\",\\\"domain\\\":\\\"media_player\\\",\\\"service\\\":\\\"volume_up\\\",\\\"fields\\\":{},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"media_player\\\"],\\\"supported_features\\\":[4,1024]}]}},\\\"media_player.volume_down\\\":{\\\"name\\\":\\\"Turn down media player volume\\\",\\\"description\\\":\\\"Turns down the volume of a media player.\\\",\\\"domain\\\":\\\"media_player\\\",\\\"service\\\":\\\"volume_down\\\",\\\"fields\\\":{},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"media_player\\\"],\\\"supported_features\\\":[4,1024]}]}},\\\"media_player.media_play_pause\\\":{\\\"name\\\":\\\"Play/Pause media\\\",\\\"description\\\":\\\"Toggles play/pause on a media player.\\\",\\\"domain\\\":\\\"media_player\\\",\\\"service\\\":\\\"media_play_pause\\\",\\\"fields\\\":{},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"media_player\\\"],\\\"supported_features\\\":[16385]}]}},\\\"media_player.media_play\\\":{\\\"name\\\":\\\"Play media\\\",\\\"description\\\":\\\"Starts playback on a media player.\\\",\\\"domain\\\":\\\"media_player\\\",\\\"service\\\":\\\"media_play\\\",\\\"fields\\\":{},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"media_player\\\"],\\\"supported_features\\\":[16384]}]}},\\\"media_player.media_pause\\\":{\\\"name\\\":\\\"Pause media\\\",\\\"description\\\":\\\"Pauses playback on a media player.\\\",\\\"domain\\\":\\\"media_player\\\",\\\"service\\\":\\\"media_pause\\\",\\\"fields\\\":{},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"media_player\\\"],\\\"supported_features\\\":[1]}]}},\\\"media_player.media_stop\\\":{\\\"name\\\":\\\"Stop media\\\",\\\"description\\\":\\\"Stops playback on a media player.\\\",\\\"domain\\\":\\\"media_player\\\",\\\"service\\\":\\\"media_stop\\\",\\\"fields\\\":{},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"media_player\\\"],\\\"supported_features\\\":[4096]}]}},\\\"media_player.media_next_track\\\":{\\\"name\\\":\\\"Next track\\\",\\\"description\\\":\\\"Selects the next track on a media player.\\\",\\\"domain\\\":\\\"media_player\\\",\\\"service\\\":\\\"media_next_track\\\",\\\"fields\\\":{},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"media_player\\\"],\\\"supported_features\\\":[32]}]}},\\\"media_player.media_previous_track\\\":{\\\"name\\\":\\\"Previous track\\\",\\\"description\\\":\\\"Selects the previous track on a media player.\\\",\\\"domain\\\":\\\"media_player\\\",\\\"service\\\":\\\"media_previous_track\\\",\\\"fields\\\":{},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"media_player\\\"],\\\"supported_features\\\":[16]}]}},\\\"media_player.clear_playlist\\\":{\\\"name\\\":\\\"Clear media player playlist\\\",\\\"description\\\":\\\"Removes all items from a media player's playlist.\\\",\\\"domain\\\":\\\"media_player\\\",\\\"service\\\":\\\"clear_playlist\\\",\\\"fields\\\":{},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"media_player\\\"],\\\"supported_features\\\":[8192]}]}},\\\"media_player.volume_set\\\":{\\\"name\\\":\\\"Set media player volume\\\",\\\"description\\\":\\\"Sets the volume level of a media player.\\\",\\\"domain\\\":\\\"media_player\\\",\\\"service\\\":\\\"volume_set\\\",\\\"fields\\\":{\\\"volume_level\\\":{\\\"required\\\":true,\\\"selector\\\":{\\\"number\\\":{\\\"min\\\":0.0,\\\"max\\\":1.0,\\\"step\\\":0.01,\\\"mode\\\":\\\"slider\\\"}},\\\"name\\\":\\\"Level\\\",\\\"description\\\":\\\"The volume. 0 is inaudible, 1 is the maximum volume.\\\"}},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"media_player\\\"],\\\"supported_features\\\":[4]}]}},\\\"media_player.volume_mute\\\":{\\\"name\\\":\\\"Mute/unmute media player\\\",\\\"description\\\":\\\"Mutes or unmutes a media player.\\\",\\\"domain\\\":\\\"media_player\\\",\\\"service\\\":\\\"volume_mute\\\",\\\"fields\\\":{\\\"is_volume_muted\\\":{\\\"required\\\":true,\\\"selector\\\":{\\\"boolean\\\":{}},\\\"name\\\":\\\"Muted\\\",\\\"description\\\":\\\"Defines whether or not it is muted.\\\"}},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"media_player\\\"],\\\"supported_features\\\":[8]}]}},\\\"media_player.media_seek\\\":{\\\"name\\\":\\\"Seek media\\\",\\\"description\\\":\\\"Allows you to go to a different part of the media that is currently playing on a media player.\\\",\\\"domain\\\":\\\"media_player\\\",\\\"service\\\":\\\"media_seek\\\",\\\"fields\\\":{\\\"seek_position\\\":{\\\"required\\\":true,\\\"selector\\\":{\\\"number\\\":{\\\"min\\\":0.0,\\\"max\\\":9.223372036854776e+18,\\\"step\\\":0.01,\\\"mode\\\":\\\"box\\\"}},\\\"name\\\":\\\"Position\\\",\\\"description\\\":\\\"Target position in the currently playing media. The format is platform dependent.\\\"}},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"media_player\\\"],\\\"supported_features\\\":[2]}]}},\\\"media_player.join\\\":{\\\"name\\\":\\\"Join media players\\\",\\\"description\\\":\\\"Groups media players together for synchronous playback. Only works on supported multiroom audio systems.\\\",\\\"domain\\\":\\\"media_player\\\",\\\"service\\\":\\\"join\\\",\\\"fields\\\":{\\\"group_members\\\":{\\\"required\\\":true,\\\"example\\\":\\\"- media_player.multiroom_player2\\\\n- media_player.multiroom_player3\\\\n\\\",\\\"selector\\\":{\\\"entity\\\":{\\\"multiple\\\":true,\\\"domain\\\":[\\\"media_player\\\"],\\\"reorder\\\":false}},\\\"name\\\":\\\"Group members\\\",\\\"description\\\":\\\"The players which will be synced with the playback specified in 'Targets'.\\\"}},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"media_player\\\"],\\\"supported_features\\\":[524288]}]}},\\\"media_player.select_source\\\":{\\\"name\\\":\\\"Select media player source\\\",\\\"description\\\":\\\"Sends a media player the command to change the input source.\\\",\\\"domain\\\":\\\"media_player\\\",\\\"service\\\":\\\"select_source\\\",\\\"fields\\\":{\\\"source\\\":{\\\"required\\\":true,\\\"example\\\":\\\"video1\\\",\\\"selector\\\":{\\\"state\\\":{\\\"attribute\\\":\\\"source\\\",\\\"multiple\\\":false}},\\\"name\\\":\\\"Source\\\",\\\"description\\\":\\\"Name of the source to switch to. Platform dependent.\\\"}},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"media_player\\\"],\\\"supported_features\\\":[2048]}]}}},\\\"total_count\\\":247,\\\"offset\\\":0,\\\"limit\\\":50,\\\"count\\\":50,\\\"has_more\\\":true,\\\"next_offset\\\":50,\\\"detail_level\\\":\\\"full\\\",\\\"filters_applied\\\":{\\\"domain\\\":null,\\\"query\\\":null}}\",\"type\":\"text\"}],\"isError\":false,\"structuredContent\":{\"success\":true,\"domains\":[\"ai_task\",\"alarm_control_panel\",\"assist_satellite\",\"automation\",\"backup\",\"button\",\"calendar\",\"camera\",\"climate\",\"conversation\",\"counter\",\"cover\",\"date\",\"datetime\",\"device_tracker\",\"fan\",\"ffmpeg\",\"frontend\",\"group\",\"homeassistant\",\"humidifier\",\"image\",\"image_processing\",\"input_boolean\",\"input_button\",\"input_datetime\",\"input_number\",\"input_select\",\"input_text\",\"lawn_mower\",\"light\",\"lock\",\"logbook\",\"logger\",\"lovelace\",\"media_player\",\"notify\",\"number\",\"persistent_notification\",\"person\",\"recorder\",\"remote\",\"scene\",\"schedule\",\"script\",\"select\",\"shopping_list\",\"siren\",\"switch\",\"system_log\",\"template\",\"text\",\"time\",\"timer\",\"todo\",\"tts\",\"update\",\"vacuum\",\"valve\",\"water_heater\",\"weather\",\"zone\"],\"services\":{\"homeassistant.save_persistent_states\":{\"name\":\"Save persistent states\",\"description\":\"Saves the persistent states immediately. Maintains the normal periodic saving interval.\",\"domain\":\"homeassistant\",\"service\":\"save_persistent_states\",\"fields\":{}},\"homeassistant.turn_off\":{\"name\":\"Generic turn off\",\"description\":\"Generic action to turn devices off under any domain.\",\"domain\":\"homeassistant\",\"service\":\"turn_off\",\"fields\":{},\"target\":{}},\"homeassistant.turn_on\":{\"name\":\"Generic turn on\",\"description\":\"Generic action to turn devices on under any domain.\",\"domain\":\"homeassistant\",\"service\":\"turn_on\",\"fields\":{},\"target\":{}},\"homeassistant.toggle\":{\"name\":\"Generic toggle\",\"description\":\"Generic action to toggle devices on/off under any domain.\",\"domain\":\"homeassistant\",\"service\":\"toggle\",\"fields\":{},\"target\":{}},\"homeassistant.stop\":{\"name\":\"Stop Home Assistant\",\"description\":\"Stops Home Assistant.\",\"domain\":\"homeassistant\",\"service\":\"stop\",\"fields\":{}},\"homeassistant.restart\":{\"name\":\"Restart Home Assistant\",\"description\":\"Restarts Home Assistant.\",\"domain\":\"homeassistant\",\"service\":\"restart\",\"fields\":{}},\"homeassistant.check_config\":{\"name\":\"Check Home Assistant configuration\",\"description\":\"Checks the Home Assistant YAML-configuration files for errors. Errors will be shown in the Home Assistant logs.\",\"domain\":\"homeassistant\",\"service\":\"check_config\",\"fields\":{}},\"homeassistant.update_entity\":{\"name\":\"Update entity\",\"description\":\"Forces one or more entities to update their data.\",\"domain\":\"homeassistant\",\"service\":\"update_entity\",\"fields\":{\"entity_id\":{\"required\":true,\"selector\":{\"entity\":{\"multiple\":true,\"reorder\":false}},\"name\":\"Entities to update\",\"description\":\"List of entities to force update.\"}}},\"homeassistant.reload_core_config\":{\"name\":\"Reload Core configuration\",\"description\":\"Reloads the Core configuration from the YAML-configuration.\",\"domain\":\"homeassistant\",\"service\":\"reload_core_config\",\"fields\":{}},\"homeassistant.set_location\":{\"name\":\"Set Home Assistant location\",\"description\":\"Updates the Home Assistant location.\",\"domain\":\"homeassistant\",\"service\":\"set_location\",\"fields\":{\"latitude\":{\"required\":true,\"example\":32.87336,\"selector\":{\"number\":{\"mode\":\"box\",\"min\":-90.0,\"max\":90.0,\"step\":\"any\"}},\"name\":\"Latitude\",\"description\":\"Latitude of your location.\"},\"longitude\":{\"required\":true,\"example\":117.22743,\"selector\":{\"number\":{\"mode\":\"box\",\"min\":-180.0,\"max\":180.0,\"step\":\"any\"}},\"name\":\"Longitude\",\"description\":\"Longitude of your location.\"},\"elevation\":{\"required\":false,\"example\":120,\"selector\":{\"number\":{\"mode\":\"box\",\"step\":\"any\",\"unit_of_measurement\":\"m\"}},\"name\":\"Elevation\",\"description\":\"Elevation of your location above sea level.\"}}},\"homeassistant.reload_custom_templates\":{\"name\":\"Reload custom Jinja2 templates\",\"description\":\"Reloads Jinja2 templates found in the `custom_templates` folder in your config. New values will be applied on the next render of the template.\",\"domain\":\"homeassistant\",\"service\":\"reload_custom_templates\",\"fields\":{}},\"homeassistant.reload_config_entry\":{\"name\":\"Reload config entry\",\"description\":\"Reloads the config entry of the provided config entry ID.\",\"domain\":\"homeassistant\",\"service\":\"reload_config_entry\",\"fields\":{\"entry_id\":{\"required\":true,\"selector\":{\"config_entry\":{}},\"name\":\"Config entry ID\",\"description\":\"The configuration entry to reload.\"}}},\"homeassistant.reload_all\":{\"name\":\"Reload all Home Assistant configuration\",\"description\":\"Reloads all YAML configuration that can be reloaded without restarting Home Assistant.\",\"domain\":\"homeassistant\",\"service\":\"reload_all\",\"fields\":{}},\"persistent_notification.create\":{\"name\":\"Create persistent notification\",\"description\":\"Shows a persistent notification on the notifications panel.\",\"domain\":\"persistent_notification\",\"service\":\"create\",\"fields\":{\"message\":{\"required\":true,\"example\":\"Please check your configuration.yaml.\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}},\"name\":\"Message\",\"description\":\"Message body of the notification.\"},\"title\":{\"example\":\"Test notification\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}},\"name\":\"Title\",\"description\":\"Optional title of the notification.\"},\"notification_id\":{\"example\":1234,\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}},\"name\":\"Notification ID\",\"description\":\"ID of the notification. This new notification will overwrite an existing notification with the same ID.\"}}},\"persistent_notification.dismiss\":{\"name\":\"Dismiss persistent notification\",\"description\":\"Deletes a persistent notification from the notifications panel.\",\"domain\":\"persistent_notification\",\"service\":\"dismiss\",\"fields\":{\"notification_id\":{\"required\":true,\"example\":1234,\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}},\"name\":\"Notification ID\",\"description\":\"ID of the notification to be deleted.\"}}},\"persistent_notification.dismiss_all\":{\"name\":\"Dismiss all persistent notifications\",\"description\":\"Deletes all persistent notifications from the notifications panel.\",\"domain\":\"persistent_notification\",\"service\":\"dismiss_all\",\"fields\":{}},\"system_log.clear\":{\"name\":\"Clear system log\",\"description\":\"Deletes all system log entries.\",\"domain\":\"system_log\",\"service\":\"clear\",\"fields\":{}},\"system_log.write\":{\"name\":\"Write to system log\",\"description\":\"Writes a system log entry.\",\"domain\":\"system_log\",\"service\":\"write\",\"fields\":{\"message\":{\"required\":true,\"example\":\"Something went wrong\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}},\"name\":\"Message\",\"description\":\"Message to log.\"},\"level\":{\"default\":\"error\",\"selector\":{\"select\":{\"options\":[\"debug\",\"info\",\"warning\",\"error\",\"critical\"],\"translation_key\":\"level\",\"multiple\":false,\"custom_value\":false,\"sort\":false}},\"name\":\"Level\",\"description\":\"Log level.\"},\"logger\":{\"example\":\"mycomponent.myplatform\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}},\"name\":\"Logger\",\"description\":\"Logger name under which to log the message. Defaults to `system_log.external`.\"}}},\"logger.set_default_level\":{\"name\":\"Set logger default level\",\"description\":\"Sets the default log level for integrations.\",\"domain\":\"logger\",\"service\":\"set_default_level\",\"fields\":{\"level\":{\"selector\":{\"select\":{\"options\":[\"debug\",\"info\",\"warning\",\"error\",\"fatal\",\"critical\"],\"translation_key\":\"level\",\"multiple\":false,\"custom_value\":false,\"sort\":false}},\"name\":\"Level\",\"description\":\"Default severity level for all integrations.\"}}},\"logger.set_level\":{\"name\":\"Set logger level\",\"description\":\"Sets the log level for one or more integrations.\",\"domain\":\"logger\",\"service\":\"set_level\",\"fields\":{}},\"lovelace.reload_resources\":{\"name\":\"Reload dashboard resources\",\"description\":\"Reloads dashboard resources from the YAML-configuration.\",\"domain\":\"lovelace\",\"service\":\"reload_resources\",\"fields\":{}},\"frontend.set_theme\":{\"name\":\"Set theme\",\"description\":\"Sets the theme Home Assistant uses. Can be overridden by a user.\",\"domain\":\"frontend\",\"service\":\"set_theme\",\"fields\":{\"name\":{\"required\":false,\"example\":\"default\",\"selector\":{\"theme\":{\"include_default\":true}},\"name\":\"Theme\",\"description\":\"Name of the theme that is used by default.\"},\"name_dark\":{\"required\":false,\"example\":\"default\",\"selector\":{\"theme\":{\"include_default\":true}},\"name\":\"Dark theme override\",\"description\":\"Alternative dark-mode theme that is used by default.\"}}},\"frontend.reload_themes\":{\"name\":\"Reload themes\",\"description\":\"Reloads themes from the YAML-configuration.\",\"domain\":\"frontend\",\"service\":\"reload_themes\",\"fields\":{}},\"recorder.purge\":{\"name\":\"Purge Recorder database\",\"description\":\"Starts purge task - to clean up old data from your database.\",\"domain\":\"recorder\",\"service\":\"purge\",\"fields\":{\"keep_days\":{\"selector\":{\"number\":{\"min\":0.0,\"max\":365.0,\"unit_of_measurement\":\"days\",\"step\":1.0,\"mode\":\"slider\"}},\"name\":\"Days to keep\",\"description\":\"Number of days to keep the data in the database. Starting today, counting backward. A value of `7` means that everything older than a week will be purged.\"},\"repack\":{\"default\":false,\"selector\":{\"boolean\":{}},\"name\":\"Repack\",\"description\":\"Attempt to save disk space by rewriting the entire database file.\"},\"apply_filter\":{\"default\":false,\"selector\":{\"boolean\":{}},\"name\":\"Apply filter\",\"description\":\"Apply `entity_id` and `event_type` filters in addition to time-based purge.\"}}},\"recorder.purge_entities\":{\"name\":\"Purge Recorder entities\",\"description\":\"Starts a purge task to remove the data related to specific entities from your database.\",\"domain\":\"recorder\",\"service\":\"purge_entities\",\"fields\":{\"entity_id\":{\"required\":false,\"selector\":{\"entity\":{\"multiple\":true,\"reorder\":false}},\"name\":\"Entities to remove\",\"description\":\"List of entities for which the data is to be removed from the Recorder database.\"},\"domains\":{\"example\":\"sun\",\"required\":false,\"selector\":{\"object\":{\"multiple\":false}},\"name\":\"Domains to remove\",\"description\":\"List of domains for which the data needs to be removed from the Recorder database.\"},\"entity_globs\":{\"example\":\"domain*.object_id*\",\"required\":false,\"selector\":{\"object\":{\"multiple\":false}},\"name\":\"Entity globs to remove\",\"description\":\"List of glob patterns used to select the entities for which the data is to be removed from the Recorder database.\"},\"keep_days\":{\"default\":0,\"selector\":{\"number\":{\"min\":0.0,\"max\":365.0,\"unit_of_measurement\":\"days\",\"step\":1.0,\"mode\":\"slider\"}},\"name\":\"Days to keep\",\"description\":\"Number of days to keep the data for rows matching the filter. Starting today, counting backward. A value of `7` means that everything older than a week will be purged. The default of 0 days will remove all matching rows immediately.\"}}},\"recorder.enable\":{\"name\":\"Enable Recorder\",\"description\":\"Starts the recording of events and state changes.\",\"domain\":\"recorder\",\"service\":\"enable\",\"fields\":{}},\"recorder.disable\":{\"name\":\"Disable Recorder\",\"description\":\"Stops the recording of events and state changes.\",\"domain\":\"recorder\",\"service\":\"disable\",\"fields\":{}},\"recorder.get_statistics\":{\"name\":\"Get Recorder statistics\",\"description\":\"Retrieves statistics data for entities within a specific time period.\",\"domain\":\"recorder\",\"service\":\"get_statistics\",\"fields\":{\"start_time\":{\"required\":true,\"example\":\"2025-01-01 00:00:00\",\"selector\":{\"datetime\":{}},\"name\":\"Start time\",\"description\":\"The start time for the statistics query.\"},\"end_time\":{\"required\":false,\"example\":\"2025-01-02 00:00:00\",\"selector\":{\"datetime\":{}},\"name\":\"End time\",\"description\":\"The end time for the statistics query. If omitted, returns all statistics from start time onward.\"},\"statistic_ids\":{\"required\":true,\"example\":[\"sensor.energy_consumption\",\"sensor.temperature\"],\"selector\":{\"statistic\":{\"multiple\":true}},\"name\":\"Statistic IDs\",\"description\":\"The entity IDs or statistic IDs to return statistics for.\"},\"period\":{\"required\":true,\"example\":\"hour\",\"selector\":{\"select\":{\"options\":[\"5minute\",\"hour\",\"day\",\"week\",\"month\",\"year\"],\"multiple\":false,\"custom_value\":false,\"sort\":false}},\"name\":\"Period\",\"description\":\"The time period to group statistics by.\"},\"types\":{\"required\":true,\"example\":[\"mean\",\"sum\"],\"selector\":{\"select\":{\"options\":[\"change\",\"last_reset\",\"max\",\"mean\",\"min\",\"state\",\"sum\"],\"multiple\":true,\"custom_value\":false,\"sort\":false}},\"name\":\"Types\",\"description\":\"The types of statistics values to return.\"},\"units\":{\"required\":false,\"example\":{\"energy\":\"kWh\",\"temperature\":\"\u00b0C\"},\"selector\":{\"object\":{\"multiple\":false}},\"name\":\"Units\",\"description\":\"Optional unit conversion mapping.\"}},\"response\":{\"optional\":false}},\"scene.reload\":{\"name\":\"Reload scenes\",\"description\":\"Reloads the scenes from the YAML-configuration.\",\"domain\":\"scene\",\"service\":\"reload\",\"fields\":{}},\"scene.apply\":{\"name\":\"Apply scene\",\"description\":\"Activates a scene with configuration.\",\"domain\":\"scene\",\"service\":\"apply\",\"fields\":{\"entities\":{\"required\":true,\"example\":\"light.kitchen: \\\"on\\\"\\nlight.ceiling:\\n  state: \\\"on\\\"\\n  brightness: 80\\n\",\"selector\":{\"object\":{\"multiple\":false}},\"name\":\"Entities state\",\"description\":\"List of entities and their target state.\"},\"transition\":{\"selector\":{\"number\":{\"min\":0.0,\"max\":300.0,\"unit_of_measurement\":\"seconds\",\"step\":1.0,\"mode\":\"slider\"}},\"name\":\"Transition\",\"description\":\"Time it takes the devices to transition into the states defined in the scene.\"}}},\"scene.create\":{\"name\":\"Create scene\",\"description\":\"Creates a new scene.\",\"domain\":\"scene\",\"service\":\"create\",\"fields\":{\"scene_id\":{\"required\":true,\"example\":\"all_lights\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}},\"name\":\"Scene entity ID\",\"description\":\"The entity ID of the new scene.\"},\"entities\":{\"example\":\"light.tv_back_light: \\\"on\\\"\\nlight.ceiling:\\n  state: \\\"on\\\"\\n  brightness: 200\\n\",\"selector\":{\"object\":{\"multiple\":false}},\"name\":\"Entity states\",\"description\":\"List of entities and their target state. If your entities are already in the target state right now, use 'Entities snapshot' instead.\"},\"snapshot_entities\":{\"example\":\"- light.ceiling\\n- light.kitchen\\n\",\"selector\":{\"entity\":{\"multiple\":true,\"reorder\":false}},\"name\":\"Entities snapshot\",\"description\":\"List of entities to be included in the snapshot. By taking a snapshot, you record the current state of those entities. If you do not want to use the current state of all your entities for this scene, you can combine 'Entities snapshot' with 'Entity states'.\"}}},\"scene.delete\":{\"name\":\"Delete scene\",\"description\":\"Deletes a dynamically created scene.\",\"domain\":\"scene\",\"service\":\"delete\",\"fields\":{},\"target\":{\"entity\":[{\"integration\":\"homeassistant\",\"domain\":[\"scene\"]}]}},\"scene.turn_on\":{\"name\":\"Activate scene\",\"description\":\"Activates a scene.\",\"domain\":\"scene\",\"service\":\"turn_on\",\"fields\":{\"transition\":{\"selector\":{\"number\":{\"min\":0.0,\"max\":300.0,\"unit_of_measurement\":\"seconds\",\"step\":1.0,\"mode\":\"slider\"}},\"name\":\"Transition\",\"description\":\"Time it takes the devices to transition into the states defined in the scene.\"}},\"target\":{\"entity\":[{\"domain\":[\"scene\"]}]}},\"media_player.turn_on\":{\"name\":\"Turn on media player\",\"description\":\"Turns on the power of a media player.\",\"domain\":\"media_player\",\"service\":\"turn_on\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[128]}]}},\"media_player.turn_off\":{\"name\":\"Turn off media player\",\"description\":\"Turns off the power of a media player.\",\"domain\":\"media_player\",\"service\":\"turn_off\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[256]}]}},\"media_player.toggle\":{\"name\":\"Toggle media player\",\"description\":\"Toggles a media player on/off.\",\"domain\":\"media_player\",\"service\":\"toggle\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[384]}]}},\"media_player.volume_up\":{\"name\":\"Turn up media player volume\",\"description\":\"Turns up the volume of a media player.\",\"domain\":\"media_player\",\"service\":\"volume_up\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[4,1024]}]}},\"media_player.volume_down\":{\"name\":\"Turn down media player volume\",\"description\":\"Turns down the volume of a media player.\",\"domain\":\"media_player\",\"service\":\"volume_down\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[4,1024]}]}},\"media_player.media_play_pause\":{\"name\":\"Play/Pause media\",\"description\":\"Toggles play/pause on a media player.\",\"domain\":\"media_player\",\"service\":\"media_play_pause\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[16385]}]}},\"media_player.media_play\":{\"name\":\"Play media\",\"description\":\"Starts playback on a media player.\",\"domain\":\"media_player\",\"service\":\"media_play\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[16384]}]}},\"media_player.media_pause\":{\"name\":\"Pause media\",\"description\":\"Pauses playback on a media player.\",\"domain\":\"media_player\",\"service\":\"media_pause\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[1]}]}},\"media_player.media_stop\":{\"name\":\"Stop media\",\"description\":\"Stops playback on a media player.\",\"domain\":\"media_player\",\"service\":\"media_stop\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[4096]}]}},\"media_player.media_next_track\":{\"name\":\"Next track\",\"description\":\"Selects the next track on a media player.\",\"domain\":\"media_player\",\"service\":\"media_next_track\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[32]}]}},\"media_player.media_previous_track\":{\"name\":\"Previous track\",\"description\":\"Selects the previous track on a media player.\",\"domain\":\"media_player\",\"service\":\"media_previous_track\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[16]}]}},\"media_player.clear_playlist\":{\"name\":\"Clear media player playlist\",\"description\":\"Removes all items from a media player's playlist.\",\"domain\":\"media_player\",\"service\":\"clear_playlist\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[8192]}]}},\"media_player.volume_set\":{\"name\":\"Set media player volume\",\"description\":\"Sets the volume level of a media player.\",\"domain\":\"media_player\",\"service\":\"volume_set\",\"fields\":{\"volume_level\":{\"required\":true,\"selector\":{\"number\":{\"min\":0.0,\"max\":1.0,\"step\":0.01,\"mode\":\"slider\"}},\"name\":\"Level\",\"description\":\"The volume. 0 is inaudible, 1 is the maximum volume.\"}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[4]}]}},\"media_player.volume_mute\":{\"name\":\"Mute/unmute media player\",\"description\":\"Mutes or unmutes a media player.\",\"domain\":\"media_player\",\"service\":\"volume_mute\",\"fields\":{\"is_volume_muted\":{\"required\":true,\"selector\":{\"boolean\":{}},\"name\":\"Muted\",\"description\":\"Defines whether or not it is muted.\"}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[8]}]}},\"media_player.media_seek\":{\"name\":\"Seek media\",\"description\":\"Allows you to go to a different part of the media that is currently playing on a media player.\",\"domain\":\"media_player\",\"service\":\"media_seek\",\"fields\":{\"seek_position\":{\"required\":true,\"selector\":{\"number\":{\"min\":0.0,\"max\":9.223372036854776e+18,\"step\":0.01,\"mode\":\"box\"}},\"name\":\"Position\",\"description\":\"Target position in the currently playing media. The format is platform dependent.\"}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[2]}]}},\"media_player.join\":{\"name\":\"Join media players\",\"description\":\"Groups media players together for synchronous playback. Only works on supported multiroom audio systems.\",\"domain\":\"media_player\",\"service\":\"join\",\"fields\":{\"group_members\":{\"required\":true,\"example\":\"- media_player.multiroom_player2\\n- media_player.multiroom_player3\\n\",\"selector\":{\"entity\":{\"multiple\":true,\"domain\":[\"media_player\"],\"reorder\":false}},\"name\":\"Group members\",\"description\":\"The players which will be synced with the playback specified in 'Targets'.\"}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[524288]}]}},\"media_player.select_source\":{\"name\":\"Select media player source\",\"description\":\"Sends a media player the command to change the input source.\",\"domain\":\"media_player\",\"service\":\"select_source\",\"fields\":{\"source\":{\"required\":true,\"example\":\"video1\",\"selector\":{\"state\":{\"attribute\":\"source\",\"multiple\":false}},\"name\":\"Source\",\"description\":\"Name of the source to switch to. Platform dependent.\"}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[2048]}]}}},\"total_count\":247,\"offset\":0,\"limit\":50,\"count\":50,\"has_more\":true,\"next_offset\":50,\"detail_level\":\"full\",\"filters_applied\":{\"domain\":null,\"query\":null}}}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 143,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\"success\":true,\"domains\":[\"ai_task\",\"alarm_control_panel\",\"assist_satellite\",\"automation\",\"backup\",\"button\",\"calendar\",\"camera\",\"climate\",\"conversation\",\"counter\",\"cover\",\"date\",\"datetime\",\"device_tracker\",\"fan\",\"ffmpeg\",\"frontend\",\"group\",\"homeassistant\",\"humidifier\",\"image\",\"image_processing\",\"input_boolean\",\"input_button\",\"input_datetime\",\"input_number\",\"input_select\",\"input_text\",\"lawn_mower\",\"light\",\"lock\",\"logbook\",\"logger\",\"lovelace\",\"media_player\",\"notify\",\"number\",\"persistent_notification\",\"person\",\"recorder\",\"remote\",\"scene\",\"schedule\",\"script\",\"select\",\"shopping_list\",\"siren\",\"switch\",\"system_log\",\"template\",\"text\",\"time\",\"timer\",\"todo\",\"tts\",\"update\",\"vacuum\",\"valve\",\"water_heater\",\"weather\",\"zone\"],\"services\":{\"homeassistant.save_persistent_states\":{\"name\":\"Save persistent states\",\"description\":\"Saves the persistent states immediately. Maintains the normal periodic saving interval.\",\"domain\":\"homeassistant\",\"service\":\"save_persistent_states\",\"fields\":{}},\"homeassistant.turn_off\":{\"name\":\"Generic turn off\",\"description\":\"Generic action to turn devices off under any domain.\",\"domain\":\"homeassistant\",\"service\":\"turn_off\",\"fields\":{},\"target\":{}},\"homeassistant.turn_on\":{\"name\":\"Generic turn on\",\"description\":\"Generic action to turn devices on under any domain.\",\"domain\":\"homeassistant\",\"service\":\"turn_on\",\"fields\":{},\"target\":{}},\"homeassistant.toggle\":{\"name\":\"Generic toggle\",\"description\":\"Generic action to toggle devices on/off under any domain.\",\"domain\":\"homeassistant\",\"service\":\"toggle\",\"fields\":{},\"target\":{}},\"homeassistant.stop\":{\"name\":\"Stop Home Assistant\",\"description\":\"Stops Home Assistant.\",\"domain\":\"homeassistant\",\"service\":\"stop\",\"fields\":{}},\"homeassistant.restart\":{\"name\":\"Restart Home Assistant\",\"description\":\"Restarts Home Assistant.\",\"domain\":\"homeassistant\",\"service\":\"restart\",\"fields\":{}},\"homeassistant.check_config\":{\"name\":\"Check Home Assistant configuration\",\"description\":\"Checks the Home Assistant YAML-configuration files for errors. Errors will be shown in the Home Assistant logs.\",\"domain\":\"homeassistant\",\"service\":\"check_config\",\"fields\":{}},\"homeassistant.update_entity\":{\"name\":\"Update entity\",\"description\":\"Forces one or more entities to update their data.\",\"domain\":\"homeassistant\",\"service\":\"update_entity\",\"fields\":{\"entity_id\":{\"required\":true,\"selector\":{\"entity\":{\"multiple\":true,\"reorder\":false}},\"name\":\"Entities to update\",\"description\":\"List of entities to force update.\"}}},\"homeassistant.reload_core_config\":{\"name\":\"Reload Core configuration\",\"description\":\"Reloads the Core configuration from the YAML-configuration.\",\"domain\":\"homeassistant\",\"service\":\"reload_core_config\",\"fields\":{}},\"homeassistant.set_location\":{\"name\":\"Set Home Assistant location\",\"description\":\"Updates the Home Assistant location.\",\"domain\":\"homeassistant\",\"service\":\"set_location\",\"fields\":{\"latitude\":{\"required\":true,\"example\":32.87336,\"selector\":{\"number\":{\"mode\":\"box\",\"min\":-90.0,\"max\":90.0,\"step\":\"any\"}},\"name\":\"Latitude\",\"description\":\"Latitude of your location.\"},\"longitude\":{\"required\":true,\"example\":117.22743,\"selector\":{\"number\":{\"mode\":\"box\",\"min\":-180.0,\"max\":180.0,\"step\":\"any\"}},\"name\":\"Longitude\",\"description\":\"Longitude of your location.\"},\"elevation\":{\"required\":false,\"example\":120,\"selector\":{\"number\":{\"mode\":\"box\",\"step\":\"any\",\"unit_of_measurement\":\"m\"}},\"name\":\"Elevation\",\"description\":\"Elevation of your location above sea level.\"}}},\"homeassistant.reload_custom_templates\":{\"name\":\"Reload custom Jinja2 templates\",\"description\":\"Reloads Jinja2 templates found in the `custom_templates` folder in your config. New values will be applied on the next render of the template.\",\"domain\":\"homeassistant\",\"service\":\"reload_custom_templates\",\"fields\":{}},\"homeassistant.reload_config_entry\":{\"name\":\"Reload config entry\",\"description\":\"Reloads the config entry of the provided config entry ID.\",\"domain\":\"homeassistant\",\"service\":\"reload_config_entry\",\"fields\":{\"entry_id\":{\"required\":true,\"selector\":{\"config_entry\":{}},\"name\":\"Config entry ID\",\"description\":\"The configuration entry to reload.\"}}},\"homeassistant.reload_all\":{\"name\":\"Reload all Home Assistant configuration\",\"description\":\"Reloads all YAML configuration that can be reloaded without restarting Home Assistant.\",\"domain\":\"homeassistant\",\"service\":\"reload_all\",\"fields\":{}},\"persistent_notification.create\":{\"name\":\"Create persistent notification\",\"description\":\"Shows a persistent notification on the notifications panel.\",\"domain\":\"persistent_notification\",\"service\":\"create\",\"fields\":{\"message\":{\"required\":true,\"example\":\"Please check your configuration.yaml.\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}},\"name\":\"Message\",\"description\":\"Message body of the notification.\"},\"title\":{\"example\":\"Test notification\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}},\"name\":\"Title\",\"description\":\"Optional title of the notification.\"},\"notification_id\":{\"example\":1234,\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}},\"name\":\"Notification ID\",\"description\":\"ID of the notification. This new notification will overwrite an existing notification with the same ID.\"}}},\"persistent_notification.dismiss\":{\"name\":\"Dismiss persistent notification\",\"description\":\"Deletes a persistent notification from the notifications panel.\",\"domain\":\"persistent_notification\",\"service\":\"dismiss\",\"fields\":{\"notification_id\":{\"required\":true,\"example\":1234,\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}},\"name\":\"Notification ID\",\"description\":\"ID of the notification to be deleted.\"}}},\"persistent_notification.dismiss_all\":{\"name\":\"Dismiss all persistent notifications\",\"description\":\"Deletes all persistent notifications from the notifications panel.\",\"domain\":\"persistent_notification\",\"service\":\"dismiss_all\",\"fields\":{}},\"system_log.clear\":{\"name\":\"Clear system log\",\"description\":\"Deletes all system log entries.\",\"domain\":\"system_log\",\"service\":\"clear\",\"fields\":{}},\"system_log.write\":{\"name\":\"Write to system log\",\"description\":\"Writes a system log entry.\",\"domain\":\"system_log\",\"service\":\"write\",\"fields\":{\"message\":{\"required\":true,\"example\":\"Something went wrong\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}},\"name\":\"Message\",\"description\":\"Message to log.\"},\"level\":{\"default\":\"error\",\"selector\":{\"select\":{\"options\":[\"debug\",\"info\",\"warning\",\"error\",\"critical\"],\"translation_key\":\"level\",\"multiple\":false,\"custom_value\":false,\"sort\":false}},\"name\":\"Level\",\"description\":\"Log level.\"},\"logger\":{\"example\":\"mycomponent.myplatform\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}},\"name\":\"Logger\",\"description\":\"Logger name under which to log the message. Defaults to `system_log.external`.\"}}},\"logger.set_default_level\":{\"name\":\"Set logger default level\",\"description\":\"Sets the default log level for integrations.\",\"domain\":\"logger\",\"service\":\"set_default_level\",\"fields\":{\"level\":{\"selector\":{\"select\":{\"options\":[\"debug\",\"info\",\"warning\",\"error\",\"fatal\",\"critical\"],\"translation_key\":\"level\",\"multiple\":false,\"custom_value\":false,\"sort\":false}},\"name\":\"Level\",\"description\":\"Default severity level for all integrations.\"}}},\"logger.set_level\":{\"name\":\"Set logger level\",\"description\":\"Sets the log level for one or more integrations.\",\"domain\":\"logger\",\"service\":\"set_level\",\"fields\":{}},\"lovelace.reload_resources\":{\"name\":\"Reload dashboard resources\",\"description\":\"Reloads dashboard resources from the YAML-configuration.\",\"domain\":\"lovelace\",\"service\":\"reload_resources\",\"fields\":{}},\"frontend.set_theme\":{\"name\":\"Set theme\",\"description\":\"Sets the theme Home Assistant uses. Can be overridden by a user.\",\"domain\":\"frontend\",\"service\":\"set_theme\",\"fields\":{\"name\":{\"required\":false,\"example\":\"default\",\"selector\":{\"theme\":{\"include_default\":true}},\"name\":\"Theme\",\"description\":\"Name of the theme that is used by default.\"},\"name_dark\":{\"required\":false,\"example\":\"default\",\"selector\":{\"theme\":{\"include_default\":true}},\"name\":\"Dark theme override\",\"description\":\"Alternative dark-mode theme that is used by default.\"}}},\"frontend.reload_themes\":{\"name\":\"Reload themes\",\"description\":\"Reloads themes from the YAML-configuration.\",\"domain\":\"frontend\",\"service\":\"reload_themes\",\"fields\":{}},\"recorder.purge\":{\"name\":\"Purge Recorder database\",\"description\":\"Starts purge task - to clean up old data from your database.\",\"domain\":\"recorder\",\"service\":\"purge\",\"fields\":{\"keep_days\":{\"selector\":{\"number\":{\"min\":0.0,\"max\":365.0,\"unit_of_measurement\":\"days\",\"step\":1.0,\"mode\":\"slider\"}},\"name\":\"Days to keep\",\"description\":\"Number of days to keep the data in the database. Starting today, counting backward. A value of `7` means that everything older than a week will be purged.\"},\"repack\":{\"default\":false,\"selector\":{\"boolean\":{}},\"name\":\"Repack\",\"description\":\"Attempt to save disk space by rewriting the entire database file.\"},\"apply_filter\":{\"default\":false,\"selector\":{\"boolean\":{}},\"name\":\"Apply filter\",\"description\":\"Apply `entity_id` and `event_type` filters in addition to time-based purge.\"}}},\"recorder.purge_entities\":{\"name\":\"Purge Recorder entities\",\"description\":\"Starts a purge task to remove the data related to specific entities from your database.\",\"domain\":\"recorder\",\"service\":\"purge_entities\",\"fields\":{\"entity_id\":{\"required\":false,\"selector\":{\"entity\":{\"multiple\":true,\"reorder\":false}},\"name\":\"Entities to remove\",\"description\":\"List of entities for which the data is to be removed from the Recorder database.\"},\"domains\":{\"example\":\"sun\",\"required\":false,\"selector\":{\"object\":{\"multiple\":false}},\"name\":\"Domains to remove\",\"description\":\"List of domains for which the data needs to be removed from the Recorder database.\"},\"entity_globs\":{\"example\":\"domain*.object_id*\",\"required\":false,\"selector\":{\"object\":{\"multiple\":false}},\"name\":\"Entity globs to remove\",\"description\":\"List of glob patterns used to select the entities for which the data is to be removed from the Recorder database.\"},\"keep_days\":{\"default\":0,\"selector\":{\"number\":{\"min\":0.0,\"max\":365.0,\"unit_of_measurement\":\"days\",\"step\":1.0,\"mode\":\"slider\"}},\"name\":\"Days to keep\",\"description\":\"Number of days to keep the data for rows matching the filter. Starting today, counting backward. A value of `7` means that everything older than a week will be purged. The default of 0 days will remove all matching rows immediately.\"}}},\"recorder.enable\":{\"name\":\"Enable Recorder\",\"description\":\"Starts the recording of events and state changes.\",\"domain\":\"recorder\",\"service\":\"enable\",\"fields\":{}},\"recorder.disable\":{\"name\":\"Disable Recorder\",\"description\":\"Stops the recording of events and state changes.\",\"domain\":\"recorder\",\"service\":\"disable\",\"fields\":{}},\"recorder.get_statistics\":{\"name\":\"Get Recorder statistics\",\"description\":\"Retrieves statistics data for entities within a specific time period.\",\"domain\":\"recorder\",\"service\":\"get_statistics\",\"fields\":{\"start_time\":{\"required\":true,\"example\":\"2025-01-01 00:00:00\",\"selector\":{\"datetime\":{}},\"name\":\"Start time\",\"description\":\"The start time for the statistics query.\"},\"end_time\":{\"required\":false,\"example\":\"2025-01-02 00:00:00\",\"selector\":{\"datetime\":{}},\"name\":\"End time\",\"description\":\"The end time for the statistics query. If omitted, returns all statistics from start time onward.\"},\"statistic_ids\":{\"required\":true,\"example\":[\"sensor.energy_consumption\",\"sensor.temperature\"],\"selector\":{\"statistic\":{\"multiple\":true}},\"name\":\"Statistic IDs\",\"description\":\"The entity IDs or statistic IDs to return statistics for.\"},\"period\":{\"required\":true,\"example\":\"hour\",\"selector\":{\"select\":{\"options\":[\"5minute\",\"hour\",\"day\",\"week\",\"month\",\"year\"],\"multiple\":false,\"custom_value\":false,\"sort\":false}},\"name\":\"Period\",\"description\":\"The time period to group statistics by.\"},\"types\":{\"required\":true,\"example\":[\"mean\",\"sum\"],\"selector\":{\"select\":{\"options\":[\"change\",\"last_reset\",\"max\",\"mean\",\"min\",\"state\",\"sum\"],\"multiple\":true,\"custom_value\":false,\"sort\":false}},\"name\":\"Types\",\"description\":\"The types of statistics values to return.\"},\"units\":{\"required\":false,\"example\":{\"energy\":\"kWh\",\"temperature\":\"\u00b0C\"},\"selector\":{\"object\":{\"multiple\":false}},\"name\":\"Units\",\"description\":\"Optional unit conversion mapping.\"}},\"response\":{\"optional\":false}},\"scene.reload\":{\"name\":\"Reload scenes\",\"description\":\"Reloads the scenes from the YAML-configuration.\",\"domain\":\"scene\",\"service\":\"reload\",\"fields\":{}},\"scene.apply\":{\"name\":\"Apply scene\",\"description\":\"Activates a scene with configuration.\",\"domain\":\"scene\",\"service\":\"apply\",\"fields\":{\"entities\":{\"required\":true,\"example\":\"light.kitchen: \\\"on\\\"\\nlight.ceiling:\\n  state: \\\"on\\\"\\n  brightness: 80\\n\",\"selector\":{\"object\":{\"multiple\":false}},\"name\":\"Entities state\",\"description\":\"List of entities and their target state.\"},\"transition\":{\"selector\":{\"number\":{\"min\":0.0,\"max\":300.0,\"unit_of_measurement\":\"seconds\",\"step\":1.0,\"mode\":\"slider\"}},\"name\":\"Transition\",\"description\":\"Time it takes the devices to transition into the states defined in the scene.\"}}},\"scene.create\":{\"name\":\"Create scene\",\"description\":\"Creates a new scene.\",\"domain\":\"scene\",\"service\":\"create\",\"fields\":{\"scene_id\":{\"required\":true,\"example\":\"all_lights\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}},\"name\":\"Scene entity ID\",\"description\":\"The entity ID of the new scene.\"},\"entities\":{\"example\":\"light.tv_back_light: \\\"on\\\"\\nlight.ceiling:\\n  state: \\\"on\\\"\\n  brightness: 200\\n\",\"selector\":{\"object\":{\"multiple\":false}},\"name\":\"Entity states\",\"description\":\"List of entities and their target state. If your entities are already in the target state right now, use 'Entities snapshot' instead.\"},\"snapshot_entities\":{\"example\":\"- light.ceiling\\n- light.kitchen\\n\",\"selector\":{\"entity\":{\"multiple\":true,\"reorder\":false}},\"name\":\"Entities snapshot\",\"description\":\"List of entities to be included in the snapshot. By taking a snapshot, you record the current state of those entities. If you do not want to use the current state of all your entities for this scene, you can combine 'Entities snapshot' with 'Entity states'.\"}}},\"scene.delete\":{\"name\":\"Delete scene\",\"description\":\"Deletes a dynamically created scene.\",\"domain\":\"scene\",\"service\":\"delete\",\"fields\":{},\"target\":{\"entity\":[{\"integration\":\"homeassistant\",\"domain\":[\"scene\"]}]}},\"scene.turn_on\":{\"name\":\"Activate scene\",\"description\":\"Activates a scene.\",\"domain\":\"scene\",\"service\":\"turn_on\",\"fields\":{\"transition\":{\"selector\":{\"number\":{\"min\":0.0,\"max\":300.0,\"unit_of_measurement\":\"seconds\",\"step\":1.0,\"mode\":\"slider\"}},\"name\":\"Transition\",\"description\":\"Time it takes the devices to transition into the states defined in the scene.\"}},\"target\":{\"entity\":[{\"domain\":[\"scene\"]}]}},\"media_player.turn_on\":{\"name\":\"Turn on media player\",\"description\":\"Turns on the power of a media player.\",\"domain\":\"media_player\",\"service\":\"turn_on\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[128]}]}},\"media_player.turn_off\":{\"name\":\"Turn off media player\",\"description\":\"Turns off the power of a media player.\",\"domain\":\"media_player\",\"service\":\"turn_off\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[256]}]}},\"media_player.toggle\":{\"name\":\"Toggle media player\",\"description\":\"Toggles a media player on/off.\",\"domain\":\"media_player\",\"service\":\"toggle\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[384]}]}},\"media_player.volume_up\":{\"name\":\"Turn up media player volume\",\"description\":\"Turns up the volume of a media player.\",\"domain\":\"media_player\",\"service\":\"volume_up\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[4,1024]}]}},\"media_player.volume_down\":{\"name\":\"Turn down media player volume\",\"description\":\"Turns down the volume of a media player.\",\"domain\":\"media_player\",\"service\":\"volume_down\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[4,1024]}]}},\"media_player.media_play_pause\":{\"name\":\"Play/Pause media\",\"description\":\"Toggles play/pause on a media player.\",\"domain\":\"media_player\",\"service\":\"media_play_pause\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[16385]}]}},\"media_player.media_play\":{\"name\":\"Play media\",\"description\":\"Starts playback on a media player.\",\"domain\":\"media_player\",\"service\":\"media_play\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[16384]}]}},\"media_player.media_pause\":{\"name\":\"Pause media\",\"description\":\"Pauses playback on a media player.\",\"domain\":\"media_player\",\"service\":\"media_pause\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[1]}]}},\"media_player.media_stop\":{\"name\":\"Stop media\",\"description\":\"Stops playback on a media player.\",\"domain\":\"media_player\",\"service\":\"media_stop\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[4096]}]}},\"media_player.media_next_track\":{\"name\":\"Next track\",\"description\":\"Selects the next track on a media player.\",\"domain\":\"media_player\",\"service\":\"media_next_track\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[32]}]}},\"media_player.media_previous_track\":{\"name\":\"Previous track\",\"description\":\"Selects the previous track on a media player.\",\"domain\":\"media_player\",\"service\":\"media_previous_track\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[16]}]}},\"media_player.clear_playlist\":{\"name\":\"Clear media player playlist\",\"description\":\"Removes all items from a media player's playlist.\",\"domain\":\"media_player\",\"service\":\"clear_playlist\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[8192]}]}},\"media_player.volume_set\":{\"name\":\"Set media player volume\",\"description\":\"Sets the volume level of a media player.\",\"domain\":\"media_player\",\"service\":\"volume_set\",\"fields\":{\"volume_level\":{\"required\":true,\"selector\":{\"number\":{\"min\":0.0,\"max\":1.0,\"step\":0.01,\"mode\":\"slider\"}},\"name\":\"Level\",\"description\":\"The volume. 0 is inaudible, 1 is the maximum volume.\"}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[4]}]}},\"media_player.volume_mute\":{\"name\":\"Mute/unmute media player\",\"description\":\"Mutes or unmutes a media player.\",\"domain\":\"media_player\",\"service\":\"volume_mute\",\"fields\":{\"is_volume_muted\":{\"required\":true,\"selector\":{\"boolean\":{}},\"name\":\"Muted\",\"description\":\"Defines whether or not it is muted.\"}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[8]}]}},\"media_player.media_seek\":{\"name\":\"Seek media\",\"description\":\"Allows you to go to a different part of the media that is currently playing on a media player.\",\"domain\":\"media_player\",\"service\":\"media_seek\",\"fields\":{\"seek_position\":{\"required\":true,\"selector\":{\"number\":{\"min\":0.0,\"max\":9.223372036854776e+18,\"step\":0.01,\"mode\":\"box\"}},\"name\":\"Position\",\"description\":\"Target position in the currently playing media. The format is platform dependent.\"}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[2]}]}},\"media_player.join\":{\"name\":\"Join media players\",\"description\":\"Groups media players together for synchronous playback. Only works on supported multiroom audio systems.\",\"domain\":\"media_player\",\"service\":\"join\",\"fields\":{\"group_members\":{\"required\":true,\"example\":\"- media_player.multiroom_player2\\n- media_player.multiroom_player3\\n\",\"selector\":{\"entity\":{\"multiple\":true,\"domain\":[\"media_player\"],\"reorder\":false}},\"name\":\"Group members\",\"description\":\"The players which will be synced with the playback specified in 'Targets'.\"}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[524288]}]}},\"media_player.select_source\":{\"name\":\"Select media player source\",\"description\":\"Sends a media player the command to change the input source.\",\"domain\":\"media_player\",\"service\":\"select_source\",\"fields\":{\"source\":{\"required\":true,\"example\":\"video1\",\"selector\":{\"state\":{\"attribute\":\"source\",\"multiple\":false}},\"name\":\"Source\",\"description\":\"Name of the source to switch to. Platform dependent.\"}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[2048]}]}}},\"total_count\":247,\"offset\":0,\"limit\":50,\"count\":50,\"has_more\":true,\"next_offset\":50,\"detail_level\":\"full\",\"filters_applied\":{\"domain\":null,\"query\":null}}",
+       "type": "text"
+      }
+     ],
+     "isError": false,
+     "structuredContent": {
+      "count": 50,
+      "detail_level": "full",
+      "domains": [
+       "ai_task",
+       "alarm_control_panel",
+       "assist_satellite",
+       "automation",
+       "backup",
+       "button",
+       "calendar",
+       "camera",
+       "climate",
+       "conversation",
+       "counter",
+       "cover",
+       "date",
+       "datetime",
+       "device_tracker",
+       "fan",
+       "ffmpeg",
+       "frontend",
+       "group",
+       "homeassistant",
+       "humidifier",
+       "image",
+       "image_processing",
+       "input_boolean",
+       "input_button",
+       "input_datetime",
+       "input_number",
+       "input_select",
+       "input_text",
+       "lawn_mower",
+       "light",
+       "lock",
+       "logbook",
+       "logger",
+       "lovelace",
+       "media_player",
+       "notify",
+       "number",
+       "persistent_notification",
+       "person",
+       "recorder",
+       "remote",
+       "scene",
+       "schedule",
+       "script",
+       "select",
+       "shopping_list",
+       "siren",
+       "switch",
+       "system_log",
+       "template",
+       "text",
+       "time",
+       "timer",
+       "todo",
+       "tts",
+       "update",
+       "vacuum",
+       "valve",
+       "water_heater",
+       "weather",
+       "zone"
+      ],
+      "filters_applied": {
+       "domain": null,
+       "query": null
+      },
+      "has_more": true,
+      "limit": 50,
+      "next_offset": 50,
+      "offset": 0,
+      "services": {
+       "frontend.reload_themes": {
+        "description": "Reloads themes from the YAML-configuration.",
+        "domain": "frontend",
+        "fields": {},
+        "name": "Reload themes",
+        "service": "reload_themes"
+       },
+       "frontend.set_theme": {
+        "description": "Sets the theme Home Assistant uses. Can be overridden by a user.",
+        "domain": "frontend",
+        "fields": {
+         "name": {
+          "description": "Name of the theme that is used by default.",
+          "example": "default",
+          "name": "Theme",
+          "required": false,
+          "selector": {
+           "theme": {
+            "include_default": true
+           }
+          }
+         },
+         "name_dark": {
+          "description": "Alternative dark-mode theme that is used by default.",
+          "example": "default",
+          "name": "Dark theme override",
+          "required": false,
+          "selector": {
+           "theme": {
+            "include_default": true
+           }
+          }
+         }
+        },
+        "name": "Set theme",
+        "service": "set_theme"
+       },
+       "homeassistant.check_config": {
+        "description": "Checks the Home Assistant YAML-configuration files for errors. Errors will be shown in the Home Assistant logs.",
+        "domain": "homeassistant",
+        "fields": {},
+        "name": "Check Home Assistant configuration",
+        "service": "check_config"
+       },
+       "homeassistant.reload_all": {
+        "description": "Reloads all YAML configuration that can be reloaded without restarting Home Assistant.",
+        "domain": "homeassistant",
+        "fields": {},
+        "name": "Reload all Home Assistant configuration",
+        "service": "reload_all"
+       },
+       "homeassistant.reload_config_entry": {
+        "description": "Reloads the config entry of the provided config entry ID.",
+        "domain": "homeassistant",
+        "fields": {
+         "entry_id": {
+          "description": "The configuration entry to reload.",
+          "name": "Config entry ID",
+          "required": true,
+          "selector": {
+           "config_entry": {}
+          }
+         }
+        },
+        "name": "Reload config entry",
+        "service": "reload_config_entry"
+       },
+       "homeassistant.reload_core_config": {
+        "description": "Reloads the Core configuration from the YAML-configuration.",
+        "domain": "homeassistant",
+        "fields": {},
+        "name": "Reload Core configuration",
+        "service": "reload_core_config"
+       },
+       "homeassistant.reload_custom_templates": {
+        "description": "Reloads Jinja2 templates found in the `custom_templates` folder in your config. New values will be applied on the next render of the template.",
+        "domain": "homeassistant",
+        "fields": {},
+        "name": "Reload custom Jinja2 templates",
+        "service": "reload_custom_templates"
+       },
+       "homeassistant.restart": {
+        "description": "Restarts Home Assistant.",
+        "domain": "homeassistant",
+        "fields": {},
+        "name": "Restart Home Assistant",
+        "service": "restart"
+       },
+       "homeassistant.save_persistent_states": {
+        "description": "Saves the persistent states immediately. Maintains the normal periodic saving interval.",
+        "domain": "homeassistant",
+        "fields": {},
+        "name": "Save persistent states",
+        "service": "save_persistent_states"
+       },
+       "homeassistant.set_location": {
+        "description": "Updates the Home Assistant location.",
+        "domain": "homeassistant",
+        "fields": {
+         "elevation": {
+          "description": "Elevation of your location above sea level.",
+          "example": 120,
+          "name": "Elevation",
+          "required": false,
+          "selector": {
+           "number": {
+            "mode": "box",
+            "step": "any",
+            "unit_of_measurement": "m"
+           }
+          }
+         },
+         "latitude": {
+          "description": "Latitude of your location.",
+          "example": 32.87336,
+          "name": "Latitude",
+          "required": true,
+          "selector": {
+           "number": {
+            "max": 90.0,
+            "min": -90.0,
+            "mode": "box",
+            "step": "any"
+           }
+          }
+         },
+         "longitude": {
+          "description": "Longitude of your location.",
+          "example": 117.22743,
+          "name": "Longitude",
+          "required": true,
+          "selector": {
+           "number": {
+            "max": 180.0,
+            "min": -180.0,
+            "mode": "box",
+            "step": "any"
+           }
+          }
+         }
+        },
+        "name": "Set Home Assistant location",
+        "service": "set_location"
+       },
+       "homeassistant.stop": {
+        "description": "Stops Home Assistant.",
+        "domain": "homeassistant",
+        "fields": {},
+        "name": "Stop Home Assistant",
+        "service": "stop"
+       },
+       "homeassistant.toggle": {
+        "description": "Generic action to toggle devices on/off under any domain.",
+        "domain": "homeassistant",
+        "fields": {},
+        "name": "Generic toggle",
+        "service": "toggle",
+        "target": {}
+       },
+       "homeassistant.turn_off": {
+        "description": "Generic action to turn devices off under any domain.",
+        "domain": "homeassistant",
+        "fields": {},
+        "name": "Generic turn off",
+        "service": "turn_off",
+        "target": {}
+       },
+       "homeassistant.turn_on": {
+        "description": "Generic action to turn devices on under any domain.",
+        "domain": "homeassistant",
+        "fields": {},
+        "name": "Generic turn on",
+        "service": "turn_on",
+        "target": {}
+       },
+       "homeassistant.update_entity": {
+        "description": "Forces one or more entities to update their data.",
+        "domain": "homeassistant",
+        "fields": {
+         "entity_id": {
+          "description": "List of entities to force update.",
+          "name": "Entities to update",
+          "required": true,
+          "selector": {
+           "entity": {
+            "multiple": true,
+            "reorder": false
+           }
+          }
+         }
+        },
+        "name": "Update entity",
+        "service": "update_entity"
+       },
+       "logger.set_default_level": {
+        "description": "Sets the default log level for integrations.",
+        "domain": "logger",
+        "fields": {
+         "level": {
+          "description": "Default severity level for all integrations.",
+          "name": "Level",
+          "selector": {
+           "select": {
+            "custom_value": false,
+            "multiple": false,
+            "options": [
+             "debug",
+             "info",
+             "warning",
+             "error",
+             "fatal",
+             "critical"
+            ],
+            "sort": false,
+            "translation_key": "level"
+           }
+          }
+         }
+        },
+        "name": "Set logger default level",
+        "service": "set_default_level"
+       },
+       "logger.set_level": {
+        "description": "Sets the log level for one or more integrations.",
+        "domain": "logger",
+        "fields": {},
+        "name": "Set logger level",
+        "service": "set_level"
+       },
+       "lovelace.reload_resources": {
+        "description": "Reloads dashboard resources from the YAML-configuration.",
+        "domain": "lovelace",
+        "fields": {},
+        "name": "Reload dashboard resources",
+        "service": "reload_resources"
+       },
+       "media_player.clear_playlist": {
+        "description": "Removes all items from a media player's playlist.",
+        "domain": "media_player",
+        "fields": {},
+        "name": "Clear media player playlist",
+        "service": "clear_playlist",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "media_player"
+           ],
+           "supported_features": [
+            8192
+           ]
+          }
+         ]
+        }
+       },
+       "media_player.join": {
+        "description": "Groups media players together for synchronous playback. Only works on supported multiroom audio systems.",
+        "domain": "media_player",
+        "fields": {
+         "group_members": {
+          "description": "The players which will be synced with the playback specified in 'Targets'.",
+          "example": "- media_player.multiroom_player2\n- media_player.multiroom_player3\n",
+          "name": "Group members",
+          "required": true,
+          "selector": {
+           "entity": {
+            "domain": [
+             "media_player"
+            ],
+            "multiple": true,
+            "reorder": false
+           }
+          }
+         }
+        },
+        "name": "Join media players",
+        "service": "join",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "media_player"
+           ],
+           "supported_features": [
+            524288
+           ]
+          }
+         ]
+        }
+       },
+       "media_player.media_next_track": {
+        "description": "Selects the next track on a media player.",
+        "domain": "media_player",
+        "fields": {},
+        "name": "Next track",
+        "service": "media_next_track",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "media_player"
+           ],
+           "supported_features": [
+            32
+           ]
+          }
+         ]
+        }
+       },
+       "media_player.media_pause": {
+        "description": "Pauses playback on a media player.",
+        "domain": "media_player",
+        "fields": {},
+        "name": "Pause media",
+        "service": "media_pause",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "media_player"
+           ],
+           "supported_features": [
+            1
+           ]
+          }
+         ]
+        }
+       },
+       "media_player.media_play": {
+        "description": "Starts playback on a media player.",
+        "domain": "media_player",
+        "fields": {},
+        "name": "Play media",
+        "service": "media_play",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "media_player"
+           ],
+           "supported_features": [
+            16384
+           ]
+          }
+         ]
+        }
+       },
+       "media_player.media_play_pause": {
+        "description": "Toggles play/pause on a media player.",
+        "domain": "media_player",
+        "fields": {},
+        "name": "Play/Pause media",
+        "service": "media_play_pause",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "media_player"
+           ],
+           "supported_features": [
+            16385
+           ]
+          }
+         ]
+        }
+       },
+       "media_player.media_previous_track": {
+        "description": "Selects the previous track on a media player.",
+        "domain": "media_player",
+        "fields": {},
+        "name": "Previous track",
+        "service": "media_previous_track",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "media_player"
+           ],
+           "supported_features": [
+            16
+           ]
+          }
+         ]
+        }
+       },
+       "media_player.media_seek": {
+        "description": "Allows you to go to a different part of the media that is currently playing on a media player.",
+        "domain": "media_player",
+        "fields": {
+         "seek_position": {
+          "description": "Target position in the currently playing media. The format is platform dependent.",
+          "name": "Position",
+          "required": true,
+          "selector": {
+           "number": {
+            "max": 9.223372036854776e+18,
+            "min": 0.0,
+            "mode": "box",
+            "step": 0.01
+           }
+          }
+         }
+        },
+        "name": "Seek media",
+        "service": "media_seek",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "media_player"
+           ],
+           "supported_features": [
+            2
+           ]
+          }
+         ]
+        }
+       },
+       "media_player.media_stop": {
+        "description": "Stops playback on a media player.",
+        "domain": "media_player",
+        "fields": {},
+        "name": "Stop media",
+        "service": "media_stop",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "media_player"
+           ],
+           "supported_features": [
+            4096
+           ]
+          }
+         ]
+        }
+       },
+       "media_player.select_source": {
+        "description": "Sends a media player the command to change the input source.",
+        "domain": "media_player",
+        "fields": {
+         "source": {
+          "description": "Name of the source to switch to. Platform dependent.",
+          "example": "video1",
+          "name": "Source",
+          "required": true,
+          "selector": {
+           "state": {
+            "attribute": "source",
+            "multiple": false
+           }
+          }
+         }
+        },
+        "name": "Select media player source",
+        "service": "select_source",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "media_player"
+           ],
+           "supported_features": [
+            2048
+           ]
+          }
+         ]
+        }
+       },
+       "media_player.toggle": {
+        "description": "Toggles a media player on/off.",
+        "domain": "media_player",
+        "fields": {},
+        "name": "Toggle media player",
+        "service": "toggle",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "media_player"
+           ],
+           "supported_features": [
+            384
+           ]
+          }
+         ]
+        }
+       },
+       "media_player.turn_off": {
+        "description": "Turns off the power of a media player.",
+        "domain": "media_player",
+        "fields": {},
+        "name": "Turn off media player",
+        "service": "turn_off",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "media_player"
+           ],
+           "supported_features": [
+            256
+           ]
+          }
+         ]
+        }
+       },
+       "media_player.turn_on": {
+        "description": "Turns on the power of a media player.",
+        "domain": "media_player",
+        "fields": {},
+        "name": "Turn on media player",
+        "service": "turn_on",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "media_player"
+           ],
+           "supported_features": [
+            128
+           ]
+          }
+         ]
+        }
+       },
+       "media_player.volume_down": {
+        "description": "Turns down the volume of a media player.",
+        "domain": "media_player",
+        "fields": {},
+        "name": "Turn down media player volume",
+        "service": "volume_down",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "media_player"
+           ],
+           "supported_features": [
+            4,
+            1024
+           ]
+          }
+         ]
+        }
+       },
+       "media_player.volume_mute": {
+        "description": "Mutes or unmutes a media player.",
+        "domain": "media_player",
+        "fields": {
+         "is_volume_muted": {
+          "description": "Defines whether or not it is muted.",
+          "name": "Muted",
+          "required": true,
+          "selector": {
+           "boolean": {}
+          }
+         }
+        },
+        "name": "Mute/unmute media player",
+        "service": "volume_mute",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "media_player"
+           ],
+           "supported_features": [
+            8
+           ]
+          }
+         ]
+        }
+       },
+       "media_player.volume_set": {
+        "description": "Sets the volume level of a media player.",
+        "domain": "media_player",
+        "fields": {
+         "volume_level": {
+          "description": "The volume. 0 is inaudible, 1 is the maximum volume.",
+          "name": "Level",
+          "required": true,
+          "selector": {
+           "number": {
+            "max": 1.0,
+            "min": 0.0,
+            "mode": "slider",
+            "step": 0.01
+           }
+          }
+         }
+        },
+        "name": "Set media player volume",
+        "service": "volume_set",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "media_player"
+           ],
+           "supported_features": [
+            4
+           ]
+          }
+         ]
+        }
+       },
+       "media_player.volume_up": {
+        "description": "Turns up the volume of a media player.",
+        "domain": "media_player",
+        "fields": {},
+        "name": "Turn up media player volume",
+        "service": "volume_up",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "media_player"
+           ],
+           "supported_features": [
+            4,
+            1024
+           ]
+          }
+         ]
+        }
+       },
+       "persistent_notification.create": {
+        "description": "Shows a persistent notification on the notifications panel.",
+        "domain": "persistent_notification",
+        "fields": {
+         "message": {
+          "description": "Message body of the notification.",
+          "example": "Please check your configuration.yaml.",
+          "name": "Message",
+          "required": true,
+          "selector": {
+           "text": {
+            "multiline": false,
+            "multiple": false
+           }
+          }
+         },
+         "notification_id": {
+          "description": "ID of the notification. This new notification will overwrite an existing notification with the same ID.",
+          "example": 1234,
+          "name": "Notification ID",
+          "selector": {
+           "text": {
+            "multiline": false,
+            "multiple": false
+           }
+          }
+         },
+         "title": {
+          "description": "Optional title of the notification.",
+          "example": "Test notification",
+          "name": "Title",
+          "selector": {
+           "text": {
+            "multiline": false,
+            "multiple": false
+           }
+          }
+         }
+        },
+        "name": "Create persistent notification",
+        "service": "create"
+       },
+       "persistent_notification.dismiss": {
+        "description": "Deletes a persistent notification from the notifications panel.",
+        "domain": "persistent_notification",
+        "fields": {
+         "notification_id": {
+          "description": "ID of the notification to be deleted.",
+          "example": 1234,
+          "name": "Notification ID",
+          "required": true,
+          "selector": {
+           "text": {
+            "multiline": false,
+            "multiple": false
+           }
+          }
+         }
+        },
+        "name": "Dismiss persistent notification",
+        "service": "dismiss"
+       },
+       "persistent_notification.dismiss_all": {
+        "description": "Deletes all persistent notifications from the notifications panel.",
+        "domain": "persistent_notification",
+        "fields": {},
+        "name": "Dismiss all persistent notifications",
+        "service": "dismiss_all"
+       },
+       "recorder.disable": {
+        "description": "Stops the recording of events and state changes.",
+        "domain": "recorder",
+        "fields": {},
+        "name": "Disable Recorder",
+        "service": "disable"
+       },
+       "recorder.enable": {
+        "description": "Starts the recording of events and state changes.",
+        "domain": "recorder",
+        "fields": {},
+        "name": "Enable Recorder",
+        "service": "enable"
+       },
+       "recorder.get_statistics": {
+        "description": "Retrieves statistics data for entities within a specific time period.",
+        "domain": "recorder",
+        "fields": {
+         "end_time": {
+          "description": "The end time for the statistics query. If omitted, returns all statistics from start time onward.",
+          "example": "2025-01-02 00:00:00",
+          "name": "End time",
+          "required": false,
+          "selector": {
+           "datetime": {}
+          }
+         },
+         "period": {
+          "description": "The time period to group statistics by.",
+          "example": "hour",
+          "name": "Period",
+          "required": true,
+          "selector": {
+           "select": {
+            "custom_value": false,
+            "multiple": false,
+            "options": [
+             "5minute",
+             "hour",
+             "day",
+             "week",
+             "month",
+             "year"
+            ],
+            "sort": false
+           }
+          }
+         },
+         "start_time": {
+          "description": "The start time for the statistics query.",
+          "example": "2025-01-01 00:00:00",
+          "name": "Start time",
+          "required": true,
+          "selector": {
+           "datetime": {}
+          }
+         },
+         "statistic_ids": {
+          "description": "The entity IDs or statistic IDs to return statistics for.",
+          "example": [
+           "sensor.energy_consumption",
+           "sensor.temperature"
+          ],
+          "name": "Statistic IDs",
+          "required": true,
+          "selector": {
+           "statistic": {
+            "multiple": true
+           }
+          }
+         },
+         "types": {
+          "description": "The types of statistics values to return.",
+          "example": [
+           "mean",
+           "sum"
+          ],
+          "name": "Types",
+          "required": true,
+          "selector": {
+           "select": {
+            "custom_value": false,
+            "multiple": true,
+            "options": [
+             "change",
+             "last_reset",
+             "max",
+             "mean",
+             "min",
+             "state",
+             "sum"
+            ],
+            "sort": false
+           }
+          }
+         },
+         "units": {
+          "description": "Optional unit conversion mapping.",
+          "example": {
+           "energy": "kWh",
+           "temperature": "\u00b0C"
+          },
+          "name": "Units",
+          "required": false,
+          "selector": {
+           "object": {
+            "multiple": false
+           }
+          }
+         }
+        },
+        "name": "Get Recorder statistics",
+        "response": {
+         "optional": false
+        },
+        "service": "get_statistics"
+       },
+       "recorder.purge": {
+        "description": "Starts purge task - to clean up old data from your database.",
+        "domain": "recorder",
+        "fields": {
+         "apply_filter": {
+          "default": false,
+          "description": "Apply `entity_id` and `event_type` filters in addition to time-based purge.",
+          "name": "Apply filter",
+          "selector": {
+           "boolean": {}
+          }
+         },
+         "keep_days": {
+          "description": "Number of days to keep the data in the database. Starting today, counting backward. A value of `7` means that everything older than a week will be purged.",
+          "name": "Days to keep",
+          "selector": {
+           "number": {
+            "max": 365.0,
+            "min": 0.0,
+            "mode": "slider",
+            "step": 1.0,
+            "unit_of_measurement": "days"
+           }
+          }
+         },
+         "repack": {
+          "default": false,
+          "description": "Attempt to save disk space by rewriting the entire database file.",
+          "name": "Repack",
+          "selector": {
+           "boolean": {}
+          }
+         }
+        },
+        "name": "Purge Recorder database",
+        "service": "purge"
+       },
+       "recorder.purge_entities": {
+        "description": "Starts a purge task to remove the data related to specific entities from your database.",
+        "domain": "recorder",
+        "fields": {
+         "domains": {
+          "description": "List of domains for which the data needs to be removed from the Recorder database.",
+          "example": "sun",
+          "name": "Domains to remove",
+          "required": false,
+          "selector": {
+           "object": {
+            "multiple": false
+           }
+          }
+         },
+         "entity_globs": {
+          "description": "List of glob patterns used to select the entities for which the data is to be removed from the Recorder database.",
+          "example": "domain*.object_id*",
+          "name": "Entity globs to remove",
+          "required": false,
+          "selector": {
+           "object": {
+            "multiple": false
+           }
+          }
+         },
+         "entity_id": {
+          "description": "List of entities for which the data is to be removed from the Recorder database.",
+          "name": "Entities to remove",
+          "required": false,
+          "selector": {
+           "entity": {
+            "multiple": true,
+            "reorder": false
+           }
+          }
+         },
+         "keep_days": {
+          "default": 0,
+          "description": "Number of days to keep the data for rows matching the filter. Starting today, counting backward. A value of `7` means that everything older than a week will be purged. The default of 0 days will remove all matching rows immediately.",
+          "name": "Days to keep",
+          "selector": {
+           "number": {
+            "max": 365.0,
+            "min": 0.0,
+            "mode": "slider",
+            "step": 1.0,
+            "unit_of_measurement": "days"
+           }
+          }
+         }
+        },
+        "name": "Purge Recorder entities",
+        "service": "purge_entities"
+       },
+       "scene.apply": {
+        "description": "Activates a scene with configuration.",
+        "domain": "scene",
+        "fields": {
+         "entities": {
+          "description": "List of entities and their target state.",
+          "example": "light.kitchen: \"on\"\nlight.ceiling:\n  state: \"on\"\n  brightness: 80\n",
+          "name": "Entities state",
+          "required": true,
+          "selector": {
+           "object": {
+            "multiple": false
+           }
+          }
+         },
+         "transition": {
+          "description": "Time it takes the devices to transition into the states defined in the scene.",
+          "name": "Transition",
+          "selector": {
+           "number": {
+            "max": 300.0,
+            "min": 0.0,
+            "mode": "slider",
+            "step": 1.0,
+            "unit_of_measurement": "seconds"
+           }
+          }
+         }
+        },
+        "name": "Apply scene",
+        "service": "apply"
+       },
+       "scene.create": {
+        "description": "Creates a new scene.",
+        "domain": "scene",
+        "fields": {
+         "entities": {
+          "description": "List of entities and their target state. If your entities are already in the target state right now, use 'Entities snapshot' instead.",
+          "example": "light.tv_back_light: \"on\"\nlight.ceiling:\n  state: \"on\"\n  brightness: 200\n",
+          "name": "Entity states",
+          "selector": {
+           "object": {
+            "multiple": false
+           }
+          }
+         },
+         "scene_id": {
+          "description": "The entity ID of the new scene.",
+          "example": "all_lights",
+          "name": "Scene entity ID",
+          "required": true,
+          "selector": {
+           "text": {
+            "multiline": false,
+            "multiple": false
+           }
+          }
+         },
+         "snapshot_entities": {
+          "description": "List of entities to be included in the snapshot. By taking a snapshot, you record the current state of those entities. If you do not want to use the current state of all your entities for this scene, you can combine 'Entities snapshot' with 'Entity states'.",
+          "example": "- light.ceiling\n- light.kitchen\n",
+          "name": "Entities snapshot",
+          "selector": {
+           "entity": {
+            "multiple": true,
+            "reorder": false
+           }
+          }
+         }
+        },
+        "name": "Create scene",
+        "service": "create"
+       },
+       "scene.delete": {
+        "description": "Deletes a dynamically created scene.",
+        "domain": "scene",
+        "fields": {},
+        "name": "Delete scene",
+        "service": "delete",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "scene"
+           ],
+           "integration": "homeassistant"
+          }
+         ]
+        }
+       },
+       "scene.reload": {
+        "description": "Reloads the scenes from the YAML-configuration.",
+        "domain": "scene",
+        "fields": {},
+        "name": "Reload scenes",
+        "service": "reload"
+       },
+       "scene.turn_on": {
+        "description": "Activates a scene.",
+        "domain": "scene",
+        "fields": {
+         "transition": {
+          "description": "Time it takes the devices to transition into the states defined in the scene.",
+          "name": "Transition",
+          "selector": {
+           "number": {
+            "max": 300.0,
+            "min": 0.0,
+            "mode": "slider",
+            "step": 1.0,
+            "unit_of_measurement": "seconds"
+           }
+          }
+         }
+        },
+        "name": "Activate scene",
+        "service": "turn_on",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "scene"
+           ]
+          }
+         ]
+        }
+       },
+       "system_log.clear": {
+        "description": "Deletes all system log entries.",
+        "domain": "system_log",
+        "fields": {},
+        "name": "Clear system log",
+        "service": "clear"
+       },
+       "system_log.write": {
+        "description": "Writes a system log entry.",
+        "domain": "system_log",
+        "fields": {
+         "level": {
+          "default": "error",
+          "description": "Log level.",
+          "name": "Level",
+          "selector": {
+           "select": {
+            "custom_value": false,
+            "multiple": false,
+            "options": [
+             "debug",
+             "info",
+             "warning",
+             "error",
+             "critical"
+            ],
+            "sort": false,
+            "translation_key": "level"
+           }
+          }
+         },
+         "logger": {
+          "description": "Logger name under which to log the message. Defaults to `system_log.external`.",
+          "example": "mycomponent.myplatform",
+          "name": "Logger",
+          "selector": {
+           "text": {
+            "multiline": false,
+            "multiple": false
+           }
+          }
+         },
+         "message": {
+          "description": "Message to log.",
+          "example": "Something went wrong",
+          "name": "Message",
+          "required": true,
+          "selector": {
+           "text": {
+            "multiline": false,
+            "multiple": false
+           }
+          }
+         }
+        },
+        "name": "Write to system log",
+        "service": "write"
+       }
+      },
+      "success": true,
+      "total_count": 247
+     }
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 143,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "detail_level": "full"
+     },
+     "name": "ha_list_services"
+    }
+   },
+   "method": "POST",
+   "path": "/mcp"
+  },
+  "response": {
+   "id": 143,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\"success\":true,\"domains\":[\"ai_task\",\"alarm_control_panel\",\"assist_satellite\",\"automation\",\"backup\",\"button\",\"calendar\",\"camera\",\"climate\",\"conversation\",\"counter\",\"cover\",\"date\",\"datetime\",\"device_tracker\",\"fan\",\"ffmpeg\",\"frontend\",\"group\",\"homeassistant\",\"humidifier\",\"image\",\"image_processing\",\"input_boolean\",\"input_button\",\"input_datetime\",\"input_number\",\"input_select\",\"input_text\",\"lawn_mower\",\"light\",\"lock\",\"logbook\",\"logger\",\"lovelace\",\"media_player\",\"notify\",\"number\",\"persistent_notification\",\"person\",\"recorder\",\"remote\",\"scene\",\"schedule\",\"script\",\"select\",\"shopping_list\",\"siren\",\"switch\",\"system_log\",\"template\",\"text\",\"time\",\"timer\",\"todo\",\"tts\",\"update\",\"vacuum\",\"valve\",\"water_heater\",\"weather\",\"zone\"],\"services\":{\"homeassistant.save_persistent_states\":{\"name\":\"Save persistent states\",\"description\":\"Saves the persistent states immediately. Maintains the normal periodic saving interval.\",\"domain\":\"homeassistant\",\"service\":\"save_persistent_states\",\"fields\":{}},\"homeassistant.turn_off\":{\"name\":\"Generic turn off\",\"description\":\"Generic action to turn devices off under any domain.\",\"domain\":\"homeassistant\",\"service\":\"turn_off\",\"fields\":{},\"target\":{}},\"homeassistant.turn_on\":{\"name\":\"Generic turn on\",\"description\":\"Generic action to turn devices on under any domain.\",\"domain\":\"homeassistant\",\"service\":\"turn_on\",\"fields\":{},\"target\":{}},\"homeassistant.toggle\":{\"name\":\"Generic toggle\",\"description\":\"Generic action to toggle devices on/off under any domain.\",\"domain\":\"homeassistant\",\"service\":\"toggle\",\"fields\":{},\"target\":{}},\"homeassistant.stop\":{\"name\":\"Stop Home Assistant\",\"description\":\"Stops Home Assistant.\",\"domain\":\"homeassistant\",\"service\":\"stop\",\"fields\":{}},\"homeassistant.restart\":{\"name\":\"Restart Home Assistant\",\"description\":\"Restarts Home Assistant.\",\"domain\":\"homeassistant\",\"service\":\"restart\",\"fields\":{}},\"homeassistant.check_config\":{\"name\":\"Check Home Assistant configuration\",\"description\":\"Checks the Home Assistant YAML-configuration files for errors. Errors will be shown in the Home Assistant logs.\",\"domain\":\"homeassistant\",\"service\":\"check_config\",\"fields\":{}},\"homeassistant.update_entity\":{\"name\":\"Update entity\",\"description\":\"Forces one or more entities to update their data.\",\"domain\":\"homeassistant\",\"service\":\"update_entity\",\"fields\":{\"entity_id\":{\"required\":true,\"selector\":{\"entity\":{\"multiple\":true,\"reorder\":false}},\"name\":\"Entities to update\",\"description\":\"List of entities to force update.\"}}},\"homeassistant.reload_core_config\":{\"name\":\"Reload Core configuration\",\"description\":\"Reloads the Core configuration from the YAML-configuration.\",\"domain\":\"homeassistant\",\"service\":\"reload_core_config\",\"fields\":{}},\"homeassistant.set_location\":{\"name\":\"Set Home Assistant location\",\"description\":\"Updates the Home Assistant location.\",\"domain\":\"homeassistant\",\"service\":\"set_location\",\"fields\":{\"latitude\":{\"required\":true,\"example\":32.87336,\"selector\":{\"number\":{\"mode\":\"box\",\"min\":-90.0,\"max\":90.0,\"step\":\"any\"}},\"name\":\"Latitude\",\"description\":\"Latitude of your location.\"},\"longitude\":{\"required\":true,\"example\":117.22743,\"selector\":{\"number\":{\"mode\":\"box\",\"min\":-180.0,\"max\":180.0,\"step\":\"any\"}},\"name\":\"Longitude\",\"description\":\"Longitude of your location.\"},\"elevation\":{\"required\":false,\"example\":120,\"selector\":{\"number\":{\"mode\":\"box\",\"step\":\"any\",\"unit_of_measurement\":\"m\"}},\"name\":\"Elevation\",\"description\":\"Elevation of your location above sea level.\"}}},\"homeassistant.reload_custom_templates\":{\"name\":\"Reload custom Jinja2 templates\",\"description\":\"Reloads Jinja2 templates found in the `custom_templates` folder in your config. New values will be applied on the next render of the template.\",\"domain\":\"homeassistant\",\"service\":\"reload_custom_templates\",\"fields\":{}},\"homeassistant.reload_config_entry\":{\"name\":\"Reload config entry\",\"description\":\"Reloads the config entry of the provided config entry ID.\",\"domain\":\"homeassistant\",\"service\":\"reload_config_entry\",\"fields\":{\"entry_id\":{\"required\":true,\"selector\":{\"config_entry\":{}},\"name\":\"Config entry ID\",\"description\":\"The configuration entry to reload.\"}}},\"homeassistant.reload_all\":{\"name\":\"Reload all Home Assistant configuration\",\"description\":\"Reloads all YAML configuration that can be reloaded without restarting Home Assistant.\",\"domain\":\"homeassistant\",\"service\":\"reload_all\",\"fields\":{}},\"persistent_notification.create\":{\"name\":\"Create persistent notification\",\"description\":\"Shows a persistent notification on the notifications panel.\",\"domain\":\"persistent_notification\",\"service\":\"create\",\"fields\":{\"message\":{\"required\":true,\"example\":\"Please check your configuration.yaml.\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}},\"name\":\"Message\",\"description\":\"Message body of the notification.\"},\"title\":{\"example\":\"Test notification\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}},\"name\":\"Title\",\"description\":\"Optional title of the notification.\"},\"notification_id\":{\"example\":1234,\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}},\"name\":\"Notification ID\",\"description\":\"ID of the notification. This new notification will overwrite an existing notification with the same ID.\"}}},\"persistent_notification.dismiss\":{\"name\":\"Dismiss persistent notification\",\"description\":\"Deletes a persistent notification from the notifications panel.\",\"domain\":\"persistent_notification\",\"service\":\"dismiss\",\"fields\":{\"notification_id\":{\"required\":true,\"example\":1234,\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}},\"name\":\"Notification ID\",\"description\":\"ID of the notification to be deleted.\"}}},\"persistent_notification.dismiss_all\":{\"name\":\"Dismiss all persistent notifications\",\"description\":\"Deletes all persistent notifications from the notifications panel.\",\"domain\":\"persistent_notification\",\"service\":\"dismiss_all\",\"fields\":{}},\"system_log.clear\":{\"name\":\"Clear system log\",\"description\":\"Deletes all system log entries.\",\"domain\":\"system_log\",\"service\":\"clear\",\"fields\":{}},\"system_log.write\":{\"name\":\"Write to system log\",\"description\":\"Writes a system log entry.\",\"domain\":\"system_log\",\"service\":\"write\",\"fields\":{\"message\":{\"required\":true,\"example\":\"Something went wrong\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}},\"name\":\"Message\",\"description\":\"Message to log.\"},\"level\":{\"default\":\"error\",\"selector\":{\"select\":{\"options\":[\"debug\",\"info\",\"warning\",\"error\",\"critical\"],\"translation_key\":\"level\",\"multiple\":false,\"custom_value\":false,\"sort\":false}},\"name\":\"Level\",\"description\":\"Log level.\"},\"logger\":{\"example\":\"mycomponent.myplatform\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}},\"name\":\"Logger\",\"description\":\"Logger name under which to log the message. Defaults to `system_log.external`.\"}}},\"logger.set_default_level\":{\"name\":\"Set logger default level\",\"description\":\"Sets the default log level for integrations.\",\"domain\":\"logger\",\"service\":\"set_default_level\",\"fields\":{\"level\":{\"selector\":{\"select\":{\"options\":[\"debug\",\"info\",\"warning\",\"error\",\"fatal\",\"critical\"],\"translation_key\":\"level\",\"multiple\":false,\"custom_value\":false,\"sort\":false}},\"name\":\"Level\",\"description\":\"Default severity level for all integrations.\"}}},\"logger.set_level\":{\"name\":\"Set logger level\",\"description\":\"Sets the log level for one or more integrations.\",\"domain\":\"logger\",\"service\":\"set_level\",\"fields\":{}},\"lovelace.reload_resources\":{\"name\":\"Reload dashboard resources\",\"description\":\"Reloads dashboard resources from the YAML-configuration.\",\"domain\":\"lovelace\",\"service\":\"reload_resources\",\"fields\":{}},\"frontend.set_theme\":{\"name\":\"Set theme\",\"description\":\"Sets the theme Home Assistant uses. Can be overridden by a user.\",\"domain\":\"frontend\",\"service\":\"set_theme\",\"fields\":{\"name\":{\"required\":false,\"example\":\"default\",\"selector\":{\"theme\":{\"include_default\":true}},\"name\":\"Theme\",\"description\":\"Name of the theme that is used by default.\"},\"name_dark\":{\"required\":false,\"example\":\"default\",\"selector\":{\"theme\":{\"include_default\":true}},\"name\":\"Dark theme override\",\"description\":\"Alternative dark-mode theme that is used by default.\"}}},\"frontend.reload_themes\":{\"name\":\"Reload themes\",\"description\":\"Reloads themes from the YAML-configuration.\",\"domain\":\"frontend\",\"service\":\"reload_themes\",\"fields\":{}},\"recorder.purge\":{\"name\":\"Purge Recorder database\",\"description\":\"Starts purge task - to clean up old data from your database.\",\"domain\":\"recorder\",\"service\":\"purge\",\"fields\":{\"keep_days\":{\"selector\":{\"number\":{\"min\":0.0,\"max\":365.0,\"unit_of_measurement\":\"days\",\"step\":1.0,\"mode\":\"slider\"}},\"name\":\"Days to keep\",\"description\":\"Number of days to keep the data in the database. Starting today, counting backward. A value of `7` means that everything older than a week will be purged.\"},\"repack\":{\"default\":false,\"selector\":{\"boolean\":{}},\"name\":\"Repack\",\"description\":\"Attempt to save disk space by rewriting the entire database file.\"},\"apply_filter\":{\"default\":false,\"selector\":{\"boolean\":{}},\"name\":\"Apply filter\",\"description\":\"Apply `entity_id` and `event_type` filters in addition to time-based purge.\"}}},\"recorder.purge_entities\":{\"name\":\"Purge Recorder entities\",\"description\":\"Starts a purge task to remove the data related to specific entities from your database.\",\"domain\":\"recorder\",\"service\":\"purge_entities\",\"fields\":{\"entity_id\":{\"required\":false,\"selector\":{\"entity\":{\"multiple\":true,\"reorder\":false}},\"name\":\"Entities to remove\",\"description\":\"List of entities for which the data is to be removed from the Recorder database.\"},\"domains\":{\"example\":\"sun\",\"required\":false,\"selector\":{\"object\":{\"multiple\":false}},\"name\":\"Domains to remove\",\"description\":\"List of domains for which the data needs to be removed from the Recorder database.\"},\"entity_globs\":{\"example\":\"domain*.object_id*\",\"required\":false,\"selector\":{\"object\":{\"multiple\":false}},\"name\":\"Entity globs to remove\",\"description\":\"List of glob patterns used to select the entities for which the data is to be removed from the Recorder database.\"},\"keep_days\":{\"default\":0,\"selector\":{\"number\":{\"min\":0.0,\"max\":365.0,\"unit_of_measurement\":\"days\",\"step\":1.0,\"mode\":\"slider\"}},\"name\":\"Days to keep\",\"description\":\"Number of days to keep the data for rows matching the filter. Starting today, counting backward. A value of `7` means that everything older than a week will be purged. The default of 0 days will remove all matching rows immediately.\"}}},\"recorder.enable\":{\"name\":\"Enable Recorder\",\"description\":\"Starts the recording of events and state changes.\",\"domain\":\"recorder\",\"service\":\"enable\",\"fields\":{}},\"recorder.disable\":{\"name\":\"Disable Recorder\",\"description\":\"Stops the recording of events and state changes.\",\"domain\":\"recorder\",\"service\":\"disable\",\"fields\":{}},\"recorder.get_statistics\":{\"name\":\"Get Recorder statistics\",\"description\":\"Retrieves statistics data for entities within a specific time period.\",\"domain\":\"recorder\",\"service\":\"get_statistics\",\"fields\":{\"start_time\":{\"required\":true,\"example\":\"2025-01-01 00:00:00\",\"selector\":{\"datetime\":{}},\"name\":\"Start time\",\"description\":\"The start time for the statistics query.\"},\"end_time\":{\"required\":false,\"example\":\"2025-01-02 00:00:00\",\"selector\":{\"datetime\":{}},\"name\":\"End time\",\"description\":\"The end time for the statistics query. If omitted, returns all statistics from start time onward.\"},\"statistic_ids\":{\"required\":true,\"example\":[\"sensor.energy_consumption\",\"sensor.temperature\"],\"selector\":{\"statistic\":{\"multiple\":true}},\"name\":\"Statistic IDs\",\"description\":\"The entity IDs or statistic IDs to return statistics for.\"},\"period\":{\"required\":true,\"example\":\"hour\",\"selector\":{\"select\":{\"options\":[\"5minute\",\"hour\",\"day\",\"week\",\"month\",\"year\"],\"multiple\":false,\"custom_value\":false,\"sort\":false}},\"name\":\"Period\",\"description\":\"The time period to group statistics by.\"},\"types\":{\"required\":true,\"example\":[\"mean\",\"sum\"],\"selector\":{\"select\":{\"options\":[\"change\",\"last_reset\",\"max\",\"mean\",\"min\",\"state\",\"sum\"],\"multiple\":true,\"custom_value\":false,\"sort\":false}},\"name\":\"Types\",\"description\":\"The types of statistics values to return.\"},\"units\":{\"required\":false,\"example\":{\"energy\":\"kWh\",\"temperature\":\"\u00b0C\"},\"selector\":{\"object\":{\"multiple\":false}},\"name\":\"Units\",\"description\":\"Optional unit conversion mapping.\"}},\"response\":{\"optional\":false}},\"scene.reload\":{\"name\":\"Reload scenes\",\"description\":\"Reloads the scenes from the YAML-configuration.\",\"domain\":\"scene\",\"service\":\"reload\",\"fields\":{}},\"scene.apply\":{\"name\":\"Apply scene\",\"description\":\"Activates a scene with configuration.\",\"domain\":\"scene\",\"service\":\"apply\",\"fields\":{\"entities\":{\"required\":true,\"example\":\"light.kitchen: \\\"on\\\"\\nlight.ceiling:\\n  state: \\\"on\\\"\\n  brightness: 80\\n\",\"selector\":{\"object\":{\"multiple\":false}},\"name\":\"Entities state\",\"description\":\"List of entities and their target state.\"},\"transition\":{\"selector\":{\"number\":{\"min\":0.0,\"max\":300.0,\"unit_of_measurement\":\"seconds\",\"step\":1.0,\"mode\":\"slider\"}},\"name\":\"Transition\",\"description\":\"Time it takes the devices to transition into the states defined in the scene.\"}}},\"scene.create\":{\"name\":\"Create scene\",\"description\":\"Creates a new scene.\",\"domain\":\"scene\",\"service\":\"create\",\"fields\":{\"scene_id\":{\"required\":true,\"example\":\"all_lights\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}},\"name\":\"Scene entity ID\",\"description\":\"The entity ID of the new scene.\"},\"entities\":{\"example\":\"light.tv_back_light: \\\"on\\\"\\nlight.ceiling:\\n  state: \\\"on\\\"\\n  brightness: 200\\n\",\"selector\":{\"object\":{\"multiple\":false}},\"name\":\"Entity states\",\"description\":\"List of entities and their target state. If your entities are already in the target state right now, use 'Entities snapshot' instead.\"},\"snapshot_entities\":{\"example\":\"- light.ceiling\\n- light.kitchen\\n\",\"selector\":{\"entity\":{\"multiple\":true,\"reorder\":false}},\"name\":\"Entities snapshot\",\"description\":\"List of entities to be included in the snapshot. By taking a snapshot, you record the current state of those entities. If you do not want to use the current state of all your entities for this scene, you can combine 'Entities snapshot' with 'Entity states'.\"}}},\"scene.delete\":{\"name\":\"Delete scene\",\"description\":\"Deletes a dynamically created scene.\",\"domain\":\"scene\",\"service\":\"delete\",\"fields\":{},\"target\":{\"entity\":[{\"integration\":\"homeassistant\",\"domain\":[\"scene\"]}]}},\"scene.turn_on\":{\"name\":\"Activate scene\",\"description\":\"Activates a scene.\",\"domain\":\"scene\",\"service\":\"turn_on\",\"fields\":{\"transition\":{\"selector\":{\"number\":{\"min\":0.0,\"max\":300.0,\"unit_of_measurement\":\"seconds\",\"step\":1.0,\"mode\":\"slider\"}},\"name\":\"Transition\",\"description\":\"Time it takes the devices to transition into the states defined in the scene.\"}},\"target\":{\"entity\":[{\"domain\":[\"scene\"]}]}},\"media_player.turn_on\":{\"name\":\"Turn on media player\",\"description\":\"Turns on the power of a media player.\",\"domain\":\"media_player\",\"service\":\"turn_on\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[128]}]}},\"media_player.turn_off\":{\"name\":\"Turn off media player\",\"description\":\"Turns off the power of a media player.\",\"domain\":\"media_player\",\"service\":\"turn_off\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[256]}]}},\"media_player.toggle\":{\"name\":\"Toggle media player\",\"description\":\"Toggles a media player on/off.\",\"domain\":\"media_player\",\"service\":\"toggle\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[384]}]}},\"media_player.volume_up\":{\"name\":\"Turn up media player volume\",\"description\":\"Turns up the volume of a media player.\",\"domain\":\"media_player\",\"service\":\"volume_up\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[4,1024]}]}},\"media_player.volume_down\":{\"name\":\"Turn down media player volume\",\"description\":\"Turns down the volume of a media player.\",\"domain\":\"media_player\",\"service\":\"volume_down\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[4,1024]}]}},\"media_player.media_play_pause\":{\"name\":\"Play/Pause media\",\"description\":\"Toggles play/pause on a media player.\",\"domain\":\"media_player\",\"service\":\"media_play_pause\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[16385]}]}},\"media_player.media_play\":{\"name\":\"Play media\",\"description\":\"Starts playback on a media player.\",\"domain\":\"media_player\",\"service\":\"media_play\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[16384]}]}},\"media_player.media_pause\":{\"name\":\"Pause media\",\"description\":\"Pauses playback on a media player.\",\"domain\":\"media_player\",\"service\":\"media_pause\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[1]}]}},\"media_player.media_stop\":{\"name\":\"Stop media\",\"description\":\"Stops playback on a media player.\",\"domain\":\"media_player\",\"service\":\"media_stop\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[4096]}]}},\"media_player.media_next_track\":{\"name\":\"Next track\",\"description\":\"Selects the next track on a media player.\",\"domain\":\"media_player\",\"service\":\"media_next_track\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[32]}]}},\"media_player.media_previous_track\":{\"name\":\"Previous track\",\"description\":\"Selects the previous track on a media player.\",\"domain\":\"media_player\",\"service\":\"media_previous_track\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[16]}]}},\"media_player.clear_playlist\":{\"name\":\"Clear media player playlist\",\"description\":\"Removes all items from a media player's playlist.\",\"domain\":\"media_player\",\"service\":\"clear_playlist\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[8192]}]}},\"media_player.volume_set\":{\"name\":\"Set media player volume\",\"description\":\"Sets the volume level of a media player.\",\"domain\":\"media_player\",\"service\":\"volume_set\",\"fields\":{\"volume_level\":{\"required\":true,\"selector\":{\"number\":{\"min\":0.0,\"max\":1.0,\"step\":0.01,\"mode\":\"slider\"}},\"name\":\"Level\",\"description\":\"The volume. 0 is inaudible, 1 is the maximum volume.\"}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[4]}]}},\"media_player.volume_mute\":{\"name\":\"Mute/unmute media player\",\"description\":\"Mutes or unmutes a media player.\",\"domain\":\"media_player\",\"service\":\"volume_mute\",\"fields\":{\"is_volume_muted\":{\"required\":true,\"selector\":{\"boolean\":{}},\"name\":\"Muted\",\"description\":\"Defines whether or not it is muted.\"}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[8]}]}},\"media_player.media_seek\":{\"name\":\"Seek media\",\"description\":\"Allows you to go to a different part of the media that is currently playing on a media player.\",\"domain\":\"media_player\",\"service\":\"media_seek\",\"fields\":{\"seek_position\":{\"required\":true,\"selector\":{\"number\":{\"min\":0.0,\"max\":9.223372036854776e+18,\"step\":0.01,\"mode\":\"box\"}},\"name\":\"Position\",\"description\":\"Target position in the currently playing media. The format is platform dependent.\"}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[2]}]}},\"media_player.join\":{\"name\":\"Join media players\",\"description\":\"Groups media players together for synchronous playback. Only works on supported multiroom audio systems.\",\"domain\":\"media_player\",\"service\":\"join\",\"fields\":{\"group_members\":{\"required\":true,\"example\":\"- media_player.multiroom_player2\\n- media_player.multiroom_player3\\n\",\"selector\":{\"entity\":{\"multiple\":true,\"domain\":[\"media_player\"],\"reorder\":false}},\"name\":\"Group members\",\"description\":\"The players which will be synced with the playback specified in 'Targets'.\"}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[524288]}]}},\"media_player.select_source\":{\"name\":\"Select media player source\",\"description\":\"Sends a media player the command to change the input source.\",\"domain\":\"media_player\",\"service\":\"select_source\",\"fields\":{\"source\":{\"required\":true,\"example\":\"video1\",\"selector\":{\"state\":{\"attribute\":\"source\",\"multiple\":false}},\"name\":\"Source\",\"description\":\"Name of the source to switch to. Platform dependent.\"}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[2048]}]}}},\"total_count\":247,\"offset\":0,\"limit\":50,\"count\":50,\"has_more\":true,\"next_offset\":50,\"detail_level\":\"full\",\"filters_applied\":{\"domain\":null,\"query\":null}}",
+      "type": "text"
+     }
+    ],
+    "isError": false,
+    "structuredContent": {
+     "count": 50,
+     "detail_level": "full",
+     "domains": [
+      "ai_task",
+      "alarm_control_panel",
+      "assist_satellite",
+      "automation",
+      "backup",
+      "button",
+      "calendar",
+      "camera",
+      "climate",
+      "conversation",
+      "counter",
+      "cover",
+      "date",
+      "datetime",
+      "device_tracker",
+      "fan",
+      "ffmpeg",
+      "frontend",
+      "group",
+      "homeassistant",
+      "humidifier",
+      "image",
+      "image_processing",
+      "input_boolean",
+      "input_button",
+      "input_datetime",
+      "input_number",
+      "input_select",
+      "input_text",
+      "lawn_mower",
+      "light",
+      "lock",
+      "logbook",
+      "logger",
+      "lovelace",
+      "media_player",
+      "notify",
+      "number",
+      "persistent_notification",
+      "person",
+      "recorder",
+      "remote",
+      "scene",
+      "schedule",
+      "script",
+      "select",
+      "shopping_list",
+      "siren",
+      "switch",
+      "system_log",
+      "template",
+      "text",
+      "time",
+      "timer",
+      "todo",
+      "tts",
+      "update",
+      "vacuum",
+      "valve",
+      "water_heater",
+      "weather",
+      "zone"
+     ],
+     "filters_applied": {
+      "domain": null,
+      "query": null
+     },
+     "has_more": true,
+     "limit": 50,
+     "next_offset": 50,
+     "offset": 0,
+     "services": {
+      "frontend.reload_themes": {
+       "description": "Reloads themes from the YAML-configuration.",
+       "domain": "frontend",
+       "fields": {},
+       "name": "Reload themes",
+       "service": "reload_themes"
+      },
+      "frontend.set_theme": {
+       "description": "Sets the theme Home Assistant uses. Can be overridden by a user.",
+       "domain": "frontend",
+       "fields": {
+        "name": {
+         "description": "Name of the theme that is used by default.",
+         "example": "default",
+         "name": "Theme",
+         "required": false,
+         "selector": {
+          "theme": {
+           "include_default": true
+          }
+         }
+        },
+        "name_dark": {
+         "description": "Alternative dark-mode theme that is used by default.",
+         "example": "default",
+         "name": "Dark theme override",
+         "required": false,
+         "selector": {
+          "theme": {
+           "include_default": true
+          }
+         }
+        }
+       },
+       "name": "Set theme",
+       "service": "set_theme"
+      },
+      "homeassistant.check_config": {
+       "description": "Checks the Home Assistant YAML-configuration files for errors. Errors will be shown in the Home Assistant logs.",
+       "domain": "homeassistant",
+       "fields": {},
+       "name": "Check Home Assistant configuration",
+       "service": "check_config"
+      },
+      "homeassistant.reload_all": {
+       "description": "Reloads all YAML configuration that can be reloaded without restarting Home Assistant.",
+       "domain": "homeassistant",
+       "fields": {},
+       "name": "Reload all Home Assistant configuration",
+       "service": "reload_all"
+      },
+      "homeassistant.reload_config_entry": {
+       "description": "Reloads the config entry of the provided config entry ID.",
+       "domain": "homeassistant",
+       "fields": {
+        "entry_id": {
+         "description": "The configuration entry to reload.",
+         "name": "Config entry ID",
+         "required": true,
+         "selector": {
+          "config_entry": {}
+         }
+        }
+       },
+       "name": "Reload config entry",
+       "service": "reload_config_entry"
+      },
+      "homeassistant.reload_core_config": {
+       "description": "Reloads the Core configuration from the YAML-configuration.",
+       "domain": "homeassistant",
+       "fields": {},
+       "name": "Reload Core configuration",
+       "service": "reload_core_config"
+      },
+      "homeassistant.reload_custom_templates": {
+       "description": "Reloads Jinja2 templates found in the `custom_templates` folder in your config. New values will be applied on the next render of the template.",
+       "domain": "homeassistant",
+       "fields": {},
+       "name": "Reload custom Jinja2 templates",
+       "service": "reload_custom_templates"
+      },
+      "homeassistant.restart": {
+       "description": "Restarts Home Assistant.",
+       "domain": "homeassistant",
+       "fields": {},
+       "name": "Restart Home Assistant",
+       "service": "restart"
+      },
+      "homeassistant.save_persistent_states": {
+       "description": "Saves the persistent states immediately. Maintains the normal periodic saving interval.",
+       "domain": "homeassistant",
+       "fields": {},
+       "name": "Save persistent states",
+       "service": "save_persistent_states"
+      },
+      "homeassistant.set_location": {
+       "description": "Updates the Home Assistant location.",
+       "domain": "homeassistant",
+       "fields": {
+        "elevation": {
+         "description": "Elevation of your location above sea level.",
+         "example": 120,
+         "name": "Elevation",
+         "required": false,
+         "selector": {
+          "number": {
+           "mode": "box",
+           "step": "any",
+           "unit_of_measurement": "m"
+          }
+         }
+        },
+        "latitude": {
+         "description": "Latitude of your location.",
+         "example": 32.87336,
+         "name": "Latitude",
+         "required": true,
+         "selector": {
+          "number": {
+           "max": 90.0,
+           "min": -90.0,
+           "mode": "box",
+           "step": "any"
+          }
+         }
+        },
+        "longitude": {
+         "description": "Longitude of your location.",
+         "example": 117.22743,
+         "name": "Longitude",
+         "required": true,
+         "selector": {
+          "number": {
+           "max": 180.0,
+           "min": -180.0,
+           "mode": "box",
+           "step": "any"
+          }
+         }
+        }
+       },
+       "name": "Set Home Assistant location",
+       "service": "set_location"
+      },
+      "homeassistant.stop": {
+       "description": "Stops Home Assistant.",
+       "domain": "homeassistant",
+       "fields": {},
+       "name": "Stop Home Assistant",
+       "service": "stop"
+      },
+      "homeassistant.toggle": {
+       "description": "Generic action to toggle devices on/off under any domain.",
+       "domain": "homeassistant",
+       "fields": {},
+       "name": "Generic toggle",
+       "service": "toggle",
+       "target": {}
+      },
+      "homeassistant.turn_off": {
+       "description": "Generic action to turn devices off under any domain.",
+       "domain": "homeassistant",
+       "fields": {},
+       "name": "Generic turn off",
+       "service": "turn_off",
+       "target": {}
+      },
+      "homeassistant.turn_on": {
+       "description": "Generic action to turn devices on under any domain.",
+       "domain": "homeassistant",
+       "fields": {},
+       "name": "Generic turn on",
+       "service": "turn_on",
+       "target": {}
+      },
+      "homeassistant.update_entity": {
+       "description": "Forces one or more entities to update their data.",
+       "domain": "homeassistant",
+       "fields": {
+        "entity_id": {
+         "description": "List of entities to force update.",
+         "name": "Entities to update",
+         "required": true,
+         "selector": {
+          "entity": {
+           "multiple": true,
+           "reorder": false
+          }
+         }
+        }
+       },
+       "name": "Update entity",
+       "service": "update_entity"
+      },
+      "logger.set_default_level": {
+       "description": "Sets the default log level for integrations.",
+       "domain": "logger",
+       "fields": {
+        "level": {
+         "description": "Default severity level for all integrations.",
+         "name": "Level",
+         "selector": {
+          "select": {
+           "custom_value": false,
+           "multiple": false,
+           "options": [
+            "debug",
+            "info",
+            "warning",
+            "error",
+            "fatal",
+            "critical"
+           ],
+           "sort": false,
+           "translation_key": "level"
+          }
+         }
+        }
+       },
+       "name": "Set logger default level",
+       "service": "set_default_level"
+      },
+      "logger.set_level": {
+       "description": "Sets the log level for one or more integrations.",
+       "domain": "logger",
+       "fields": {},
+       "name": "Set logger level",
+       "service": "set_level"
+      },
+      "lovelace.reload_resources": {
+       "description": "Reloads dashboard resources from the YAML-configuration.",
+       "domain": "lovelace",
+       "fields": {},
+       "name": "Reload dashboard resources",
+       "service": "reload_resources"
+      },
+      "media_player.clear_playlist": {
+       "description": "Removes all items from a media player's playlist.",
+       "domain": "media_player",
+       "fields": {},
+       "name": "Clear media player playlist",
+       "service": "clear_playlist",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "media_player"
+          ],
+          "supported_features": [
+           8192
+          ]
+         }
+        ]
+       }
+      },
+      "media_player.join": {
+       "description": "Groups media players together for synchronous playback. Only works on supported multiroom audio systems.",
+       "domain": "media_player",
+       "fields": {
+        "group_members": {
+         "description": "The players which will be synced with the playback specified in 'Targets'.",
+         "example": "- media_player.multiroom_player2\n- media_player.multiroom_player3\n",
+         "name": "Group members",
+         "required": true,
+         "selector": {
+          "entity": {
+           "domain": [
+            "media_player"
+           ],
+           "multiple": true,
+           "reorder": false
+          }
+         }
+        }
+       },
+       "name": "Join media players",
+       "service": "join",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "media_player"
+          ],
+          "supported_features": [
+           524288
+          ]
+         }
+        ]
+       }
+      },
+      "media_player.media_next_track": {
+       "description": "Selects the next track on a media player.",
+       "domain": "media_player",
+       "fields": {},
+       "name": "Next track",
+       "service": "media_next_track",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "media_player"
+          ],
+          "supported_features": [
+           32
+          ]
+         }
+        ]
+       }
+      },
+      "media_player.media_pause": {
+       "description": "Pauses playback on a media player.",
+       "domain": "media_player",
+       "fields": {},
+       "name": "Pause media",
+       "service": "media_pause",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "media_player"
+          ],
+          "supported_features": [
+           1
+          ]
+         }
+        ]
+       }
+      },
+      "media_player.media_play": {
+       "description": "Starts playback on a media player.",
+       "domain": "media_player",
+       "fields": {},
+       "name": "Play media",
+       "service": "media_play",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "media_player"
+          ],
+          "supported_features": [
+           16384
+          ]
+         }
+        ]
+       }
+      },
+      "media_player.media_play_pause": {
+       "description": "Toggles play/pause on a media player.",
+       "domain": "media_player",
+       "fields": {},
+       "name": "Play/Pause media",
+       "service": "media_play_pause",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "media_player"
+          ],
+          "supported_features": [
+           16385
+          ]
+         }
+        ]
+       }
+      },
+      "media_player.media_previous_track": {
+       "description": "Selects the previous track on a media player.",
+       "domain": "media_player",
+       "fields": {},
+       "name": "Previous track",
+       "service": "media_previous_track",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "media_player"
+          ],
+          "supported_features": [
+           16
+          ]
+         }
+        ]
+       }
+      },
+      "media_player.media_seek": {
+       "description": "Allows you to go to a different part of the media that is currently playing on a media player.",
+       "domain": "media_player",
+       "fields": {
+        "seek_position": {
+         "description": "Target position in the currently playing media. The format is platform dependent.",
+         "name": "Position",
+         "required": true,
+         "selector": {
+          "number": {
+           "max": 9.223372036854776e+18,
+           "min": 0.0,
+           "mode": "box",
+           "step": 0.01
+          }
+         }
+        }
+       },
+       "name": "Seek media",
+       "service": "media_seek",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "media_player"
+          ],
+          "supported_features": [
+           2
+          ]
+         }
+        ]
+       }
+      },
+      "media_player.media_stop": {
+       "description": "Stops playback on a media player.",
+       "domain": "media_player",
+       "fields": {},
+       "name": "Stop media",
+       "service": "media_stop",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "media_player"
+          ],
+          "supported_features": [
+           4096
+          ]
+         }
+        ]
+       }
+      },
+      "media_player.select_source": {
+       "description": "Sends a media player the command to change the input source.",
+       "domain": "media_player",
+       "fields": {
+        "source": {
+         "description": "Name of the source to switch to. Platform dependent.",
+         "example": "video1",
+         "name": "Source",
+         "required": true,
+         "selector": {
+          "state": {
+           "attribute": "source",
+           "multiple": false
+          }
+         }
+        }
+       },
+       "name": "Select media player source",
+       "service": "select_source",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "media_player"
+          ],
+          "supported_features": [
+           2048
+          ]
+         }
+        ]
+       }
+      },
+      "media_player.toggle": {
+       "description": "Toggles a media player on/off.",
+       "domain": "media_player",
+       "fields": {},
+       "name": "Toggle media player",
+       "service": "toggle",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "media_player"
+          ],
+          "supported_features": [
+           384
+          ]
+         }
+        ]
+       }
+      },
+      "media_player.turn_off": {
+       "description": "Turns off the power of a media player.",
+       "domain": "media_player",
+       "fields": {},
+       "name": "Turn off media player",
+       "service": "turn_off",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "media_player"
+          ],
+          "supported_features": [
+           256
+          ]
+         }
+        ]
+       }
+      },
+      "media_player.turn_on": {
+       "description": "Turns on the power of a media player.",
+       "domain": "media_player",
+       "fields": {},
+       "name": "Turn on media player",
+       "service": "turn_on",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "media_player"
+          ],
+          "supported_features": [
+           128
+          ]
+         }
+        ]
+       }
+      },
+      "media_player.volume_down": {
+       "description": "Turns down the volume of a media player.",
+       "domain": "media_player",
+       "fields": {},
+       "name": "Turn down media player volume",
+       "service": "volume_down",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "media_player"
+          ],
+          "supported_features": [
+           4,
+           1024
+          ]
+         }
+        ]
+       }
+      },
+      "media_player.volume_mute": {
+       "description": "Mutes or unmutes a media player.",
+       "domain": "media_player",
+       "fields": {
+        "is_volume_muted": {
+         "description": "Defines whether or not it is muted.",
+         "name": "Muted",
+         "required": true,
+         "selector": {
+          "boolean": {}
+         }
+        }
+       },
+       "name": "Mute/unmute media player",
+       "service": "volume_mute",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "media_player"
+          ],
+          "supported_features": [
+           8
+          ]
+         }
+        ]
+       }
+      },
+      "media_player.volume_set": {
+       "description": "Sets the volume level of a media player.",
+       "domain": "media_player",
+       "fields": {
+        "volume_level": {
+         "description": "The volume. 0 is inaudible, 1 is the maximum volume.",
+         "name": "Level",
+         "required": true,
+         "selector": {
+          "number": {
+           "max": 1.0,
+           "min": 0.0,
+           "mode": "slider",
+           "step": 0.01
+          }
+         }
+        }
+       },
+       "name": "Set media player volume",
+       "service": "volume_set",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "media_player"
+          ],
+          "supported_features": [
+           4
+          ]
+         }
+        ]
+       }
+      },
+      "media_player.volume_up": {
+       "description": "Turns up the volume of a media player.",
+       "domain": "media_player",
+       "fields": {},
+       "name": "Turn up media player volume",
+       "service": "volume_up",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "media_player"
+          ],
+          "supported_features": [
+           4,
+           1024
+          ]
+         }
+        ]
+       }
+      },
+      "persistent_notification.create": {
+       "description": "Shows a persistent notification on the notifications panel.",
+       "domain": "persistent_notification",
+       "fields": {
+        "message": {
+         "description": "Message body of the notification.",
+         "example": "Please check your configuration.yaml.",
+         "name": "Message",
+         "required": true,
+         "selector": {
+          "text": {
+           "multiline": false,
+           "multiple": false
+          }
+         }
+        },
+        "notification_id": {
+         "description": "ID of the notification. This new notification will overwrite an existing notification with the same ID.",
+         "example": 1234,
+         "name": "Notification ID",
+         "selector": {
+          "text": {
+           "multiline": false,
+           "multiple": false
+          }
+         }
+        },
+        "title": {
+         "description": "Optional title of the notification.",
+         "example": "Test notification",
+         "name": "Title",
+         "selector": {
+          "text": {
+           "multiline": false,
+           "multiple": false
+          }
+         }
+        }
+       },
+       "name": "Create persistent notification",
+       "service": "create"
+      },
+      "persistent_notification.dismiss": {
+       "description": "Deletes a persistent notification from the notifications panel.",
+       "domain": "persistent_notification",
+       "fields": {
+        "notification_id": {
+         "description": "ID of the notification to be deleted.",
+         "example": 1234,
+         "name": "Notification ID",
+         "required": true,
+         "selector": {
+          "text": {
+           "multiline": false,
+           "multiple": false
+          }
+         }
+        }
+       },
+       "name": "Dismiss persistent notification",
+       "service": "dismiss"
+      },
+      "persistent_notification.dismiss_all": {
+       "description": "Deletes all persistent notifications from the notifications panel.",
+       "domain": "persistent_notification",
+       "fields": {},
+       "name": "Dismiss all persistent notifications",
+       "service": "dismiss_all"
+      },
+      "recorder.disable": {
+       "description": "Stops the recording of events and state changes.",
+       "domain": "recorder",
+       "fields": {},
+       "name": "Disable Recorder",
+       "service": "disable"
+      },
+      "recorder.enable": {
+       "description": "Starts the recording of events and state changes.",
+       "domain": "recorder",
+       "fields": {},
+       "name": "Enable Recorder",
+       "service": "enable"
+      },
+      "recorder.get_statistics": {
+       "description": "Retrieves statistics data for entities within a specific time period.",
+       "domain": "recorder",
+       "fields": {
+        "end_time": {
+         "description": "The end time for the statistics query. If omitted, returns all statistics from start time onward.",
+         "example": "2025-01-02 00:00:00",
+         "name": "End time",
+         "required": false,
+         "selector": {
+          "datetime": {}
+         }
+        },
+        "period": {
+         "description": "The time period to group statistics by.",
+         "example": "hour",
+         "name": "Period",
+         "required": true,
+         "selector": {
+          "select": {
+           "custom_value": false,
+           "multiple": false,
+           "options": [
+            "5minute",
+            "hour",
+            "day",
+            "week",
+            "month",
+            "year"
+           ],
+           "sort": false
+          }
+         }
+        },
+        "start_time": {
+         "description": "The start time for the statistics query.",
+         "example": "2025-01-01 00:00:00",
+         "name": "Start time",
+         "required": true,
+         "selector": {
+          "datetime": {}
+         }
+        },
+        "statistic_ids": {
+         "description": "The entity IDs or statistic IDs to return statistics for.",
+         "example": [
+          "sensor.energy_consumption",
+          "sensor.temperature"
+         ],
+         "name": "Statistic IDs",
+         "required": true,
+         "selector": {
+          "statistic": {
+           "multiple": true
+          }
+         }
+        },
+        "types": {
+         "description": "The types of statistics values to return.",
+         "example": [
+          "mean",
+          "sum"
+         ],
+         "name": "Types",
+         "required": true,
+         "selector": {
+          "select": {
+           "custom_value": false,
+           "multiple": true,
+           "options": [
+            "change",
+            "last_reset",
+            "max",
+            "mean",
+            "min",
+            "state",
+            "sum"
+           ],
+           "sort": false
+          }
+         }
+        },
+        "units": {
+         "description": "Optional unit conversion mapping.",
+         "example": {
+          "energy": "kWh",
+          "temperature": "\u00b0C"
+         },
+         "name": "Units",
+         "required": false,
+         "selector": {
+          "object": {
+           "multiple": false
+          }
+         }
+        }
+       },
+       "name": "Get Recorder statistics",
+       "response": {
+        "optional": false
+       },
+       "service": "get_statistics"
+      },
+      "recorder.purge": {
+       "description": "Starts purge task - to clean up old data from your database.",
+       "domain": "recorder",
+       "fields": {
+        "apply_filter": {
+         "default": false,
+         "description": "Apply `entity_id` and `event_type` filters in addition to time-based purge.",
+         "name": "Apply filter",
+         "selector": {
+          "boolean": {}
+         }
+        },
+        "keep_days": {
+         "description": "Number of days to keep the data in the database. Starting today, counting backward. A value of `7` means that everything older than a week will be purged.",
+         "name": "Days to keep",
+         "selector": {
+          "number": {
+           "max": 365.0,
+           "min": 0.0,
+           "mode": "slider",
+           "step": 1.0,
+           "unit_of_measurement": "days"
+          }
+         }
+        },
+        "repack": {
+         "default": false,
+         "description": "Attempt to save disk space by rewriting the entire database file.",
+         "name": "Repack",
+         "selector": {
+          "boolean": {}
+         }
+        }
+       },
+       "name": "Purge Recorder database",
+       "service": "purge"
+      },
+      "recorder.purge_entities": {
+       "description": "Starts a purge task to remove the data related to specific entities from your database.",
+       "domain": "recorder",
+       "fields": {
+        "domains": {
+         "description": "List of domains for which the data needs to be removed from the Recorder database.",
+         "example": "sun",
+         "name": "Domains to remove",
+         "required": false,
+         "selector": {
+          "object": {
+           "multiple": false
+          }
+         }
+        },
+        "entity_globs": {
+         "description": "List of glob patterns used to select the entities for which the data is to be removed from the Recorder database.",
+         "example": "domain*.object_id*",
+         "name": "Entity globs to remove",
+         "required": false,
+         "selector": {
+          "object": {
+           "multiple": false
+          }
+         }
+        },
+        "entity_id": {
+         "description": "List of entities for which the data is to be removed from the Recorder database.",
+         "name": "Entities to remove",
+         "required": false,
+         "selector": {
+          "entity": {
+           "multiple": true,
+           "reorder": false
+          }
+         }
+        },
+        "keep_days": {
+         "default": 0,
+         "description": "Number of days to keep the data for rows matching the filter. Starting today, counting backward. A value of `7` means that everything older than a week will be purged. The default of 0 days will remove all matching rows immediately.",
+         "name": "Days to keep",
+         "selector": {
+          "number": {
+           "max": 365.0,
+           "min": 0.0,
+           "mode": "slider",
+           "step": 1.0,
+           "unit_of_measurement": "days"
+          }
+         }
+        }
+       },
+       "name": "Purge Recorder entities",
+       "service": "purge_entities"
+      },
+      "scene.apply": {
+       "description": "Activates a scene with configuration.",
+       "domain": "scene",
+       "fields": {
+        "entities": {
+         "description": "List of entities and their target state.",
+         "example": "light.kitchen: \"on\"\nlight.ceiling:\n  state: \"on\"\n  brightness: 80\n",
+         "name": "Entities state",
+         "required": true,
+         "selector": {
+          "object": {
+           "multiple": false
+          }
+         }
+        },
+        "transition": {
+         "description": "Time it takes the devices to transition into the states defined in the scene.",
+         "name": "Transition",
+         "selector": {
+          "number": {
+           "max": 300.0,
+           "min": 0.0,
+           "mode": "slider",
+           "step": 1.0,
+           "unit_of_measurement": "seconds"
+          }
+         }
+        }
+       },
+       "name": "Apply scene",
+       "service": "apply"
+      },
+      "scene.create": {
+       "description": "Creates a new scene.",
+       "domain": "scene",
+       "fields": {
+        "entities": {
+         "description": "List of entities and their target state. If your entities are already in the target state right now, use 'Entities snapshot' instead.",
+         "example": "light.tv_back_light: \"on\"\nlight.ceiling:\n  state: \"on\"\n  brightness: 200\n",
+         "name": "Entity states",
+         "selector": {
+          "object": {
+           "multiple": false
+          }
+         }
+        },
+        "scene_id": {
+         "description": "The entity ID of the new scene.",
+         "example": "all_lights",
+         "name": "Scene entity ID",
+         "required": true,
+         "selector": {
+          "text": {
+           "multiline": false,
+           "multiple": false
+          }
+         }
+        },
+        "snapshot_entities": {
+         "description": "List of entities to be included in the snapshot. By taking a snapshot, you record the current state of those entities. If you do not want to use the current state of all your entities for this scene, you can combine 'Entities snapshot' with 'Entity states'.",
+         "example": "- light.ceiling\n- light.kitchen\n",
+         "name": "Entities snapshot",
+         "selector": {
+          "entity": {
+           "multiple": true,
+           "reorder": false
+          }
+         }
+        }
+       },
+       "name": "Create scene",
+       "service": "create"
+      },
+      "scene.delete": {
+       "description": "Deletes a dynamically created scene.",
+       "domain": "scene",
+       "fields": {},
+       "name": "Delete scene",
+       "service": "delete",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "scene"
+          ],
+          "integration": "homeassistant"
+         }
+        ]
+       }
+      },
+      "scene.reload": {
+       "description": "Reloads the scenes from the YAML-configuration.",
+       "domain": "scene",
+       "fields": {},
+       "name": "Reload scenes",
+       "service": "reload"
+      },
+      "scene.turn_on": {
+       "description": "Activates a scene.",
+       "domain": "scene",
+       "fields": {
+        "transition": {
+         "description": "Time it takes the devices to transition into the states defined in the scene.",
+         "name": "Transition",
+         "selector": {
+          "number": {
+           "max": 300.0,
+           "min": 0.0,
+           "mode": "slider",
+           "step": 1.0,
+           "unit_of_measurement": "seconds"
+          }
+         }
+        }
+       },
+       "name": "Activate scene",
+       "service": "turn_on",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "scene"
+          ]
+         }
+        ]
+       }
+      },
+      "system_log.clear": {
+       "description": "Deletes all system log entries.",
+       "domain": "system_log",
+       "fields": {},
+       "name": "Clear system log",
+       "service": "clear"
+      },
+      "system_log.write": {
+       "description": "Writes a system log entry.",
+       "domain": "system_log",
+       "fields": {
+        "level": {
+         "default": "error",
+         "description": "Log level.",
+         "name": "Level",
+         "selector": {
+          "select": {
+           "custom_value": false,
+           "multiple": false,
+           "options": [
+            "debug",
+            "info",
+            "warning",
+            "error",
+            "critical"
+           ],
+           "sort": false,
+           "translation_key": "level"
+          }
+         }
+        },
+        "logger": {
+         "description": "Logger name under which to log the message. Defaults to `system_log.external`.",
+         "example": "mycomponent.myplatform",
+         "name": "Logger",
+         "selector": {
+          "text": {
+           "multiline": false,
+           "multiple": false
+          }
+         }
+        },
+        "message": {
+         "description": "Message to log.",
+         "example": "Something went wrong",
+         "name": "Message",
+         "required": true,
+         "selector": {
+          "text": {
+           "multiline": false,
+           "multiple": false
+          }
+         }
+        }
+       },
+       "name": "Write to system log",
+       "service": "write"
+      }
+     },
+     "success": true,
+     "total_count": 247
+    }
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Thu, 12 Nov 2026 06:23:57 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null,
+ "group": "transport",
+ "id": "t-large-services",
+ "idle": false,
+ "kind": "upstream",
+ "new_session": false,
+ "public_arguments": {
+  "detail_level": "full"
+ },
+ "public_tool": "ha_list_services",
+ "upstream_tool": "ha_list_services",
+ "wire_arguments": {
+  "detail_level": "full"
+ }
+}
