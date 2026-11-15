@@ -99,6 +99,8 @@ CORE = 'Core 2026.11.0 (74cf5a49)'
 CORE_INTEGRATION = f'S10-2 ruling: {CORE} helpers/selector.py:178,212 (entity filter integration: str)'
 CORE_COLLAPSED = f'S10-2 ruling: {CORE} helpers/service.py:996,1004 (section collapsed: bool, default False)'
 SERVICES_WARNINGS = 'research G ruling 2b (language-note prefix, tools_services.py:227-279 at 51e3aac7)'
+UPDATE_SOURCE = ('research G ruling 2d; 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/update_check.py:386-390, '
+                 'tools/tools_search.py:741-745; not reachable in the lane (no Supervisor, no PyPI)')
 
 # Per read: number, upstream tool, projection kind, the reviewed specification.
 # "named": keys the shipped 9.1 projection requires or type-checks (file:line).
@@ -163,7 +165,8 @@ READS = {
         'system_summary', 'domain_stats', 'area_analysis', 'ai_insights', 'partial')),
         drops=('mcp_client', 'tool_discovery', 'settings_url', 'settings_url_hint', 'python_required', 'upgrade_command'),
         maps={'domain_stats': 1, 'area_analysis': 1, 'states_summary': 1, 'domains': 1},
-        ruled={'name': 'research G ruling 2d (overview rows)'},
+        ruled={'name': 'research G ruling 2d (overview rows)',
+               **dict.fromkeys(('ha_mcp_update', 'current', 'latest', 'update_available'), UPDATE_SOURCE)},
         notes=('ha_mcp_update is closed to current, latest and update_available; python_required and upgrade_command are policy drops (research G 2d, non-add-on installs only)',)),
     'ha_get_skill_guide': dict(n=18, upstream='ha_get_skill_guide', kind='rebuild', rebuild=(f'{E}:157-179', (
         'skill_content_hint', 'success', 'skill', 'file', 'uri', 'content')), drops=('how_to_use',)),

@@ -1933,6 +1933,7 @@
         "controllable_devices": "receipt 9.1.2 profile A+B",
         "count": "receipt 9.1.2 profile A+B",
         "created": "receipt 9.1.2 profile A+B",
+        "current": "research G ruling 2d; 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/update_check.py:386-390, tools/tools_search.py:741-745; not reachable in the lane (no Supervisor, no PyPI)",
         "dismissed_version": "receipt 9.1.2 profile A+B",
         "domain": "receipt 9.1.2 profile A+B",
         "domain_stats": "receipt 9.1.2 profile A+B",
@@ -1941,12 +1942,14 @@
         "entities_returned": "receipt 9.1.2 profile A+B",
         "filtered_domains": "receipt 9.1.2 profile A+B",
         "friendly_name": "receipt 9.1.2 profile A+B",
+        "ha_mcp_update": "research G ruling 2d; 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/update_check.py:386-390, tools/tools_search.py:741-745; not reachable in the lane (no Supervisor, no PyPI)",
         "has_more": "receipt 9.1.2 profile A+B",
         "ignored": "receipt 9.1.2 profile A+B",
         "is_fixable": "receipt 9.1.2 profile A+B",
         "issue_domain": "receipt 9.1.2 profile A+B",
         "issue_id": "receipt 9.1.2 profile A+B",
         "language": "receipt 9.1.2 profile A+B",
+        "latest": "research G ruling 2d; 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/update_check.py:386-390, tools/tools_search.py:741-745; not reachable in the lane (no Supervisor, no PyPI)",
         "limit": "receipt 9.1.2 profile A+B",
         "location_name": "receipt 9.1.2 profile A+B",
         "monitoring_sensors": "receipt 9.1.2 profile A+B",
@@ -1972,6 +1975,7 @@
         "total_services": "receipt 9.1.2 profile A+B",
         "translation_key": "receipt 9.1.2 profile A+B",
         "truncated": "receipt 9.1.2 profile A+B",
+        "update_available": "research G ruling 2d; 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/update_check.py:386-390, tools/tools_search.py:741-745; not reachable in the lane (no Supervisor, no PyPI)",
         "version": "receipt 9.1.2 profile A+B"
       },
       "calls": {
@@ -2000,6 +2004,24 @@
         "states_summary": 1
       },
       "new_in_9_2_0": {
+        "current": {
+          "observed_9_1_2_profiles": [],
+          "observed_9_2_0_profiles": [],
+          "source": "research G ruling 2d; 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/update_check.py:386-390, tools/tools_search.py:741-745; not reachable in the lane (no Supervisor, no PyPI)",
+          "status": "admitted"
+        },
+        "ha_mcp_update": {
+          "observed_9_1_2_profiles": [],
+          "observed_9_2_0_profiles": [],
+          "source": "research G ruling 2d; 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/update_check.py:386-390, tools/tools_search.py:741-745; not reachable in the lane (no Supervisor, no PyPI)",
+          "status": "admitted"
+        },
+        "latest": {
+          "observed_9_1_2_profiles": [],
+          "observed_9_2_0_profiles": [],
+          "source": "research G ruling 2d; 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/update_check.py:386-390, tools/tools_search.py:741-745; not reachable in the lane (no Supervisor, no PyPI)",
+          "status": "admitted"
+        },
         "name": {
           "observed_9_1_2_profiles": [
             "A",
@@ -2010,6 +2032,12 @@
             "B"
           ],
           "source": "research G ruling 2d (overview rows)",
+          "status": "admitted"
+        },
+        "update_available": {
+          "observed_9_1_2_profiles": [],
+          "observed_9_2_0_profiles": [],
+          "source": "research G ruling 2d; 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/update_check.py:386-390, tools/tools_search.py:741-745; not reachable in the lane (no Supervisor, no PyPI)",
           "status": "admitted"
         }
       },

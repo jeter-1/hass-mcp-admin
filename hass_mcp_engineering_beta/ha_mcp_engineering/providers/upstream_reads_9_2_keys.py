@@ -219,15 +219,16 @@ ROWS: dict = {
         admitted=frozenset({
             'ai_insights', 'area_analysis', 'automation_ready', 'base_url',
             'breaks_in_ha_version', 'controllable_devices', 'count', 'created',
-            'dismissed_version', 'domain', 'domain_stats', 'domains', 'entities',
-            'entities_returned', 'filtered_domains', 'friendly_name', 'has_more',
-            'ignored', 'is_fixable', 'issue_domain', 'issue_id', 'language', 'limit',
-            'location_name', 'monitoring_sensors', 'most_common_domains', 'name',
+            'current', 'dismissed_version', 'domain', 'domain_stats', 'domains',
+            'entities', 'entities_returned', 'filtered_domains', 'friendly_name',
+            'ha_mcp_update', 'has_more', 'ignored', 'is_fixable', 'issue_domain',
+            'issue_id', 'language', 'latest', 'limit', 'location_name',
+            'monitoring_sensors', 'most_common_domains', 'name',
             'next_offset', 'offset', 'pagination', 'partial', 'repair_count', 'repairs',
             'severity', 'state', 'states_summary', 'success', 'system_info',
             'system_summary', 'time_zone', 'total_areas', 'total_domains',
             'total_entities', 'total_entity_results', 'total_services',
-            'translation_key', 'truncated', 'version'
+            'translation_key', 'truncated', 'update_available', 'version'
         }),
         drops=frozenset({
             'mcp_client', 'python_required', 'settings_url', 'settings_url_hint',
