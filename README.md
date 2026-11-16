@@ -16,15 +16,15 @@ the owner, applied once and verified by read-back.
 
 ## Current release
 
-The current source version is **2.4.2-beta.8**, the 2.6.0 build. It is in
+The current source version is **2.4.2-beta.9**, the 2.7.0 build. It is in
 progress: its items land through reviewed pull requests into the
-`release/2.6.0` integration branch (HAMCP-354). Read the
-[2.4.2-beta.8 release notes](docs/V2_4_2_BETA8_RELEASE_NOTES.md) and the
-[2.4.2-beta.8 acceptance contract](docs/V2_4_2_BETA8_ACCEPTANCE.md).
+`release/2.7.0` integration branch (HAMCP-371). Read the
+[2.4.2-beta.9 release notes](docs/V2_4_2_BETA9_RELEASE_NOTES.md) and the
+[2.4.2-beta.9 acceptance contract](docs/V2_4_2_BETA9_ACCEPTANCE.md).
 
-The most recent completed release is 2.4.2-beta.7; read its
-[release notes](docs/V2_4_2_BETA7_RELEASE_NOTES.md) for the reviewed
-delegated catalog, tool counts and deploy order. The final 2.4.2-beta.8
+The most recent published release is 2.4.2-beta.8; read its
+[release notes](docs/V2_4_2_BETA8_RELEASE_NOTES.md) for the reviewed
+delegated catalog, tool counts and deploy order. The final 2.4.2-beta.9
 release pull request states this version's catalog and rollback.
 
 Every earlier release is listed in the [release index](docs/RELEASES.md).
