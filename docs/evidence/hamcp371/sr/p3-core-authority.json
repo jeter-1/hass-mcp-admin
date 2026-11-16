@@ -1,0 +1,904 @@
+{
+ "after_failed_refresh": {
+  "content_digest": "sha256:5a68d9a2011ff26a4dd329ac6e1d7d9a47c629a7a79f937e0227f947055d6482",
+  "entry": {
+   "capability_count": 38,
+   "entry_id": "ha-core-2026.11.0-reviewed-v1",
+   "image_index_digest": "sha256:c6c1ca9931036bf3a2c4cc088d8db25dfea3b33935a5ecc83c40349462e2f69e",
+   "probe_profile_id": "core-probes-child-device-name-parts-v1",
+   "source_commit": "74cf5a49c63ed8d4d87717844bf14f79c28c9cea",
+   "version": "2026.11.0"
+  },
+  "expires_at": "2027-02-12T12:09:02Z",
+  "positive_authority_current": true,
+  "probe_profile_id": "core-probes-child-device-name-parts-v1",
+  "probe_profile_present": true,
+  "revoked": false,
+  "selections": [
+   {
+    "adapter_id": "compiled-core-rest-read-v1",
+    "capability_ids": [
+     "core.basic_rest_read"
+    ],
+    "profile_id": "core_basic_rest_read_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-websocket-read-v1",
+    "capability_ids": [
+     "core.basic_websocket_read"
+    ],
+    "profile_id": "core_basic_websocket_read_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-state-service-discovery-v1",
+    "capability_ids": [
+     "core.state_service_discovery"
+    ],
+    "profile_id": "core_state_service_discovery_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-non-device-registry-read-v1",
+    "capability_ids": [
+     "core.non_device_registry_read"
+    ],
+    "profile_id": "core_non_device_registry_read_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-direct-device-registry-v1",
+    "capability_ids": [
+     "core.direct_device_registry_read"
+    ],
+    "profile_id": "core_direct_device_registry_read_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-delegated-device-effective-area-v1",
+    "capability_ids": [
+     "core.delegated_device_effective_area"
+    ],
+    "profile_id": "core_delegated_device_effective_area_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-direct-entity-state-read-v1",
+    "capability_ids": [
+     "core.direct_entity_state_read"
+    ],
+    "profile_id": "core_direct_entity_state_read_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-automation-configuration-read-v1",
+    "capability_ids": [
+     "core.automation_configuration_read"
+    ],
+    "profile_id": "core_automation_configuration_read_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-automation-trace-read-v1",
+    "capability_ids": [
+     "core.automation_trace_read"
+    ],
+    "profile_id": "core_automation_trace_read_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-dashboard-configuration-read-v1",
+    "capability_ids": [
+     "core.dashboard_configuration_read"
+    ],
+    "profile_id": "core_dashboard_configuration_read_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-template-semantics-v1",
+    "capability_ids": [
+     "core.template_semantics"
+    ],
+    "profile_id": "core_template_semantics_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-configuration-validation-v1",
+    "capability_ids": [
+     "core.configuration_validation"
+    ],
+    "profile_id": "core_configuration_validation_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-dependency-helper-planning-v1",
+    "capability_ids": [
+     "core.dependency_helper_planning"
+    ],
+    "profile_id": "core_dependency_helper_planning_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-typed-helper-operation-v1",
+    "capability_ids": [
+     "core.typed_helper_operation"
+    ],
+    "profile_id": "core_typed_helper_operation_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-f3-mutation-verification-v1",
+    "capability_ids": [
+     "core.f3_mutation_verification"
+    ],
+    "profile_id": "core_f3_mutation_verification_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-governed-configuration-operation-v1",
+    "capability_ids": [
+     "core.governed_configuration_operation"
+    ],
+    "profile_id": "core_governed_configuration_operation_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-governance-observability-v1",
+    "capability_ids": [
+     "core.governance_observability"
+    ],
+    "profile_id": "core_governance_observability_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-single-fan-v1",
+    "capability_ids": [
+     "core.typed_fan_operation"
+    ],
+    "profile_id": "core_typed_fan_operation_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-single-power-v1",
+    "capability_ids": [
+     "core.typed_power_operation"
+    ],
+    "profile_id": "core_typed_power_operation_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-single-helper_value-v1",
+    "capability_ids": [
+     "core.typed_helper_value_operation"
+    ],
+    "profile_id": "core_typed_helper_value_operation_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-alarmo-metadata-read-v1",
+    "capability_ids": [
+     "core.integration_inspection_metadata_read"
+    ],
+    "profile_id": "core_integration_inspection_metadata_read_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-automation-baseline-read-v1",
+    "capability_ids": [
+     "core.automation_baseline_metadata_read"
+    ],
+    "profile_id": "core_automation_baseline_metadata_read_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-entity-registry-metadata-operation-v1",
+    "capability_ids": [
+     "core.entity_registry_metadata_operation"
+    ],
+    "profile_id": "core_entity_registry_metadata_operation_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-entity-registry-availability-operation-v1",
+    "capability_ids": [
+     "core.entity_registry_availability_operation"
+    ],
+    "profile_id": "core_entity_registry_availability_operation_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-entity-assistant-exposure-operation-v1",
+    "capability_ids": [
+     "core.entity_assistant_exposure_operation"
+    ],
+    "profile_id": "core_entity_assistant_exposure_operation_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-label-registry-operation-v1",
+    "capability_ids": [
+     "core.label_registry_operation"
+    ],
+    "profile_id": "core_label_registry_operation_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-configuration-delete-operation-v1",
+    "capability_ids": [
+     "core.configuration_delete_operation"
+    ],
+    "profile_id": "core_configuration_delete_operation_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-config-entry-helper-options-operation-v1",
+    "capability_ids": [
+     "core.config_entry_helper_options_operation"
+    ],
+    "profile_id": "core_config_entry_helper_options_operation_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-typed-input-select-option-operation-v1",
+    "capability_ids": [
+     "core.typed_input_select_option_operation"
+    ],
+    "profile_id": "core_typed_input_select_option_operation_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-script-trace-read-v1",
+    "capability_ids": [
+     "core.script_trace_read"
+    ],
+    "profile_id": "core_script_trace_read_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-dashboard-metadata-operation-v1",
+    "capability_ids": [
+     "core.dashboard_metadata_operation"
+    ],
+    "profile_id": "core_dashboard_metadata_operation_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-scene-configuration-operation-v1",
+    "capability_ids": [
+     "core.scene_configuration_operation"
+    ],
+    "profile_id": "core_scene_configuration_operation_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-marketplace-read-v1",
+    "capability_ids": [
+     "core.marketplace_read"
+    ],
+    "profile_id": "core_marketplace_read_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-security-metadata-read-v1",
+    "capability_ids": [
+     "core.security_metadata_read"
+    ],
+    "profile_id": "core_security_metadata_read_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-device-configuration-entity-operation-v1",
+    "capability_ids": [
+     "core.device_configuration_entity_operation"
+    ],
+    "profile_id": "core_device_configuration_entity_operation_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-scene-create-delete-operation-v1",
+    "capability_ids": [
+     "core.scene_create_delete_operation"
+    ],
+    "profile_id": "core_scene_create_delete_operation_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-created-helper-delete-operation-v1",
+    "capability_ids": [
+     "core.created_helper_delete_operation"
+    ],
+    "profile_id": "core_created_helper_delete_operation_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-thread-matter-topology-read-v1",
+    "capability_ids": [
+     "core.thread_matter_topology_read"
+    ],
+    "profile_id": "core_thread_matter_topology_read_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   }
+  ],
+  "sequence": 18,
+  "snapshot": {
+   "cache_status": "valid",
+   "failure_reason_counts": [
+    {
+     "count": 1,
+     "reason_code": "registry_unavailable"
+    }
+   ],
+   "freshness_status": "current",
+   "last_failure_reason": "registry_unavailable",
+   "refresh_status": "failed",
+   "registry_id_status": "accepted",
+   "sequence": 18,
+   "surface_denied": false
+  },
+  "surface_denied": false
+ },
+ "at_load": {
+  "content_digest": "sha256:5a68d9a2011ff26a4dd329ac6e1d7d9a47c629a7a79f937e0227f947055d6482",
+  "entry": {
+   "capability_count": 38,
+   "entry_id": "ha-core-2026.11.0-reviewed-v1",
+   "image_index_digest": "sha256:c6c1ca9931036bf3a2c4cc088d8db25dfea3b33935a5ecc83c40349462e2f69e",
+   "probe_profile_id": "core-probes-child-device-name-parts-v1",
+   "source_commit": "74cf5a49c63ed8d4d87717844bf14f79c28c9cea",
+   "version": "2026.11.0"
+  },
+  "expires_at": "2027-02-12T12:09:02Z",
+  "positive_authority_current": true,
+  "probe_profile_id": "core-probes-child-device-name-parts-v1",
+  "probe_profile_present": true,
+  "revoked": false,
+  "selections": [
+   {
+    "adapter_id": "compiled-core-rest-read-v1",
+    "capability_ids": [
+     "core.basic_rest_read"
+    ],
+    "profile_id": "core_basic_rest_read_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-websocket-read-v1",
+    "capability_ids": [
+     "core.basic_websocket_read"
+    ],
+    "profile_id": "core_basic_websocket_read_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-state-service-discovery-v1",
+    "capability_ids": [
+     "core.state_service_discovery"
+    ],
+    "profile_id": "core_state_service_discovery_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-non-device-registry-read-v1",
+    "capability_ids": [
+     "core.non_device_registry_read"
+    ],
+    "profile_id": "core_non_device_registry_read_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-direct-device-registry-v1",
+    "capability_ids": [
+     "core.direct_device_registry_read"
+    ],
+    "profile_id": "core_direct_device_registry_read_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-delegated-device-effective-area-v1",
+    "capability_ids": [
+     "core.delegated_device_effective_area"
+    ],
+    "profile_id": "core_delegated_device_effective_area_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-direct-entity-state-read-v1",
+    "capability_ids": [
+     "core.direct_entity_state_read"
+    ],
+    "profile_id": "core_direct_entity_state_read_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-automation-configuration-read-v1",
+    "capability_ids": [
+     "core.automation_configuration_read"
+    ],
+    "profile_id": "core_automation_configuration_read_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-automation-trace-read-v1",
+    "capability_ids": [
+     "core.automation_trace_read"
+    ],
+    "profile_id": "core_automation_trace_read_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-dashboard-configuration-read-v1",
+    "capability_ids": [
+     "core.dashboard_configuration_read"
+    ],
+    "profile_id": "core_dashboard_configuration_read_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-template-semantics-v1",
+    "capability_ids": [
+     "core.template_semantics"
+    ],
+    "profile_id": "core_template_semantics_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-configuration-validation-v1",
+    "capability_ids": [
+     "core.configuration_validation"
+    ],
+    "profile_id": "core_configuration_validation_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-dependency-helper-planning-v1",
+    "capability_ids": [
+     "core.dependency_helper_planning"
+    ],
+    "profile_id": "core_dependency_helper_planning_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-typed-helper-operation-v1",
+    "capability_ids": [
+     "core.typed_helper_operation"
+    ],
+    "profile_id": "core_typed_helper_operation_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-f3-mutation-verification-v1",
+    "capability_ids": [
+     "core.f3_mutation_verification"
+    ],
+    "profile_id": "core_f3_mutation_verification_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-governed-configuration-operation-v1",
+    "capability_ids": [
+     "core.governed_configuration_operation"
+    ],
+    "profile_id": "core_governed_configuration_operation_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-governance-observability-v1",
+    "capability_ids": [
+     "core.governance_observability"
+    ],
+    "profile_id": "core_governance_observability_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-single-fan-v1",
+    "capability_ids": [
+     "core.typed_fan_operation"
+    ],
+    "profile_id": "core_typed_fan_operation_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-single-power-v1",
+    "capability_ids": [
+     "core.typed_power_operation"
+    ],
+    "profile_id": "core_typed_power_operation_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-single-helper_value-v1",
+    "capability_ids": [
+     "core.typed_helper_value_operation"
+    ],
+    "profile_id": "core_typed_helper_value_operation_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-alarmo-metadata-read-v1",
+    "capability_ids": [
+     "core.integration_inspection_metadata_read"
+    ],
+    "profile_id": "core_integration_inspection_metadata_read_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-automation-baseline-read-v1",
+    "capability_ids": [
+     "core.automation_baseline_metadata_read"
+    ],
+    "profile_id": "core_automation_baseline_metadata_read_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-entity-registry-metadata-operation-v1",
+    "capability_ids": [
+     "core.entity_registry_metadata_operation"
+    ],
+    "profile_id": "core_entity_registry_metadata_operation_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-entity-registry-availability-operation-v1",
+    "capability_ids": [
+     "core.entity_registry_availability_operation"
+    ],
+    "profile_id": "core_entity_registry_availability_operation_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-entity-assistant-exposure-operation-v1",
+    "capability_ids": [
+     "core.entity_assistant_exposure_operation"
+    ],
+    "profile_id": "core_entity_assistant_exposure_operation_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-label-registry-operation-v1",
+    "capability_ids": [
+     "core.label_registry_operation"
+    ],
+    "profile_id": "core_label_registry_operation_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-configuration-delete-operation-v1",
+    "capability_ids": [
+     "core.configuration_delete_operation"
+    ],
+    "profile_id": "core_configuration_delete_operation_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-config-entry-helper-options-operation-v1",
+    "capability_ids": [
+     "core.config_entry_helper_options_operation"
+    ],
+    "profile_id": "core_config_entry_helper_options_operation_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-typed-input-select-option-operation-v1",
+    "capability_ids": [
+     "core.typed_input_select_option_operation"
+    ],
+    "profile_id": "core_typed_input_select_option_operation_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-script-trace-read-v1",
+    "capability_ids": [
+     "core.script_trace_read"
+    ],
+    "profile_id": "core_script_trace_read_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-dashboard-metadata-operation-v1",
+    "capability_ids": [
+     "core.dashboard_metadata_operation"
+    ],
+    "profile_id": "core_dashboard_metadata_operation_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-scene-configuration-operation-v1",
+    "capability_ids": [
+     "core.scene_configuration_operation"
+    ],
+    "profile_id": "core_scene_configuration_operation_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-marketplace-read-v1",
+    "capability_ids": [
+     "core.marketplace_read"
+    ],
+    "profile_id": "core_marketplace_read_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-security-metadata-read-v1",
+    "capability_ids": [
+     "core.security_metadata_read"
+    ],
+    "profile_id": "core_security_metadata_read_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-device-configuration-entity-operation-v1",
+    "capability_ids": [
+     "core.device_configuration_entity_operation"
+    ],
+    "profile_id": "core_device_configuration_entity_operation_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-scene-create-delete-operation-v1",
+    "capability_ids": [
+     "core.scene_create_delete_operation"
+    ],
+    "profile_id": "core_scene_create_delete_operation_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-created-helper-delete-operation-v1",
+    "capability_ids": [
+     "core.created_helper_delete_operation"
+    ],
+    "profile_id": "core_created_helper_delete_operation_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   },
+   {
+    "adapter_id": "compiled-core-thread-matter-topology-read-v1",
+    "capability_ids": [
+     "core.thread_matter_topology_read"
+    ],
+    "profile_id": "core_thread_matter_topology_read_v1",
+    "reason_code": "verified_core_compatible_release",
+    "source": "verified_compatibility",
+    "status": "positive"
+   }
+  ],
+  "sequence": 18,
+  "snapshot": {
+   "cache_status": "valid",
+   "failure_reason_counts": [],
+   "freshness_status": "current",
+   "last_failure_reason": null,
+   "refresh_status": "not_attempted",
+   "registry_id_status": "accepted",
+   "sequence": 18,
+   "surface_denied": false
+  },
+  "surface_denied": false
+ },
+ "delivery": "harness options_archive() extracted into data/ (tarfile filter=data)",
+ "engineering": {
+  "head": "13f8587b5573e5f1c539f428fe4af30db9a7ed3e",
+  "tree": "060d5d9997fd8b67461217c585574449830637e9"
+ },
+ "evaluated_at": "2026-11-16T12:15:13Z",
+ "expected_entry_from_blob": {
+  "capability_count": 38,
+  "entry_id": "ha-core-2026.11.0-reviewed-v1",
+  "image_index_digest": "sha256:c6c1ca9931036bf3a2c4cc088d8db25dfea3b33935a5ecc83c40349462e2f69e",
+  "probe_profile_id": "core-probes-child-device-name-parts-v1",
+  "source_commit": "74cf5a49c63ed8d4d87717844bf14f79c28c9cea",
+  "version": "2026.11.0"
+ },
+ "failures": [],
+ "fetcher": {
+  "calls": [
+   {
+    "maximum": 33554432,
+    "url": "https://raw.githubusercontent.com/jeter-1/hass-mcp-admin/registry/upstream-trust/ha-core-release-registry.json"
+   }
+  ],
+  "kind": "always fails: aiohttp.ClientConnectionError"
+ },
+ "files_after_refresh": {
+  "ha-core-release-registry-cache.json": {
+   "mode": "0o600",
+   "sha256": "622e29e0f285d3bd45ab488f70f492642365b319d5ba76a70dc43a68826082df"
+  },
+  "ha-core-release-registry-cache.json.lifecycle": {
+   "mode": "0o600",
+   "sha256": "f8c0918fb763fed3d5e62bae7ca82d6bec2e1e772a6eea64ab90793753577b88"
+  },
+  "options.json": {
+   "mode": "0o644",
+   "sha256": "d967b9e45477b1323f170388095a4822af34d076eee44bfd3a3aef3d5cbfbc88"
+  }
+ },
+ "files_delivered": {
+  "ha-core-release-registry-cache.json": {
+   "mode": "0o600",
+   "sha256": "622e29e0f285d3bd45ab488f70f492642365b319d5ba76a70dc43a68826082df"
+  },
+  "ha-core-release-registry-cache.json.lifecycle": {
+   "mode": "0o600",
+   "sha256": "f8c0918fb763fed3d5e62bae7ca82d6bec2e1e772a6eea64ab90793753577b88"
+  },
+  "options.json": {
+   "mode": "0o644",
+   "sha256": "d967b9e45477b1323f170388095a4822af34d076eee44bfd3a3aef3d5cbfbc88"
+  }
+ },
+ "public_key": {
+  "file": "docs/evidence/hamcp222/core-public-key.txt",
+  "sha256": "9b27fb7f81cae19b1de066e926178e8d33b185d2601b5c30723fbe447ccc9f42"
+ },
+ "refresh_returned": false,
+ "result": "PASS",
+ "ruling": "architect ruling 2026-11-16 06:05 CST, P3 (amended)",
+ "schema": "hamcp371.sr.p3_core_authority.v1",
+ "seed": {
+  "files": {
+   "ha-core-release-registry-cache.json": {
+    "bytes": 408213,
+    "path": "/data/ha-core-release-registry-cache.json",
+    "sha256": "622e29e0f285d3bd45ab488f70f492642365b319d5ba76a70dc43a68826082df"
+   },
+   "ha-core-release-registry-cache.json.lifecycle": {
+    "bytes": 141,
+    "path": "/data/ha-core-release-registry-cache.json.lifecycle",
+    "sha256": "f8c0918fb763fed3d5e62bae7ca82d6bec2e1e772a6eea64ab90793753577b88"
+   }
+  },
+  "known_difference": "same verification and write path, local transport instead of GitHub",
+  "record": "docs/evidence/hamcp371/sr/core-registry-seed/seed-record.json",
+  "record_sha256": "ab0d8daae9cb50f5b80313dbb3d6b7b98bf3b3fe8164211a4496355912eb4c83"
+ }
+}
