@@ -1,0 +1,18 @@
+HAMCP-371 SR-a mutation checks of the SR harness (2026-11-15, Central time)
+
+Method: each mutant is a git clone --shared of the worktree's HEAD with the three
+uncommitted SR files copied on top and one edit applied; then
+python3 -m unittest tests.test_hamcp371_live_replay_local (40 tests). The clones
+live outside this worktree, in the orchestrator worktree's ignored .artifacts/.
+The unmutated files pass 40/40 (three consecutive runs).
+
+m1-r12-stop         holder check_contract: r12 non-success no longer stops
+                    KILLED: test_a_refused_blueprint_get_is_a_stop (1 failure)
+m2-supervisor-guard local engineering_argv: SUPERVISOR_TOKEN guard disabled
+                    KILLED: test_engineering_argv_refuses_a_supervisor_token (1 failure)
+m3-redaction        holder REDACTED_HEADERS without authorization
+                    KILLED: test_authorization_is_withheld_from_every_stored_file (1 failure)
+m4-r27-confirm      holder check_contract: r27 always confirmed
+                    KILLED: test_r27_success_or_upstream_success_is_not_confirmed (1 failure)
+
+4 mutants, 4 killed, 0 survived.
