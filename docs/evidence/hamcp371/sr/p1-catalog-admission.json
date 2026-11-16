@@ -1,0 +1,58 @@
+{
+ "catalogs": {
+  "9.1.2": {
+   "admission_status": "partially_admitted",
+   "catalog_comparison_status": "partial",
+   "catalog_diff_field_counts": {},
+   "dashboard_attestation_status": "reviewed",
+   "exposed_tool_count": 27,
+   "observed_catalog_fingerprint": "b4aac7ce9a3ba015c74b1f25e6ff3db4550f2f9c85c05e07330b4d45f38d06cc",
+   "peer_tool_calls": 0,
+   "protocol_version": "2025-03-26",
+   "reviewed_accounted_tool_count": 77,
+   "reviewed_catalog_fingerprint": "7c8ee48bfedea7a992a04a3260757b66fe4734c65fd7e311f024733a52f7821d",
+   "reviewed_policy_entry_count": 77,
+   "reviewed_stock_catalog_tool_count": 77,
+   "reviewed_upstream_version": "9.1.2",
+   "served_protocol": "2025-03-26",
+   "served_tools": 80,
+   "sha256": "2b824bbc90c1508bd006d795fdd3faef0af9b8b7cef0f13b628a771ae4024479",
+   "source": "docs/evidence/hamcp371/s6/run-b-9.1.2-1/out/catalog/peer-9.1.2-1.json",
+   "upstream_advertised_tool_count": 80,
+   "upstream_server_name": "ha-mcp",
+   "upstream_server_version": "9.1.2",
+   "version_status": "reviewed_exact"
+  },
+  "9.2.0": {
+   "admission_status": "partially_admitted",
+   "catalog_comparison_status": "partial",
+   "catalog_diff_field_counts": {},
+   "dashboard_attestation_status": "reviewed",
+   "exposed_tool_count": 27,
+   "observed_catalog_fingerprint": "bc76065e46fcf12c4d8da0b9e88a6a4011a8edbcc2769d100ad2aad194cef559",
+   "peer_tool_calls": 0,
+   "protocol_version": "2025-03-26",
+   "reviewed_accounted_tool_count": 77,
+   "reviewed_catalog_fingerprint": "0f1a2c75a766a111a83053733c6803ca14d60357137f4ecc7bc7978061982147",
+   "reviewed_policy_entry_count": 77,
+   "reviewed_stock_catalog_tool_count": 77,
+   "reviewed_upstream_version": "9.2.0",
+   "served_protocol": "2025-03-26",
+   "served_tools": 80,
+   "sha256": "c707f5f78003f446e66fce096561eea18c4fbfe9b8f8df5a16ca883b4c45fee4",
+   "source": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/catalog/peer-9.2.0-1.json",
+   "upstream_advertised_tool_count": 80,
+   "upstream_server_name": "ha-mcp",
+   "upstream_server_version": "9.2.0",
+   "version_status": "reviewed_exact"
+  }
+ },
+ "check": "HAMCP-371 P1 offline startup catalog admission",
+ "head": "291b2cb6b0bdf697e81658236658e69f1005297f",
+ "p2": "ADMISSION BLOCKER: 9.2.0 not admitted_exact under the D1 flags",
+ "registry": {
+  "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_release_registry.json",
+  "sha256": "f3bff693ae572412210f19babc0abc8cda3423474e5ada4f883f4b0de2039019"
+ },
+ "signed_release_registry": "off (built-in reviewed registry)"
+}

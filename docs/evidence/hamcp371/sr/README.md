@@ -1,8 +1,18 @@
-# HAMCP-371 SR-a: harness, local Engineering image, 2.2.1 tree
+# HAMCP-371 SR-a and P1: harness, local Engineering image, 2.2.1 tree, catalog admission
 
 Ruling: architect ruling 2026-11-15 19:05 CST (SR GO, part SR-a), under the SR
 contract of 2026-11-15 17:50 CST. SR-a prepares the replay; it calls no read.
 SR-b (the replay of the 27 admitted reads) has not run.
+
+The architect accepted SR-a as reported (ruling 2026-11-15 20:17 CST) and
+recorded two known differences from CI:
+
+- **Build context.** SR builds from the committed tree, streamed as a tar
+  (section 3). CI builds from its working directory.
+- **Token.** SR gives Engineering `HA_TOKEN` only and refuses
+  `SUPERVISOR_TOKEN` (section 2). This is a lane-versus-production
+  difference, alongside N29(a): production Engineering runs as an add-on with
+  a Supervisor token.
 
 ## 1. The 2.2.1 component tree
 
@@ -107,7 +117,7 @@ own `.dockerignore`.
 | Tree (`hass_mcp_engineering_beta`) | `ec11f8784a9d4982ba11971b8b67047b941cc528` |
 | Build-context sha256 | `45c511cd86a24873202842d0a147cd9babcae848a0a42195a9895cb68c0c4191` (412 files, 12,953,600 bytes) |
 | Context listing sha256 | `195dc92044b47f6ae22db8116dddaf1c7f5f4233604b1b4fe2915fd081aaa73a` |
-| Version label | `2.4.2-beta.8` (from the branch `config.yaml`, as on main; 2.4.2-beta.9 is set only at S14) |
+| Version label | `2.4.2-beta.8` (from the branch `config.yaml`, as on main; 2.4.2-beta.9 is set only at S16, ruling 2026-11-14 16:15; corrected per the ruling of 2026-11-15 20:17 CST) |
 | Size | 316,347,886 bytes |
 
 - The build ran as unit `hamcp371-sr-build-1` (MemoryMax=3G,
@@ -123,8 +133,67 @@ own `.dockerignore`.
 
 ## 4. Not run
 
-- SR-b: the replay of the 27 reads, both setups. It waits for the
-  architect's go and the budget rule.
+- SR-b: the replay of the 27 reads, both setups. Not started: P1 found an
+  admission blocker (section 5), and the ruling of 2026-11-15 20:17 CST
+  makes SR-b conditional on 9.2.0 being admitted exact.
 - Full and Evidence tiers.
 - CI: there was no push.
 - S14 and later.
+
+## 5. P1: offline startup catalog admission (ruling 2026-11-15 20:17 CST)
+
+`p1_catalog_admission.py` replays each saved D1-flag `tools/list` from S6
+profile B, verbatim and in wire order, through the test suite's loopback peer.
+It checks each file's sha256, its `serverInfo` and its single page first.
+Engineering's own `UpstreamReadGateway.initialize()` then admits the catalog
+against the built-in reviewed registry of head `291b2cb6` (registry sha256
+`f3bff693…2039019`, signed registry off). It uses no Home Assistant, no Docker
+and no network beyond 127.0.0.1, and it ran no heavy job. Output:
+`p1-catalog-admission.json`, sha256
+`5f828a7abed49e88782ad45585c557ba5b8f56031ad1fdafceb65754fa39a055`. The script
+exited 1.
+
+| Field | 9.2.0 (`run-b-9.2.0-2`, `c707f5f7…`) | 9.1.2 (`run-b-9.1.2-1`, `2b824bbc…`) |
+|---|---|---|
+| admission_status | **partially_admitted** | **partially_admitted** |
+| version_status | reviewed_exact | reviewed_exact |
+| upstream_advertised_tool_count | 80 | 80 |
+| reviewed_policy_entry_count | 77 | 77 |
+| catalog_comparison_status | partial | partial |
+| exposed tools | 27 (no `ha_search`) | 27 (no `ha_search`) |
+| peer tool calls | 0 | 0 |
+
+**P2 result: admission blocker.** 9.2.0 is not admitted exact under the D1
+flags. SR-b did not start, and no policy or registry row changed.
+
+### Diagnosis
+
+The diagnosis comes from a read-only inspection of the same health output and
+of ha-mcp source. It is the same for both versions:
+
+- One automatic read is quarantined: `ha_search`, reason
+  `input_schema_mismatch`. The observed schema has no `search_types`,
+  `include_config` or `config_time_budget`, and its tool and `query`
+  descriptions differ. All three parameters are in the reviewed catalog.
+- Reconciliation is degraded. `ha_get_operation_status` is held.
+- The saved catalogs also advertise `ha_config_get_yaml`, `ha_list_files` and
+  `ha_read_file`, which are not in the reviewed catalog. `ha_config_set_helper`
+  (persistent_write) differs only in one description.
+- **Cause.** The cause is in ha-mcp source, not in a D1 flag. At ha-mcp
+  9.2.0 (`51e3aac7`), `src/ha_mcp/transforms/component_search.py`
+  (`ComponentSearchSchemaTransform`, registered unconditionally at
+  `src/ha_mcp/server.py:221-223`) rewrites the advertised `ha_search`. It
+  removes exactly those three parameters and replaces both descriptions, but
+  only when the connected component reports the capabilities `search`,
+  `device_registry_child_semantics` and `search_unified`. The S6 profile B
+  component reported all three, for 9.2.0 and for 9.1.2
+  (`out/profile-b/component-after-setup.json`). The reviewed `ha_search`
+  entry carries the legacy schema. That is what the transform leaves in
+  place when those capabilities are absent (an inference from the source;
+  the reviewed capture's component state was not rechecked here). The 9.1.2
+  source was not checked.
+- **Effect on SR-b.** `r25-search` (`ha_search`) is one of the SR reads, so it
+  would not be admitted in the 9.2.0 setup.
+
+Not checked: whether the 8.5.0 control (component 2.2.1) passes its
+admitted_exact gate under the D1 flags.
