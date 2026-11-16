@@ -21,7 +21,9 @@ Paths: `P` = `hass_mcp_engineering_beta/ha_mcp_engineering`.
 | | `scripts/exact_image_admission_91_governed.py` | `UPSTREAM_VERSION` 9.2.0; docstrings and comments |
 | | `scripts/exact_image_admission_91_typed.py` | `UPSTREAM_VERSION` 9.2.0; refusal codes `peer_version_not_9_2_0`, `admission_candidate_not_9_2_0`; docstrings |
 | acceptance script | `scripts/exact_image_read_gateway_acceptance.py` | 9.2.0 rows (below); the two history calls |
-| tests of those scripts | `tests/test_hamcp319_91_governed_runner.py`, `tests/test_hamcp319_91_lane_runners.py`, `tests/test_hamcp319_91_typed_runner.py`, `tests/test_hamcp319_exact_image_admission_lanes.py` | candidate 9.1.2 → 9.2.0 (see "Test edits"; a ruling item) |
+| tests of those scripts | `tests/test_hamcp319_91_governed_runner.py`, `tests/test_hamcp319_91_lane_runners.py`, `tests/test_hamcp319_91_typed_runner.py`, `tests/test_hamcp319_exact_image_admission_lanes.py` | candidate 9.1.2 → 9.2.0 (see "Test edits"; ruled S13-1 (a)) |
+| lane selection (follow-up) | `tests/test_hamcp351_ha_mcp_912_admission.py` `LanePeerSelectionTests` | candidate 9.1.2 → 9.2.0 (S13-1 ruling) |
+| used-tool admission (follow-up) | `tests/test_hamcp319_used_tool_exact_admission.py`, `tests/test_hamcp319_dashboard.py` | 9.2.0 appended; 9.2.0 dashboard peer row (SB used-tool ruling) |
 | coverage matrix | `docs/read_coverage_matrix.json`, `docs/READ_COVERAGE_MATRIX.md` | regenerated with `tests/read_coverage_inventory.py --write` |
 | Q8 check | `tests/test_hamcp371_q8_prepush_equality.py` (new) | the Q8 pre-SR equality check |
 
@@ -96,19 +98,87 @@ filesystem descriptors from the committed S8 standalone fs-on capture
 instead of the HAMCP-351 9.1.2 response. No assertion is removed. The full diff
 is `.artifacts/s13/lane-tests-trial.patch` (scratch) and the commit diff.
 
-This changes existing expectations, which N11 does not cover. The commit keeps
-the edits, disclosed, pending a ruling; see the handoff for the options.
-
-A fifth module fails for the same cause and is left unedited:
+This changes existing expectations, which N11 does not cover. `b8e42139` kept
+the edits, disclosed, pending a ruling. A fifth module failed for the same
+cause and was left unedited there:
 `tests/test_hamcp351_ha_mcp_912_admission.py` `LanePeerSelectionTests`
-(5 failing and 2 erroring subtests, in 2 of the module's 23 tests; the other
-21 pass). It asserts that
-`typed_lane.select_peer_image` selects the pinned 9.1.2 row and refuses others
-with `peer_version_not_9_1_2`. With the typed lane's candidate at 9.2.0, the
-9.1.2 row is refused with `peer_version_not_9_2_0`. This module is a HAMCP-351
-9.1.2 admission test, not one of "the tests of those scripts", so it was not
-edited. It passed at `0179558e` (the T129 run found no branch-only failure in
-it).
+(5 failing and 2 erroring subtests, in 2 of the module's 23 tests). It asserted
+that `typed_lane.select_peer_image` selects the pinned 9.1.2 row and refuses
+others with `peer_version_not_9_1_2`.
+
+### S13-1 ruling, applied in the follow-up commit
+
+Architect ruling 2026-11-15 17:50 CST, relayed by Josh (verbatim): "S13-1
+RULING: (a). N11's append-only rule governs version lists. The single CI
+candidate slot moves, as bcdff105 did. Accept the four module edits. Edit
+test_hamcp351_ha_mcp_912_admission LanePeerSelectionTests the same way: the
+typed lane selects the 9.2.0 row and refuses 9.1.2 as candidate. That is lane
+selection only; 9.1.2 admission is unchanged. No assertion removed. Record in
+the S13 README and, at S16, in the release notes: after this release no CI
+admission lane exercises 9.1.2; it stays admitted in the registry, source
+admitted, never replayed, never live. S15 review item."
+
+`LanePeerSelectionTests` now builds its row from the reviewed 9.2.0 release.
+- `test_pinned_920_row_selects_each_architecture` asserts the 9.2.0 index and
+  platform digests, `INDEX_920` and `PLATFORMS_920`. They are written from
+  `docs/evidence/hamcp371/s4` (`index-9.2.0.raw.json`,
+  `inspect-digest-9.2.0.txt`).
+- `test_912_911_and_unpinned_digests_are_refused` keeps every earlier case
+  (9.1.1, 9.1.0, tag only, other index, other platform), now with
+  `peer_version_not_9_2_0`. It adds two cases: the full pinned 9.1.2 row, and
+  a 9.1.2 version label on the 9.2.0 digests. Both are refused as candidate.
+- The module's 9.1.2 registry, policy and adapter tests are unchanged.
+
+**For the S16 release notes (ruled):** after this release no CI admission lane
+exercises ha-mcp 9.1.2. 9.1.2 stays admitted in the registry, source
+admitted, never replayed, never live.
+
+### SB used-tool ruling, applied in the same commit
+
+Architect ruling 2026-11-15 17:50 CST (verbatim): "SB USED-TOOL RULING: (a).
+Apply trial3 (.artifacts/sb/ut/trial3.patch) and add 9.2.0 rows to
+tests/test_hamcp319_dashboard.py, additive only, as bcdff105 did for 9.1.2.
+The 9.2.0 peer shapes come from the 9.2.0 capture (profiles-2 standalone
+filesystem-on), with the source cited, not from the 9.1 shapes by analogy.
+The 33 original test_hamcp319_dashboard tests must still pass with their
+expectations unchanged. S15 review item."
+
+- `tests/test_hamcp319_used_tool_exact_admission.py`: trial3 as written (the SB
+  README ruling item): `'9.2.0'` appended to `NINE_ONE`, and `WIRE_920` is
+  the profiles-2 standalone fs-on `tools/list`. One comment line added.
+- `tests/test_hamcp319_dashboard.py`, additive only. `NINE_TWO = ('9.2.0',)`
+  is appended to `NINE_ONE`, and `URLS['9.2.0']` is added. `catalog()` is
+  unchanged: `catalog('9.2.0')` keeps the reviewed 9.2.0 capture's runtime
+  order (77 tools), which `test_hamcp371_admission_core` relies on. The
+  module's `VERSIONS` stays `('9.1.0', '8.5.0')`, so its 33 tests run
+  unchanged. The sources of the 9.2.0 peer shapes:
+  - Descriptors: the used-tool module serves the profiles-2 standalone fs-on
+    `tools/list` named above (82 tools, wire order). Its getter, guide and
+    setter descriptors equal those in the reviewed 9.2.0 capture
+    (`ha-mcp-9.2.0.json`), compared value by value. The extra five are the
+    filesystem and YAML tools.
+  - First attempt, withdrawn: `catalog('9.2.0')` also returned the fs-on
+    list. The affected-module rerun then failed
+    `test_hamcp371_admission_core` `test_920_exposed_surface_equals_912`
+    (`ha_config_get_yaml` exposed on 9.2.0 only, since 9.1.2's catalog has
+    no YAML tool). Removing that override restored the module (33 OK).
+  - Reply envelopes: the capture is a `tools/list`, so it holds no reply
+    bodies. The peer keeps the envelopes in
+    `tests/fixtures/ha_mcp_9_1_0/dashboard/envelopes.json`, which were
+    transcribed from source. Source review: the seven source files listed in
+    that fixture's `provenance.json` have the same sha256 at v9.1.0
+    (`d2e3f4b0`), v9.1.2 (`bab615df`) and v9.2.0 (`51e3aac7`). They were read
+    with `GIT_NO_LAZY_FETCH=1 git show <commit>:<path> | sha256sum` from the
+    disposable ha-mcp clone. So the envelopes describe 9.2.0 by source
+    identity, not by analogy.
+  - The guide: `docs/evidence/hamcp371/s4/ha-mcp-9.2.0/image-resources.json`
+    records the 9.2.0 image's `dashboard-guide.md` with the fixture's sha256
+    `b4d42e93…d293`.
+  - `KEY_91` is synthetic, as before. The provider reads it from the guide
+    acknowledgement line, whose source (`strict_bps.py`) is one of the seven
+    identical files.
+- `test_hamcp371_dashboard_getter` still patches `NINE_ONE` and `URLS` for
+  9.2.0. Those patches are now redundant but harmless (the module passes).
 
 ## Stale workflow labels, left unchanged
 
@@ -155,3 +225,6 @@ scripts, reads the support window or the coverage matrix, plus every
 `test_hamcp371_*` module and `test_upstream_release_registry`. That is 45
 modules and 1,435 tests. 44 pass. `test_hamcp351_ha_mcp_912_admission` fails as
 described above. The Fast tier result is in the S13 commit message.
+
+After the 17:50 rulings, the follow-up commit reruns the same 45 modules and
+the Fast tier; results are in that commit message.

@@ -49,10 +49,13 @@ from test_hamcp319_yaml import wire_catalog
 
 # HAMCP-351: exact 9.1.2 is admitted on the same terms as 9.1.0 (Josh,
 # 2026-11-09); every 9.1.0 case below also runs on 9.1.2.
-NINE_ONE = ('9.1.0', '9.1.2')
+# HAMCP-371 (SB used-tool ruling): every case also runs on exact 9.2.0, against
+# the committed 9.2.0 standalone filesystem-on tools/list (WIRE_920).
+NINE_ONE = ('9.1.0', '9.1.2', '9.2.0')
 VERSIONS = ('8.5.0',) + NINE_ONE
 # The exact 9.1.2 wire catalog (HAMCP-351 standalone capture, filesystem on).
 WIRE_912 = ROOT / 'docs/evidence/hamcp351/catalogs/standalone-fs-on-tools-response.json'
+WIRE_920 = ROOT / 'docs/evidence/hamcp371/s8/profiles-2/out/standalone-9.2.0-fs-on/observation.json'
 REGISTRY = load_reviewed_upstream_release_registry()
 EXTRA = 'ha_synthetic_unreviewed_extra'
 # The blueprint adapter exposes its upstream tool under a reviewed name.
@@ -197,6 +200,8 @@ class Scope(unittest.TestCase):
 # Read gateway: automatic reads and adapter reads.
 # ---------------------------------------------------------------------------
 def gateway_catalog(version):
+    if version == '9.2.0':
+        return deepcopy(json.loads(WIRE_920.read_text(encoding='utf-8'))['tools_list_pages'][0]['response']['result']['tools'])
     if version == '9.1.2':
         return deepcopy(json.loads(WIRE_912.read_text(encoding='utf-8'))['result']['tools'])
     return deepcopy(adm.captured(version)) if version != '9.1.0' else deepcopy(wire_catalog())

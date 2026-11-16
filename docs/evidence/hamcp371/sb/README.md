@@ -185,6 +185,9 @@ and the row would assert that 9.2.0 dashboard replies have the synthetic 9.1
 envelope shapes, which is a 9.1.2 value copied by analogy. The module is
 therefore left unedited and fails on the branch, pending a ruling.
 
+Ruled 2026-11-15 17:50 CST, (a): trial3 applied, and a 9.2.0 dashboard peer row
+added with its sources cited. See `../s13/README.md`, "SB used-tool ruling".
+
 ## Validation
 
 Run on the uncommitted SB tree over local HEAD `fe3b64fd` (base `origin/main`
