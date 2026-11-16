@@ -268,15 +268,33 @@ class RecordTests(unittest.TestCase):
         self.assertEqual(found, [False, True, True, True, True])
 
 
+def health_payload(**gateway):
+    """A get_server_health envelope with the production control values (2026-11-14 22:18)."""
+    values = {"upstream_advertised_tool_count": 80, "reviewed_policy_entry_count": 77,
+              "version_status": "reviewed_exact", "admission_status": "admitted_exact",
+              "catalog_comparison_status": "exact", "upstream_server_version": "8.5.0",
+              "reviewed_upstream_version": "8.5.0", "exposed_tools": ["nested", "dropped"]}
+    values.update(gateway)
+    lifecycle = {"configured": True, "operational_status": "unavailable",
+                 "last_failure_category": "upstream_version_mismatch",
+                 "observed_upstream_version": "8.5.0", "selected_compatibility_entry_id": None,
+                 "nested": {"left": "out"}}
+    return {"success": True, "data": {"upstream_read_gateway": values, "governance": {
+        "operational_administration": {"lifecycle_provider": lifecycle}}}}
+
+
 class FakeSession:
     """Engineering's session, with the proxy records each read would cause."""
 
     def __init__(self, proxy_dir, answers):
+        answers = {"get_server_health": (health_payload(), None), **answers}
         self.proxy_dir, self.answers, self.sequence = proxy_dir, answers, 0
+        self.tools = []
         self.initialize = {"response": {"result": {"protocolVersion": "2025-06-18"}}}
         self.closed = False
 
     def call(self, tool, arguments):
+        self.tools.append(tool)
         engineering, upstream = self.answers.get(tool, ({"success": True}, sse({"success": True})))
         if upstream is not None:
             self.sequence += 1
@@ -288,7 +306,7 @@ class FakeSession:
 
 
 class ReadsTests(unittest.TestCase):
-    def run_reads(self, answers=None, factory=None):
+    def run_reads(self, answers=None, factory=None, version="9.2.0"):
         base = Path(tempfile.mkdtemp())
         proxy_dir = base / "proxy"
         proxy_dir.mkdir()
@@ -301,7 +319,7 @@ class ReadsTests(unittest.TestCase):
             return session
         args = types.SimpleNamespace(endpoint="http://127.0.0.1:1/synthetic/mcp",
                                      seed=str(base / "seed.json"), proxy_dir=str(proxy_dir),
-                                     out=str(base / "reads"), version="9.2.0")
+                                     out=str(base / "reads"), version=version)
         code = holder.reads(args, session_factory=factory or make, sleep=lambda _s: None)
         index = json.loads((base / "reads" / "_index.json").read_text())
         return code, index, sessions, base
@@ -360,6 +378,85 @@ class ReadsTests(unittest.TestCase):
         self.assertEqual((code, index["stop"], index["reads"]),
                          (1, "engineering_session_not_opened", []))
         self.assertFalse((base / "reads" / "_initialize.json").exists())
+
+
+    def test_health_comes_first_and_is_recorded_without_gating_the_candidate(self):
+        answers = {"get_server_health": (health_payload(admission_status="partially_admitted"),
+                                         sse({"success": True})), **self.r27_answer()}
+        code, index, sessions, base = self.run_reads(answers)
+        self.assertEqual((code, index["stop"], index["read_count"]), (0, None, 27))
+        self.assertEqual(sessions[0].tools[0], "get_server_health")
+        health = index["health"]
+        self.assertIsNone(health["control_gate"])
+        self.assertFalse(health["response_truncated"])
+        self.assertEqual(health["result_class"], "success")
+        self.assertEqual(health["upstream_read_gateway"]["admission_status"], "partially_admitted")
+        self.assertNotIn("exposed_tools", health["upstream_read_gateway"])
+        self.assertEqual(health["lifecycle_provider"]["operational_status"], "unavailable")
+        self.assertEqual(health["lifecycle_provider"]["last_failure_category"],
+                         "upstream_version_mismatch")
+        self.assertNotIn("nested", health["lifecycle_provider"])
+        self.assertEqual(health["upstream_tool_calls"], 1)
+        stored = (base / "reads" / holder.HEALTH_FILE).read_bytes()
+        self.assertEqual(health["engineering_exchange_sha256"], hashlib.sha256(stored).hexdigest())
+        # The health exchange is not attributed to r01.
+        self.assertEqual(index["reads"][0]["upstream"][0]["sequence"], 2)
+
+    def test_the_control_gate_passes_on_the_production_values(self):
+        code, index, _, _ = self.run_reads(self.r27_answer(), version="8.5.0")
+        self.assertEqual((code, index["stop"], index["read_count"]), (0, None, 27))
+        self.assertEqual(index["health"]["control_gate"],
+                         {"expected": holder.CONTROL_GATE, "passed": True, "differ": []})
+
+    def test_a_control_value_that_differs_stops_before_the_reads(self):
+        for field, value in (("upstream_advertised_tool_count", 77),
+                             ("reviewed_policy_entry_count", 78),
+                             ("version_status", "reviewed_compatible"),
+                             ("admission_status", "partially_admitted")):
+            with self.subTest(field=field):
+                answers = {"get_server_health": (health_payload(**{field: value}), None)}
+                code, index, sessions, _ = self.run_reads(answers, version="8.5.0")
+                self.assertEqual((code, index["stop"], index["reads"]),
+                                 (1, "control_gate_failed", []))
+                self.assertEqual(index["health"]["control_gate"]["differ"], [field])
+                self.assertEqual(index["health"]["upstream_read_gateway"][field], value)
+                self.assertEqual(sessions[0].tools, ["get_server_health"])
+                self.assertTrue(sessions[0].closed)
+
+    def test_a_truncated_health_response_is_named_and_fails_the_control_gate(self):
+        cut = {"success": True, "data": {}, "response_completeness": {"truncated": True}}
+        code, index, _, _ = self.run_reads({"get_server_health": (cut, None)}, version="8.5.0")
+        self.assertEqual((code, index["stop"]), (1, "control_gate_failed"))
+        self.assertTrue(index["health"]["response_truncated"])
+        self.assertEqual(index["health"]["control_gate"]["differ"], sorted(holder.CONTROL_GATE))
+
+    def test_a_refused_health_call_fails_the_control_gate(self):
+        answers = {"get_server_health": ({"success": False, "error_code": "refused"}, None)}
+        code, index, _, _ = self.run_reads(answers, version="8.5.0")
+        self.assertEqual((code, index["stop"]), (1, "control_gate_failed"))
+        self.assertEqual(index["health"]["control_gate"]["differ"], sorted(holder.CONTROL_GATE))
+
+    def test_ha_search_records_its_variant_and_warning_codes(self):
+        search = {"success": True, "metadata": {
+            "search_descriptor_variant": "unified",
+            "warning_codes": ["search_budget_legacy_path_only"]}}
+        answers = {"ha_search": (search, sse({"success": True})), **self.r27_answer()}
+        _, index, _, _ = self.run_reads(answers)
+        row = next(row for row in index["reads"] if row["tool"] == "ha_search")
+        self.assertEqual((row["search_descriptor_variant"], row["warning_codes"]),
+                         ("unified", ["search_budget_legacy_path_only"]))
+        self.assertTrue(all("search_descriptor_variant" not in row
+                            for row in index["reads"] if row["tool"] != "ha_search"))
+        copied = sr.read_rows(index)
+        self.assertEqual(next(item for item in copied if item["tool"] == "ha_search")
+                         ["search_descriptor_variant"], "unified")
+        self.assertNotIn("warning_codes", copied[0])
+        self.assertIsNone(copied[0]["note"])
+
+    def test_ha_search_without_metadata_records_no_variant(self):
+        _, index, _, _ = self.run_reads(self.r27_answer())
+        row = next(row for row in index["reads"] if row["tool"] == "ha_search")
+        self.assertEqual((row["search_descriptor_variant"], row["warning_codes"]), (None, None))
 
 
 class UrlAndArgvTests(unittest.TestCase):

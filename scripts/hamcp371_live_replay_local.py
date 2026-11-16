@@ -563,6 +563,8 @@ def read_rows(index):
             "id", "version", "tool", "arguments", "result_class", "withheld",
             "exchange_failure", "engineering_exchange_sha256", "upstream_wire_arguments",
             "other_upstream_traffic", "note", "note_confirmed_by_response")}
+            | {key: row[key] for key in ("search_descriptor_variant", "warning_codes")
+               if key in row}
             | {"upstream_raw_response_sha256": [
                 item.get("raw_response_sha256") for item in row.get("upstream") or []],
                "upstream": row.get("upstream")})
@@ -578,6 +580,7 @@ def run_reads(section, version, wanted, setup_dir):
         index = s4.read_json(setup_dir / "out" / "reads" / "_index.json")
     except (OSError, ValueError):
         raise Refusal("reads_index_unreadable") from None
+    section["health"] = index.get("health")
     section["reads"] = read_rows(index)
     classes = {}
     for row in section["reads"]:

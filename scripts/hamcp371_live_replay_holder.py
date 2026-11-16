@@ -8,7 +8,8 @@ Two commands, standard library and this checkout's calls module only:
            response body as upstream sent it, and one record naming both by
            sha256.  Nothing is filtered, repaired or interpreted.
 
-``reads``  one Engineering session that makes the 27 admitted reads with
+``reads``  one Engineering session that first calls get_server_health (the
+           8.5.0 control gate) and then makes the 27 admitted reads with
            their public tool names and arguments.  Each read's receipt row
            names the call, Engineering's result class and withheld counts,
            and the upstream ``tools/call`` exchanges the proxy recorded while
@@ -61,6 +62,20 @@ APP_CASE = "r27-apps"
 APP_NOTE = "not replayable in the local lane (no Supervisor)"
 WITHHELD_KEY = re.compile(r"[a-z_]{1,64}(_withheld|_dropped_by_policy|_replaced)")
 WITHHELD_DEPTH = 3
+# One get_server_health call before the reads (ruling 2026-11-15 20:17 CST). The
+# 8.5.0 control must report the production values Josh relayed (2026-11-14 22:18
+# CST); any difference is recorded and stops the setup before its reads.
+HEALTH_TOOL = "get_server_health"
+HEALTH_FILE = "_health.json"
+HEALTH_FIELDS = ("upstream_advertised_tool_count", "reviewed_policy_entry_count",
+                 "version_status", "admission_status", "catalog_comparison_status",
+                 "upstream_server_version", "reviewed_upstream_version")
+CONTROL_VERSION = "8.5.0"
+CONTROL_GATE = {"upstream_advertised_tool_count": 80, "reviewed_policy_entry_count": 77,
+                "version_status": "reviewed_exact", "admission_status": "admitted_exact"}
+SCALAR_CHARS = 128
+# D6 (rulings 2026-11-15 22:26 CST): each ha_search result records its variant.
+SEARCH_TOOL = "ha_search"
 
 
 class Stop(Exception):
@@ -289,6 +304,76 @@ def withheld_counts(payload, depth=WITHHELD_DEPTH, prefix=""):
     return found
 
 
+def scalars(value):
+    """The bounded scalar items of one dict, by key; nested values are left out."""
+    if not isinstance(value, dict):
+        return None
+    return {str(key): (item[:SCALAR_CHARS] if isinstance(item, str) else item)
+            for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
+            if item is None or isinstance(item, (str, int, float, bool))}
+
+
+def health_fields(payload):
+    """The admission fields and the lifecycle provider status of one health payload."""
+    data = payload.get("data") if isinstance(payload, dict) else None
+    data = data if isinstance(data, dict) else {}
+    gateway = data.get("upstream_read_gateway")
+    gateway = gateway if isinstance(gateway, dict) else {}
+    lifecycle = data.get("governance")
+    for key in ("operational_administration", "lifecycle_provider"):
+        lifecycle = lifecycle.get(key) if isinstance(lifecycle, dict) else None
+    return scalars({field: gateway.get(field) for field in HEALTH_FIELDS}), scalars(lifecycle)
+
+
+def control_gate(version, klass, fields):
+    """None outside the control; else whether every relayed value matched, and which did not."""
+    if version != CONTROL_VERSION:
+        return None
+    differ = sorted(key for key, value in CONTROL_GATE.items()
+                    if klass != "success" or fields.get(key) != value)
+    return {"expected": dict(CONTROL_GATE), "passed": not differ, "differ": differ}
+
+
+def search_attribution(row, payload):
+    """The descriptor variant and warning codes Engineering put on one ha_search result."""
+    if row["tool"] != SEARCH_TOOL:
+        return row
+    metadata = payload.get("metadata") if isinstance(payload, dict) else None
+    metadata = metadata if isinstance(metadata, dict) else {}
+    variant = metadata.get("search_descriptor_variant")
+    codes = metadata.get("warning_codes")
+    row["search_descriptor_variant"] = variant[:SCALAR_CHARS] if isinstance(variant, str) else None
+    row["warning_codes"] = ([code[:SCALAR_CHARS] for code in codes if isinstance(code, str)]
+                            if isinstance(codes, list) else None)
+    return row
+
+
+def health_step(session, args, out_dir, proxy_dir, sleep):
+    """One get_server_health call, stored like a read; the control gate stops on a difference."""
+    after = max(sequences(proxy_dir), default=0)
+    record, failure = None, None
+    try:
+        record = session.call(HEALTH_TOOL, {})
+    except (calls.raw.ObservationError, calls.CallsError) as exc:
+        failure = str(exc)
+    stored = calls.raw.serialize({"tool": HEALTH_TOOL, "arguments": {}, "exchange": record,
+                                  "exchange_failure": failure})
+    (out_dir / HEALTH_FILE).write_bytes(stored)
+    klass, payload = result_class(record) if failure is None else ("exchange_failed", None)
+    fields, lifecycle = health_fields(payload)
+    upstream, other = upstream_rows(new_records(proxy_dir, after, sleep=sleep))
+    health = {"tool": HEALTH_TOOL, "arguments": {}, "file": HEALTH_FILE,
+              "engineering_exchange_sha256": hashlib.sha256(stored).hexdigest(),
+              "exchange_failure": failure, "result_class": klass,
+              "upstream_read_gateway": fields, "lifecycle_provider": lifecycle,
+              "response_truncated": isinstance(payload, dict) and isinstance(
+                  payload.get("response_completeness"), dict)
+              and payload["response_completeness"].get("truncated") is True,
+              "upstream_tool_calls": len(upstream), "other_upstream_traffic": other,
+              "control_gate": control_gate(args.version, klass, fields)}
+    return health
+
+
 def sequences(proxy_dir):
     return sorted(int(match.group(1)) for match in (
         SEQUENCE.fullmatch(path.name) for path in Path(proxy_dir).iterdir()) if match)
@@ -371,7 +456,7 @@ def reads(args, session_factory=calls.Session, sleep=time.sleep):
     out_dir.mkdir(parents=True, exist_ok=False)
     seed = json.loads(Path(args.seed).read_text(encoding="utf-8"))
     cases = read_cases(seed)
-    rows, stop = [], None
+    rows, stop, health = [], None, None
     try:
         session = session_factory(args.endpoint)
     except (calls.raw.ObservationError, calls.CallsError):
@@ -381,6 +466,9 @@ def reads(args, session_factory=calls.Session, sleep=time.sleep):
         return 1
     (out_dir / "_initialize.json").write_bytes(calls.raw.serialize(session.initialize))
     try:
+        health = health_step(session, args, out_dir, proxy_dir, sleep)
+        if health["control_gate"] is not None and not health["control_gate"]["passed"]:
+            raise Stop("control_gate_failed")
         for case in cases:
             after = max(sequences(proxy_dir), default=0)
             record, failure = None, None
@@ -401,7 +489,7 @@ def reads(args, session_factory=calls.Session, sleep=time.sleep):
                    "withheld": withheld_counts(payload), "upstream": upstream,
                    "upstream_wire_arguments": wire_arguments(proxy_dir, upstream),
                    "other_upstream_traffic": other}
-            rows.append(check_contract(row, proxy_dir))
+            rows.append(check_contract(search_attribution(row, payload), proxy_dir))
     except Stop as exc:
         stop = str(exc)
     finally:
@@ -410,7 +498,7 @@ def reads(args, session_factory=calls.Session, sleep=time.sleep):
         except calls.raw.ObservationError:
             pass
         index = {"version": args.version, "endpoint_form": "engineering access-secret path",
-                 "reads": rows, "stop": stop, "read_count": len(rows)}
+                 "health": health, "reads": rows, "stop": stop, "read_count": len(rows)}
         (out_dir / "_index.json").write_bytes(calls.raw.serialize(index))
     return 1 if stop else 0
 
