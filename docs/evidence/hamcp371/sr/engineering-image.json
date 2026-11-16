@@ -7,49 +7,49 @@
   ],
   [
    "HAMCP_BUILD_SHA",
-   "8b3cadfa06f59c887e7e570d1cbeb7f91044c35c"
+   "a518934a54e02f070d7a994153dc0a37c88ed464"
   ],
   [
    "HAMCP_BUILD_TIME",
-   "2026-11-16T02:09:34Z"
+   "2026-11-16T05:08:56Z"
   ],
   [
    "HAMCP_BUILD_DIRTY",
    "false"
   ]
  ],
- "build_seconds": 31.7,
- "built_at": "2026-11-16T02:09:34Z",
+ "build_seconds": 12.3,
+ "built_at": "2026-11-16T05:08:56Z",
  "context": {
-  "bytes": 12953600,
+  "bytes": 12963840,
   "files": 412,
-  "listing_sha256": "195dc92044b47f6ae22db8116dddaf1c7f5f4233604b1b4fe2915fd081aaa73a",
-  "sha256": "45c511cd86a24873202842d0a147cd9babcae848a0a42195a9895cb68c0c4191"
+  "listing_sha256": "d8471a13b312b4b591bb91b14980b947ad8cedc6b2165eb36fc2deb1eaaae5ab",
+  "sha256": "ac7497f2a5211f7255f6ba9230546eafd44c909a7c263f8e138885d27855bc01"
  },
  "context_path": "hass_mcp_engineering_beta",
  "host_at_start": {
-  "load_1m": 0.11279296875,
-  "memory_available_gb": 12.38,
-  "root_free_gb": 59.06,
+  "load_1m": 0.3173828125,
+  "memory_available_gb": 12.41,
+  "root_free_gb": 57.99,
   "root_total_gb": 143.14
  },
- "image_id": "sha256:61d897836200184ce59db4a2941e3d9c88f483a911c523b97506c82f42c6e655",
+ "image_id": "sha256:b95ab1f23253f94e1209eaf39799fa1afa62ca2d540fb2b9b70e45a0fef96d13",
  "labels": {
   "io.hass-mcp.build.dirty": "false",
-  "org.opencontainers.image.created": "2026-11-16T02:09:34Z",
-  "org.opencontainers.image.revision": "8b3cadfa06f59c887e7e570d1cbeb7f91044c35c",
+  "org.opencontainers.image.created": "2026-11-16T05:08:56Z",
+  "org.opencontainers.image.revision": "a518934a54e02f070d7a994153dc0a37c88ed464",
   "org.opencontainers.image.source": "https://github.com/jeter-1/hass-mcp-admin",
   "org.opencontainers.image.version": "2.4.2-beta.8"
  },
  "method": "git ls-tree and cat-file of the committed tree into one tar stream (mtime 0, uid 0, modes from git), checked against each blob id, then docker build - with ci.yml's build arguments; local tag only, never pushed",
  "pushed": false,
  "repo_digests": [
-  "hamcp371-sr-engineering@sha256:61d897836200184ce59db4a2941e3d9c88f483a911c523b97506c82f42c6e655"
+  "hamcp371-sr-engineering@sha256:b95ab1f23253f94e1209eaf39799fa1afa62ca2d540fb2b9b70e45a0fef96d13"
  ],
- "revision": "8b3cadfa06f59c887e7e570d1cbeb7f91044c35c",
+ "revision": "a518934a54e02f070d7a994153dc0a37c88ed464",
  "schema": "hamcp371.sr.engineering_image.v1",
- "size_bytes": 316347886,
- "tag": "hamcp371-sr-engineering:8b3cadfa06f5",
- "tree": "ec11f8784a9d4982ba11971b8b67047b941cc528",
+ "size_bytes": 316363834,
+ "tag": "hamcp371-sr-engineering:a518934a54e0",
+ "tree": "060d5d9997fd8b67461217c585574449830637e9",
  "version": "2.4.2-beta.8"
 }
