@@ -181,6 +181,9 @@ Deploying is separately authorized by Josh. Nothing here authorizes it.
      (`docs/evidence/hamcp371/sr/p4b-withheld-names.md`: 18 on r20, 13 on
      r26);
    - the filesystem flag still on;
+   - `ha_get_history` with an explicit-offset `start_time` succeeds;
+   - the same call with a date-only `start_time` is refused as
+     `invalid_request` with the offset message;
    - the actual Engineering, delegated and total tool counts, recorded.
 
 **Update holds until beta.9 is accepted:** the ha-mcp add-on, HACS

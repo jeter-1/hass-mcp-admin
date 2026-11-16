@@ -29,6 +29,15 @@ published or deployed.
   - The 9.2.0 reads are bound to closed key sets. Unknown blueprint
     top-level keys are refused; unknown platform-read keys are withheld and
     counted.
+  - History on 9.2.0: ha-mcp 9.2.0 resolves offset-free times in Home
+    Assistant local time, where 9.1 used UTC. Engineering therefore forwards
+    `start_time` and `end_time` only when they are a full date and time with
+    an explicit offset or `Z`, or a relative form (`30min`, `24h`, `7d`,
+    `2w`, `1m`). Any other parseable value, date-only included, is refused
+    before dispatch as `invalid_request` (`history_time_offset_required`),
+    with a message naming the required format. 8.5.0 behaviour is unchanged.
+  - Blueprint: "unknown top-level data keys are refused" applies on 9.2.0
+    only. On 8.5.0 they still pass through (HAMCP-402) until the upgrade.
   - `ha_search` has exactly two 9.2.0 descriptors, legacy and unified. Under
     unified, `config_time_budget` is forwarded unchanged with the one fixed
     warning `search_budget_legacy_path_only`.
