@@ -1,0 +1,114 @@
+{
+ "body_bytes": 1360,
+ "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":\"2025-03-26\",\"capabilities\":{\"experimental\":{},\"prompts\":{\"listChanged\":false},\"resources\":{\"subscribe\":false,\"listChanged\":false},\"tools\":{\"listChanged\":false}},\"serverInfo\":{\"name\":\"ha-engineering-beta\",\"version\":\"1.30.0\"},\"instructions\":\"Operating procedure for this Home Assistant admin server:\\n1. Debug with evidence, not hypothesis.\\n2. Read blueprint source before reasoning about blueprint behavior.\\n3. Test Jinja templates against live state before configuration writes.\\n4. Automation, script, input_boolean, and input_number configuration writes\\n   and entity registry metadata, enable/disable, assistant exposure, and label create/edit updates require an immutable change plan, exact-hash external approval, ordered\\n   governed apply, and exact read-back verification.\\n5. Multi-operation plans are non-atomic, stop on the first failure, and never\\n   roll back automatically. Inspect every per-step result and remaining risk.\\n6. Automation and script deletion uses only create_configuration_delete_plan\\n   (pre-image captured, consumers disclosed, rollback recreates); legacy\\n   execution, deletion, reload, and ungoverned upsert tools fail closed;\\n   generated evidence or recommendations are never authorization.\\n7. Prefer narrow queries over broad dumps.\"}}\r\n\r\n",
+ "content_type": "text/event-stream",
+ "messages": [
+  {
+   "id": 1,
+   "jsonrpc": "2.0",
+   "result": {
+    "capabilities": {
+     "experimental": {},
+     "prompts": {
+      "listChanged": false
+     },
+     "resources": {
+      "listChanged": false,
+      "subscribe": false
+     },
+     "tools": {
+      "listChanged": false
+     }
+    },
+    "instructions": "Operating procedure for this Home Assistant admin server:\n1. Debug with evidence, not hypothesis.\n2. Read blueprint source before reasoning about blueprint behavior.\n3. Test Jinja templates against live state before configuration writes.\n4. Automation, script, input_boolean, and input_number configuration writes\n   and entity registry metadata, enable/disable, assistant exposure, and label create/edit updates require an immutable change plan, exact-hash external approval, ordered\n   governed apply, and exact read-back verification.\n5. Multi-operation plans are non-atomic, stop on the first failure, and never\n   roll back automatically. Inspect every per-step result and remaining risk.\n6. Automation and script deletion uses only create_configuration_delete_plan\n   (pre-image captured, consumers disclosed, rollback recreates); legacy\n   execution, deletion, reload, and ungoverned upsert tools fail closed;\n   generated evidence or recommendations are never authorization.\n7. Prefer narrow queries over broad dumps.",
+    "protocolVersion": "2025-03-26",
+    "serverInfo": {
+     "name": "ha-engineering-beta",
+     "version": "1.30.0"
+    }
+   }
+  }
+ ],
+ "reason": "OK",
+ "request": {
+  "headers": [
+   "Accept",
+   "Content-Type"
+  ],
+  "json": {
+   "id": 1,
+   "jsonrpc": "2.0",
+   "method": "initialize",
+   "params": {
+    "capabilities": {},
+    "clientInfo": {
+     "name": "hass-mcp-engineering-upstream-review",
+     "version": "1"
+    },
+    "protocolVersion": "2025-03-26"
+   }
+  },
+  "method": "POST",
+  "path": "/synthetic-engineering-access-secret/mcp"
+ },
+ "response": {
+  "id": 1,
+  "jsonrpc": "2.0",
+  "result": {
+   "capabilities": {
+    "experimental": {},
+    "prompts": {
+     "listChanged": false
+    },
+    "resources": {
+     "listChanged": false,
+     "subscribe": false
+    },
+    "tools": {
+     "listChanged": false
+    }
+   },
+   "instructions": "Operating procedure for this Home Assistant admin server:\n1. Debug with evidence, not hypothesis.\n2. Read blueprint source before reasoning about blueprint behavior.\n3. Test Jinja templates against live state before configuration writes.\n4. Automation, script, input_boolean, and input_number configuration writes\n   and entity registry metadata, enable/disable, assistant exposure, and label create/edit updates require an immutable change plan, exact-hash external approval, ordered\n   governed apply, and exact read-back verification.\n5. Multi-operation plans are non-atomic, stop on the first failure, and never\n   roll back automatically. Inspect every per-step result and remaining risk.\n6. Automation and script deletion uses only create_configuration_delete_plan\n   (pre-image captured, consumers disclosed, rollback recreates); legacy\n   execution, deletion, reload, and ungoverned upsert tools fail closed;\n   generated evidence or recommendations are never authorization.\n7. Prefer narrow queries over broad dumps.",
+   "protocolVersion": "2025-03-26",
+   "serverInfo": {
+    "name": "ha-engineering-beta",
+    "version": "1.30.0"
+   }
+  }
+ },
+ "response_headers": [
+  [
+   "date",
+   "Mon, 16 Nov 2026 12:17:04 GMT"
+  ],
+  [
+   "server",
+   "uvicorn"
+  ],
+  [
+   "cache-control",
+   "no-cache, no-transform"
+  ],
+  [
+   "connection",
+   "keep-alive"
+  ],
+  [
+   "content-type",
+   "text/event-stream"
+  ],
+  [
+   "x-accel-buffering",
+   "no"
+  ],
+  [
+   "x-request-id",
+   "e22f1fb77d4643f59264800990cc0122"
+  ],
+  [
+   "Transfer-Encoding",
+   "chunked"
+  ]
+ ],
+ "status": 200
+}

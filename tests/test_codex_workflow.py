@@ -1388,6 +1388,32 @@ class CheckScriptExecutionTests(unittest.TestCase):
         self.assertIn(REPOSITORY_CODE_SENTINEL, output)
         self.assertIn("Fast validation passed", output)
 
+    def test_changed_text_whitespace_skips_only_an_unset_whitespace_attribute(self):
+        # HAMCP-371 D4. The file stays untracked, so the Git whitespace steps
+        # never see it and only the changed-text scan decides.
+        relative = "docs/hash-bound.txt"
+        self.fixture.write(relative, "bound line \n")
+        cases = (
+            ("-whitespace", 0),
+            (None, 1),
+            ("-text", 1),
+        )
+        for attribute, expected in cases:
+            with self.subTest(attribute=attribute):
+                self.fixture.write(
+                    ".gitattributes",
+                    f"{relative} {attribute}\n" if attribute else "",
+                )
+                result = self.fixture.run_check(self.powershell, "Fast")
+                output = self.output(result)
+                self.assertEqual(result.returncode, expected, output)
+                if expected:
+                    self.assertIn(f"Trailing whitespace found: {relative}:1", output)
+                    self.assertNotIn("Fast validation passed", output)
+                else:
+                    self.assertIn("Changed text files contain no trailing whitespace.", output)
+                    self.assertIn("Fast validation passed", output)
+
     def test_protected_path_is_rejected_before_repository_code_on_every_tier(self):
         for tier in ("Fast", "Full", "Evidence"):
             with self.subTest(tier=tier):

@@ -1,0 +1,159 @@
+{
+ "arguments_built_by": "adapter code, policy 9.1.2",
+ "calls_format_version": 1,
+ "exchange": {
+  "body_bytes": 1082,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":122,\"result\":{\"content\":[{\"text\":\"{\\\"success\\\":true,\\\"count\\\":2,\\\"zones\\\":[{\\\"id\\\":\\\"hamcp371_zone\\\",\\\"name\\\":\\\"HAMCP371 zone\\\",\\\"latitude\\\":1.0,\\\"longitude\\\":1.0,\\\"radius\\\":100.0,\\\"icon\\\":\\\"mdi:flask\\\",\\\"passive\\\":false,\\\"entity_id\\\":\\\"zone.hamcp371_zone\\\",\\\"editable\\\":true,\\\"source\\\":\\\"storage\\\"},{\\\"name\\\":\\\"HAMCP371 disposable\\\",\\\"latitude\\\":0.0,\\\"longitude\\\":0.0,\\\"radius\\\":100,\\\"icon\\\":\\\"mdi:home\\\",\\\"passive\\\":false,\\\"id\\\":\\\"home\\\",\\\"entity_id\\\":\\\"zone.home\\\",\\\"editable\\\":false,\\\"source\\\":\\\"yaml\\\"}],\\\"message\\\":\\\"Found 2 zone(s)\\\"}\",\"type\":\"text\"}],\"isError\":false,\"structuredContent\":{\"success\":true,\"count\":2,\"zones\":[{\"id\":\"hamcp371_zone\",\"name\":\"HAMCP371 zone\",\"latitude\":1.0,\"longitude\":1.0,\"radius\":100.0,\"icon\":\"mdi:flask\",\"passive\":false,\"entity_id\":\"zone.hamcp371_zone\",\"editable\":true,\"source\":\"storage\"},{\"name\":\"HAMCP371 disposable\",\"latitude\":0.0,\"longitude\":0.0,\"radius\":100,\"icon\":\"mdi:home\",\"passive\":false,\"id\":\"home\",\"entity_id\":\"zone.home\",\"editable\":false,\"source\":\"yaml\"}],\"message\":\"Found 2 zone(s)\"}}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 122,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\"success\":true,\"count\":2,\"zones\":[{\"id\":\"hamcp371_zone\",\"name\":\"HAMCP371 zone\",\"latitude\":1.0,\"longitude\":1.0,\"radius\":100.0,\"icon\":\"mdi:flask\",\"passive\":false,\"entity_id\":\"zone.hamcp371_zone\",\"editable\":true,\"source\":\"storage\"},{\"name\":\"HAMCP371 disposable\",\"latitude\":0.0,\"longitude\":0.0,\"radius\":100,\"icon\":\"mdi:home\",\"passive\":false,\"id\":\"home\",\"entity_id\":\"zone.home\",\"editable\":false,\"source\":\"yaml\"}],\"message\":\"Found 2 zone(s)\"}",
+       "type": "text"
+      }
+     ],
+     "isError": false,
+     "structuredContent": {
+      "count": 2,
+      "message": "Found 2 zone(s)",
+      "success": true,
+      "zones": [
+       {
+        "editable": true,
+        "entity_id": "zone.hamcp371_zone",
+        "icon": "mdi:flask",
+        "id": "hamcp371_zone",
+        "latitude": 1.0,
+        "longitude": 1.0,
+        "name": "HAMCP371 zone",
+        "passive": false,
+        "radius": 100.0,
+        "source": "storage"
+       },
+       {
+        "editable": false,
+        "entity_id": "zone.home",
+        "icon": "mdi:home",
+        "id": "home",
+        "latitude": 0.0,
+        "longitude": 0.0,
+        "name": "HAMCP371 disposable",
+        "passive": false,
+        "radius": 100,
+        "source": "yaml"
+       }
+      ]
+     }
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 122,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {},
+     "name": "ha_get_zone"
+    }
+   },
+   "method": "POST",
+   "path": "/mcp"
+  },
+  "response": {
+   "id": 122,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\"success\":true,\"count\":2,\"zones\":[{\"id\":\"hamcp371_zone\",\"name\":\"HAMCP371 zone\",\"latitude\":1.0,\"longitude\":1.0,\"radius\":100.0,\"icon\":\"mdi:flask\",\"passive\":false,\"entity_id\":\"zone.hamcp371_zone\",\"editable\":true,\"source\":\"storage\"},{\"name\":\"HAMCP371 disposable\",\"latitude\":0.0,\"longitude\":0.0,\"radius\":100,\"icon\":\"mdi:home\",\"passive\":false,\"id\":\"home\",\"entity_id\":\"zone.home\",\"editable\":false,\"source\":\"yaml\"}],\"message\":\"Found 2 zone(s)\"}",
+      "type": "text"
+     }
+    ],
+    "isError": false,
+    "structuredContent": {
+     "count": 2,
+     "message": "Found 2 zone(s)",
+     "success": true,
+     "zones": [
+      {
+       "editable": true,
+       "entity_id": "zone.hamcp371_zone",
+       "icon": "mdi:flask",
+       "id": "hamcp371_zone",
+       "latitude": 1.0,
+       "longitude": 1.0,
+       "name": "HAMCP371 zone",
+       "passive": false,
+       "radius": 100.0,
+       "source": "storage"
+      },
+      {
+       "editable": false,
+       "entity_id": "zone.home",
+       "icon": "mdi:home",
+       "id": "home",
+       "latitude": 0.0,
+       "longitude": 0.0,
+       "name": "HAMCP371 disposable",
+       "passive": false,
+       "radius": 100,
+       "source": "yaml"
+      }
+     ]
+    }
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Sun, 15 Nov 2026 05:07:37 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null,
+ "group": "reads",
+ "id": "r22-zones",
+ "idle": false,
+ "kind": "public",
+ "new_session": false,
+ "public_arguments": {},
+ "public_tool": "ha_get_zone",
+ "upstream_tool": "ha_get_zone",
+ "wire_arguments": {}
+}

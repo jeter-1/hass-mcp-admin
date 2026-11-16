@@ -1,0 +1,58 @@
+2026-11-16 05:10:06 INFO:     127.0.0.1:54198 - "GET /synthetic-upstream-secret/mcp/catalog/full HTTP/1.1" 405 Method Not Allowed
+2026-11-16 05:10:06 INFO:     127.0.0.1:54214 - "POST /synthetic-upstream-secret/mcp/catalog/full HTTP/1.1" 200 OK
+2026-11-16 05:10:06 INFO:     127.0.0.1:54222 - "POST /synthetic-upstream-secret/mcp/catalog/full HTTP/1.1" 202 Accepted
+2026-11-16 05:10:06 INFO:     127.0.0.1:54228 - "POST /synthetic-upstream-secret/mcp/catalog/full HTTP/1.1" 200 OK
+2026-11-16 05:10:07 INFO:     127.0.0.1:54230 - "GET / HTTP/1.1" 404 Not Found
+2026-11-16 05:10:11 INFO:     127.0.0.1:54242 - "POST /synthetic-upstream-secret/mcp/catalog/full HTTP/1.1" 200 OK
+2026-11-16 05:10:11 INFO:     127.0.0.1:54246 - "POST /synthetic-upstream-secret/mcp/catalog/full HTTP/1.1" 202 Accepted
+2026-11-16 05:10:11 INFO:     127.0.0.1:54260 - "POST /synthetic-upstream-secret/mcp/catalog/full HTTP/1.1" 200 OK
+2026-11-16 05:10:04 ha_mcp.__main__ INFO: ha-mcp 9.2.0
+2026-11-16 05:10:04 ha_mcp.settings_ui._persistence INFO: Saved tool config to /tmp/ha-mcp/tool_config.json
+2026-11-16 05:10:04 ha_mcp.settings_ui._persistence INFO: Seeded tool config from env vars (2 entries)
+2026-11-16 05:10:04 ha_mcp.client.rest_client INFO: Initialized Home Assistant client for http://127.0.0.1:8123
+2026-11-16 05:10:05 ha_mcp.tools.tools_filesystem INFO: Filesystem tools enabled via feature flag
+2026-11-16 05:10:05 ha_mcp.tools.registry INFO: Auto-discovery registered tools from 43 modules
+2026-11-16 05:10:05 ha_mcp.server INFO: Registered bundled skills as MCP resources
+2026-11-16 05:10:05 ha_mcp.server INFO: Registered ha_get_skill_guide (1 bundled skill(s))
+2026-11-16 05:10:05 ha_mcp.utils.skill_loader INFO: Skill system summary: provider=ok, tool=ok, guidance_count=1
+2026-11-16 05:10:05 ha_mcp.server INFO: Env-pinned tools active (DISABLED_TOOLS / PINNED_TOOLS): ha_delete_file=disabled, ha_write_file=disabled
+2026-11-16 05:10:05 ha_mcp.settings_ui._tools_meta INFO: Disabled tools: ha_config_set_yaml, ha_delete_file, ha_write_file
+2026-11-16 05:10:05 ha_mcp.server INFO: Applied persisted tool config (2 entries)
+2026-11-16 05:10:05 ha_mcp.server INFO: Search keyword enrichment applied (17 boosts)
+2026-11-16 05:10:05 ha_mcp.server INFO: Tool search transform applied (7 pinned tools, max_results=5, code_mode=False)
+2026-11-16 05:10:05 ha_mcp.__main__ INFO: Settings UI disabled (HA_MCP_DISABLE_SETTINGS_UI); routes not registered.
+
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                         ▄▀▀ ▄▀█ █▀▀ ▀█▀ █▀▄▀█ █▀▀ █▀█                        │
+│                         █▀  █▀█ ▄▄█  █  █ ▀ █ █▄▄ █▀▀                        │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                FastMCP 4.1.6                                 │
+│                            https://gofastmcp.com                             │
+│                                                                              │
+│                  🖥  Server:      ha-mcp, 9.2.0                               │
+│                  🚀 Deploy free: https://horizon.prefect.io                  │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+2026-11-16 05:10:05 ha_mcp.client.rest_client INFO: Initialized Home Assistant client for http://127.0.0.1:8123
+2026-11-16 05:10:05 ha_mcp.client.websocket_client INFO: Connecting to Home Assistant WebSocket: ws://127.0.0.1:8123/api/websocket
+[11/16/26 05:10:05] INFO     Starting MCP server 'ha-mcp' with  transport.py:358
+                             transport 'http' (stateless) on                    
+                             http://127.0.0.1:18086/synthetic-u                 
+                             pstream-secret/mcp                                 
+2026-11-16 05:10:05 INFO:     Started server process [1]
+2026-11-16 05:10:05 INFO:     Waiting for application startup.
+2026-11-16 05:10:05 mcp.server.streamable_http_manager INFO: StreamableHTTP session manager started
+2026-11-16 05:10:05 INFO:     Application startup complete.
+2026-11-16 05:10:05 INFO:     Uvicorn running on http://127.0.0.1:18086 (Press CTRL+C to quit)
+2026-11-16 05:10:05 ha_mcp.client.websocket_client INFO: WebSocket connected and authenticated successfully
+2026-11-16 05:10:05 ha_mcp.client.websocket_client INFO: WebSocket disconnected
+2026-11-16 05:10:06 ha_mcp.browser_landing INFO: GET -> 405 (NORMAL for most non-SSE connections)
+2026-11-16 05:10:06 ha_mcp.client.websocket_client INFO: Connecting to Home Assistant WebSocket: ws://127.0.0.1:8123/api/websocket
+2026-11-16 05:10:06 ha_mcp.client.websocket_client INFO: WebSocket connected and authenticated successfully

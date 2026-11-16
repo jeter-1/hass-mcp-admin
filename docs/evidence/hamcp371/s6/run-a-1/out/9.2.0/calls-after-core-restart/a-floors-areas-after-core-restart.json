@@ -1,0 +1,249 @@
+{
+ "arguments_built_by": "adapter code, policy 9.1.2",
+ "calls_format_version": 1,
+ "exchange": {
+  "body_bytes": 2924,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":102,\"result\":{\"content\":[{\"text\":\"{\\\"success\\\":true,\\\"floor_count\\\":1,\\\"area_count\\\":4,\\\"unassigned_count\\\":3,\\\"orphaned_count\\\":0,\\\"floors\\\":[{\\\"aliases\\\":[],\\\"created_at\\\":1794464520.137181,\\\"floor_id\\\":\\\"hamcp371_floor\\\",\\\"icon\\\":null,\\\"level\\\":1,\\\"name\\\":\\\"HAMCP371 floor\\\",\\\"modified_at\\\":1794464520.137183,\\\"areas\\\":[{\\\"aliases\\\":[],\\\"area_id\\\":\\\"hamcp371_area\\\",\\\"floor_id\\\":\\\"hamcp371_floor\\\",\\\"humidity_entity_id\\\":null,\\\"icon\\\":null,\\\"labels\\\":[],\\\"name\\\":\\\"HAMCP371 area\\\",\\\"picture\\\":null,\\\"temperature_entity_id\\\":null,\\\"created_at\\\":1794464520.138404,\\\"modified_at\\\":1794464520.138407}]}],\\\"unassigned_areas\\\":[{\\\"aliases\\\":[],\\\"area_id\\\":\\\"living_room\\\",\\\"floor_id\\\":null,\\\"humidity_entity_id\\\":null,\\\"icon\\\":\\\"mdi:sofa\\\",\\\"labels\\\":[],\\\"name\\\":\\\"Living Room\\\",\\\"picture\\\":null,\\\"temperature_entity_id\\\":null,\\\"created_at\\\":1794464517.682165,\\\"modified_at\\\":1794464517.682166},{\\\"aliases\\\":[],\\\"area_id\\\":\\\"kitchen\\\",\\\"floor_id\\\":null,\\\"humidity_entity_id\\\":null,\\\"icon\\\":\\\"mdi:stove\\\",\\\"labels\\\":[],\\\"name\\\":\\\"Kitchen\\\",\\\"picture\\\":null,\\\"temperature_entity_id\\\":null,\\\"created_at\\\":1794464517.682242,\\\"modified_at\\\":1794464517.682243},{\\\"aliases\\\":[],\\\"area_id\\\":\\\"bedroom\\\",\\\"floor_id\\\":null,\\\"humidity_entity_id\\\":null,\\\"icon\\\":\\\"mdi:bed\\\",\\\"labels\\\":[],\\\"name\\\":\\\"Bedroom\\\",\\\"picture\\\":null,\\\"temperature_entity_id\\\":null,\\\"created_at\\\":1794464517.682281,\\\"modified_at\\\":1794464517.682282}],\\\"orphaned_areas\\\":[],\\\"message\\\":\\\"Found 1 floor(s), 4 area(s), 3 unassigned, 0 orphaned\\\"}\",\"type\":\"text\"}],\"isError\":false,\"structuredContent\":{\"success\":true,\"floor_count\":1,\"area_count\":4,\"unassigned_count\":3,\"orphaned_count\":0,\"floors\":[{\"aliases\":[],\"created_at\":1794464520.137181,\"floor_id\":\"hamcp371_floor\",\"icon\":null,\"level\":1,\"name\":\"HAMCP371 floor\",\"modified_at\":1794464520.137183,\"areas\":[{\"aliases\":[],\"area_id\":\"hamcp371_area\",\"floor_id\":\"hamcp371_floor\",\"humidity_entity_id\":null,\"icon\":null,\"labels\":[],\"name\":\"HAMCP371 area\",\"picture\":null,\"temperature_entity_id\":null,\"created_at\":1794464520.138404,\"modified_at\":1794464520.138407}]}],\"unassigned_areas\":[{\"aliases\":[],\"area_id\":\"living_room\",\"floor_id\":null,\"humidity_entity_id\":null,\"icon\":\"mdi:sofa\",\"labels\":[],\"name\":\"Living Room\",\"picture\":null,\"temperature_entity_id\":null,\"created_at\":1794464517.682165,\"modified_at\":1794464517.682166},{\"aliases\":[],\"area_id\":\"kitchen\",\"floor_id\":null,\"humidity_entity_id\":null,\"icon\":\"mdi:stove\",\"labels\":[],\"name\":\"Kitchen\",\"picture\":null,\"temperature_entity_id\":null,\"created_at\":1794464517.682242,\"modified_at\":1794464517.682243},{\"aliases\":[],\"area_id\":\"bedroom\",\"floor_id\":null,\"humidity_entity_id\":null,\"icon\":\"mdi:bed\",\"labels\":[],\"name\":\"Bedroom\",\"picture\":null,\"temperature_entity_id\":null,\"created_at\":1794464517.682281,\"modified_at\":1794464517.682282}],\"orphaned_areas\":[],\"message\":\"Found 1 floor(s), 4 area(s), 3 unassigned, 0 orphaned\"}}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 102,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\"success\":true,\"floor_count\":1,\"area_count\":4,\"unassigned_count\":3,\"orphaned_count\":0,\"floors\":[{\"aliases\":[],\"created_at\":1794464520.137181,\"floor_id\":\"hamcp371_floor\",\"icon\":null,\"level\":1,\"name\":\"HAMCP371 floor\",\"modified_at\":1794464520.137183,\"areas\":[{\"aliases\":[],\"area_id\":\"hamcp371_area\",\"floor_id\":\"hamcp371_floor\",\"humidity_entity_id\":null,\"icon\":null,\"labels\":[],\"name\":\"HAMCP371 area\",\"picture\":null,\"temperature_entity_id\":null,\"created_at\":1794464520.138404,\"modified_at\":1794464520.138407}]}],\"unassigned_areas\":[{\"aliases\":[],\"area_id\":\"living_room\",\"floor_id\":null,\"humidity_entity_id\":null,\"icon\":\"mdi:sofa\",\"labels\":[],\"name\":\"Living Room\",\"picture\":null,\"temperature_entity_id\":null,\"created_at\":1794464517.682165,\"modified_at\":1794464517.682166},{\"aliases\":[],\"area_id\":\"kitchen\",\"floor_id\":null,\"humidity_entity_id\":null,\"icon\":\"mdi:stove\",\"labels\":[],\"name\":\"Kitchen\",\"picture\":null,\"temperature_entity_id\":null,\"created_at\":1794464517.682242,\"modified_at\":1794464517.682243},{\"aliases\":[],\"area_id\":\"bedroom\",\"floor_id\":null,\"humidity_entity_id\":null,\"icon\":\"mdi:bed\",\"labels\":[],\"name\":\"Bedroom\",\"picture\":null,\"temperature_entity_id\":null,\"created_at\":1794464517.682281,\"modified_at\":1794464517.682282}],\"orphaned_areas\":[],\"message\":\"Found 1 floor(s), 4 area(s), 3 unassigned, 0 orphaned\"}",
+       "type": "text"
+      }
+     ],
+     "isError": false,
+     "structuredContent": {
+      "area_count": 4,
+      "floor_count": 1,
+      "floors": [
+       {
+        "aliases": [],
+        "areas": [
+         {
+          "aliases": [],
+          "area_id": "hamcp371_area",
+          "created_at": 1794464520.138404,
+          "floor_id": "hamcp371_floor",
+          "humidity_entity_id": null,
+          "icon": null,
+          "labels": [],
+          "modified_at": 1794464520.138407,
+          "name": "HAMCP371 area",
+          "picture": null,
+          "temperature_entity_id": null
+         }
+        ],
+        "created_at": 1794464520.137181,
+        "floor_id": "hamcp371_floor",
+        "icon": null,
+        "level": 1,
+        "modified_at": 1794464520.137183,
+        "name": "HAMCP371 floor"
+       }
+      ],
+      "message": "Found 1 floor(s), 4 area(s), 3 unassigned, 0 orphaned",
+      "orphaned_areas": [],
+      "orphaned_count": 0,
+      "success": true,
+      "unassigned_areas": [
+       {
+        "aliases": [],
+        "area_id": "living_room",
+        "created_at": 1794464517.682165,
+        "floor_id": null,
+        "humidity_entity_id": null,
+        "icon": "mdi:sofa",
+        "labels": [],
+        "modified_at": 1794464517.682166,
+        "name": "Living Room",
+        "picture": null,
+        "temperature_entity_id": null
+       },
+       {
+        "aliases": [],
+        "area_id": "kitchen",
+        "created_at": 1794464517.682242,
+        "floor_id": null,
+        "humidity_entity_id": null,
+        "icon": "mdi:stove",
+        "labels": [],
+        "modified_at": 1794464517.682243,
+        "name": "Kitchen",
+        "picture": null,
+        "temperature_entity_id": null
+       },
+       {
+        "aliases": [],
+        "area_id": "bedroom",
+        "created_at": 1794464517.682281,
+        "floor_id": null,
+        "humidity_entity_id": null,
+        "icon": "mdi:bed",
+        "labels": [],
+        "modified_at": 1794464517.682282,
+        "name": "Bedroom",
+        "picture": null,
+        "temperature_entity_id": null
+       }
+      ],
+      "unassigned_count": 3
+     }
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 102,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {},
+     "name": "ha_list_floors_areas"
+    }
+   },
+   "method": "POST",
+   "path": "/mcp"
+  },
+  "response": {
+   "id": 102,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\"success\":true,\"floor_count\":1,\"area_count\":4,\"unassigned_count\":3,\"orphaned_count\":0,\"floors\":[{\"aliases\":[],\"created_at\":1794464520.137181,\"floor_id\":\"hamcp371_floor\",\"icon\":null,\"level\":1,\"name\":\"HAMCP371 floor\",\"modified_at\":1794464520.137183,\"areas\":[{\"aliases\":[],\"area_id\":\"hamcp371_area\",\"floor_id\":\"hamcp371_floor\",\"humidity_entity_id\":null,\"icon\":null,\"labels\":[],\"name\":\"HAMCP371 area\",\"picture\":null,\"temperature_entity_id\":null,\"created_at\":1794464520.138404,\"modified_at\":1794464520.138407}]}],\"unassigned_areas\":[{\"aliases\":[],\"area_id\":\"living_room\",\"floor_id\":null,\"humidity_entity_id\":null,\"icon\":\"mdi:sofa\",\"labels\":[],\"name\":\"Living Room\",\"picture\":null,\"temperature_entity_id\":null,\"created_at\":1794464517.682165,\"modified_at\":1794464517.682166},{\"aliases\":[],\"area_id\":\"kitchen\",\"floor_id\":null,\"humidity_entity_id\":null,\"icon\":\"mdi:stove\",\"labels\":[],\"name\":\"Kitchen\",\"picture\":null,\"temperature_entity_id\":null,\"created_at\":1794464517.682242,\"modified_at\":1794464517.682243},{\"aliases\":[],\"area_id\":\"bedroom\",\"floor_id\":null,\"humidity_entity_id\":null,\"icon\":\"mdi:bed\",\"labels\":[],\"name\":\"Bedroom\",\"picture\":null,\"temperature_entity_id\":null,\"created_at\":1794464517.682281,\"modified_at\":1794464517.682282}],\"orphaned_areas\":[],\"message\":\"Found 1 floor(s), 4 area(s), 3 unassigned, 0 orphaned\"}",
+      "type": "text"
+     }
+    ],
+    "isError": false,
+    "structuredContent": {
+     "area_count": 4,
+     "floor_count": 1,
+     "floors": [
+      {
+       "aliases": [],
+       "areas": [
+        {
+         "aliases": [],
+         "area_id": "hamcp371_area",
+         "created_at": 1794464520.138404,
+         "floor_id": "hamcp371_floor",
+         "humidity_entity_id": null,
+         "icon": null,
+         "labels": [],
+         "modified_at": 1794464520.138407,
+         "name": "HAMCP371 area",
+         "picture": null,
+         "temperature_entity_id": null
+        }
+       ],
+       "created_at": 1794464520.137181,
+       "floor_id": "hamcp371_floor",
+       "icon": null,
+       "level": 1,
+       "modified_at": 1794464520.137183,
+       "name": "HAMCP371 floor"
+      }
+     ],
+     "message": "Found 1 floor(s), 4 area(s), 3 unassigned, 0 orphaned",
+     "orphaned_areas": [],
+     "orphaned_count": 0,
+     "success": true,
+     "unassigned_areas": [
+      {
+       "aliases": [],
+       "area_id": "living_room",
+       "created_at": 1794464517.682165,
+       "floor_id": null,
+       "humidity_entity_id": null,
+       "icon": "mdi:sofa",
+       "labels": [],
+       "modified_at": 1794464517.682166,
+       "name": "Living Room",
+       "picture": null,
+       "temperature_entity_id": null
+      },
+      {
+       "aliases": [],
+       "area_id": "kitchen",
+       "created_at": 1794464517.682242,
+       "floor_id": null,
+       "humidity_entity_id": null,
+       "icon": "mdi:stove",
+       "labels": [],
+       "modified_at": 1794464517.682243,
+       "name": "Kitchen",
+       "picture": null,
+       "temperature_entity_id": null
+      },
+      {
+       "aliases": [],
+       "area_id": "bedroom",
+       "created_at": 1794464517.682281,
+       "floor_id": null,
+       "humidity_entity_id": null,
+       "icon": "mdi:bed",
+       "labels": [],
+       "modified_at": 1794464517.682282,
+       "name": "Bedroom",
+       "picture": null,
+       "temperature_entity_id": null
+      }
+     ],
+     "unassigned_count": 3
+    }
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Thu, 12 Nov 2026 06:25:32 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null,
+ "group": "after_restart",
+ "id": "a-floors-areas-after-core-restart",
+ "idle": false,
+ "kind": "public",
+ "new_session": false,
+ "public_arguments": {},
+ "public_tool": "ha_list_floors_areas",
+ "upstream_tool": "ha_list_floors_areas",
+ "wire_arguments": {}
+}

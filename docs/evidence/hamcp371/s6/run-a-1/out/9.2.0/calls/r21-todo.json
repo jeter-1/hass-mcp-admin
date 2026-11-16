@@ -1,0 +1,139 @@
+{
+ "arguments_built_by": "adapter code, policy 9.1.2",
+ "calls_format_version": 1,
+ "exchange": {
+  "body_bytes": 790,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":121,\"result\":{\"content\":[{\"text\":\"{\\\"success\\\":true,\\\"count\\\":2,\\\"todo_lists\\\":[{\\\"entity_id\\\":\\\"todo.shopping_list\\\",\\\"friendly_name\\\":\\\"Shopping list\\\",\\\"state\\\":\\\"0\\\",\\\"icon\\\":null,\\\"supported_features\\\":15},{\\\"entity_id\\\":\\\"todo.hamcp371_todo\\\",\\\"friendly_name\\\":\\\"HAMCP371 todo\\\",\\\"state\\\":\\\"1\\\",\\\"icon\\\":null,\\\"supported_features\\\":127}],\\\"message\\\":\\\"Found 2 todo list(s)\\\"}\",\"type\":\"text\"}],\"isError\":false,\"structuredContent\":{\"success\":true,\"count\":2,\"todo_lists\":[{\"entity_id\":\"todo.shopping_list\",\"friendly_name\":\"Shopping list\",\"state\":\"0\",\"icon\":null,\"supported_features\":15},{\"entity_id\":\"todo.hamcp371_todo\",\"friendly_name\":\"HAMCP371 todo\",\"state\":\"1\",\"icon\":null,\"supported_features\":127}],\"message\":\"Found 2 todo list(s)\"}}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 121,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\"success\":true,\"count\":2,\"todo_lists\":[{\"entity_id\":\"todo.shopping_list\",\"friendly_name\":\"Shopping list\",\"state\":\"0\",\"icon\":null,\"supported_features\":15},{\"entity_id\":\"todo.hamcp371_todo\",\"friendly_name\":\"HAMCP371 todo\",\"state\":\"1\",\"icon\":null,\"supported_features\":127}],\"message\":\"Found 2 todo list(s)\"}",
+       "type": "text"
+      }
+     ],
+     "isError": false,
+     "structuredContent": {
+      "count": 2,
+      "message": "Found 2 todo list(s)",
+      "success": true,
+      "todo_lists": [
+       {
+        "entity_id": "todo.shopping_list",
+        "friendly_name": "Shopping list",
+        "icon": null,
+        "state": "0",
+        "supported_features": 15
+       },
+       {
+        "entity_id": "todo.hamcp371_todo",
+        "friendly_name": "HAMCP371 todo",
+        "icon": null,
+        "state": "1",
+        "supported_features": 127
+       }
+      ]
+     }
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 121,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {},
+     "name": "ha_get_todo"
+    }
+   },
+   "method": "POST",
+   "path": "/mcp"
+  },
+  "response": {
+   "id": 121,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\"success\":true,\"count\":2,\"todo_lists\":[{\"entity_id\":\"todo.shopping_list\",\"friendly_name\":\"Shopping list\",\"state\":\"0\",\"icon\":null,\"supported_features\":15},{\"entity_id\":\"todo.hamcp371_todo\",\"friendly_name\":\"HAMCP371 todo\",\"state\":\"1\",\"icon\":null,\"supported_features\":127}],\"message\":\"Found 2 todo list(s)\"}",
+      "type": "text"
+     }
+    ],
+    "isError": false,
+    "structuredContent": {
+     "count": 2,
+     "message": "Found 2 todo list(s)",
+     "success": true,
+     "todo_lists": [
+      {
+       "entity_id": "todo.shopping_list",
+       "friendly_name": "Shopping list",
+       "icon": null,
+       "state": "0",
+       "supported_features": 15
+      },
+      {
+       "entity_id": "todo.hamcp371_todo",
+       "friendly_name": "HAMCP371 todo",
+       "icon": null,
+       "state": "1",
+       "supported_features": 127
+      }
+     ]
+    }
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Thu, 12 Nov 2026 06:23:55 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null,
+ "group": "reads",
+ "id": "r21-todo",
+ "idle": false,
+ "kind": "public",
+ "new_session": false,
+ "public_arguments": {},
+ "public_tool": "ha_get_todo",
+ "upstream_tool": "ha_get_todo",
+ "wire_arguments": {}
+}

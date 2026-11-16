@@ -13,6 +13,8 @@ from dataclasses import replace
 import re
 from typing import Any
 
+from . import upstream_reads_9_2_platform as _platform_9_2
+
 HEALTH = "ha_get_system_health"
 APP = "ha_get_app"
 INTEGRATION = "ha_get_integration"
@@ -22,6 +24,7 @@ _SOURCES = {
     "8.6.0": "fc54437a804858732e4bc927add98e202d879a09",
     "9.1.0": "d2e3f4b0647d815fb32d530fed15a6a99b1d4b33",
     "9.1.2": "bab615dfc90cc510f5e19a9118707d0fae03a37c",
+    "9.2.0": "51e3aac788482a081807591cd5d58d07dc4e540b",
 }
 _KINDS = {HEALTH: "platform-health", APP: "platform-apps", INTEGRATION: "platform-integrations"}
 _FINGERPRINTS = {
@@ -30,11 +33,17 @@ _FINGERPRINTS = {
     (HEALTH, "8.6.0"): "569e6a4dc9c6e7b18d53b2704f2c8db0d2cbd2036e64514774021b0b75e4cd76",
     (HEALTH, "9.1.0"): "569e6a4dc9c6e7b18d53b2704f2c8db0d2cbd2036e64514774021b0b75e4cd76",
     (HEALTH, "9.1.2"): "569e6a4dc9c6e7b18d53b2704f2c8db0d2cbd2036e64514774021b0b75e4cd76",
+    # HAMCP-371: from the exact 9.2.0 registry capture (ha-mcp-9.2.0.json); the
+    # three wire schemas equal 9.1.2's, and tools_system.py changes only the
+    # health docstring at 51e3aac7.
+    (HEALTH, "9.2.0"): "569e6a4dc9c6e7b18d53b2704f2c8db0d2cbd2036e64514774021b0b75e4cd76",
     (APP, "8.4.3"): "71bbe1fb1fc60e97b4d8b08361de2f9dda5de6868797613e1011fc8e10a4d28e",
     (APP, "8.5.0"): "c76674086c0d6f48e85ec8d6f4ef4ee9eff5b582c2795e76e43327cdc2b8f7fe",
     (APP, "8.6.0"): "7c1fba1746d03398144231b4e1fa133291a0182eb01b38ff7f66ef4121298a60",
     (APP, "9.1.0"): "7c1fba1746d03398144231b4e1fa133291a0182eb01b38ff7f66ef4121298a60",
     (APP, "9.1.2"): "7c1fba1746d03398144231b4e1fa133291a0182eb01b38ff7f66ef4121298a60",
+    # HAMCP-371: tools_addons.py is unchanged at 51e3aac7.
+    (APP, "9.2.0"): "7c1fba1746d03398144231b4e1fa133291a0182eb01b38ff7f66ef4121298a60",
     (INTEGRATION, "8.4.3"): "5dd76ac034af33a238434633859a7f717eaf5b9d55c557d6b284881ec0804686",
     (INTEGRATION, "8.5.0"): "5dd76ac034af33a238434633859a7f717eaf5b9d55c557d6b284881ec0804686",
     (INTEGRATION, "8.6.0"): "798a5110a0e7717c3db87c8ff231103cdba9e887c35001164f850cf13887cacf",
@@ -45,6 +54,9 @@ _FINGERPRINTS = {
     # include_options false, optional query) is unchanged and still valid, and
     # the projection stays the positive allowlist above.
     (INTEGRATION, "9.1.2"): "82aec3a9ea8ffa0250d292b40d3c2d7bc0653233320b02d854a02451243bf4f5",
+    # HAMCP-371: at 51e3aac7 tools_integrations.py changes only the
+    # ha_set_integration paths; the ha_get_integration wire schema equals 9.1.2.
+    (INTEGRATION, "9.2.0"): "82aec3a9ea8ffa0250d292b40d3c2d7bc0653233320b02d854a02451243bf4f5",
 }
 # token -> (tool, version, source commit, exact policy input-schema fingerprint)
 ADAPTER_BINDINGS = {
@@ -766,6 +778,10 @@ def project_result(entry, payload: Any, arguments: dict) -> dict[str, Any]:
         raise ValueError("platform_response_invalid")
     tool = entry.upstream_name
     values = normalized_arguments(tool, arguments)
+    # HAMCP-371 D5: on ha-mcp 9.2.0 only, the default-withhold counts and the
+    # replaced-warning rule (upstream_reads_9_2_platform).
+    if binding(entry)[1] in _platform_9_2.RELEASES:
+        return _platform_9_2.project(tool, payload, values)
     if tool == HEALTH:
         return _project_health(payload, values)
     if tool == APP:

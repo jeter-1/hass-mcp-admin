@@ -1,0 +1,1501 @@
+{
+ "payloads_after_core_restart": {
+  "calls": 51,
+  "identical": 37,
+  "rows": [
+   {
+    "body_bytes": [
+     660,
+     660
+    ],
+    "id": "f-invalid-json",
+    "payload_identical": true,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     null,
+     null
+    ],
+    "upstream_tool": "ha_call_service"
+   },
+   {
+    "body_bytes": [
+     6110,
+     6110
+    ],
+    "id": "o-overview-standard",
+    "payload_identical": true,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_get_overview"
+   },
+   {
+    "body_bytes": [
+     36672,
+     45878
+    ],
+    "id": "o-services-default-page",
+    "payload_identical": false,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_list_services"
+   },
+   {
+    "body_bytes": [
+     3356,
+     3970
+    ],
+    "id": "o-services-first-five",
+    "payload_identical": false,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_list_services"
+   },
+   {
+    "body_bytes": [
+     66672,
+     86436
+    ],
+    "id": "o-services-page-1",
+    "payload_identical": false,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_list_services"
+   },
+   {
+    "body_bytes": [
+     16384,
+     22250
+    ],
+    "id": "o-services-page-2",
+    "payload_identical": false,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_list_services"
+   },
+   {
+    "body_bytes": [
+     1054,
+     1054
+    ],
+    "id": "p3-unknown-argument",
+    "payload_identical": true,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     null,
+     null
+    ],
+    "upstream_tool": "ha_get_state"
+   },
+   {
+    "body_bytes": [
+     594,
+     594
+    ],
+    "id": "p3-wrong-type",
+    "payload_identical": true,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     null,
+     null
+    ],
+    "upstream_tool": "ha_search"
+   },
+   {
+    "body_bytes": [
+     498,
+     498
+    ],
+    "id": "p4-absent-automation",
+    "payload_identical": true,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     null,
+     null
+    ],
+    "upstream_tool": "ha_config_get_automation"
+   },
+   {
+    "body_bytes": [
+     562,
+     562
+    ],
+    "id": "p4-absent-entity",
+    "payload_identical": true,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     null,
+     null
+    ],
+    "upstream_tool": "ha_get_entity"
+   },
+   {
+    "body_bytes": [
+     693,
+     693
+    ],
+    "id": "p4-absent-state",
+    "payload_identical": true,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     null,
+     null
+    ],
+    "upstream_tool": "ha_get_state"
+   },
+   {
+    "body_bytes": [
+     3264,
+     3264
+    ],
+    "id": "r01-automation",
+    "payload_identical": true,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_config_get_automation"
+   },
+   {
+    "body_bytes": [
+     1196,
+     1196
+    ],
+    "id": "r02-calendar-events",
+    "payload_identical": true,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_config_get_calendar_events"
+   },
+   {
+    "body_bytes": [
+     696,
+     696
+    ],
+    "id": "r03-category",
+    "payload_identical": true,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_config_get_category"
+   },
+   {
+    "body_bytes": [
+     620,
+     620
+    ],
+    "id": "r04-label",
+    "payload_identical": true,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_config_get_label"
+   },
+   {
+    "body_bytes": [
+     566,
+     566
+    ],
+    "id": "r05-scene",
+    "payload_identical": true,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_config_get_scene"
+   },
+   {
+    "body_bytes": [
+     672,
+     672
+    ],
+    "id": "r06-script",
+    "payload_identical": true,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_config_get_script"
+   },
+   {
+    "body_bytes": [
+     758,
+     758
+    ],
+    "id": "r07-dashboard-resources",
+    "payload_identical": true,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_config_list_dashboard_resources"
+   },
+   {
+    "body_bytes": [
+     1316,
+     1316
+    ],
+    "id": "r08-groups",
+    "payload_identical": true,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_config_list_groups"
+   },
+   {
+    "body_bytes": [
+     804,
+     804
+    ],
+    "id": "r09-helpers",
+    "payload_identical": true,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_config_list_helpers"
+   },
+   {
+    "body_bytes": [
+     532,
+     532
+    ],
+    "id": "r10-template",
+    "payload_identical": true,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_eval_template"
+   },
+   {
+    "body_bytes": [
+     1012,
+     1012
+    ],
+    "id": "r11-automation-traces",
+    "payload_identical": true,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_get_automation_traces"
+   },
+   {
+    "body_bytes": [
+     1634,
+     1634
+    ],
+    "id": "r12-blueprints",
+    "payload_identical": true,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_manage_blueprints"
+   },
+   {
+    "body_bytes": [
+     2010,
+     2010
+    ],
+    "id": "r13-devices",
+    "payload_identical": true,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_get_device"
+   },
+   {
+    "body_bytes": [
+     1308,
+     1308
+    ],
+    "id": "r14-entity",
+    "payload_identical": true,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_get_entity"
+   },
+   {
+    "body_bytes": [
+     582,
+     582
+    ],
+    "id": "r15-entity-exposure",
+    "payload_identical": true,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_get_entity_exposure"
+   },
+   {
+    "body_bytes": [
+     2998,
+     2998
+    ],
+    "id": "r16-history",
+    "payload_identical": true,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_get_history"
+   },
+   {
+    "body_bytes": [
+     2818,
+     2818
+    ],
+    "id": "r17-overview",
+    "payload_identical": true,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_get_overview"
+   },
+   {
+    "body_bytes": [
+     48021,
+     48021
+    ],
+    "id": "r18-skill-guide",
+    "payload_identical": false,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_get_skill_guide"
+   },
+   {
+    "body_bytes": [
+     1582,
+     1582
+    ],
+    "id": "r19-state",
+    "payload_identical": true,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_get_state"
+   },
+   {
+    "body_bytes": [
+     2380,
+     2380
+    ],
+    "id": "r20-system-health",
+    "payload_identical": true,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_get_system_health"
+   },
+   {
+    "body_bytes": [
+     790,
+     790
+    ],
+    "id": "r21-todo",
+    "payload_identical": true,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_get_todo"
+   },
+   {
+    "body_bytes": [
+     1234,
+     1226
+    ],
+    "id": "r22-zones",
+    "payload_identical": false,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_get_zone"
+   },
+   {
+    "body_bytes": [
+     2918,
+     2918
+    ],
+    "id": "r23-floors-areas",
+    "payload_identical": true,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_list_floors_areas"
+   },
+   {
+    "body_bytes": [
+     3356,
+     3970
+    ],
+    "id": "r24-services",
+    "payload_identical": false,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_list_services"
+   },
+   {
+    "body_bytes": [
+     1356,
+     1356
+    ],
+    "id": "r25-search",
+    "payload_identical": true,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_search"
+   },
+   {
+    "body_bytes": [
+     11830,
+     11830
+    ],
+    "id": "r26-integrations",
+    "payload_identical": true,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_get_integration"
+   },
+   {
+    "body_bytes": [
+     698,
+     698
+    ],
+    "id": "r27-apps",
+    "payload_identical": true,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     null,
+     null
+    ],
+    "upstream_tool": "ha_get_app"
+   },
+   {
+    "body_bytes": [
+     1308,
+     1308
+    ],
+    "id": "t-after-idle",
+    "payload_identical": true,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_get_entity"
+   },
+   {
+    "body_bytes": [
+     36672,
+     45878
+    ],
+    "id": "t-large-services",
+    "payload_identical": false,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_list_services"
+   },
+   {
+    "body_bytes": [
+     1582,
+     1582
+    ],
+    "id": "t-new-session",
+    "payload_identical": true,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_get_state"
+   },
+   {
+    "body_bytes": [
+     2028,
+     2998
+    ],
+    "id": "v16-history-offset-free",
+    "payload_identical": false,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_get_history"
+   },
+   {
+    "body_bytes": [
+     3054,
+     3054
+    ],
+    "id": "v16-history-relative",
+    "payload_identical": false,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_get_history"
+   },
+   {
+    "body_bytes": [
+     2280,
+     2280
+    ],
+    "id": "v16-history-statistics",
+    "payload_identical": true,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_get_history"
+   },
+   {
+    "body_bytes": [
+     6110,
+     6110
+    ],
+    "id": "v17-overview-standard",
+    "payload_identical": true,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_get_overview"
+   },
+   {
+    "body_bytes": [
+     640,
+     640
+    ],
+    "id": "v21-todo-list",
+    "payload_identical": true,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_get_todo"
+   },
+   {
+    "body_bytes": [
+     664,
+     736
+    ],
+    "id": "v22-zone-single",
+    "payload_identical": false,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_get_zone"
+   },
+   {
+    "body_bytes": [
+     1950,
+     2322
+    ],
+    "id": "v24-services-domain-full",
+    "payload_identical": false,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_list_services"
+   },
+   {
+    "body_bytes": [
+     1852,
+     2224
+    ],
+    "id": "v24-services-domain-summary",
+    "payload_identical": false,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_list_services"
+   },
+   {
+    "body_bytes": [
+     4996,
+     5634
+    ],
+    "id": "v24-services-response",
+    "payload_identical": false,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_list_services"
+   },
+   {
+    "body_bytes": [
+     4194,
+     4194
+    ],
+    "id": "v25-search-text",
+    "payload_identical": true,
+    "same_wire_arguments": true,
+    "text_equals_structured_content": [
+     true,
+     true
+    ],
+    "upstream_tool": "ha_search"
+   }
+  ]
+ },
+ "r1_forced_case": {
+  "9.1.2": {
+   "body_bytes": 660,
+   "details": "value_error",
+   "error_code": "VALIDATION_FAILED",
+   "is_error": true,
+   "response_sha256": "ea8e326e66f8d61f49db036f9d06910ad041f522fd9db07684bc44f1b503268f"
+  },
+  "9.2.0": {
+   "body_bytes": 660,
+   "details": "value_error",
+   "error_code": "VALIDATION_FAILED",
+   "is_error": true,
+   "response_sha256": "ea8e326e66f8d61f49db036f9d06910ad041f522fd9db07684bc44f1b503268f"
+  },
+  "responses_equal": true,
+  "validation_invalid_json_observed": false
+ },
+ "r2_across_core_restart_per_version": {
+  "9.1.2:o-overview-standard": {
+   "domains_with_a_different_listing": [
+    "group",
+    "scene",
+    "zone"
+   ],
+   "listing_equal": false,
+   "most_common_domains": [
+    [
+     "sensor",
+     "zone",
+     "person",
+     "todo",
+     "group"
+    ],
+    [
+     "sensor",
+     "zone",
+     "person",
+     "todo",
+     "scene"
+    ]
+   ]
+  },
+  "9.1.2:o-services-default-page": {
+   "listing_equal": false,
+   "order_equal": false,
+   "same_services": true,
+   "services": [
+    50,
+    50
+   ],
+   "total_count": [
+    247,
+    247
+   ]
+  },
+  "9.1.2:o-services-first-five": {
+   "listing_equal": false,
+   "order_equal": false,
+   "same_services": false,
+   "services": [
+    5,
+    5
+   ],
+   "total_count": [
+    247,
+    247
+   ]
+  },
+  "9.1.2:o-services-page-1": {
+   "listing_equal": false,
+   "order_equal": false,
+   "same_services": false,
+   "services": [
+    200,
+    200
+   ],
+   "total_count": [
+    247,
+    247
+   ]
+  },
+  "9.1.2:o-services-page-2": {
+   "listing_equal": false,
+   "order_equal": false,
+   "same_services": false,
+   "services": [
+    47,
+    47
+   ],
+   "total_count": [
+    247,
+    247
+   ]
+  },
+  "9.2.0:o-overview-standard": {
+   "domains_with_a_different_listing": [
+    "group",
+    "scene",
+    "zone"
+   ],
+   "listing_equal": false,
+   "most_common_domains": [
+    [
+     "sensor",
+     "zone",
+     "person",
+     "todo",
+     "group"
+    ],
+    [
+     "sensor",
+     "zone",
+     "person",
+     "todo",
+     "scene"
+    ]
+   ]
+  },
+  "9.2.0:o-services-default-page": {
+   "listing_equal": false,
+   "order_equal": false,
+   "same_services": true,
+   "services": [
+    50,
+    50
+   ],
+   "total_count": [
+    247,
+    247
+   ]
+  },
+  "9.2.0:o-services-first-five": {
+   "listing_equal": false,
+   "order_equal": false,
+   "same_services": false,
+   "services": [
+    5,
+    5
+   ],
+   "total_count": [
+    247,
+    247
+   ]
+  },
+  "9.2.0:o-services-page-1": {
+   "listing_equal": false,
+   "order_equal": false,
+   "same_services": false,
+   "services": [
+    200,
+    200
+   ],
+   "total_count": [
+    247,
+    247
+   ]
+  },
+  "9.2.0:o-services-page-2": {
+   "listing_equal": false,
+   "order_equal": false,
+   "same_services": false,
+   "services": [
+    47,
+    47
+   ],
+   "total_count": [
+    247,
+    247
+   ]
+  }
+ },
+ "r2_across_versions_after_core_restart": {
+  "o-overview-standard": {
+   "domains_with_a_different_listing": [],
+   "listing_equal": true,
+   "most_common_domains": [
+    [
+     "sensor",
+     "zone",
+     "person",
+     "todo",
+     "scene"
+    ],
+    [
+     "sensor",
+     "zone",
+     "person",
+     "todo",
+     "scene"
+    ]
+   ]
+  },
+  "o-services-default-page": {
+   "listing_equal": true,
+   "order_equal": true,
+   "same_services": true,
+   "services": [
+    50,
+    50
+   ],
+   "total_count": [
+    247,
+    247
+   ]
+  },
+  "o-services-first-five": {
+   "listing_equal": true,
+   "order_equal": true,
+   "same_services": true,
+   "services": [
+    5,
+    5
+   ],
+   "total_count": [
+    247,
+    247
+   ]
+  },
+  "o-services-page-1": {
+   "listing_equal": true,
+   "order_equal": true,
+   "same_services": true,
+   "services": [
+    200,
+    200
+   ],
+   "total_count": [
+    247,
+    247
+   ]
+  },
+  "o-services-page-2": {
+   "listing_equal": true,
+   "order_equal": true,
+   "same_services": true,
+   "services": [
+    47,
+    47
+   ],
+   "total_count": [
+    247,
+    247
+   ]
+  },
+  "r17-overview": {
+   "domains_with_a_different_listing": [],
+   "listing_equal": true,
+   "most_common_domains": [
+    [
+     "input_boolean"
+    ],
+    [
+     "input_boolean"
+    ]
+   ]
+  },
+  "r24-services": {
+   "listing_equal": true,
+   "order_equal": true,
+   "same_services": true,
+   "services": [
+    5,
+    5
+   ],
+   "total_count": [
+    247,
+    247
+   ]
+  },
+  "t-large-services": {
+   "listing_equal": true,
+   "order_equal": true,
+   "same_services": true,
+   "services": [
+    50,
+    50
+   ],
+   "total_count": [
+    247,
+    247
+   ]
+  },
+  "v17-overview-standard": {
+   "domains_with_a_different_listing": [],
+   "listing_equal": true,
+   "most_common_domains": [
+    [
+     "sensor",
+     "zone",
+     "person",
+     "todo",
+     "scene"
+    ],
+    [
+     "sensor",
+     "zone",
+     "person",
+     "todo",
+     "scene"
+    ]
+   ]
+  },
+  "v24-services-domain-full": {
+   "listing_equal": true,
+   "order_equal": true,
+   "same_services": true,
+   "services": [
+    4,
+    4
+   ],
+   "total_count": [
+    4,
+    4
+   ]
+  },
+  "v24-services-domain-summary": {
+   "listing_equal": true,
+   "order_equal": true,
+   "same_services": true,
+   "services": [
+    4,
+    4
+   ],
+   "total_count": [
+    4,
+    4
+   ]
+  },
+  "v24-services-response": {
+   "listing_equal": true,
+   "order_equal": true,
+   "same_services": true,
+   "services": [
+    2,
+    2
+   ],
+   "total_count": [
+    2,
+    2
+   ]
+  }
+ },
+ "r2_across_versions_before_core_restart": {
+  "o-overview-standard": {
+   "domains_with_a_different_listing": [],
+   "listing_equal": true,
+   "most_common_domains": [
+    [
+     "sensor",
+     "zone",
+     "person",
+     "todo",
+     "group"
+    ],
+    [
+     "sensor",
+     "zone",
+     "person",
+     "todo",
+     "group"
+    ]
+   ]
+  },
+  "o-services-default-page": {
+   "listing_equal": true,
+   "order_equal": true,
+   "same_services": true,
+   "services": [
+    50,
+    50
+   ],
+   "total_count": [
+    247,
+    247
+   ]
+  },
+  "o-services-first-five": {
+   "listing_equal": true,
+   "order_equal": true,
+   "same_services": true,
+   "services": [
+    5,
+    5
+   ],
+   "total_count": [
+    247,
+    247
+   ]
+  },
+  "o-services-page-1": {
+   "listing_equal": true,
+   "order_equal": true,
+   "same_services": true,
+   "services": [
+    200,
+    200
+   ],
+   "total_count": [
+    247,
+    247
+   ]
+  },
+  "o-services-page-2": {
+   "listing_equal": true,
+   "order_equal": true,
+   "same_services": true,
+   "services": [
+    47,
+    47
+   ],
+   "total_count": [
+    247,
+    247
+   ]
+  }
+ },
+ "r2_service_catalogue": {
+  "9.1.2:calls-after-core-restart": {
+   "catalogue_sorted": false,
+   "distinct": 247,
+   "domain_runs": 62,
+   "domain_runs_in_order": [
+    "homeassistant",
+    "persistent_notification",
+    "system_log",
+    "logger",
+    "lovelace",
+    "frontend",
+    "recorder",
+    "media_player",
+    "valve",
+    "vacuum",
+    "fan",
+    "light",
+    "climate",
+    "alarm_control_panel",
+    "cover",
+    "number",
+    "switch",
+    "notify",
+    "lock",
+    "button",
+    "water_heater",
+    "scene",
+    "group",
+    "input_number",
+    "script",
+    "automation",
+    "logbook",
+    "zone",
+    "person",
+    "device_tracker",
+    "backup",
+    "ffmpeg",
+    "humidifier",
+    "image",
+    "time",
+    "update",
+    "lawn_mower",
+    "datetime",
+    "date",
+    "weather",
+    "siren",
+    "remote",
+    "select",
+    "text",
+    "template",
+    "input_boolean",
+    "timer",
+    "input_datetime",
+    "input_text",
+    "counter",
+    "shopping_list",
+    "schedule",
+    "input_button",
+    "input_select",
+    "tts",
+    "conversation",
+    "camera",
+    "todo",
+    "calendar",
+    "image_processing",
+    "ai_task",
+    "assist_satellite"
+   ],
+   "domain_runs_sorted": false,
+   "domains_in_one_run_each": true,
+   "first_pages_as_slices": {
+    "o-services-default-page": {
+     "equals_catalogue_head": true,
+     "page_sorted": false,
+     "services": 50
+    },
+    "o-services-first-five": {
+     "equals_catalogue_head": true,
+     "page_sorted": false,
+     "services": 5
+    }
+   },
+   "names_sorted_within_each_run": false,
+   "order_sha256": "c0211b37793d3fd19c5c561c87b7921312d8a33b474ea3ba3c6c13d02fe6001d",
+   "pages_sorted": [
+    false,
+    false
+   ],
+   "services": 247
+  },
+  "9.1.2:order-before-core-restart": {
+   "catalogue_sorted": false,
+   "distinct": 247,
+   "domain_runs": 62,
+   "domain_runs_in_order": [
+    "persistent_notification",
+    "homeassistant",
+    "system_log",
+    "logger",
+    "lovelace",
+    "frontend",
+    "recorder",
+    "media_player",
+    "light",
+    "vacuum",
+    "number",
+    "scene",
+    "alarm_control_panel",
+    "notify",
+    "climate",
+    "cover",
+    "switch",
+    "button",
+    "valve",
+    "lock",
+    "water_heater",
+    "fan",
+    "automation",
+    "group",
+    "logbook",
+    "script",
+    "zone",
+    "person",
+    "input_number",
+    "device_tracker",
+    "backup",
+    "lawn_mower",
+    "ffmpeg",
+    "image",
+    "remote",
+    "datetime",
+    "update",
+    "select",
+    "siren",
+    "date",
+    "text",
+    "humidifier",
+    "time",
+    "weather",
+    "input_boolean",
+    "input_button",
+    "counter",
+    "template",
+    "timer",
+    "schedule",
+    "input_select",
+    "input_datetime",
+    "input_text",
+    "camera",
+    "conversation",
+    "tts",
+    "shopping_list",
+    "image_processing",
+    "ai_task",
+    "todo",
+    "assist_satellite",
+    "calendar"
+   ],
+   "domain_runs_sorted": false,
+   "domains_in_one_run_each": true,
+   "first_pages_as_slices": {
+    "o-services-default-page": {
+     "equals_catalogue_head": true,
+     "page_sorted": false,
+     "services": 50
+    },
+    "o-services-first-five": {
+     "equals_catalogue_head": true,
+     "page_sorted": false,
+     "services": 5
+    }
+   },
+   "names_sorted_within_each_run": false,
+   "order_sha256": "1abd5ad1fdd6de40b8f965a87acec413957e3e63eb18df5173023cb32caf65fc",
+   "pages_sorted": [
+    false,
+    false
+   ],
+   "services": 247
+  },
+  "9.2.0:calls-after-core-restart": {
+   "catalogue_sorted": false,
+   "distinct": 247,
+   "domain_runs": 62,
+   "domain_runs_in_order": [
+    "homeassistant",
+    "persistent_notification",
+    "system_log",
+    "logger",
+    "lovelace",
+    "frontend",
+    "recorder",
+    "media_player",
+    "valve",
+    "vacuum",
+    "fan",
+    "light",
+    "climate",
+    "alarm_control_panel",
+    "cover",
+    "number",
+    "switch",
+    "notify",
+    "lock",
+    "button",
+    "water_heater",
+    "scene",
+    "group",
+    "input_number",
+    "script",
+    "automation",
+    "logbook",
+    "zone",
+    "person",
+    "device_tracker",
+    "backup",
+    "ffmpeg",
+    "humidifier",
+    "image",
+    "time",
+    "update",
+    "lawn_mower",
+    "datetime",
+    "date",
+    "weather",
+    "siren",
+    "remote",
+    "select",
+    "text",
+    "template",
+    "input_boolean",
+    "timer",
+    "input_datetime",
+    "input_text",
+    "counter",
+    "shopping_list",
+    "schedule",
+    "input_button",
+    "input_select",
+    "tts",
+    "conversation",
+    "camera",
+    "todo",
+    "calendar",
+    "image_processing",
+    "ai_task",
+    "assist_satellite"
+   ],
+   "domain_runs_sorted": false,
+   "domains_in_one_run_each": true,
+   "first_pages_as_slices": {
+    "o-services-default-page": {
+     "equals_catalogue_head": true,
+     "page_sorted": false,
+     "services": 50
+    },
+    "o-services-first-five": {
+     "equals_catalogue_head": true,
+     "page_sorted": false,
+     "services": 5
+    }
+   },
+   "names_sorted_within_each_run": false,
+   "order_sha256": "c0211b37793d3fd19c5c561c87b7921312d8a33b474ea3ba3c6c13d02fe6001d",
+   "pages_sorted": [
+    false,
+    false
+   ],
+   "services": 247
+  },
+  "9.2.0:order-before-core-restart": {
+   "catalogue_sorted": false,
+   "distinct": 247,
+   "domain_runs": 62,
+   "domain_runs_in_order": [
+    "persistent_notification",
+    "homeassistant",
+    "system_log",
+    "logger",
+    "lovelace",
+    "frontend",
+    "recorder",
+    "media_player",
+    "light",
+    "vacuum",
+    "number",
+    "scene",
+    "alarm_control_panel",
+    "notify",
+    "climate",
+    "cover",
+    "switch",
+    "button",
+    "valve",
+    "lock",
+    "water_heater",
+    "fan",
+    "automation",
+    "group",
+    "logbook",
+    "script",
+    "zone",
+    "person",
+    "input_number",
+    "device_tracker",
+    "backup",
+    "lawn_mower",
+    "ffmpeg",
+    "image",
+    "remote",
+    "datetime",
+    "update",
+    "select",
+    "siren",
+    "date",
+    "text",
+    "humidifier",
+    "time",
+    "weather",
+    "input_boolean",
+    "input_button",
+    "counter",
+    "template",
+    "timer",
+    "schedule",
+    "input_select",
+    "input_datetime",
+    "input_text",
+    "camera",
+    "conversation",
+    "tts",
+    "shopping_list",
+    "image_processing",
+    "ai_task",
+    "todo",
+    "assist_satellite",
+    "calendar"
+   ],
+   "domain_runs_sorted": false,
+   "domains_in_one_run_each": true,
+   "first_pages_as_slices": {
+    "o-services-default-page": {
+     "equals_catalogue_head": true,
+     "page_sorted": false,
+     "services": 50
+    },
+    "o-services-first-five": {
+     "equals_catalogue_head": true,
+     "page_sorted": false,
+     "services": 5
+    }
+   },
+   "names_sorted_within_each_run": false,
+   "order_sha256": "1abd5ad1fdd6de40b8f965a87acec413957e3e63eb18df5173023cb32caf65fc",
+   "pages_sorted": [
+    false,
+    false
+   ],
+   "services": 247
+  }
+ }
+}

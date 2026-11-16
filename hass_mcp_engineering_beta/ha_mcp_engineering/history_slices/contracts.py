@@ -32,8 +32,10 @@ from ..incident_logs.contracts import MAX_FUTURE_SKEW_SECONDS, format_ms, parse_
 SCHEMA = "history-slices-v1"
 UPSTREAM_TOOL = "ha_get_history"
 # Reviewed history shapes; each has a parser row in service._PARSERS (9.1.0: HAMCP-319 rule 3;
-# 9.1.2: HAMCP-351, tools_history.py and history_response.py unchanged at bab615df).
-REVIEWED_VERSIONS = frozenset({"8.5.0", "8.6.0", "9.1.0", "9.1.2"})
+# 9.1.2: HAMCP-351, tools_history.py and history_response.py unchanged at bab615df;
+# 9.2.0: HAMCP-371, history_response.py unchanged at 51e3aac7, and the slices send
+# only explicit-offset UTC times, which r16-history replays identically).
+REVIEWED_VERSIONS = frozenset({"8.5.0", "8.6.0", "9.1.0", "9.1.2", "9.2.0"})
 
 MAX_SPAN_SECONDS = 7 * 24 * 3600
 SLICE_SECONDS = 6 * 3600

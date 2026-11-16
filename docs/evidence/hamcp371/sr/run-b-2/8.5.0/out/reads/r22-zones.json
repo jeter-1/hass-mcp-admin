@@ -1,0 +1,95 @@
+{
+ "case": {
+  "arguments": {},
+  "id": "r22-zones",
+  "tool": "ha_get_zone"
+ },
+ "exchange": {
+  "body_bytes": 2058,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":123,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\n  \\\"operation\\\": \\\"ha_get_zone\\\",\\n  \\\"summary\\\": \\\"Completed a reviewed pure-read operation through the upstream gateway.\\\",\\n  \\\"data\\\": {\\n    \\\"success\\\": true,\\n    \\\"count\\\": 2,\\n    \\\"zones\\\": [\\n      {\\n        \\\"name\\\": \\\"HAMCP371 disposable\\\",\\n        \\\"latitude\\\": 0.0,\\n        \\\"longitude\\\": 0.0,\\n        \\\"radius\\\": 100,\\n        \\\"icon\\\": \\\"mdi:home\\\",\\n        \\\"passive\\\": false,\\n        \\\"id\\\": \\\"home\\\",\\n        \\\"editable\\\": true,\\n        \\\"source\\\": \\\"storage\\\"\\n      },\\n      {\\n        \\\"id\\\": \\\"hamcp371_zone\\\",\\n        \\\"name\\\": \\\"HAMCP371 zone\\\",\\n        \\\"latitude\\\": 1.0,\\n        \\\"longitude\\\": 1.0,\\n        \\\"radius\\\": 100.0,\\n        \\\"icon\\\": \\\"mdi:flask\\\",\\n        \\\"passive\\\": false,\\n        \\\"editable\\\": true,\\n        \\\"source\\\": \\\"storage\\\"\\n      }\\n    ],\\n    \\\"message\\\": \\\"Found 2 zone(s)\\\"\\n  },\\n  \\\"warnings\\\": [],\\n  \\\"metadata\\\": {\\n    \\\"provider\\\": \\\"upstream_read_gateway\\\",\\n    \\\"upstream_tool\\\": \\\"ha_get_zone\\\",\\n    \\\"upstream_server\\\": \\\"ha-mcp\\\",\\n    \\\"upstream_version\\\": \\\"8.5.0\\\",\\n    \\\"classification\\\": \\\"automatic_read\\\",\\n    \\\"schema_fingerprint\\\": \\\"e201e1de2eac658f5a20b9369650f70e8f5e8c175f62f14fef4b4715a69425d1\\\",\\n    \\\"untrusted_upstream_content\\\": true,\\n    \\\"fallback\\\": \\\"none\\\",\\n    \\\"fallback_occurred\\\": false,\\n    \\\"completeness\\\": \\\"complete\\\"\\n  },\\n  \\\"timing\\\": {\\n    \\\"total_ms\\\": 212.907,\\n    \\\"tool_ms\\\": 210.309,\\n    \\\"home_assistant_ms\\\": 0.0,\\n    \\\"home_assistant_cumulative_attempt_ms\\\": 0.0,\\n    \\\"home_assistant_wall_clock_span_ms\\\": 0.0,\\n    \\\"home_assistant_request_count\\\": 0,\\n    \\\"upstream_attempted\\\": true,\\n    \\\"upstream_ms\\\": 206.982,\\n    \\\"upstream_wall_clock_span_ms\\\": 206.982,\\n    \\\"upstream_request_count\\\": 1,\\n    \\\"provider_operations_concurrent\\\": false,\\n    \\\"retry_count\\\": 0,\\n    \\\"timeout_occurred\\\": false\\n  },\\n  \\\"request_id\\\": \\\"74c2c6334e594004a5d7b4347f2f338a\\\",\\n  \\\"success\\\": true\\n}\"}],\"isError\":false}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 123,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\n  \"operation\": \"ha_get_zone\",\n  \"summary\": \"Completed a reviewed pure-read operation through the upstream gateway.\",\n  \"data\": {\n    \"success\": true,\n    \"count\": 2,\n    \"zones\": [\n      {\n        \"name\": \"HAMCP371 disposable\",\n        \"latitude\": 0.0,\n        \"longitude\": 0.0,\n        \"radius\": 100,\n        \"icon\": \"mdi:home\",\n        \"passive\": false,\n        \"id\": \"home\",\n        \"editable\": true,\n        \"source\": \"storage\"\n      },\n      {\n        \"id\": \"hamcp371_zone\",\n        \"name\": \"HAMCP371 zone\",\n        \"latitude\": 1.0,\n        \"longitude\": 1.0,\n        \"radius\": 100.0,\n        \"icon\": \"mdi:flask\",\n        \"passive\": false,\n        \"editable\": true,\n        \"source\": \"storage\"\n      }\n    ],\n    \"message\": \"Found 2 zone(s)\"\n  },\n  \"warnings\": [],\n  \"metadata\": {\n    \"provider\": \"upstream_read_gateway\",\n    \"upstream_tool\": \"ha_get_zone\",\n    \"upstream_server\": \"ha-mcp\",\n    \"upstream_version\": \"8.5.0\",\n    \"classification\": \"automatic_read\",\n    \"schema_fingerprint\": \"e201e1de2eac658f5a20b9369650f70e8f5e8c175f62f14fef4b4715a69425d1\",\n    \"untrusted_upstream_content\": true,\n    \"fallback\": \"none\",\n    \"fallback_occurred\": false,\n    \"completeness\": \"complete\"\n  },\n  \"timing\": {\n    \"total_ms\": 212.907,\n    \"tool_ms\": 210.309,\n    \"home_assistant_ms\": 0.0,\n    \"home_assistant_cumulative_attempt_ms\": 0.0,\n    \"home_assistant_wall_clock_span_ms\": 0.0,\n    \"home_assistant_request_count\": 0,\n    \"upstream_attempted\": true,\n    \"upstream_ms\": 206.982,\n    \"upstream_wall_clock_span_ms\": 206.982,\n    \"upstream_request_count\": 1,\n    \"provider_operations_concurrent\": false,\n    \"retry_count\": 0,\n    \"timeout_occurred\": false\n  },\n  \"request_id\": \"74c2c6334e594004a5d7b4347f2f338a\",\n  \"success\": true\n}",
+       "type": "text"
+      }
+     ],
+     "isError": false
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 123,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {},
+     "name": "ha_get_zone"
+    }
+   },
+   "method": "POST",
+   "path": "/synthetic-engineering-access-secret/mcp"
+  },
+  "response": {
+   "id": 123,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\n  \"operation\": \"ha_get_zone\",\n  \"summary\": \"Completed a reviewed pure-read operation through the upstream gateway.\",\n  \"data\": {\n    \"success\": true,\n    \"count\": 2,\n    \"zones\": [\n      {\n        \"name\": \"HAMCP371 disposable\",\n        \"latitude\": 0.0,\n        \"longitude\": 0.0,\n        \"radius\": 100,\n        \"icon\": \"mdi:home\",\n        \"passive\": false,\n        \"id\": \"home\",\n        \"editable\": true,\n        \"source\": \"storage\"\n      },\n      {\n        \"id\": \"hamcp371_zone\",\n        \"name\": \"HAMCP371 zone\",\n        \"latitude\": 1.0,\n        \"longitude\": 1.0,\n        \"radius\": 100.0,\n        \"icon\": \"mdi:flask\",\n        \"passive\": false,\n        \"editable\": true,\n        \"source\": \"storage\"\n      }\n    ],\n    \"message\": \"Found 2 zone(s)\"\n  },\n  \"warnings\": [],\n  \"metadata\": {\n    \"provider\": \"upstream_read_gateway\",\n    \"upstream_tool\": \"ha_get_zone\",\n    \"upstream_server\": \"ha-mcp\",\n    \"upstream_version\": \"8.5.0\",\n    \"classification\": \"automatic_read\",\n    \"schema_fingerprint\": \"e201e1de2eac658f5a20b9369650f70e8f5e8c175f62f14fef4b4715a69425d1\",\n    \"untrusted_upstream_content\": true,\n    \"fallback\": \"none\",\n    \"fallback_occurred\": false,\n    \"completeness\": \"complete\"\n  },\n  \"timing\": {\n    \"total_ms\": 212.907,\n    \"tool_ms\": 210.309,\n    \"home_assistant_ms\": 0.0,\n    \"home_assistant_cumulative_attempt_ms\": 0.0,\n    \"home_assistant_wall_clock_span_ms\": 0.0,\n    \"home_assistant_request_count\": 0,\n    \"upstream_attempted\": true,\n    \"upstream_ms\": 206.982,\n    \"upstream_wall_clock_span_ms\": 206.982,\n    \"upstream_request_count\": 1,\n    \"provider_operations_concurrent\": false,\n    \"retry_count\": 0,\n    \"timeout_occurred\": false\n  },\n  \"request_id\": \"74c2c6334e594004a5d7b4347f2f338a\",\n  \"success\": true\n}",
+      "type": "text"
+     }
+    ],
+    "isError": false
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Mon, 16 Nov 2026 12:17:44 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "x-request-id",
+    "74c2c6334e594004a5d7b4347f2f338a"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null
+}

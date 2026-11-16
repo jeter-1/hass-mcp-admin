@@ -1,0 +1,158 @@
+/package/admin/s6-overlay/libexec/preinit: info: container permissions: uid=0 (root), euid=0, gid=0 (root), egid=0
+/package/admin/s6-overlay/libexec/preinit: info: /run permissions: uid=0 (root), gid=0 (root), perms=oxorgxgruxuwur
+s6-rc-compile: warning: source /etc/s6-overlay/s6-rc.d is empty
+s6-rc: info: service s6rc-oneshot-runner: starting
+s6-rc: info: service fix-attrs: starting
+s6-rc: info: service s6rc-oneshot-runner successfully started
+s6-rc: info: service legacy-cont-init: starting
+s6-rc: info: service fix-attrs successfully started
+s6-rc: info: service legacy-services: starting
+s6-rc: info: service legacy-cont-init successfully started
+services-up: info: copying legacy longrun home-assistant (no readiness notification)
+s6-rc: info: service legacy-services successfully started
+[33m2026-11-15 23:09:53.118-06:00 WARNING (SyncWorker_0) [homeassistant.loader] We found a custom integration ha_mcp_tools which has not been tested by Home Assistant. This component might cause stability problems, be sure to disable it if you experience issues with Home Assistant[0m
+[33m2026-11-15 23:09:53.256-06:00 WARNING (MainThread) [homeassistant.components.network] Because the system does not have any enabled IPv4 addresses, source address detection may be inaccurate[0m
+[31m2026-11-15 23:09:55.085-06:00 ERROR (MainThread) [homeassistant.config_entries] Error setting up entry Radio Browser for radio_browser
+Traceback (most recent call last):
+  File "/usr/src/homeassistant/homeassistant/config_entries.py", line 1023, in __async_setup_with_context
+    setup_result: bool | None = await component.async_setup_entry(
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        hass, self
+        ^^^^^^^^^^
+    )  # type: ignore[func-returns-value]
+    ^
+  File "/usr/src/homeassistant/homeassistant/components/radio_browser/__init__.py", line 24, in async_setup_entry
+    session = async_get_clientsession(hass)
+  File "/usr/src/homeassistant/homeassistant/helpers/aiohttp_client.py", line 235, in async_get_clientsession
+    session = _async_create_clientsession(
+        hass,
+    ...<3 lines>...
+        ssl_cipher=ssl_cipher,
+    )
+  File "/usr/src/homeassistant/homeassistant/helpers/aiohttp_client.py", line 301, in _async_create_clientsession
+    connector=_async_get_connector(hass, verify_ssl, family, ssl_cipher),
+              ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/src/homeassistant/homeassistant/helpers/aiohttp_client.py", line 489, in _async_get_connector
+    resolver=_async_get_or_create_resolver(hass),
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/usr/src/homeassistant/homeassistant/helpers/singleton.py", line 55, in wrapped
+    hass.data[data_key] = func(hass)
+                          ~~~~^^^^^^
+  File "/usr/src/homeassistant/homeassistant/helpers/aiohttp_client.py", line 506, in _async_get_or_create_resolver
+    resolver = _async_make_resolver(hass)
+  File "/usr/src/homeassistant/homeassistant/helpers/aiohttp_client.py", line 517, in _async_make_resolver
+    return HassAsyncDNSResolver(async_zeroconf=zeroconf.async_get_async_zeroconf(hass))
+                                               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/usr/src/homeassistant/homeassistant/components/zeroconf/__init__.py", line 91, in async_get_async_zeroconf
+    return _async_get_instance(hass)
+  File "/usr/src/homeassistant/homeassistant/components/zeroconf/__init__.py", line 98, in _async_get_instance
+    zeroconf = HaZeroconf(**_async_get_zc_args(hass))
+  File "/usr/local/lib/python3.14/site-packages/zeroconf/_core.py", line 190, in __init__
+    listen_socket, respond_sockets = create_sockets(interfaces, unicast, ip_version, apple_p2p=apple_p2p)
+                                     ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.14/site-packages/zeroconf/_utils/net.py", line 505, in create_sockets
+    add_multicast_member(cast(socket.socket, listen_socket), interface)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.14/site-packages/zeroconf/_utils/net.py", line 334, in add_multicast_member
+    listen_socket.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, _value)
+    ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: [Errno 19] No such device[0m
+[31m2026-11-15 23:09:55.169-06:00 ERROR (MainThread) [homeassistant.components.analytics] Error setting up entry Analytics for analytics
+Traceback (most recent call last):
+  File "/usr/src/homeassistant/homeassistant/config_entries.py", line 1023, in __async_setup_with_context
+    setup_result: bool | None = await component.async_setup_entry(
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        hass, self
+        ^^^^^^^^^^
+    )  # type: ignore[func-returns-value]
+    ^
+  File "/usr/src/homeassistant/homeassistant/components/analytics/__init__.py", line 89, in async_setup_entry
+    analytics = Analytics(hass, snapshots_url)
+  File "/usr/src/homeassistant/homeassistant/components/analytics/analytics.py", line 249, in __init__
+    self._session = async_get_clientsession(hass)
+                    ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/usr/src/homeassistant/homeassistant/helpers/aiohttp_client.py", line 235, in async_get_clientsession
+    session = _async_create_clientsession(
+        hass,
+    ...<3 lines>...
+        ssl_cipher=ssl_cipher,
+    )
+  File "/usr/src/homeassistant/homeassistant/helpers/aiohttp_client.py", line 301, in _async_create_clientsession
+    connector=_async_get_connector(hass, verify_ssl, family, ssl_cipher),
+              ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/src/homeassistant/homeassistant/helpers/aiohttp_client.py", line 489, in _async_get_connector
+    resolver=_async_get_or_create_resolver(hass),
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/usr/src/homeassistant/homeassistant/helpers/singleton.py", line 55, in wrapped
+    hass.data[data_key] = func(hass)
+                          ~~~~^^^^^^
+  File "/usr/src/homeassistant/homeassistant/helpers/aiohttp_client.py", line 506, in _async_get_or_create_resolver
+    resolver = _async_make_resolver(hass)
+  File "/usr/src/homeassistant/homeassistant/helpers/aiohttp_client.py", line 517, in _async_make_resolver
+    return HassAsyncDNSResolver(async_zeroconf=zeroconf.async_get_async_zeroconf(hass))
+                                               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/usr/src/homeassistant/homeassistant/components/zeroconf/__init__.py", line 91, in async_get_async_zeroconf
+    return _async_get_instance(hass)
+  File "/usr/src/homeassistant/homeassistant/components/zeroconf/__init__.py", line 98, in _async_get_instance
+    zeroconf = HaZeroconf(**_async_get_zc_args(hass))
+  File "/usr/local/lib/python3.14/site-packages/zeroconf/_core.py", line 190, in __init__
+    listen_socket, respond_sockets = create_sockets(interfaces, unicast, ip_version, apple_p2p=apple_p2p)
+                                     ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.14/site-packages/zeroconf/_utils/net.py", line 505, in create_sockets
+    add_multicast_member(cast(socket.socket, listen_socket), interface)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.14/site-packages/zeroconf/_utils/net.py", line 334, in add_multicast_member
+    listen_socket.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, _value)
+    ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: [Errno 19] No such device[0m
+[31m2026-11-15 23:09:55.177-06:00 ERROR (MainThread) [homeassistant.components.marketplace] Error setting up entry  for marketplace
+Traceback (most recent call last):
+  File "/usr/src/homeassistant/homeassistant/config_entries.py", line 1023, in __async_setup_with_context
+    setup_result: bool | None = await component.async_setup_entry(
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        hass, self
+        ^^^^^^^^^^
+    )  # type: ignore[func-returns-value]
+    ^
+  File "/usr/src/homeassistant/homeassistant/components/marketplace/__init__.py", line 191, in async_setup_entry
+    config_entry.runtime_data = marketplace = MarketplaceManager(hass, config_entry)
+                                              ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "/usr/src/homeassistant/homeassistant/components/marketplace/base.py", line 412, in __init__
+    self.session: ClientSession = async_get_clientsession(hass)
+                                  ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/usr/src/homeassistant/homeassistant/helpers/aiohttp_client.py", line 235, in async_get_clientsession
+    session = _async_create_clientsession(
+        hass,
+    ...<3 lines>...
+        ssl_cipher=ssl_cipher,
+    )
+  File "/usr/src/homeassistant/homeassistant/helpers/aiohttp_client.py", line 301, in _async_create_clientsession
+    connector=_async_get_connector(hass, verify_ssl, family, ssl_cipher),
+              ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/src/homeassistant/homeassistant/helpers/aiohttp_client.py", line 489, in _async_get_connector
+    resolver=_async_get_or_create_resolver(hass),
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/usr/src/homeassistant/homeassistant/helpers/singleton.py", line 55, in wrapped
+    hass.data[data_key] = func(hass)
+                          ~~~~^^^^^^
+  File "/usr/src/homeassistant/homeassistant/helpers/aiohttp_client.py", line 506, in _async_get_or_create_resolver
+    resolver = _async_make_resolver(hass)
+  File "/usr/src/homeassistant/homeassistant/helpers/aiohttp_client.py", line 517, in _async_make_resolver
+    return HassAsyncDNSResolver(async_zeroconf=zeroconf.async_get_async_zeroconf(hass))
+                                               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/usr/src/homeassistant/homeassistant/components/zeroconf/__init__.py", line 91, in async_get_async_zeroconf
+    return _async_get_instance(hass)
+  File "/usr/src/homeassistant/homeassistant/components/zeroconf/__init__.py", line 98, in _async_get_instance
+    zeroconf = HaZeroconf(**_async_get_zc_args(hass))
+  File "/usr/local/lib/python3.14/site-packages/zeroconf/_core.py", line 190, in __init__
+    listen_socket, respond_sockets = create_sockets(interfaces, unicast, ip_version, apple_p2p=apple_p2p)
+                                     ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.14/site-packages/zeroconf/_utils/net.py", line 505, in create_sockets
+    add_multicast_member(cast(socket.socket, listen_socket), interface)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.14/site-packages/zeroconf/_utils/net.py", line 334, in add_multicast_member
+    listen_socket.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, _value)
+    ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: [Errno 19] No such device[0m
+[33m2026-11-15 23:10:00.688-06:00 WARNING (MainThread) [homeassistant.components.recorder.websocket_api] WS command recorder/import_statistics called without specifying mean_type in metadata, this is deprecated and will stop working in HA Core 2026.11[0m
+[33m2026-11-15 23:10:00.688-06:00 WARNING (MainThread) [homeassistant.components.recorder.websocket_api] WS command recorder/import_statistics called without specifying unit_class in metadata, this is deprecated and will stop working in HA Core 2026.11[0m

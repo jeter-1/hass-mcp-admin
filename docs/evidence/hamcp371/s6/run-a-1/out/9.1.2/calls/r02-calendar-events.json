@@ -1,0 +1,168 @@
+{
+ "arguments_built_by": "adapter code, policy 9.1.2",
+ "calls_format_version": 1,
+ "exchange": {
+  "body_bytes": 1196,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":102,\"result\":{\"content\":[{\"text\":\"{\\\"success\\\":true,\\\"entity_id\\\":\\\"calendar.hamcp371_calendar\\\",\\\"events\\\":[{\\\"start\\\":{\\\"dateTime\\\":\\\"2026-11-12T00:31:59-06:00\\\"},\\\"end\\\":{\\\"dateTime\\\":\\\"2026-11-12T01:01:59-06:00\\\"},\\\"summary\\\":\\\"HAMCP371 event\\\",\\\"description\\\":null,\\\"location\\\":null,\\\"uid\\\":\\\"5f058f42-de61-11f1-b344-a1fcebef17ca\\\",\\\"recurrence_id\\\":null,\\\"rrule\\\":null,\\\"status\\\":null}],\\\"count\\\":1,\\\"total_available\\\":1,\\\"time_range\\\":{\\\"start\\\":\\\"2026-11-11T22:21:59-06:00\\\",\\\"end\\\":\\\"2026-11-12T01:21:59-06:00\\\"},\\\"message\\\":\\\"Retrieved 1 event(s) from calendar.hamcp371_calendar\\\"}\",\"type\":\"text\"}],\"isError\":false,\"structuredContent\":{\"success\":true,\"entity_id\":\"calendar.hamcp371_calendar\",\"events\":[{\"start\":{\"dateTime\":\"2026-11-12T00:31:59-06:00\"},\"end\":{\"dateTime\":\"2026-11-12T01:01:59-06:00\"},\"summary\":\"HAMCP371 event\",\"description\":null,\"location\":null,\"uid\":\"5f058f42-de61-11f1-b344-a1fcebef17ca\",\"recurrence_id\":null,\"rrule\":null,\"status\":null}],\"count\":1,\"total_available\":1,\"time_range\":{\"start\":\"2026-11-11T22:21:59-06:00\",\"end\":\"2026-11-12T01:21:59-06:00\"},\"message\":\"Retrieved 1 event(s) from calendar.hamcp371_calendar\"}}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 102,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\"success\":true,\"entity_id\":\"calendar.hamcp371_calendar\",\"events\":[{\"start\":{\"dateTime\":\"2026-11-12T00:31:59-06:00\"},\"end\":{\"dateTime\":\"2026-11-12T01:01:59-06:00\"},\"summary\":\"HAMCP371 event\",\"description\":null,\"location\":null,\"uid\":\"5f058f42-de61-11f1-b344-a1fcebef17ca\",\"recurrence_id\":null,\"rrule\":null,\"status\":null}],\"count\":1,\"total_available\":1,\"time_range\":{\"start\":\"2026-11-11T22:21:59-06:00\",\"end\":\"2026-11-12T01:21:59-06:00\"},\"message\":\"Retrieved 1 event(s) from calendar.hamcp371_calendar\"}",
+       "type": "text"
+      }
+     ],
+     "isError": false,
+     "structuredContent": {
+      "count": 1,
+      "entity_id": "calendar.hamcp371_calendar",
+      "events": [
+       {
+        "description": null,
+        "end": {
+         "dateTime": "2026-11-12T01:01:59-06:00"
+        },
+        "location": null,
+        "recurrence_id": null,
+        "rrule": null,
+        "start": {
+         "dateTime": "2026-11-12T00:31:59-06:00"
+        },
+        "status": null,
+        "summary": "HAMCP371 event",
+        "uid": "5f058f42-de61-11f1-b344-a1fcebef17ca"
+       }
+      ],
+      "message": "Retrieved 1 event(s) from calendar.hamcp371_calendar",
+      "success": true,
+      "time_range": {
+       "end": "2026-11-12T01:21:59-06:00",
+       "start": "2026-11-11T22:21:59-06:00"
+      },
+      "total_available": 1
+     }
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 102,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "end": "2026-11-12T01:21:59-06:00",
+      "entity_id": "calendar.hamcp371_calendar",
+      "max_results": 5,
+      "start": "2026-11-11T22:21:59-06:00"
+     },
+     "name": "ha_config_get_calendar_events"
+    }
+   },
+   "method": "POST",
+   "path": "/mcp"
+  },
+  "response": {
+   "id": 102,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\"success\":true,\"entity_id\":\"calendar.hamcp371_calendar\",\"events\":[{\"start\":{\"dateTime\":\"2026-11-12T00:31:59-06:00\"},\"end\":{\"dateTime\":\"2026-11-12T01:01:59-06:00\"},\"summary\":\"HAMCP371 event\",\"description\":null,\"location\":null,\"uid\":\"5f058f42-de61-11f1-b344-a1fcebef17ca\",\"recurrence_id\":null,\"rrule\":null,\"status\":null}],\"count\":1,\"total_available\":1,\"time_range\":{\"start\":\"2026-11-11T22:21:59-06:00\",\"end\":\"2026-11-12T01:21:59-06:00\"},\"message\":\"Retrieved 1 event(s) from calendar.hamcp371_calendar\"}",
+      "type": "text"
+     }
+    ],
+    "isError": false,
+    "structuredContent": {
+     "count": 1,
+     "entity_id": "calendar.hamcp371_calendar",
+     "events": [
+      {
+       "description": null,
+       "end": {
+        "dateTime": "2026-11-12T01:01:59-06:00"
+       },
+       "location": null,
+       "recurrence_id": null,
+       "rrule": null,
+       "start": {
+        "dateTime": "2026-11-12T00:31:59-06:00"
+       },
+       "status": null,
+       "summary": "HAMCP371 event",
+       "uid": "5f058f42-de61-11f1-b344-a1fcebef17ca"
+      }
+     ],
+     "message": "Retrieved 1 event(s) from calendar.hamcp371_calendar",
+     "success": true,
+     "time_range": {
+      "end": "2026-11-12T01:21:59-06:00",
+      "start": "2026-11-11T22:21:59-06:00"
+     },
+     "total_available": 1
+    }
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Thu, 12 Nov 2026 06:22:12 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null,
+ "group": "reads",
+ "id": "r02-calendar-events",
+ "idle": false,
+ "kind": "public",
+ "new_session": false,
+ "public_arguments": {
+  "end": "2026-11-12T01:21:59-06:00",
+  "entity_id": "calendar.hamcp371_calendar",
+  "max_results": 5,
+  "start": "2026-11-11T22:21:59-06:00"
+ },
+ "public_tool": "ha_config_get_calendar_events",
+ "upstream_tool": "ha_config_get_calendar_events",
+ "wire_arguments": {
+  "end": "2026-11-12T01:21:59-06:00",
+  "entity_id": "calendar.hamcp371_calendar",
+  "max_results": 5,
+  "start": "2026-11-11T22:21:59-06:00"
+ }
+}

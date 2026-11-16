@@ -1,0 +1,82 @@
+{
+ "calls": [
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 1482,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "a-entity-after-core-restart.json",
+   "group": "after_restart",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "a-entity-after-core-restart",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {
+    "entity_id": "input_boolean.hamcp371_helper"
+   },
+   "public_tool": "ha_get_entity",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.027,
+   "session": 0,
+   "sha256": "169ebcbfa62fc92fedc1f75e99f7575165760f9c63a48d06f188a95430014f4a",
+   "upstream_tool": "ha_get_entity",
+   "wire_arguments": {
+    "entity_id": "input_boolean.hamcp371_helper"
+   }
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 2924,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "a-floors-areas-after-core-restart.json",
+   "group": "after_restart",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "a-floors-areas-after-core-restart",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {},
+   "public_tool": "ha_list_floors_areas",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.004,
+   "session": 0,
+   "sha256": "ab186b298a6e61cdc5915caf55c48dc4ef32724b3336570cdbc289085cf99c13",
+   "upstream_tool": "ha_list_floors_areas",
+   "wire_arguments": {}
+  }
+ ],
+ "calls_format_version": 1,
+ "endpoint": "http://127.0.0.1:18086/mcp",
+ "negotiated_protocol_version": "2025-03-26",
+ "session_delete_status": [
+  null
+ ],
+ "session_header_present": false,
+ "sessions_opened": 1
+}

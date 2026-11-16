@@ -1,0 +1,109 @@
+{
+ "case": {
+  "arguments": {
+   "detail_level": "minimal",
+   "domains": [
+    "input_boolean"
+   ],
+   "include_notifications": false,
+   "limit": 5
+  },
+  "id": "r17-overview",
+  "tool": "ha_get_overview"
+ },
+ "exchange": {
+  "body_bytes": 3654,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":118,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\n  \\\"operation\\\": \\\"ha_get_overview\\\",\\n  \\\"summary\\\": \\\"Completed a reviewed pure-read operation through the upstream gateway.\\\",\\n  \\\"data\\\": {\\n    \\\"success\\\": true,\\n    \\\"system_summary\\\": {\\n      \\\"total_entities\\\": 28,\\n      \\\"total_domains\\\": 14,\\n      \\\"total_services\\\": 259,\\n      \\\"total_areas\\\": 4,\\n      \\\"filtered_domains\\\": [\\n        \\\"input_boolean\\\"\\n      ],\\n      \\\"version\\\": \\\"2026.11.0\\\"\\n    },\\n    \\\"domain_stats\\\": {\\n      \\\"input_boolean\\\": {\\n        \\\"count\\\": 1,\\n        \\\"states_summary\\\": {\\n          \\\"on\\\": 1\\n        },\\n        \\\"entities\\\": [\\n          {\\n            \\\"friendly_name\\\": \\\"HAMCP371 helper\\\"\\n          }\\n        ],\\n        \\\"truncated\\\": false\\n      }\\n    },\\n    \\\"area_analysis\\\": {\\n      \\\"living_room\\\": {\\n        \\\"count\\\": 0\\n      },\\n      \\\"kitchen\\\": {\\n        \\\"count\\\": 0\\n      },\\n      \\\"bedroom\\\": {\\n        \\\"count\\\": 0\\n      },\\n      \\\"hamcp371_area\\\": {\\n        \\\"count\\\": 1\\n      }\\n    },\\n    \\\"ai_insights\\\": {\\n      \\\"most_common_domains\\\": [\\n        \\\"input_boolean\\\"\\n      ],\\n      \\\"controllable_devices\\\": [],\\n      \\\"monitoring_sensors\\\": [],\\n      \\\"automation_ready\\\": false\\n    },\\n    \\\"pagination\\\": {\\n      \\\"total_entity_results\\\": 1,\\n      \\\"offset\\\": 0,\\n      \\\"limit\\\": 5,\\n      \\\"entities_returned\\\": 1,\\n      \\\"has_more\\\": false,\\n      \\\"next_offset\\\": null\\n    },\\n    \\\"system_info\\\": {\\n      \\\"base_url\\\": \\\"http://[REDACTED:token]:8123\\\",\\n      \\\"version\\\": \\\"2026.11.0\\\",\\n      \\\"location_name\\\": \\\"HAMCP371 disposable\\\",\\n      \\\"time_zone\\\": \\\"America/Chicago\\\",\\n      \\\"language\\\": \\\"en\\\",\\n      \\\"state\\\": \\\"RUNNING\\\"\\n    },\\n    \\\"repair_count\\\": 1,\\n    \\\"repairs\\\": [\\n      {\\n        \\\"issue_id\\\": \\\"deprecated_yaml\\\",\\n        \\\"domain\\\": \\\"http\\\",\\n        \\\"severity\\\": \\\"warning\\\",\\n        \\\"translation_key\\\": \\\"deprecated_yaml\\\",\\n        \\\"ignored\\\": false,\\n        \\\"dismissed_version\\\": null,\\n        \\\"is_fixable\\\": false,\\n        \\\"breaks_in_ha_version\\\": \\\"2027.2.0\\\",\\n        \\\"created\\\": \\\"2026-11-16T12:17:20.160813+00:00\\\",\\n        \\\"issue_domain\\\": null\\n      }\\n    ]\\n  },\\n  \\\"warnings\\\": [\\n    \\\"Sensitive values in the untrusted upstream response were redacted; the result is not complete.\\\"\\n  ],\\n  \\\"metadata\\\": {\\n    \\\"provider\\\": \\\"upstream_read_gateway\\\",\\n    \\\"upstream_tool\\\": \\\"ha_get_overview\\\",\\n    \\\"upstream_server\\\": \\\"ha-mcp\\\",\\n    \\\"upstream_version\\\": \\\"8.5.0\\\",\\n    \\\"classification\\\": \\\"automatic_read\\\",\\n    \\\"schema_fingerprint\\\": \\\"2623c1ff0b2739ce7bc7ac360dfb0a0f17c5379b79e92a4a1a2d0fe0bbb7c408\\\",\\n    \\\"untrusted_upstream_content\\\": true,\\n    \\\"fallback\\\": \\\"none\\\",\\n    \\\"fallback_occurred\\\": false,\\n    \\\"completeness\\\": \\\"partial\\\",\\n    \\\"redaction\\\": {\\n      \\\"redacted_field_count\\\": 1,\\n      \\\"categories\\\": [\\n        \\\"token\\\"\\n      ],\\n      \\\"category_count\\\": 1,\\n      \\\"marker_collision_count\\\": 0\\n    }\\n  },\\n  \\\"timing\\\": {\\n    \\\"total_ms\\\": 244.285,\\n    \\\"tool_ms\\\": 241.389,\\n    \\\"home_assistant_ms\\\": 0.0,\\n    \\\"home_assistant_cumulative_attempt_ms\\\": 0.0,\\n    \\\"home_assistant_wall_clock_span_ms\\\": 0.0,\\n    \\\"home_assistant_request_count\\\": 0,\\n    \\\"upstream_attempted\\\": true,\\n    \\\"upstream_ms\\\": 234.808,\\n    \\\"upstream_wall_clock_span_ms\\\": 234.808,\\n    \\\"upstream_request_count\\\": 1,\\n    \\\"provider_operations_concurrent\\\": false,\\n    \\\"retry_count\\\": 0,\\n    \\\"timeout_occurred\\\": false\\n  },\\n  \\\"request_id\\\": \\\"ba71f055debd4adcbf76cbeeb9951994\\\",\\n  \\\"success\\\": true\\n}\"}],\"isError\":false}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 118,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\n  \"operation\": \"ha_get_overview\",\n  \"summary\": \"Completed a reviewed pure-read operation through the upstream gateway.\",\n  \"data\": {\n    \"success\": true,\n    \"system_summary\": {\n      \"total_entities\": 28,\n      \"total_domains\": 14,\n      \"total_services\": 259,\n      \"total_areas\": 4,\n      \"filtered_domains\": [\n        \"input_boolean\"\n      ],\n      \"version\": \"2026.11.0\"\n    },\n    \"domain_stats\": {\n      \"input_boolean\": {\n        \"count\": 1,\n        \"states_summary\": {\n          \"on\": 1\n        },\n        \"entities\": [\n          {\n            \"friendly_name\": \"HAMCP371 helper\"\n          }\n        ],\n        \"truncated\": false\n      }\n    },\n    \"area_analysis\": {\n      \"living_room\": {\n        \"count\": 0\n      },\n      \"kitchen\": {\n        \"count\": 0\n      },\n      \"bedroom\": {\n        \"count\": 0\n      },\n      \"hamcp371_area\": {\n        \"count\": 1\n      }\n    },\n    \"ai_insights\": {\n      \"most_common_domains\": [\n        \"input_boolean\"\n      ],\n      \"controllable_devices\": [],\n      \"monitoring_sensors\": [],\n      \"automation_ready\": false\n    },\n    \"pagination\": {\n      \"total_entity_results\": 1,\n      \"offset\": 0,\n      \"limit\": 5,\n      \"entities_returned\": 1,\n      \"has_more\": false,\n      \"next_offset\": null\n    },\n    \"system_info\": {\n      \"base_url\": \"http://[REDACTED:token]:8123\",\n      \"version\": \"2026.11.0\",\n      \"location_name\": \"HAMCP371 disposable\",\n      \"time_zone\": \"America/Chicago\",\n      \"language\": \"en\",\n      \"state\": \"RUNNING\"\n    },\n    \"repair_count\": 1,\n    \"repairs\": [\n      {\n        \"issue_id\": \"deprecated_yaml\",\n        \"domain\": \"http\",\n        \"severity\": \"warning\",\n        \"translation_key\": \"deprecated_yaml\",\n        \"ignored\": false,\n        \"dismissed_version\": null,\n        \"is_fixable\": false,\n        \"breaks_in_ha_version\": \"2027.2.0\",\n        \"created\": \"2026-11-16T12:17:20.160813+00:00\",\n        \"issue_domain\": null\n      }\n    ]\n  },\n  \"warnings\": [\n    \"Sensitive values in the untrusted upstream response were redacted; the result is not complete.\"\n  ],\n  \"metadata\": {\n    \"provider\": \"upstream_read_gateway\",\n    \"upstream_tool\": \"ha_get_overview\",\n    \"upstream_server\": \"ha-mcp\",\n    \"upstream_version\": \"8.5.0\",\n    \"classification\": \"automatic_read\",\n    \"schema_fingerprint\": \"2623c1ff0b2739ce7bc7ac360dfb0a0f17c5379b79e92a4a1a2d0fe0bbb7c408\",\n    \"untrusted_upstream_content\": true,\n    \"fallback\": \"none\",\n    \"fallback_occurred\": false,\n    \"completeness\": \"partial\",\n    \"redaction\": {\n      \"redacted_field_count\": 1,\n      \"categories\": [\n        \"token\"\n      ],\n      \"category_count\": 1,\n      \"marker_collision_count\": 0\n    }\n  },\n  \"timing\": {\n    \"total_ms\": 244.285,\n    \"tool_ms\": 241.389,\n    \"home_assistant_ms\": 0.0,\n    \"home_assistant_cumulative_attempt_ms\": 0.0,\n    \"home_assistant_wall_clock_span_ms\": 0.0,\n    \"home_assistant_request_count\": 0,\n    \"upstream_attempted\": true,\n    \"upstream_ms\": 234.808,\n    \"upstream_wall_clock_span_ms\": 234.808,\n    \"upstream_request_count\": 1,\n    \"provider_operations_concurrent\": false,\n    \"retry_count\": 0,\n    \"timeout_occurred\": false\n  },\n  \"request_id\": \"ba71f055debd4adcbf76cbeeb9951994\",\n  \"success\": true\n}",
+       "type": "text"
+      }
+     ],
+     "isError": false
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 118,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "detail_level": "minimal",
+      "domains": [
+       "input_boolean"
+      ],
+      "include_notifications": false,
+      "limit": 5
+     },
+     "name": "ha_get_overview"
+    }
+   },
+   "method": "POST",
+   "path": "/synthetic-engineering-access-secret/mcp"
+  },
+  "response": {
+   "id": 118,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\n  \"operation\": \"ha_get_overview\",\n  \"summary\": \"Completed a reviewed pure-read operation through the upstream gateway.\",\n  \"data\": {\n    \"success\": true,\n    \"system_summary\": {\n      \"total_entities\": 28,\n      \"total_domains\": 14,\n      \"total_services\": 259,\n      \"total_areas\": 4,\n      \"filtered_domains\": [\n        \"input_boolean\"\n      ],\n      \"version\": \"2026.11.0\"\n    },\n    \"domain_stats\": {\n      \"input_boolean\": {\n        \"count\": 1,\n        \"states_summary\": {\n          \"on\": 1\n        },\n        \"entities\": [\n          {\n            \"friendly_name\": \"HAMCP371 helper\"\n          }\n        ],\n        \"truncated\": false\n      }\n    },\n    \"area_analysis\": {\n      \"living_room\": {\n        \"count\": 0\n      },\n      \"kitchen\": {\n        \"count\": 0\n      },\n      \"bedroom\": {\n        \"count\": 0\n      },\n      \"hamcp371_area\": {\n        \"count\": 1\n      }\n    },\n    \"ai_insights\": {\n      \"most_common_domains\": [\n        \"input_boolean\"\n      ],\n      \"controllable_devices\": [],\n      \"monitoring_sensors\": [],\n      \"automation_ready\": false\n    },\n    \"pagination\": {\n      \"total_entity_results\": 1,\n      \"offset\": 0,\n      \"limit\": 5,\n      \"entities_returned\": 1,\n      \"has_more\": false,\n      \"next_offset\": null\n    },\n    \"system_info\": {\n      \"base_url\": \"http://[REDACTED:token]:8123\",\n      \"version\": \"2026.11.0\",\n      \"location_name\": \"HAMCP371 disposable\",\n      \"time_zone\": \"America/Chicago\",\n      \"language\": \"en\",\n      \"state\": \"RUNNING\"\n    },\n    \"repair_count\": 1,\n    \"repairs\": [\n      {\n        \"issue_id\": \"deprecated_yaml\",\n        \"domain\": \"http\",\n        \"severity\": \"warning\",\n        \"translation_key\": \"deprecated_yaml\",\n        \"ignored\": false,\n        \"dismissed_version\": null,\n        \"is_fixable\": false,\n        \"breaks_in_ha_version\": \"2027.2.0\",\n        \"created\": \"2026-11-16T12:17:20.160813+00:00\",\n        \"issue_domain\": null\n      }\n    ]\n  },\n  \"warnings\": [\n    \"Sensitive values in the untrusted upstream response were redacted; the result is not complete.\"\n  ],\n  \"metadata\": {\n    \"provider\": \"upstream_read_gateway\",\n    \"upstream_tool\": \"ha_get_overview\",\n    \"upstream_server\": \"ha-mcp\",\n    \"upstream_version\": \"8.5.0\",\n    \"classification\": \"automatic_read\",\n    \"schema_fingerprint\": \"2623c1ff0b2739ce7bc7ac360dfb0a0f17c5379b79e92a4a1a2d0fe0bbb7c408\",\n    \"untrusted_upstream_content\": true,\n    \"fallback\": \"none\",\n    \"fallback_occurred\": false,\n    \"completeness\": \"partial\",\n    \"redaction\": {\n      \"redacted_field_count\": 1,\n      \"categories\": [\n        \"token\"\n      ],\n      \"category_count\": 1,\n      \"marker_collision_count\": 0\n    }\n  },\n  \"timing\": {\n    \"total_ms\": 244.285,\n    \"tool_ms\": 241.389,\n    \"home_assistant_ms\": 0.0,\n    \"home_assistant_cumulative_attempt_ms\": 0.0,\n    \"home_assistant_wall_clock_span_ms\": 0.0,\n    \"home_assistant_request_count\": 0,\n    \"upstream_attempted\": true,\n    \"upstream_ms\": 234.808,\n    \"upstream_wall_clock_span_ms\": 234.808,\n    \"upstream_request_count\": 1,\n    \"provider_operations_concurrent\": false,\n    \"retry_count\": 0,\n    \"timeout_occurred\": false\n  },\n  \"request_id\": \"ba71f055debd4adcbf76cbeeb9951994\",\n  \"success\": true\n}",
+      "type": "text"
+     }
+    ],
+    "isError": false
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Mon, 16 Nov 2026 12:17:42 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "x-request-id",
+    "ba71f055debd4adcbf76cbeeb9951994"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null
+}

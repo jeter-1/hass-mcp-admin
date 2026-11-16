@@ -1,0 +1,95 @@
+{
+ "case": {
+  "arguments": {},
+  "id": "r21-todo",
+  "tool": "ha_get_todo"
+ },
+ "exchange": {
+  "body_bytes": 1979,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":122,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\n  \\\"operation\\\": \\\"ha_get_todo\\\",\\n  \\\"summary\\\": \\\"Completed a reviewed pure-read operation through the upstream gateway.\\\",\\n  \\\"data\\\": {\\n    \\\"success\\\": true,\\n    \\\"count\\\": 2,\\n    \\\"todo_lists\\\": [\\n      {\\n        \\\"entity_id\\\": \\\"todo.shopping_list\\\",\\n        \\\"friendly_name\\\": \\\"Shopping list\\\",\\n        \\\"state\\\": \\\"0\\\",\\n        \\\"icon\\\": null,\\n        \\\"supported_features\\\": 15\\n      },\\n      {\\n        \\\"entity_id\\\": \\\"todo.hamcp371_todo\\\",\\n        \\\"friendly_name\\\": \\\"HAMCP371 todo\\\",\\n        \\\"state\\\": \\\"1\\\",\\n        \\\"icon\\\": null,\\n        \\\"supported_features\\\": 127\\n      }\\n    ],\\n    \\\"message\\\": \\\"Found 2 todo list(s)\\\",\\n    \\\"fields_withheld\\\": 0,\\n    \\\"fields_dropped_by_policy\\\": 0,\\n    \\\"upstream_warnings_replaced\\\": 0\\n  },\\n  \\\"warnings\\\": [],\\n  \\\"metadata\\\": {\\n    \\\"provider\\\": \\\"upstream_read_gateway\\\",\\n    \\\"upstream_tool\\\": \\\"ha_get_todo\\\",\\n    \\\"upstream_server\\\": \\\"ha-mcp\\\",\\n    \\\"upstream_version\\\": \\\"9.2.0\\\",\\n    \\\"classification\\\": \\\"automatic_read\\\",\\n    \\\"schema_fingerprint\\\": \\\"12e8313054860017feb901c9b96fceb00cae71c2dbd78afb90d50aaa933f8a70\\\",\\n    \\\"untrusted_upstream_content\\\": true,\\n    \\\"fallback\\\": \\\"none\\\",\\n    \\\"fallback_occurred\\\": false,\\n    \\\"completeness\\\": \\\"complete\\\"\\n  },\\n  \\\"timing\\\": {\\n    \\\"total_ms\\\": 220.984,\\n    \\\"tool_ms\\\": 218.26,\\n    \\\"home_assistant_ms\\\": 0.0,\\n    \\\"home_assistant_cumulative_attempt_ms\\\": 0.0,\\n    \\\"home_assistant_wall_clock_span_ms\\\": 0.0,\\n    \\\"home_assistant_request_count\\\": 0,\\n    \\\"upstream_attempted\\\": true,\\n    \\\"upstream_ms\\\": 215.159,\\n    \\\"upstream_wall_clock_span_ms\\\": 215.159,\\n    \\\"upstream_request_count\\\": 1,\\n    \\\"provider_operations_concurrent\\\": false,\\n    \\\"retry_count\\\": 0,\\n    \\\"timeout_occurred\\\": false\\n  },\\n  \\\"request_id\\\": \\\"91d6f773a9334585aacbbb991647f4f0\\\",\\n  \\\"success\\\": true\\n}\"}],\"isError\":false}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 122,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\n  \"operation\": \"ha_get_todo\",\n  \"summary\": \"Completed a reviewed pure-read operation through the upstream gateway.\",\n  \"data\": {\n    \"success\": true,\n    \"count\": 2,\n    \"todo_lists\": [\n      {\n        \"entity_id\": \"todo.shopping_list\",\n        \"friendly_name\": \"Shopping list\",\n        \"state\": \"0\",\n        \"icon\": null,\n        \"supported_features\": 15\n      },\n      {\n        \"entity_id\": \"todo.hamcp371_todo\",\n        \"friendly_name\": \"HAMCP371 todo\",\n        \"state\": \"1\",\n        \"icon\": null,\n        \"supported_features\": 127\n      }\n    ],\n    \"message\": \"Found 2 todo list(s)\",\n    \"fields_withheld\": 0,\n    \"fields_dropped_by_policy\": 0,\n    \"upstream_warnings_replaced\": 0\n  },\n  \"warnings\": [],\n  \"metadata\": {\n    \"provider\": \"upstream_read_gateway\",\n    \"upstream_tool\": \"ha_get_todo\",\n    \"upstream_server\": \"ha-mcp\",\n    \"upstream_version\": \"9.2.0\",\n    \"classification\": \"automatic_read\",\n    \"schema_fingerprint\": \"12e8313054860017feb901c9b96fceb00cae71c2dbd78afb90d50aaa933f8a70\",\n    \"untrusted_upstream_content\": true,\n    \"fallback\": \"none\",\n    \"fallback_occurred\": false,\n    \"completeness\": \"complete\"\n  },\n  \"timing\": {\n    \"total_ms\": 220.984,\n    \"tool_ms\": 218.26,\n    \"home_assistant_ms\": 0.0,\n    \"home_assistant_cumulative_attempt_ms\": 0.0,\n    \"home_assistant_wall_clock_span_ms\": 0.0,\n    \"home_assistant_request_count\": 0,\n    \"upstream_attempted\": true,\n    \"upstream_ms\": 215.159,\n    \"upstream_wall_clock_span_ms\": 215.159,\n    \"upstream_request_count\": 1,\n    \"provider_operations_concurrent\": false,\n    \"retry_count\": 0,\n    \"timeout_occurred\": false\n  },\n  \"request_id\": \"91d6f773a9334585aacbbb991647f4f0\",\n  \"success\": true\n}",
+       "type": "text"
+      }
+     ],
+     "isError": false
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 122,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {},
+     "name": "ha_get_todo"
+    }
+   },
+   "method": "POST",
+   "path": "/synthetic-engineering-access-secret/mcp"
+  },
+  "response": {
+   "id": 122,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\n  \"operation\": \"ha_get_todo\",\n  \"summary\": \"Completed a reviewed pure-read operation through the upstream gateway.\",\n  \"data\": {\n    \"success\": true,\n    \"count\": 2,\n    \"todo_lists\": [\n      {\n        \"entity_id\": \"todo.shopping_list\",\n        \"friendly_name\": \"Shopping list\",\n        \"state\": \"0\",\n        \"icon\": null,\n        \"supported_features\": 15\n      },\n      {\n        \"entity_id\": \"todo.hamcp371_todo\",\n        \"friendly_name\": \"HAMCP371 todo\",\n        \"state\": \"1\",\n        \"icon\": null,\n        \"supported_features\": 127\n      }\n    ],\n    \"message\": \"Found 2 todo list(s)\",\n    \"fields_withheld\": 0,\n    \"fields_dropped_by_policy\": 0,\n    \"upstream_warnings_replaced\": 0\n  },\n  \"warnings\": [],\n  \"metadata\": {\n    \"provider\": \"upstream_read_gateway\",\n    \"upstream_tool\": \"ha_get_todo\",\n    \"upstream_server\": \"ha-mcp\",\n    \"upstream_version\": \"9.2.0\",\n    \"classification\": \"automatic_read\",\n    \"schema_fingerprint\": \"12e8313054860017feb901c9b96fceb00cae71c2dbd78afb90d50aaa933f8a70\",\n    \"untrusted_upstream_content\": true,\n    \"fallback\": \"none\",\n    \"fallback_occurred\": false,\n    \"completeness\": \"complete\"\n  },\n  \"timing\": {\n    \"total_ms\": 220.984,\n    \"tool_ms\": 218.26,\n    \"home_assistant_ms\": 0.0,\n    \"home_assistant_cumulative_attempt_ms\": 0.0,\n    \"home_assistant_wall_clock_span_ms\": 0.0,\n    \"home_assistant_request_count\": 0,\n    \"upstream_attempted\": true,\n    \"upstream_ms\": 215.159,\n    \"upstream_wall_clock_span_ms\": 215.159,\n    \"upstream_request_count\": 1,\n    \"provider_operations_concurrent\": false,\n    \"retry_count\": 0,\n    \"timeout_occurred\": false\n  },\n  \"request_id\": \"91d6f773a9334585aacbbb991647f4f0\",\n  \"success\": true\n}",
+      "type": "text"
+     }
+    ],
+    "isError": false
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Mon, 16 Nov 2026 12:17:10 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "x-request-id",
+    "91d6f773a9334585aacbbb991647f4f0"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null
+}

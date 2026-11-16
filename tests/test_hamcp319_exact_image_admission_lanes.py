@@ -37,7 +37,7 @@ GATE_JOB = "exact-image-admission-manifest-gate"
 COMMIT = "c" * 40
 SYNTHETIC_91 = {
     # Synthetic, unmistakably fake pins: never real 9.1 evidence.
-    "upstream_version": "9.1.2",
+    "upstream_version": "9.2.0",
     "upstream_image": "ghcr.io/homeassistant-ai/ha-mcp@sha256:" + "9" * 64,
     "image_index_digest": "sha256:" + "9" * 64,
     "image_revision": "9" * 40,
@@ -62,14 +62,14 @@ def pre_91_registry():
     """The committed reviewed registry without its candidate row (the pre-admission state).
 
     The dormant-lane, writer and gate contracts below are defined against a
-    registry that has no row for the admission candidate (9.1.2 since HAMCP-351;
+    registry that has no row for the admission candidate (9.2.0 since HAMCP-351;
     9.1.0 in the HAMCP-319 build); the committed registry carries the reviewed
     candidate row, which activates every lane (see
     ``test_committed_registry_91_row_activates_every_lane``).
     """
 
     registry = copy.deepcopy(registry_matrix())
-    registry["include"] = [r for r in registry["include"] if r["upstream_version"] != "9.1.2"]
+    registry["include"] = [r for r in registry["include"] if r["upstream_version"] != "9.2.0"]
     return registry
 
 
@@ -121,7 +121,7 @@ class SupportWindowAdmissionTests(unittest.TestCase):
         cls.window = cls.sw.load(ROOT)
 
     def test_committed_window_declares_85_baseline_and_91_candidate(self):
-        self.assertEqual(self.window["admission"], {"baseline_version": "8.5.0", "candidate_version": "9.1.2"})
+        self.assertEqual(self.window["admission"], {"baseline_version": "8.5.0", "candidate_version": "9.2.0"})
         self.assertEqual(self.window["admission"]["baseline_version"], self.window["ha_mcp"]["current"]["version"])
 
     def test_today_85_lanes_active_and_91_lanes_dormant_on_both_architectures(self):
@@ -157,7 +157,7 @@ class SupportWindowAdmissionTests(unittest.TestCase):
 
     def test_committed_registry_91_row_activates_every_lane(self):
         committed = registry_matrix()
-        real_91 = [r for r in committed["include"] if r["upstream_version"] == "9.1.2"]
+        real_91 = [r for r in committed["include"] if r["upstream_version"] == "9.2.0"]
         self.assertEqual(len(real_91), 1)
         self.assertNotEqual(real_91[0]["image_index_digest"], SYNTHETIC_91["image_index_digest"])
         rows = self.sw.admission_matrix(self.window, committed)["include"]
@@ -531,7 +531,7 @@ class CaseRunnerTests(unittest.TestCase):
         LANES.evaluate_initialize(200, "text/event-stream", sse, expect="served", expected_version="8.5.0")
         with self.assertRaises(LANES.LaneFailure):
             LANES.evaluate_initialize(200, "application/json", json.dumps(message), expect="served",
-                                      expected_version="9.1.2")
+                                      expected_version="9.2.0")
         other = copy.deepcopy(message)
         other["result"]["protocolVersion"] = "2025-06-18"
         with self.assertRaises(LANES.LaneFailure):

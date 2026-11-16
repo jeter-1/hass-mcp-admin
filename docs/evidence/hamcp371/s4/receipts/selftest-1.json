@@ -1,0 +1,98 @@
+{
+ "cleanup": {
+  "clean": true,
+  "containers_absent": true,
+  "docker_networks_created": 0
+ },
+ "command": "selftest",
+ "container_memory": {
+  "holder": "384m",
+  "inspect": "64m",
+  "peer": "768m"
+ },
+ "ended": "2026-11-11T22:55:29-06:00",
+ "failure": "fixture_recorded_a_mutation_surface",
+ "failure_type": "Refusal",
+ "harness_commit": "a6b96736867f4e5e3e1be42be94cf251dd65ee7f",
+ "helper_image": {
+  "architecture": "amd64",
+  "config_digest": "sha256:5801d42fd19bfe813cccfe0a81b218d9f3a8cabf6f12ee044a160c0603c83c47",
+  "image": "ghcr.io/jeter-1/hass-mcp-engineering-beta@sha256:5801d42fd19bfe813cccfe0a81b218d9f3a8cabf6f12ee044a160c0603c83c47",
+  "image_defaults": {
+   "cmd": [
+    "python",
+    "-u",
+    "-m",
+    "ha_mcp_engineering"
+   ],
+   "entrypoint": null,
+   "environment": [
+    "BUILD_VERSION=2.4.2-beta.7",
+    "GPG_KEY=7169605F62C751356D054A26A821E680E5FA6305",
+    "HAMCP_BUILD_DIRTY=false",
+    "HAMCP_BUILD_SHA=b614be43f8c56ae06fdec0ac0bcb479b9da39715",
+    "HAMCP_BUILD_TIME=2026-11-09T12:44:12Z",
+    "LANG=C.UTF-8",
+    "MCP_PORT=8100",
+    "PATH=/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+    "PYTHONDONTWRITEBYTECODE=1",
+    "PYTHON_SHA256=b5796915dc45ff745cfb4e990a7e7c93d6f546328a102ce31448d69ebc37575c",
+    "PYTHON_VERSION=3.12.16"
+   ],
+   "user": null
+  },
+  "labels": {
+   "io.hass-mcp.build.dirty": "false",
+   "org.opencontainers.image.revision": "b614be43f8c56ae06fdec0ac0bcb479b9da39715",
+   "org.opencontainers.image.source": "https://github.com/jeter-1/hass-mcp-admin"
+  },
+  "size_bytes": 314840865
+ },
+ "helper_runtime": {
+  "aiohttp": "3.14.4",
+  "mcp": "1.30.0",
+  "python": "3.12.16"
+ },
+ "home_assistant": "synthetic read-only fixture scripts/fake_ha_read_gateway_contract_server.py; no Home Assistant Core was started",
+ "host_at_end": {
+  "load_1m": 3.166015625,
+  "memory_available_gb": 12.33,
+  "root_free_gb": 50.19,
+  "root_total_gb": 143.14
+ },
+ "host_at_start": {
+  "load_1m": 3.00634765625,
+  "memory_available_gb": 12.2,
+  "root_free_gb": 50.19,
+  "root_total_gb": 143.14
+ },
+ "model": "hamcp371-upstream-catalog-capture-local-v1",
+ "network_posture": {
+  "docker_networks": [
+   "none"
+  ],
+  "docker_networks_created": [],
+  "egress_errno": 101,
+  "interfaces": [
+   "lo"
+  ],
+  "ipv4_routes": 0,
+  "network_mode": "none",
+  "published_ports": []
+ },
+ "notes": [],
+ "peer_network": {
+  "docker_networks": [],
+  "mounts": [],
+  "network_mode": "container:<holder>",
+  "tmpfs": [
+   "/home/mcpuser/.ha-mcp",
+   "/tmp"
+  ]
+ },
+ "pull": "never",
+ "result": "WITHHELD",
+ "run_id": "144e7c31869e4dd490a9ef9218b93278",
+ "seconds": 5.0,
+ "started": "2026-11-11T22:55:24-06:00"
+}

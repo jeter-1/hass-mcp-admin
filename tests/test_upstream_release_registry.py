@@ -53,6 +53,8 @@ POLICY_8500 = RUNTIME / "upstream_tool_policy_8_5_0.json"
 POLICY_8600 = RUNTIME / "upstream_tool_policy_8_6_0.json"
 POLICY_9100 = RUNTIME / "upstream_tool_policy_9_1_0.json"
 POLICY_9120 = RUNTIME / "upstream_tool_policy_9_1_2.json"
+# HAMCP-371: the S8 9.2.0 registry row's policy and contract-review evidence.
+POLICY_9200 = RUNTIME / "upstream_tool_policy_9_2_0.json"
 CAPTURE_DIRECTORY = (
     ROOT / "docs/evidence/upstream-read-compatibility"
 )
@@ -75,6 +77,7 @@ ARTIFACT_EVIDENCE_8500 = CAPTURE_DIRECTORY / "ha-mcp-8.5.0-contract-review.json"
 ARTIFACT_EVIDENCE_8600 = CAPTURE_DIRECTORY / "ha-mcp-8.6.0-contract-review.json"
 ARTIFACT_EVIDENCE_9100 = CAPTURE_DIRECTORY / "ha-mcp-9.1.0-contract-review.json"
 ARTIFACT_EVIDENCE_9120 = CAPTURE_DIRECTORY / "ha-mcp-9.1.2-contract-review.json"
+ARTIFACT_EVIDENCE_9200 = CAPTURE_DIRECTORY / "ha-mcp-9.2.0-contract-review.json"
 FAMILY_DECISION_8111 = (
     CAPTURE_DIRECTORY / "ha-mcp-8.1.1-family-decision.json"
 )
@@ -98,7 +101,7 @@ def captured_tools(version: str) -> list[dict]:
         )
     )
     tools = value["tools"]
-    if version in {"8.4.1", "8.4.3", "8.5.0", "8.6.0", "9.1.0", "9.1.2"}:
+    if version in {"8.4.1", "8.4.3", "8.5.0", "8.6.0", "9.1.0", "9.1.2", "9.2.0"}:
         review = json.loads(
             (
                 CAPTURE_DIRECTORY / f"ha-mcp-{version}-contract-review.json"
@@ -144,6 +147,7 @@ class RegistryFixture:
             POLICY_8600,
             POLICY_9100,
             POLICY_9120,
+            POLICY_9200,
             FAMILY_POLICY,
         ):
             shutil.copy2(path, self.runtime / path.name)
@@ -168,6 +172,7 @@ class RegistryFixture:
             "8.6.0",
             "9.1.0",
             "9.1.2",
+            "9.2.0",
         ):
             shutil.copy2(
                 CAPTURE_DIRECTORY / f"ha-mcp-{version}.json",
@@ -198,6 +203,7 @@ class RegistryFixture:
         shutil.copy2(ARTIFACT_EVIDENCE_8600, self.capture_directory / ARTIFACT_EVIDENCE_8600.name)
         shutil.copy2(ARTIFACT_EVIDENCE_9100, self.capture_directory / ARTIFACT_EVIDENCE_9100.name)
         shutil.copy2(ARTIFACT_EVIDENCE_9120, self.capture_directory / ARTIFACT_EVIDENCE_9120.name)
+        shutil.copy2(ARTIFACT_EVIDENCE_9200, self.capture_directory / ARTIFACT_EVIDENCE_9200.name)
         self.dashboard_attestations = (
             self.runtime
             / "providers"
@@ -276,6 +282,8 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
                 "8.6.0",
                 "9.1.0",
                 "9.1.2",
+                # HAMCP-371: the S8 9.2.0 registry row.
+                "9.2.0",
             ),
         )
         self.assertEqual(registry.default_version, "7.14.1")
@@ -284,7 +292,7 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
             canonical_json(json.loads(REGISTRY.read_text())),
         )
         for release in registry.releases:
-            expected_tool_count = 77 if release.version in {"8.5.0", "8.6.0", "9.1.0", "9.1.2"} else 78
+            expected_tool_count = 77 if release.version in {"8.5.0", "8.6.0", "9.1.0", "9.1.2", "9.2.0"} else 78  # 9.2.0: S8 advertised_tool_count
             self.assertEqual(release.advertised_tool_count, expected_tool_count)
             self.assertEqual(len(release.tool_contracts), expected_tool_count)
             expected_automatic_reads = {
@@ -300,6 +308,8 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
                 "8.6.0": 28,
                 "9.1.0": 27,
                 "9.1.2": 27,
+                # HAMCP-371: automatic reads of the S8 upstream_tool_policy_9_2_0.json.
+                "9.2.0": 27,
             }
             self.assertEqual(
                 release.policy.classification_counts["automatic_read"],
@@ -320,6 +330,8 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
                         "8.6.0",
                         "9.1.0",
                         "9.1.2",
+                        # HAMCP-371: the S8 9.2.0 row declares the v2 model.
+                        "9.2.0",
                     }
                     else RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1
                 ),
@@ -952,6 +964,8 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
                 "8.6.0": 28,
                 "9.1.0": 27,
                 "9.1.2": 27,
+                # HAMCP-371: automatic reads of the S8 upstream_tool_policy_9_2_0.json.
+                "9.2.0": 27,
             }
             self.assertEqual(
                 len(automatic_names),

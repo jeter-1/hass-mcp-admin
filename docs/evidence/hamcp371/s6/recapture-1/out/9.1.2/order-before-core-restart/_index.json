@@ -1,0 +1,205 @@
+{
+ "calls": [
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 6066,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "o-overview-standard.json",
+   "group": "order",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "o-overview-standard",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {
+    "detail_level": "standard",
+    "include_notifications": false,
+    "limit": 5
+   },
+   "public_tool": "ha_get_overview",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.404,
+   "session": 0,
+   "sha256": "395d59b05bcfbcd231d6e35e3fdefda53ebdf64b981c735fee558cdda17a8475",
+   "upstream_tool": "ha_get_overview",
+   "wire_arguments": {
+    "detail_level": "standard",
+    "include_notifications": false,
+    "limit": 5
+   }
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 3466,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "o-services-first-five.json",
+   "group": "order",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "o-services-first-five",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "public",
+   "new_session": false,
+   "public_arguments": {
+    "limit": 5
+   },
+   "public_tool": "ha_list_services",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.011,
+   "session": 0,
+   "sha256": "bbbdd0d4da2c41a03952571f326c94fe74703efdac7c7949c3510cd3fa75b724",
+   "upstream_tool": "ha_list_services",
+   "wire_arguments": {
+    "limit": 5
+   }
+  },
+  {
+   "arguments_built_by": "harness, sent as written",
+   "body_bytes": 36672,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "o-services-default-page.json",
+   "group": "order",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "o-services-default-page",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "upstream",
+   "new_session": false,
+   "public_arguments": {
+    "detail_level": "full"
+   },
+   "public_tool": "ha_list_services",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.015,
+   "session": 0,
+   "sha256": "952661468a66b7c895caf004888ab799af05a41523b9029090d460b195603a7a",
+   "upstream_tool": "ha_list_services",
+   "wire_arguments": {
+    "detail_level": "full"
+   }
+  },
+  {
+   "arguments_built_by": "harness, sent as written",
+   "body_bytes": 66672,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "o-services-page-1.json",
+   "group": "order",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "o-services-page-1",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "upstream",
+   "new_session": false,
+   "public_arguments": {
+    "limit": 200,
+    "offset": 0
+   },
+   "public_tool": "ha_list_services",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.013,
+   "session": 0,
+   "sha256": "4e09186324cde43c6176dd69a0c059a45d8971351aa82717b2526c9f175b8b69",
+   "upstream_tool": "ha_list_services",
+   "wire_arguments": {
+    "limit": 200,
+    "offset": 0
+   }
+  },
+  {
+   "arguments_built_by": "harness, sent as written",
+   "body_bytes": 16384,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "o-services-page-2.json",
+   "group": "order",
+   "has_structured_content": true,
+   "http_status": 200,
+   "id": "o-services-page-2",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": false,
+   "json_rpc_error_code": null,
+   "kind": "upstream",
+   "new_session": false,
+   "public_arguments": {
+    "limit": 200,
+    "offset": 200
+   },
+   "public_tool": "ha_list_services",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.012,
+   "session": 0,
+   "sha256": "f68f59f4079e0ca35cc430542da33f708cea53e19c07028aac84a776e4ce978e",
+   "upstream_tool": "ha_list_services",
+   "wire_arguments": {
+    "limit": 200,
+    "offset": 200
+   }
+  }
+ ],
+ "calls_format_version": 1,
+ "endpoint": "http://127.0.0.1:18086/mcp",
+ "negotiated_protocol_version": "2025-03-26",
+ "session_delete_status": [
+  null
+ ],
+ "session_header_present": false,
+ "sessions_opened": 1
+}

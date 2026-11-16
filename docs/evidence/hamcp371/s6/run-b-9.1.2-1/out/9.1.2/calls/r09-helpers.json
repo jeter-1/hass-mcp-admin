@@ -1,0 +1,146 @@
+{
+ "arguments_built_by": "adapter code, policy 9.1.2",
+ "calls_format_version": 1,
+ "exchange": {
+  "body_bytes": 804,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":109,\"result\":{\"content\":[{\"text\":\"{\\\"success\\\":true,\\\"helper_type\\\":\\\"input_boolean\\\",\\\"count\\\":1,\\\"helpers\\\":[{\\\"id\\\":\\\"hamcp371_helper\\\",\\\"name\\\":\\\"HAMCP371 helper\\\",\\\"entity_id\\\":\\\"input_boolean.hamcp371_helper\\\",\\\"original_name\\\":\\\"HAMCP371 helper\\\"}],\\\"message\\\":\\\"Found 1 input_boolean helper(s)\\\",\\\"total_count\\\":1,\\\"offset\\\":0,\\\"limit\\\":5,\\\"has_more\\\":false,\\\"next_offset\\\":null}\",\"type\":\"text\"}],\"isError\":false,\"structuredContent\":{\"success\":true,\"helper_type\":\"input_boolean\",\"count\":1,\"helpers\":[{\"id\":\"hamcp371_helper\",\"name\":\"HAMCP371 helper\",\"entity_id\":\"input_boolean.hamcp371_helper\",\"original_name\":\"HAMCP371 helper\"}],\"message\":\"Found 1 input_boolean helper(s)\",\"total_count\":1,\"offset\":0,\"limit\":5,\"has_more\":false,\"next_offset\":null}}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 109,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\"success\":true,\"helper_type\":\"input_boolean\",\"count\":1,\"helpers\":[{\"id\":\"hamcp371_helper\",\"name\":\"HAMCP371 helper\",\"entity_id\":\"input_boolean.hamcp371_helper\",\"original_name\":\"HAMCP371 helper\"}],\"message\":\"Found 1 input_boolean helper(s)\",\"total_count\":1,\"offset\":0,\"limit\":5,\"has_more\":false,\"next_offset\":null}",
+       "type": "text"
+      }
+     ],
+     "isError": false,
+     "structuredContent": {
+      "count": 1,
+      "has_more": false,
+      "helper_type": "input_boolean",
+      "helpers": [
+       {
+        "entity_id": "input_boolean.hamcp371_helper",
+        "id": "hamcp371_helper",
+        "name": "HAMCP371 helper",
+        "original_name": "HAMCP371 helper"
+       }
+      ],
+      "limit": 5,
+      "message": "Found 1 input_boolean helper(s)",
+      "next_offset": null,
+      "offset": 0,
+      "success": true,
+      "total_count": 1
+     }
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 109,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "describe": false,
+      "helper_type": "input_boolean",
+      "limit": 5
+     },
+     "name": "ha_config_list_helpers"
+    }
+   },
+   "method": "POST",
+   "path": "/mcp"
+  },
+  "response": {
+   "id": 109,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\"success\":true,\"helper_type\":\"input_boolean\",\"count\":1,\"helpers\":[{\"id\":\"hamcp371_helper\",\"name\":\"HAMCP371 helper\",\"entity_id\":\"input_boolean.hamcp371_helper\",\"original_name\":\"HAMCP371 helper\"}],\"message\":\"Found 1 input_boolean helper(s)\",\"total_count\":1,\"offset\":0,\"limit\":5,\"has_more\":false,\"next_offset\":null}",
+      "type": "text"
+     }
+    ],
+    "isError": false,
+    "structuredContent": {
+     "count": 1,
+     "has_more": false,
+     "helper_type": "input_boolean",
+     "helpers": [
+      {
+       "entity_id": "input_boolean.hamcp371_helper",
+       "id": "hamcp371_helper",
+       "name": "HAMCP371 helper",
+       "original_name": "HAMCP371 helper"
+      }
+     ],
+     "limit": 5,
+     "message": "Found 1 input_boolean helper(s)",
+     "next_offset": null,
+     "offset": 0,
+     "success": true,
+     "total_count": 1
+    }
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Sun, 15 Nov 2026 05:07:37 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null,
+ "group": "reads",
+ "id": "r09-helpers",
+ "idle": false,
+ "kind": "public",
+ "new_session": false,
+ "public_arguments": {
+  "helper_type": "input_boolean",
+  "limit": 5
+ },
+ "public_tool": "ha_config_list_helpers",
+ "upstream_tool": "ha_config_list_helpers",
+ "wire_arguments": {
+  "describe": false,
+  "helper_type": "input_boolean",
+  "limit": 5
+ }
+}

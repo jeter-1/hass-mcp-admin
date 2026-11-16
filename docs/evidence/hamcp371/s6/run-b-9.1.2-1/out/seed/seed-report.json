@@ -1,0 +1,177 @@
+{
+ "all_steps_ok": true,
+ "core_version": "2026.11.0",
+ "seed_format_version": 1,
+ "steps": [
+  {
+   "readback": {
+    "steps_listed": 4
+   },
+   "status": "ok",
+   "step": "onboard"
+  },
+  {
+   "readback": {
+    "components": 124,
+    "time_zone": "America/Chicago",
+    "utc_offset": "-1 day, 18:00:00",
+    "version": "2026.11.0"
+   },
+   "status": "ok",
+   "step": "ready"
+  },
+  {
+   "readback": {
+    "is_admin": true,
+    "is_owner": true,
+    "kind": "long-lived access token of the disposable Core's owner user",
+    "lifespan_days": 1
+   },
+   "status": "ok",
+   "step": "administrator_token"
+  },
+  {
+   "readback": {
+    "group_ids": [
+     "system-users"
+    ],
+    "is_admin": false,
+    "is_owner": false,
+    "lifespan_days": 1
+   },
+   "status": "ok",
+   "step": "ordinary_user_token"
+  },
+  {
+   "readback": {
+    "areas": 4,
+    "categories": 1,
+    "floors": 1,
+    "labels": 1
+   },
+   "status": "ok",
+   "step": "registries"
+  },
+  {
+   "readback": {
+    "entity": "input_boolean.hamcp371_helper"
+   },
+   "status": "ok",
+   "step": "helper"
+  },
+  {
+   "readback": {
+    "automation_entity": "automation.hamcp371_automation",
+    "stored_keys": {
+     "automation": [
+      "actions",
+      "alias",
+      "conditions",
+      "description",
+      "id",
+      "mode",
+      "triggers"
+     ],
+     "scene": [
+      "entities",
+      "id",
+      "name"
+     ],
+     "script": [
+      "alias",
+      "mode",
+      "sequence"
+     ]
+    }
+   },
+   "status": "ok",
+   "step": "configured_objects"
+  },
+  {
+   "readback": {
+    "resources": 1
+   },
+   "status": "ok",
+   "step": "dashboard_resource"
+  },
+  {
+   "readback": {
+    "entity": "calendar.hamcp371_calendar",
+    "events_created": 1
+   },
+   "status": "ok",
+   "step": "calendar"
+  },
+  {
+   "readback": {
+    "entity": "todo.hamcp371_todo",
+    "items_added": 1
+   },
+   "status": "ok",
+   "step": "todo"
+  },
+  {
+   "readback": {
+    "persons": 2,
+    "zones": 1
+   },
+   "status": "ok",
+   "step": "zone_and_person"
+  },
+  {
+   "readback": {
+    "area_set": true,
+    "category_set": true,
+    "exposed_to": [
+     "conversation"
+    ],
+    "labels": 1
+   },
+   "status": "ok",
+   "step": "metadata"
+  },
+  {
+   "readback": {
+    "automation_runs": 1,
+    "helper_toggles": 2,
+    "traces": 1
+   },
+   "status": "ok",
+   "step": "activity"
+  },
+  {
+   "readback": {
+    "entity": "sensor.hamcp371_energy",
+    "rows_imported": 1
+   },
+   "status": "ok",
+   "step": "statistics"
+  },
+  {
+   "readback": {
+    "config_entry_domains": [
+     "analytics",
+     "backup",
+     "google_translate",
+     "local_calendar",
+     "local_todo",
+     "marketplace",
+     "radio_browser",
+     "shopping_list",
+     "sun"
+    ],
+    "devices": 3,
+    "entity_registry": 27,
+    "non_ascii_group_name_loaded": true,
+    "states": 28
+   },
+   "status": "ok",
+   "step": "readback"
+  }
+ ],
+ "token_kind": "long-lived access tokens minted in this disposable Core; held in memory by the host, written to no file",
+ "tokens_issued": [
+  "administrator",
+  "ordinary_user"
+ ]
+}

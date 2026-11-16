@@ -1,0 +1,3361 @@
+{
+  "contract_format": "hamcp371-output-key-contract-v1",
+  "generator": "docs/evidence/hamcp371/s7/generate_output_key_contract.py",
+  "proposals_pending_ruling": [
+    "map containers (dict keys are data, values are closed rows): services, fields, domain_stats, area_analysis, states_summary, domains (overview), exposed_to, categories, by_type, data (system health)",
+    "extra open containers: capabilities and options (automation entity, entity registry), result (template), info (system health), example and default (service fields)",
+    "S10 E1-R (2026-11-15 14:45 ruling): a key named by the shipped 9.1 projections but not observed in a 9.1.2 receipt stays only as a source-review key, cited to the 9.2.0 upstream line that can write it; none is observed in a lane receipt",
+    "reviewed warnings are the exact upstream strings observed in the 9.1.2 receipts; the upstream source-string review is deferred",
+    "ha_get_history keeps the shipped 8.5-parity projection on 9.2.0; the keys it drops (summary, statistics_metadata, unit_source, unit_reason, last_reset) are policy drops counted in fields_dropped_by_policy (S9 correction of the S7 row)",
+    "S10 E1 (2026-11-15 13:25 ruling): a key justified only by the shipped 9.1 code is reported, not kept; the S10 additions of warnings and partial (entity envelope rows), all and unavailable_fields (groups) and unavailable_fields (template) are withdrawn; unavailable_fields on groups and template is recomputed by Engineering",
+    "S10: engineering_notes is Engineering-added (the zone location and icon notes, the services type note, item 14 and 15); response and optional on ha_list_services are admitted on a recorded review (item 13); integration and collapsed are admitted by the S10-2 ruling with one value type each; filter stays withheld pending review",
+    "D5: the platform rows are closed rebuilds; no open container applies, so a dropped key and the names inside it are counted"
+  ],
+  "reads": {
+    "ha_config_get_automation": {
+      "admitted": {
+        "action": "receipt 9.1.2 profile A+B",
+        "aliases": "receipt 9.1.2 profile A+B",
+        "area_id": "receipt 9.1.2 profile A+B",
+        "areas": "receipt 9.1.2 profile B",
+        "automation_id": "receipt 9.1.2 profile A+B",
+        "blueprint": "receipt 9.1.2 profile B",
+        "capabilities": "receipt 9.1.2 profile A+B",
+        "categories": "receipt 9.1.2 profile A+B",
+        "config": "receipt 9.1.2 profile A+B",
+        "config_entry_id": "receipt 9.1.2 profile A+B",
+        "config_hash": "receipt 9.1.2 profile A+B",
+        "config_subentry_id": "receipt 9.1.2 profile A+B",
+        "created_at": "receipt 9.1.2 profile A+B",
+        "device_class": "receipt 9.1.2 profile A+B",
+        "device_id": "receipt 9.1.2 profile A+B",
+        "devices": "receipt 9.1.2 profile B",
+        "disabled_by": "receipt 9.1.2 profile A+B",
+        "entities": "receipt 9.1.2 profile B",
+        "entity": "receipt 9.1.2 profile A+B",
+        "entity_category": "receipt 9.1.2 profile A+B",
+        "entity_id": "receipt 9.1.2 profile A+B",
+        "floors": "receipt 9.1.2 profile B",
+        "hidden_by": "receipt 9.1.2 profile A+B",
+        "icon": "receipt 9.1.2 profile A+B",
+        "id": "receipt 9.1.2 profile A+B",
+        "labels": "receipt 9.1.2 profile A+B",
+        "modified_at": "receipt 9.1.2 profile A+B",
+        "name": "receipt 9.1.2 profile A+B",
+        "next_name_part": "receipt 9.1.2 profile A+B",
+        "options": "receipt 9.1.2 profile A+B",
+        "original_device_class": "receipt 9.1.2 profile A+B",
+        "original_icon": "receipt 9.1.2 profile A+B",
+        "original_name": "receipt 9.1.2 profile A+B",
+        "platform": "receipt 9.1.2 profile A+B",
+        "references": "receipt 9.1.2 profile A+B",
+        "success": "receipt 9.1.2 profile A+B",
+        "translation_key": "receipt 9.1.2 profile A+B",
+        "unique_id": "receipt 9.1.2 profile A+B",
+        "validation": "receipt 9.1.2 profile A+B",
+        "warnings": "receipt 9.1.2 profile A"
+      },
+      "calls": {
+        "A/9.1.2": [
+          "r01-automation"
+        ],
+        "A/9.2.0": [
+          "r01-automation"
+        ],
+        "B/9.1.2": [
+          "r01-automation"
+        ],
+        "B/9.2.0": [
+          "r01-automation"
+        ]
+      },
+      "consumed_structure": [],
+      "map_containers": {
+        "categories": 1
+      },
+      "new_in_9_2_0": {},
+      "notes": [
+        "profile A carries upstream warnings and the policy drop related; profile B carries references"
+      ],
+      "number": 1,
+      "observed": {
+        "9.1.2": [
+          "action",
+          "aliases",
+          "area_id",
+          "areas",
+          "automation_id",
+          "blueprint",
+          "capabilities",
+          "categories",
+          "config",
+          "config_entry_id",
+          "config_hash",
+          "config_subentry_id",
+          "created_at",
+          "device_class",
+          "device_id",
+          "devices",
+          "disabled_by",
+          "entities",
+          "entity",
+          "entity_category",
+          "entity_id",
+          "floors",
+          "hidden_by",
+          "icon",
+          "id",
+          "labels",
+          "modified_at",
+          "name",
+          "next_name_part",
+          "options",
+          "original_device_class",
+          "original_icon",
+          "original_name",
+          "platform",
+          "references",
+          "related",
+          "success",
+          "translation_key",
+          "unique_id",
+          "validation",
+          "warnings"
+        ],
+        "9.2.0": [
+          "action",
+          "aliases",
+          "area_id",
+          "areas",
+          "automation_id",
+          "blueprint",
+          "capabilities",
+          "categories",
+          "config",
+          "config_entry_id",
+          "config_hash",
+          "config_subentry_id",
+          "created_at",
+          "device_class",
+          "device_id",
+          "devices",
+          "disabled_by",
+          "entities",
+          "entity",
+          "entity_category",
+          "entity_id",
+          "floors",
+          "hidden_by",
+          "icon",
+          "id",
+          "labels",
+          "modified_at",
+          "name",
+          "next_name_part",
+          "options",
+          "original_device_class",
+          "original_icon",
+          "original_name",
+          "platform",
+          "references",
+          "related",
+          "success",
+          "translation_key",
+          "unique_id",
+          "validation",
+          "warnings"
+        ]
+      },
+      "open_containers": [
+        "attributes",
+        "capabilities",
+        "config",
+        "filter",
+        "options",
+        "selector"
+      ],
+      "policy_drops": [
+        "related"
+      ],
+      "projection": "closed",
+      "qualified_containers": [],
+      "recomputed_by_engineering": [],
+      "removed_in_9_2_0": [],
+      "reviewed_warnings": [
+        "references need the ha_mcp_tools component's automation_config bridge, which is not available; related holds Core's broader Related set instead (also the devices, areas and integrations of what the automation uses)"
+      ],
+      "upstream_text_fields": [
+        "warnings"
+      ],
+      "upstream_tool": "ha_config_get_automation",
+      "value_types": {},
+      "warnings_new_in_9_2_0": [],
+      "withheld_by_rebuild": []
+    },
+    "ha_config_get_calendar_events": {
+      "admitted": {
+        "count": "receipt 9.1.2 profile A+B",
+        "dateTime": "receipt 9.1.2 profile A+B",
+        "description": "receipt 9.1.2 profile A+B",
+        "end": "receipt 9.1.2 profile A+B",
+        "entity_id": "receipt 9.1.2 profile A+B",
+        "events": "receipt 9.1.2 profile A+B",
+        "location": "receipt 9.1.2 profile A+B",
+        "message": "receipt 9.1.2 profile A+B",
+        "recurrence_id": "receipt 9.1.2 profile A+B",
+        "rrule": "receipt 9.1.2 profile A+B",
+        "start": "receipt 9.1.2 profile A+B",
+        "status": "receipt 9.1.2 profile A+B",
+        "success": "receipt 9.1.2 profile A+B",
+        "summary": "receipt 9.1.2 profile A+B",
+        "time_range": "receipt 9.1.2 profile A+B",
+        "total_available": "receipt 9.1.2 profile A+B",
+        "uid": "receipt 9.1.2 profile A+B"
+      },
+      "calls": {
+        "A/9.1.2": [
+          "r02-calendar-events"
+        ],
+        "A/9.2.0": [
+          "r02-calendar-events"
+        ],
+        "B/9.1.2": [
+          "r02-calendar-events"
+        ],
+        "B/9.2.0": [
+          "r02-calendar-events"
+        ]
+      },
+      "consumed_structure": [],
+      "map_containers": {},
+      "new_in_9_2_0": {},
+      "notes": [],
+      "number": 2,
+      "observed": {
+        "9.1.2": [
+          "count",
+          "dateTime",
+          "description",
+          "end",
+          "entity_id",
+          "events",
+          "location",
+          "message",
+          "recurrence_id",
+          "rrule",
+          "start",
+          "status",
+          "success",
+          "summary",
+          "time_range",
+          "total_available",
+          "uid"
+        ],
+        "9.2.0": [
+          "count",
+          "dateTime",
+          "description",
+          "end",
+          "entity_id",
+          "events",
+          "location",
+          "message",
+          "recurrence_id",
+          "rrule",
+          "start",
+          "status",
+          "success",
+          "summary",
+          "time_range",
+          "total_available",
+          "uid"
+        ]
+      },
+      "open_containers": [
+        "attributes",
+        "config",
+        "filter",
+        "selector"
+      ],
+      "policy_drops": [],
+      "projection": "closed",
+      "qualified_containers": [],
+      "recomputed_by_engineering": [],
+      "removed_in_9_2_0": [],
+      "reviewed_warnings": [],
+      "upstream_text_fields": [
+        "message"
+      ],
+      "upstream_tool": "ha_config_get_calendar_events",
+      "value_types": {},
+      "warnings_new_in_9_2_0": [],
+      "withheld_by_rebuild": []
+    },
+    "ha_config_get_category": {
+      "admitted": {
+        "categories": "receipt 9.1.2 profile A+B",
+        "category": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/tools_categories.py:124 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:178-194)",
+        "category_id": "receipt 9.1.2 profile A+B",
+        "count": "receipt 9.1.2 profile A+B",
+        "created_at": "receipt 9.1.2 profile A+B",
+        "icon": "receipt 9.1.2 profile A+B",
+        "message": "receipt 9.1.2 profile A+B",
+        "modified_at": "receipt 9.1.2 profile A+B",
+        "name": "receipt 9.1.2 profile A+B",
+        "scope": "receipt 9.1.2 profile A+B",
+        "success": "receipt 9.1.2 profile A+B"
+      },
+      "calls": {
+        "A/9.1.2": [
+          "r03-category"
+        ],
+        "A/9.2.0": [
+          "r03-category"
+        ],
+        "B/9.1.2": [
+          "r03-category"
+        ],
+        "B/9.2.0": [
+          "r03-category"
+        ]
+      },
+      "consumed_structure": [],
+      "map_containers": {},
+      "new_in_9_2_0": {},
+      "notes": [],
+      "number": 3,
+      "observed": {
+        "9.1.2": [
+          "categories",
+          "category_id",
+          "count",
+          "created_at",
+          "icon",
+          "message",
+          "modified_at",
+          "name",
+          "scope",
+          "success"
+        ],
+        "9.2.0": [
+          "categories",
+          "category_id",
+          "count",
+          "created_at",
+          "icon",
+          "message",
+          "modified_at",
+          "name",
+          "scope",
+          "success"
+        ]
+      },
+      "open_containers": [
+        "attributes",
+        "config",
+        "filter",
+        "selector"
+      ],
+      "policy_drops": [],
+      "projection": "closed",
+      "qualified_containers": [],
+      "recomputed_by_engineering": [],
+      "removed_in_9_2_0": [],
+      "reviewed_warnings": [],
+      "upstream_text_fields": [
+        "message"
+      ],
+      "upstream_tool": "ha_config_get_category",
+      "value_types": {},
+      "warnings_new_in_9_2_0": [],
+      "withheld_by_rebuild": []
+    },
+    "ha_config_get_label": {
+      "admitted": {
+        "color": "receipt 9.1.2 profile A+B",
+        "count": "receipt 9.1.2 profile A+B",
+        "created_at": "receipt 9.1.2 profile A+B",
+        "description": "receipt 9.1.2 profile A+B",
+        "icon": "receipt 9.1.2 profile A+B",
+        "label": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/tools_labels.py:647 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:198-213)",
+        "label_id": "receipt 9.1.2 profile A+B",
+        "labels": "receipt 9.1.2 profile A+B",
+        "message": "receipt 9.1.2 profile A+B",
+        "modified_at": "receipt 9.1.2 profile A+B",
+        "name": "receipt 9.1.2 profile A+B",
+        "success": "receipt 9.1.2 profile A+B"
+      },
+      "calls": {
+        "A/9.1.2": [
+          "r04-label"
+        ],
+        "A/9.2.0": [
+          "r04-label"
+        ],
+        "B/9.1.2": [
+          "r04-label"
+        ],
+        "B/9.2.0": [
+          "r04-label"
+        ]
+      },
+      "consumed_structure": [],
+      "map_containers": {},
+      "new_in_9_2_0": {},
+      "notes": [],
+      "number": 4,
+      "observed": {
+        "9.1.2": [
+          "color",
+          "count",
+          "created_at",
+          "description",
+          "icon",
+          "label_id",
+          "labels",
+          "message",
+          "modified_at",
+          "name",
+          "success"
+        ],
+        "9.2.0": [
+          "color",
+          "count",
+          "created_at",
+          "description",
+          "icon",
+          "label_id",
+          "labels",
+          "message",
+          "modified_at",
+          "name",
+          "success"
+        ]
+      },
+      "open_containers": [
+        "attributes",
+        "config",
+        "filter",
+        "selector"
+      ],
+      "policy_drops": [],
+      "projection": "closed",
+      "qualified_containers": [],
+      "recomputed_by_engineering": [],
+      "removed_in_9_2_0": [],
+      "reviewed_warnings": [],
+      "upstream_text_fields": [
+        "message"
+      ],
+      "upstream_tool": "ha_config_get_label",
+      "value_types": {},
+      "warnings_new_in_9_2_0": [],
+      "withheld_by_rebuild": []
+    },
+    "ha_config_get_scene": {
+      "admitted": {
+        "action": "receipt 9.1.2 profile A+B",
+        "category": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/tools_config_scenes.py:455 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:219-230)",
+        "config": "receipt 9.1.2 profile A+B",
+        "config_hash": "receipt 9.1.2 profile A+B",
+        "scene_id": "receipt 9.1.2 profile A+B",
+        "success": "receipt 9.1.2 profile A+B",
+        "warnings": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/tools_config_scenes.py:457 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:219-230)"
+      },
+      "calls": {
+        "A/9.1.2": [
+          "r05-scene"
+        ],
+        "A/9.2.0": [
+          "r05-scene"
+        ],
+        "B/9.1.2": [
+          "r05-scene"
+        ],
+        "B/9.2.0": [
+          "r05-scene"
+        ]
+      },
+      "consumed_structure": [],
+      "map_containers": {},
+      "new_in_9_2_0": {},
+      "notes": [],
+      "number": 5,
+      "observed": {
+        "9.1.2": [
+          "action",
+          "config",
+          "config_hash",
+          "scene_id",
+          "success"
+        ],
+        "9.2.0": [
+          "action",
+          "config",
+          "config_hash",
+          "scene_id",
+          "success"
+        ]
+      },
+      "open_containers": [
+        "attributes",
+        "config",
+        "filter",
+        "selector"
+      ],
+      "policy_drops": [],
+      "projection": "closed",
+      "qualified_containers": [],
+      "recomputed_by_engineering": [],
+      "removed_in_9_2_0": [],
+      "reviewed_warnings": [],
+      "upstream_text_fields": [],
+      "upstream_tool": "ha_config_get_scene",
+      "value_types": {},
+      "warnings_new_in_9_2_0": [],
+      "withheld_by_rebuild": []
+    },
+    "ha_config_get_script": {
+      "admitted": {
+        "action": "receipt 9.1.2 profile A+B",
+        "config": "receipt 9.1.2 profile A+B",
+        "config_hash": "receipt 9.1.2 profile A+B",
+        "script_id": "receipt 9.1.2 profile A+B",
+        "success": "receipt 9.1.2 profile A+B",
+        "warnings": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/tools_config_scripts.py:255 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:237-247)"
+      },
+      "calls": {
+        "A/9.1.2": [
+          "r06-script"
+        ],
+        "A/9.2.0": [
+          "r06-script"
+        ],
+        "B/9.1.2": [
+          "r06-script"
+        ],
+        "B/9.2.0": [
+          "r06-script"
+        ]
+      },
+      "consumed_structure": [],
+      "map_containers": {},
+      "new_in_9_2_0": {},
+      "notes": [],
+      "number": 6,
+      "observed": {
+        "9.1.2": [
+          "action",
+          "config",
+          "config_hash",
+          "script_id",
+          "success"
+        ],
+        "9.2.0": [
+          "action",
+          "config",
+          "config_hash",
+          "script_id",
+          "success"
+        ]
+      },
+      "open_containers": [
+        "attributes",
+        "config",
+        "filter",
+        "selector"
+      ],
+      "policy_drops": [],
+      "projection": "closed",
+      "qualified_containers": [],
+      "recomputed_by_engineering": [],
+      "removed_in_9_2_0": [],
+      "reviewed_warnings": [],
+      "upstream_text_fields": [],
+      "upstream_tool": "ha_config_get_script",
+      "value_types": {},
+      "warnings_new_in_9_2_0": [],
+      "withheld_by_rebuild": []
+    },
+    "ha_config_list_dashboard_resources": {
+      "admitted": {
+        "action": "receipt 9.1.2 profile A+B",
+        "by_type": "receipt 9.1.2 profile A+B",
+        "content_truncated": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/tools_resources.py:265 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:251-281)",
+        "content_truncation_note": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/tools_resources.py:266 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:251-281)",
+        "count": "receipt 9.1.2 profile A+B",
+        "has_more": "receipt 9.1.2 profile A+B",
+        "id": "receipt 9.1.2 profile A+B",
+        "inline_count": "receipt 9.1.2 profile A+B",
+        "limit": "receipt 9.1.2 profile A+B",
+        "migration_hint": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/tools_resources.py:274 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:251-281)",
+        "next_offset": "receipt 9.1.2 profile A+B",
+        "note": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/tools_resources.py:279 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:251-281)",
+        "offset": "receipt 9.1.2 profile A+B",
+        "resource_mode": "receipt 9.1.2 profile A+B",
+        "resources": "receipt 9.1.2 profile A+B",
+        "success": "receipt 9.1.2 profile A+B",
+        "total_count": "receipt 9.1.2 profile A+B",
+        "type": "receipt 9.1.2 profile A+B",
+        "url": "receipt 9.1.2 profile A+B"
+      },
+      "calls": {
+        "A/9.1.2": [
+          "r07-dashboard-resources"
+        ],
+        "A/9.2.0": [
+          "r07-dashboard-resources"
+        ],
+        "B/9.1.2": [
+          "r07-dashboard-resources"
+        ],
+        "B/9.2.0": [
+          "r07-dashboard-resources"
+        ]
+      },
+      "consumed_structure": [],
+      "map_containers": {
+        "by_type": 1
+      },
+      "new_in_9_2_0": {},
+      "notes": [],
+      "number": 7,
+      "observed": {
+        "9.1.2": [
+          "action",
+          "by_type",
+          "count",
+          "has_more",
+          "id",
+          "inline_count",
+          "limit",
+          "next_offset",
+          "offset",
+          "resource_mode",
+          "resources",
+          "success",
+          "total_count",
+          "type",
+          "url"
+        ],
+        "9.2.0": [
+          "action",
+          "by_type",
+          "count",
+          "has_more",
+          "id",
+          "inline_count",
+          "limit",
+          "next_offset",
+          "offset",
+          "resource_mode",
+          "resources",
+          "success",
+          "total_count",
+          "type",
+          "url"
+        ]
+      },
+      "open_containers": [
+        "attributes",
+        "config",
+        "filter",
+        "selector"
+      ],
+      "policy_drops": [],
+      "projection": "closed",
+      "qualified_containers": [],
+      "recomputed_by_engineering": [],
+      "removed_in_9_2_0": [],
+      "reviewed_warnings": [],
+      "upstream_text_fields": [],
+      "upstream_tool": "ha_config_list_dashboard_resources",
+      "value_types": {},
+      "warnings_new_in_9_2_0": [],
+      "withheld_by_rebuild": []
+    },
+    "ha_config_list_groups": {
+      "admitted": {
+        "auto": "receipt 9.1.2 profile A+B",
+        "context": "receipt 9.1.2 profile A+B",
+        "count": "receipt 9.1.2 profile A+B",
+        "entity_id": "receipt 9.1.2 profile A+B",
+        "entity_ids": "receipt 9.1.2 profile A+B",
+        "friendly_name": "receipt 9.1.2 profile A+B",
+        "groups": "receipt 9.1.2 profile A+B",
+        "has_more": "receipt 9.1.2 profile A+B",
+        "icon": "receipt 9.1.2 profile A+B",
+        "id": "receipt 9.1.2 profile A+B",
+        "last_changed": "receipt 9.1.2 profile A+B",
+        "last_reported": "receipt 9.1.2 profile A+B",
+        "last_updated": "receipt 9.1.2 profile A+B",
+        "limit": "receipt 9.1.2 profile A+B",
+        "message": "receipt 9.1.2 profile A+B",
+        "next_offset": "receipt 9.1.2 profile A+B",
+        "object_id": "receipt 9.1.2 profile A+B",
+        "offset": "receipt 9.1.2 profile A+B",
+        "order": "receipt 9.1.2 profile A+B",
+        "parent_id": "receipt 9.1.2 profile A+B",
+        "state": "receipt 9.1.2 profile A+B",
+        "success": "receipt 9.1.2 profile A+B",
+        "total_count": "receipt 9.1.2 profile A+B",
+        "user_id": "receipt 9.1.2 profile A+B"
+      },
+      "calls": {
+        "A/9.1.2": [
+          "r08-groups"
+        ],
+        "A/9.2.0": [
+          "r08-groups"
+        ],
+        "B/9.1.2": [
+          "r08-groups"
+        ],
+        "B/9.2.0": [
+          "r08-groups"
+        ]
+      },
+      "consumed_structure": [],
+      "map_containers": {},
+      "new_in_9_2_0": {},
+      "notes": [],
+      "number": 8,
+      "observed": {
+        "9.1.2": [
+          "auto",
+          "context",
+          "count",
+          "entity_id",
+          "entity_ids",
+          "friendly_name",
+          "groups",
+          "has_more",
+          "icon",
+          "id",
+          "last_changed",
+          "last_reported",
+          "last_updated",
+          "limit",
+          "message",
+          "next_offset",
+          "object_id",
+          "offset",
+          "order",
+          "parent_id",
+          "state",
+          "success",
+          "total_count",
+          "user_id"
+        ],
+        "9.2.0": [
+          "auto",
+          "context",
+          "count",
+          "entity_id",
+          "entity_ids",
+          "friendly_name",
+          "groups",
+          "has_more",
+          "icon",
+          "id",
+          "last_changed",
+          "last_reported",
+          "last_updated",
+          "limit",
+          "message",
+          "next_offset",
+          "object_id",
+          "offset",
+          "order",
+          "parent_id",
+          "state",
+          "success",
+          "total_count",
+          "user_id"
+        ]
+      },
+      "open_containers": [
+        "attributes",
+        "config",
+        "filter",
+        "selector"
+      ],
+      "policy_drops": [],
+      "projection": "closed",
+      "qualified_containers": [],
+      "recomputed_by_engineering": [
+        "unavailable_fields"
+      ],
+      "removed_in_9_2_0": [],
+      "reviewed_warnings": [],
+      "upstream_text_fields": [
+        "message"
+      ],
+      "upstream_tool": "ha_config_list_groups",
+      "value_types": {},
+      "warnings_new_in_9_2_0": [],
+      "withheld_by_rebuild": []
+    },
+    "ha_config_list_helpers": {
+      "admitted": {
+        "count": "receipt 9.1.2 profile A+B",
+        "entity_id": "receipt 9.1.2 profile A+B",
+        "has_more": "receipt 9.1.2 profile A+B",
+        "helper_type": "receipt 9.1.2 profile A+B",
+        "helpers": "receipt 9.1.2 profile A+B",
+        "id": "receipt 9.1.2 profile A+B",
+        "limit": "receipt 9.1.2 profile A+B",
+        "message": "receipt 9.1.2 profile A+B",
+        "name": "receipt 9.1.2 profile A+B",
+        "next_offset": "receipt 9.1.2 profile A+B",
+        "offset": "receipt 9.1.2 profile A+B",
+        "original_name": "receipt 9.1.2 profile A+B",
+        "success": "receipt 9.1.2 profile A+B",
+        "total_count": "receipt 9.1.2 profile A+B",
+        "warnings": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/config_helpers/listing.py:231 (also :182) (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:316-327)"
+      },
+      "calls": {
+        "A/9.1.2": [
+          "r09-helpers"
+        ],
+        "A/9.2.0": [
+          "r09-helpers"
+        ],
+        "B/9.1.2": [
+          "r09-helpers"
+        ],
+        "B/9.2.0": [
+          "r09-helpers"
+        ]
+      },
+      "consumed_structure": [],
+      "map_containers": {},
+      "new_in_9_2_0": {
+        "later_forms": {
+          "observed_9_1_2_profiles": [],
+          "observed_9_2_0_profiles": [],
+          "source": "no recorded review",
+          "status": "withheld_pending_review"
+        },
+        "read_only": {
+          "observed_9_1_2_profiles": [],
+          "observed_9_2_0_profiles": [],
+          "source": "no recorded review",
+          "status": "withheld_pending_review"
+        },
+        "secret": {
+          "observed_9_1_2_profiles": [],
+          "observed_9_2_0_profiles": [],
+          "source": "no recorded review",
+          "status": "withheld_pending_review"
+        }
+      },
+      "notes": [
+        "describe=True is not exercised by the S6 receipts; read_only, secret and later_forms stay withheld until reviewed (research G 2f)"
+      ],
+      "number": 9,
+      "observed": {
+        "9.1.2": [
+          "count",
+          "entity_id",
+          "has_more",
+          "helper_type",
+          "helpers",
+          "id",
+          "limit",
+          "message",
+          "name",
+          "next_offset",
+          "offset",
+          "original_name",
+          "success",
+          "total_count"
+        ],
+        "9.2.0": [
+          "count",
+          "entity_id",
+          "has_more",
+          "helper_type",
+          "helpers",
+          "id",
+          "limit",
+          "message",
+          "name",
+          "next_offset",
+          "offset",
+          "original_name",
+          "success",
+          "total_count"
+        ]
+      },
+      "open_containers": [
+        "attributes",
+        "config",
+        "filter",
+        "selector"
+      ],
+      "policy_drops": [],
+      "projection": "closed",
+      "qualified_containers": [],
+      "recomputed_by_engineering": [],
+      "removed_in_9_2_0": [],
+      "reviewed_warnings": [],
+      "upstream_text_fields": [
+        "message"
+      ],
+      "upstream_tool": "ha_config_list_helpers",
+      "value_types": {},
+      "warnings_new_in_9_2_0": [],
+      "withheld_by_rebuild": []
+    },
+    "ha_eval_template": {
+      "admitted": {
+        "all": "receipt 9.1.2 profile A+B",
+        "domains": "receipt 9.1.2 profile A+B",
+        "entities": "receipt 9.1.2 profile A+B",
+        "listeners": "receipt 9.1.2 profile A+B",
+        "result": "receipt 9.1.2 profile A+B",
+        "success": "receipt 9.1.2 profile A+B",
+        "template": "receipt 9.1.2 profile A+B",
+        "time": "receipt 9.1.2 profile A+B",
+        "warnings": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/tools_utility.py:163 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:333-345)"
+      },
+      "calls": {
+        "A/9.1.2": [
+          "r10-template"
+        ],
+        "A/9.2.0": [
+          "r10-template"
+        ],
+        "B/9.1.2": [
+          "r10-template"
+        ],
+        "B/9.2.0": [
+          "r10-template"
+        ]
+      },
+      "consumed_structure": [],
+      "map_containers": {},
+      "new_in_9_2_0": {},
+      "notes": [],
+      "number": 10,
+      "observed": {
+        "9.1.2": [
+          "all",
+          "domains",
+          "entities",
+          "listeners",
+          "result",
+          "success",
+          "template",
+          "time"
+        ],
+        "9.2.0": [
+          "all",
+          "domains",
+          "entities",
+          "listeners",
+          "result",
+          "success",
+          "template",
+          "time"
+        ]
+      },
+      "open_containers": [
+        "attributes",
+        "config",
+        "filter",
+        "result",
+        "selector"
+      ],
+      "policy_drops": [],
+      "projection": "closed",
+      "qualified_containers": [],
+      "recomputed_by_engineering": [
+        "unavailable_fields"
+      ],
+      "removed_in_9_2_0": [],
+      "reviewed_warnings": [],
+      "upstream_text_fields": [],
+      "upstream_tool": "ha_eval_template",
+      "value_types": {},
+      "warnings_new_in_9_2_0": [],
+      "withheld_by_rebuild": []
+    },
+    "ha_get_app": {
+      "admitted": {
+        "addons": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:611-673 (shipped rebuild)",
+        "cpu_percent": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:611-673 (shipped rebuild)",
+        "description": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:611-673 (shipped rebuild)",
+        "installed": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:611-673 (shipped rebuild)",
+        "memory_limit": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:611-673 (shipped rebuild)",
+        "memory_percent": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:611-673 (shipped rebuild)",
+        "memory_usage": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:611-673 (shipped rebuild)",
+        "name": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:611-673 (shipped rebuild)",
+        "repository": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:611-673 (shipped rebuild)",
+        "slug": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:611-673 (shipped rebuild)",
+        "state": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:611-673 (shipped rebuild)",
+        "stats": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:611-673 (shipped rebuild)",
+        "success": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:611-673 (shipped rebuild)",
+        "update_available": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:611-673 (shipped rebuild)",
+        "version": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:611-673 (shipped rebuild)",
+        "warnings": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:611-673 (shipped rebuild)"
+      },
+      "calls": {},
+      "consumed_structure": [],
+      "map_containers": {},
+      "new_in_9_2_0": {},
+      "notes": [
+        "D5: the 9.2.0 projection is tested with a synthetic payload only (disclosed)",
+        "no successful receipt: r27-apps errors on both versions (the peer logs show supervisor/api: Unknown command); SR records the body and category"
+      ],
+      "number": 27,
+      "observed": {
+        "9.1.2": [],
+        "9.2.0": []
+      },
+      "open_containers": [],
+      "policy_drops": [],
+      "projection": "rebuild",
+      "qualified_containers": [],
+      "recomputed_by_engineering": [],
+      "removed_in_9_2_0": [],
+      "reviewed_warnings": [],
+      "upstream_text_fields": [],
+      "upstream_tool": "ha_get_app",
+      "value_types": {},
+      "warnings_new_in_9_2_0": [],
+      "withheld_by_rebuild": []
+    },
+    "ha_get_automation_traces": {
+      "admitted": {
+        "automation_id": "receipt 9.1.2 profile A+B",
+        "diagnostics": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/tools_traces.py:596 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py:354-390)",
+        "execution": "receipt 9.1.2 profile A+B",
+        "finish": "receipt 9.1.2 profile A+B",
+        "has_more": "receipt 9.1.2 profile A+B",
+        "hint": "receipt 9.1.2 profile A+B",
+        "offset": "receipt 9.1.2 profile A+B",
+        "order": "receipt 9.1.2 profile A+B",
+        "run_id": "receipt 9.1.2 profile A+B",
+        "start": "receipt 9.1.2 profile A+B",
+        "state": "receipt 9.1.2 profile A+B",
+        "success": "receipt 9.1.2 profile A+B",
+        "timestamp": "receipt 9.1.2 profile A+B",
+        "total_available": "receipt 9.1.2 profile A+B",
+        "trace_count": "receipt 9.1.2 profile A+B",
+        "traces": "receipt 9.1.2 profile A+B"
+      },
+      "calls": {
+        "A/9.1.2": [
+          "r11-automation-traces"
+        ],
+        "A/9.2.0": [
+          "r11-automation-traces"
+        ],
+        "B/9.1.2": [
+          "r11-automation-traces"
+        ],
+        "B/9.2.0": [
+          "r11-automation-traces"
+        ]
+      },
+      "consumed_structure": [],
+      "map_containers": {},
+      "new_in_9_2_0": {},
+      "notes": [],
+      "number": 11,
+      "observed": {
+        "9.1.2": [
+          "automation_id",
+          "execution",
+          "finish",
+          "has_more",
+          "hint",
+          "offset",
+          "order",
+          "run_id",
+          "start",
+          "state",
+          "success",
+          "timestamp",
+          "total_available",
+          "trace_count",
+          "traces"
+        ],
+        "9.2.0": [
+          "automation_id",
+          "execution",
+          "finish",
+          "has_more",
+          "hint",
+          "offset",
+          "order",
+          "run_id",
+          "start",
+          "state",
+          "success",
+          "timestamp",
+          "total_available",
+          "trace_count",
+          "traces"
+        ]
+      },
+      "open_containers": [
+        "attributes",
+        "config",
+        "filter",
+        "selector"
+      ],
+      "policy_drops": [],
+      "projection": "closed",
+      "qualified_containers": [],
+      "recomputed_by_engineering": [],
+      "removed_in_9_2_0": [],
+      "reviewed_warnings": [],
+      "upstream_text_fields": [
+        "hint"
+      ],
+      "upstream_tool": "ha_get_automation_traces",
+      "value_types": {},
+      "warnings_new_in_9_2_0": [],
+      "withheld_by_rebuild": []
+    },
+    "ha_get_blueprint": {
+      "admitted": {
+        "author": "receipt 9.1.2 profile A+B",
+        "blueprints": "receipt 9.1.2 profile A+B",
+        "count": "receipt 9.1.2 profile A+B",
+        "data": "receipt 9.1.2 profile A+B",
+        "description": "receipt 9.1.2 profile A+B",
+        "domain": "receipt 9.1.2 profile A+B",
+        "name": "receipt 9.1.2 profile A+B",
+        "path": "receipt 9.1.2 profile A+B",
+        "source_url": "receipt 9.1.2 profile A+B",
+        "success": "receipt 9.1.2 profile A+B"
+      },
+      "calls": {
+        "A/9.1.2": [
+          "r12-blueprints"
+        ],
+        "A/9.2.0": [
+          "r12-blueprints"
+        ],
+        "B/9.1.2": [
+          "r12-blueprints"
+        ],
+        "B/9.2.0": [
+          "r12-blueprints"
+        ]
+      },
+      "consumed_structure": [],
+      "map_containers": {},
+      "new_in_9_2_0": {},
+      "notes": [
+        "shape-only validation on 8.x and 9.1.x (HAMCP-402); the closed set is drafted from the 9.1.2 receipts",
+        "D5-B: on 9.2.0 a key directly under data outside upstream_reads_9_2_blueprint LIST_KEYS (capture) or GET_KEYS (source review of tools_blueprints.py at 51e3aac7) is refused as invalid_response and never counted; nested keys, config and yaml are not closed, and a key at the payload top level passes as shipped"
+      ],
+      "number": 12,
+      "observed": {
+        "9.1.2": [
+          "author",
+          "blueprints",
+          "count",
+          "data",
+          "description",
+          "domain",
+          "name",
+          "path",
+          "source_url",
+          "success"
+        ],
+        "9.2.0": [
+          "author",
+          "blueprints",
+          "count",
+          "data",
+          "description",
+          "domain",
+          "name",
+          "path",
+          "source_url",
+          "success"
+        ]
+      },
+      "open_containers": [
+        "attributes",
+        "config",
+        "filter",
+        "selector"
+      ],
+      "policy_drops": [],
+      "projection": "closed",
+      "qualified_containers": [],
+      "recomputed_by_engineering": [],
+      "removed_in_9_2_0": [],
+      "reviewed_warnings": [],
+      "upstream_text_fields": [],
+      "upstream_tool": "ha_manage_blueprints",
+      "value_types": {},
+      "warnings_new_in_9_2_0": [],
+      "withheld_by_rebuild": []
+    },
+    "ha_get_device": {
+      "admitted": {
+        "active_fabric_index": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "active_fabrics": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "area_filter": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "area_id": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "available": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "bridge": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "config_entries": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "connections": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "count": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "default_name": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "detail_level": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "device": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "device_id": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "devices": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "disabled_by": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "entities": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "entity_count": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "entity_id": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "fabric_id": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "fabric_index": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "fabric_label": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "filters": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "friendly_name": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "has_more": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "hw_version": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "identifiers": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "ieee_address": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "integration_filter": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "integration_sources": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "integration_type": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "ip_addresses": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "labels": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "limit": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "mac_address": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "manufacturer": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "manufacturer_filter": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "model": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "mqtt_topic_hint": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "name": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "name_by_user": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "network_name": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "network_type": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "next_offset": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "node_diagnostics": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "node_id": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "node_status": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "node_type": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "offset": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "platform": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "queried_by": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "queried_entity_id": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "radio_metrics": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "serial_number": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "success": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "sw_version": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "total_count": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "total_devices": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "usage_hint": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "vendor_id": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "vendor_name": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "via_device_id": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "warnings": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)",
+        "zha_trigger_hint": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py:476-748 (shipped rebuild)"
+      },
+      "calls": {
+        "A/9.1.2": [
+          "r13-devices"
+        ],
+        "A/9.2.0": [
+          "r13-devices"
+        ],
+        "B/9.1.2": [
+          "r13-devices"
+        ],
+        "B/9.2.0": [
+          "r13-devices"
+        ]
+      },
+      "consumed_structure": [],
+      "map_containers": {},
+      "new_in_9_2_0": {},
+      "notes": [
+        "the shared device projection counts unknown keys per occurrence, not distinct names; kept as shipped on 9.2.0 (22:59 record, item 2)",
+        "N26 difference from ruling 10: fields_withheld is per occurrence and absent when zero; there is no fields_dropped_by_policy or upstream_warnings_replaced; an unlisted warning becomes a shipped closed code (enrichment_warning_unrecognized on the single read; unknown_fields_withheld on the list read, which has no warnings key), not upstream_warning_replaced"
+      ],
+      "number": 13,
+      "observed": {
+        "9.1.2": [
+          "area_id",
+          "count",
+          "detail_level",
+          "device_id",
+          "devices",
+          "has_more",
+          "integration_sources",
+          "integration_type",
+          "limit",
+          "manufacturer",
+          "model",
+          "name",
+          "next_offset",
+          "offset",
+          "success",
+          "sw_version",
+          "total_count",
+          "total_devices",
+          "via_device_id"
+        ],
+        "9.2.0": [
+          "area_id",
+          "count",
+          "detail_level",
+          "device_id",
+          "devices",
+          "has_more",
+          "integration_sources",
+          "integration_type",
+          "limit",
+          "manufacturer",
+          "model",
+          "name",
+          "next_offset",
+          "offset",
+          "success",
+          "sw_version",
+          "total_count",
+          "total_devices",
+          "via_device_id"
+        ]
+      },
+      "open_containers": [
+        "attributes",
+        "config",
+        "filter",
+        "selector"
+      ],
+      "policy_drops": [],
+      "projection": "rebuild",
+      "qualified_containers": [],
+      "recomputed_by_engineering": [],
+      "removed_in_9_2_0": [],
+      "reviewed_warnings": [],
+      "upstream_text_fields": [],
+      "upstream_tool": "ha_get_device",
+      "value_types": {},
+      "warnings_new_in_9_2_0": [],
+      "withheld_by_rebuild": []
+    },
+    "ha_get_entity": {
+      "admitted": {
+        "aliases": "receipt 9.1.2 profile A+B",
+        "area": "receipt 9.1.2 profile B",
+        "area_id": "receipt 9.1.2 profile A+B",
+        "categories": "receipt 9.1.2 profile A+B",
+        "config_entry_id": "receipt 9.1.2 profile A+B",
+        "device_class": "receipt 9.1.2 profile A+B",
+        "device_id": "receipt 9.1.2 profile A+B",
+        "disabled_by": "receipt 9.1.2 profile A+B",
+        "enabled": "receipt 9.1.2 profile A+B",
+        "entity_entries": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/tools_entities.py:1997 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:103-110)",
+        "entity_entry": "receipt 9.1.2 profile A+B",
+        "entity_id": "receipt 9.1.2 profile A+B",
+        "errors": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/tools_entities.py:2000 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:103-110)",
+        "floor": "receipt 9.1.2 profile B",
+        "hidden": "receipt 9.1.2 profile A+B",
+        "hidden_by": "receipt 9.1.2 profile A+B",
+        "icon": "receipt 9.1.2 profile A+B",
+        "label_names": "receipt 9.1.2 profile B",
+        "labels": "receipt 9.1.2 profile A+B",
+        "name": "receipt 9.1.2 profile A+B",
+        "options": "receipt 9.1.2 profile A+B",
+        "original_device_class": "receipt 9.1.2 profile A+B",
+        "original_name": "receipt 9.1.2 profile A+B",
+        "platform": "receipt 9.1.2 profile A+B",
+        "success": "receipt 9.1.2 profile A+B",
+        "unique_id": "receipt 9.1.2 profile A+B",
+        "uses_device_name": "receipt 9.1.2 profile A+B"
+      },
+      "calls": {
+        "A/9.1.2": [
+          "a-entity-after-core-restart",
+          "r14-entity",
+          "t-after-idle"
+        ],
+        "A/9.2.0": [
+          "a-entity-after-core-restart",
+          "r14-entity",
+          "t-after-idle"
+        ],
+        "B/9.1.2": [
+          "a-entity-after-core-restart",
+          "r14-entity",
+          "t-after-idle"
+        ],
+        "B/9.2.0": [
+          "a-entity-after-core-restart",
+          "r14-entity",
+          "t-after-idle"
+        ]
+      },
+      "consumed_structure": [],
+      "map_containers": {
+        "categories": 1
+      },
+      "new_in_9_2_0": {},
+      "notes": [],
+      "number": 14,
+      "observed": {
+        "9.1.2": [
+          "aliases",
+          "area",
+          "area_id",
+          "categories",
+          "config_entry_id",
+          "device_class",
+          "device_id",
+          "disabled_by",
+          "enabled",
+          "entity_entry",
+          "entity_id",
+          "floor",
+          "hidden",
+          "hidden_by",
+          "icon",
+          "label_names",
+          "labels",
+          "name",
+          "options",
+          "original_device_class",
+          "original_name",
+          "platform",
+          "success",
+          "unique_id",
+          "uses_device_name"
+        ],
+        "9.2.0": [
+          "aliases",
+          "area",
+          "area_id",
+          "categories",
+          "config_entry_id",
+          "device_class",
+          "device_id",
+          "disabled_by",
+          "enabled",
+          "entity_entry",
+          "entity_id",
+          "floor",
+          "hidden",
+          "hidden_by",
+          "icon",
+          "label_names",
+          "labels",
+          "name",
+          "options",
+          "original_device_class",
+          "original_name",
+          "platform",
+          "success",
+          "unique_id",
+          "uses_device_name"
+        ]
+      },
+      "open_containers": [
+        "attributes",
+        "config",
+        "filter",
+        "options",
+        "selector"
+      ],
+      "policy_drops": [],
+      "projection": "closed",
+      "qualified_containers": [],
+      "recomputed_by_engineering": [],
+      "removed_in_9_2_0": [],
+      "reviewed_warnings": [],
+      "upstream_text_fields": [],
+      "upstream_tool": "ha_get_entity",
+      "value_types": {},
+      "warnings_new_in_9_2_0": [],
+      "withheld_by_rebuild": []
+    },
+    "ha_get_entity_exposure": {
+      "admitted": {
+        "area": "receipt 9.1.2 profile B",
+        "domain": "receipt 9.1.2 profile B",
+        "entity_id": "receipt 9.1.2 profile A+B",
+        "exposed_entities": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/tools_voice_assistant.py:191 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:122-131)",
+        "exposed_to": "receipt 9.1.2 profile A+B",
+        "floor": "receipt 9.1.2 profile B",
+        "friendly_name": "receipt 9.1.2 profile B",
+        "has_custom_settings": "receipt 9.1.2 profile A+B",
+        "is_exposed_anywhere": "receipt 9.1.2 profile A+B",
+        "labels": "receipt 9.1.2 profile B",
+        "note": "receipt 9.1.2 profile A+B",
+        "state": "receipt 9.1.2 profile B",
+        "success": "receipt 9.1.2 profile A+B"
+      },
+      "calls": {
+        "A/9.1.2": [
+          "r15-entity-exposure"
+        ],
+        "A/9.2.0": [
+          "r15-entity-exposure"
+        ],
+        "B/9.1.2": [
+          "r15-entity-exposure"
+        ],
+        "B/9.2.0": [
+          "r15-entity-exposure"
+        ]
+      },
+      "consumed_structure": [],
+      "map_containers": {
+        "exposed_to": 1
+      },
+      "new_in_9_2_0": {},
+      "notes": [],
+      "number": 15,
+      "observed": {
+        "9.1.2": [
+          "area",
+          "domain",
+          "entity_id",
+          "exposed_to",
+          "floor",
+          "friendly_name",
+          "has_custom_settings",
+          "is_exposed_anywhere",
+          "labels",
+          "note",
+          "state",
+          "success"
+        ],
+        "9.2.0": [
+          "area",
+          "domain",
+          "entity_id",
+          "exposed_to",
+          "floor",
+          "friendly_name",
+          "has_custom_settings",
+          "is_exposed_anywhere",
+          "labels",
+          "note",
+          "state",
+          "success"
+        ]
+      },
+      "open_containers": [
+        "attributes",
+        "config",
+        "filter",
+        "selector"
+      ],
+      "policy_drops": [],
+      "projection": "closed",
+      "qualified_containers": [],
+      "recomputed_by_engineering": [],
+      "removed_in_9_2_0": [],
+      "reviewed_warnings": [],
+      "upstream_text_fields": [
+        "note"
+      ],
+      "upstream_tool": "ha_get_entity_exposure",
+      "value_types": {},
+      "warnings_new_in_9_2_0": [],
+      "withheld_by_rebuild": []
+    },
+    "ha_get_history": {
+      "admitted": {
+        "attributes": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/history_response.py:10,36 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_history_9_1.py:37-52,206-224,243-245,331-332,421,498-505)",
+        "change": "receipt 9.1.2 profile A+B",
+        "count": "receipt 9.1.2 profile A+B",
+        "data": "receipt 9.1.2 profile A+B",
+        "end": "receipt 9.1.2 profile A+B",
+        "entities": "receipt 9.1.2 profile A+B",
+        "entity_id": "receipt 9.1.2 profile A+B",
+        "has_more": "receipt 9.1.2 profile A+B",
+        "home_assistant_timezone": "receipt 9.1.2 profile A+B",
+        "last_changed": "receipt 9.1.2 profile A+B",
+        "last_updated": "receipt 9.1.2 profile A+B",
+        "limit": "receipt 9.1.2 profile A+B",
+        "max": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/statistics_helpers.py:74,84; Core 74cf5a49 recorder/statistics.py:344 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_history_9_1.py:37-52,206-224,243-245,331-332,421,498-505)",
+        "mean": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/statistics_helpers.py:74,84; Core 74cf5a49 recorder/statistics.py:342 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_history_9_1.py:37-52,206-224,243-245,331-332,421,498-505)",
+        "metadata": "receipt 9.1.2 profile A+B",
+        "min": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/statistics_helpers.py:74,84; Core 74cf5a49 recorder/statistics.py:343 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_history_9_1.py:37-52,206-224,243-245,331-332,421,498-505)",
+        "minimal_response": "receipt 9.1.2 profile A+B",
+        "next_offset": "receipt 9.1.2 profile A+B",
+        "note": "receipt 9.1.2 profile A+B",
+        "offset": "receipt 9.1.2 profile A+B",
+        "order": "receipt 9.1.2 profile A+B",
+        "period": "receipt 9.1.2 profile A+B",
+        "period_type": "receipt 9.1.2 profile A+B",
+        "query_params": "receipt 9.1.2 profile A+B",
+        "significant_changes_only": "receipt 9.1.2 profile A+B",
+        "source": "receipt 9.1.2 profile A+B",
+        "start": "receipt 9.1.2 profile A+B",
+        "state": "receipt 9.1.2 profile A+B",
+        "states": "receipt 9.1.2 profile A+B",
+        "statistic_types": "receipt 9.1.2 profile A+B",
+        "statistics": "receipt 9.1.2 profile A+B",
+        "success": "receipt 9.1.2 profile A+B",
+        "sum": "receipt 9.1.2 profile A+B",
+        "time_range": "receipt 9.1.2 profile A+B",
+        "timestamp_format": "receipt 9.1.2 profile A+B",
+        "total_count": "receipt 9.1.2 profile A+B",
+        "unit_of_measurement": "receipt 9.1.2 profile A+B",
+        "warnings": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/tools_history.py:984,1099 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_history_9_1.py:37-52,206-224,243-245,331-332,421,498-505)"
+      },
+      "calls": {
+        "A/9.1.2": [
+          "r16-history",
+          "v16-history-offset-free",
+          "v16-history-relative",
+          "v16-history-statistics"
+        ],
+        "A/9.2.0": [
+          "r16-history",
+          "v16-history-offset-free",
+          "v16-history-relative",
+          "v16-history-statistics"
+        ],
+        "B/9.1.2": [
+          "r16-history",
+          "v16-history-offset-free",
+          "v16-history-relative",
+          "v16-history-statistics"
+        ],
+        "B/9.2.0": [
+          "r16-history",
+          "v16-history-offset-free",
+          "v16-history-relative",
+          "v16-history-statistics"
+        ]
+      },
+      "consumed_structure": [],
+      "map_containers": {},
+      "new_in_9_2_0": {},
+      "notes": [
+        "on 9.2.0 an unknown key is withheld and counted, not a whole-read refusal (item 7); offset-free start and end times are refused (research G 2a)",
+        "policy drops are the shipped 8.5-parity drops of hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_history_9_1.py:17-20,329-339,388-396 (S9 correction, pending ruling)",
+        "a statistics row keeps start and the requested types; its end is removed too, but the name stays admitted through period and time_range, so distinct-name counts do not include it"
+      ],
+      "number": 16,
+      "observed": {
+        "9.1.2": [
+          "change",
+          "count",
+          "data",
+          "end",
+          "entities",
+          "entity_id",
+          "has_more",
+          "home_assistant_timezone",
+          "last_changed",
+          "last_reset",
+          "last_updated",
+          "limit",
+          "metadata",
+          "minimal_response",
+          "next_offset",
+          "note",
+          "offset",
+          "order",
+          "period",
+          "period_type",
+          "query_params",
+          "significant_changes_only",
+          "source",
+          "start",
+          "state",
+          "states",
+          "statistic_types",
+          "statistics",
+          "statistics_metadata",
+          "success",
+          "sum",
+          "summary",
+          "time_range",
+          "timestamp_format",
+          "total_count",
+          "unit_of_measurement",
+          "unit_source"
+        ],
+        "9.2.0": [
+          "change",
+          "count",
+          "data",
+          "end",
+          "entities",
+          "entity_id",
+          "has_more",
+          "home_assistant_timezone",
+          "last_changed",
+          "last_reset",
+          "last_updated",
+          "limit",
+          "metadata",
+          "minimal_response",
+          "next_offset",
+          "note",
+          "offset",
+          "order",
+          "period",
+          "period_type",
+          "query_params",
+          "significant_changes_only",
+          "source",
+          "start",
+          "state",
+          "states",
+          "statistic_types",
+          "statistics",
+          "statistics_metadata",
+          "success",
+          "sum",
+          "summary",
+          "time_range",
+          "timestamp_format",
+          "total_count",
+          "unit_of_measurement",
+          "unit_source"
+        ]
+      },
+      "open_containers": [
+        "attributes",
+        "config",
+        "filter",
+        "selector"
+      ],
+      "policy_drops": [
+        "last_reset",
+        "statistics_metadata",
+        "summary",
+        "unit_reason",
+        "unit_source"
+      ],
+      "projection": "closed",
+      "qualified_containers": [],
+      "recomputed_by_engineering": [],
+      "removed_in_9_2_0": [],
+      "reviewed_warnings": [],
+      "upstream_text_fields": [
+        "metadata.note"
+      ],
+      "upstream_tool": "ha_get_history",
+      "value_types": {},
+      "warnings_new_in_9_2_0": [],
+      "withheld_by_rebuild": []
+    },
+    "ha_get_integration": {
+      "admitted": {
+        "disabled_by": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:674-744 (shipped rebuild)",
+        "domain": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:674-744 (shipped rebuild)",
+        "entries": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:674-744 (shipped rebuild)",
+        "entry_id": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:674-744 (shipped rebuild)",
+        "has_more": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:674-744 (shipped rebuild)",
+        "log_level": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:674-744 (shipped rebuild)",
+        "pref_disable_new_entities": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:674-744 (shipped rebuild)",
+        "pref_disable_polling": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:674-744 (shipped rebuild)",
+        "source": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:674-744 (shipped rebuild)",
+        "state": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:674-744 (shipped rebuild)",
+        "success": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:674-744 (shipped rebuild)",
+        "supports_options": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:674-744 (shipped rebuild)",
+        "supports_reconfigure": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:674-744 (shipped rebuild)",
+        "supports_unload": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:674-744 (shipped rebuild)",
+        "title": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:674-744 (shipped rebuild)",
+        "warnings": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:674-744 (shipped rebuild)"
+      },
+      "calls": {
+        "A/9.1.2": [
+          "r26-integrations"
+        ],
+        "A/9.2.0": [
+          "r26-integrations"
+        ],
+        "B/9.1.2": [
+          "r26-integrations"
+        ],
+        "B/9.2.0": [
+          "r26-integrations"
+        ]
+      },
+      "consumed_structure": [],
+      "map_containers": {},
+      "new_in_9_2_0": {
+        "later_forms": {
+          "observed_9_1_2_profiles": [],
+          "observed_9_2_0_profiles": [],
+          "source": "no recorded review",
+          "status": "withheld_pending_review"
+        },
+        "read_only": {
+          "observed_9_1_2_profiles": [],
+          "observed_9_2_0_profiles": [],
+          "source": "no recorded review",
+          "status": "withheld_pending_review"
+        },
+        "secret": {
+          "observed_9_1_2_profiles": [],
+          "observed_9_2_0_profiles": [],
+          "source": "no recorded review",
+          "status": "withheld_pending_review"
+        }
+      },
+      "notes": [
+        "include_schema and include_subentry_schema are not exercised; read_only, secret and later_forms stay withheld until reviewed (research G 2f)"
+      ],
+      "number": 26,
+      "observed": {
+        "9.1.2": [
+          "count",
+          "created_at",
+          "disabled_by",
+          "domain",
+          "entries",
+          "entry_id",
+          "error_reason_translation_domain",
+          "error_reason_translation_key",
+          "error_reason_translation_placeholders",
+          "has_more",
+          "limit",
+          "loaded",
+          "log_level",
+          "log_level_raw",
+          "modified_at",
+          "next_offset",
+          "num_subentries",
+          "offset",
+          "pref_disable_new_entities",
+          "pref_disable_polling",
+          "query",
+          "reason",
+          "setup_error",
+          "source",
+          "state",
+          "state_summary",
+          "success",
+          "supported_subentry_types",
+          "supports_options",
+          "supports_reconfigure",
+          "supports_remove_device",
+          "supports_unload",
+          "title",
+          "total_count",
+          "unique_id"
+        ],
+        "9.2.0": [
+          "count",
+          "created_at",
+          "disabled_by",
+          "domain",
+          "entries",
+          "entry_id",
+          "error_reason_translation_domain",
+          "error_reason_translation_key",
+          "error_reason_translation_placeholders",
+          "has_more",
+          "limit",
+          "loaded",
+          "log_level",
+          "log_level_raw",
+          "modified_at",
+          "next_offset",
+          "num_subentries",
+          "offset",
+          "pref_disable_new_entities",
+          "pref_disable_polling",
+          "query",
+          "reason",
+          "setup_error",
+          "source",
+          "state",
+          "state_summary",
+          "success",
+          "supported_subentry_types",
+          "supports_options",
+          "supports_reconfigure",
+          "supports_remove_device",
+          "supports_unload",
+          "title",
+          "total_count",
+          "unique_id"
+        ]
+      },
+      "open_containers": [],
+      "policy_drops": [],
+      "projection": "rebuild",
+      "qualified_containers": [],
+      "recomputed_by_engineering": [
+        "count",
+        "limit",
+        "next_offset",
+        "offset",
+        "query",
+        "state_summary",
+        "total_count"
+      ],
+      "removed_in_9_2_0": [],
+      "reviewed_warnings": [],
+      "upstream_text_fields": [],
+      "upstream_tool": "ha_get_integration",
+      "value_types": {},
+      "warnings_new_in_9_2_0": [],
+      "withheld_by_rebuild": [
+        "created_at",
+        "error_reason_translation_domain",
+        "error_reason_translation_key",
+        "error_reason_translation_placeholders",
+        "loaded",
+        "log_level_raw",
+        "modified_at",
+        "num_subentries",
+        "reason",
+        "setup_error",
+        "supported_subentry_types",
+        "supports_remove_device",
+        "unique_id"
+      ]
+    },
+    "ha_get_overview": {
+      "admitted": {
+        "ai_insights": "receipt 9.1.2 profile A+B",
+        "area_analysis": "receipt 9.1.2 profile A+B",
+        "automation_ready": "receipt 9.1.2 profile A+B",
+        "base_url": "receipt 9.1.2 profile A+B",
+        "breaks_in_ha_version": "receipt 9.1.2 profile A+B",
+        "controllable_devices": "receipt 9.1.2 profile A+B",
+        "count": "receipt 9.1.2 profile A+B",
+        "created": "receipt 9.1.2 profile A+B",
+        "current": "research G ruling 2d; 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/update_check.py:386-390, tools/tools_search.py:741-745; not reachable in the lane (no Supervisor, no PyPI)",
+        "dismissed_version": "receipt 9.1.2 profile A+B",
+        "domain": "receipt 9.1.2 profile A+B",
+        "domain_stats": "receipt 9.1.2 profile A+B",
+        "domains": "receipt 9.1.2 profile A+B",
+        "entities": "receipt 9.1.2 profile A+B",
+        "entities_returned": "receipt 9.1.2 profile A+B",
+        "filtered_domains": "receipt 9.1.2 profile A+B",
+        "friendly_name": "receipt 9.1.2 profile A+B",
+        "ha_mcp_update": "research G ruling 2d; 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/update_check.py:386-390, tools/tools_search.py:741-745; not reachable in the lane (no Supervisor, no PyPI)",
+        "has_more": "receipt 9.1.2 profile A+B",
+        "ignored": "receipt 9.1.2 profile A+B",
+        "is_fixable": "receipt 9.1.2 profile A+B",
+        "issue_domain": "receipt 9.1.2 profile A+B",
+        "issue_id": "receipt 9.1.2 profile A+B",
+        "language": "receipt 9.1.2 profile A+B",
+        "latest": "research G ruling 2d; 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/update_check.py:386-390, tools/tools_search.py:741-745; not reachable in the lane (no Supervisor, no PyPI)",
+        "limit": "receipt 9.1.2 profile A+B",
+        "location_name": "receipt 9.1.2 profile A+B",
+        "monitoring_sensors": "receipt 9.1.2 profile A+B",
+        "most_common_domains": "receipt 9.1.2 profile A+B",
+        "name": "research G ruling 2d (overview rows)",
+        "next_offset": "receipt 9.1.2 profile A+B",
+        "offset": "receipt 9.1.2 profile A+B",
+        "pagination": "receipt 9.1.2 profile A+B",
+        "partial": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/smart_search/_overview.py:556 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:45-47,135-140)",
+        "repair_count": "receipt 9.1.2 profile A+B",
+        "repairs": "receipt 9.1.2 profile A+B",
+        "severity": "receipt 9.1.2 profile A+B",
+        "state": "receipt 9.1.2 profile A+B",
+        "states_summary": "receipt 9.1.2 profile A+B",
+        "success": "receipt 9.1.2 profile A+B",
+        "system_info": "receipt 9.1.2 profile A+B",
+        "system_summary": "receipt 9.1.2 profile A+B",
+        "time_zone": "receipt 9.1.2 profile A+B",
+        "total_areas": "receipt 9.1.2 profile A+B",
+        "total_domains": "receipt 9.1.2 profile A+B",
+        "total_entities": "receipt 9.1.2 profile A+B",
+        "total_entity_results": "receipt 9.1.2 profile A+B",
+        "total_services": "receipt 9.1.2 profile A+B",
+        "translation_key": "receipt 9.1.2 profile A+B",
+        "truncated": "receipt 9.1.2 profile A+B",
+        "update_available": "research G ruling 2d; 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/update_check.py:386-390, tools/tools_search.py:741-745; not reachable in the lane (no Supervisor, no PyPI)",
+        "version": "receipt 9.1.2 profile A+B"
+      },
+      "calls": {
+        "A/9.1.2": [
+          "r17-overview",
+          "v17-overview-standard"
+        ],
+        "A/9.2.0": [
+          "r17-overview",
+          "v17-overview-standard"
+        ],
+        "B/9.1.2": [
+          "r17-overview",
+          "v17-overview-standard"
+        ],
+        "B/9.2.0": [
+          "r17-overview",
+          "v17-overview-standard"
+        ]
+      },
+      "consumed_structure": [],
+      "map_containers": {
+        "area_analysis": 1,
+        "domain_stats": 1,
+        "domains": 1,
+        "states_summary": 1
+      },
+      "new_in_9_2_0": {
+        "current": {
+          "observed_9_1_2_profiles": [],
+          "observed_9_2_0_profiles": [],
+          "source": "research G ruling 2d; 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/update_check.py:386-390, tools/tools_search.py:741-745; not reachable in the lane (no Supervisor, no PyPI)",
+          "status": "admitted"
+        },
+        "ha_mcp_update": {
+          "observed_9_1_2_profiles": [],
+          "observed_9_2_0_profiles": [],
+          "source": "research G ruling 2d; 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/update_check.py:386-390, tools/tools_search.py:741-745; not reachable in the lane (no Supervisor, no PyPI)",
+          "status": "admitted"
+        },
+        "latest": {
+          "observed_9_1_2_profiles": [],
+          "observed_9_2_0_profiles": [],
+          "source": "research G ruling 2d; 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/update_check.py:386-390, tools/tools_search.py:741-745; not reachable in the lane (no Supervisor, no PyPI)",
+          "status": "admitted"
+        },
+        "name": {
+          "observed_9_1_2_profiles": [
+            "A",
+            "B"
+          ],
+          "observed_9_2_0_profiles": [
+            "A",
+            "B"
+          ],
+          "source": "research G ruling 2d (overview rows)",
+          "status": "admitted"
+        },
+        "update_available": {
+          "observed_9_1_2_profiles": [],
+          "observed_9_2_0_profiles": [],
+          "source": "research G ruling 2d; 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/update_check.py:386-390, tools/tools_search.py:741-745; not reachable in the lane (no Supervisor, no PyPI)",
+          "status": "admitted"
+        }
+      },
+      "notes": [
+        "ha_mcp_update is closed to current, latest and update_available; python_required and upgrade_command are policy drops (research G 2d, non-add-on installs only)"
+      ],
+      "number": 17,
+      "observed": {
+        "9.1.2": [
+          "ai_insights",
+          "area_analysis",
+          "automation_ready",
+          "base_url",
+          "breaks_in_ha_version",
+          "controllable_devices",
+          "count",
+          "created",
+          "dismissed_version",
+          "domain",
+          "domain_stats",
+          "domains",
+          "entities",
+          "entities_returned",
+          "filtered_domains",
+          "friendly_name",
+          "has_more",
+          "ignored",
+          "is_fixable",
+          "issue_domain",
+          "issue_id",
+          "language",
+          "limit",
+          "location_name",
+          "mcp_client",
+          "monitoring_sensors",
+          "most_common_domains",
+          "name",
+          "next_offset",
+          "offset",
+          "pagination",
+          "repair_count",
+          "repairs",
+          "severity",
+          "state",
+          "states_summary",
+          "success",
+          "system_info",
+          "system_summary",
+          "time_zone",
+          "total_areas",
+          "total_domains",
+          "total_entities",
+          "total_entity_results",
+          "total_services",
+          "translation_key",
+          "truncated",
+          "version"
+        ],
+        "9.2.0": [
+          "ai_insights",
+          "area_analysis",
+          "automation_ready",
+          "base_url",
+          "breaks_in_ha_version",
+          "controllable_devices",
+          "count",
+          "created",
+          "dismissed_version",
+          "domain",
+          "domain_stats",
+          "domains",
+          "entities",
+          "entities_returned",
+          "filtered_domains",
+          "friendly_name",
+          "has_more",
+          "ignored",
+          "is_fixable",
+          "issue_domain",
+          "issue_id",
+          "language",
+          "limit",
+          "location_name",
+          "mcp_client",
+          "monitoring_sensors",
+          "most_common_domains",
+          "name",
+          "next_offset",
+          "offset",
+          "pagination",
+          "repair_count",
+          "repairs",
+          "severity",
+          "state",
+          "states_summary",
+          "success",
+          "system_info",
+          "system_summary",
+          "time_zone",
+          "total_areas",
+          "total_domains",
+          "total_entities",
+          "total_entity_results",
+          "total_services",
+          "translation_key",
+          "truncated",
+          "version"
+        ]
+      },
+      "open_containers": [
+        "attributes",
+        "config",
+        "filter",
+        "selector"
+      ],
+      "policy_drops": [
+        "mcp_client",
+        "python_required",
+        "settings_url",
+        "settings_url_hint",
+        "tool_discovery",
+        "upgrade_command"
+      ],
+      "projection": "closed",
+      "qualified_containers": [],
+      "recomputed_by_engineering": [],
+      "removed_in_9_2_0": [],
+      "reviewed_warnings": [],
+      "upstream_text_fields": [],
+      "upstream_tool": "ha_get_overview",
+      "value_types": {},
+      "warnings_new_in_9_2_0": [],
+      "withheld_by_rebuild": []
+    },
+    "ha_get_skill_guide": {
+      "admitted": {
+        "content": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:157-179 (shipped rebuild)",
+        "file": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:157-179 (shipped rebuild)",
+        "skill": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:157-179 (shipped rebuild)",
+        "skill_content_hint": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:157-179 (shipped rebuild)",
+        "success": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:157-179 (shipped rebuild)",
+        "uri": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:157-179 (shipped rebuild)"
+      },
+      "calls": {
+        "A/9.1.2": [
+          "r18-skill-guide"
+        ],
+        "A/9.2.0": [
+          "r18-skill-guide"
+        ],
+        "B/9.1.2": [
+          "r18-skill-guide"
+        ],
+        "B/9.2.0": [
+          "r18-skill-guide"
+        ]
+      },
+      "consumed_structure": [],
+      "map_containers": {},
+      "new_in_9_2_0": {},
+      "notes": [],
+      "number": 18,
+      "observed": {
+        "9.1.2": [
+          "content",
+          "file",
+          "how_to_use",
+          "success",
+          "uri"
+        ],
+        "9.2.0": [
+          "content",
+          "file",
+          "how_to_use",
+          "success",
+          "uri"
+        ]
+      },
+      "open_containers": [
+        "attributes",
+        "config",
+        "filter",
+        "selector"
+      ],
+      "policy_drops": [
+        "how_to_use"
+      ],
+      "projection": "rebuild",
+      "qualified_containers": [],
+      "recomputed_by_engineering": [],
+      "removed_in_9_2_0": [],
+      "reviewed_warnings": [],
+      "upstream_text_fields": [
+        "how_to_use"
+      ],
+      "upstream_tool": "ha_get_skill_guide",
+      "value_types": {},
+      "warnings_new_in_9_2_0": [],
+      "withheld_by_rebuild": []
+    },
+    "ha_get_state": {
+      "admitted": {
+        "attributes": "receipt 9.1.2 profile A+B",
+        "context": "receipt 9.1.2 profile A+B",
+        "count": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/search/state.py:90 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:189-205)",
+        "data": "receipt 9.1.2 profile A+B",
+        "entity_id": "receipt 9.1.2 profile A+B",
+        "errors": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/search/state.py:102 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:189-205)",
+        "home_assistant_timezone": "receipt 9.1.2 profile A+B",
+        "id": "receipt 9.1.2 profile A+B",
+        "last_changed": "receipt 9.1.2 profile A+B",
+        "last_reported": "receipt 9.1.2 profile A+B",
+        "last_updated": "receipt 9.1.2 profile A+B",
+        "metadata": "receipt 9.1.2 profile A+B",
+        "note": "receipt 9.1.2 profile A+B",
+        "parent_id": "receipt 9.1.2 profile A+B",
+        "partial": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/search/state.py:109 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:189-205)",
+        "state": "receipt 9.1.2 profile A+B",
+        "states": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/search/state.py:91 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:189-205)",
+        "success": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/search/state.py:89 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:189-205)",
+        "timestamp_format": "receipt 9.1.2 profile A+B",
+        "user_id": "receipt 9.1.2 profile A+B"
+      },
+      "calls": {
+        "A/9.1.2": [
+          "r19-state",
+          "t-new-session"
+        ],
+        "A/9.2.0": [
+          "r19-state",
+          "t-new-session"
+        ],
+        "B/9.1.2": [
+          "r19-state",
+          "t-new-session"
+        ],
+        "B/9.2.0": [
+          "r19-state",
+          "t-new-session"
+        ]
+      },
+      "consumed_structure": [],
+      "map_containers": {},
+      "new_in_9_2_0": {},
+      "notes": [],
+      "number": 19,
+      "observed": {
+        "9.1.2": [
+          "attributes",
+          "context",
+          "data",
+          "entity_id",
+          "home_assistant_timezone",
+          "id",
+          "last_changed",
+          "last_reported",
+          "last_updated",
+          "metadata",
+          "note",
+          "parent_id",
+          "state",
+          "timestamp_format",
+          "user_id"
+        ],
+        "9.2.0": [
+          "attributes",
+          "context",
+          "data",
+          "entity_id",
+          "home_assistant_timezone",
+          "id",
+          "last_changed",
+          "last_reported",
+          "last_updated",
+          "metadata",
+          "note",
+          "parent_id",
+          "state",
+          "timestamp_format",
+          "user_id"
+        ]
+      },
+      "open_containers": [
+        "attributes",
+        "config",
+        "filter",
+        "selector"
+      ],
+      "policy_drops": [],
+      "projection": "closed",
+      "qualified_containers": [],
+      "recomputed_by_engineering": [],
+      "removed_in_9_2_0": [],
+      "reviewed_warnings": [],
+      "upstream_text_fields": [
+        "metadata.note"
+      ],
+      "upstream_tool": "ha_get_state",
+      "value_types": {},
+      "warnings_new_in_9_2_0": [],
+      "withheld_by_rebuild": []
+    },
+    "ha_get_system_health": {
+      "admitted": {
+        "available": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "border_agent_id": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "border_routers": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "breaks_in_ha_version": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "candidate_total": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "channel": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "cloud.alexa_enabled": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "cloud.can_reach_cert_server": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "cloud.can_reach_cloud": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "cloud.can_reach_cloud_auth": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "cloud.certificate_status": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "cloud.google_enabled": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "cloud.iot_state": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "cloud.logged_in": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "cloud.relayer_connected": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "cloud.remote_connected": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "cloud.remote_enabled": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "config_entry_id": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "config_entry_orphans": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "controller": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "created": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "dead_entities": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "default_dark_theme": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "default_theme": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "devices": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "disabled_by": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "dismissed_count": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "dismissed_version": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "domain": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "entity_id": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "error": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "extended_address": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "extended_pan_id": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "firmware_version": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "has_state": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "hassio.agent_version": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "hassio.board": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "hassio.disk_life_time": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "hassio.disk_total": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "hassio.disk_used": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "hassio.docker_version": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "hassio.healthy": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "hassio.host_connectivity": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "hassio.host_os": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "hassio.ntp_synchronized": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "hassio.supervisor_api": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "hassio.supervisor_connectivity": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "hassio.supervisor_version": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "hassio.supported": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "hassio.update_channel": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "hassio.version_api": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "hassio.virtualization": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "home_id": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "homeassistant.arch": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "homeassistant.dev": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "homeassistant.docker": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "homeassistant.hassio": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "homeassistant.installation_type": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "homeassistant.os_name": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "homeassistant.os_version": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "homeassistant.python_version": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "homeassistant.version": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "homeassistant.virtualenv": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "ieee": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "ignored": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "inclusion_state": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "is_controller_node": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "is_fixable": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "is_primary": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "is_rebuilding_routes": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "is_routing": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "is_secure": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "is_suc": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "issue_domain": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "issue_id": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "issues": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "items": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "lqi": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "manufacturer": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "matter_network": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "model": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "name": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "node_id": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "nodes": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "own_node_id": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "platform": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "registry_total": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "repairs": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "rf_region": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "rssi": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "sdk_version": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "severity": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "stale_restored": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "state": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "status": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "summary": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "supports_long_range": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "themes": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "thread_network": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "title": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "total_count": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "translation_key": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "type": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "zha_network": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "zwave_network": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)",
+        "zwave_plus_version": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py:422-610 (shipped rebuild)"
+      },
+      "calls": {
+        "A/9.1.2": [
+          "r20-system-health"
+        ],
+        "A/9.2.0": [
+          "r20-system-health"
+        ],
+        "B/9.1.2": [
+          "r20-system-health"
+        ],
+        "B/9.2.0": [
+          "r20-system-health"
+        ]
+      },
+      "consumed_structure": [
+        "baseline_available",
+        "data",
+        "health_info",
+        "info",
+        "success",
+        "type",
+        "warnings"
+      ],
+      "map_containers": {},
+      "new_in_9_2_0": {},
+      "notes": [
+        "domains outside homeassistant, hassio and cloud become other_domains",
+        "D5: info is not open; each info key is named domain.key and one outside _PLATFORM_KEYS is withheld and counted (count unit: interpretation, pending ruling); info values are reduced as shipped and not walked",
+        "section keys (SECTIONS, the section specs and their structure names) come from the shipped rebuild only; no S6 receipt requests a section"
+      ],
+      "number": 20,
+      "observed": {
+        "9.1.2": [
+          "component_count",
+          "data",
+          "health_info",
+          "homeassistant.arch",
+          "homeassistant.config_dir",
+          "homeassistant.container_arch",
+          "homeassistant.dev",
+          "homeassistant.docker",
+          "homeassistant.hassio",
+          "homeassistant.installation_type",
+          "homeassistant.os_name",
+          "homeassistant.os_version",
+          "homeassistant.python_version",
+          "homeassistant.timezone",
+          "homeassistant.user",
+          "homeassistant.version",
+          "homeassistant.virtualenv",
+          "info",
+          "lovelace.dashboards",
+          "lovelace.mode",
+          "lovelace.resources",
+          "lovelace.views",
+          "manage_url",
+          "marketplace.disabled",
+          "message",
+          "network.error",
+          "recorder.current_recorder_run",
+          "recorder.database_engine",
+          "recorder.database_version",
+          "recorder.estimated_db_size",
+          "recorder.oldest_recorder_run",
+          "success",
+          "type"
+        ],
+        "9.2.0": [
+          "component_count",
+          "data",
+          "health_info",
+          "homeassistant.arch",
+          "homeassistant.config_dir",
+          "homeassistant.container_arch",
+          "homeassistant.dev",
+          "homeassistant.docker",
+          "homeassistant.hassio",
+          "homeassistant.installation_type",
+          "homeassistant.os_name",
+          "homeassistant.os_version",
+          "homeassistant.python_version",
+          "homeassistant.timezone",
+          "homeassistant.user",
+          "homeassistant.version",
+          "homeassistant.virtualenv",
+          "info",
+          "lovelace.dashboards",
+          "lovelace.mode",
+          "lovelace.resources",
+          "lovelace.views",
+          "manage_url",
+          "marketplace.disabled",
+          "message",
+          "network.error",
+          "recorder.current_recorder_run",
+          "recorder.database_engine",
+          "recorder.database_version",
+          "recorder.estimated_db_size",
+          "recorder.oldest_recorder_run",
+          "success",
+          "type"
+        ]
+      },
+      "open_containers": [],
+      "policy_drops": [],
+      "projection": "rebuild",
+      "qualified_containers": [
+        "health_info",
+        "data",
+        "info"
+      ],
+      "recomputed_by_engineering": [],
+      "removed_in_9_2_0": [],
+      "reviewed_warnings": [],
+      "upstream_text_fields": [
+        "message"
+      ],
+      "upstream_tool": "ha_get_system_health",
+      "value_types": {},
+      "warnings_new_in_9_2_0": [],
+      "withheld_by_rebuild": [
+        "component_count",
+        "homeassistant.config_dir",
+        "homeassistant.container_arch",
+        "homeassistant.timezone",
+        "homeassistant.user",
+        "lovelace.dashboards",
+        "lovelace.mode",
+        "lovelace.resources",
+        "lovelace.views",
+        "manage_url",
+        "marketplace.disabled",
+        "message",
+        "network.error",
+        "recorder.current_recorder_run",
+        "recorder.database_engine",
+        "recorder.database_version",
+        "recorder.estimated_db_size",
+        "recorder.oldest_recorder_run"
+      ]
+    },
+    "ha_get_todo": {
+      "admitted": {
+        "count": "receipt 9.1.2 profile A+B",
+        "entity_id": "receipt 9.1.2 profile A+B",
+        "friendly_name": "receipt 9.1.2 profile A+B",
+        "icon": "receipt 9.1.2 profile A+B",
+        "items": "receipt 9.1.2 profile A+B",
+        "message": "receipt 9.1.2 profile A+B",
+        "state": "receipt 9.1.2 profile A+B",
+        "status": "receipt 9.1.2 profile A+B",
+        "status_filter": "receipt 9.1.2 profile A+B",
+        "success": "receipt 9.1.2 profile A+B",
+        "summary": "receipt 9.1.2 profile A+B",
+        "supported_features": "receipt 9.1.2 profile A+B",
+        "todo_lists": "receipt 9.1.2 profile A+B",
+        "uid": "receipt 9.1.2 profile A+B"
+      },
+      "calls": {
+        "A/9.1.2": [
+          "r21-todo",
+          "v21-todo-list"
+        ],
+        "A/9.2.0": [
+          "r21-todo",
+          "v21-todo-list"
+        ],
+        "B/9.1.2": [
+          "r21-todo",
+          "v21-todo-list"
+        ],
+        "B/9.2.0": [
+          "r21-todo",
+          "v21-todo-list"
+        ]
+      },
+      "consumed_structure": [],
+      "map_containers": {},
+      "new_in_9_2_0": {},
+      "notes": [],
+      "number": 21,
+      "observed": {
+        "9.1.2": [
+          "count",
+          "entity_id",
+          "friendly_name",
+          "icon",
+          "items",
+          "message",
+          "state",
+          "status",
+          "status_filter",
+          "success",
+          "summary",
+          "supported_features",
+          "todo_lists",
+          "uid"
+        ],
+        "9.2.0": [
+          "count",
+          "entity_id",
+          "friendly_name",
+          "icon",
+          "items",
+          "message",
+          "state",
+          "status",
+          "status_filter",
+          "success",
+          "summary",
+          "supported_features",
+          "todo_lists",
+          "uid"
+        ]
+      },
+      "open_containers": [
+        "attributes",
+        "config",
+        "filter",
+        "selector"
+      ],
+      "policy_drops": [],
+      "projection": "closed",
+      "qualified_containers": [],
+      "recomputed_by_engineering": [],
+      "removed_in_9_2_0": [],
+      "reviewed_warnings": [],
+      "upstream_text_fields": [
+        "message"
+      ],
+      "upstream_tool": "ha_get_todo",
+      "value_types": {},
+      "warnings_new_in_9_2_0": [],
+      "withheld_by_rebuild": []
+    },
+    "ha_get_zone": {
+      "admitted": {
+        "count": "receipt 9.1.2 profile A+B",
+        "device_trackers": "research G ruling 2e (Q2, with a disclosure note)",
+        "editable": "receipt 9.1.2 profile A+B",
+        "entity_icon": "research G ruling 2e",
+        "entity_id": "receipt 9.1.2 profile A+B",
+        "friendly_name": "receipt 9.1.2 profile A",
+        "icon": "receipt 9.1.2 profile A+B",
+        "id": "receipt 9.1.2 profile A+B",
+        "latitude": "receipt 9.1.2 profile A+B",
+        "longitude": "receipt 9.1.2 profile A+B",
+        "message": "receipt 9.1.2 profile A+B",
+        "name": "receipt 9.1.2 profile A+B",
+        "passive": "receipt 9.1.2 profile A+B",
+        "persons": "research G ruling 2e (Q2, with a disclosure note)",
+        "radius": "receipt 9.1.2 profile A+B",
+        "source": "receipt 9.1.2 profile A+B",
+        "success": "receipt 9.1.2 profile A+B",
+        "zone": "receipt 9.1.2 profile A+B",
+        "zone_id": "receipt 9.1.2 profile A+B",
+        "zones": "receipt 9.1.2 profile A+B"
+      },
+      "calls": {
+        "A/9.1.2": [
+          "r22-zones",
+          "v22-zone-single"
+        ],
+        "A/9.2.0": [
+          "r22-zones",
+          "v22-zone-single"
+        ],
+        "B/9.1.2": [
+          "r22-zones",
+          "v22-zone-single"
+        ],
+        "B/9.2.0": [
+          "r22-zones",
+          "v22-zone-single"
+        ]
+      },
+      "consumed_structure": [],
+      "map_containers": {},
+      "new_in_9_2_0": {
+        "device_trackers": {
+          "observed_9_1_2_profiles": [
+            "A"
+          ],
+          "observed_9_2_0_profiles": [
+            "A",
+            "B"
+          ],
+          "source": "research G ruling 2e (Q2, with a disclosure note)",
+          "status": "admitted"
+        },
+        "entity_icon": {
+          "observed_9_1_2_profiles": [],
+          "observed_9_2_0_profiles": [],
+          "source": "research G ruling 2e",
+          "status": "admitted"
+        },
+        "persons": {
+          "observed_9_1_2_profiles": [
+            "A"
+          ],
+          "observed_9_2_0_profiles": [
+            "A",
+            "B"
+          ],
+          "source": "research G ruling 2e (Q2, with a disclosure note)",
+          "status": "admitted"
+        }
+      },
+      "notes": [
+        "friendly_name is gone from YAML and home zone rows upstream; Engineering restores it from name on 9.2.0 (item 15); the changed icon meaning is documented (research G 2e)"
+      ],
+      "number": 22,
+      "observed": {
+        "9.1.2": [
+          "count",
+          "device_trackers",
+          "editable",
+          "entity_id",
+          "friendly_name",
+          "icon",
+          "id",
+          "latitude",
+          "longitude",
+          "message",
+          "name",
+          "passive",
+          "persons",
+          "radius",
+          "source",
+          "success",
+          "zone",
+          "zone_id",
+          "zones"
+        ],
+        "9.2.0": [
+          "count",
+          "device_trackers",
+          "editable",
+          "entity_id",
+          "icon",
+          "id",
+          "latitude",
+          "longitude",
+          "message",
+          "name",
+          "passive",
+          "persons",
+          "radius",
+          "source",
+          "success",
+          "zone",
+          "zone_id",
+          "zones"
+        ]
+      },
+      "open_containers": [
+        "attributes",
+        "config",
+        "filter",
+        "selector"
+      ],
+      "policy_drops": [],
+      "projection": "closed",
+      "qualified_containers": [],
+      "recomputed_by_engineering": [],
+      "removed_in_9_2_0": [
+        "friendly_name"
+      ],
+      "reviewed_warnings": [],
+      "upstream_text_fields": [
+        "message"
+      ],
+      "upstream_tool": "ha_get_zone",
+      "value_types": {},
+      "warnings_new_in_9_2_0": [],
+      "withheld_by_rebuild": []
+    },
+    "ha_list_floors_areas": {
+      "admitted": {
+        "aliases": "receipt 9.1.2 profile A+B",
+        "area_count": "receipt 9.1.2 profile A+B",
+        "area_id": "receipt 9.1.2 profile A+B",
+        "areas": "receipt 9.1.2 profile A+B",
+        "created_at": "receipt 9.1.2 profile A+B",
+        "floor_count": "receipt 9.1.2 profile A+B",
+        "floor_id": "receipt 9.1.2 profile A+B",
+        "floors": "receipt 9.1.2 profile A+B",
+        "humidity_entity_id": "receipt 9.1.2 profile A+B",
+        "icon": "receipt 9.1.2 profile A+B",
+        "labels": "receipt 9.1.2 profile A+B",
+        "level": "receipt 9.1.2 profile A+B",
+        "message": "receipt 9.1.2 profile A+B",
+        "modified_at": "receipt 9.1.2 profile A+B",
+        "name": "receipt 9.1.2 profile A+B",
+        "orphaned_areas": "receipt 9.1.2 profile A+B",
+        "orphaned_count": "receipt 9.1.2 profile A+B",
+        "picture": "receipt 9.1.2 profile A+B",
+        "success": "receipt 9.1.2 profile A+B",
+        "temperature_entity_id": "receipt 9.1.2 profile A+B",
+        "unassigned_areas": "receipt 9.1.2 profile A+B",
+        "unassigned_count": "receipt 9.1.2 profile A+B"
+      },
+      "calls": {
+        "A/9.1.2": [
+          "a-floors-areas-after-core-restart",
+          "r23-floors-areas"
+        ],
+        "A/9.2.0": [
+          "a-floors-areas-after-core-restart",
+          "r23-floors-areas"
+        ],
+        "B/9.1.2": [
+          "a-floors-areas-after-core-restart",
+          "r23-floors-areas"
+        ],
+        "B/9.2.0": [
+          "a-floors-areas-after-core-restart",
+          "r23-floors-areas"
+        ]
+      },
+      "consumed_structure": [],
+      "map_containers": {},
+      "new_in_9_2_0": {},
+      "notes": [],
+      "number": 23,
+      "observed": {
+        "9.1.2": [
+          "aliases",
+          "area_count",
+          "area_id",
+          "areas",
+          "created_at",
+          "floor_count",
+          "floor_id",
+          "floors",
+          "humidity_entity_id",
+          "icon",
+          "labels",
+          "level",
+          "message",
+          "modified_at",
+          "name",
+          "orphaned_areas",
+          "orphaned_count",
+          "picture",
+          "success",
+          "temperature_entity_id",
+          "unassigned_areas",
+          "unassigned_count"
+        ],
+        "9.2.0": [
+          "aliases",
+          "area_count",
+          "area_id",
+          "areas",
+          "created_at",
+          "floor_count",
+          "floor_id",
+          "floors",
+          "humidity_entity_id",
+          "icon",
+          "labels",
+          "level",
+          "message",
+          "modified_at",
+          "name",
+          "orphaned_areas",
+          "orphaned_count",
+          "picture",
+          "success",
+          "temperature_entity_id",
+          "unassigned_areas",
+          "unassigned_count"
+        ]
+      },
+      "open_containers": [
+        "attributes",
+        "config",
+        "filter",
+        "selector"
+      ],
+      "policy_drops": [],
+      "projection": "closed",
+      "qualified_containers": [],
+      "recomputed_by_engineering": [],
+      "removed_in_9_2_0": [],
+      "reviewed_warnings": [],
+      "upstream_text_fields": [
+        "message"
+      ],
+      "upstream_tool": "ha_list_floors_areas",
+      "value_types": {},
+      "warnings_new_in_9_2_0": [],
+      "withheld_by_rebuild": []
+    },
+    "ha_list_services": {
+      "admitted": {
+        "collapsed": "S10-2 ruling: Core 2026.11.0 (74cf5a49) helpers/service.py:996,1004 (section collapsed: bool, default False)",
+        "count": "receipt 9.1.2 profile A+B",
+        "default": "receipt 9.1.2 profile A+B",
+        "description": "receipt 9.1.2 profile A+B",
+        "detail_level": "receipt 9.1.2 profile A+B",
+        "domain": "receipt 9.1.2 profile A+B",
+        "domains": "receipt 9.1.2 profile A+B",
+        "entity": "receipt 9.1.2 profile A+B",
+        "example": "receipt 9.1.2 profile A+B",
+        "fields": "receipt 9.1.2 profile A+B",
+        "filters_applied": "receipt 9.1.2 profile A+B",
+        "has_more": "receipt 9.1.2 profile A+B",
+        "integration": "S10-2 ruling: Core 2026.11.0 (74cf5a49) helpers/selector.py:178,212 (entity filter integration: str)",
+        "limit": "receipt 9.1.2 profile A+B",
+        "name": "receipt 9.1.2 profile A+B",
+        "next_offset": "receipt 9.1.2 profile A+B",
+        "offset": "receipt 9.1.2 profile A+B",
+        "optional": "S10 recorded review: Core service response description, tools_services.py:581-585 at 51e3aac7, receipt A/9.2.0 v24-services-response (the only key of response)",
+        "query": "receipt 9.1.2 profile A+B",
+        "required": "receipt 9.1.2 profile A+B",
+        "response": "S10 recorded review: Core service response description, tools_services.py:581-585 at 51e3aac7, receipt A/9.2.0 v24-services-response",
+        "selector": "receipt 9.1.2 profile A+B",
+        "service": "receipt 9.1.2 profile A+B",
+        "services": "receipt 9.1.2 profile A+B",
+        "success": "receipt 9.1.2 profile A+B",
+        "supported_features": "receipt 9.1.2 profile A+B",
+        "target": "receipt 9.1.2 profile A+B",
+        "total_count": "receipt 9.1.2 profile A+B",
+        "type": "receipt 9.1.2 profile A+B",
+        "warnings": "research G ruling 2b (language-note prefix, tools_services.py:227-279 at 51e3aac7)"
+      },
+      "calls": {
+        "A/9.1.2": [
+          "r24-services",
+          "t-large-services",
+          "v24-services-domain-full",
+          "v24-services-domain-summary",
+          "v24-services-response"
+        ],
+        "A/9.2.0": [
+          "r24-services",
+          "t-large-services",
+          "v24-services-domain-full",
+          "v24-services-domain-summary",
+          "v24-services-response"
+        ],
+        "B/9.1.2": [
+          "r24-services",
+          "t-large-services",
+          "v24-services-domain-full",
+          "v24-services-domain-summary",
+          "v24-services-response"
+        ],
+        "B/9.2.0": [
+          "r24-services",
+          "t-large-services",
+          "v24-services-domain-full",
+          "v24-services-domain-summary",
+          "v24-services-response"
+        ]
+      },
+      "consumed_structure": [],
+      "map_containers": {
+        "fields": 1,
+        "services": 1
+      },
+      "new_in_9_2_0": {
+        "collapsed": {
+          "observed_9_1_2_profiles": [],
+          "observed_9_2_0_profiles": [
+            "B"
+          ],
+          "source": "S10-2 ruling: Core 2026.11.0 (74cf5a49) helpers/service.py:996,1004 (section collapsed: bool, default False)",
+          "status": "admitted"
+        },
+        "filter": {
+          "observed_9_1_2_profiles": [],
+          "observed_9_2_0_profiles": [
+            "B"
+          ],
+          "source": "no recorded review",
+          "status": "withheld_pending_review"
+        },
+        "integration": {
+          "observed_9_1_2_profiles": [],
+          "observed_9_2_0_profiles": [
+            "A",
+            "B"
+          ],
+          "source": "S10-2 ruling: Core 2026.11.0 (74cf5a49) helpers/selector.py:178,212 (entity filter integration: str)",
+          "status": "admitted"
+        },
+        "optional": {
+          "observed_9_1_2_profiles": [],
+          "observed_9_2_0_profiles": [
+            "A",
+            "B"
+          ],
+          "source": "S10 recorded review: Core service response description, tools_services.py:581-585 at 51e3aac7, receipt A/9.2.0 v24-services-response (the only key of response)",
+          "status": "admitted"
+        },
+        "response": {
+          "observed_9_1_2_profiles": [],
+          "observed_9_2_0_profiles": [
+            "A",
+            "B"
+          ],
+          "source": "S10 recorded review: Core service response description, tools_services.py:581-585 at 51e3aac7, receipt A/9.2.0 v24-services-response",
+          "status": "admitted"
+        },
+        "warnings": {
+          "observed_9_1_2_profiles": [],
+          "observed_9_2_0_profiles": [],
+          "source": "research G ruling 2b (language-note prefix, tools_services.py:227-279 at 51e3aac7)",
+          "status": "admitted"
+        }
+      },
+      "notes": [
+        "type is removed upstream and not synthesized (item 15); language now follows Core with an English fallback warning, matched by a reviewed fixed prefix (research G 2b)",
+        "integration (target.entity[] filters) and collapsed (field sections) are Core keys copied unchanged (S10-2 ruling); a value of another type is withheld and counted; filter stays withheld"
+      ],
+      "number": 24,
+      "observed": {
+        "9.1.2": [
+          "count",
+          "default",
+          "description",
+          "detail_level",
+          "domain",
+          "domains",
+          "entity",
+          "example",
+          "fields",
+          "filters_applied",
+          "has_more",
+          "limit",
+          "name",
+          "next_offset",
+          "offset",
+          "query",
+          "required",
+          "selector",
+          "service",
+          "services",
+          "success",
+          "supported_features",
+          "target",
+          "total_count",
+          "type"
+        ],
+        "9.2.0": [
+          "collapsed",
+          "count",
+          "default",
+          "description",
+          "detail_level",
+          "domain",
+          "domains",
+          "entity",
+          "example",
+          "fields",
+          "filter",
+          "filters_applied",
+          "has_more",
+          "integration",
+          "limit",
+          "name",
+          "next_offset",
+          "offset",
+          "optional",
+          "query",
+          "required",
+          "response",
+          "selector",
+          "service",
+          "services",
+          "success",
+          "supported_features",
+          "target",
+          "total_count"
+        ]
+      },
+      "open_containers": [
+        "attributes",
+        "config",
+        "default",
+        "example",
+        "filter",
+        "selector"
+      ],
+      "policy_drops": [],
+      "projection": "closed",
+      "qualified_containers": [],
+      "recomputed_by_engineering": [],
+      "removed_in_9_2_0": [
+        "type"
+      ],
+      "reviewed_warnings": [],
+      "upstream_text_fields": [],
+      "upstream_tool": "ha_list_services",
+      "value_types": {
+        "collapsed": "bool",
+        "integration": "str"
+      },
+      "warnings_new_in_9_2_0": [],
+      "withheld_by_rebuild": []
+    },
+    "ha_search": {
+      "admitted": {
+        "automations": "receipt 9.1.2 profile A+B",
+        "config_has_more": "receipt 9.1.2 profile A+B",
+        "config_next_offset": "receipt 9.1.2 profile A+B",
+        "config_total_matches": "receipt 9.1.2 profile A+B",
+        "count": "receipt 9.1.2 profile A+B",
+        "dashboards": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/search/component.py:523 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:49-51,282-290)",
+        "domain": "receipt 9.1.2 profile A+B",
+        "domain_filter": "receipt 9.1.2 profile A+B",
+        "entities": "receipt 9.1.2 profile A+B",
+        "entity_has_more": "receipt 9.1.2 profile A+B",
+        "entity_id": "receipt 9.1.2 profile A+B",
+        "entity_next_offset": "receipt 9.1.2 profile A+B",
+        "entity_total_matches": "receipt 9.1.2 profile A+B",
+        "errors": "receipt 9.1.2 profile A+B",
+        "friendly_name": "receipt 9.1.2 profile A+B",
+        "has_more": "receipt 9.1.2 profile A+B",
+        "helper_type": "receipt 9.1.2 profile A+B",
+        "helpers": "receipt 9.1.2 profile A+B",
+        "limit": "receipt 9.1.2 profile A+B",
+        "match_in_config": "receipt 9.1.2 profile A+B",
+        "match_in_name": "receipt 9.1.2 profile A+B",
+        "match_in_references": "receipt 9.1.2 profile A+B",
+        "match_type": "receipt 9.1.2 profile A+B",
+        "name": "research G ruling 2c",
+        "next_offset": "receipt 9.1.2 profile A+B",
+        "offset": "receipt 9.1.2 profile A+B",
+        "partial": "receipt 9.1.2 profile A+B",
+        "query": "receipt 9.1.2 profile A+B",
+        "scene_id": "receipt 9.1.2 profile A+B",
+        "scenes": "receipt 9.1.2 profile A+B",
+        "score": "receipt 9.1.2 profile A+B",
+        "script_id": "receipt 9.1.2 profile A+B",
+        "scripts": "receipt 9.1.2 profile A+B",
+        "search_type": "receipt 9.1.2 profile A+B",
+        "search_types": "receipt 9.1.2 profile A+B",
+        "state": "receipt 9.1.2 profile A+B",
+        "success": "receipt 9.1.2 profile A+B",
+        "warnings": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/search/modes.py:688 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:49-51,282-290)"
+      },
+      "calls": {
+        "A/9.1.2": [
+          "r25-search",
+          "v25-search-text"
+        ],
+        "A/9.2.0": [
+          "r25-search",
+          "v25-search-text"
+        ],
+        "B/9.1.2": [
+          "r25-search",
+          "v25-search-text"
+        ],
+        "B/9.2.0": [
+          "r25-search",
+          "v25-search-text"
+        ]
+      },
+      "consumed_structure": [],
+      "map_containers": {},
+      "new_in_9_2_0": {
+        "name": {
+          "observed_9_1_2_profiles": [
+            "A",
+            "B"
+          ],
+          "observed_9_2_0_profiles": [
+            "A",
+            "B"
+          ],
+          "source": "research G ruling 2c",
+          "status": "admitted"
+        }
+      },
+      "notes": [],
+      "number": 25,
+      "observed": {
+        "9.1.2": [
+          "automations",
+          "config_has_more",
+          "config_next_offset",
+          "config_total_matches",
+          "count",
+          "domain",
+          "domain_filter",
+          "entities",
+          "entity_has_more",
+          "entity_id",
+          "entity_next_offset",
+          "entity_total_matches",
+          "errors",
+          "friendly_name",
+          "has_more",
+          "helper_type",
+          "helpers",
+          "limit",
+          "match_in_config",
+          "match_in_name",
+          "match_in_references",
+          "match_type",
+          "name",
+          "next_offset",
+          "offset",
+          "partial",
+          "query",
+          "scene_id",
+          "scenes",
+          "score",
+          "script_id",
+          "scripts",
+          "search_type",
+          "search_types",
+          "state",
+          "success"
+        ],
+        "9.2.0": [
+          "automations",
+          "config_has_more",
+          "config_next_offset",
+          "config_total_matches",
+          "count",
+          "domain",
+          "domain_filter",
+          "entities",
+          "entity_has_more",
+          "entity_id",
+          "entity_next_offset",
+          "entity_total_matches",
+          "errors",
+          "friendly_name",
+          "has_more",
+          "helper_type",
+          "helpers",
+          "limit",
+          "match_in_config",
+          "match_in_name",
+          "match_in_references",
+          "match_type",
+          "name",
+          "next_offset",
+          "offset",
+          "partial",
+          "query",
+          "scene_id",
+          "scenes",
+          "score",
+          "script_id",
+          "scripts",
+          "search_type",
+          "search_types",
+          "state",
+          "success"
+        ]
+      },
+      "open_containers": [
+        "attributes",
+        "config",
+        "filter",
+        "selector"
+      ],
+      "policy_drops": [],
+      "projection": "closed",
+      "qualified_containers": [],
+      "recomputed_by_engineering": [],
+      "removed_in_9_2_0": [],
+      "reviewed_warnings": [],
+      "upstream_text_fields": [
+        "errors"
+      ],
+      "upstream_tool": "ha_search",
+      "value_types": {},
+      "warnings_new_in_9_2_0": [],
+      "withheld_by_rebuild": []
+    }
+  },
+  "receipt_sets": {
+    "A/9.1.2": "docs/evidence/hamcp371/s6/run-a-1/out/9.1.2",
+    "A/9.2.0": "docs/evidence/hamcp371/s6/run-a-1/out/9.2.0",
+    "B/9.1.2": "docs/evidence/hamcp371/s6/run-b-9.1.2-1/out/9.1.2",
+    "B/9.2.0": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0"
+  },
+  "rules": {
+    "count_cap": 999,
+    "default_withhold_scope": "9.2.0 only; the 9.1 modules are not edited (item 4)",
+    "engineering_added": [
+      "fields_withheld",
+      "fields_dropped_by_policy",
+      "upstream_warnings_replaced",
+      "engineering_notes"
+    ],
+    "open_containers_ruled": [
+      "config",
+      "attributes",
+      "selector",
+      "filter"
+    ],
+    "replaced_warning_code": "upstream_warning_replaced",
+    "unknown_keys": "withheld by default and counted as distinct names per call (ruling 2, item 10)"
+  },
+  "upstream": {
+    "baseline_version": "9.1.2",
+    "name": "ha-mcp",
+    "version": "9.2.0"
+  }
+}

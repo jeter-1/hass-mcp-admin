@@ -1,0 +1,3 @@
+event: message
+data: {"jsonrpc":"2.0","id":2,"result":{"content":[{"text":"{\"success\":true,\"count\":1,\"categories\":[{\"category_id\":\"01M7J4KQD8PN7MC968W4W66EKA\",\"created_at\":1794831408.552378,\"icon\":null,\"modified_at\":1794831408.55238,\"name\":\"HAMCP371 category\"}],\"scope\":\"automation\",\"message\":\"Found 1 category(ies) for scope 'automation'\"}","type":"text"}],"isError":false,"structuredContent":{"success":true,"count":1,"categories":[{"category_id":"01M7J4KQD8PN7MC968W4W66EKA","created_at":1794831408.552378,"icon":null,"modified_at":1794831408.55238,"name":"HAMCP371 category"}],"scope":"automation","message":"Found 1 category(ies) for scope 'automation'"}}}
+

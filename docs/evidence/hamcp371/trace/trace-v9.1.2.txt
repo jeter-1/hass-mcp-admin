@@ -1,0 +1,165 @@
+== ha_config_get_automation (tools/tools_config_automations.py)
+  REST GET /config/automation/config/{}                             client/rest_client.py:1435
+  REST GET /states                                                  client/rest_client.py:660
+  REST GET /states/{}                                               client/rest_client.py:679
+  WS   <dynamic type>                                               tools/component_automation.py:37
+  WS   <dynamic>                                                    tools/component_api.py:494
+  WS   config/entity_registry/get                                   client/rest_client.py:1392
+  WS   config/entity_registry/get                                   tools/config_write_helpers.py:47
+  WS   config/entity_registry/list                                  tools/util_helpers.py:520
+  WS   repairs/list_issues                                          tools/automation_registry_details.py:82
+  WS   search/related                                               tools/automation_registry_details.py:63
+== ha_config_get_calendar_events (tools/tools_calendar.py)
+  REST GET /calendars/{}                                            tools/tools_calendar.py:232
+== ha_config_get_category (tools/tools_categories.py)
+  WS   <dynamic>                                                    tools/tools_categories.py:93
+== ha_config_get_label (tools/tools_labels.py)
+  WS   config/label_registry/list                                   tools/tools_labels.py:76
+== ha_config_get_scene (tools/tools_config_scenes.py)
+  REST GET /states                                                  client/rest_client.py:660
+  REST GET /states/{}                                               client/rest_client.py:679
+  REST GET <dynamic>                                                client/rest_client.py:2438
+  WS   <dynamic>                                                    tools/component_api.py:494
+  WS   <dynamic>                                                    tools/component_config_reads.py:106
+  WS   <dynamic>                                                    tools/component_registry_lookup.py:152
+  WS   config/entity_registry/get                                   client/rest_client.py:2303
+  WS   config/entity_registry/get                                   tools/config_write_helpers.py:47
+  WS   config/entity_registry/list                                  tools/scene_discovery.py:111
+  WS   config/entity_registry/list                                  tools/tools_config_scenes.py:242
+  WS   ha_mcp_tools/search                                          tools/scene_discovery.py:71
+== ha_config_get_script (tools/tools_config_scripts.py)
+  REST GET <dynamic>                                                client/rest_client.py:2182
+  WS   config/entity_registry/get                                   client/rest_client.py:2152
+  WS   config/entity_registry/get                                   tools/config_write_helpers.py:47
+  WS   config/entity_registry/list                                  tools/util_helpers.py:520
+== ha_config_list_dashboard_resources (tools/tools_resources.py)
+  WS   lovelace/info                                                tools/tools_resources.py:778
+  WS   lovelace/resources                                           tools/tools_resources.py:233
+== ha_config_list_groups (tools/tools_groups.py)
+  REST GET /states                                                  client/rest_client.py:660
+== ha_config_list_helpers (tools/tools_config_helpers.py)
+  REST GET /config/config_entries/entry                             client/rest_client.py:1846
+  REST POST /config/config_entries/flow                             client/rest_client.py:1644
+  REST POST /config/config_entries/options/flow                     client/rest_client.py:1727
+  WS   <dynamic type>                                               tools/config_helpers/describe.py:406
+  WS   <dynamic type>                                               tools/tools_config_helpers.py:237
+  WS   <dynamic type>                                               tools/tools_config_helpers.py:408
+  WS   <dynamic>                                                    tools/component_api.py:494
+  WS   <dynamic>                                                    tools/component_helper_collections.py:66
+  WS   config/entity_registry/get                                   tools/config_helpers/describe.py:399
+  WS   config/entity_registry/list                                  tools/config_helpers/registry.py:482
+  WS   config_entries/get_single                                    client/config_entry_read.py:27
+  WS   frontend/get_translations                                    tools/flow_translations.py:40
+  WS   ha_mcp_tools/helpers_list                                    tools/tools_config_helpers.py:393
+  WS   ha_mcp_tools/helpers_list                                    tools/tools_config_helpers.py:506
+== ha_eval_template (tools/tools_utility.py)
+== ha_get_automation_traces (tools/tools_traces.py)
+  REST GET /states/{}                                               client/rest_client.py:679
+  WS   automation/config                                            tools/tools_traces.py:491
+  WS   config/entity_registry/get                                   tools/tools_traces.py:388
+  WS   trace/get                                                    tools/tools_traces.py:239
+  WS   trace/list                                                   tools/tools_traces.py:277
+== ha_manage_blueprints (tools/tools_blueprints.py)
+  REST GET /config                                                  client/rest_client.py:644
+  REST GET /services                                                client/rest_client.py:812
+  REST POST /services/{}/{}                                         client/rest_client.py:745
+  WS   <dynamic>                                                    tools/blueprint_write.py:88
+  WS   <dynamic>                                                    tools/component_api.py:494
+  WS   auth/current_user                                            client/rest_client.py:604
+  WS   blueprint/delete                                             tools/tools_blueprints.py:513
+  WS   blueprint/import                                             tools/blueprint_sources.py:294
+  WS   blueprint/import                                             tools/blueprint_write.py:307
+  WS   blueprint/list                                               tools/tools_blueprints.py:381
+  WS   blueprint/save                                               backup_manager.py:2755
+  WS   blueprint/substitute                                         tools/blueprint_substitute.py:85
+  WS   call_service                                                 client/rest_client.py:783
+  WS   ha_mcp_tools/blueprint_get                                   tools/blueprint_sources.py:210
+  WS   search/related                                               tools/tools_blueprints.py:628
+== ha_get_device (tools/tools_registry.py)
+  WS   <dynamic>                                                    tools/component_api.py:494
+  WS   <dynamic>                                                    tools/component_devices.py:106
+  WS   <dynamic>                                                    tools/component_devices.py:188
+  WS   config/device_registry/list                                  tools/tools_registry.py:259
+  WS   config/entity_registry/get                                   tools/tools_registry.py:332
+  WS   config/entity_registry/list                                  tools/tools_registry.py:224
+  WS   config/entity_registry/list                                  tools/tools_registry.py:240
+  WS   matter/node_diagnostics                                      tools/device_enrichment.py:101
+  WS   zha/devices                                                  tools/device_enrichment.py:21
+  WS   zwave_js/node_status                                         tools/device_enrichment.py:59
+== ha_get_entity (tools/tools_entities.py)
+  WS   <dynamic>                                                    tools/component_api.py:494
+  WS   <dynamic>                                                    tools/tools_entities.py:1306
+  WS   <dynamic>                                                    tools/tools_entities.py:162
+  WS   config/entity_registry/get_entries                           tools/tools_entities.py:1337
+  WS   config/entity_registry/list                                  tools/tools_entities.py:1380
+== ha_get_entity_exposure (tools/tools_voice_assistant.py)
+  WS   <dynamic>                                                    tools/component_api.py:494
+  WS   <dynamic>                                                    tools/tools_voice_assistant.py:109
+  WS   <dynamic>                                                    tools/tools_voice_assistant.py:293
+== ha_get_history (tools/tools_history.py)
+  REST GET /config                                                  client/rest_client.py:644
+  WS   <dynamic>                                                    tools/component_api.py:494
+  WS   ha_mcp_tools/statistics_units                                tools/statistics_helpers.py:137
+  WS   ha_mcp_tools/{}                                              tools/core_contract.py:82
+  WS   history/history_during_period                                tools/tools_history.py:906
+  WS   recorder/get_statistics_metadata                             tools/statistics_helpers.py:21
+  WS   recorder/statistics_during_period                            tools/statistics_resets.py:88
+  WS   recorder/statistics_during_period                            tools/tools_history.py:1022
+== ha_get_overview (tools/tools_search.py)
+  unresolved: self._collect_independent_overview@tools/tools_search.py:602; self._collect_overview@tools/tools_search.py:609
+== ha_get_skill_guide (server.py)
+== ha_get_state (tools/tools_search.py)
+  unresolved: self._get_bulk_entity_states@tools/tools_search.py:802; self._get_single_entity_state@tools/tools_search.py:796
+== ha_get_system_health (tools/tools_system.py)
+  REST GET /states                                                  client/rest_client.py:660
+  REST GET <dynamic>                                                tools/diagnostics_helpers.py:76
+  REST POST /config/core/check_config                               client/rest_client.py:896
+  WS   <dynamic>                                                    tools/component_api.py:494
+  WS   <dynamic>                                                    tools/tools_system.py:1185
+  WS   config/entity_registry/list                                  tools/tools_system.py:1630
+  WS   config_entries/get                                           tools/tools_system.py:1355
+  WS   config_entries/get                                           tools/tools_system.py:1486
+  WS   config_entries/get                                           tools/tools_system.py:1633
+  WS   frontend/get_themes                                          tools/tools_system.py:1525
+  WS   otbr/info                                                    tools/tools_system.py:1423
+  WS   repairs/list_issues                                          tools/tools_system.py:1237
+  WS   zha/devices                                                  tools/tools_system.py:1287
+  WS   zwave_js/network_status                                      tools/tools_system.py:1369
+== ha_get_todo (tools/tools_todo.py)
+  REST GET /states                                                  client/rest_client.py:660
+  REST GET /states/{}                                               client/rest_client.py:679
+  WS                                                                tools/tools_todo.py:379
+  WS   todo/item/list                                               tools/tools_todo.py:215
+== ha_get_zone (tools/tools_zones.py)
+  REST GET /states                                                  client/rest_client.py:660
+  WS   <dynamic>                                                    tools/component_api.py:494
+  WS   config/entity_registry/list                                  tools/tools_zones.py:380
+  WS   ha_mcp_tools/helpers_list                                    tools/tools_zones.py:302
+  WS   zone/list                                                    tools/tools_zones.py:325
+== ha_list_floors_areas (tools/tools_areas.py)
+  WS   <dynamic>                                                    tools/component_api.py:494
+  WS   <dynamic>                                                    tools/component_registries.py:128
+  WS   config/area_registry/list                                    tools/tools_areas.py:307
+  WS   config/floor_registry/list                                   tools/tools_areas.py:308
+== ha_list_services (tools/tools_services.py)
+  REST GET /services                                                client/rest_client.py:812
+  WS   <dynamic>                                                    tools/component_api.py:494
+  WS   <dynamic>                                                    tools/tools_services.py:297
+  WS   frontend/get_translations                                    tools/tools_services.py:340
+== ha_search (tools/tools_search.py)
+  WS   <dynamic>                                                    tools/component_api.py:494
+  unresolved: self._ha_search_via_component@tools/tools_search.py:417; self._legacy_ha_search@tools/tools_search.py:423; self._resolve_component_search_visibility@tools/tools_search.py:415
+== ha_get_integration (tools/tools_integrations.py)
+  REST GET /config/config_entries/entry                             client/rest_client.py:1846
+  REST GET /config/config_entries/entry                             tools/tools_integrations.py:1178
+  REST GET <dynamic>                                                tools/diagnostics_helpers.py:76
+  REST POST /config/config_entries/options/flow                     client/rest_client.py:1727
+  REST POST /config/config_entries/subentries/flow                  client/rest_client.py:1797
+  WS   <dynamic>                                                    tools/component_api.py:494
+  WS   <dynamic>                                                    tools/component_config_entries.py:129
+  WS   config_entries/get_single                                    client/config_entry_read.py:27
+  WS   config_entries/subentries/list                               client/rest_client.py:1824
+  WS   frontend/get_translations                                    tools/flow_translations.py:40
+  WS   ha_mcp_tools/{}                                              tools/core_contract.py:82
+  WS   logger/log_info                                              tools/util_helpers.py:415
+== ha_get_app (tools/tools_addons.py)

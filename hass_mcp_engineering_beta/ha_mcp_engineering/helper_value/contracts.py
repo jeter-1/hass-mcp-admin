@@ -29,6 +29,8 @@ _SOURCES = {
     "9.1.0": ("ha-mcp-v9.1.0-4259f247", "d2e3f4b0647d815fb32d530fed15a6a99b1d4b33"),
     # HAMCP-351: exact reviewed registry entry ha-mcp-v9.1.2-381b1e01.
     "9.1.2": ("ha-mcp-v9.1.2-381b1e01", "bab615dfc90cc510f5e19a9118707d0fae03a37c"),
+    # HAMCP-371 SB: exact reviewed registry entry ha-mcp-v9.2.0-9de5bf6c.
+    "9.2.0": ("ha-mcp-v9.2.0-9de5bf6c", "51e3aac788482a081807591cd5d58d07dc4e540b"),
 }
 HELPER_SEMANTIC_CONTRACTS = {version: "ha-mcp-" + version + "-single-helper-value-v1"
                              for version in _SOURCES}

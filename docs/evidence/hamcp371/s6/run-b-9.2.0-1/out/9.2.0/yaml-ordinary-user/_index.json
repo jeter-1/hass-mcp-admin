@@ -1,0 +1,92 @@
+{
+ "calls": [
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 150,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "y-group.json",
+   "group": "yaml",
+   "has_structured_content": false,
+   "http_status": 200,
+   "id": "y-group",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": true,
+   "json_rpc_error_code": null,
+   "kind": "yaml",
+   "new_session": false,
+   "public_arguments": {
+    "yaml_path": "group"
+   },
+   "public_tool": "ha_config_get_yaml",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.003,
+   "session": 0,
+   "sha256": "ff25265bd29d0d81bb8cf23811ecc6af66bea79563fbae05c9799331f05a53d1",
+   "upstream_tool": "ha_config_get_yaml",
+   "wire_arguments": {
+    "file": "configuration.yaml",
+    "include_content": true,
+    "include_parsed": true,
+    "yaml_path": "group"
+   }
+  },
+  {
+   "arguments_built_by": "adapter code, policy 9.1.2",
+   "body_bytes": 150,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "y-absent-key.json",
+   "group": "yaml",
+   "has_structured_content": false,
+   "http_status": 200,
+   "id": "y-absent-key",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": true,
+   "json_rpc_error_code": null,
+   "kind": "yaml",
+   "new_session": false,
+   "public_arguments": {
+    "yaml_path": "hamcp371_absent_object"
+   },
+   "public_tool": "ha_config_get_yaml",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.002,
+   "session": 0,
+   "sha256": "357fd2aeed68ba5e299e22faeb45de2414171e3068a0e3406a2e03c6b50e9b2c",
+   "upstream_tool": "ha_config_get_yaml",
+   "wire_arguments": {
+    "file": "configuration.yaml",
+    "include_content": true,
+    "include_parsed": true,
+    "yaml_path": "hamcp371_absent_object"
+   }
+  }
+ ],
+ "calls_format_version": 1,
+ "endpoint": "http://127.0.0.1:18086/mcp",
+ "negotiated_protocol_version": "2025-03-26",
+ "session_delete_status": [
+  null
+ ],
+ "session_header_present": false,
+ "sessions_opened": 1
+}

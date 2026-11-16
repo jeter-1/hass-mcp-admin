@@ -1,0 +1,133 @@
+{
+ "arguments_built_by": "adapter code, policy 9.1.2",
+ "calls_format_version": 1,
+ "exchange": {
+  "body_bytes": 698,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":103,\"result\":{\"content\":[{\"text\":\"{\\\"success\\\":true,\\\"count\\\":1,\\\"categories\\\":[{\\\"category_id\\\":\\\"01M7ESCZS195TMNY14JZB4R7JQ\\\",\\\"created_at\\\":1794718990.113713,\\\"icon\\\":null,\\\"modified_at\\\":1794718990.113715,\\\"name\\\":\\\"HAMCP371 category\\\"}],\\\"scope\\\":\\\"automation\\\",\\\"message\\\":\\\"Found 1 category(ies) for scope 'automation'\\\"}\",\"type\":\"text\"}],\"isError\":false,\"structuredContent\":{\"success\":true,\"count\":1,\"categories\":[{\"category_id\":\"01M7ESCZS195TMNY14JZB4R7JQ\",\"created_at\":1794718990.113713,\"icon\":null,\"modified_at\":1794718990.113715,\"name\":\"HAMCP371 category\"}],\"scope\":\"automation\",\"message\":\"Found 1 category(ies) for scope 'automation'\"}}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 103,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\"success\":true,\"count\":1,\"categories\":[{\"category_id\":\"01M7ESCZS195TMNY14JZB4R7JQ\",\"created_at\":1794718990.113713,\"icon\":null,\"modified_at\":1794718990.113715,\"name\":\"HAMCP371 category\"}],\"scope\":\"automation\",\"message\":\"Found 1 category(ies) for scope 'automation'\"}",
+       "type": "text"
+      }
+     ],
+     "isError": false,
+     "structuredContent": {
+      "categories": [
+       {
+        "category_id": "01M7ESCZS195TMNY14JZB4R7JQ",
+        "created_at": 1794718990.113713,
+        "icon": null,
+        "modified_at": 1794718990.113715,
+        "name": "HAMCP371 category"
+       }
+      ],
+      "count": 1,
+      "message": "Found 1 category(ies) for scope 'automation'",
+      "scope": "automation",
+      "success": true
+     }
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 103,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "scope": "automation"
+     },
+     "name": "ha_config_get_category"
+    }
+   },
+   "method": "POST",
+   "path": "/mcp"
+  },
+  "response": {
+   "id": 103,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\"success\":true,\"count\":1,\"categories\":[{\"category_id\":\"01M7ESCZS195TMNY14JZB4R7JQ\",\"created_at\":1794718990.113713,\"icon\":null,\"modified_at\":1794718990.113715,\"name\":\"HAMCP371 category\"}],\"scope\":\"automation\",\"message\":\"Found 1 category(ies) for scope 'automation'\"}",
+      "type": "text"
+     }
+    ],
+    "isError": false,
+    "structuredContent": {
+     "categories": [
+      {
+       "category_id": "01M7ESCZS195TMNY14JZB4R7JQ",
+       "created_at": 1794718990.113713,
+       "icon": null,
+       "modified_at": 1794718990.113715,
+       "name": "HAMCP371 category"
+      }
+     ],
+     "count": 1,
+     "message": "Found 1 category(ies) for scope 'automation'",
+     "scope": "automation",
+     "success": true
+    }
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Sun, 15 Nov 2026 05:03:21 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null,
+ "group": "reads",
+ "id": "r03-category",
+ "idle": false,
+ "kind": "public",
+ "new_session": false,
+ "public_arguments": {
+  "scope": "automation"
+ },
+ "public_tool": "ha_config_get_category",
+ "upstream_tool": "ha_config_get_category",
+ "wire_arguments": {
+  "scope": "automation"
+ }
+}

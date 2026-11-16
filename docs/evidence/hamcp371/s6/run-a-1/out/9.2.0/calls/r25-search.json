@@ -1,0 +1,180 @@
+{
+ "arguments_built_by": "adapter code, policy 9.1.2",
+ "calls_format_version": 1,
+ "exchange": {
+  "body_bytes": 1356,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":125,\"result\":{\"content\":[{\"text\":\"{\\\"success\\\":true,\\\"query\\\":null,\\\"entities\\\":[{\\\"entity_id\\\":\\\"input_boolean.hamcp371_helper\\\",\\\"friendly_name\\\":\\\"HAMCP371 helper\\\",\\\"domain\\\":\\\"input_boolean\\\",\\\"state\\\":\\\"on\\\",\\\"score\\\":100,\\\"match_type\\\":\\\"domain_listing\\\"}],\\\"entity_total_matches\\\":1,\\\"automations\\\":[],\\\"scripts\\\":[],\\\"scenes\\\":[],\\\"helpers\\\":[],\\\"search_types\\\":[\\\"automation\\\",\\\"script\\\",\\\"scene\\\",\\\"helper\\\"],\\\"config_total_matches\\\":0,\\\"partial\\\":false,\\\"errors\\\":[],\\\"entity_has_more\\\":false,\\\"entity_next_offset\\\":null,\\\"domain_filter\\\":\\\"input_boolean\\\",\\\"offset\\\":0,\\\"limit\\\":5,\\\"count\\\":1,\\\"search_type\\\":\\\"domain_listing\\\",\\\"has_more\\\":false,\\\"next_offset\\\":null}\",\"type\":\"text\"}],\"isError\":false,\"structuredContent\":{\"success\":true,\"query\":null,\"entities\":[{\"entity_id\":\"input_boolean.hamcp371_helper\",\"friendly_name\":\"HAMCP371 helper\",\"domain\":\"input_boolean\",\"state\":\"on\",\"score\":100,\"match_type\":\"domain_listing\"}],\"entity_total_matches\":1,\"automations\":[],\"scripts\":[],\"scenes\":[],\"helpers\":[],\"search_types\":[\"automation\",\"script\",\"scene\",\"helper\"],\"config_total_matches\":0,\"partial\":false,\"errors\":[],\"entity_has_more\":false,\"entity_next_offset\":null,\"domain_filter\":\"input_boolean\",\"offset\":0,\"limit\":5,\"count\":1,\"search_type\":\"domain_listing\",\"has_more\":false,\"next_offset\":null}}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 125,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\"success\":true,\"query\":null,\"entities\":[{\"entity_id\":\"input_boolean.hamcp371_helper\",\"friendly_name\":\"HAMCP371 helper\",\"domain\":\"input_boolean\",\"state\":\"on\",\"score\":100,\"match_type\":\"domain_listing\"}],\"entity_total_matches\":1,\"automations\":[],\"scripts\":[],\"scenes\":[],\"helpers\":[],\"search_types\":[\"automation\",\"script\",\"scene\",\"helper\"],\"config_total_matches\":0,\"partial\":false,\"errors\":[],\"entity_has_more\":false,\"entity_next_offset\":null,\"domain_filter\":\"input_boolean\",\"offset\":0,\"limit\":5,\"count\":1,\"search_type\":\"domain_listing\",\"has_more\":false,\"next_offset\":null}",
+       "type": "text"
+      }
+     ],
+     "isError": false,
+     "structuredContent": {
+      "automations": [],
+      "config_total_matches": 0,
+      "count": 1,
+      "domain_filter": "input_boolean",
+      "entities": [
+       {
+        "domain": "input_boolean",
+        "entity_id": "input_boolean.hamcp371_helper",
+        "friendly_name": "HAMCP371 helper",
+        "match_type": "domain_listing",
+        "score": 100,
+        "state": "on"
+       }
+      ],
+      "entity_has_more": false,
+      "entity_next_offset": null,
+      "entity_total_matches": 1,
+      "errors": [],
+      "has_more": false,
+      "helpers": [],
+      "limit": 5,
+      "next_offset": null,
+      "offset": 0,
+      "partial": false,
+      "query": null,
+      "scenes": [],
+      "scripts": [],
+      "search_type": "domain_listing",
+      "search_types": [
+       "automation",
+       "script",
+       "scene",
+       "helper"
+      ],
+      "success": true
+     }
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 125,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "domain_filter": "input_boolean",
+      "limit": 5
+     },
+     "name": "ha_search"
+    }
+   },
+   "method": "POST",
+   "path": "/mcp"
+  },
+  "response": {
+   "id": 125,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\"success\":true,\"query\":null,\"entities\":[{\"entity_id\":\"input_boolean.hamcp371_helper\",\"friendly_name\":\"HAMCP371 helper\",\"domain\":\"input_boolean\",\"state\":\"on\",\"score\":100,\"match_type\":\"domain_listing\"}],\"entity_total_matches\":1,\"automations\":[],\"scripts\":[],\"scenes\":[],\"helpers\":[],\"search_types\":[\"automation\",\"script\",\"scene\",\"helper\"],\"config_total_matches\":0,\"partial\":false,\"errors\":[],\"entity_has_more\":false,\"entity_next_offset\":null,\"domain_filter\":\"input_boolean\",\"offset\":0,\"limit\":5,\"count\":1,\"search_type\":\"domain_listing\",\"has_more\":false,\"next_offset\":null}",
+      "type": "text"
+     }
+    ],
+    "isError": false,
+    "structuredContent": {
+     "automations": [],
+     "config_total_matches": 0,
+     "count": 1,
+     "domain_filter": "input_boolean",
+     "entities": [
+      {
+       "domain": "input_boolean",
+       "entity_id": "input_boolean.hamcp371_helper",
+       "friendly_name": "HAMCP371 helper",
+       "match_type": "domain_listing",
+       "score": 100,
+       "state": "on"
+      }
+     ],
+     "entity_has_more": false,
+     "entity_next_offset": null,
+     "entity_total_matches": 1,
+     "errors": [],
+     "has_more": false,
+     "helpers": [],
+     "limit": 5,
+     "next_offset": null,
+     "offset": 0,
+     "partial": false,
+     "query": null,
+     "scenes": [],
+     "scripts": [],
+     "search_type": "domain_listing",
+     "search_types": [
+      "automation",
+      "script",
+      "scene",
+      "helper"
+     ],
+     "success": true
+    }
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Thu, 12 Nov 2026 06:23:57 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null,
+ "group": "reads",
+ "id": "r25-search",
+ "idle": false,
+ "kind": "public",
+ "new_session": false,
+ "public_arguments": {
+  "domain_filter": "input_boolean",
+  "limit": 5
+ },
+ "public_tool": "ha_search",
+ "upstream_tool": "ha_search",
+ "wire_arguments": {
+  "domain_filter": "input_boolean",
+  "limit": 5
+ }
+}

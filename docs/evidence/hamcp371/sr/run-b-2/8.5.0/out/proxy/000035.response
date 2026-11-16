@@ -1,0 +1,3 @@
+event: message
+data: {"jsonrpc":"2.0","id":2,"result":{"content":[{"text":"{\"success\":true,\"action\":\"list\",\"resources\":[{\"id\":\"afaf4554ff29466f9ee98ac4de754e3f\",\"url\":\"/local/hamcp371-resource.js\",\"type\":\"module\"}],\"total_count\":1,\"offset\":0,\"limit\":5,\"count\":1,\"has_more\":false,\"next_offset\":null,\"inline_count\":0,\"by_type\":{\"module\":1,\"js\":0,\"css\":0}}","type":"text"}],"isError":false,"structuredContent":{"success":true,"action":"list","resources":[{"id":"afaf4554ff29466f9ee98ac4de754e3f","url":"/local/hamcp371-resource.js","type":"module"}],"total_count":1,"offset":0,"limit":5,"count":1,"has_more":false,"next_offset":null,"inline_count":0,"by_type":{"module":1,"js":0,"css":0}}}}
+

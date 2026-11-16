@@ -1,0 +1,331 @@
+{
+ "arguments_built_by": "adapter code, policy 9.1.2",
+ "calls_format_version": 1,
+ "exchange": {
+  "body_bytes": 3388,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":124,\"result\":{\"content\":[{\"text\":\"{\\\"success\\\":true,\\\"domains\\\":[\\\"ai_task\\\",\\\"alarm_control_panel\\\",\\\"assist_satellite\\\",\\\"automation\\\",\\\"backup\\\",\\\"button\\\",\\\"calendar\\\",\\\"camera\\\",\\\"climate\\\",\\\"conversation\\\",\\\"counter\\\",\\\"cover\\\",\\\"date\\\",\\\"datetime\\\",\\\"device_tracker\\\",\\\"fan\\\",\\\"ffmpeg\\\",\\\"frontend\\\",\\\"group\\\",\\\"ha_mcp_tools\\\",\\\"homeassistant\\\",\\\"humidifier\\\",\\\"image\\\",\\\"image_processing\\\",\\\"input_boolean\\\",\\\"input_button\\\",\\\"input_datetime\\\",\\\"input_number\\\",\\\"input_select\\\",\\\"input_text\\\",\\\"lawn_mower\\\",\\\"light\\\",\\\"lock\\\",\\\"logbook\\\",\\\"logger\\\",\\\"lovelace\\\",\\\"media_player\\\",\\\"notify\\\",\\\"number\\\",\\\"persistent_notification\\\",\\\"person\\\",\\\"recorder\\\",\\\"remote\\\",\\\"scene\\\",\\\"schedule\\\",\\\"script\\\",\\\"select\\\",\\\"shopping_list\\\",\\\"siren\\\",\\\"switch\\\",\\\"system_log\\\",\\\"template\\\",\\\"text\\\",\\\"time\\\",\\\"timer\\\",\\\"todo\\\",\\\"tts\\\",\\\"update\\\",\\\"vacuum\\\",\\\"valve\\\",\\\"water_heater\\\",\\\"weather\\\",\\\"zone\\\"],\\\"services\\\":{\\\"homeassistant.save_persistent_states\\\":{\\\"name\\\":\\\"Save Persistent States\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"homeassistant\\\",\\\"service\\\":\\\"save_persistent_states\\\"},\\\"homeassistant.turn_off\\\":{\\\"name\\\":\\\"Turn Off\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"homeassistant\\\",\\\"service\\\":\\\"turn_off\\\",\\\"target\\\":{}},\\\"homeassistant.turn_on\\\":{\\\"name\\\":\\\"Turn On\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"homeassistant\\\",\\\"service\\\":\\\"turn_on\\\",\\\"target\\\":{}},\\\"homeassistant.toggle\\\":{\\\"name\\\":\\\"Toggle\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"homeassistant\\\",\\\"service\\\":\\\"toggle\\\",\\\"target\\\":{}},\\\"homeassistant.stop\\\":{\\\"name\\\":\\\"Stop\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"homeassistant\\\",\\\"service\\\":\\\"stop\\\"}},\\\"total_count\\\":260,\\\"offset\\\":0,\\\"limit\\\":5,\\\"count\\\":5,\\\"has_more\\\":true,\\\"next_offset\\\":5,\\\"detail_level\\\":\\\"summary\\\",\\\"filters_applied\\\":{\\\"domain\\\":null,\\\"query\\\":null}}\",\"type\":\"text\"}],\"isError\":false,\"structuredContent\":{\"success\":true,\"domains\":[\"ai_task\",\"alarm_control_panel\",\"assist_satellite\",\"automation\",\"backup\",\"button\",\"calendar\",\"camera\",\"climate\",\"conversation\",\"counter\",\"cover\",\"date\",\"datetime\",\"device_tracker\",\"fan\",\"ffmpeg\",\"frontend\",\"group\",\"ha_mcp_tools\",\"homeassistant\",\"humidifier\",\"image\",\"image_processing\",\"input_boolean\",\"input_button\",\"input_datetime\",\"input_number\",\"input_select\",\"input_text\",\"lawn_mower\",\"light\",\"lock\",\"logbook\",\"logger\",\"lovelace\",\"media_player\",\"notify\",\"number\",\"persistent_notification\",\"person\",\"recorder\",\"remote\",\"scene\",\"schedule\",\"script\",\"select\",\"shopping_list\",\"siren\",\"switch\",\"system_log\",\"template\",\"text\",\"time\",\"timer\",\"todo\",\"tts\",\"update\",\"vacuum\",\"valve\",\"water_heater\",\"weather\",\"zone\"],\"services\":{\"homeassistant.save_persistent_states\":{\"name\":\"Save Persistent States\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"save_persistent_states\"},\"homeassistant.turn_off\":{\"name\":\"Turn Off\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"turn_off\",\"target\":{}},\"homeassistant.turn_on\":{\"name\":\"Turn On\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"turn_on\",\"target\":{}},\"homeassistant.toggle\":{\"name\":\"Toggle\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"toggle\",\"target\":{}},\"homeassistant.stop\":{\"name\":\"Stop\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"stop\"}},\"total_count\":260,\"offset\":0,\"limit\":5,\"count\":5,\"has_more\":true,\"next_offset\":5,\"detail_level\":\"summary\",\"filters_applied\":{\"domain\":null,\"query\":null}}}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 124,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\"success\":true,\"domains\":[\"ai_task\",\"alarm_control_panel\",\"assist_satellite\",\"automation\",\"backup\",\"button\",\"calendar\",\"camera\",\"climate\",\"conversation\",\"counter\",\"cover\",\"date\",\"datetime\",\"device_tracker\",\"fan\",\"ffmpeg\",\"frontend\",\"group\",\"ha_mcp_tools\",\"homeassistant\",\"humidifier\",\"image\",\"image_processing\",\"input_boolean\",\"input_button\",\"input_datetime\",\"input_number\",\"input_select\",\"input_text\",\"lawn_mower\",\"light\",\"lock\",\"logbook\",\"logger\",\"lovelace\",\"media_player\",\"notify\",\"number\",\"persistent_notification\",\"person\",\"recorder\",\"remote\",\"scene\",\"schedule\",\"script\",\"select\",\"shopping_list\",\"siren\",\"switch\",\"system_log\",\"template\",\"text\",\"time\",\"timer\",\"todo\",\"tts\",\"update\",\"vacuum\",\"valve\",\"water_heater\",\"weather\",\"zone\"],\"services\":{\"homeassistant.save_persistent_states\":{\"name\":\"Save Persistent States\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"save_persistent_states\"},\"homeassistant.turn_off\":{\"name\":\"Turn Off\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"turn_off\",\"target\":{}},\"homeassistant.turn_on\":{\"name\":\"Turn On\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"turn_on\",\"target\":{}},\"homeassistant.toggle\":{\"name\":\"Toggle\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"toggle\",\"target\":{}},\"homeassistant.stop\":{\"name\":\"Stop\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"stop\"}},\"total_count\":260,\"offset\":0,\"limit\":5,\"count\":5,\"has_more\":true,\"next_offset\":5,\"detail_level\":\"summary\",\"filters_applied\":{\"domain\":null,\"query\":null}}",
+       "type": "text"
+      }
+     ],
+     "isError": false,
+     "structuredContent": {
+      "count": 5,
+      "detail_level": "summary",
+      "domains": [
+       "ai_task",
+       "alarm_control_panel",
+       "assist_satellite",
+       "automation",
+       "backup",
+       "button",
+       "calendar",
+       "camera",
+       "climate",
+       "conversation",
+       "counter",
+       "cover",
+       "date",
+       "datetime",
+       "device_tracker",
+       "fan",
+       "ffmpeg",
+       "frontend",
+       "group",
+       "ha_mcp_tools",
+       "homeassistant",
+       "humidifier",
+       "image",
+       "image_processing",
+       "input_boolean",
+       "input_button",
+       "input_datetime",
+       "input_number",
+       "input_select",
+       "input_text",
+       "lawn_mower",
+       "light",
+       "lock",
+       "logbook",
+       "logger",
+       "lovelace",
+       "media_player",
+       "notify",
+       "number",
+       "persistent_notification",
+       "person",
+       "recorder",
+       "remote",
+       "scene",
+       "schedule",
+       "script",
+       "select",
+       "shopping_list",
+       "siren",
+       "switch",
+       "system_log",
+       "template",
+       "text",
+       "time",
+       "timer",
+       "todo",
+       "tts",
+       "update",
+       "vacuum",
+       "valve",
+       "water_heater",
+       "weather",
+       "zone"
+      ],
+      "filters_applied": {
+       "domain": null,
+       "query": null
+      },
+      "has_more": true,
+      "limit": 5,
+      "next_offset": 5,
+      "offset": 0,
+      "services": {
+       "homeassistant.save_persistent_states": {
+        "description": "",
+        "domain": "homeassistant",
+        "name": "Save Persistent States",
+        "service": "save_persistent_states"
+       },
+       "homeassistant.stop": {
+        "description": "",
+        "domain": "homeassistant",
+        "name": "Stop",
+        "service": "stop"
+       },
+       "homeassistant.toggle": {
+        "description": "",
+        "domain": "homeassistant",
+        "name": "Toggle",
+        "service": "toggle",
+        "target": {}
+       },
+       "homeassistant.turn_off": {
+        "description": "",
+        "domain": "homeassistant",
+        "name": "Turn Off",
+        "service": "turn_off",
+        "target": {}
+       },
+       "homeassistant.turn_on": {
+        "description": "",
+        "domain": "homeassistant",
+        "name": "Turn On",
+        "service": "turn_on",
+        "target": {}
+       }
+      },
+      "success": true,
+      "total_count": 260
+     }
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 124,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "limit": 5
+     },
+     "name": "ha_list_services"
+    }
+   },
+   "method": "POST",
+   "path": "/mcp"
+  },
+  "response": {
+   "id": 124,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\"success\":true,\"domains\":[\"ai_task\",\"alarm_control_panel\",\"assist_satellite\",\"automation\",\"backup\",\"button\",\"calendar\",\"camera\",\"climate\",\"conversation\",\"counter\",\"cover\",\"date\",\"datetime\",\"device_tracker\",\"fan\",\"ffmpeg\",\"frontend\",\"group\",\"ha_mcp_tools\",\"homeassistant\",\"humidifier\",\"image\",\"image_processing\",\"input_boolean\",\"input_button\",\"input_datetime\",\"input_number\",\"input_select\",\"input_text\",\"lawn_mower\",\"light\",\"lock\",\"logbook\",\"logger\",\"lovelace\",\"media_player\",\"notify\",\"number\",\"persistent_notification\",\"person\",\"recorder\",\"remote\",\"scene\",\"schedule\",\"script\",\"select\",\"shopping_list\",\"siren\",\"switch\",\"system_log\",\"template\",\"text\",\"time\",\"timer\",\"todo\",\"tts\",\"update\",\"vacuum\",\"valve\",\"water_heater\",\"weather\",\"zone\"],\"services\":{\"homeassistant.save_persistent_states\":{\"name\":\"Save Persistent States\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"save_persistent_states\"},\"homeassistant.turn_off\":{\"name\":\"Turn Off\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"turn_off\",\"target\":{}},\"homeassistant.turn_on\":{\"name\":\"Turn On\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"turn_on\",\"target\":{}},\"homeassistant.toggle\":{\"name\":\"Toggle\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"toggle\",\"target\":{}},\"homeassistant.stop\":{\"name\":\"Stop\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"stop\"}},\"total_count\":260,\"offset\":0,\"limit\":5,\"count\":5,\"has_more\":true,\"next_offset\":5,\"detail_level\":\"summary\",\"filters_applied\":{\"domain\":null,\"query\":null}}",
+      "type": "text"
+     }
+    ],
+    "isError": false,
+    "structuredContent": {
+     "count": 5,
+     "detail_level": "summary",
+     "domains": [
+      "ai_task",
+      "alarm_control_panel",
+      "assist_satellite",
+      "automation",
+      "backup",
+      "button",
+      "calendar",
+      "camera",
+      "climate",
+      "conversation",
+      "counter",
+      "cover",
+      "date",
+      "datetime",
+      "device_tracker",
+      "fan",
+      "ffmpeg",
+      "frontend",
+      "group",
+      "ha_mcp_tools",
+      "homeassistant",
+      "humidifier",
+      "image",
+      "image_processing",
+      "input_boolean",
+      "input_button",
+      "input_datetime",
+      "input_number",
+      "input_select",
+      "input_text",
+      "lawn_mower",
+      "light",
+      "lock",
+      "logbook",
+      "logger",
+      "lovelace",
+      "media_player",
+      "notify",
+      "number",
+      "persistent_notification",
+      "person",
+      "recorder",
+      "remote",
+      "scene",
+      "schedule",
+      "script",
+      "select",
+      "shopping_list",
+      "siren",
+      "switch",
+      "system_log",
+      "template",
+      "text",
+      "time",
+      "timer",
+      "todo",
+      "tts",
+      "update",
+      "vacuum",
+      "valve",
+      "water_heater",
+      "weather",
+      "zone"
+     ],
+     "filters_applied": {
+      "domain": null,
+      "query": null
+     },
+     "has_more": true,
+     "limit": 5,
+     "next_offset": 5,
+     "offset": 0,
+     "services": {
+      "homeassistant.save_persistent_states": {
+       "description": "",
+       "domain": "homeassistant",
+       "name": "Save Persistent States",
+       "service": "save_persistent_states"
+      },
+      "homeassistant.stop": {
+       "description": "",
+       "domain": "homeassistant",
+       "name": "Stop",
+       "service": "stop"
+      },
+      "homeassistant.toggle": {
+       "description": "",
+       "domain": "homeassistant",
+       "name": "Toggle",
+       "service": "toggle",
+       "target": {}
+      },
+      "homeassistant.turn_off": {
+       "description": "",
+       "domain": "homeassistant",
+       "name": "Turn Off",
+       "service": "turn_off",
+       "target": {}
+      },
+      "homeassistant.turn_on": {
+       "description": "",
+       "domain": "homeassistant",
+       "name": "Turn On",
+       "service": "turn_on",
+       "target": {}
+      }
+     },
+     "success": true,
+     "total_count": 260
+    }
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Sun, 15 Nov 2026 05:07:37 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null,
+ "group": "reads",
+ "id": "r24-services",
+ "idle": false,
+ "kind": "public",
+ "new_session": false,
+ "public_arguments": {
+  "limit": 5
+ },
+ "public_tool": "ha_list_services",
+ "upstream_tool": "ha_list_services",
+ "wire_arguments": {
+  "limit": 5
+ }
+}

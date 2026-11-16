@@ -1,0 +1,95 @@
+{
+ "case": {
+  "arguments": {},
+  "id": "r22-zones",
+  "tool": "ha_get_zone"
+ },
+ "exchange": {
+  "body_bytes": 2809,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":123,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\n  \\\"operation\\\": \\\"ha_get_zone\\\",\\n  \\\"summary\\\": \\\"Completed a reviewed pure-read operation through the upstream gateway.\\\",\\n  \\\"data\\\": {\\n    \\\"success\\\": true,\\n    \\\"count\\\": 2,\\n    \\\"zones\\\": [\\n      {\\n        \\\"id\\\": \\\"hamcp371_zone\\\",\\n        \\\"name\\\": \\\"HAMCP371 zone\\\",\\n        \\\"latitude\\\": 1.0,\\n        \\\"longitude\\\": 1.0,\\n        \\\"radius\\\": 100.0,\\n        \\\"icon\\\": \\\"mdi:flask\\\",\\n        \\\"passive\\\": false,\\n        \\\"entity_id\\\": \\\"zone.hamcp371_zone\\\",\\n        \\\"editable\\\": true,\\n        \\\"source\\\": \\\"storage\\\",\\n        \\\"persons\\\": [],\\n        \\\"device_trackers\\\": [],\\n        \\\"friendly_name\\\": \\\"HAMCP371 zone\\\"\\n      },\\n      {\\n        \\\"name\\\": \\\"HAMCP371 disposable\\\",\\n        \\\"latitude\\\": 0.0,\\n        \\\"longitude\\\": 0.0,\\n        \\\"radius\\\": 100,\\n        \\\"icon\\\": \\\"mdi:home\\\",\\n        \\\"passive\\\": false,\\n        \\\"id\\\": \\\"home\\\",\\n        \\\"entity_id\\\": \\\"zone.home\\\",\\n        \\\"editable\\\": false,\\n        \\\"source\\\": \\\"yaml\\\",\\n        \\\"persons\\\": [],\\n        \\\"device_trackers\\\": [],\\n        \\\"friendly_name\\\": \\\"HAMCP371 disposable\\\"\\n      }\\n    ],\\n    \\\"message\\\": \\\"Found 2 zone(s)\\\",\\n    \\\"engineering_notes\\\": [\\n      \\\"persons and device_trackers list who is in each zone, read from the zone state; they are household location data.\\\",\\n      \\\"icon is the icon stored in the zone, which the Zones editor shows; entity_icon is the entity registry icon override, which the map and the zone state show instead.\\\"\\n    ],\\n    \\\"fields_withheld\\\": 0,\\n    \\\"fields_dropped_by_policy\\\": 0,\\n    \\\"upstream_warnings_replaced\\\": 0\\n  },\\n  \\\"warnings\\\": [],\\n  \\\"metadata\\\": {\\n    \\\"provider\\\": \\\"upstream_read_gateway\\\",\\n    \\\"upstream_tool\\\": \\\"ha_get_zone\\\",\\n    \\\"upstream_server\\\": \\\"ha-mcp\\\",\\n    \\\"upstream_version\\\": \\\"9.2.0\\\",\\n    \\\"classification\\\": \\\"automatic_read\\\",\\n    \\\"schema_fingerprint\\\": \\\"70fdd40ad93278a5685654e046bb3cbac27c15cf8a6eba30b166c6f1d89470b2\\\",\\n    \\\"untrusted_upstream_content\\\": true,\\n    \\\"fallback\\\": \\\"none\\\",\\n    \\\"fallback_occurred\\\": false,\\n    \\\"completeness\\\": \\\"complete\\\"\\n  },\\n  \\\"timing\\\": {\\n    \\\"total_ms\\\": 218.116,\\n    \\\"tool_ms\\\": 215.511,\\n    \\\"home_assistant_ms\\\": 0.0,\\n    \\\"home_assistant_cumulative_attempt_ms\\\": 0.0,\\n    \\\"home_assistant_wall_clock_span_ms\\\": 0.0,\\n    \\\"home_assistant_request_count\\\": 0,\\n    \\\"upstream_attempted\\\": true,\\n    \\\"upstream_ms\\\": 210.315,\\n    \\\"upstream_wall_clock_span_ms\\\": 210.315,\\n    \\\"upstream_request_count\\\": 1,\\n    \\\"provider_operations_concurrent\\\": false,\\n    \\\"retry_count\\\": 0,\\n    \\\"timeout_occurred\\\": false\\n  },\\n  \\\"request_id\\\": \\\"e6b56cf65e0247309a4e18509a3e50eb\\\",\\n  \\\"success\\\": true\\n}\"}],\"isError\":false}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 123,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\n  \"operation\": \"ha_get_zone\",\n  \"summary\": \"Completed a reviewed pure-read operation through the upstream gateway.\",\n  \"data\": {\n    \"success\": true,\n    \"count\": 2,\n    \"zones\": [\n      {\n        \"id\": \"hamcp371_zone\",\n        \"name\": \"HAMCP371 zone\",\n        \"latitude\": 1.0,\n        \"longitude\": 1.0,\n        \"radius\": 100.0,\n        \"icon\": \"mdi:flask\",\n        \"passive\": false,\n        \"entity_id\": \"zone.hamcp371_zone\",\n        \"editable\": true,\n        \"source\": \"storage\",\n        \"persons\": [],\n        \"device_trackers\": [],\n        \"friendly_name\": \"HAMCP371 zone\"\n      },\n      {\n        \"name\": \"HAMCP371 disposable\",\n        \"latitude\": 0.0,\n        \"longitude\": 0.0,\n        \"radius\": 100,\n        \"icon\": \"mdi:home\",\n        \"passive\": false,\n        \"id\": \"home\",\n        \"entity_id\": \"zone.home\",\n        \"editable\": false,\n        \"source\": \"yaml\",\n        \"persons\": [],\n        \"device_trackers\": [],\n        \"friendly_name\": \"HAMCP371 disposable\"\n      }\n    ],\n    \"message\": \"Found 2 zone(s)\",\n    \"engineering_notes\": [\n      \"persons and device_trackers list who is in each zone, read from the zone state; they are household location data.\",\n      \"icon is the icon stored in the zone, which the Zones editor shows; entity_icon is the entity registry icon override, which the map and the zone state show instead.\"\n    ],\n    \"fields_withheld\": 0,\n    \"fields_dropped_by_policy\": 0,\n    \"upstream_warnings_replaced\": 0\n  },\n  \"warnings\": [],\n  \"metadata\": {\n    \"provider\": \"upstream_read_gateway\",\n    \"upstream_tool\": \"ha_get_zone\",\n    \"upstream_server\": \"ha-mcp\",\n    \"upstream_version\": \"9.2.0\",\n    \"classification\": \"automatic_read\",\n    \"schema_fingerprint\": \"70fdd40ad93278a5685654e046bb3cbac27c15cf8a6eba30b166c6f1d89470b2\",\n    \"untrusted_upstream_content\": true,\n    \"fallback\": \"none\",\n    \"fallback_occurred\": false,\n    \"completeness\": \"complete\"\n  },\n  \"timing\": {\n    \"total_ms\": 218.116,\n    \"tool_ms\": 215.511,\n    \"home_assistant_ms\": 0.0,\n    \"home_assistant_cumulative_attempt_ms\": 0.0,\n    \"home_assistant_wall_clock_span_ms\": 0.0,\n    \"home_assistant_request_count\": 0,\n    \"upstream_attempted\": true,\n    \"upstream_ms\": 210.315,\n    \"upstream_wall_clock_span_ms\": 210.315,\n    \"upstream_request_count\": 1,\n    \"provider_operations_concurrent\": false,\n    \"retry_count\": 0,\n    \"timeout_occurred\": false\n  },\n  \"request_id\": \"e6b56cf65e0247309a4e18509a3e50eb\",\n  \"success\": true\n}",
+       "type": "text"
+      }
+     ],
+     "isError": false
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 123,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {},
+     "name": "ha_get_zone"
+    }
+   },
+   "method": "POST",
+   "path": "/synthetic-engineering-access-secret/mcp"
+  },
+  "response": {
+   "id": 123,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\n  \"operation\": \"ha_get_zone\",\n  \"summary\": \"Completed a reviewed pure-read operation through the upstream gateway.\",\n  \"data\": {\n    \"success\": true,\n    \"count\": 2,\n    \"zones\": [\n      {\n        \"id\": \"hamcp371_zone\",\n        \"name\": \"HAMCP371 zone\",\n        \"latitude\": 1.0,\n        \"longitude\": 1.0,\n        \"radius\": 100.0,\n        \"icon\": \"mdi:flask\",\n        \"passive\": false,\n        \"entity_id\": \"zone.hamcp371_zone\",\n        \"editable\": true,\n        \"source\": \"storage\",\n        \"persons\": [],\n        \"device_trackers\": [],\n        \"friendly_name\": \"HAMCP371 zone\"\n      },\n      {\n        \"name\": \"HAMCP371 disposable\",\n        \"latitude\": 0.0,\n        \"longitude\": 0.0,\n        \"radius\": 100,\n        \"icon\": \"mdi:home\",\n        \"passive\": false,\n        \"id\": \"home\",\n        \"entity_id\": \"zone.home\",\n        \"editable\": false,\n        \"source\": \"yaml\",\n        \"persons\": [],\n        \"device_trackers\": [],\n        \"friendly_name\": \"HAMCP371 disposable\"\n      }\n    ],\n    \"message\": \"Found 2 zone(s)\",\n    \"engineering_notes\": [\n      \"persons and device_trackers list who is in each zone, read from the zone state; they are household location data.\",\n      \"icon is the icon stored in the zone, which the Zones editor shows; entity_icon is the entity registry icon override, which the map and the zone state show instead.\"\n    ],\n    \"fields_withheld\": 0,\n    \"fields_dropped_by_policy\": 0,\n    \"upstream_warnings_replaced\": 0\n  },\n  \"warnings\": [],\n  \"metadata\": {\n    \"provider\": \"upstream_read_gateway\",\n    \"upstream_tool\": \"ha_get_zone\",\n    \"upstream_server\": \"ha-mcp\",\n    \"upstream_version\": \"9.2.0\",\n    \"classification\": \"automatic_read\",\n    \"schema_fingerprint\": \"70fdd40ad93278a5685654e046bb3cbac27c15cf8a6eba30b166c6f1d89470b2\",\n    \"untrusted_upstream_content\": true,\n    \"fallback\": \"none\",\n    \"fallback_occurred\": false,\n    \"completeness\": \"complete\"\n  },\n  \"timing\": {\n    \"total_ms\": 218.116,\n    \"tool_ms\": 215.511,\n    \"home_assistant_ms\": 0.0,\n    \"home_assistant_cumulative_attempt_ms\": 0.0,\n    \"home_assistant_wall_clock_span_ms\": 0.0,\n    \"home_assistant_request_count\": 0,\n    \"upstream_attempted\": true,\n    \"upstream_ms\": 210.315,\n    \"upstream_wall_clock_span_ms\": 210.315,\n    \"upstream_request_count\": 1,\n    \"provider_operations_concurrent\": false,\n    \"retry_count\": 0,\n    \"timeout_occurred\": false\n  },\n  \"request_id\": \"e6b56cf65e0247309a4e18509a3e50eb\",\n  \"success\": true\n}",
+      "type": "text"
+     }
+    ],
+    "isError": false
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Mon, 16 Nov 2026 12:17:10 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "x-request-id",
+    "e6b56cf65e0247309a4e18509a3e50eb"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null
+}

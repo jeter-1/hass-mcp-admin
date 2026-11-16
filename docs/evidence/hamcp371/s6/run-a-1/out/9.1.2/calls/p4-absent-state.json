@@ -1,0 +1,103 @@
+{
+ "arguments_built_by": "adapter code, policy 9.1.2",
+ "calls_format_version": 1,
+ "exchange": {
+  "body_bytes": 693,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":141,\"result\":{\"content\":[{\"text\":\"{\\n  \\\"success\\\": false,\\n  \\\"error\\\": {\\n    \\\"code\\\": \\\"ENTITY_NOT_FOUND\\\",\\n    \\\"message\\\": \\\"Entity 'sensor.hamcp371_absent_object' not found\\\",\\n    \\\"details\\\": \\\"API error: 404 - Entity not found.\\\",\\n    \\\"suggestion\\\": \\\"Verify entity 'sensor.hamcp371_absent_object' exists in Home Assistant\\\",\\n    \\\"suggestions\\\": [\\n      \\\"Verify entity 'sensor.hamcp371_absent_object' exists in Home Assistant\\\",\\n      \\\"Check Home Assistant connection\\\",\\n      \\\"Use ha_search() to find correct entity IDs\\\"\\n    ]\\n  },\\n  \\\"entity_id\\\": \\\"sensor.hamcp371_absent_object\\\"\\n}\",\"type\":\"text\"}],\"isError\":true}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 141,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\n  \"success\": false,\n  \"error\": {\n    \"code\": \"ENTITY_NOT_FOUND\",\n    \"message\": \"Entity 'sensor.hamcp371_absent_object' not found\",\n    \"details\": \"API error: 404 - Entity not found.\",\n    \"suggestion\": \"Verify entity 'sensor.hamcp371_absent_object' exists in Home Assistant\",\n    \"suggestions\": [\n      \"Verify entity 'sensor.hamcp371_absent_object' exists in Home Assistant\",\n      \"Check Home Assistant connection\",\n      \"Use ha_search() to find correct entity IDs\"\n    ]\n  },\n  \"entity_id\": \"sensor.hamcp371_absent_object\"\n}",
+       "type": "text"
+      }
+     ],
+     "isError": true
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 141,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "entity_id": "sensor.hamcp371_absent_object"
+     },
+     "name": "ha_get_state"
+    }
+   },
+   "method": "POST",
+   "path": "/mcp"
+  },
+  "response": {
+   "id": 141,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\n  \"success\": false,\n  \"error\": {\n    \"code\": \"ENTITY_NOT_FOUND\",\n    \"message\": \"Entity 'sensor.hamcp371_absent_object' not found\",\n    \"details\": \"API error: 404 - Entity not found.\",\n    \"suggestion\": \"Verify entity 'sensor.hamcp371_absent_object' exists in Home Assistant\",\n    \"suggestions\": [\n      \"Verify entity 'sensor.hamcp371_absent_object' exists in Home Assistant\",\n      \"Check Home Assistant connection\",\n      \"Use ha_search() to find correct entity IDs\"\n    ]\n  },\n  \"entity_id\": \"sensor.hamcp371_absent_object\"\n}",
+      "type": "text"
+     }
+    ],
+    "isError": true
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Thu, 12 Nov 2026 06:22:13 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null,
+ "group": "errors",
+ "id": "p4-absent-state",
+ "idle": false,
+ "kind": "public",
+ "new_session": false,
+ "public_arguments": {
+  "entity_id": "sensor.hamcp371_absent_object"
+ },
+ "public_tool": "ha_get_state",
+ "upstream_tool": "ha_get_state",
+ "wire_arguments": {
+  "entity_id": "sensor.hamcp371_absent_object"
+ }
+}

@@ -1,0 +1,3591 @@
+{
+ "calls": [
+  {
+   "body_bytes": [
+    1054,
+    1054
+   ],
+   "different_value_paths_sample": [],
+   "error": [
+    {
+     "code": "VALIDATION_FAILED",
+     "error_keys": [
+      "code",
+      "details",
+      "message",
+      "suggestion"
+     ],
+     "error_type": "object",
+     "success": false,
+     "top_level_keys": [
+      "error",
+      "success",
+      "valid_parameters"
+     ]
+    },
+    {
+     "code": "VALIDATION_FAILED",
+     "error_keys": [
+      "code",
+      "details",
+      "message",
+      "suggestion"
+     ],
+     "error_type": "object",
+     "success": false,
+     "top_level_keys": [
+      "error",
+      "success",
+      "valid_parameters"
+     ]
+    }
+   ],
+   "has_structured_content": [
+    false,
+    false
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "p3-unknown-argument",
+   "is_error": [
+    true,
+    true
+   ],
+   "key_paths": [
+    7,
+    7
+   ],
+   "key_paths_only_in_9_1_2": [],
+   "key_paths_only_in_9_2_0": [],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": true,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 0,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "error",
+     "success",
+     "valid_parameters"
+    ],
+    [
+     "error",
+     "success",
+     "valid_parameters"
+    ]
+   ],
+   "upstream_tool": "ha_get_state"
+  },
+  {
+   "body_bytes": [
+    594,
+    594
+   ],
+   "different_value_paths_sample": [],
+   "error": [
+    {
+     "code": "VALIDATION_FAILED",
+     "error_keys": [
+      "code",
+      "details",
+      "message",
+      "suggestion",
+      "suggestions"
+     ],
+     "error_type": "object",
+     "success": false,
+     "top_level_keys": [
+      "error",
+      "success"
+     ]
+    },
+    {
+     "code": "VALIDATION_FAILED",
+     "error_keys": [
+      "code",
+      "details",
+      "message",
+      "suggestion",
+      "suggestions"
+     ],
+     "error_type": "object",
+     "success": false,
+     "top_level_keys": [
+      "error",
+      "success"
+     ]
+    }
+   ],
+   "has_structured_content": [
+    false,
+    false
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "p3-wrong-type",
+   "is_error": [
+    true,
+    true
+   ],
+   "key_paths": [
+    7,
+    7
+   ],
+   "key_paths_only_in_9_1_2": [],
+   "key_paths_only_in_9_2_0": [],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": true,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 0,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "error",
+     "success"
+    ],
+    [
+     "error",
+     "success"
+    ]
+   ],
+   "upstream_tool": "ha_search"
+  },
+  {
+   "body_bytes": [
+    498,
+    498
+   ],
+   "different_value_paths_sample": [],
+   "error": [
+    {
+     "code": "RESOURCE_NOT_FOUND",
+     "error_keys": [
+      "code",
+      "message",
+      "suggestion"
+     ],
+     "error_type": "object",
+     "success": false,
+     "top_level_keys": [
+      "automation_id",
+      "available_automation_ids",
+      "error",
+      "success"
+     ]
+    },
+    {
+     "code": "RESOURCE_NOT_FOUND",
+     "error_keys": [
+      "code",
+      "message",
+      "suggestion"
+     ],
+     "error_type": "object",
+     "success": false,
+     "top_level_keys": [
+      "automation_id",
+      "available_automation_ids",
+      "error",
+      "success"
+     ]
+    }
+   ],
+   "has_structured_content": [
+    false,
+    false
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "p4-absent-automation",
+   "is_error": [
+    true,
+    true
+   ],
+   "key_paths": [
+    7,
+    7
+   ],
+   "key_paths_only_in_9_1_2": [],
+   "key_paths_only_in_9_2_0": [],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": true,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 0,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "automation_id",
+     "available_automation_ids",
+     "error",
+     "success"
+    ],
+    [
+     "automation_id",
+     "available_automation_ids",
+     "error",
+     "success"
+    ]
+   ],
+   "upstream_tool": "ha_config_get_automation"
+  },
+  {
+   "body_bytes": [
+    562,
+    562
+   ],
+   "different_value_paths_sample": [],
+   "error": [
+    {
+     "code": "SERVICE_CALL_FAILED",
+     "error_keys": [
+      "code",
+      "message",
+      "suggestion",
+      "suggestions"
+     ],
+     "error_type": "object",
+     "success": false,
+     "top_level_keys": [
+      "entity_id",
+      "error",
+      "success"
+     ]
+    },
+    {
+     "code": "SERVICE_CALL_FAILED",
+     "error_keys": [
+      "code",
+      "message",
+      "suggestion",
+      "suggestions"
+     ],
+     "error_type": "object",
+     "success": false,
+     "top_level_keys": [
+      "entity_id",
+      "error",
+      "success"
+     ]
+    }
+   ],
+   "has_structured_content": [
+    false,
+    false
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "p4-absent-entity",
+   "is_error": [
+    true,
+    true
+   ],
+   "key_paths": [
+    7,
+    7
+   ],
+   "key_paths_only_in_9_1_2": [],
+   "key_paths_only_in_9_2_0": [],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": true,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 0,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "entity_id",
+     "error",
+     "success"
+    ],
+    [
+     "entity_id",
+     "error",
+     "success"
+    ]
+   ],
+   "upstream_tool": "ha_get_entity"
+  },
+  {
+   "body_bytes": [
+    693,
+    693
+   ],
+   "different_value_paths_sample": [],
+   "error": [
+    {
+     "code": "ENTITY_NOT_FOUND",
+     "error_keys": [
+      "code",
+      "details",
+      "message",
+      "suggestion",
+      "suggestions"
+     ],
+     "error_type": "object",
+     "success": false,
+     "top_level_keys": [
+      "entity_id",
+      "error",
+      "success"
+     ]
+    },
+    {
+     "code": "ENTITY_NOT_FOUND",
+     "error_keys": [
+      "code",
+      "details",
+      "message",
+      "suggestion",
+      "suggestions"
+     ],
+     "error_type": "object",
+     "success": false,
+     "top_level_keys": [
+      "entity_id",
+      "error",
+      "success"
+     ]
+    }
+   ],
+   "has_structured_content": [
+    false,
+    false
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "p4-absent-state",
+   "is_error": [
+    true,
+    true
+   ],
+   "key_paths": [
+    8,
+    8
+   ],
+   "key_paths_only_in_9_1_2": [],
+   "key_paths_only_in_9_2_0": [],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": true,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 0,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "entity_id",
+     "error",
+     "success"
+    ],
+    [
+     "entity_id",
+     "error",
+     "success"
+    ]
+   ],
+   "upstream_tool": "ha_get_state"
+  },
+  {
+   "body_bytes": [
+    3264,
+    3264
+   ],
+   "different_value_paths_sample": [],
+   "error": [
+    null,
+    null
+   ],
+   "has_structured_content": [
+    true,
+    true
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "r01-automation",
+   "is_error": [
+    false,
+    false
+   ],
+   "key_paths": [
+    54,
+    54
+   ],
+   "key_paths_only_in_9_1_2": [],
+   "key_paths_only_in_9_2_0": [],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": true,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 0,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "action",
+     "automation_id",
+     "config",
+     "config_hash",
+     "entity",
+     "references",
+     "related",
+     "success",
+     "validation",
+     "warnings"
+    ],
+    [
+     "action",
+     "automation_id",
+     "config",
+     "config_hash",
+     "entity",
+     "references",
+     "related",
+     "success",
+     "validation",
+     "warnings"
+    ]
+   ],
+   "upstream_tool": "ha_config_get_automation"
+  },
+  {
+   "body_bytes": [
+    1196,
+    1196
+   ],
+   "different_value_paths_sample": [],
+   "error": [
+    null,
+    null
+   ],
+   "has_structured_content": [
+    true,
+    true
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "r02-calendar-events",
+   "is_error": [
+    false,
+    false
+   ],
+   "key_paths": [
+    20,
+    20
+   ],
+   "key_paths_only_in_9_1_2": [],
+   "key_paths_only_in_9_2_0": [],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": true,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 0,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "count",
+     "entity_id",
+     "events",
+     "message",
+     "success",
+     "time_range",
+     "total_available"
+    ],
+    [
+     "count",
+     "entity_id",
+     "events",
+     "message",
+     "success",
+     "time_range",
+     "total_available"
+    ]
+   ],
+   "upstream_tool": "ha_config_get_calendar_events"
+  },
+  {
+   "body_bytes": [
+    698,
+    698
+   ],
+   "different_value_paths_sample": [],
+   "error": [
+    null,
+    null
+   ],
+   "has_structured_content": [
+    true,
+    true
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "r03-category",
+   "is_error": [
+    false,
+    false
+   ],
+   "key_paths": [
+    10,
+    10
+   ],
+   "key_paths_only_in_9_1_2": [],
+   "key_paths_only_in_9_2_0": [],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": true,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 0,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "categories",
+     "count",
+     "message",
+     "scope",
+     "success"
+    ],
+    [
+     "categories",
+     "count",
+     "message",
+     "scope",
+     "success"
+    ]
+   ],
+   "upstream_tool": "ha_config_get_category"
+  },
+  {
+   "body_bytes": [
+    620,
+    620
+   ],
+   "different_value_paths_sample": [],
+   "error": [
+    null,
+    null
+   ],
+   "has_structured_content": [
+    true,
+    true
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "r04-label",
+   "is_error": [
+    false,
+    false
+   ],
+   "key_paths": [
+    11,
+    11
+   ],
+   "key_paths_only_in_9_1_2": [],
+   "key_paths_only_in_9_2_0": [],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": true,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 0,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "count",
+     "labels",
+     "message",
+     "success"
+    ],
+    [
+     "count",
+     "labels",
+     "message",
+     "success"
+    ]
+   ],
+   "upstream_tool": "ha_config_get_label"
+  },
+  {
+   "body_bytes": [
+    566,
+    566
+   ],
+   "different_value_paths_sample": [],
+   "error": [
+    null,
+    null
+   ],
+   "has_structured_content": [
+    true,
+    true
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "r05-scene",
+   "is_error": [
+    false,
+    false
+   ],
+   "key_paths": [
+    9,
+    9
+   ],
+   "key_paths_only_in_9_1_2": [],
+   "key_paths_only_in_9_2_0": [],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": true,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 0,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "action",
+     "config",
+     "config_hash",
+     "scene_id",
+     "success"
+    ],
+    [
+     "action",
+     "config",
+     "config_hash",
+     "scene_id",
+     "success"
+    ]
+   ],
+   "upstream_tool": "ha_config_get_scene"
+  },
+  {
+   "body_bytes": [
+    672,
+    672
+   ],
+   "different_value_paths_sample": [],
+   "error": [
+    null,
+    null
+   ],
+   "has_structured_content": [
+    true,
+    true
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "r06-script",
+   "is_error": [
+    false,
+    false
+   ],
+   "key_paths": [
+    11,
+    11
+   ],
+   "key_paths_only_in_9_1_2": [],
+   "key_paths_only_in_9_2_0": [],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": true,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 0,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "action",
+     "config",
+     "config_hash",
+     "script_id",
+     "success"
+    ],
+    [
+     "action",
+     "config",
+     "config_hash",
+     "script_id",
+     "success"
+    ]
+   ],
+   "upstream_tool": "ha_config_get_script"
+  },
+  {
+   "body_bytes": [
+    758,
+    758
+   ],
+   "different_value_paths_sample": [],
+   "error": [
+    null,
+    null
+   ],
+   "has_structured_content": [
+    true,
+    true
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "r07-dashboard-resources",
+   "is_error": [
+    false,
+    false
+   ],
+   "key_paths": [
+    16,
+    16
+   ],
+   "key_paths_only_in_9_1_2": [],
+   "key_paths_only_in_9_2_0": [],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": true,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 0,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "action",
+     "by_type",
+     "count",
+     "has_more",
+     "inline_count",
+     "limit",
+     "next_offset",
+     "offset",
+     "resource_mode",
+     "resources",
+     "success",
+     "total_count"
+    ],
+    [
+     "action",
+     "by_type",
+     "count",
+     "has_more",
+     "inline_count",
+     "limit",
+     "next_offset",
+     "offset",
+     "resource_mode",
+     "resources",
+     "success",
+     "total_count"
+    ]
+   ],
+   "upstream_tool": "ha_config_list_dashboard_resources"
+  },
+  {
+   "body_bytes": [
+    1316,
+    1316
+   ],
+   "different_value_paths_sample": [
+    "groups[0].context.id",
+    "groups[0].last_changed",
+    "groups[0].last_reported",
+    "groups[0].last_updated"
+   ],
+   "error": [
+    null,
+    null
+   ],
+   "has_structured_content": [
+    true,
+    true
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "r08-groups",
+   "is_error": [
+    false,
+    false
+   ],
+   "key_paths": [
+    24,
+    24
+   ],
+   "key_paths_only_in_9_1_2": [],
+   "key_paths_only_in_9_2_0": [],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": false,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 4,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "count",
+     "groups",
+     "has_more",
+     "limit",
+     "message",
+     "next_offset",
+     "offset",
+     "success",
+     "total_count"
+    ],
+    [
+     "count",
+     "groups",
+     "has_more",
+     "limit",
+     "message",
+     "next_offset",
+     "offset",
+     "success",
+     "total_count"
+    ]
+   ],
+   "upstream_tool": "ha_config_list_groups"
+  },
+  {
+   "body_bytes": [
+    804,
+    804
+   ],
+   "different_value_paths_sample": [],
+   "error": [
+    null,
+    null
+   ],
+   "has_structured_content": [
+    true,
+    true
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "r09-helpers",
+   "is_error": [
+    false,
+    false
+   ],
+   "key_paths": [
+    14,
+    14
+   ],
+   "key_paths_only_in_9_1_2": [],
+   "key_paths_only_in_9_2_0": [],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": true,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 0,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "count",
+     "has_more",
+     "helper_type",
+     "helpers",
+     "limit",
+     "message",
+     "next_offset",
+     "offset",
+     "success",
+     "total_count"
+    ],
+    [
+     "count",
+     "has_more",
+     "helper_type",
+     "helpers",
+     "limit",
+     "message",
+     "next_offset",
+     "offset",
+     "success",
+     "total_count"
+    ]
+   ],
+   "upstream_tool": "ha_config_list_helpers"
+  },
+  {
+   "body_bytes": [
+    532,
+    532
+   ],
+   "different_value_paths_sample": [],
+   "error": [
+    null,
+    null
+   ],
+   "has_structured_content": [
+    true,
+    true
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "r10-template",
+   "is_error": [
+    false,
+    false
+   ],
+   "key_paths": [
+    8,
+    8
+   ],
+   "key_paths_only_in_9_1_2": [],
+   "key_paths_only_in_9_2_0": [],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": true,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 0,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "listeners",
+     "result",
+     "success",
+     "template"
+    ],
+    [
+     "listeners",
+     "result",
+     "success",
+     "template"
+    ]
+   ],
+   "upstream_tool": "ha_eval_template"
+  },
+  {
+   "body_bytes": [
+    1012,
+    1012
+   ],
+   "different_value_paths_sample": [],
+   "error": [
+    null,
+    null
+   ],
+   "has_structured_content": [
+    true,
+    true
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "r11-automation-traces",
+   "is_error": [
+    false,
+    false
+   ],
+   "key_paths": [
+    15,
+    15
+   ],
+   "key_paths_only_in_9_1_2": [],
+   "key_paths_only_in_9_2_0": [],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": true,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 0,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "automation_id",
+     "has_more",
+     "hint",
+     "offset",
+     "order",
+     "success",
+     "total_available",
+     "trace_count",
+     "traces"
+    ],
+    [
+     "automation_id",
+     "has_more",
+     "hint",
+     "offset",
+     "order",
+     "success",
+     "total_available",
+     "trace_count",
+     "traces"
+    ]
+   ],
+   "upstream_tool": "ha_get_automation_traces"
+  },
+  {
+   "body_bytes": [
+    1634,
+    1634
+   ],
+   "different_value_paths_sample": [],
+   "error": [
+    null,
+    null
+   ],
+   "has_structured_content": [
+    true,
+    true
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "r12-blueprints",
+   "is_error": [
+    false,
+    false
+   ],
+   "key_paths": [
+    11,
+    11
+   ],
+   "key_paths_only_in_9_1_2": [],
+   "key_paths_only_in_9_2_0": [],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": true,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 0,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "data",
+     "success"
+    ],
+    [
+     "data",
+     "success"
+    ]
+   ],
+   "upstream_tool": "ha_manage_blueprints"
+  },
+  {
+   "body_bytes": [
+    2010,
+    2010
+   ],
+   "different_value_paths_sample": [],
+   "error": [
+    null,
+    null
+   ],
+   "has_structured_content": [
+    true,
+    true
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "r13-devices",
+   "is_error": [
+    false,
+    false
+   ],
+   "key_paths": [
+    19,
+    19
+   ],
+   "key_paths_only_in_9_1_2": [],
+   "key_paths_only_in_9_2_0": [],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": true,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 0,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "count",
+     "detail_level",
+     "devices",
+     "has_more",
+     "limit",
+     "next_offset",
+     "offset",
+     "success",
+     "total_count",
+     "total_devices"
+    ],
+    [
+     "count",
+     "detail_level",
+     "devices",
+     "has_more",
+     "limit",
+     "next_offset",
+     "offset",
+     "success",
+     "total_count",
+     "total_devices"
+    ]
+   ],
+   "upstream_tool": "ha_get_device"
+  },
+  {
+   "body_bytes": [
+    1308,
+    1308
+   ],
+   "different_value_paths_sample": [],
+   "error": [
+    null,
+    null
+   ],
+   "has_structured_content": [
+    true,
+    true
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "r14-entity",
+   "is_error": [
+    false,
+    false
+   ],
+   "key_paths": [
+    25,
+    25
+   ],
+   "key_paths_only_in_9_1_2": [],
+   "key_paths_only_in_9_2_0": [],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": true,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 0,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "entity_entry",
+     "entity_id",
+     "success"
+    ],
+    [
+     "entity_entry",
+     "entity_id",
+     "success"
+    ]
+   ],
+   "upstream_tool": "ha_get_entity"
+  },
+  {
+   "body_bytes": [
+    582,
+    582
+   ],
+   "different_value_paths_sample": [],
+   "error": [
+    null,
+    null
+   ],
+   "has_structured_content": [
+    true,
+    true
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "r15-entity-exposure",
+   "is_error": [
+    false,
+    false
+   ],
+   "key_paths": [
+    9,
+    9
+   ],
+   "key_paths_only_in_9_1_2": [],
+   "key_paths_only_in_9_2_0": [],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": true,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 0,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "entity_id",
+     "exposed_to",
+     "has_custom_settings",
+     "is_exposed_anywhere",
+     "note",
+     "success"
+    ],
+    [
+     "entity_id",
+     "exposed_to",
+     "has_custom_settings",
+     "is_exposed_anywhere",
+     "note",
+     "success"
+    ]
+   ],
+   "upstream_tool": "ha_get_entity_exposure"
+  },
+  {
+   "body_bytes": [
+    2998,
+    2998
+   ],
+   "different_value_paths_sample": [],
+   "error": [
+    null,
+    null
+   ],
+   "has_structured_content": [
+    true,
+    true
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "r16-history",
+   "is_error": [
+    false,
+    false
+   ],
+   "key_paths": [
+    32,
+    32
+   ],
+   "key_paths_only_in_9_1_2": [],
+   "key_paths_only_in_9_2_0": [],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": true,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 0,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "data",
+     "metadata"
+    ],
+    [
+     "data",
+     "metadata"
+    ]
+   ],
+   "upstream_tool": "ha_get_history"
+  },
+  {
+   "body_bytes": [
+    2742,
+    2818
+   ],
+   "different_value_paths_sample": [
+    "repairs[0].created",
+    "repairs[0].issue_id",
+    "repairs[0].translation_key"
+   ],
+   "error": [
+    null,
+    null
+   ],
+   "has_structured_content": [
+    true,
+    true
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "r17-overview",
+   "is_error": [
+    false,
+    false
+   ],
+   "key_paths": [
+    60,
+    60
+   ],
+   "key_paths_only_in_9_1_2": [],
+   "key_paths_only_in_9_2_0": [],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": false,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 3,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "ai_insights",
+     "area_analysis",
+     "domain_stats",
+     "mcp_client",
+     "pagination",
+     "repair_count",
+     "repairs",
+     "success",
+     "system_info",
+     "system_summary"
+    ],
+    [
+     "ai_insights",
+     "area_analysis",
+     "domain_stats",
+     "mcp_client",
+     "pagination",
+     "repair_count",
+     "repairs",
+     "success",
+     "system_info",
+     "system_summary"
+    ]
+   ],
+   "upstream_tool": "ha_get_overview"
+  },
+  {
+   "body_bytes": [
+    48021,
+    48021
+   ],
+   "different_value_paths_sample": [
+    "content"
+   ],
+   "error": [
+    null,
+    null
+   ],
+   "has_structured_content": [
+    true,
+    true
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "r18-skill-guide",
+   "is_error": [
+    false,
+    false
+   ],
+   "key_paths": [
+    5,
+    5
+   ],
+   "key_paths_only_in_9_1_2": [],
+   "key_paths_only_in_9_2_0": [],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": false,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 1,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "content",
+     "file",
+     "how_to_use",
+     "success",
+     "uri"
+    ],
+    [
+     "content",
+     "file",
+     "how_to_use",
+     "success",
+     "uri"
+    ]
+   ],
+   "upstream_tool": "ha_get_skill_guide"
+  },
+  {
+   "body_bytes": [
+    1644,
+    1582
+   ],
+   "different_value_paths_sample": [
+    "data.context.id",
+    "data.context.user_id",
+    "data.last_changed",
+    "data.last_reported",
+    "data.last_updated"
+   ],
+   "error": [
+    null,
+    null
+   ],
+   "has_structured_content": [
+    true,
+    true
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "r19-state",
+   "is_error": [
+    false,
+    false
+   ],
+   "key_paths": [
+    17,
+    17
+   ],
+   "key_paths_only_in_9_1_2": [],
+   "key_paths_only_in_9_2_0": [],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": false,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 5,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "data",
+     "metadata"
+    ],
+    [
+     "data",
+     "metadata"
+    ]
+   ],
+   "upstream_tool": "ha_get_state"
+  },
+  {
+   "body_bytes": [
+    2380,
+    2380
+   ],
+   "different_value_paths_sample": [
+    "health_info.data.recorder.info.current_recorder_run.value",
+    "health_info.data.recorder.info.estimated_db_size"
+   ],
+   "error": [
+    null,
+    null
+   ],
+   "has_structured_content": [
+    true,
+    true
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "r20-system-health",
+   "is_error": [
+    false,
+    false
+   ],
+   "key_paths": [
+    50,
+    50
+   ],
+   "key_paths_only_in_9_1_2": [],
+   "key_paths_only_in_9_2_0": [],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": false,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 2,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "component_count",
+     "health_info",
+     "message",
+     "success"
+    ],
+    [
+     "component_count",
+     "health_info",
+     "message",
+     "success"
+    ]
+   ],
+   "upstream_tool": "ha_get_system_health"
+  },
+  {
+   "body_bytes": [
+    790,
+    790
+   ],
+   "different_value_paths_sample": [],
+   "error": [
+    null,
+    null
+   ],
+   "has_structured_content": [
+    true,
+    true
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "r21-todo",
+   "is_error": [
+    false,
+    false
+   ],
+   "key_paths": [
+    9,
+    9
+   ],
+   "key_paths_only_in_9_1_2": [],
+   "key_paths_only_in_9_2_0": [],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": true,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 0,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "count",
+     "message",
+     "success",
+     "todo_lists"
+    ],
+    [
+     "count",
+     "message",
+     "success",
+     "todo_lists"
+    ]
+   ],
+   "upstream_tool": "ha_get_todo"
+  },
+  {
+   "body_bytes": [
+    1234,
+    1226
+   ],
+   "different_value_paths_sample": [],
+   "error": [
+    null,
+    null
+   ],
+   "has_structured_content": [
+    true,
+    true
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "r22-zones",
+   "is_error": [
+    false,
+    false
+   ],
+   "key_paths": [
+    17,
+    16
+   ],
+   "key_paths_only_in_9_1_2": [
+    "zones[].friendly_name"
+   ],
+   "key_paths_only_in_9_2_0": [],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": false,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 0,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "count",
+     "message",
+     "success",
+     "zones"
+    ],
+    [
+     "count",
+     "message",
+     "success",
+     "zones"
+    ]
+   ],
+   "upstream_tool": "ha_get_zone"
+  },
+  {
+   "body_bytes": [
+    2924,
+    2924
+   ],
+   "different_value_paths_sample": [],
+   "error": [
+    null,
+    null
+   ],
+   "has_structured_content": [
+    true,
+    true
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "r23-floors-areas",
+   "is_error": [
+    false,
+    false
+   ],
+   "key_paths": [
+    39,
+    39
+   ],
+   "key_paths_only_in_9_1_2": [],
+   "key_paths_only_in_9_2_0": [],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": true,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 0,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "area_count",
+     "floor_count",
+     "floors",
+     "message",
+     "orphaned_areas",
+     "orphaned_count",
+     "success",
+     "unassigned_areas",
+     "unassigned_count"
+    ],
+    [
+     "area_count",
+     "floor_count",
+     "floors",
+     "message",
+     "orphaned_areas",
+     "orphaned_count",
+     "success",
+     "unassigned_areas",
+     "unassigned_count"
+    ]
+   ],
+   "upstream_tool": "ha_list_floors_areas"
+  },
+  {
+   "body_bytes": [
+    3466,
+    3970
+   ],
+   "different_value_paths_sample": [
+    "services.homeassistant.save_persistent_states.description",
+    "services.homeassistant.save_persistent_states.name",
+    "services.homeassistant.turn_off.description",
+    "services.homeassistant.turn_off.name"
+   ],
+   "error": [
+    null,
+    null
+   ],
+   "has_structured_content": [
+    true,
+    true
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "r24-services",
+   "is_error": [
+    false,
+    false
+   ],
+   "key_paths": [
+    39,
+    41
+   ],
+   "key_paths_only_in_9_1_2": [
+    "services.persistent_notification.create",
+    "services.persistent_notification.create.description",
+    "services.persistent_notification.create.domain",
+    "services.persistent_notification.create.name",
+    "services.persistent_notification.create.service",
+    "services.persistent_notification.dismiss",
+    "services.persistent_notification.dismiss.description",
+    "services.persistent_notification.dismiss.domain",
+    "services.persistent_notification.dismiss.name",
+    "services.persistent_notification.dismiss.service",
+    "services.persistent_notification.dismiss_all",
+    "services.persistent_notification.dismiss_all.description",
+    "services.persistent_notification.dismiss_all.domain",
+    "services.persistent_notification.dismiss_all.name",
+    "services.persistent_notification.dismiss_all.service"
+   ],
+   "key_paths_only_in_9_2_0": [
+    "services.homeassistant.stop",
+    "services.homeassistant.stop.description",
+    "services.homeassistant.stop.domain",
+    "services.homeassistant.stop.name",
+    "services.homeassistant.stop.service",
+    "services.homeassistant.toggle",
+    "services.homeassistant.toggle.description",
+    "services.homeassistant.toggle.domain",
+    "services.homeassistant.toggle.name",
+    "services.homeassistant.toggle.service",
+    "services.homeassistant.toggle.target",
+    "services.homeassistant.turn_on",
+    "services.homeassistant.turn_on.description",
+    "services.homeassistant.turn_on.domain",
+    "services.homeassistant.turn_on.name",
+    "services.homeassistant.turn_on.service",
+    "services.homeassistant.turn_on.target"
+   ],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": false,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 4,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "count",
+     "detail_level",
+     "domains",
+     "filters_applied",
+     "has_more",
+     "limit",
+     "next_offset",
+     "offset",
+     "services",
+     "success",
+     "total_count"
+    ],
+    [
+     "count",
+     "detail_level",
+     "domains",
+     "filters_applied",
+     "has_more",
+     "limit",
+     "next_offset",
+     "offset",
+     "services",
+     "success",
+     "total_count"
+    ]
+   ],
+   "upstream_tool": "ha_list_services"
+  },
+  {
+   "body_bytes": [
+    1356,
+    1356
+   ],
+   "different_value_paths_sample": [],
+   "error": [
+    null,
+    null
+   ],
+   "has_structured_content": [
+    true,
+    true
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "r25-search",
+   "is_error": [
+    false,
+    false
+   ],
+   "key_paths": [
+    27,
+    27
+   ],
+   "key_paths_only_in_9_1_2": [],
+   "key_paths_only_in_9_2_0": [],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": true,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 0,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "automations",
+     "config_total_matches",
+     "count",
+     "domain_filter",
+     "entities",
+     "entity_has_more",
+     "entity_next_offset",
+     "entity_total_matches",
+     "errors",
+     "has_more",
+     "helpers",
+     "limit",
+     "next_offset",
+     "offset",
+     "partial",
+     "query",
+     "scenes",
+     "scripts",
+     "search_type",
+     "search_types",
+     "success"
+    ],
+    [
+     "automations",
+     "config_total_matches",
+     "count",
+     "domain_filter",
+     "entities",
+     "entity_has_more",
+     "entity_next_offset",
+     "entity_total_matches",
+     "errors",
+     "has_more",
+     "helpers",
+     "limit",
+     "next_offset",
+     "offset",
+     "partial",
+     "query",
+     "scenes",
+     "scripts",
+     "search_type",
+     "search_types",
+     "success"
+    ]
+   ],
+   "upstream_tool": "ha_search"
+  },
+  {
+   "body_bytes": [
+    11834,
+    11834
+   ],
+   "different_value_paths_sample": [],
+   "error": [
+    null,
+    null
+   ],
+   "has_structured_content": [
+    true,
+    true
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "r26-integrations",
+   "is_error": [
+    false,
+    false
+   ],
+   "key_paths": [
+    34,
+    34
+   ],
+   "key_paths_only_in_9_1_2": [],
+   "key_paths_only_in_9_2_0": [],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": true,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 0,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "count",
+     "entries",
+     "has_more",
+     "limit",
+     "next_offset",
+     "offset",
+     "query",
+     "state_summary",
+     "success",
+     "total_count"
+    ],
+    [
+     "count",
+     "entries",
+     "has_more",
+     "limit",
+     "next_offset",
+     "offset",
+     "query",
+     "state_summary",
+     "success",
+     "total_count"
+    ]
+   ],
+   "upstream_tool": "ha_get_integration"
+  },
+  {
+   "body_bytes": [
+    698,
+    698
+   ],
+   "different_value_paths_sample": [],
+   "error": [
+    {
+     "code": "SERVICE_CALL_FAILED",
+     "error_keys": [
+      "code",
+      "message",
+      "suggestion",
+      "suggestions"
+     ],
+     "error_type": "object",
+     "success": false,
+     "top_level_keys": [
+      "endpoint",
+      "error",
+      "operation",
+      "success",
+      "timeout_seconds"
+     ]
+    },
+    {
+     "code": "SERVICE_CALL_FAILED",
+     "error_keys": [
+      "code",
+      "message",
+      "suggestion",
+      "suggestions"
+     ],
+     "error_type": "object",
+     "success": false,
+     "top_level_keys": [
+      "endpoint",
+      "error",
+      "operation",
+      "success",
+      "timeout_seconds"
+     ]
+    }
+   ],
+   "has_structured_content": [
+    false,
+    false
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "r27-apps",
+   "is_error": [
+    true,
+    true
+   ],
+   "key_paths": [
+    9,
+    9
+   ],
+   "key_paths_only_in_9_1_2": [],
+   "key_paths_only_in_9_2_0": [],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": true,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 0,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "endpoint",
+     "error",
+     "operation",
+     "success",
+     "timeout_seconds"
+    ],
+    [
+     "endpoint",
+     "error",
+     "operation",
+     "success",
+     "timeout_seconds"
+    ]
+   ],
+   "upstream_tool": "ha_get_app"
+  },
+  {
+   "body_bytes": [
+    1308,
+    1308
+   ],
+   "different_value_paths_sample": [],
+   "error": [
+    null,
+    null
+   ],
+   "has_structured_content": [
+    true,
+    true
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "t-after-idle",
+   "is_error": [
+    false,
+    false
+   ],
+   "key_paths": [
+    25,
+    25
+   ],
+   "key_paths_only_in_9_1_2": [],
+   "key_paths_only_in_9_2_0": [],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": true,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 0,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "entity_entry",
+     "entity_id",
+     "success"
+    ],
+    [
+     "entity_entry",
+     "entity_id",
+     "success"
+    ]
+   ],
+   "upstream_tool": "ha_get_entity"
+  },
+  {
+   "body_bytes": [
+    36672,
+    42952
+   ],
+   "different_value_paths_sample": [
+    "services.frontend.reload_themes.description",
+    "services.frontend.reload_themes.name",
+    "services.frontend.set_theme.description",
+    "services.frontend.set_theme.fields.name.description",
+    "services.frontend.set_theme.fields.name.name",
+    "services.frontend.set_theme.fields.name_dark.description",
+    "services.frontend.set_theme.fields.name_dark.name",
+    "services.frontend.set_theme.name",
+    "services.homeassistant.check_config.description",
+    "services.homeassistant.check_config.name",
+    "services.homeassistant.reload_all.description",
+    "services.homeassistant.reload_all.name"
+   ],
+   "error": [
+    null,
+    null
+   ],
+   "has_structured_content": [
+    true,
+    true
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "t-large-services",
+   "is_error": [
+    false,
+    false
+   ],
+   "key_paths": [
+    857,
+    735
+   ],
+   "key_paths_only_in_9_1_2": [
+    "services.frontend.set_theme.fields.name.type",
+    "services.frontend.set_theme.fields.name_dark.type",
+    "services.homeassistant.reload_config_entry.fields.entry_id.example",
+    "services.homeassistant.reload_config_entry.fields.entry_id.type",
+    "services.homeassistant.set_location.fields.elevation.type",
+    "services.homeassistant.set_location.fields.latitude.type",
+    "services.homeassistant.set_location.fields.longitude.type",
+    "services.homeassistant.update_entity.fields.entity_id.example",
+    "services.homeassistant.update_entity.fields.entity_id.type",
+    "services.logger.set_default_level.fields.level.example",
+    "services.logger.set_default_level.fields.level.required",
+    "services.logger.set_default_level.fields.level.type",
+    "services.media_player.browse_media",
+    "services.media_player.browse_media.description",
+    "services.media_player.browse_media.domain",
+    "services.media_player.browse_media.fields",
+    "services.media_player.browse_media.fields.media_content_id",
+    "services.media_player.browse_media.fields.media_content_id.description",
+    "services.media_player.browse_media.fields.media_content_id.example",
+    "services.media_player.browse_media.fields.media_content_id.name",
+    "services.media_player.browse_media.fields.media_content_id.required",
+    "services.media_player.browse_media.fields.media_content_id.selector",
+    "services.media_player.browse_media.fields.media_content_id.selector.text",
+    "services.media_player.browse_media.fields.media_content_id.selector.text.multiline",
+    "services.media_player.browse_media.fields.media_content_id.selector.text.multiple",
+    "services.media_player.browse_media.fields.media_content_id.type",
+    "services.media_player.browse_media.fields.media_content_type",
+    "services.media_player.browse_media.fields.media_content_type.description",
+    "services.media_player.browse_media.fields.media_content_type.example",
+    "services.media_player.browse_media.fields.media_content_type.name",
+    "services.media_player.browse_media.fields.media_content_type.required",
+    "services.media_player.browse_media.fields.media_content_type.selector",
+    "services.media_player.browse_media.fields.media_content_type.selector.text",
+    "services.media_player.browse_media.fields.media_content_type.selector.text.multiline",
+    "services.media_player.browse_media.fields.media_content_type.selector.text.multiple",
+    "services.media_player.browse_media.fields.media_content_type.type",
+    "services.media_player.browse_media.name",
+    "services.media_player.browse_media.service",
+    "services.media_player.browse_media.target",
+    "services.media_player.browse_media.target.entity",
+    "services.media_player.browse_media.target.entity[].domain",
+    "services.media_player.browse_media.target.entity[].supported_features",
+    "services.media_player.join.fields.group_members.type",
+    "services.media_player.media_seek.fields.seek_position.example",
+    "services.media_player.media_seek.fields.seek_position.type",
+    "services.media_player.play_media",
+    "services.media_player.play_media.description",
+    "services.media_player.play_media.domain",
+    "services.media_player.play_media.fields",
+    "services.media_player.play_media.fields.announce",
+    "services.media_player.play_media.fields.announce.description",
+    "services.media_player.play_media.fields.announce.example",
+    "services.media_player.play_media.fields.announce.name",
+    "services.media_player.play_media.fields.announce.required",
+    "services.media_player.play_media.fields.announce.selector",
+    "services.media_player.play_media.fields.announce.selector.boolean",
+    "services.media_player.play_media.fields.announce.type",
+    "services.media_player.play_media.fields.enqueue",
+    "services.media_player.play_media.fields.enqueue.description",
+    "services.media_player.play_media.fields.enqueue.example",
+    "services.media_player.play_media.fields.enqueue.name",
+    "services.media_player.play_media.fields.enqueue.required",
+    "services.media_player.play_media.fields.enqueue.selector",
+    "services.media_player.play_media.fields.enqueue.selector.select",
+    "services.media_player.play_media.fields.enqueue.selector.select.custom_value",
+    "services.media_player.play_media.fields.enqueue.selector.select.multiple",
+    "services.media_player.play_media.fields.enqueue.selector.select.options",
+    "services.media_player.play_media.fields.enqueue.selector.select.sort",
+    "services.media_player.play_media.fields.enqueue.selector.select.translation_key",
+    "services.media_player.play_media.fields.enqueue.type",
+    "services.media_player.play_media.fields.media",
+    "services.media_player.play_media.fields.media.description",
+    "services.media_player.play_media.fields.media.example",
+    "services.media_player.play_media.fields.media.name",
+    "services.media_player.play_media.fields.media.required",
+    "services.media_player.play_media.fields.media.selector",
+    "services.media_player.play_media.fields.media.selector.media",
+    "services.media_player.play_media.fields.media.selector.media.image_upload",
+    "services.media_player.play_media.fields.media.selector.media.multiple",
+    "services.media_player.play_media.fields.media.type",
+    "services.media_player.play_media.name",
+    "services.media_player.play_media.service",
+    "services.media_player.play_media.target",
+    "services.media_player.play_media.target.entity",
+    "services.media_player.play_media.target.entity[].domain",
+    "services.media_player.play_media.target.entity[].supported_features",
+    "services.media_player.search_media",
+    "services.media_player.search_media.description",
+    "services.media_player.search_media.domain",
+    "services.media_player.search_media.fields",
+    "services.media_player.search_media.fields.media_content_id",
+    "services.media_player.search_media.fields.media_content_id.description",
+    "services.media_player.search_media.fields.media_content_id.example",
+    "services.media_player.search_media.fields.media_content_id.name",
+    "services.media_player.search_media.fields.media_content_id.required",
+    "services.media_player.search_media.fields.media_content_id.selector",
+    "services.media_player.search_media.fields.media_content_id.selector.text",
+    "services.media_player.search_media.fields.media_content_id.selector.text.multiline",
+    "services.media_player.search_media.fields.media_content_id.selector.text.multiple",
+    "services.media_player.search_media.fields.media_content_id.type",
+    "services.media_player.search_media.fields.media_content_type",
+    "services.media_player.search_media.fields.media_content_type.description",
+    "services.media_player.search_media.fields.media_content_type.example",
+    "services.media_player.search_media.fields.media_content_type.name",
+    "services.media_player.search_media.fields.media_content_type.required",
+    "services.media_player.search_media.fields.media_content_type.selector",
+    "services.media_player.search_media.fields.media_content_type.selector.text",
+    "services.media_player.search_media.fields.media_content_type.selector.text.multiline",
+    "services.media_player.search_media.fields.media_content_type.selector.text.multiple",
+    "services.media_player.search_media.fields.media_content_type.type",
+    "services.media_player.search_media.fields.media_filter_classes",
+    "services.media_player.search_media.fields.media_filter_classes.description",
+    "services.media_player.search_media.fields.media_filter_classes.example",
+    "services.media_player.search_media.fields.media_filter_classes.name",
+    "services.media_player.search_media.fields.media_filter_classes.required",
+    "services.media_player.search_media.fields.media_filter_classes.selector",
+    "services.media_player.search_media.fields.media_filter_classes.selector.text",
+    "services.media_player.search_media.fields.media_filter_classes.selector.text.multiline",
+    "services.media_player.search_media.fields.media_filter_classes.selector.text.multiple",
+    "services.media_player.search_media.fields.media_filter_classes.type",
+    "services.media_player.search_media.fields.search_query",
+    "services.media_player.search_media.fields.search_query.description",
+    "services.media_player.search_media.fields.search_query.example",
+    "services.media_player.search_media.fields.search_query.name",
+    "services.media_player.search_media.fields.search_query.required",
+    "services.media_player.search_media.fields.search_query.selector",
+    "services.media_player.search_media.fields.search_query.selector.text",
+    "services.media_player.search_media.fields.search_query.selector.text.multiline",
+    "services.media_player.search_media.fields.search_query.selector.text.multiple",
+    "services.media_player.search_media.fields.search_query.type",
+    "services.media_player.search_media.name",
+    "services.media_player.search_media.service",
+    "services.media_player.search_media.target",
+    "services.media_player.search_media.target.entity",
+    "services.media_player.search_media.target.entity[].domain",
+    "services.media_player.search_media.target.entity[].supported_features",
+    "services.media_player.select_sound_mode",
+    "services.media_player.select_sound_mode.description",
+    "services.media_player.select_sound_mode.domain",
+    "services.media_player.select_sound_mode.fields",
+    "services.media_player.select_sound_mode.fields.sound_mode",
+    "services.media_player.select_sound_mode.fields.sound_mode.description",
+    "services.media_player.select_sound_mode.fields.sound_mode.example",
+    "services.media_player.select_sound_mode.fields.sound_mode.name",
+    "services.media_player.select_sound_mode.fields.sound_mode.required",
+    "services.media_player.select_sound_mode.fields.sound_mode.selector",
+    "services.media_player.select_sound_mode.fields.sound_mode.selector.state",
+    "services.media_player.select_sound_mode.fields.sound_mode.selector.state.attribute",
+    "services.media_player.select_sound_mode.fields.sound_mode.selector.state.multiple",
+    "services.media_player.select_sound_mode.fields.sound_mode.type",
+    "services.media_player.select_sound_mode.name",
+    "services.media_player.select_sound_mode.service",
+    "services.media_player.select_sound_mode.target",
+    "services.media_player.select_sound_mode.target.entity",
+    "services.media_player.select_sound_mode.target.entity[].domain",
+    "services.media_player.select_sound_mode.target.entity[].supported_features",
+    "services.media_player.select_source.fields.source.type",
+    "services.media_player.shuffle_set",
+    "services.media_player.shuffle_set.description",
+    "services.media_player.shuffle_set.domain",
+    "services.media_player.shuffle_set.fields",
+    "services.media_player.shuffle_set.fields.shuffle",
+    "services.media_player.shuffle_set.fields.shuffle.description",
+    "services.media_player.shuffle_set.fields.shuffle.example",
+    "services.media_player.shuffle_set.fields.shuffle.name",
+    "services.media_player.shuffle_set.fields.shuffle.required",
+    "services.media_player.shuffle_set.fields.shuffle.selector",
+    "services.media_player.shuffle_set.fields.shuffle.selector.boolean",
+    "services.media_player.shuffle_set.fields.shuffle.type",
+    "services.media_player.shuffle_set.name",
+    "services.media_player.shuffle_set.service",
+    "services.media_player.shuffle_set.target",
+    "services.media_player.shuffle_set.target.entity",
+    "services.media_player.shuffle_set.target.entity[].domain",
+    "services.media_player.shuffle_set.target.entity[].supported_features",
+    "services.media_player.volume_mute.fields.is_volume_muted.example",
+    "services.media_player.volume_mute.fields.is_volume_muted.type",
+    "services.media_player.volume_set.fields.volume_level.example",
+    "services.media_player.volume_set.fields.volume_level.type",
+    "services.persistent_notification.create.fields.message.type",
+    "services.persistent_notification.create.fields.notification_id.required",
+    "services.persistent_notification.create.fields.notification_id.type",
+    "services.persistent_notification.create.fields.title.required",
+    "services.persistent_notification.create.fields.title.type",
+    "services.persistent_notification.dismiss.fields.notification_id.type",
+    "services.recorder.get_statistics.fields.end_time.type",
+    "services.recorder.get_statistics.fields.period.type",
+    "services.recorder.get_statistics.fields.start_time.type",
+    "services.recorder.get_statistics.fields.statistic_ids.type",
+    "services.recorder.get_statistics.fields.types.type",
+    "services.recorder.get_statistics.fields.units.type",
+    "services.recorder.purge.fields.apply_filter.example",
+    "services.recorder.purge.fields.apply_filter.required",
+    "services.recorder.purge.fields.apply_filter.type",
+    "services.recorder.purge.fields.keep_days.example",
+    "services.recorder.purge.fields.keep_days.required",
+    "services.recorder.purge.fields.keep_days.type",
+    "services.recorder.purge.fields.repack.example",
+    "services.recorder.purge.fields.repack.required",
+    "services.recorder.purge.fields.repack.type",
+    "services.recorder.purge_entities.fields.domains.type",
+    "services.recorder.purge_entities.fields.entity_globs.type",
+    "services.recorder.purge_entities.fields.entity_id.example",
+    "services.recorder.purge_entities.fields.entity_id.type",
+    "services.recorder.purge_entities.fields.keep_days.example",
+    "services.recorder.purge_entities.fields.keep_days.required",
+    "services.recorder.purge_entities.fields.keep_days.type",
+    "services.system_log.write.fields.level.example",
+    "services.system_log.write.fields.level.required",
+    "services.system_log.write.fields.level.type",
+    "services.system_log.write.fields.logger.required",
+    "services.system_log.write.fields.logger.type",
+    "services.system_log.write.fields.message.type"
+   ],
+   "key_paths_only_in_9_2_0": [
+    "services.recorder.get_statistics.response",
+    "services.recorder.get_statistics.response.optional",
+    "services.scene.apply",
+    "services.scene.apply.description",
+    "services.scene.apply.domain",
+    "services.scene.apply.fields",
+    "services.scene.apply.fields.entities",
+    "services.scene.apply.fields.entities.description",
+    "services.scene.apply.fields.entities.example",
+    "services.scene.apply.fields.entities.name",
+    "services.scene.apply.fields.entities.required",
+    "services.scene.apply.fields.entities.selector",
+    "services.scene.apply.fields.entities.selector.object",
+    "services.scene.apply.fields.entities.selector.object.multiple",
+    "services.scene.apply.fields.transition",
+    "services.scene.apply.fields.transition.description",
+    "services.scene.apply.fields.transition.name",
+    "services.scene.apply.fields.transition.selector",
+    "services.scene.apply.fields.transition.selector.number",
+    "services.scene.apply.fields.transition.selector.number.max",
+    "services.scene.apply.fields.transition.selector.number.min",
+    "services.scene.apply.fields.transition.selector.number.mode",
+    "services.scene.apply.fields.transition.selector.number.step",
+    "services.scene.apply.fields.transition.selector.number.unit_of_measurement",
+    "services.scene.apply.name",
+    "services.scene.apply.service",
+    "services.scene.create",
+    "services.scene.create.description",
+    "services.scene.create.domain",
+    "services.scene.create.fields",
+    "services.scene.create.fields.entities",
+    "services.scene.create.fields.entities.description",
+    "services.scene.create.fields.entities.example",
+    "services.scene.create.fields.entities.name",
+    "services.scene.create.fields.entities.selector",
+    "services.scene.create.fields.entities.selector.object",
+    "services.scene.create.fields.entities.selector.object.multiple",
+    "services.scene.create.fields.scene_id",
+    "services.scene.create.fields.scene_id.description",
+    "services.scene.create.fields.scene_id.example",
+    "services.scene.create.fields.scene_id.name",
+    "services.scene.create.fields.scene_id.required",
+    "services.scene.create.fields.scene_id.selector",
+    "services.scene.create.fields.scene_id.selector.text",
+    "services.scene.create.fields.scene_id.selector.text.multiline",
+    "services.scene.create.fields.scene_id.selector.text.multiple",
+    "services.scene.create.fields.snapshot_entities",
+    "services.scene.create.fields.snapshot_entities.description",
+    "services.scene.create.fields.snapshot_entities.example",
+    "services.scene.create.fields.snapshot_entities.name",
+    "services.scene.create.fields.snapshot_entities.selector",
+    "services.scene.create.fields.snapshot_entities.selector.entity",
+    "services.scene.create.fields.snapshot_entities.selector.entity.multiple",
+    "services.scene.create.fields.snapshot_entities.selector.entity.reorder",
+    "services.scene.create.name",
+    "services.scene.create.service",
+    "services.scene.delete",
+    "services.scene.delete.description",
+    "services.scene.delete.domain",
+    "services.scene.delete.fields",
+    "services.scene.delete.name",
+    "services.scene.delete.service",
+    "services.scene.delete.target",
+    "services.scene.delete.target.entity",
+    "services.scene.delete.target.entity[].domain",
+    "services.scene.delete.target.entity[].integration",
+    "services.scene.reload",
+    "services.scene.reload.description",
+    "services.scene.reload.domain",
+    "services.scene.reload.fields",
+    "services.scene.reload.name",
+    "services.scene.reload.service",
+    "services.scene.turn_on",
+    "services.scene.turn_on.description",
+    "services.scene.turn_on.domain",
+    "services.scene.turn_on.fields",
+    "services.scene.turn_on.fields.transition",
+    "services.scene.turn_on.fields.transition.description",
+    "services.scene.turn_on.fields.transition.name",
+    "services.scene.turn_on.fields.transition.selector",
+    "services.scene.turn_on.fields.transition.selector.number",
+    "services.scene.turn_on.fields.transition.selector.number.max",
+    "services.scene.turn_on.fields.transition.selector.number.min",
+    "services.scene.turn_on.fields.transition.selector.number.mode",
+    "services.scene.turn_on.fields.transition.selector.number.step",
+    "services.scene.turn_on.fields.transition.selector.number.unit_of_measurement",
+    "services.scene.turn_on.name",
+    "services.scene.turn_on.service",
+    "services.scene.turn_on.target",
+    "services.scene.turn_on.target.entity",
+    "services.scene.turn_on.target.entity[].domain"
+   ],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": false,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 142,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "count",
+     "detail_level",
+     "domains",
+     "filters_applied",
+     "has_more",
+     "limit",
+     "next_offset",
+     "offset",
+     "services",
+     "success",
+     "total_count"
+    ],
+    [
+     "count",
+     "detail_level",
+     "domains",
+     "filters_applied",
+     "has_more",
+     "limit",
+     "next_offset",
+     "offset",
+     "services",
+     "success",
+     "total_count"
+    ]
+   ],
+   "upstream_tool": "ha_list_services"
+  },
+  {
+   "body_bytes": [
+    1644,
+    1582
+   ],
+   "different_value_paths_sample": [
+    "data.context.id",
+    "data.context.user_id",
+    "data.last_changed",
+    "data.last_reported",
+    "data.last_updated"
+   ],
+   "error": [
+    null,
+    null
+   ],
+   "has_structured_content": [
+    true,
+    true
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "t-new-session",
+   "is_error": [
+    false,
+    false
+   ],
+   "key_paths": [
+    17,
+    17
+   ],
+   "key_paths_only_in_9_1_2": [],
+   "key_paths_only_in_9_2_0": [],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": false,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 5,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "data",
+     "metadata"
+    ],
+    [
+     "data",
+     "metadata"
+    ]
+   ],
+   "upstream_tool": "ha_get_state"
+  },
+  {
+   "body_bytes": [
+    2028,
+    2998
+   ],
+   "different_value_paths_sample": [
+    "data.entities[0].count",
+    "data.entities[0].period.end",
+    "data.entities[0].period.start",
+    "data.entities[0].states#len",
+    "data.entities[0].total_count",
+    "data.period.end",
+    "data.period.start"
+   ],
+   "error": [
+    null,
+    null
+   ],
+   "has_structured_content": [
+    true,
+    true
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "v16-history-offset-free",
+   "is_error": [
+    false,
+    false
+   ],
+   "key_paths": [
+    29,
+    32
+   ],
+   "key_paths_only_in_9_1_2": [],
+   "key_paths_only_in_9_2_0": [
+    "data.entities[].states[].last_changed",
+    "data.entities[].states[].last_updated",
+    "data.entities[].states[].state"
+   ],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": false,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 7,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "data",
+     "metadata"
+    ],
+    [
+     "data",
+     "metadata"
+    ]
+   ],
+   "upstream_tool": "ha_get_history"
+  },
+  {
+   "body_bytes": [
+    3054,
+    3054
+   ],
+   "different_value_paths_sample": [
+    "data.entities[0].period.end",
+    "data.entities[0].period.start",
+    "data.period.end",
+    "data.period.start"
+   ],
+   "error": [
+    null,
+    null
+   ],
+   "has_structured_content": [
+    true,
+    true
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "v16-history-relative",
+   "is_error": [
+    false,
+    false
+   ],
+   "key_paths": [
+    32,
+    32
+   ],
+   "key_paths_only_in_9_1_2": [],
+   "key_paths_only_in_9_2_0": [],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": false,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 4,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "data",
+     "metadata"
+    ],
+    [
+     "data",
+     "metadata"
+    ]
+   ],
+   "upstream_tool": "ha_get_history"
+  },
+  {
+   "body_bytes": [
+    2280,
+    2280
+   ],
+   "different_value_paths_sample": [],
+   "error": [
+    null,
+    null
+   ],
+   "has_structured_content": [
+    true,
+    true
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "v16-history-statistics",
+   "is_error": [
+    false,
+    false
+   ],
+   "key_paths": [
+    44,
+    44
+   ],
+   "key_paths_only_in_9_1_2": [],
+   "key_paths_only_in_9_2_0": [],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": true,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 0,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "data",
+     "metadata"
+    ],
+    [
+     "data",
+     "metadata"
+    ]
+   ],
+   "upstream_tool": "ha_get_history"
+  },
+  {
+   "body_bytes": [
+    6062,
+    6106
+   ],
+   "different_value_paths_sample": [
+    "ai_insights.most_common_domains[4]",
+    "domain_stats.group.entities#len",
+    "domain_stats.group.truncated",
+    "domain_stats.scene.entities#len",
+    "domain_stats.scene.truncated",
+    "domain_stats.zone.entities[0].friendly_name",
+    "repairs[0].created",
+    "repairs[0].issue_id",
+    "repairs[0].translation_key"
+   ],
+   "error": [
+    null,
+    null
+   ],
+   "has_structured_content": [
+    true,
+    true
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "v17-overview-standard",
+   "is_error": [
+    false,
+    false
+   ],
+   "key_paths": [
+    159,
+    159
+   ],
+   "key_paths_only_in_9_1_2": [
+    "domain_stats.group.entities[].friendly_name"
+   ],
+   "key_paths_only_in_9_2_0": [
+    "domain_stats.scene.entities[].friendly_name"
+   ],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": false,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 9,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "ai_insights",
+     "area_analysis",
+     "domain_stats",
+     "mcp_client",
+     "pagination",
+     "repair_count",
+     "repairs",
+     "success",
+     "system_info",
+     "system_summary"
+    ],
+    [
+     "ai_insights",
+     "area_analysis",
+     "domain_stats",
+     "mcp_client",
+     "pagination",
+     "repair_count",
+     "repairs",
+     "success",
+     "system_info",
+     "system_summary"
+    ]
+   ],
+   "upstream_tool": "ha_get_overview"
+  },
+  {
+   "body_bytes": [
+    640,
+    640
+   ],
+   "different_value_paths_sample": [],
+   "error": [
+    null,
+    null
+   ],
+   "has_structured_content": [
+    true,
+    true
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "v21-todo-list",
+   "is_error": [
+    false,
+    false
+   ],
+   "key_paths": [
+    9,
+    9
+   ],
+   "key_paths_only_in_9_1_2": [],
+   "key_paths_only_in_9_2_0": [],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": true,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 0,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "count",
+     "entity_id",
+     "items",
+     "message",
+     "status_filter",
+     "success"
+    ],
+    [
+     "count",
+     "entity_id",
+     "items",
+     "message",
+     "status_filter",
+     "success"
+    ]
+   ],
+   "upstream_tool": "ha_get_todo"
+  },
+  {
+   "body_bytes": [
+    664,
+    736
+   ],
+   "different_value_paths_sample": [],
+   "error": [
+    null,
+    null
+   ],
+   "has_structured_content": [
+    true,
+    true
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "v22-zone-single",
+   "is_error": [
+    false,
+    false
+   ],
+   "key_paths": [
+    13,
+    15
+   ],
+   "key_paths_only_in_9_1_2": [],
+   "key_paths_only_in_9_2_0": [
+    "zone.device_trackers",
+    "zone.persons"
+   ],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": false,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 0,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "success",
+     "zone",
+     "zone_id"
+    ],
+    [
+     "success",
+     "zone",
+     "zone_id"
+    ]
+   ],
+   "upstream_tool": "ha_get_zone"
+  },
+  {
+   "body_bytes": [
+    1950,
+    2322
+   ],
+   "different_value_paths_sample": [
+    "services.input_boolean.reload.description",
+    "services.input_boolean.reload.name",
+    "services.input_boolean.toggle.description",
+    "services.input_boolean.toggle.name",
+    "services.input_boolean.turn_off.description",
+    "services.input_boolean.turn_off.name",
+    "services.input_boolean.turn_on.description",
+    "services.input_boolean.turn_on.name"
+   ],
+   "error": [
+    null,
+    null
+   ],
+   "has_structured_content": [
+    true,
+    true
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "v24-services-domain-full",
+   "is_error": [
+    false,
+    false
+   ],
+   "key_paths": [
+    46,
+    46
+   ],
+   "key_paths_only_in_9_1_2": [],
+   "key_paths_only_in_9_2_0": [],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": false,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 8,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "count",
+     "detail_level",
+     "domains",
+     "filters_applied",
+     "has_more",
+     "limit",
+     "next_offset",
+     "offset",
+     "services",
+     "success",
+     "total_count"
+    ],
+    [
+     "count",
+     "detail_level",
+     "domains",
+     "filters_applied",
+     "has_more",
+     "limit",
+     "next_offset",
+     "offset",
+     "services",
+     "success",
+     "total_count"
+    ]
+   ],
+   "upstream_tool": "ha_list_services"
+  },
+  {
+   "body_bytes": [
+    1852,
+    2224
+   ],
+   "different_value_paths_sample": [
+    "services.input_boolean.reload.description",
+    "services.input_boolean.reload.name",
+    "services.input_boolean.toggle.description",
+    "services.input_boolean.toggle.name",
+    "services.input_boolean.turn_off.description",
+    "services.input_boolean.turn_off.name",
+    "services.input_boolean.turn_on.description",
+    "services.input_boolean.turn_on.name"
+   ],
+   "error": [
+    null,
+    null
+   ],
+   "has_structured_content": [
+    true,
+    true
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "v24-services-domain-summary",
+   "is_error": [
+    false,
+    false
+   ],
+   "key_paths": [
+    42,
+    42
+   ],
+   "key_paths_only_in_9_1_2": [],
+   "key_paths_only_in_9_2_0": [],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": false,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 8,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "count",
+     "detail_level",
+     "domains",
+     "filters_applied",
+     "has_more",
+     "limit",
+     "next_offset",
+     "offset",
+     "services",
+     "success",
+     "total_count"
+    ],
+    [
+     "count",
+     "detail_level",
+     "domains",
+     "filters_applied",
+     "has_more",
+     "limit",
+     "next_offset",
+     "offset",
+     "services",
+     "success",
+     "total_count"
+    ]
+   ],
+   "upstream_tool": "ha_list_services"
+  },
+  {
+   "body_bytes": [
+    4996,
+    5634
+   ],
+   "different_value_paths_sample": [
+    "services.calendar.create_event.description",
+    "services.calendar.create_event.fields.description.description",
+    "services.calendar.create_event.fields.end_date.description",
+    "services.calendar.create_event.fields.end_date.name",
+    "services.calendar.create_event.fields.end_date_time.description",
+    "services.calendar.create_event.fields.end_date_time.name",
+    "services.calendar.create_event.fields.in.description",
+    "services.calendar.create_event.fields.location.description",
+    "services.calendar.create_event.fields.start_date.description",
+    "services.calendar.create_event.fields.start_date.name",
+    "services.calendar.create_event.fields.start_date_time.description",
+    "services.calendar.create_event.fields.start_date_time.name"
+   ],
+   "error": [
+    null,
+    null
+   ],
+   "has_structured_content": [
+    true,
+    true
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "v24-services-response",
+   "is_error": [
+    false,
+    false
+   ],
+   "key_paths": [
+    125,
+    105
+   ],
+   "key_paths_only_in_9_1_2": [
+    "services.calendar.create_event.fields.description.required",
+    "services.calendar.create_event.fields.description.type",
+    "services.calendar.create_event.fields.end_date.required",
+    "services.calendar.create_event.fields.end_date.type",
+    "services.calendar.create_event.fields.end_date_time.required",
+    "services.calendar.create_event.fields.end_date_time.type",
+    "services.calendar.create_event.fields.in.required",
+    "services.calendar.create_event.fields.in.type",
+    "services.calendar.create_event.fields.location.required",
+    "services.calendar.create_event.fields.location.type",
+    "services.calendar.create_event.fields.start_date.required",
+    "services.calendar.create_event.fields.start_date.type",
+    "services.calendar.create_event.fields.start_date_time.required",
+    "services.calendar.create_event.fields.start_date_time.type",
+    "services.calendar.create_event.fields.summary.type",
+    "services.calendar.get_events.fields.duration.example",
+    "services.calendar.get_events.fields.duration.required",
+    "services.calendar.get_events.fields.duration.type",
+    "services.calendar.get_events.fields.end_date_time.required",
+    "services.calendar.get_events.fields.end_date_time.type",
+    "services.calendar.get_events.fields.start_date_time.required",
+    "services.calendar.get_events.fields.start_date_time.type"
+   ],
+   "key_paths_only_in_9_2_0": [
+    "services.calendar.get_events.response",
+    "services.calendar.get_events.response.optional"
+   ],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": false,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 21,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "count",
+     "detail_level",
+     "domains",
+     "filters_applied",
+     "has_more",
+     "limit",
+     "next_offset",
+     "offset",
+     "services",
+     "success",
+     "total_count"
+    ],
+    [
+     "count",
+     "detail_level",
+     "domains",
+     "filters_applied",
+     "has_more",
+     "limit",
+     "next_offset",
+     "offset",
+     "services",
+     "success",
+     "total_count"
+    ]
+   ],
+   "upstream_tool": "ha_list_services"
+  },
+  {
+   "body_bytes": [
+    4194,
+    4194
+   ],
+   "different_value_paths_sample": [],
+   "error": [
+    null,
+    null
+   ],
+   "has_structured_content": [
+    true,
+    true
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "v25-search-text",
+   "is_error": [
+    false,
+    false
+   ],
+   "key_paths": [
+    55,
+    55
+   ],
+   "key_paths_only_in_9_1_2": [],
+   "key_paths_only_in_9_2_0": [],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": true,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 0,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "automations",
+     "config_has_more",
+     "config_next_offset",
+     "config_total_matches",
+     "count",
+     "entities",
+     "entity_has_more",
+     "entity_next_offset",
+     "entity_total_matches",
+     "errors",
+     "has_more",
+     "helpers",
+     "limit",
+     "next_offset",
+     "offset",
+     "partial",
+     "query",
+     "scenes",
+     "scripts",
+     "search_type",
+     "search_types",
+     "success"
+    ],
+    [
+     "automations",
+     "config_has_more",
+     "config_next_offset",
+     "config_total_matches",
+     "count",
+     "entities",
+     "entity_has_more",
+     "entity_next_offset",
+     "entity_total_matches",
+     "errors",
+     "has_more",
+     "helpers",
+     "limit",
+     "next_offset",
+     "offset",
+     "partial",
+     "query",
+     "scenes",
+     "scripts",
+     "search_type",
+     "search_types",
+     "success"
+    ]
+   ],
+   "upstream_tool": "ha_search"
+  }
+ ],
+ "calls_after_core_restart": [
+  {
+   "body_bytes": [
+    1308,
+    1308
+   ],
+   "different_value_paths_sample": [],
+   "error": [
+    null,
+    null
+   ],
+   "has_structured_content": [
+    true,
+    true
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "a-entity-after-core-restart",
+   "is_error": [
+    false,
+    false
+   ],
+   "key_paths": [
+    25,
+    25
+   ],
+   "key_paths_only_in_9_1_2": [],
+   "key_paths_only_in_9_2_0": [],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": true,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 0,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "entity_entry",
+     "entity_id",
+     "success"
+    ],
+    [
+     "entity_entry",
+     "entity_id",
+     "success"
+    ]
+   ],
+   "upstream_tool": "ha_get_entity"
+  },
+  {
+   "body_bytes": [
+    2924,
+    2924
+   ],
+   "different_value_paths_sample": [],
+   "error": [
+    null,
+    null
+   ],
+   "has_structured_content": [
+    true,
+    true
+   ],
+   "http_status": [
+    200,
+    200
+   ],
+   "id": "a-floors-areas-after-core-restart",
+   "is_error": [
+    false,
+    false
+   ],
+   "key_paths": [
+    39,
+    39
+   ],
+   "key_paths_only_in_9_1_2": [],
+   "key_paths_only_in_9_2_0": [],
+   "message_kind": [
+    "result",
+    "result"
+   ],
+   "payload_identical": true,
+   "same_wire_arguments": true,
+   "shared_scalar_paths_with_different_values": 0,
+   "text_equals_structured": [
+    true,
+    true
+   ],
+   "top_level_keys": [
+    [
+     "area_count",
+     "floor_count",
+     "floors",
+     "message",
+     "orphaned_areas",
+     "orphaned_count",
+     "success",
+     "unassigned_areas",
+     "unassigned_count"
+    ],
+    [
+     "area_count",
+     "floor_count",
+     "floors",
+     "message",
+     "orphaned_areas",
+     "orphaned_count",
+     "success",
+     "unassigned_areas",
+     "unassigned_count"
+    ]
+   ],
+   "upstream_tool": "ha_list_floors_areas"
+  }
+ ],
+ "initialize": {
+  "9.1.2": {
+   "capabilities": {
+    "logging": {},
+    "prompts": {
+     "listChanged": true
+    },
+    "resources": {
+     "listChanged": true,
+     "subscribe": false
+    },
+    "tools": {
+     "listChanged": true
+    }
+   },
+   "protocolVersion": "2025-03-26",
+   "serverInfo": {
+    "name": "ha-mcp",
+    "version": "9.1.2"
+   },
+   "status": 200
+  },
+  "9.2.0": {
+   "capabilities": {
+    "logging": {},
+    "prompts": {
+     "listChanged": true
+    },
+    "resources": {
+     "listChanged": true,
+     "subscribe": false
+    },
+    "tools": {
+     "listChanged": true
+    }
+   },
+   "protocolVersion": "2025-03-26",
+   "serverInfo": {
+    "name": "ha-mcp",
+    "version": "9.2.0"
+   },
+   "status": 200
+  }
+ }
+}

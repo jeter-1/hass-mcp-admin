@@ -1,0 +1,12 @@
+result WITHHELD failure fs_on_control_differs_from_hamcp351
+app-9.2.0-fs-off: tools 77 capture sha256:ed3d635433992a3a5f6794f88433808c1edbdf4be6d473f3ca9525c5b64d2d90 byte-identical True
+app-9.2.0-fs-on: tools 77 capture sha256:ed3d635433992a3a5f6794f88433808c1edbdf4be6d473f3ca9525c5b64d2d90 byte-identical True
+control-standalone-9.1.2-fs-on: tools 77 capture sha256:ce52221101a42367c35d22ea7281d82fa910fa0f696b551448feb5ccd997f3dd byte-identical True
+standalone-9.2.0-fs-on: tools 77 capture sha256:ed3d635433992a3a5f6794f88433808c1edbdf4be6d473f3ca9525c5b64d2d90 byte-identical True
+comparison app_fs_off_capture_equals_standalone_s4 True
+comparison app_fs_off_tools_result_equals_standalone_s4 True
+comparison app_fs_on_capture_equals_standalone_fs_on True
+comparison app_fs_on_tools_result_equals_standalone_fs_on True
+comparison control_fs_on_tools_result_equals_hamcp351 False
+9.1.2 control (77 tools) equals HAMCP-351 fs-off (77 tools): True
+9.1.2 control (77 tools) equals HAMCP-351 fs-on (82 tools): False

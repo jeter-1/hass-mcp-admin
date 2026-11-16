@@ -1,0 +1,48 @@
+{
+ "authority_after_refresh": {
+  "cache_status": "valid",
+  "content_digest": "sha256:5a68d9a2011ff26a4dd329ac6e1d7d9a47c629a7a79f937e0227f947055d6482",
+  "expires_at": "2027-02-12T12:09:02Z",
+  "freshness_status": "current",
+  "positive_authority_current": true,
+  "refresh_status": "accepted",
+  "sequence": 18,
+  "surface_denied": false
+ },
+ "fetch": {
+  "calls": 1,
+  "transport": "local, in-process",
+  "url": "https://raw.githubusercontent.com/jeter-1/hass-mcp-admin/registry/upstream-trust/ha-core-release-registry.json"
+ },
+ "files": {
+  "ha-core-release-registry-cache.json": {
+   "bytes": 408213,
+   "mode_written": "0o600",
+   "sha256": "622e29e0f285d3bd45ab488f70f492642365b319d5ba76a70dc43a68826082df"
+  },
+  "ha-core-release-registry-cache.json.lifecycle": {
+   "bytes": 141,
+   "mode_written": "0o600",
+   "sha256": "f8c0918fb763fed3d5e62bae7ca82d6bec2e1e772a6eea64ab90793753577b88"
+  }
+ },
+ "known_difference": "same verification and write path, local transport instead of GitHub",
+ "lane_paths": {
+  "ha-core-release-registry-cache.json": "/data/ha-core-release-registry-cache.json",
+  "ha-core-release-registry-cache.json.lifecycle": "/data/ha-core-release-registry-cache.json.lifecycle"
+ },
+ "public_key": {
+  "file": "docs/evidence/hamcp222/core-public-key.txt",
+  "sha256": "9b27fb7f81cae19b1de066e926178e8d33b185d2601b5c30723fbe447ccc9f42"
+ },
+ "registry": {
+  "blob": "6d91c9b243cd7c0414d134e6620718903ef8fc33",
+  "bytes": 408173,
+  "commit": "917bfa2a59da5f996fb3d46a73760353547d2700",
+  "path": "upstream-trust/ha-core-release-registry.json",
+  "sha256": "e792670dd22586cfa3d2fbbfaacf6165feb85bcb435e33f69bc712f7db27b092"
+ },
+ "ruling": "architect ruling 2026-11-16 06:05 CST, seeding (a)",
+ "schema": "hamcp371.sr.core_registry_seed.v1",
+ "writer": "ha_mcp_engineering CoreReleaseRegistry.refresh()"
+}

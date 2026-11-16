@@ -1,0 +1,628 @@
+{
+ "categories": [
+  "credential",
+  "url_userinfo",
+  "token",
+  "hostname",
+  "ip_address",
+  "file_path"
+ ],
+ "inputs": {
+  "p4": "docs/evidence/hamcp371/sr/p4-parity.json",
+  "run": "docs/evidence/hamcp371/sr/run-b-2"
+ },
+ "reads": [
+  {
+   "id": "r20-system-health",
+   "names": [
+    {
+     "could_carry": [],
+     "meaning": "integer count",
+     "name": "component_count",
+     "observed": [],
+     "occurrences": 1,
+     "paths": [
+      "$.component_count"
+     ],
+     "shown_by_8_5_0_public": [],
+     "shown_by_9_2_0_public": [],
+     "size": null,
+     "types": [
+      "integer"
+     ]
+    },
+    {
+     "could_carry": [
+      "file_path"
+     ],
+     "meaning": "the configuration directory path",
+     "name": "homeassistant.config_dir",
+     "observed": [
+      "file_path"
+     ],
+     "occurrences": 1,
+     "paths": [
+      "$.health_info.data.homeassistant.info.config_dir"
+     ],
+     "shown_by_8_5_0_public": [],
+     "shown_by_9_2_0_public": [],
+     "size": {
+      "max": 7,
+      "min": 7
+     },
+     "types": [
+      "string"
+     ]
+    },
+    {
+     "could_carry": [],
+     "meaning": "architecture label",
+     "name": "homeassistant.container_arch",
+     "observed": [],
+     "occurrences": 1,
+     "paths": [
+      "$.health_info.data.homeassistant.info.container_arch"
+     ],
+     "shown_by_8_5_0_public": [],
+     "shown_by_9_2_0_public": [],
+     "size": {
+      "max": 5,
+      "min": 5
+     },
+     "types": [
+      "string"
+     ]
+    },
+    {
+     "could_carry": [],
+     "meaning": "IANA zone name",
+     "name": "homeassistant.timezone",
+     "observed": [],
+     "occurrences": 1,
+     "paths": [
+      "$.health_info.data.homeassistant.info.timezone"
+     ],
+     "shown_by_8_5_0_public": [],
+     "shown_by_9_2_0_public": [],
+     "size": {
+      "max": 15,
+      "min": 15
+     },
+     "types": [
+      "string"
+     ]
+    },
+    {
+     "could_carry": [],
+     "meaning": "the OS account Core runs as; an account name, not a listed category",
+     "name": "homeassistant.user",
+     "observed": [],
+     "occurrences": 1,
+     "paths": [
+      "$.health_info.data.homeassistant.info.user"
+     ],
+     "shown_by_8_5_0_public": [],
+     "shown_by_9_2_0_public": [],
+     "size": {
+      "max": 4,
+      "min": 4
+     },
+     "types": [
+      "string"
+     ]
+    },
+    {
+     "could_carry": [],
+     "meaning": "integer count",
+     "name": "lovelace.dashboards",
+     "observed": [],
+     "occurrences": 1,
+     "paths": [
+      "$.health_info.data.lovelace.info.dashboards"
+     ],
+     "shown_by_8_5_0_public": [],
+     "shown_by_9_2_0_public": [],
+     "size": null,
+     "types": [
+      "integer"
+     ]
+    },
+    {
+     "could_carry": [],
+     "meaning": "storage or yaml",
+     "name": "lovelace.mode",
+     "observed": [],
+     "occurrences": 1,
+     "paths": [
+      "$.health_info.data.lovelace.info.mode"
+     ],
+     "shown_by_8_5_0_public": [],
+     "shown_by_9_2_0_public": [],
+     "size": {
+      "max": 7,
+      "min": 7
+     },
+     "types": [
+      "string"
+     ]
+    },
+    {
+     "could_carry": [],
+     "meaning": "integer count",
+     "name": "lovelace.resources",
+     "observed": [],
+     "occurrences": 1,
+     "paths": [
+      "$.health_info.data.lovelace.info.resources"
+     ],
+     "shown_by_8_5_0_public": [],
+     "shown_by_9_2_0_public": [],
+     "size": null,
+     "types": [
+      "integer"
+     ]
+    },
+    {
+     "could_carry": [],
+     "meaning": "integer count",
+     "name": "lovelace.views",
+     "observed": [],
+     "occurrences": 1,
+     "paths": [
+      "$.health_info.data.lovelace.info.views"
+     ],
+     "shown_by_8_5_0_public": [],
+     "shown_by_9_2_0_public": [],
+     "size": null,
+     "types": [
+      "integer"
+     ]
+    },
+    {
+     "could_carry": [
+      "hostname",
+      "url_userinfo"
+     ],
+     "meaning": "a URL; relative in Core's system health, but an absolute URL could carry a hostname or userinfo",
+     "name": "manage_url",
+     "observed": [
+      "file_path"
+     ],
+     "occurrences": 3,
+     "paths": [
+      "$.health_info.data.lovelace.manage_url",
+      "$.health_info.data.marketplace.manage_url",
+      "$.health_info.data.network.manage_url"
+     ],
+     "shown_by_8_5_0_public": [],
+     "shown_by_9_2_0_public": [],
+     "size": {
+      "max": 16,
+      "min": 12
+     },
+     "types": [
+      "string"
+     ]
+    },
+    {
+     "could_carry": [],
+     "meaning": "status text",
+     "name": "marketplace.disabled",
+     "observed": [],
+     "occurrences": 1,
+     "paths": [
+      "$.health_info.data.marketplace.info.disabled"
+     ],
+     "shown_by_8_5_0_public": [],
+     "shown_by_9_2_0_public": [],
+     "size": {
+      "max": 29,
+      "min": 29
+     },
+     "types": [
+      "string"
+     ]
+    },
+    {
+     "could_carry": [
+      "hostname",
+      "ip_address",
+      "file_path"
+     ],
+     "meaning": "free text from upstream",
+     "name": "message",
+     "observed": [],
+     "occurrences": 1,
+     "paths": [
+      "$.message"
+     ],
+     "shown_by_8_5_0_public": [],
+     "shown_by_9_2_0_public": [],
+     "size": {
+      "max": 38,
+      "min": 38
+     },
+     "types": [
+      "string"
+     ]
+    },
+    {
+     "could_carry": [
+      "hostname",
+      "ip_address",
+      "url_userinfo"
+     ],
+     "meaning": "an error object whose text can quote a host, address or URL",
+     "name": "network.error",
+     "observed": [],
+     "occurrences": 1,
+     "paths": [
+      "$.health_info.data.network.info.error"
+     ],
+     "shown_by_8_5_0_public": [],
+     "shown_by_9_2_0_public": [],
+     "size": {
+      "max": 2,
+      "min": 2
+     },
+     "types": [
+      "object"
+     ]
+    },
+    {
+     "could_carry": [],
+     "meaning": "a timestamp value object",
+     "name": "recorder.current_recorder_run",
+     "observed": [],
+     "occurrences": 1,
+     "paths": [
+      "$.health_info.data.recorder.info.current_recorder_run"
+     ],
+     "shown_by_8_5_0_public": [],
+     "shown_by_9_2_0_public": [],
+     "size": {
+      "max": 2,
+      "min": 2
+     },
+     "types": [
+      "object"
+     ]
+    },
+    {
+     "could_carry": [],
+     "meaning": "engine name",
+     "name": "recorder.database_engine",
+     "observed": [],
+     "occurrences": 1,
+     "paths": [
+      "$.health_info.data.recorder.info.database_engine"
+     ],
+     "shown_by_8_5_0_public": [],
+     "shown_by_9_2_0_public": [],
+     "size": {
+      "max": 6,
+      "min": 6
+     },
+     "types": [
+      "string"
+     ]
+    },
+    {
+     "could_carry": [],
+     "meaning": "version text",
+     "name": "recorder.database_version",
+     "observed": [],
+     "occurrences": 1,
+     "paths": [
+      "$.health_info.data.recorder.info.database_version"
+     ],
+     "shown_by_8_5_0_public": [],
+     "shown_by_9_2_0_public": [],
+     "size": {
+      "max": 6,
+      "min": 6
+     },
+     "types": [
+      "string"
+     ]
+    },
+    {
+     "could_carry": [],
+     "meaning": "size text",
+     "name": "recorder.estimated_db_size",
+     "observed": [],
+     "occurrences": 1,
+     "paths": [
+      "$.health_info.data.recorder.info.estimated_db_size"
+     ],
+     "shown_by_8_5_0_public": [],
+     "shown_by_9_2_0_public": [],
+     "size": {
+      "max": 8,
+      "min": 8
+     },
+     "types": [
+      "string"
+     ]
+    },
+    {
+     "could_carry": [],
+     "meaning": "a timestamp value object",
+     "name": "recorder.oldest_recorder_run",
+     "observed": [],
+     "occurrences": 1,
+     "paths": [
+      "$.health_info.data.recorder.info.oldest_recorder_run"
+     ],
+     "shown_by_8_5_0_public": [],
+     "shown_by_9_2_0_public": [],
+     "size": {
+      "max": 2,
+      "min": 2
+     },
+     "types": [
+      "object"
+     ]
+    }
+   ],
+   "tool": "ha_get_system_health",
+   "upstream_9_2_0": {
+    "file": "docs/evidence/hamcp371/sr/run-b-2/9.2.0/out/proxy/000087.response",
+    "sequence": 87,
+    "sha256": "78bdc60c5ea3efbb3b5493985e02ea713cc330e93965f3517ca023ae6fbbaa86"
+   },
+   "withheld": 18
+  },
+  {
+   "id": "r26-integrations",
+   "names": [
+    {
+     "could_carry": [],
+     "meaning": "epoch seconds",
+     "name": "created_at",
+     "observed": [],
+     "occurrences": 10,
+     "paths": [
+      "$.entries[].created_at"
+     ],
+     "shown_by_8_5_0_public": [],
+     "shown_by_9_2_0_public": [],
+     "size": null,
+     "types": [
+      "number"
+     ]
+    },
+    {
+     "could_carry": [],
+     "meaning": "integration domain",
+     "name": "error_reason_translation_domain",
+     "observed": [],
+     "occurrences": 10,
+     "paths": [
+      "$.entries[].error_reason_translation_domain"
+     ],
+     "shown_by_8_5_0_public": [],
+     "shown_by_9_2_0_public": [],
+     "size": null,
+     "types": [
+      "null"
+     ]
+    },
+    {
+     "could_carry": [],
+     "meaning": "translation key",
+     "name": "error_reason_translation_key",
+     "observed": [],
+     "occurrences": 10,
+     "paths": [
+      "$.entries[].error_reason_translation_key"
+     ],
+     "shown_by_8_5_0_public": [],
+     "shown_by_9_2_0_public": [],
+     "size": null,
+     "types": [
+      "null"
+     ]
+    },
+    {
+     "could_carry": [
+      "hostname",
+      "ip_address",
+      "url_userinfo",
+      "file_path"
+     ],
+     "meaning": "placeholder values an integration fills from its own error",
+     "name": "error_reason_translation_placeholders",
+     "observed": [],
+     "occurrences": 10,
+     "paths": [
+      "$.entries[].error_reason_translation_placeholders"
+     ],
+     "shown_by_8_5_0_public": [],
+     "shown_by_9_2_0_public": [],
+     "size": null,
+     "types": [
+      "null"
+     ]
+    },
+    {
+     "could_carry": [],
+     "meaning": "integer count in state_summary",
+     "name": "loaded",
+     "observed": [],
+     "occurrences": 1,
+     "paths": [
+      "$.state_summary.loaded"
+     ],
+     "shown_by_8_5_0_public": [
+      "$.data.state_summary.loaded"
+     ],
+     "shown_by_9_2_0_public": [
+      "$.data.state_summary.loaded"
+     ],
+     "size": null,
+     "types": [
+      "integer"
+     ]
+    },
+    {
+     "could_carry": [],
+     "meaning": "integer log level",
+     "name": "log_level_raw",
+     "observed": [],
+     "occurrences": 10,
+     "paths": [
+      "$.entries[].log_level_raw"
+     ],
+     "shown_by_8_5_0_public": [],
+     "shown_by_9_2_0_public": [],
+     "size": null,
+     "types": [
+      "integer"
+     ]
+    },
+    {
+     "could_carry": [],
+     "meaning": "epoch seconds",
+     "name": "modified_at",
+     "observed": [],
+     "occurrences": 10,
+     "paths": [
+      "$.entries[].modified_at"
+     ],
+     "shown_by_8_5_0_public": [],
+     "shown_by_9_2_0_public": [],
+     "size": null,
+     "types": [
+      "number"
+     ]
+    },
+    {
+     "could_carry": [],
+     "meaning": "integer count",
+     "name": "num_subentries",
+     "observed": [],
+     "occurrences": 10,
+     "paths": [
+      "$.entries[].num_subentries"
+     ],
+     "shown_by_8_5_0_public": [],
+     "shown_by_9_2_0_public": [],
+     "size": null,
+     "types": [
+      "integer"
+     ]
+    },
+    {
+     "could_carry": [
+      "hostname",
+      "ip_address",
+      "url_userinfo",
+      "file_path"
+     ],
+     "meaning": "free-text setup or error reason",
+     "name": "reason",
+     "observed": [],
+     "occurrences": 10,
+     "paths": [
+      "$.entries[].reason"
+     ],
+     "shown_by_8_5_0_public": [],
+     "shown_by_9_2_0_public": [],
+     "size": null,
+     "types": [
+      "null"
+     ]
+    },
+    {
+     "could_carry": [],
+     "meaning": "integer count in state_summary",
+     "name": "setup_error",
+     "observed": [],
+     "occurrences": 1,
+     "paths": [
+      "$.state_summary.setup_error"
+     ],
+     "shown_by_8_5_0_public": [
+      "$.data.state_summary.setup_error"
+     ],
+     "shown_by_9_2_0_public": [
+      "$.data.state_summary.setup_error"
+     ],
+     "size": null,
+     "types": [
+      "integer"
+     ]
+    },
+    {
+     "could_carry": [],
+     "meaning": "subentry type flags",
+     "name": "supported_subentry_types",
+     "observed": [],
+     "occurrences": 10,
+     "paths": [
+      "$.entries[].supported_subentry_types"
+     ],
+     "shown_by_8_5_0_public": [],
+     "shown_by_9_2_0_public": [],
+     "size": {
+      "max": 0,
+      "min": 0
+     },
+     "types": [
+      "object"
+     ]
+    },
+    {
+     "could_carry": [],
+     "meaning": "boolean",
+     "name": "supports_remove_device",
+     "observed": [],
+     "occurrences": 10,
+     "paths": [
+      "$.entries[].supports_remove_device"
+     ],
+     "shown_by_8_5_0_public": [],
+     "shown_by_9_2_0_public": [],
+     "size": null,
+     "types": [
+      "boolean"
+     ]
+    },
+    {
+     "could_carry": [
+      "hostname",
+      "ip_address",
+      "credential"
+     ],
+     "meaning": "integration-defined; can be a host, address, serial, MAC or account id",
+     "name": "unique_id",
+     "observed": [],
+     "occurrences": 10,
+     "paths": [
+      "$.entries[].unique_id"
+     ],
+     "shown_by_8_5_0_public": [],
+     "shown_by_9_2_0_public": [],
+     "size": {
+      "max": 13,
+      "min": 12
+     },
+     "types": [
+      "null",
+      "string"
+     ]
+    }
+   ],
+   "tool": "ha_get_integration",
+   "upstream_9_2_0": {
+    "file": "docs/evidence/hamcp371/sr/run-b-2/9.2.0/out/proxy/000111.response",
+    "sequence": 111,
+    "sha256": "95006d965aa7d22fadcaf5295370f2148368b9ba6142508c73e197d3077ba5f4"
+   },
+   "withheld": 13
+  }
+ ],
+ "ruling": "architect ruling 2026-11-16 08:18 CST, P4-B",
+ "schema": "hamcp371.sr.p4b_withheld_names.v1"
+}

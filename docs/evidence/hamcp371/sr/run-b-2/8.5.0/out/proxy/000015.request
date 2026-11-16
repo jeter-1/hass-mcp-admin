@@ -1,0 +1,1 @@
+{"method":"tools/call","params":{"name":"ha_config_get_calendar_events","arguments":{"entity_id":"calendar.hamcp371_calendar","start":"2026-11-16T04:17:22-06:00","end":"2026-11-16T07:17:22-06:00","max_results":5}},"jsonrpc":"2.0","id":2}

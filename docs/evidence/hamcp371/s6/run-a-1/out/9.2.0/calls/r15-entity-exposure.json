@@ -1,0 +1,127 @@
+{
+ "arguments_built_by": "adapter code, policy 9.1.2",
+ "calls_format_version": 1,
+ "exchange": {
+  "body_bytes": 582,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":115,\"result\":{\"content\":[{\"text\":\"{\\\"success\\\":true,\\\"entity_id\\\":\\\"input_boolean.hamcp371_helper\\\",\\\"exposed_to\\\":{\\\"conversation\\\":true,\\\"cloud.alexa\\\":false,\\\"cloud.google_assistant\\\":false},\\\"is_exposed_anywhere\\\":true,\\\"has_custom_settings\\\":true,\\\"note\\\":null}\",\"type\":\"text\"}],\"isError\":false,\"structuredContent\":{\"success\":true,\"entity_id\":\"input_boolean.hamcp371_helper\",\"exposed_to\":{\"conversation\":true,\"cloud.alexa\":false,\"cloud.google_assistant\":false},\"is_exposed_anywhere\":true,\"has_custom_settings\":true,\"note\":null}}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 115,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\"success\":true,\"entity_id\":\"input_boolean.hamcp371_helper\",\"exposed_to\":{\"conversation\":true,\"cloud.alexa\":false,\"cloud.google_assistant\":false},\"is_exposed_anywhere\":true,\"has_custom_settings\":true,\"note\":null}",
+       "type": "text"
+      }
+     ],
+     "isError": false,
+     "structuredContent": {
+      "entity_id": "input_boolean.hamcp371_helper",
+      "exposed_to": {
+       "cloud.alexa": false,
+       "cloud.google_assistant": false,
+       "conversation": true
+      },
+      "has_custom_settings": true,
+      "is_exposed_anywhere": true,
+      "note": null,
+      "success": true
+     }
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 115,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "entity_id": "input_boolean.hamcp371_helper"
+     },
+     "name": "ha_get_entity_exposure"
+    }
+   },
+   "method": "POST",
+   "path": "/mcp"
+  },
+  "response": {
+   "id": 115,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\"success\":true,\"entity_id\":\"input_boolean.hamcp371_helper\",\"exposed_to\":{\"conversation\":true,\"cloud.alexa\":false,\"cloud.google_assistant\":false},\"is_exposed_anywhere\":true,\"has_custom_settings\":true,\"note\":null}",
+      "type": "text"
+     }
+    ],
+    "isError": false,
+    "structuredContent": {
+     "entity_id": "input_boolean.hamcp371_helper",
+     "exposed_to": {
+      "cloud.alexa": false,
+      "cloud.google_assistant": false,
+      "conversation": true
+     },
+     "has_custom_settings": true,
+     "is_exposed_anywhere": true,
+     "note": null,
+     "success": true
+    }
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Thu, 12 Nov 2026 06:23:55 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null,
+ "group": "reads",
+ "id": "r15-entity-exposure",
+ "idle": false,
+ "kind": "public",
+ "new_session": false,
+ "public_arguments": {
+  "entity_id": "input_boolean.hamcp371_helper"
+ },
+ "public_tool": "ha_get_entity_exposure",
+ "upstream_tool": "ha_get_entity_exposure",
+ "wire_arguments": {
+  "entity_id": "input_boolean.hamcp371_helper"
+ }
+}

@@ -827,6 +827,11 @@ function Test-ChangedTextWhitespace {
         if ([IO.Path]::GetExtension($path).ToLowerInvariant() -notin $textExtensions -and [IO.Path]::GetFileName($path) -ne "AGENTS.md") {
             continue
         }
+        # HAMCP-371 D4: a file whose whitespace attribute .gitattributes unsets
+        # (-whitespace) is byte-exact on purpose; -text alone is still scanned.
+        if (@(Invoke-GitRead -Arguments @("check-attr", "whitespace", "--", $relative)) -contains "${relative}: whitespace: unset") {
+            continue
+        }
         $lineNumber = 0
         foreach ($line in [IO.File]::ReadAllLines($path)) {
             $lineNumber += 1

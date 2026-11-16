@@ -363,6 +363,32 @@
       "source_commit": "bab615dfc90cc510f5e19a9118707d0fae03a37c",
       "source_tag": "v9.1.2",
       "upstream_version": "9.1.2"
+    },
+    {
+      "catalog_fingerprint": "0f1a2c75a766a111a83053733c6803ca14d60357137f4ecc7bc7978061982147",
+      "contract_family": "ha_mcp_dashboard_read_v3",
+      "entry_id": "ha-mcp-v9.2.0-9de5bf6c",
+      "fixture_runtime_descriptor_fingerprint": null,
+      "image_index_digest": "sha256:9de5bf6c4216142fdffe862900abe72dac8dfe9621dd0b2b050d132372b676ba",
+      "image_revision": "4d7148309af7e4d3da95e16ced8bb67d6a43b9c1",
+      "input_contract_fingerprint": "1ea37859cf37426edf61bbe5987b1f144af74f1e6f2da8c43a02de1b06e24bc6",
+      "output_contract_fingerprint": "9db14b83579f9ec897cc6d97640a3ad67899055b57d18c815c4119192a04dbb7",
+      "platform_digests": {
+        "linux/amd64": "sha256:349a3ec6b2f4fa0797651b2c5d8985ca28d7a1028156eefba8d94fe51683fdb8",
+        "linux/arm64": "sha256:5799ff6f0b85f01710b725792e32caf79255934a6e80b8af28373768d42e9a80"
+      },
+      "published_runtime_descriptor_fingerprint": null,
+      "raw_input_schema_fingerprint": "3d5eb7f07319fc0007f535ef316091a11c15863262f3cb6b03ae279474dfdca7",
+      "review_evidence_digest": "sha256:377d810c484b5d34d82fca220e21a35c7b2ad984359cc26d4b680fdc327276b7",
+      "reviewed_at": "2026-11-15T00:00:00Z",
+      "reviewed_security_descriptor_fingerprint": null,
+      "revoked": false,
+      "runtime_contract_fingerprint": "78b74a6c193af3de32730c878e094250ad3ec5a304724529d917d1195e8783d9",
+      "security_contract_fingerprint": "e9770b0461efed6a85e0527fc301578ec0d3069f3725b9884373d4216d119cd7",
+      "server_name": "ha-mcp",
+      "source_commit": "51e3aac788482a081807591cd5d58d07dc4e540b",
+      "source_tag": "v9.2.0",
+      "upstream_version": "9.2.0"
     }
   ],
   "schema_version": 1

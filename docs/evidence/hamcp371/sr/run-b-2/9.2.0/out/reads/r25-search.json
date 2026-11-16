@@ -1,0 +1,101 @@
+{
+ "case": {
+  "arguments": {
+   "domain_filter": "input_boolean",
+   "limit": 5
+  },
+  "id": "r25-search",
+  "tool": "ha_search"
+ },
+ "exchange": {
+  "body_bytes": 2659,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":126,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\n  \\\"operation\\\": \\\"ha_search\\\",\\n  \\\"summary\\\": \\\"Completed a reviewed pure-read operation through the upstream gateway.\\\",\\n  \\\"data\\\": {\\n    \\\"success\\\": true,\\n    \\\"query\\\": null,\\n    \\\"entities\\\": [\\n      {\\n        \\\"entity_id\\\": \\\"input_boolean.hamcp371_helper\\\",\\n        \\\"friendly_name\\\": \\\"HAMCP371 helper\\\",\\n        \\\"domain\\\": \\\"input_boolean\\\",\\n        \\\"state\\\": \\\"on\\\",\\n        \\\"score\\\": 100,\\n        \\\"match_type\\\": \\\"domain_listing\\\",\\n        \\\"name\\\": \\\"HAMCP371 helper\\\"\\n      }\\n    ],\\n    \\\"entity_total_matches\\\": 1,\\n    \\\"automations\\\": [],\\n    \\\"scripts\\\": [],\\n    \\\"scenes\\\": [],\\n    \\\"helpers\\\": [],\\n    \\\"search_types\\\": [\\n      \\\"automation\\\",\\n      \\\"script\\\",\\n      \\\"scene\\\",\\n      \\\"helper\\\"\\n    ],\\n    \\\"config_total_matches\\\": 0,\\n    \\\"partial\\\": false,\\n    \\\"errors\\\": [],\\n    \\\"entity_has_more\\\": false,\\n    \\\"entity_next_offset\\\": null,\\n    \\\"offset\\\": 0,\\n    \\\"limit\\\": 5,\\n    \\\"count\\\": 1,\\n    \\\"search_type\\\": \\\"domain_listing\\\",\\n    \\\"domain_filter\\\": \\\"input_boolean\\\",\\n    \\\"has_more\\\": false,\\n    \\\"next_offset\\\": null,\\n    \\\"warnings\\\": [],\\n    \\\"fields_withheld\\\": 0,\\n    \\\"fields_dropped_by_policy\\\": 0,\\n    \\\"upstream_warnings_replaced\\\": 0\\n  },\\n  \\\"warnings\\\": [\\n    \\\"Coverage is limited to entities visible to the upstream provider; entities hidden by its visibility policy are omitted without notice.\\\"\\n  ],\\n  \\\"metadata\\\": {\\n    \\\"provider\\\": \\\"upstream_read_gateway\\\",\\n    \\\"upstream_tool\\\": \\\"ha_search\\\",\\n    \\\"upstream_server\\\": \\\"ha-mcp\\\",\\n    \\\"upstream_version\\\": \\\"9.2.0\\\",\\n    \\\"classification\\\": \\\"automatic_read\\\",\\n    \\\"schema_fingerprint\\\": \\\"c1ca76bd2f762cceb1697bec9e0cee25e0d3806cc2815e62dd06f5132a19a83b\\\",\\n    \\\"untrusted_upstream_content\\\": true,\\n    \\\"fallback\\\": \\\"none\\\",\\n    \\\"fallback_occurred\\\": false,\\n    \\\"completeness\\\": \\\"partial\\\",\\n    \\\"search_descriptor_variant\\\": \\\"unified\\\",\\n    \\\"warning_codes\\\": []\\n  },\\n  \\\"timing\\\": {\\n    \\\"total_ms\\\": 235.01,\\n    \\\"tool_ms\\\": 232.265,\\n    \\\"home_assistant_ms\\\": 0.0,\\n    \\\"home_assistant_cumulative_attempt_ms\\\": 0.0,\\n    \\\"home_assistant_wall_clock_span_ms\\\": 0.0,\\n    \\\"home_assistant_request_count\\\": 0,\\n    \\\"upstream_attempted\\\": true,\\n    \\\"upstream_ms\\\": 227.187,\\n    \\\"upstream_wall_clock_span_ms\\\": 227.187,\\n    \\\"upstream_request_count\\\": 1,\\n    \\\"provider_operations_concurrent\\\": false,\\n    \\\"retry_count\\\": 0,\\n    \\\"timeout_occurred\\\": false\\n  },\\n  \\\"request_id\\\": \\\"56d4ae27567047dd884a2bb3164af71a\\\",\\n  \\\"success\\\": true\\n}\"}],\"isError\":false}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 126,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\n  \"operation\": \"ha_search\",\n  \"summary\": \"Completed a reviewed pure-read operation through the upstream gateway.\",\n  \"data\": {\n    \"success\": true,\n    \"query\": null,\n    \"entities\": [\n      {\n        \"entity_id\": \"input_boolean.hamcp371_helper\",\n        \"friendly_name\": \"HAMCP371 helper\",\n        \"domain\": \"input_boolean\",\n        \"state\": \"on\",\n        \"score\": 100,\n        \"match_type\": \"domain_listing\",\n        \"name\": \"HAMCP371 helper\"\n      }\n    ],\n    \"entity_total_matches\": 1,\n    \"automations\": [],\n    \"scripts\": [],\n    \"scenes\": [],\n    \"helpers\": [],\n    \"search_types\": [\n      \"automation\",\n      \"script\",\n      \"scene\",\n      \"helper\"\n    ],\n    \"config_total_matches\": 0,\n    \"partial\": false,\n    \"errors\": [],\n    \"entity_has_more\": false,\n    \"entity_next_offset\": null,\n    \"offset\": 0,\n    \"limit\": 5,\n    \"count\": 1,\n    \"search_type\": \"domain_listing\",\n    \"domain_filter\": \"input_boolean\",\n    \"has_more\": false,\n    \"next_offset\": null,\n    \"warnings\": [],\n    \"fields_withheld\": 0,\n    \"fields_dropped_by_policy\": 0,\n    \"upstream_warnings_replaced\": 0\n  },\n  \"warnings\": [\n    \"Coverage is limited to entities visible to the upstream provider; entities hidden by its visibility policy are omitted without notice.\"\n  ],\n  \"metadata\": {\n    \"provider\": \"upstream_read_gateway\",\n    \"upstream_tool\": \"ha_search\",\n    \"upstream_server\": \"ha-mcp\",\n    \"upstream_version\": \"9.2.0\",\n    \"classification\": \"automatic_read\",\n    \"schema_fingerprint\": \"c1ca76bd2f762cceb1697bec9e0cee25e0d3806cc2815e62dd06f5132a19a83b\",\n    \"untrusted_upstream_content\": true,\n    \"fallback\": \"none\",\n    \"fallback_occurred\": false,\n    \"completeness\": \"partial\",\n    \"search_descriptor_variant\": \"unified\",\n    \"warning_codes\": []\n  },\n  \"timing\": {\n    \"total_ms\": 235.01,\n    \"tool_ms\": 232.265,\n    \"home_assistant_ms\": 0.0,\n    \"home_assistant_cumulative_attempt_ms\": 0.0,\n    \"home_assistant_wall_clock_span_ms\": 0.0,\n    \"home_assistant_request_count\": 0,\n    \"upstream_attempted\": true,\n    \"upstream_ms\": 227.187,\n    \"upstream_wall_clock_span_ms\": 227.187,\n    \"upstream_request_count\": 1,\n    \"provider_operations_concurrent\": false,\n    \"retry_count\": 0,\n    \"timeout_occurred\": false\n  },\n  \"request_id\": \"56d4ae27567047dd884a2bb3164af71a\",\n  \"success\": true\n}",
+       "type": "text"
+      }
+     ],
+     "isError": false
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 126,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "domain_filter": "input_boolean",
+      "limit": 5
+     },
+     "name": "ha_search"
+    }
+   },
+   "method": "POST",
+   "path": "/synthetic-engineering-access-secret/mcp"
+  },
+  "response": {
+   "id": 126,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\n  \"operation\": \"ha_search\",\n  \"summary\": \"Completed a reviewed pure-read operation through the upstream gateway.\",\n  \"data\": {\n    \"success\": true,\n    \"query\": null,\n    \"entities\": [\n      {\n        \"entity_id\": \"input_boolean.hamcp371_helper\",\n        \"friendly_name\": \"HAMCP371 helper\",\n        \"domain\": \"input_boolean\",\n        \"state\": \"on\",\n        \"score\": 100,\n        \"match_type\": \"domain_listing\",\n        \"name\": \"HAMCP371 helper\"\n      }\n    ],\n    \"entity_total_matches\": 1,\n    \"automations\": [],\n    \"scripts\": [],\n    \"scenes\": [],\n    \"helpers\": [],\n    \"search_types\": [\n      \"automation\",\n      \"script\",\n      \"scene\",\n      \"helper\"\n    ],\n    \"config_total_matches\": 0,\n    \"partial\": false,\n    \"errors\": [],\n    \"entity_has_more\": false,\n    \"entity_next_offset\": null,\n    \"offset\": 0,\n    \"limit\": 5,\n    \"count\": 1,\n    \"search_type\": \"domain_listing\",\n    \"domain_filter\": \"input_boolean\",\n    \"has_more\": false,\n    \"next_offset\": null,\n    \"warnings\": [],\n    \"fields_withheld\": 0,\n    \"fields_dropped_by_policy\": 0,\n    \"upstream_warnings_replaced\": 0\n  },\n  \"warnings\": [\n    \"Coverage is limited to entities visible to the upstream provider; entities hidden by its visibility policy are omitted without notice.\"\n  ],\n  \"metadata\": {\n    \"provider\": \"upstream_read_gateway\",\n    \"upstream_tool\": \"ha_search\",\n    \"upstream_server\": \"ha-mcp\",\n    \"upstream_version\": \"9.2.0\",\n    \"classification\": \"automatic_read\",\n    \"schema_fingerprint\": \"c1ca76bd2f762cceb1697bec9e0cee25e0d3806cc2815e62dd06f5132a19a83b\",\n    \"untrusted_upstream_content\": true,\n    \"fallback\": \"none\",\n    \"fallback_occurred\": false,\n    \"completeness\": \"partial\",\n    \"search_descriptor_variant\": \"unified\",\n    \"warning_codes\": []\n  },\n  \"timing\": {\n    \"total_ms\": 235.01,\n    \"tool_ms\": 232.265,\n    \"home_assistant_ms\": 0.0,\n    \"home_assistant_cumulative_attempt_ms\": 0.0,\n    \"home_assistant_wall_clock_span_ms\": 0.0,\n    \"home_assistant_request_count\": 0,\n    \"upstream_attempted\": true,\n    \"upstream_ms\": 227.187,\n    \"upstream_wall_clock_span_ms\": 227.187,\n    \"upstream_request_count\": 1,\n    \"provider_operations_concurrent\": false,\n    \"retry_count\": 0,\n    \"timeout_occurred\": false\n  },\n  \"request_id\": \"56d4ae27567047dd884a2bb3164af71a\",\n  \"success\": true\n}",
+      "type": "text"
+     }
+    ],
+    "isError": false
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Mon, 16 Nov 2026 12:17:10 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "x-request-id",
+    "56d4ae27567047dd884a2bb3164af71a"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null
+}

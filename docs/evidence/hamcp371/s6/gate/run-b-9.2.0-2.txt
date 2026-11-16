@@ -1,0 +1,10 @@
+== admission for hamcp371-s6-run-b-9-2-0-2 (lane) in /home/josh/repos/hass-mcp-admin/.claude/worktrees/hamcp-371-ha-mcp-9-2-0
+time=2026-11-14 23:02:58 CST
+units:
+
+lanes(containers):
+
+stray:
+heavy_total=0 evidence=0 mem_avail_gb=12.5 load1=0.48 root_free_gb=60.4
+Running as unit: hamcp371-s6-run-b-9-2-0-2.service; invocation ID: b6de8e5e109f4f39af9b43ba366275c2
+launched rc=0 cmd=bash -c python3\ -I\ -B\ scripts/core_read_replay_capture_local.py\ run\ --profile\ B\ --version\ 9.2.0\ --wheel-dir\ /home/josh/repos/hass-mcp-admin/.claude/worktrees/hamcp-371-ha-mcp-9-2-0/.artifacts/hamcp371-n32/wheels\ --upstream-git\ /home/josh/repos/cursor-hass-mcp-admin/.artifacts/cursor-research-2026-11-11-ij/ha-mcp/.git\ --run-dir\ .artifacts/hamcp371-s6/run-b-9.2.0-2\ --launch-log\ .artifacts/hamcp371-s6/launches.jsonl\ --note\ \'D1\ of\ 2026-11-14\ \(production\ flags\ confirmed\ 22:18\):\ new\ 9.2.0\ profile\ B\ launch\,\ component\ 9.2.0\ from\ tag\ v9.2.0\ on\ one\ disposable\ Core\ 2026.11.0\;\ peer\ with\ ENABLE_BETA_FEATURES=true\,\ HAMCP_ENABLE_FILESYSTEM_TOOLS=true\,\ ENABLE_YAML_CONFIG_EDITING=false\,\ DISABLED_TOOLS=ha_write_file\,ha_delete_file\;\ N32\ wheels\ pinned\;\ harness\ b2596af2\;\ images\ from\ the\ local\ cache\ by\ digest\,\ no\ pull\'\ \>\ .artifacts/hamcp371-s6/run-b-9.2.0-2.log\ 2\>\&1

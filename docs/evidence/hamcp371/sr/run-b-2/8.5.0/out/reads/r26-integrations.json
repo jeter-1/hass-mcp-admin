@@ -1,0 +1,99 @@
+{
+ "case": {
+  "arguments": {
+   "limit": 5
+  },
+  "id": "r26-integrations",
+  "tool": "ha_get_integration"
+ },
+ "exchange": {
+  "body_bytes": 4227,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":127,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\n  \\\"operation\\\": \\\"ha_get_integration\\\",\\n  \\\"summary\\\": \\\"Completed a reviewed pure-read operation through the upstream gateway.\\\",\\n  \\\"data\\\": {\\n    \\\"success\\\": true,\\n    \\\"total_count\\\": 10,\\n    \\\"offset\\\": 0,\\n    \\\"limit\\\": 5,\\n    \\\"count\\\": 5,\\n    \\\"has_more\\\": true,\\n    \\\"next_offset\\\": 5,\\n    \\\"entries\\\": [\\n      {\\n        \\\"entry_id\\\": \\\"01M7J4MPH665YMZRHAN6HNQPXW\\\",\\n        \\\"domain\\\": \\\"sun\\\",\\n        \\\"title\\\": \\\"Sun\\\",\\n        \\\"state\\\": \\\"loaded\\\",\\n        \\\"source\\\": \\\"import\\\",\\n        \\\"disabled_by\\\": null,\\n        \\\"supports_options\\\": false,\\n        \\\"supports_unload\\\": true,\\n        \\\"supports_reconfigure\\\": false,\\n        \\\"log_level\\\": \\\"WARNING\\\",\\n        \\\"pref_disable_new_entities\\\": false,\\n        \\\"pref_disable_polling\\\": false\\n      },\\n      {\\n        \\\"entry_id\\\": \\\"01M7J4MQPRGS25ZY1KZSYQ323R\\\",\\n        \\\"domain\\\": \\\"shopping_list\\\",\\n        \\\"title\\\": \\\"Shopping list\\\",\\n        \\\"state\\\": \\\"loaded\\\",\\n        \\\"source\\\": \\\"onboarding\\\",\\n        \\\"disabled_by\\\": null,\\n        \\\"supports_options\\\": false,\\n        \\\"supports_unload\\\": false,\\n        \\\"supports_reconfigure\\\": false,\\n        \\\"log_level\\\": \\\"WARNING\\\",\\n        \\\"pref_disable_new_entities\\\": false,\\n        \\\"pref_disable_polling\\\": false\\n      },\\n      {\\n        \\\"entry_id\\\": \\\"01M7J4MQTZMRG2A4FAWW0HWKFX\\\",\\n        \\\"domain\\\": \\\"radio_browser\\\",\\n        \\\"title\\\": \\\"Radio Browser\\\",\\n        \\\"state\\\": \\\"setup_error\\\",\\n        \\\"source\\\": \\\"onboarding\\\",\\n        \\\"disabled_by\\\": null,\\n        \\\"supports_options\\\": false,\\n        \\\"supports_unload\\\": true,\\n        \\\"supports_reconfigure\\\": false,\\n        \\\"log_level\\\": \\\"WARNING\\\",\\n        \\\"pref_disable_new_entities\\\": false,\\n        \\\"pref_disable_polling\\\": false\\n      },\\n      {\\n        \\\"entry_id\\\": \\\"01M7J4MQV4RYV04ZFMKCSBHYRX\\\",\\n        \\\"domain\\\": \\\"google_translate\\\",\\n        \\\"title\\\": \\\"Google Translate text-to-speech\\\",\\n        \\\"state\\\": \\\"loaded\\\",\\n        \\\"source\\\": \\\"onboarding\\\",\\n        \\\"disabled_by\\\": null,\\n        \\\"supports_options\\\": false,\\n        \\\"supports_unload\\\": true,\\n        \\\"supports_reconfigure\\\": false,\\n        \\\"log_level\\\": \\\"WARNING\\\",\\n        \\\"pref_disable_new_entities\\\": false,\\n        \\\"pref_disable_polling\\\": false\\n      },\\n      {\\n        \\\"entry_id\\\": \\\"01M7J4MQX5EDKKKGZ8335PTWRW\\\",\\n        \\\"domain\\\": \\\"marketplace\\\",\\n        \\\"title\\\": \\\"\\\",\\n        \\\"state\\\": \\\"setup_error\\\",\\n        \\\"source\\\": \\\"system\\\",\\n        \\\"disabled_by\\\": null,\\n        \\\"supports_options\\\": true,\\n        \\\"supports_unload\\\": true,\\n        \\\"supports_reconfigure\\\": true,\\n        \\\"log_level\\\": \\\"WARNING\\\",\\n        \\\"pref_disable_new_entities\\\": false,\\n        \\\"pref_disable_polling\\\": false\\n      }\\n    ],\\n    \\\"state_summary\\\": {\\n      \\\"loaded\\\": 7,\\n      \\\"setup_error\\\": 3\\n    },\\n    \\\"filters\\\": {},\\n    \\\"warnings\\\": [],\\n    \\\"completeness\\\": {\\n      \\\"status\\\": \\\"complete\\\",\\n      \\\"reasons\\\": []\\n    }\\n  },\\n  \\\"warnings\\\": [],\\n  \\\"metadata\\\": {\\n    \\\"provider\\\": \\\"upstream_read_gateway\\\",\\n    \\\"upstream_tool\\\": \\\"ha_get_integration\\\",\\n    \\\"upstream_server\\\": \\\"ha-mcp\\\",\\n    \\\"upstream_version\\\": \\\"8.5.0\\\",\\n    \\\"classification\\\": \\\"automatic_read\\\",\\n    \\\"schema_fingerprint\\\": \\\"5dd76ac034af33a238434633859a7f717eaf5b9d55c557d6b284881ec0804686\\\",\\n    \\\"untrusted_upstream_content\\\": true,\\n    \\\"fallback\\\": \\\"none\\\",\\n    \\\"fallback_occurred\\\": false,\\n    \\\"completeness\\\": \\\"complete\\\"\\n  },\\n  \\\"timing\\\": {\\n    \\\"total_ms\\\": 233.61,\\n    \\\"tool_ms\\\": 230.959,\\n    \\\"home_assistant_ms\\\": 0.0,\\n    \\\"home_assistant_cumulative_attempt_ms\\\": 0.0,\\n    \\\"home_assistant_wall_clock_span_ms\\\": 0.0,\\n    \\\"home_assistant_request_count\\\": 0,\\n    \\\"upstream_attempted\\\": true,\\n    \\\"upstream_ms\\\": 221.089,\\n    \\\"upstream_wall_clock_span_ms\\\": 221.089,\\n    \\\"upstream_request_count\\\": 1,\\n    \\\"provider_operations_concurrent\\\": false,\\n    \\\"retry_count\\\": 0,\\n    \\\"timeout_occurred\\\": false\\n  },\\n  \\\"request_id\\\": \\\"99344a16ddae453f936d2ffc2fd687af\\\",\\n  \\\"success\\\": true\\n}\"}],\"isError\":false}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 127,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\n  \"operation\": \"ha_get_integration\",\n  \"summary\": \"Completed a reviewed pure-read operation through the upstream gateway.\",\n  \"data\": {\n    \"success\": true,\n    \"total_count\": 10,\n    \"offset\": 0,\n    \"limit\": 5,\n    \"count\": 5,\n    \"has_more\": true,\n    \"next_offset\": 5,\n    \"entries\": [\n      {\n        \"entry_id\": \"01M7J4MPH665YMZRHAN6HNQPXW\",\n        \"domain\": \"sun\",\n        \"title\": \"Sun\",\n        \"state\": \"loaded\",\n        \"source\": \"import\",\n        \"disabled_by\": null,\n        \"supports_options\": false,\n        \"supports_unload\": true,\n        \"supports_reconfigure\": false,\n        \"log_level\": \"WARNING\",\n        \"pref_disable_new_entities\": false,\n        \"pref_disable_polling\": false\n      },\n      {\n        \"entry_id\": \"01M7J4MQPRGS25ZY1KZSYQ323R\",\n        \"domain\": \"shopping_list\",\n        \"title\": \"Shopping list\",\n        \"state\": \"loaded\",\n        \"source\": \"onboarding\",\n        \"disabled_by\": null,\n        \"supports_options\": false,\n        \"supports_unload\": false,\n        \"supports_reconfigure\": false,\n        \"log_level\": \"WARNING\",\n        \"pref_disable_new_entities\": false,\n        \"pref_disable_polling\": false\n      },\n      {\n        \"entry_id\": \"01M7J4MQTZMRG2A4FAWW0HWKFX\",\n        \"domain\": \"radio_browser\",\n        \"title\": \"Radio Browser\",\n        \"state\": \"setup_error\",\n        \"source\": \"onboarding\",\n        \"disabled_by\": null,\n        \"supports_options\": false,\n        \"supports_unload\": true,\n        \"supports_reconfigure\": false,\n        \"log_level\": \"WARNING\",\n        \"pref_disable_new_entities\": false,\n        \"pref_disable_polling\": false\n      },\n      {\n        \"entry_id\": \"01M7J4MQV4RYV04ZFMKCSBHYRX\",\n        \"domain\": \"google_translate\",\n        \"title\": \"Google Translate text-to-speech\",\n        \"state\": \"loaded\",\n        \"source\": \"onboarding\",\n        \"disabled_by\": null,\n        \"supports_options\": false,\n        \"supports_unload\": true,\n        \"supports_reconfigure\": false,\n        \"log_level\": \"WARNING\",\n        \"pref_disable_new_entities\": false,\n        \"pref_disable_polling\": false\n      },\n      {\n        \"entry_id\": \"01M7J4MQX5EDKKKGZ8335PTWRW\",\n        \"domain\": \"marketplace\",\n        \"title\": \"\",\n        \"state\": \"setup_error\",\n        \"source\": \"system\",\n        \"disabled_by\": null,\n        \"supports_options\": true,\n        \"supports_unload\": true,\n        \"supports_reconfigure\": true,\n        \"log_level\": \"WARNING\",\n        \"pref_disable_new_entities\": false,\n        \"pref_disable_polling\": false\n      }\n    ],\n    \"state_summary\": {\n      \"loaded\": 7,\n      \"setup_error\": 3\n    },\n    \"filters\": {},\n    \"warnings\": [],\n    \"completeness\": {\n      \"status\": \"complete\",\n      \"reasons\": []\n    }\n  },\n  \"warnings\": [],\n  \"metadata\": {\n    \"provider\": \"upstream_read_gateway\",\n    \"upstream_tool\": \"ha_get_integration\",\n    \"upstream_server\": \"ha-mcp\",\n    \"upstream_version\": \"8.5.0\",\n    \"classification\": \"automatic_read\",\n    \"schema_fingerprint\": \"5dd76ac034af33a238434633859a7f717eaf5b9d55c557d6b284881ec0804686\",\n    \"untrusted_upstream_content\": true,\n    \"fallback\": \"none\",\n    \"fallback_occurred\": false,\n    \"completeness\": \"complete\"\n  },\n  \"timing\": {\n    \"total_ms\": 233.61,\n    \"tool_ms\": 230.959,\n    \"home_assistant_ms\": 0.0,\n    \"home_assistant_cumulative_attempt_ms\": 0.0,\n    \"home_assistant_wall_clock_span_ms\": 0.0,\n    \"home_assistant_request_count\": 0,\n    \"upstream_attempted\": true,\n    \"upstream_ms\": 221.089,\n    \"upstream_wall_clock_span_ms\": 221.089,\n    \"upstream_request_count\": 1,\n    \"provider_operations_concurrent\": false,\n    \"retry_count\": 0,\n    \"timeout_occurred\": false\n  },\n  \"request_id\": \"99344a16ddae453f936d2ffc2fd687af\",\n  \"success\": true\n}",
+       "type": "text"
+      }
+     ],
+     "isError": false
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 127,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "limit": 5
+     },
+     "name": "ha_get_integration"
+    }
+   },
+   "method": "POST",
+   "path": "/synthetic-engineering-access-secret/mcp"
+  },
+  "response": {
+   "id": 127,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\n  \"operation\": \"ha_get_integration\",\n  \"summary\": \"Completed a reviewed pure-read operation through the upstream gateway.\",\n  \"data\": {\n    \"success\": true,\n    \"total_count\": 10,\n    \"offset\": 0,\n    \"limit\": 5,\n    \"count\": 5,\n    \"has_more\": true,\n    \"next_offset\": 5,\n    \"entries\": [\n      {\n        \"entry_id\": \"01M7J4MPH665YMZRHAN6HNQPXW\",\n        \"domain\": \"sun\",\n        \"title\": \"Sun\",\n        \"state\": \"loaded\",\n        \"source\": \"import\",\n        \"disabled_by\": null,\n        \"supports_options\": false,\n        \"supports_unload\": true,\n        \"supports_reconfigure\": false,\n        \"log_level\": \"WARNING\",\n        \"pref_disable_new_entities\": false,\n        \"pref_disable_polling\": false\n      },\n      {\n        \"entry_id\": \"01M7J4MQPRGS25ZY1KZSYQ323R\",\n        \"domain\": \"shopping_list\",\n        \"title\": \"Shopping list\",\n        \"state\": \"loaded\",\n        \"source\": \"onboarding\",\n        \"disabled_by\": null,\n        \"supports_options\": false,\n        \"supports_unload\": false,\n        \"supports_reconfigure\": false,\n        \"log_level\": \"WARNING\",\n        \"pref_disable_new_entities\": false,\n        \"pref_disable_polling\": false\n      },\n      {\n        \"entry_id\": \"01M7J4MQTZMRG2A4FAWW0HWKFX\",\n        \"domain\": \"radio_browser\",\n        \"title\": \"Radio Browser\",\n        \"state\": \"setup_error\",\n        \"source\": \"onboarding\",\n        \"disabled_by\": null,\n        \"supports_options\": false,\n        \"supports_unload\": true,\n        \"supports_reconfigure\": false,\n        \"log_level\": \"WARNING\",\n        \"pref_disable_new_entities\": false,\n        \"pref_disable_polling\": false\n      },\n      {\n        \"entry_id\": \"01M7J4MQV4RYV04ZFMKCSBHYRX\",\n        \"domain\": \"google_translate\",\n        \"title\": \"Google Translate text-to-speech\",\n        \"state\": \"loaded\",\n        \"source\": \"onboarding\",\n        \"disabled_by\": null,\n        \"supports_options\": false,\n        \"supports_unload\": true,\n        \"supports_reconfigure\": false,\n        \"log_level\": \"WARNING\",\n        \"pref_disable_new_entities\": false,\n        \"pref_disable_polling\": false\n      },\n      {\n        \"entry_id\": \"01M7J4MQX5EDKKKGZ8335PTWRW\",\n        \"domain\": \"marketplace\",\n        \"title\": \"\",\n        \"state\": \"setup_error\",\n        \"source\": \"system\",\n        \"disabled_by\": null,\n        \"supports_options\": true,\n        \"supports_unload\": true,\n        \"supports_reconfigure\": true,\n        \"log_level\": \"WARNING\",\n        \"pref_disable_new_entities\": false,\n        \"pref_disable_polling\": false\n      }\n    ],\n    \"state_summary\": {\n      \"loaded\": 7,\n      \"setup_error\": 3\n    },\n    \"filters\": {},\n    \"warnings\": [],\n    \"completeness\": {\n      \"status\": \"complete\",\n      \"reasons\": []\n    }\n  },\n  \"warnings\": [],\n  \"metadata\": {\n    \"provider\": \"upstream_read_gateway\",\n    \"upstream_tool\": \"ha_get_integration\",\n    \"upstream_server\": \"ha-mcp\",\n    \"upstream_version\": \"8.5.0\",\n    \"classification\": \"automatic_read\",\n    \"schema_fingerprint\": \"5dd76ac034af33a238434633859a7f717eaf5b9d55c557d6b284881ec0804686\",\n    \"untrusted_upstream_content\": true,\n    \"fallback\": \"none\",\n    \"fallback_occurred\": false,\n    \"completeness\": \"complete\"\n  },\n  \"timing\": {\n    \"total_ms\": 233.61,\n    \"tool_ms\": 230.959,\n    \"home_assistant_ms\": 0.0,\n    \"home_assistant_cumulative_attempt_ms\": 0.0,\n    \"home_assistant_wall_clock_span_ms\": 0.0,\n    \"home_assistant_request_count\": 0,\n    \"upstream_attempted\": true,\n    \"upstream_ms\": 221.089,\n    \"upstream_wall_clock_span_ms\": 221.089,\n    \"upstream_request_count\": 1,\n    \"provider_operations_concurrent\": false,\n    \"retry_count\": 0,\n    \"timeout_occurred\": false\n  },\n  \"request_id\": \"99344a16ddae453f936d2ffc2fd687af\",\n  \"success\": true\n}",
+      "type": "text"
+     }
+    ],
+    "isError": false
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Mon, 16 Nov 2026 12:17:44 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "x-request-id",
+    "99344a16ddae453f936d2ffc2fd687af"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null
+}

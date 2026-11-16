@@ -1,0 +1,23 @@
+amd64: index sha256:e0fd8903915be64f65744f7fa78d8d46432388159bc000ff0807079f494fe3ba
+amd64: image manifest sha256:928c55d6ba38d0219058be2e0ae4ae36375eb3db7aad0cb21c5b573848ed9244 (linux/amd64)
+amd64: labels {"io.hass.arch": "amd64", "io.hass.description": "AI assistant integration via Model Context Protocol", "io.hass.name": "Home Assistant MCP Server", "io.hass.type": "addon", "io.hass.version": "9.2.0"}
+amd64: cmd ['python3', '/start.py'] entrypoint None
+amd64: slsa builder https://github.com/homeassistant-ai/ha-mcp/actions/runs/43056483558/attempts/1
+amd64: slsa vcs:localdir:context .
+amd64: slsa vcs:localdir:dockerfile homeassistant-addon
+amd64: slsa vcs:revision 51e3aac788482a081807591cd5d58d07dc4e540b
+amd64: slsa vcs:source https://github.com/homeassistant-ai/ha-mcp
+amd64: provenance Dockerfile git blob 119a01c01755c3b681afeb415c4ebb0ebb7fbb09
+aarch64: index sha256:54459403f8bc0c77d108d8df5f3f64cc64f98eaf0d79dafdb7df5832fc9c326a
+aarch64: image manifest sha256:de36201ee267e111cb7f675ea978aef8861bd5ddc812f86976425c572e9010dc (linux/arm64)
+aarch64: labels {"io.hass.arch": "aarch64", "io.hass.description": "AI assistant integration via Model Context Protocol", "io.hass.name": "Home Assistant MCP Server", "io.hass.type": "addon", "io.hass.version": "9.2.0"}
+aarch64: cmd ['python3', '/start.py'] entrypoint None
+aarch64: slsa builder https://github.com/homeassistant-ai/ha-mcp/actions/runs/43056483558/attempts/1
+aarch64: slsa vcs:localdir:context .
+aarch64: slsa vcs:localdir:dockerfile homeassistant-addon
+aarch64: slsa vcs:revision 51e3aac788482a081807591cd5d58d07dc4e540b
+aarch64: slsa vcs:source https://github.com/homeassistant-ai/ha-mcp
+aarch64: provenance Dockerfile git blob 119a01c01755c3b681afeb415c4ebb0ebb7fbb09
+GATE FAIL amd64: org.opencontainers.image.revision is None, not 51e3aac788482a081807591cd5d58d07dc4e540b
+GATE FAIL aarch64: org.opencontainers.image.revision is None, not 51e3aac788482a081807591cd5d58d07dc4e540b
+Q7 revision gate FAIL

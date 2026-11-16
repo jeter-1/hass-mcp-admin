@@ -1,0 +1,257 @@
+{
+ "arguments_built_by": "adapter code, policy 9.1.2",
+ "calls_format_version": 1,
+ "exchange": {
+  "body_bytes": 1950,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":135,\"result\":{\"content\":[{\"text\":\"{\\\"success\\\":true,\\\"domains\\\":[\\\"input_boolean\\\"],\\\"services\\\":{\\\"input_boolean.reload\\\":{\\\"name\\\":\\\"Reload\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"input_boolean\\\",\\\"service\\\":\\\"reload\\\",\\\"fields\\\":{}},\\\"input_boolean.turn_on\\\":{\\\"name\\\":\\\"Turn On\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"input_boolean\\\",\\\"service\\\":\\\"turn_on\\\",\\\"fields\\\":{},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"input_boolean\\\"]}]}},\\\"input_boolean.turn_off\\\":{\\\"name\\\":\\\"Turn Off\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"input_boolean\\\",\\\"service\\\":\\\"turn_off\\\",\\\"fields\\\":{},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"input_boolean\\\"]}]}},\\\"input_boolean.toggle\\\":{\\\"name\\\":\\\"Toggle\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"input_boolean\\\",\\\"service\\\":\\\"toggle\\\",\\\"fields\\\":{},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"input_boolean\\\"]}]}}},\\\"total_count\\\":4,\\\"offset\\\":0,\\\"limit\\\":5,\\\"count\\\":4,\\\"has_more\\\":false,\\\"next_offset\\\":null,\\\"detail_level\\\":\\\"full\\\",\\\"filters_applied\\\":{\\\"domain\\\":\\\"input_boolean\\\",\\\"query\\\":null}}\",\"type\":\"text\"}],\"isError\":false,\"structuredContent\":{\"success\":true,\"domains\":[\"input_boolean\"],\"services\":{\"input_boolean.reload\":{\"name\":\"Reload\",\"description\":\"\",\"domain\":\"input_boolean\",\"service\":\"reload\",\"fields\":{}},\"input_boolean.turn_on\":{\"name\":\"Turn On\",\"description\":\"\",\"domain\":\"input_boolean\",\"service\":\"turn_on\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"input_boolean\"]}]}},\"input_boolean.turn_off\":{\"name\":\"Turn Off\",\"description\":\"\",\"domain\":\"input_boolean\",\"service\":\"turn_off\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"input_boolean\"]}]}},\"input_boolean.toggle\":{\"name\":\"Toggle\",\"description\":\"\",\"domain\":\"input_boolean\",\"service\":\"toggle\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"input_boolean\"]}]}}},\"total_count\":4,\"offset\":0,\"limit\":5,\"count\":4,\"has_more\":false,\"next_offset\":null,\"detail_level\":\"full\",\"filters_applied\":{\"domain\":\"input_boolean\",\"query\":null}}}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 135,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\"success\":true,\"domains\":[\"input_boolean\"],\"services\":{\"input_boolean.reload\":{\"name\":\"Reload\",\"description\":\"\",\"domain\":\"input_boolean\",\"service\":\"reload\",\"fields\":{}},\"input_boolean.turn_on\":{\"name\":\"Turn On\",\"description\":\"\",\"domain\":\"input_boolean\",\"service\":\"turn_on\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"input_boolean\"]}]}},\"input_boolean.turn_off\":{\"name\":\"Turn Off\",\"description\":\"\",\"domain\":\"input_boolean\",\"service\":\"turn_off\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"input_boolean\"]}]}},\"input_boolean.toggle\":{\"name\":\"Toggle\",\"description\":\"\",\"domain\":\"input_boolean\",\"service\":\"toggle\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"input_boolean\"]}]}}},\"total_count\":4,\"offset\":0,\"limit\":5,\"count\":4,\"has_more\":false,\"next_offset\":null,\"detail_level\":\"full\",\"filters_applied\":{\"domain\":\"input_boolean\",\"query\":null}}",
+       "type": "text"
+      }
+     ],
+     "isError": false,
+     "structuredContent": {
+      "count": 4,
+      "detail_level": "full",
+      "domains": [
+       "input_boolean"
+      ],
+      "filters_applied": {
+       "domain": "input_boolean",
+       "query": null
+      },
+      "has_more": false,
+      "limit": 5,
+      "next_offset": null,
+      "offset": 0,
+      "services": {
+       "input_boolean.reload": {
+        "description": "",
+        "domain": "input_boolean",
+        "fields": {},
+        "name": "Reload",
+        "service": "reload"
+       },
+       "input_boolean.toggle": {
+        "description": "",
+        "domain": "input_boolean",
+        "fields": {},
+        "name": "Toggle",
+        "service": "toggle",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "input_boolean"
+           ]
+          }
+         ]
+        }
+       },
+       "input_boolean.turn_off": {
+        "description": "",
+        "domain": "input_boolean",
+        "fields": {},
+        "name": "Turn Off",
+        "service": "turn_off",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "input_boolean"
+           ]
+          }
+         ]
+        }
+       },
+       "input_boolean.turn_on": {
+        "description": "",
+        "domain": "input_boolean",
+        "fields": {},
+        "name": "Turn On",
+        "service": "turn_on",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "input_boolean"
+           ]
+          }
+         ]
+        }
+       }
+      },
+      "success": true,
+      "total_count": 4
+     }
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 135,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "detail_level": "full",
+      "domain": "input_boolean",
+      "limit": 5
+     },
+     "name": "ha_list_services"
+    }
+   },
+   "method": "POST",
+   "path": "/mcp"
+  },
+  "response": {
+   "id": 135,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\"success\":true,\"domains\":[\"input_boolean\"],\"services\":{\"input_boolean.reload\":{\"name\":\"Reload\",\"description\":\"\",\"domain\":\"input_boolean\",\"service\":\"reload\",\"fields\":{}},\"input_boolean.turn_on\":{\"name\":\"Turn On\",\"description\":\"\",\"domain\":\"input_boolean\",\"service\":\"turn_on\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"input_boolean\"]}]}},\"input_boolean.turn_off\":{\"name\":\"Turn Off\",\"description\":\"\",\"domain\":\"input_boolean\",\"service\":\"turn_off\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"input_boolean\"]}]}},\"input_boolean.toggle\":{\"name\":\"Toggle\",\"description\":\"\",\"domain\":\"input_boolean\",\"service\":\"toggle\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"input_boolean\"]}]}}},\"total_count\":4,\"offset\":0,\"limit\":5,\"count\":4,\"has_more\":false,\"next_offset\":null,\"detail_level\":\"full\",\"filters_applied\":{\"domain\":\"input_boolean\",\"query\":null}}",
+      "type": "text"
+     }
+    ],
+    "isError": false,
+    "structuredContent": {
+     "count": 4,
+     "detail_level": "full",
+     "domains": [
+      "input_boolean"
+     ],
+     "filters_applied": {
+      "domain": "input_boolean",
+      "query": null
+     },
+     "has_more": false,
+     "limit": 5,
+     "next_offset": null,
+     "offset": 0,
+     "services": {
+      "input_boolean.reload": {
+       "description": "",
+       "domain": "input_boolean",
+       "fields": {},
+       "name": "Reload",
+       "service": "reload"
+      },
+      "input_boolean.toggle": {
+       "description": "",
+       "domain": "input_boolean",
+       "fields": {},
+       "name": "Toggle",
+       "service": "toggle",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "input_boolean"
+          ]
+         }
+        ]
+       }
+      },
+      "input_boolean.turn_off": {
+       "description": "",
+       "domain": "input_boolean",
+       "fields": {},
+       "name": "Turn Off",
+       "service": "turn_off",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "input_boolean"
+          ]
+         }
+        ]
+       }
+      },
+      "input_boolean.turn_on": {
+       "description": "",
+       "domain": "input_boolean",
+       "fields": {},
+       "name": "Turn On",
+       "service": "turn_on",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "input_boolean"
+          ]
+         }
+        ]
+       }
+      }
+     },
+     "success": true,
+     "total_count": 4
+    }
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Thu, 12 Nov 2026 06:22:13 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null,
+ "group": "variants",
+ "id": "v24-services-domain-full",
+ "idle": false,
+ "kind": "public",
+ "new_session": false,
+ "public_arguments": {
+  "detail_level": "full",
+  "domain": "input_boolean",
+  "limit": 5
+ },
+ "public_tool": "ha_list_services",
+ "upstream_tool": "ha_list_services",
+ "wire_arguments": {
+  "detail_level": "full",
+  "domain": "input_boolean",
+  "limit": 5
+ }
+}

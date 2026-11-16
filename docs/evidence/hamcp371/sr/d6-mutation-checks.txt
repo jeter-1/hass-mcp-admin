@@ -1,0 +1,26 @@
+HAMCP-371 D6 mutation checks of the 9.2.0 ha_search pair (2026-11-15, Central time)
+
+Ruling: architect rulings 2026-11-15 22:26 CST (mutation checks on the variant gate
+and the warning condition).
+Method: each mutant is a git clone --shared of commit 7338723e with one edit to
+hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_2.py; then
+python -m unittest test_hamcp371_search_pair (18 tests) with the worktree venv. The
+clones live outside this worktree, in the orchestrator worktree's ignored .artifacts/.
+Run as unit hamcp371-d6-mut-1 (MemoryMax=3G), 22:57:05-22:59:16 CST.
+
+m0-unmutated                  PASS: 18 OK
+m1-resolve-any-descriptor     resolve_search_variant returns unified for any descriptor
+                              KILLED: 10 failures, 12 errors (third descriptors resolve,
+                              legacy no longer admitted exact)
+m2-view-gate-skips-unified    the catalog view leaves unified unreplaced
+                              KILLED: 5 failures, 12 errors (unified not admitted exact)
+m3-attribution-input-only     variant attribution checks the input fingerprint only
+                              KILLED: test_variant_attribution_needs_both_fingerprints_from_one_variant
+m4-warning-any-variant        the budget warning fires under any variant
+                              KILLED: 3 failures (legacy calls carry the warning)
+m5-warning-without-budget     the warning fires without config_time_budget
+                              KILLED: 5 failures (unified calls without the budget warn)
+m6-trust-ignores-policy-sha   trust no longer binds the policy sha256
+                              KILLED: test_foreign_or_altered_authority_is_untrusted (policy_sha256)
+
+6 mutants, 6 killed, 0 survived.

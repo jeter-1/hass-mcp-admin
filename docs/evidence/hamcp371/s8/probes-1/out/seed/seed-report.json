@@ -1,0 +1,52 @@
+{
+ "all_steps_ok": true,
+ "core_version": "2026.11.0",
+ "phase": "access",
+ "seed_format_version": 1,
+ "steps": [
+  {
+   "readback": {
+    "steps_listed": 4
+   },
+   "status": "ok",
+   "step": "onboard"
+  },
+  {
+   "readback": {
+    "components": 124,
+    "time_zone": "America/Chicago",
+    "utc_offset": "-1 day, 18:00:00",
+    "version": "2026.11.0"
+   },
+   "status": "ok",
+   "step": "ready"
+  },
+  {
+   "readback": {
+    "is_admin": true,
+    "is_owner": true,
+    "kind": "long-lived access token of the disposable Core's owner user",
+    "lifespan_days": 1
+   },
+   "status": "ok",
+   "step": "administrator_token"
+  },
+  {
+   "readback": {
+    "group_ids": [
+     "system-users"
+    ],
+    "is_admin": false,
+    "is_owner": false,
+    "lifespan_days": 1
+   },
+   "status": "ok",
+   "step": "ordinary_user_token"
+  }
+ ],
+ "token_kind": "long-lived access tokens minted in this disposable Core; held in memory by the host, written to no file",
+ "tokens_issued": [
+  "administrator",
+  "ordinary_user"
+ ]
+}

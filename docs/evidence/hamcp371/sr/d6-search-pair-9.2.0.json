@@ -1,0 +1,434 @@
+{
+ "check": "HAMCP-371 D6 ha-mcp 9.2.0 ha_search descriptor pair",
+ "descriptor_pair": {
+  "descriptors": {
+   "legacy": "36f5a9032ebf23247df8188ff316ac11d2dffd8517d6875d0e4c2d336d97ab7c",
+   "unified": "215f7b9adf2ae9fb35a3c76d195c36e3aa8987f2db12ffe2c92700a410378abb"
+  },
+  "model": "ha-mcp-9.2.0-search-descriptor-pair-v1",
+  "protocol": "2025-03-26",
+  "public_schema_fingerprint": "c6bd01c71eea48b7fbe75c8d86f762b2336ab685e99b3e16acd91bed73e3d5bf",
+  "source": "51e3aac788482a081807591cd5d58d07dc4e540b",
+  "version": "9.2.0"
+ },
+ "descriptor_pair_sha256": "25fcab57a9cc60f0b6451b2ed316b3aaaf77da167ee69306da126f2801353838",
+ "entry_fingerprint": "b5c80944f69335fb0e9a5994a371946eae6d28b87e6d9855ad71d23d1cb23dfd",
+ "inputs": {
+  "contract_review": {
+   "path": "docs/evidence/upstream-read-compatibility/ha-mcp-9.2.0-contract-review.json",
+   "sha256": "377d810c484b5d34d82fca220e21a35c7b2ad984359cc26d4b680fdc327276b7"
+  },
+  "profile_b_receipt": {
+   "path": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/catalog/peer-9.2.0-1.json",
+   "sha256": "c707f5f78003f446e66fce096561eea18c4fbfe9b8f8df5a16ca883b4c45fee4"
+  },
+  "reviewed_capture": {
+   "path": "docs/evidence/upstream-read-compatibility/ha-mcp-9.2.0.json",
+   "sha256": "19c31e47e1986cb5803309aae064c01e515f546206e11aa75f0a91f861d03281"
+  }
+ },
+ "public_schema_fingerprint": "c6bd01c71eea48b7fbe75c8d86f762b2336ab685e99b3e16acd91bed73e3d5bf",
+ "receipt_observation": {
+  "catalog_fingerprint": "bc76065e46fcf12c4d8da0b9e88a6a4011a8edbcc2769d100ad2aad194cef559",
+  "note": "diagnostic only; the receipt also served ha_config_get_yaml, ha_list_files and ha_read_file, which are not reviewed",
+  "strict_full_contract_fingerprint": "5da805a3a2fbc946116647f3485fcdf28f4b5bbd6dddf593675069c2a43d6f9b",
+  "tool_count": 80
+ },
+ "reference_contract_fingerprint": "d79d7ad6578340c40ee1c8e94df7b5c1dc9d6f794f9ed880ca295130ecf63a4a",
+ "release": {
+  "allowed_protocol_versions": [
+   "2025-03-26"
+  ],
+  "policy_resource": "upstream_tool_policy_9_2_0.json",
+  "policy_sha256": "sha256:7f5ff2beb22ed667a3171906d3d0af48e8199552117d64b19eca9d812c97ed23",
+  "runtime_contract_fingerprint_model": "ha-mcp-operational-tool-descriptor-v2",
+  "source_commit": "51e3aac788482a081807591cd5d58d07dc4e540b",
+  "version": "9.2.0"
+ },
+ "ruling": "architect rulings 2026-11-15 22:26 CST (R-D6-1 to R-D6-3, pair requirements)",
+ "variants": {
+  "legacy": {
+   "annotation_fingerprint": "a1e187baedd2c7e40dd9b4e233387e14c67f041b21b263ec523a2ed8f3850e7b",
+   "catalog_fingerprint": "0f1a2c75a766a111a83053733c6803ca14d60357137f4ecc7bc7978061982147",
+   "description_fingerprint": "ace3d49c125ccf0fe51270e8fce5e96083d51718aa6ff2fe00985e2087f2159f",
+   "descriptor": {
+    "_meta": {
+     "fastmcp": {
+      "tags": [
+       "Search & Discovery"
+      ]
+     }
+    },
+    "annotations": {
+     "destructiveHint": false,
+     "idempotentHint": true,
+     "openWorldHint": false,
+     "readOnlyHint": true,
+     "title": "Search"
+    },
+    "description": "Search for entities (lights, sensors, switches, climate, etc.) by name, domain, or area \u2014 AND inside automation/script/scene/helper/dashboard configurations \u2014 in one call.\n\nfind entities configs lookup discover search lights sensors switches covers climate fans media_player binary_sensor device_tracker person weather automation script helper input_boolean input_number automations scripts scenes helpers dashboards",
+    "inputSchema": {
+     "additionalProperties": false,
+     "properties": {
+      "area_filter": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "default": null,
+       "description": "Narrow entity-registry results to an area (id, name, or alias), an exact floor (id, name, or alias), or an unambiguous close-spelling floor match; a floor match expands to all areas on that floor."
+      },
+      "config_time_budget": {
+       "anyOf": [
+        {
+         "maximum": 300,
+         "minimum": 0.001,
+         "type": "number"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "default": null,
+       "description": "Per-call override for the per-id config-fetch wall-clock budget (seconds). Replaces the per-type HAMCP_*_CONFIG_TIME_BUDGET defaults for the automation, script, AND scene branches. Use when a `partial: True` response names time-budget skipping. None = use the per-type env defaults."
+      },
+      "domain_filter": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "default": null,
+       "description": "Narrow entity-registry results to a single domain (e.g. 'light', 'sensor')."
+      },
+      "exact_match": {
+       "default": true,
+       "description": "Exact substring matching. Set False for fuzzy matching when the query may have typos.",
+       "type": "boolean"
+      },
+      "fields": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "items": {
+          "type": "string"
+         },
+         "type": "array"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "default": null,
+       "description": "Project the response to the named top-level keys (e.g. [\"entities\", \"automations\"]); None = full response. Diagnostic / pagination keys are always retained so projection cannot hide partial / error state. Distinct from `result_fields` (which projects each entity record's keys). Available keys: success, query, entities, automations, scripts, scenes, helpers, dashboards, search_types, search_type, entity_total_matches, config_total_matches, count, offset, limit, has_more, next_offset, entity_has_more, entity_next_offset, config_has_more, config_next_offset, by_domain, state_filter_note, area_names, domain_filter, area_filter, message, warnings, errors, partial, partial_reason."
+      },
+      "group_by_domain": {
+       "default": false,
+       "description": "Group entity-registry results by domain (entity-side only). Adds a `by_domain` map to the response.",
+       "type": "boolean"
+      },
+      "include_config": {
+       "default": false,
+       "description": "Include full configuration bodies in body-search results. Otherwise summaries only.",
+       "type": "boolean"
+      },
+      "include_hidden": {
+       "default": true,
+       "description": "Include hidden entities in registry results (with a score penalty so they sort below visible matches). Set False to exclude entirely.",
+       "type": "boolean"
+      },
+      "limit": {
+       "default": 10,
+       "description": "Maximum results per surface (entities, configs).",
+       "minimum": 1,
+       "type": "integer"
+      },
+      "offset": {
+       "default": 0,
+       "description": "Number of results to skip for pagination.",
+       "minimum": 0,
+       "type": "integer"
+      },
+      "per_domain_limit": {
+       "anyOf": [
+        {
+         "type": "integer"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "default": null,
+       "description": "When `group_by_domain=True`, cap entity-registry results per domain to this number. Ignored otherwise."
+      },
+      "query": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "default": null,
+       "description": "What to search for (entity name fragment, free-text config term, entity_id). Pass the exact entity_id, not a name fragment, when checking what a rename or delete would break: that form reports automations, scripts and scenes referencing it even when their configuration could not be read. Omit `query` to enumerate by `domain_filter`, `area_filter`, and/or `state_filter` alone (registry-listing mode); configuration-body search is skipped in that mode because there is no term to match against."
+      },
+      "result_fields": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "items": {
+          "type": "string"
+         },
+         "type": "array"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "default": null,
+       "description": "Project each entity-registry record to only the specified keys (e.g. [\"entity_id\", \"state\"]). None = full records. Base keys: entity_id, friendly_name, domain, state, score, match_type, name. name is the name Home Assistant shows, composed from the parent device, device and entity names (served by a current ha_mcp_tools component); friendly_name is the legacy state attribute and can differ from it. Opt-in enrichment/membership keys (computed on request): area, floor, labels, aliases, is_group, member_entity_ids. Membership is recognized only when HA explicitly exposes a valid group_entities or legacy entity_id collection; member IDs are sorted, direct (not recursively expanded), and omitted if visibility/include_hidden excludes a member. Requesting member_entity_ids also retains is_group. An unknown key is rejected."
+      },
+      "search_types": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "items": {
+          "type": "string"
+         },
+         "type": "array"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "default": null,
+       "description": "Configuration types to include in body search: 'automation', 'script', 'scene', 'helper', 'dashboard'. Explicitly providing this selects configuration-only search and skips entities. Omit it for entity discovery. Default = automation+script+scene+helper."
+      },
+      "state_filter": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "default": null,
+       "description": "Filter entity-registry results to a specific state (e.g. \"on\", \"off\", \"unavailable\"). Case-insensitive. Can be used standalone (no query/domain/area) to enumerate every entity in that state; entity_total_matches reflects the filtered count."
+      }
+     },
+     "type": "object"
+    },
+    "name": "ha_search",
+    "outputSchema": {
+     "additionalProperties": true,
+     "type": "object"
+    },
+    "title": "Search"
+   },
+   "descriptor_sha256": "36f5a9032ebf23247df8188ff316ac11d2dffd8517d6875d0e4c2d336d97ab7c",
+   "input_schema_fingerprint": "2258e36ce603a00a654ed3459dd78f2bfa46c21451b3b2cac90a23395eb754a2",
+   "output_contract_fingerprint": "7751ca245b89acd7d145f5c7b68cb80458b8d38bfe36a965a332f56bc2525a8c",
+   "runtime_contract_field_fingerprints": {
+    "/_meta/fastmcp/tags": "31f40081fc2073a9a0823ed0eb7d88eea76661129c1a45ca228fd861beb6bc2f",
+    "/_meta/ha_mcp/llm_api_exposed": "f35a0cf0ef896a2236d8419cac8a2d85bfb33d12859af555f9cf7825dc785109",
+    "/_meta/ha_mcp/pinned": "f35a0cf0ef896a2236d8419cac8a2d85bfb33d12859af555f9cf7825dc785109",
+    "/_meta/ha_mcp/policy/deployment": "f35a0cf0ef896a2236d8419cac8a2d85bfb33d12859af555f9cf7825dc785109",
+    "/_meta/ha_mcp/policy/enabled": "f35a0cf0ef896a2236d8419cac8a2d85bfb33d12859af555f9cf7825dc785109",
+    "/_meta/ha_mcp/policy/live": "f35a0cf0ef896a2236d8419cac8a2d85bfb33d12859af555f9cf7825dc785109",
+    "/_meta/ha_mcp/policy/rules": "f35a0cf0ef896a2236d8419cac8a2d85bfb33d12859af555f9cf7825dc785109",
+    "/annotations/title": "69ae8316d19e36c9c7808c8047c904828afba173a4936b7877d25ab6f4528bf6",
+    "/title": "69ae8316d19e36c9c7808c8047c904828afba173a4936b7877d25ab6f4528bf6"
+   },
+   "runtime_contract_fingerprint": "36f5a9032ebf23247df8188ff316ac11d2dffd8517d6875d0e4c2d336d97ab7c",
+   "strict_full_contract_fingerprint": "7a3ac5105326cb85bf30381c88d26215ed658ac19ba7e49b65ab27b6e58e3b34"
+  },
+  "unified": {
+   "annotation_fingerprint": "a1e187baedd2c7e40dd9b4e233387e14c67f041b21b263ec523a2ed8f3850e7b",
+   "catalog_fingerprint": "b8670993447f9112bd0e5e3a835e2cc9f7a6b7870efb7c803b87e622eb35a5eb",
+   "description_fingerprint": "462a9d45a5780cd6982054454162cecfeb309d66ef47bcb52f6b74fd617f2418",
+   "descriptor": {
+    "_meta": {
+     "fastmcp": {
+      "tags": [
+       "Search & Discovery"
+      ]
+     }
+    },
+    "annotations": {
+     "destructiveHint": false,
+     "idempotentHint": true,
+     "openWorldHint": false,
+     "readOnlyHint": true,
+     "title": "Search"
+    },
+    "description": "Search Home Assistant entities and configuration contents.\n\nUse dedicated get/list tools first when the resource type is known: ha_config_get_scene lists or searches scenes, ha_config_get_dashboard lists, reads or searches dashboards (query= searches across their cards), and ha_config_get_automation, ha_config_get_script, and ha_config_list_helpers handle their own types.\n\nUse ha_search for broader discovery and deep searches across entities, automations, scripts, scenes, and helpers. To search full stored scene attribute values, use ha_config_get_scene(query=..., search_in_config=True).\n\nResults are paginated; partial results are incomplete, not proof that no matches exist. Inspect warnings and partial_reason. Read full configurations with the corresponding get tool and current entity state with ha_get_state. For controls with exclusions, request is_group and member_entity_ids in result_fields and avoid aggregates whose membership cannot be verified.",
+    "inputSchema": {
+     "additionalProperties": false,
+     "properties": {
+      "area_filter": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "default": null,
+       "description": "Narrow entity-registry results to an area (id, name, or alias), an exact floor (id, name, or alias), or an unambiguous close-spelling floor match; a floor match expands to all areas on that floor."
+      },
+      "domain_filter": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "default": null,
+       "description": "Narrow entity-registry results to a single domain (e.g. 'light', 'sensor')."
+      },
+      "exact_match": {
+       "default": true,
+       "description": "Exact substring matching. Set False for fuzzy matching when the query may have typos.",
+       "type": "boolean"
+      },
+      "fields": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "items": {
+          "type": "string"
+         },
+         "type": "array"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "default": null,
+       "description": "Project the response to the named top-level keys (e.g. [\"entities\", \"automations\"]); None = full response. Diagnostic / pagination keys are always retained so projection cannot hide partial / error state. Distinct from `result_fields` (which projects each entity record's keys). Available keys: success, query, entities, automations, scripts, scenes, helpers, dashboards, search_types, search_type, entity_total_matches, config_total_matches, count, offset, limit, has_more, next_offset, entity_has_more, entity_next_offset, config_has_more, config_next_offset, by_domain, state_filter_note, area_names, domain_filter, area_filter, message, warnings, errors, partial, partial_reason."
+      },
+      "group_by_domain": {
+       "default": false,
+       "description": "Group entity-registry results by domain (entity-side only). Adds a `by_domain` map to the response.",
+       "type": "boolean"
+      },
+      "include_hidden": {
+       "default": true,
+       "description": "Include hidden entities in registry results (with a score penalty so they sort below visible matches). Set False to exclude entirely.",
+       "type": "boolean"
+      },
+      "limit": {
+       "default": 10,
+       "description": "Maximum results per surface (entities, configs).",
+       "minimum": 1,
+       "type": "integer"
+      },
+      "offset": {
+       "default": 0,
+       "description": "Number of results to skip for pagination.",
+       "minimum": 0,
+       "type": "integer"
+      },
+      "per_domain_limit": {
+       "anyOf": [
+        {
+         "type": "integer"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "default": null,
+       "description": "When `group_by_domain=True`, cap entity-registry results per domain to this number. Ignored otherwise."
+      },
+      "query": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "default": null,
+       "description": "Entity name fragment, free-text configuration term, or exact entity_id. Use an exact entity_id for reference checks before a rename or deletion. Omit to enumerate entities by domain_filter, area_filter, and/or state_filter."
+      },
+      "result_fields": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "items": {
+          "type": "string"
+         },
+         "type": "array"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "default": null,
+       "description": "Project each entity-registry record to only the specified keys (e.g. [\"entity_id\", \"state\"]). None = full records. Base keys: entity_id, friendly_name, domain, state, score, match_type, name. name is the name Home Assistant shows, composed from the parent device, device and entity names (served by a current ha_mcp_tools component); friendly_name is the legacy state attribute and can differ from it. Opt-in enrichment/membership keys (computed on request): area, floor, labels, aliases, is_group, member_entity_ids. Membership is recognized only when HA explicitly exposes a valid group_entities or legacy entity_id collection; member IDs are sorted, direct (not recursively expanded), and omitted if visibility/include_hidden excludes a member. Requesting member_entity_ids also retains is_group. An unknown key is rejected."
+      },
+      "state_filter": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "default": null,
+       "description": "Filter entity-registry results to a specific state (e.g. \"on\", \"off\", \"unavailable\"). Case-insensitive. Can be used standalone (no query/domain/area) to enumerate every entity in that state; entity_total_matches reflects the filtered count."
+      }
+     },
+     "type": "object"
+    },
+    "name": "ha_search",
+    "outputSchema": {
+     "additionalProperties": true,
+     "type": "object"
+    },
+    "title": "Search"
+   },
+   "descriptor_sha256": "215f7b9adf2ae9fb35a3c76d195c36e3aa8987f2db12ffe2c92700a410378abb",
+   "input_schema_fingerprint": "c1ca76bd2f762cceb1697bec9e0cee25e0d3806cc2815e62dd06f5132a19a83b",
+   "output_contract_fingerprint": "7751ca245b89acd7d145f5c7b68cb80458b8d38bfe36a965a332f56bc2525a8c",
+   "runtime_contract_field_fingerprints": {
+    "/_meta/fastmcp/tags": "31f40081fc2073a9a0823ed0eb7d88eea76661129c1a45ca228fd861beb6bc2f",
+    "/_meta/ha_mcp/llm_api_exposed": "f35a0cf0ef896a2236d8419cac8a2d85bfb33d12859af555f9cf7825dc785109",
+    "/_meta/ha_mcp/pinned": "f35a0cf0ef896a2236d8419cac8a2d85bfb33d12859af555f9cf7825dc785109",
+    "/_meta/ha_mcp/policy/deployment": "f35a0cf0ef896a2236d8419cac8a2d85bfb33d12859af555f9cf7825dc785109",
+    "/_meta/ha_mcp/policy/enabled": "f35a0cf0ef896a2236d8419cac8a2d85bfb33d12859af555f9cf7825dc785109",
+    "/_meta/ha_mcp/policy/live": "f35a0cf0ef896a2236d8419cac8a2d85bfb33d12859af555f9cf7825dc785109",
+    "/_meta/ha_mcp/policy/rules": "f35a0cf0ef896a2236d8419cac8a2d85bfb33d12859af555f9cf7825dc785109",
+    "/annotations/title": "69ae8316d19e36c9c7808c8047c904828afba173a4936b7877d25ab6f4528bf6",
+    "/title": "69ae8316d19e36c9c7808c8047c904828afba173a4936b7877d25ab6f4528bf6"
+   },
+   "runtime_contract_fingerprint": "215f7b9adf2ae9fb35a3c76d195c36e3aa8987f2db12ffe2c92700a410378abb",
+   "strict_full_contract_fingerprint": "2e96801755a2ddef892558788f7a4be82cf7831556448f41bac7913e1a9c26fa"
+  }
+ }
+}

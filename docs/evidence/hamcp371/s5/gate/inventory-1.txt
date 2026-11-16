@@ -1,0 +1,10 @@
+== admission for hamcp371-s5-inventory-1 (lane) in /home/josh/repos/hass-mcp-admin/.claude/worktrees/hamcp-371-ha-mcp-9-2-0
+time=2026-11-11 23:34:32 CST
+units:
+  evidence-hamcp377-478a3d95.service
+lanes(containers):
+
+stray:
+heavy_total=1 evidence=1 mem_avail_gb=10.6 load1=5.51 root_free_gb=49.8
+Running as unit: hamcp371-s5-inventory-1.service; invocation ID: 11f91ffafe364ed6b8fe4993188e32fc
+launched rc=0 cmd=/bin/bash -c python3\ -I\ -B\ scripts/core_read_replay_capture_local.py\ inventory\ --run-dir\ /home/josh/repos/hass-mcp-admin/.claude/worktrees/hamcp-371-ha-mcp-9-2-0/.artifacts/hamcp371-s5/inventory-1\ --launch-log\ /home/josh/repos/hass-mcp-admin/.claude/worktrees/hamcp-371-ha-mcp-9-2-0/.artifacts/hamcp371-s5/launches.jsonl\ \>\ .artifacts/hamcp371-s5/inventory-1.log\ 2\>\&1

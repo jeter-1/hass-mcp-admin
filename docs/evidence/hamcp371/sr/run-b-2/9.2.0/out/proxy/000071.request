@@ -1,0 +1,1 @@
+{"method":"tools/call","params":{"name":"ha_get_history","arguments":{"entity_ids":"input_boolean.hamcp371_helper","start_time":"2026-11-16T04:16:48-06:00","end_time":"2026-11-16T07:16:48-06:00","limit":5,"summary":false,"include_schema":false,"core_options":null}},"jsonrpc":"2.0","id":2}

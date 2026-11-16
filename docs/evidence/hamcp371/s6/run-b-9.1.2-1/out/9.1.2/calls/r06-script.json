@@ -1,0 +1,139 @@
+{
+ "arguments_built_by": "adapter code, policy 9.1.2",
+ "calls_format_version": 1,
+ "exchange": {
+  "body_bytes": 672,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":106,\"result\":{\"content\":[{\"text\":\"{\\\"success\\\":true,\\\"action\\\":\\\"get\\\",\\\"script_id\\\":\\\"hamcp371_script\\\",\\\"config\\\":{\\\"alias\\\":\\\"HAMCP371 script\\\",\\\"sequence\\\":[{\\\"action\\\":\\\"input_boolean.toggle\\\",\\\"target\\\":{\\\"entity_id\\\":\\\"input_boolean.hamcp371_helper\\\"}}],\\\"mode\\\":\\\"single\\\"},\\\"config_hash\\\":\\\"a5424a0d8dd40624\\\"}\",\"type\":\"text\"}],\"isError\":false,\"structuredContent\":{\"success\":true,\"action\":\"get\",\"script_id\":\"hamcp371_script\",\"config\":{\"alias\":\"HAMCP371 script\",\"sequence\":[{\"action\":\"input_boolean.toggle\",\"target\":{\"entity_id\":\"input_boolean.hamcp371_helper\"}}],\"mode\":\"single\"},\"config_hash\":\"a5424a0d8dd40624\"}}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 106,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\"success\":true,\"action\":\"get\",\"script_id\":\"hamcp371_script\",\"config\":{\"alias\":\"HAMCP371 script\",\"sequence\":[{\"action\":\"input_boolean.toggle\",\"target\":{\"entity_id\":\"input_boolean.hamcp371_helper\"}}],\"mode\":\"single\"},\"config_hash\":\"a5424a0d8dd40624\"}",
+       "type": "text"
+      }
+     ],
+     "isError": false,
+     "structuredContent": {
+      "action": "get",
+      "config": {
+       "alias": "HAMCP371 script",
+       "mode": "single",
+       "sequence": [
+        {
+         "action": "input_boolean.toggle",
+         "target": {
+          "entity_id": "input_boolean.hamcp371_helper"
+         }
+        }
+       ]
+      },
+      "config_hash": "a5424a0d8dd40624",
+      "script_id": "hamcp371_script",
+      "success": true
+     }
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 106,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "script_id": "hamcp371_script"
+     },
+     "name": "ha_config_get_script"
+    }
+   },
+   "method": "POST",
+   "path": "/mcp"
+  },
+  "response": {
+   "id": 106,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\"success\":true,\"action\":\"get\",\"script_id\":\"hamcp371_script\",\"config\":{\"alias\":\"HAMCP371 script\",\"sequence\":[{\"action\":\"input_boolean.toggle\",\"target\":{\"entity_id\":\"input_boolean.hamcp371_helper\"}}],\"mode\":\"single\"},\"config_hash\":\"a5424a0d8dd40624\"}",
+      "type": "text"
+     }
+    ],
+    "isError": false,
+    "structuredContent": {
+     "action": "get",
+     "config": {
+      "alias": "HAMCP371 script",
+      "mode": "single",
+      "sequence": [
+       {
+        "action": "input_boolean.toggle",
+        "target": {
+         "entity_id": "input_boolean.hamcp371_helper"
+        }
+       }
+      ]
+     },
+     "config_hash": "a5424a0d8dd40624",
+     "script_id": "hamcp371_script",
+     "success": true
+    }
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Sun, 15 Nov 2026 05:07:37 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null,
+ "group": "reads",
+ "id": "r06-script",
+ "idle": false,
+ "kind": "public",
+ "new_session": false,
+ "public_arguments": {
+  "script_id": "hamcp371_script"
+ },
+ "public_tool": "ha_config_get_script",
+ "upstream_tool": "ha_config_get_script",
+ "wire_arguments": {
+  "script_id": "hamcp371_script"
+ }
+}

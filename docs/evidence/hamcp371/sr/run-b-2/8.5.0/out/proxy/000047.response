@@ -1,0 +1,3 @@
+event: message
+data: {"jsonrpc":"2.0","id":2,"result":{"content":[{"text":"{\"success\":true,\"template\":\"{{ states('input_boolean.hamcp371_helper') }}\",\"result\":\"on\",\"request_id\":461678,\"evaluation_time\":3}","type":"text"}],"isError":false,"structuredContent":{"success":true,"template":"{{ states('input_boolean.hamcp371_helper') }}","result":"on","request_id":461678,"evaluation_time":3}}}
+

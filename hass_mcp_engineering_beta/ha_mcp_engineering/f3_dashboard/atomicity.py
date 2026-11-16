@@ -15,6 +15,7 @@ from .models import AtomicityDecision, AtomicityStatus
 HOME_ASSISTANT_RELEASE = "2026.8.0"
 HOME_ASSISTANT_SOURCE_COMMIT = "4a9dce13f61d03960ad5d2710e2af9fd2a78af54"
 UPSTREAM_SOURCE_COMMITS = {
+    "9.2.0": "51e3aac788482a081807591cd5d58d07dc4e540b",
     "9.1.2": "bab615dfc90cc510f5e19a9118707d0fae03a37c",
     "9.1.0": "d2e3f4b0647d815fb32d530fed15a6a99b1d4b33",
     "8.6.0": "fc54437a804858732e4bc927add98e202d879a09",
@@ -67,10 +68,11 @@ def assess_atomicity(upstream_version: str) -> AtomicityDecision:
             home_assistant_version="2026.9.4",
             home_assistant_source_commit="9212531f40a0b7b23229a90d688dd79d9dfccff4",
         )
-    if upstream_version in {"9.1.0", "9.1.2"}:
+    if upstream_version in {"9.1.0", "9.1.2", "9.2.0"}:
         # HAMCP-319 section 6.3: same native-or-legacy save path at d2e3f4b0
         # (tools_config_dashboards.py:3339-3400, :3458); Core 2026.11.0.
         # HAMCP-351: tools_config_dashboards.py is unchanged at bab615df.
+        # HAMCP-371 SB: and unchanged at 51e3aac7 (S8 source file list).
         source_evidence.update(
             upstream_save="_prepare_and_save_dashboard_config: native component or legacy save",
             home_assistant_version="2026.11.0",

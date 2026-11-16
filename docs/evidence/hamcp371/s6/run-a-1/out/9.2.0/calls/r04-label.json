@@ -1,0 +1,129 @@
+{
+ "arguments_built_by": "adapter code, policy 9.1.2",
+ "calls_format_version": 1,
+ "exchange": {
+  "body_bytes": 620,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":104,\"result\":{\"content\":[{\"text\":\"{\\\"success\\\":true,\\\"count\\\":1,\\\"labels\\\":[{\\\"color\\\":null,\\\"created_at\\\":1794464520.139396,\\\"description\\\":null,\\\"icon\\\":null,\\\"label_id\\\":\\\"hamcp371_label\\\",\\\"name\\\":\\\"HAMCP371 label\\\",\\\"modified_at\\\":1794464520.139399}],\\\"message\\\":\\\"Found 1 label(s)\\\"}\",\"type\":\"text\"}],\"isError\":false,\"structuredContent\":{\"success\":true,\"count\":1,\"labels\":[{\"color\":null,\"created_at\":1794464520.139396,\"description\":null,\"icon\":null,\"label_id\":\"hamcp371_label\",\"name\":\"HAMCP371 label\",\"modified_at\":1794464520.139399}],\"message\":\"Found 1 label(s)\"}}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 104,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\"success\":true,\"count\":1,\"labels\":[{\"color\":null,\"created_at\":1794464520.139396,\"description\":null,\"icon\":null,\"label_id\":\"hamcp371_label\",\"name\":\"HAMCP371 label\",\"modified_at\":1794464520.139399}],\"message\":\"Found 1 label(s)\"}",
+       "type": "text"
+      }
+     ],
+     "isError": false,
+     "structuredContent": {
+      "count": 1,
+      "labels": [
+       {
+        "color": null,
+        "created_at": 1794464520.139396,
+        "description": null,
+        "icon": null,
+        "label_id": "hamcp371_label",
+        "modified_at": 1794464520.139399,
+        "name": "HAMCP371 label"
+       }
+      ],
+      "message": "Found 1 label(s)",
+      "success": true
+     }
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 104,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {},
+     "name": "ha_config_get_label"
+    }
+   },
+   "method": "POST",
+   "path": "/mcp"
+  },
+  "response": {
+   "id": 104,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\"success\":true,\"count\":1,\"labels\":[{\"color\":null,\"created_at\":1794464520.139396,\"description\":null,\"icon\":null,\"label_id\":\"hamcp371_label\",\"name\":\"HAMCP371 label\",\"modified_at\":1794464520.139399}],\"message\":\"Found 1 label(s)\"}",
+      "type": "text"
+     }
+    ],
+    "isError": false,
+    "structuredContent": {
+     "count": 1,
+     "labels": [
+      {
+       "color": null,
+       "created_at": 1794464520.139396,
+       "description": null,
+       "icon": null,
+       "label_id": "hamcp371_label",
+       "modified_at": 1794464520.139399,
+       "name": "HAMCP371 label"
+      }
+     ],
+     "message": "Found 1 label(s)",
+     "success": true
+    }
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Thu, 12 Nov 2026 06:23:55 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null,
+ "group": "reads",
+ "id": "r04-label",
+ "idle": false,
+ "kind": "public",
+ "new_session": false,
+ "public_arguments": {},
+ "public_tool": "ha_config_get_label",
+ "upstream_tool": "ha_config_get_label",
+ "wire_arguments": {}
+}

@@ -81,6 +81,7 @@ from ha_mcp_engineering.providers.supervisor_self import (  # noqa: E402
 from ha_mcp_engineering.providers import (  # noqa: E402
     upstream_reads_9_1,
     upstream_reads_9_1_entities,
+    upstream_reads_9_2,
     upstream_yaml_reader,
 )
 from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
@@ -458,7 +459,11 @@ def retired_exposed_names(policy: Any, retired_upstream: frozenset[str]) -> set[
     }
 # Releases whose exact evidence carries the app-tool transition (no
 # ha_get_addon) and held operational backup/lifecycle providers.
-APP_TOOL_TRANSITION_VERSIONS = frozenset({"8.4.1", "8.4.3", "8.5.0", "8.6.0", "9.1.0", "9.1.2"})
+# HAMCP-371: the reviewed capture ha-mcp-9.2.0.json lists ha_get_app and
+# ha_manage_app and no ha_get_addon; backup and lifecycle stay held on 9.2.0.
+APP_TOOL_TRANSITION_VERSIONS = frozenset(
+    {"8.4.1", "8.4.3", "8.5.0", "8.6.0", "9.1.0", "9.1.2", "9.2.0"}
+)
 ACCEPTANCE_TIMEOUT_SECONDS = 120
 MAX_DIAGNOSTIC_ITEMS = 32
 MAX_FAILURE_MESSAGE_CHARS = 512
@@ -560,6 +565,17 @@ EXPECTED_STOCK_COUNTS_BY_VERSION = {
     },
     # HAMCP-351: the reviewed 9.1.2 policy keeps every 9.1.0 disposition.
     "9.1.2": {
+        "automatic_read": 27,
+        "held_for_canary": 1,
+        "mixed_or_requires_wrapper": 10,
+        "persistent_write": 32,
+        "physical_or_high_risk_action": 4,
+        "prohibited": 1,
+        "unsupported": 2,
+    },
+    # HAMCP-371: classification_counts of the reviewed 9.2.0 registry policy
+    # (upstream_tool_policy_9_2_0.json, loaded through the release registry).
+    "9.2.0": {
         "automatic_read": 27,
         "held_for_canary": 1,
         "mixed_or_requires_wrapper": 10,
@@ -829,6 +845,27 @@ DELEGATED_READ_CALL_OVERRIDES_BY_VERSION: dict[str, dict[str, dict[str, Any]]] =
             "file": "SKILL.md",
         },
     },
+    # HAMCP-371: the 9.2.0 adapter serves only the file tier
+    # (upstream_reads_9_2.read_arguments, row 18).
+    "9.2.0": {
+        "ha_get_skill_guide": {
+            "skill": "home-assistant-best-practices",
+            "file": "SKILL.md",
+        },
+    },
+}
+# HAMCP-371 S9 ruling 1: 9.2.0 reads offset-free history times in Home
+# Assistant local time, so Engineering refuses them before dispatch; a time
+# with an explicit offset is still forwarded.
+HISTORY_EXPLICIT_OFFSET_ARGUMENTS = {
+    "entity_ids": "sun.sun",
+    "start_time": "2026-11-01T00:00:00+00:00",
+    "limit": 5,
+}
+HISTORY_OFFSET_FREE_ARGUMENTS = {
+    "entity_ids": "sun.sun",
+    "start_time": "2026-11-01T00:00:00",
+    "limit": 5,
 }
 UPSTREAM_ADDON_INVENTORY_ARGUMENTS = {
     "source": "installed",
@@ -922,6 +959,8 @@ EXPECTED_ERROR_SHAPE_FINGERPRINTS = {
         "9.1.0": "fc0f1e8bf02be61d2056f1c6f11fb7b861a74ecd98978a5a38076617ac5bf939",
         # HAMCP-351: reviewed capture ha-mcp-9.1.2.json error_shapes.
         "9.1.2": "fc0f1e8bf02be61d2056f1c6f11fb7b861a74ecd98978a5a38076617ac5bf939",
+        # HAMCP-371: reviewed capture ha-mcp-9.2.0.json error_shapes.
+        "9.2.0": "fc0f1e8bf02be61d2056f1c6f11fb7b861a74ecd98978a5a38076617ac5bf939",
         "8.6.0": "fc0f1e8bf02be61d2056f1c6f11fb7b861a74ecd98978a5a38076617ac5bf939",
         "8.5.0": "fc0f1e8bf02be61d2056f1c6f11fb7b861a74ecd98978a5a38076617ac5bf939",
         "legacy": (
@@ -997,16 +1036,21 @@ def upstream_wire_arguments(
 ) -> dict[str, Any]:
     """Direct-upstream arguments for one exact release.
 
-    Engineering keeps the shipped 8.5 public schema for 9.1.0 and 9.1.2 and
-    rebuilds the exact 9.1 wire arguments through the compiled adapter (HAMCP-319
-    section 7; HAMCP-351). A direct upstream probe of a 9.1 release sends those same wire arguments; every
-    other release takes the public arguments unchanged.
+    Engineering keeps the shipped 8.5 public schema for 9.1.0, 9.1.2 and 9.2.0
+    and rebuilds the exact wire arguments through the compiled adapter
+    (HAMCP-319 section 7; HAMCP-351; HAMCP-371). A direct upstream probe of
+    those releases sends those same wire arguments; every other release takes
+    the public arguments unchanged.
     """
 
-    if version not in upstream_reads_9_1.RELEASES:
+    if version in upstream_reads_9_2.RELEASES:
+        adapter = upstream_reads_9_2
+    elif version in upstream_reads_9_1.RELEASES:
+        adapter = upstream_reads_9_1
+    else:
         return dict(arguments)
     release = load_reviewed_upstream_release_registry().by_version[version]
-    return upstream_reads_9_1.read_arguments(release.policy.by_name[tool], arguments)
+    return adapter.read_arguments(release.policy.by_name[tool], arguments)
 
 
 def verify_850_gateway_fixture_capture(captured: dict, reviewed: dict) -> None:
@@ -1894,6 +1938,7 @@ async def inspect_engineering(
                     )
                     visible_scope_only = (
                         expected_upstream_version in upstream_reads_9_1.RELEASES
+                        or expected_upstream_version in upstream_reads_9_2.RELEASES
                     )
                     if visible_scope_only:
                         # HAMCP-319 design F3: 9.1.0 hides filtered entities
@@ -2251,6 +2296,7 @@ async def inspect_engineering(
                         if item.get("completeness") == "partial"
                     )
                     if expected_upstream_version in upstream_reads_9_1.RELEASES
+                    or expected_upstream_version in upstream_reads_9_2.RELEASES
                     else int(partial_search_enabled)
                 ),
                 "partial delegated-read accounting mismatch",
@@ -2412,6 +2458,49 @@ async def inspect_engineering(
                 is stock_wire,
                 "exact image was not recognized as the stock reviewed fixture",
             )
+            if (
+                expected_upstream_version in upstream_reads_9_2.RELEASES
+                and "ha_get_history" in automatic
+            ):
+                # HAMCP-371 S13: run after every accounting check above, so
+                # those counts are unchanged; these two calls are checked here.
+                offset_history = decode_tool_result(
+                    await session.call_tool(
+                        "ha_get_history", HISTORY_EXPLICIT_OFFSET_ARGUMENTS
+                    ),
+                    context="delegated_read:ha_get_history_explicit_offset",
+                )
+                offset_metadata = offset_history.get("metadata") or {}
+                require(
+                    offset_history.get("success") is not False
+                    and offset_metadata.get("provider") == "upstream_read_gateway"
+                    and offset_metadata.get("upstream_version")
+                    == expected_upstream_version,
+                    "explicit-offset ha_get_history was not served",
+                )
+                stats_before_offset_free = fixture_stats(fixture_stats_url)
+                offset_free = decode_tool_result(
+                    await session.call_tool(
+                        "ha_get_history", HISTORY_OFFSET_FREE_ARGUMENTS
+                    ),
+                    context="error_contract:history_time_offset_required",
+                )
+                require(
+                    offset_free.get("success") is False
+                    and offset_free.get("error_code") == "invalid_request"
+                    and (offset_free.get("details") or {}).get("failure_category")
+                    == "history_time_offset_required",
+                    "offset-free ha_get_history was not refused",
+                )
+                require(
+                    (offset_free.get("metadata") or {}).get(
+                        "upstream_dispatch_occurred"
+                    )
+                    is not True
+                    and fixture_stats(fixture_stats_url)
+                    == stats_before_offset_free,
+                    "offset-free ha_get_history reached upstream",
+                )
 
     stats = fixture_stats(fixture_stats_url)
     require(not stats["http_mutations"], "an HTTP mutation reached the HA fixture")

@@ -1,0 +1,99 @@
+{
+ "case": {
+  "arguments": {
+   "entity_id": "input_boolean.hamcp371_helper"
+  },
+  "id": "r14-entity",
+  "tool": "ha_get_entity"
+ },
+ "exchange": {
+  "body_bytes": 2357,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":115,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\n  \\\"operation\\\": \\\"ha_get_entity\\\",\\n  \\\"summary\\\": \\\"Completed a reviewed pure-read operation through the upstream gateway.\\\",\\n  \\\"data\\\": {\\n    \\\"success\\\": true,\\n    \\\"entity_id\\\": \\\"input_boolean.hamcp371_helper\\\",\\n    \\\"entity_entry\\\": {\\n      \\\"entity_id\\\": \\\"input_boolean.hamcp371_helper\\\",\\n      \\\"name\\\": null,\\n      \\\"original_name\\\": \\\"HAMCP371 helper\\\",\\n      \\\"icon\\\": null,\\n      \\\"area_id\\\": \\\"hamcp371_area\\\",\\n      \\\"disabled_by\\\": null,\\n      \\\"hidden_by\\\": null,\\n      \\\"enabled\\\": true,\\n      \\\"hidden\\\": false,\\n      \\\"aliases\\\": [\\n        null\\n      ],\\n      \\\"labels\\\": [\\n        \\\"hamcp371_label\\\"\\n      ],\\n      \\\"categories\\\": {},\\n      \\\"device_class\\\": null,\\n      \\\"original_device_class\\\": null,\\n      \\\"options\\\": {\\n        \\\"conversation\\\": {\\n          \\\"should_expose\\\": true\\n        }\\n      },\\n      \\\"platform\\\": \\\"input_boolean\\\",\\n      \\\"device_id\\\": null,\\n      \\\"config_entry_id\\\": null,\\n      \\\"unique_id\\\": \\\"hamcp371_helper\\\",\\n      \\\"area\\\": \\\"HAMCP371 area\\\",\\n      \\\"floor\\\": \\\"HAMCP371 floor\\\",\\n      \\\"label_names\\\": [\\n        \\\"HAMCP371 label\\\"\\n      ]\\n    }\\n  },\\n  \\\"warnings\\\": [],\\n  \\\"metadata\\\": {\\n    \\\"provider\\\": \\\"upstream_read_gateway\\\",\\n    \\\"upstream_tool\\\": \\\"ha_get_entity\\\",\\n    \\\"upstream_server\\\": \\\"ha-mcp\\\",\\n    \\\"upstream_version\\\": \\\"8.5.0\\\",\\n    \\\"classification\\\": \\\"automatic_read\\\",\\n    \\\"schema_fingerprint\\\": \\\"3c7fae1584e239667a76e91a51dd37f0dd505e6f2f46235db2e033e81aae19de\\\",\\n    \\\"untrusted_upstream_content\\\": true,\\n    \\\"fallback\\\": \\\"none\\\",\\n    \\\"fallback_occurred\\\": false,\\n    \\\"completeness\\\": \\\"complete\\\"\\n  },\\n  \\\"timing\\\": {\\n    \\\"total_ms\\\": 217.58,\\n    \\\"tool_ms\\\": 214.847,\\n    \\\"home_assistant_ms\\\": 0.0,\\n    \\\"home_assistant_cumulative_attempt_ms\\\": 0.0,\\n    \\\"home_assistant_wall_clock_span_ms\\\": 0.0,\\n    \\\"home_assistant_request_count\\\": 0,\\n    \\\"upstream_attempted\\\": true,\\n    \\\"upstream_ms\\\": 211.257,\\n    \\\"upstream_wall_clock_span_ms\\\": 211.257,\\n    \\\"upstream_request_count\\\": 1,\\n    \\\"provider_operations_concurrent\\\": false,\\n    \\\"retry_count\\\": 0,\\n    \\\"timeout_occurred\\\": false\\n  },\\n  \\\"request_id\\\": \\\"14ee1b6e8afe4a20a9c1968d25d89021\\\",\\n  \\\"success\\\": true\\n}\"}],\"isError\":false}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 115,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\n  \"operation\": \"ha_get_entity\",\n  \"summary\": \"Completed a reviewed pure-read operation through the upstream gateway.\",\n  \"data\": {\n    \"success\": true,\n    \"entity_id\": \"input_boolean.hamcp371_helper\",\n    \"entity_entry\": {\n      \"entity_id\": \"input_boolean.hamcp371_helper\",\n      \"name\": null,\n      \"original_name\": \"HAMCP371 helper\",\n      \"icon\": null,\n      \"area_id\": \"hamcp371_area\",\n      \"disabled_by\": null,\n      \"hidden_by\": null,\n      \"enabled\": true,\n      \"hidden\": false,\n      \"aliases\": [\n        null\n      ],\n      \"labels\": [\n        \"hamcp371_label\"\n      ],\n      \"categories\": {},\n      \"device_class\": null,\n      \"original_device_class\": null,\n      \"options\": {\n        \"conversation\": {\n          \"should_expose\": true\n        }\n      },\n      \"platform\": \"input_boolean\",\n      \"device_id\": null,\n      \"config_entry_id\": null,\n      \"unique_id\": \"hamcp371_helper\",\n      \"area\": \"HAMCP371 area\",\n      \"floor\": \"HAMCP371 floor\",\n      \"label_names\": [\n        \"HAMCP371 label\"\n      ]\n    }\n  },\n  \"warnings\": [],\n  \"metadata\": {\n    \"provider\": \"upstream_read_gateway\",\n    \"upstream_tool\": \"ha_get_entity\",\n    \"upstream_server\": \"ha-mcp\",\n    \"upstream_version\": \"8.5.0\",\n    \"classification\": \"automatic_read\",\n    \"schema_fingerprint\": \"3c7fae1584e239667a76e91a51dd37f0dd505e6f2f46235db2e033e81aae19de\",\n    \"untrusted_upstream_content\": true,\n    \"fallback\": \"none\",\n    \"fallback_occurred\": false,\n    \"completeness\": \"complete\"\n  },\n  \"timing\": {\n    \"total_ms\": 217.58,\n    \"tool_ms\": 214.847,\n    \"home_assistant_ms\": 0.0,\n    \"home_assistant_cumulative_attempt_ms\": 0.0,\n    \"home_assistant_wall_clock_span_ms\": 0.0,\n    \"home_assistant_request_count\": 0,\n    \"upstream_attempted\": true,\n    \"upstream_ms\": 211.257,\n    \"upstream_wall_clock_span_ms\": 211.257,\n    \"upstream_request_count\": 1,\n    \"provider_operations_concurrent\": false,\n    \"retry_count\": 0,\n    \"timeout_occurred\": false\n  },\n  \"request_id\": \"14ee1b6e8afe4a20a9c1968d25d89021\",\n  \"success\": true\n}",
+       "type": "text"
+      }
+     ],
+     "isError": false
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 115,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "entity_id": "input_boolean.hamcp371_helper"
+     },
+     "name": "ha_get_entity"
+    }
+   },
+   "method": "POST",
+   "path": "/synthetic-engineering-access-secret/mcp"
+  },
+  "response": {
+   "id": 115,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\n  \"operation\": \"ha_get_entity\",\n  \"summary\": \"Completed a reviewed pure-read operation through the upstream gateway.\",\n  \"data\": {\n    \"success\": true,\n    \"entity_id\": \"input_boolean.hamcp371_helper\",\n    \"entity_entry\": {\n      \"entity_id\": \"input_boolean.hamcp371_helper\",\n      \"name\": null,\n      \"original_name\": \"HAMCP371 helper\",\n      \"icon\": null,\n      \"area_id\": \"hamcp371_area\",\n      \"disabled_by\": null,\n      \"hidden_by\": null,\n      \"enabled\": true,\n      \"hidden\": false,\n      \"aliases\": [\n        null\n      ],\n      \"labels\": [\n        \"hamcp371_label\"\n      ],\n      \"categories\": {},\n      \"device_class\": null,\n      \"original_device_class\": null,\n      \"options\": {\n        \"conversation\": {\n          \"should_expose\": true\n        }\n      },\n      \"platform\": \"input_boolean\",\n      \"device_id\": null,\n      \"config_entry_id\": null,\n      \"unique_id\": \"hamcp371_helper\",\n      \"area\": \"HAMCP371 area\",\n      \"floor\": \"HAMCP371 floor\",\n      \"label_names\": [\n        \"HAMCP371 label\"\n      ]\n    }\n  },\n  \"warnings\": [],\n  \"metadata\": {\n    \"provider\": \"upstream_read_gateway\",\n    \"upstream_tool\": \"ha_get_entity\",\n    \"upstream_server\": \"ha-mcp\",\n    \"upstream_version\": \"8.5.0\",\n    \"classification\": \"automatic_read\",\n    \"schema_fingerprint\": \"3c7fae1584e239667a76e91a51dd37f0dd505e6f2f46235db2e033e81aae19de\",\n    \"untrusted_upstream_content\": true,\n    \"fallback\": \"none\",\n    \"fallback_occurred\": false,\n    \"completeness\": \"complete\"\n  },\n  \"timing\": {\n    \"total_ms\": 217.58,\n    \"tool_ms\": 214.847,\n    \"home_assistant_ms\": 0.0,\n    \"home_assistant_cumulative_attempt_ms\": 0.0,\n    \"home_assistant_wall_clock_span_ms\": 0.0,\n    \"home_assistant_request_count\": 0,\n    \"upstream_attempted\": true,\n    \"upstream_ms\": 211.257,\n    \"upstream_wall_clock_span_ms\": 211.257,\n    \"upstream_request_count\": 1,\n    \"provider_operations_concurrent\": false,\n    \"retry_count\": 0,\n    \"timeout_occurred\": false\n  },\n  \"request_id\": \"14ee1b6e8afe4a20a9c1968d25d89021\",\n  \"success\": true\n}",
+      "type": "text"
+     }
+    ],
+    "isError": false
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Mon, 16 Nov 2026 12:17:42 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "x-request-id",
+    "14ee1b6e8afe4a20a9c1968d25d89021"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null
+}
