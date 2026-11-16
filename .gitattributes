@@ -41,6 +41,7 @@ docs/evidence/hamcp371/s8/gate/probes-1.txt -text -whitespace
 docs/evidence/hamcp371/s8/gate/profiles-1.txt -text -whitespace
 docs/evidence/hamcp371/s8/gate/profiles-2.txt -text -whitespace
 docs/evidence/hamcp371/s8/gate/pull-app-9.2.0.txt -text -whitespace
-# HAMCP-371 SR-b launch 1: raw run output, hash-bound by
-# docs/evidence/hamcp371/sr/run-b-1/SHA256SUMS; the SSE CRLF lines stay byte-exact.
-docs/evidence/hamcp371/sr/run-b-1/** -text -whitespace
+# HAMCP-371 D7: SR-b launch 1 CRLF SSE captures, hash-bound by
+# docs/evidence/hamcp371/sr/run-b-1/SHA256SUMS; their CRLF lines stay byte-exact.
+docs/evidence/hamcp371/sr/run-b-1/9.2.0/out/proxy/000002.response -text -whitespace
+docs/evidence/hamcp371/sr/run-b-1/9.2.0/out/proxy/000004.response -text -whitespace
