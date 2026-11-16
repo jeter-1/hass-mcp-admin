@@ -1,0 +1,186 @@
+{
+ "completeness": null,
+ "discovered_count": null,
+ "discovered_sha256": null,
+ "general_shards": 10,
+ "max_workers": 4,
+ "mode": "sharded",
+ "plan_sha256": null,
+ "problems": [
+  "shard_3:exit_code_1",
+  "shard_3:runner_reported_failure",
+  "shard_5:exit_code_1",
+  "shard_7:exit_code_1",
+  "shard_7:runner_reported_failure",
+  "shard_9:exit_code_1",
+  "shard_9:runner_reported_failure"
+ ],
+ "result": "failed",
+ "run_id": "5742953647796323171",
+ "schema_version": 1,
+ "serial_shards": [
+  10
+ ],
+ "shard_count": 11,
+ "shards": [
+  {
+   "duration_seconds": 1090.227,
+   "exit_code": 0,
+   "finished_offset_seconds": 1090.228,
+   "log": ".artifacts/unit-test-shards/latest/logs/shard-0.log",
+   "phase": "parallel",
+   "problems": [],
+   "shard": 0,
+   "skipped": 4,
+   "started_offset_seconds": 0.001,
+   "status": "passed",
+   "tests_run": 2014
+  },
+  {
+   "duration_seconds": 1465.646,
+   "exit_code": 0,
+   "finished_offset_seconds": 1465.647,
+   "log": ".artifacts/unit-test-shards/latest/logs/shard-1.log",
+   "phase": "parallel",
+   "problems": [],
+   "shard": 1,
+   "skipped": 1,
+   "started_offset_seconds": 0.001,
+   "status": "passed",
+   "tests_run": 1340
+  },
+  {
+   "duration_seconds": 1123.447,
+   "exit_code": 0,
+   "finished_offset_seconds": 1123.448,
+   "log": ".artifacts/unit-test-shards/latest/logs/shard-2.log",
+   "phase": "parallel",
+   "problems": [],
+   "shard": 2,
+   "skipped": 3,
+   "started_offset_seconds": 0.001,
+   "status": "passed",
+   "tests_run": 1353
+  },
+  {
+   "duration_seconds": 926.331,
+   "exit_code": 1,
+   "finished_offset_seconds": 926.332,
+   "log": ".artifacts/unit-test-shards/latest/logs/shard-3.log",
+   "phase": "parallel",
+   "problems": [
+    "exit_code_1",
+    "runner_reported_failure"
+   ],
+   "shard": 3,
+   "skipped": 2,
+   "started_offset_seconds": 0.002,
+   "status": "failed",
+   "tests_run": 1498
+  },
+  {
+   "duration_seconds": 969.162,
+   "exit_code": 0,
+   "finished_offset_seconds": 1895.695,
+   "log": ".artifacts/unit-test-shards/latest/logs/shard-4.log",
+   "phase": "parallel",
+   "problems": [],
+   "shard": 4,
+   "skipped": 3,
+   "started_offset_seconds": 926.533,
+   "status": "passed",
+   "tests_run": 1582
+  },
+  {
+   "duration_seconds": 1025.2,
+   "exit_code": 1,
+   "finished_offset_seconds": 2115.627,
+   "log": ".artifacts/unit-test-shards/latest/logs/shard-5.log",
+   "phase": "parallel",
+   "problems": [
+    "exit_code_1"
+   ],
+   "shard": 5,
+   "skipped": 1,
+   "started_offset_seconds": 1090.428,
+   "status": "failed",
+   "tests_run": 1429
+  },
+  {
+   "duration_seconds": 840.488,
+   "exit_code": 0,
+   "finished_offset_seconds": 1964.137,
+   "log": ".artifacts/unit-test-shards/latest/logs/shard-6.log",
+   "phase": "parallel",
+   "problems": [],
+   "shard": 6,
+   "skipped": 7,
+   "started_offset_seconds": 1123.648,
+   "status": "passed",
+   "tests_run": 1510
+  },
+  {
+   "duration_seconds": 1165.686,
+   "exit_code": 1,
+   "finished_offset_seconds": 2631.534,
+   "log": ".artifacts/unit-test-shards/latest/logs/shard-7.log",
+   "phase": "parallel",
+   "problems": [
+    "exit_code_1",
+    "runner_reported_failure"
+   ],
+   "shard": 7,
+   "skipped": 2,
+   "started_offset_seconds": 1465.847,
+   "status": "failed",
+   "tests_run": 1349
+  },
+  {
+   "duration_seconds": 1160.492,
+   "exit_code": 0,
+   "finished_offset_seconds": 3056.386,
+   "log": ".artifacts/unit-test-shards/latest/logs/shard-8.log",
+   "phase": "parallel",
+   "problems": [],
+   "shard": 8,
+   "skipped": 7,
+   "started_offset_seconds": 1895.895,
+   "status": "passed",
+   "tests_run": 1544
+  },
+  {
+   "duration_seconds": 1392.438,
+   "exit_code": 1,
+   "finished_offset_seconds": 3356.775,
+   "log": ".artifacts/unit-test-shards/latest/logs/shard-9.log",
+   "phase": "parallel",
+   "problems": [
+    "exit_code_1",
+    "runner_reported_failure"
+   ],
+   "shard": 9,
+   "skipped": 2,
+   "started_offset_seconds": 1964.337,
+   "status": "failed",
+   "tests_run": 1409
+  },
+  {
+   "duration_seconds": 298.188,
+   "exit_code": 0,
+   "finished_offset_seconds": 3654.963,
+   "log": ".artifacts/unit-test-shards/latest/logs/shard-10.log",
+   "phase": "serial_real_time",
+   "problems": [],
+   "shard": 10,
+   "skipped": 0,
+   "started_offset_seconds": 3356.775,
+   "status": "passed",
+   "tests_run": 130
+  }
+ ],
+ "skipped": null,
+ "source_sha": null,
+ "tests_run": null,
+ "wall_seconds": 3655.022,
+ "workers": 4
+}

@@ -139,9 +139,10 @@ own `.dockerignore`.
   2026-11-15 20:17 CST makes SR-b conditional on 9.2.0 being admitted exact.
   After D6 the P1 re-run passed (section 6). SR-b launch 1 then failed after
   start (section 7) and was not re-run.
-- Full and Evidence tiers.
+- Full and Evidence tiers: Full ran at S14 and failed after start; Evidence
+  was not launched (section 13).
 - CI: there was no push.
-- S14 and later.
+- S15 and later.
 
 ## 5. P1: offline startup catalog admission (ruling 2026-11-15 20:17 CST)
 
@@ -594,3 +595,105 @@ a comment naming `run-b-2` and its `SHA256SUMS`. Each file is listed in
 
 All staged blobs equal the files' bytes; the base `.gitattributes` has no
 line-ending normalization that applies to them.
+
+## 12. P4: offline parity of SR-b launch 2 (ruling 2026-11-16 06:35 CST)
+
+`p4_parity.py` builds `p4-parity.json` and `p4-parity.md` from the committed
+`run-b-2` files only; nothing was launched. Each read file, recorded
+upstream response and `peer.json` is checked against `run-b-2/SHA256SUMS`
+and the receipt before use. Tests: `tests/test_hamcp371_p4_parity.py`,
+8 OK. Result: **all_explained**.
+
+- Health record (9.2.0): the three exposed-count fields are all 28, as the
+  P1 re-run required. The record carries no names (`exposed_tools` is `[]`,
+  the projection is bounded). The names were recovered by running
+  Engineering's gateway in-process on the committed `peer.json`. That step
+  runs Engineering code and is not receipts-only. On both setups the 28
+  names equal P1's (including `ha_config_get_yaml`), the fingerprint
+  matches the lane, and no peer tool was called.
+- Five reads are flagged. Each cites its ruling, and each upstream
+  condition the citation depends on is checked against the recorded proxy
+  responses:
+  - r08-groups: `data.groups[].all` (not sent by 9.2.0).
+  - r10-template: `data.evaluation_time` and `data.request_id` (not sent
+    by 9.2.0).
+  - r18-skill-guide: `data.skill_content_hint` (not sent by 9.2.0). The
+    9.2.0 `content` is 23,227 characters upstream and 20,014 in the public
+    result, with the "safely bounded" warning. Size is not a P4 flag
+    criterion; it is disclosed.
+  - r20-system-health: 18 withheld on 9.2.0 (D5).
+  - r26-integrations: 13 withheld on 9.2.0 (D5 and the S7 `_ENTRY`
+    allowlist).
+  - The withheld counts equal Engineering's own withheld names.
+- No read is unexplained.
+
+## 13. S14: Full tier failed after start; Evidence not launched
+
+The Full tier ran once on head `9e6f8063`.
+
+- Command: `check.ps1 -Tier Full -Parallel 4 -BaseRef origin/main`, with
+  the 32-path `-AuthorizedProtectedPath` declaration. A script checked the
+  declaration against `git diff --name-only origin/main...HEAD` before the
+  launch; it is the same as the D6 Fast run's.
+- Base: `origin/main` at `e741f2ed`, re-fetched before the launch and
+  unchanged.
+- Unit: `hamcp371-s14-full` (MemoryMax=3G, OOMPolicy=continue,
+  RuntimeMaxSec=5400), from 06:48:26 to 07:49:41 CST on 2026-11-16, rc 1.
+  Memory peak 2.5G.
+- Heavy gate at launch: 12,800 MB available, load 0.18, 58 GB root free,
+  no other heavy job and no containers.
+- Logs: `.artifacts/s14/full.txt` and
+  `.artifacts/unit-test-shards/latest/` in the worktree. Committed here:
+  `s14/full-unit-shards-summary.json` (the sharded summary) and
+  `s14/full-failures.txt` (the failure blocks and the steps after the
+  suite). Worktree paths are shortened to `<W>/`.
+
+| Step | Result |
+|---|---|
+| Base reference, protected-path scope, scratch Git discovery, compile | passed |
+| Unit suite, 11 shards (4 workers; shard 10 serial) | **failed**: shards 3, 5, 7 and 9 |
+| Add-on metadata | **failed**: "Beta version was not bumped above the deployed/base version" |
+| YAML (133 files), pip check, secret-pattern scan, PowerShell syntax, whitespace (four checks) | passed |
+
+Unit-suite failures. All are in this branch's tests or in tests that this
+branch's changes trip; Fast ran only targeted modules and did not reach
+them.
+
+1. Shard 3: `test_rc2dev9_upstream_admission` ContractFamilyTests
+   `test_all_reviewed_versions_have_exact_builtin_attestations`. The
+   branch's builtin attestations include 9.2.0, but the test's fixed set
+   of reviewed versions does not.
+2. Shard 9: `test_hamcp319_endpoint_selector` Step0CorpusTests
+   `test_step0_corpus_has_no_strict_value_outside_hamcp319_tests`. The
+   strict `/mcp/catalog/full` URL literal at
+   `tests/test_hamcp371_live_replay_local.py:486` is outside the hamcp319
+   tests.
+3. Shards 7 and 9: `ProcessStateLeak` at tearDownModule in
+   `test_hamcp371_blueprint_9_2` (0 to 27 entries),
+   `test_hamcp371_p4_parity` (0 to 28 entries) and
+   `test_hamcp371_overview_search_9_2` (0 to 27 entries). The leaked
+   state is `ha_mcp_engineering.capabilities._DYNAMIC_UPSTREAM_CAPABILITIES`
+   and `_UPSTREAM_READ_GATEWAY_SUMMARY`. Class or module fixtures registered
+   the gateway's dynamic capabilities and did not restore them. The
+   isolation harness restored them for later modules. For P4 the fixture
+   is `setUpClass`, which calls `build()`, and `build()` runs the gateway.
+4. Shard 5: all 1,429 tests passed, but the shard exited 1 on 28 scratch
+   leaks under `.artifacts/tmp`, all created by
+   `tests/test_hamcp371_live_replay_local.py`: `run_reads` 16, `setUp` 3,
+   `catalog` 3, `repository` 3, and one each from three tests.
+
+Add-on metadata: `hass_mcp_engineering_beta/config.yaml` stays at
+`2.4.2-beta.8`, as on main, until S16 (ruling 2026-11-14 16:15).
+`validate_addon_metadata.py` runs unconditionally in both Full and Evidence
+(`scripts/check.ps1:1108`). So neither tier can pass on this branch before
+the version is set.
+
+Evidence was not launched. It runs the same unit suite and the same
+metadata step on the same head, so its result is already known. Launching
+it would spend the one authorized Evidence launch without producing a
+record of a review candidate. The ruling's rule for a failure after start
+is followed: the Full result is reported and not re-run. Fixes, a new
+head, and new Full and Evidence runs need a ruling.
+
+The tiers ran at `9e6f8063`. The commit that records them changes only
+`docs/evidence/hamcp371/sr/` (this README and `s14/`).
