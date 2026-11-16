@@ -44,6 +44,7 @@ sys.path[:0] = [str(ROOT / "hass_mcp_engineering_beta"), str(ROOT), str(ROOT / "
 from ha_mcp_engineering.providers import upstream_reads_9_2_keys as keys  # noqa: E402
 import test_hamcp371_platform_9_2 as platform_tests  # noqa: E402
 import test_hamcp371_real_core_replay as replay  # noqa: E402
+from tests.support.process_isolation import Guard, restore_after_class  # noqa: E402
 
 READS = replay.READS
 OVERVIEW, SEARCH, HEALTH = "ha_get_overview", "ha_search", "ha_get_system_health"
@@ -58,6 +59,23 @@ def calls(tool, sets=("A/9.2.0", "B/9.2.0")):
         for call, rec in replay.public_calls(set_name):
             if call["public_tool"] == tool:
                 yield set_name, call, rec["exchange"]["response"]["result"]
+
+
+# HAMCP-371 (ruling 2026-11-16 08:18, T1 item 3): every gateway this module builds
+# publishes the capability catalog; each class and test restores what it changed,
+# and the module proves the process-wide state after it equals the state before.
+_BEFORE = None
+
+
+def setUpModule():
+    global _BEFORE
+    _BEFORE = Guard().capture()
+
+
+def tearDownModule():
+    changes = Guard.changes(_BEFORE)
+    if changes:
+        raise AssertionError(f"{__name__} left process-wide state: " + "; ".join(changes))
 
 
 def run(version, cases):
@@ -121,6 +139,7 @@ class Search(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        restore_after_class(cls)
         cls.cases = [(s, call, result, result["structuredContent"]) for s, call, result in calls(SEARCH)]
         cls.out = run("9.2.0", [(SEARCH, c, r, sc) for _s, c, r, sc in cls.cases])
         cls.bare = run("9.2.0", [(SEARCH, c, r, without_name(sc)) for _s, c, r, sc in cls.cases])
@@ -152,8 +171,12 @@ class Overview(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        restore_after_class(cls)
         cls.cases = [(s, call, result, result["structuredContent"]) for s, call, result in calls(OVERVIEW)]
         cls.plain = run("9.2.0", [(OVERVIEW, c, r, sc) for _s, c, r, sc in cls.cases])
+
+    def setUp(self):
+        self.addCleanup(Guard.restore, Guard().capture())
 
     def test_ha_mcp_update_is_closed_to_three_keys(self):
         outputs = run("9.2.0", [(OVERVIEW, c, r, with_update(sc)) for _s, c, r, sc in self.cases])

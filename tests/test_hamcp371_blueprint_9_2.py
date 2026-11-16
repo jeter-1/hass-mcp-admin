@@ -34,6 +34,7 @@ sys.path[:0] = [str(ROOT / "hass_mcp_engineering_beta"), str(ROOT), str(ROOT / "
 from ha_mcp_engineering.providers import upstream_blueprint  # noqa: E402
 from ha_mcp_engineering.providers import upstream_reads_9_2_blueprint as bp_9_2  # noqa: E402
 import test_hamcp371_real_core_replay as replay  # noqa: E402
+from tests.support.process_isolation import Guard, restore_after_class  # noqa: E402
 
 INJECTED = "hamcp371_injected_key"
 LIST_ARGS = {"domain": "automation"}
@@ -80,6 +81,23 @@ def _top(content: dict) -> dict:
     copy = deepcopy(content)
     copy[INJECTED] = "x"
     return copy
+
+
+# HAMCP-371 (ruling 2026-11-16 08:18, T1 item 3): every gateway this module builds
+# publishes the capability catalog; each class and test restores what it changed,
+# and the module proves the process-wide state after it equals the state before.
+_BEFORE = None
+
+
+def setUpModule():
+    global _BEFORE
+    _BEFORE = Guard().capture()
+
+
+def tearDownModule():
+    changes = Guard.changes(_BEFORE)
+    if changes:
+        raise AssertionError(f"{__name__} left process-wide state: " + "; ".join(changes))
 
 
 class Module(unittest.TestCase):
@@ -163,6 +181,7 @@ class GatewayReplay(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        restore_after_class(cls)
         cls.receipts = _receipts()
         cls.results = {}
         for version in VERSIONS:

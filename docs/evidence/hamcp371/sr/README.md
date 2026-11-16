@@ -697,3 +697,51 @@ head, and new Full and Evidence runs need a ruling.
 
 The tiers ran at `9e6f8063`. The commit that records them changes only
 `docs/evidence/hamcp371/sr/` (this README and `s14/`).
+
+## 14. T1: the four S14 test fixes (ruling 2026-11-16 08:18 CST)
+
+All four are in `tests/` and are made in one commit. None changes an
+existing expectation or weakens an assertion. The guard
+`tests/test_hamcp319_endpoint_selector.py` is not edited.
+
+1. `test_rc2dev9_upstream_admission`: 9.2.0 is added, under the T129 rules,
+   to the expected set of builtin attestations and to `tool_for`'s version
+   list. Its tool now comes from the S8 capture
+   `docs/evidence/upstream-read-compatibility/ha-mcp-9.2.0.json` (`349d58e9`).
+   The attestation was reviewed in SB (`e6474aad`; source tag `v9.2.0`,
+   `51e3aac7`). Each edit carries a comment that names its source.
+   **The earlier T129 sweep missed this module.** That sweep ran at
+   `34abf281` (s10 README, section T129). The builtin attestation file had no
+   9.2.0 entry at that commit; SB added it later, in `e6474aad`. So the module
+   still passed in the sweep and first failed in S14.
+2. `test_hamcp371_live_replay_local` `test_upstream_url_forms`: the
+   expectation now ends in `sr.STRICT_SUFFIX`, which it imports from the
+   harness (`scripts/hamcp371_live_replay_local.py`, the module that owns
+   the suffix) instead of spelling the strict literal. The rest of the
+   expected URL, `http://127.0.0.1:18086/synthetic-upstream-secret/mcp`, is
+   spelled out as before; it is the 8.5.0 legacy form.
+3. `test_hamcp371_blueprint_9_2`, `test_hamcp371_overview_search_9_2` and
+   `test_hamcp371_p4_parity`:
+   - every `setUpClass` that builds a gateway first calls the suite's own
+     `restore_after_class` (`tests/support/process_isolation.py`);
+   - every test that builds one in its body restores the state with
+     `addCleanup`;
+   - the proof: `setUpModule` captures the isolation guard's probes, and
+     `tearDownModule` fails if they differ when the module ends. The probes
+     cover the capability catalog, the gateway summary and the loggers that
+     P4 also changed.
+4. `test_hamcp371_live_replay_local` scratch:
+   - each scratch directory now comes from `scratch(self)`, which registers
+     `shutil.rmtree` with `addCleanup`, so it is removed whether the test
+     passes or fails;
+   - the old `exchange` cleanup is replaced; it skipped `rmdir()` when the
+     directory was empty;
+   - the proof: `setUpModule` gives the module a private default temp parent,
+     and `tearDownModule` fails unless the parent is empty, then removes it.
+
+Both proofs were shown to fail on a leak, by in-process patches run outside
+the committed tests (scripts under `.artifacts/t1/`, not committed):
+- with `restore_after_class` made a no-op, each of the three modules fails
+  at `tearDownModule` with its "left process-wide state" message;
+- with `scratch` made to skip its cleanup, `test_hamcp371_live_replay_local`
+  fails at `tearDownModule`, with 31 directories left.

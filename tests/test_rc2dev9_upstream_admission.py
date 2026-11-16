@@ -73,7 +73,9 @@ EIGHT_FOUR_THREE = (
 
 
 def tool_for(version):
-    if version in {"8.4.1", "8.4.3", "8.5.0", "8.6.0", "9.1.0", "9.1.2"}:
+    # HAMCP-371: 9.2.0 reads its tool from the S8 capture
+    # docs/evidence/upstream-read-compatibility/ha-mcp-9.2.0.json (349d58e9).
+    if version in {"8.4.1", "8.4.3", "8.5.0", "8.6.0", "9.1.0", "9.1.2", "9.2.0"}:
         path = EIGHT_FOUR.with_name(f"ha-mcp-{version}.json")
         evidence = json.loads(path.read_text(encoding="utf-8"))
         return next(
@@ -202,6 +204,9 @@ class ContractFamilyTests(unittest.TestCase):
                 "9.1.0",
                 # HAMCP-351: exact 9.1.2 builtin dashboard attestation.
                 "9.1.2",
+                # HAMCP-371: exact 9.2.0 builtin dashboard attestation, reviewed
+                # from the S8 capture (e6474aad; source tag v9.2.0, 51e3aac7).
+                "9.2.0",
             },
         )
         for version in entries:

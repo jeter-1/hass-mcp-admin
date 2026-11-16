@@ -14,6 +14,7 @@ import io
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -30,6 +31,32 @@ import core_read_replay_capture_local as lane  # noqa: E402
 import hamcp371_live_replay_holder as holder  # noqa: E402
 import hamcp371_live_replay_local as sr  # noqa: E402
 from upstream_catalog_capture_local import Refusal  # noqa: E402
+
+# HAMCP-371 (ruling 2026-11-16 08:18, T1 item 4): every scratch directory this module
+# makes is removed by a cleanup on every exit path, and the module proves none remain:
+# its default temp area is a private parent that must be empty when the module ends.
+_SCRATCH = {}
+
+
+def setUpModule():
+    _SCRATCH["tempdir"] = tempfile.tempdir
+    _SCRATCH["parent"] = Path(tempfile.mkdtemp(prefix="hamcp371-live-replay-"))
+    tempfile.tempdir = str(_SCRATCH["parent"])
+
+
+def tearDownModule():
+    tempfile.tempdir = _SCRATCH["tempdir"]
+    remaining = sorted(path.name for path in _SCRATCH["parent"].iterdir())
+    if remaining:
+        raise AssertionError(f"{__name__} left scratch directories: {remaining}")
+    _SCRATCH["parent"].rmdir()
+
+
+def scratch(test):
+    """A new scratch directory that a cleanup removes, whether the test passes or fails."""
+    path = Path(tempfile.mkdtemp())
+    test.addCleanup(shutil.rmtree, path)
+    return path
 
 SYNTHETIC_TOKEN = "synthetic-administrator-token-not-real"
 
@@ -154,8 +181,7 @@ class ProxyTests(unittest.TestCase):
     def exchange(self, upstream_body, content_type, fixed_length):
         upstream = SyntheticUpstream(upstream_body, content_type, fixed_length)
         self.addCleanup(upstream.close)
-        out_dir = Path(tempfile.mkdtemp())
-        self.addCleanup(lambda: [p.unlink() for p in out_dir.iterdir()] and out_dir.rmdir())
+        out_dir = scratch(self)
         port = self.start_proxy(out_dir, upstream.port)
         request = json.dumps({"jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": {
             "name": "ha_get_state", "arguments": {"entity_id": "sun.sun"}}}).encode()
@@ -202,7 +228,7 @@ class ProxyTests(unittest.TestCase):
         probe = ThreadingHTTPServer(("127.0.0.1", 0), BaseHTTPRequestHandler)
         closed = probe.server_address[1]
         probe.server_close()
-        out_dir = Path(tempfile.mkdtemp())
+        out_dir = scratch(self)
         port = self.start_proxy(out_dir, closed)
         response, _ = self.post(port, b"{}", {"Content-Type": "application/json"})
         self.assertEqual(response.status, 502)
@@ -238,7 +264,7 @@ def sse(payload, is_error=False):
 
 class RecordTests(unittest.TestCase):
     def setUp(self):
-        self.dir = Path(tempfile.mkdtemp())
+        self.dir = scratch(self)
 
     def test_new_records_wait_for_each_record_and_stop_on_timeout(self):
         write_record(self.dir, 1, "initialize", None, b"{}")
@@ -313,7 +339,7 @@ class FakeSession:
 
 class ReadsTests(unittest.TestCase):
     def run_reads(self, answers=None, factory=None, version="9.2.0"):
-        base = Path(tempfile.mkdtemp())
+        base = scratch(self)
         proxy_dir = base / "proxy"
         proxy_dir.mkdir()
         (base / "seed.json").write_text(json.dumps(synthetic_seed()))
@@ -482,8 +508,10 @@ class ReadsTests(unittest.TestCase):
 
 class UrlAndArgvTests(unittest.TestCase):
     def test_upstream_url_forms(self):
+        # The full-catalog suffix is the harness's own STRICT_SUFFIX (ruling 2026-11-16
+        # 08:18, T1 item 2); the endpoint-selector guard keeps strict literals out of tests.
         self.assertEqual(sr.upstream_url("9.2.0", 18086),
-                         "http://127.0.0.1:18086/synthetic-upstream-secret/mcp/catalog/full")
+                         "http://127.0.0.1:18086/synthetic-upstream-secret/mcp" + sr.STRICT_SUFFIX)
         self.assertEqual(sr.upstream_url("8.5.0", 18087),
                          "http://127.0.0.1:18087/synthetic-upstream-secret/mcp")
 
@@ -531,7 +559,7 @@ class UrlAndArgvTests(unittest.TestCase):
         self.assertEqual(argv[argv.index("--env", len(argv) - 4) + 1], lane.TOKEN_VARIABLE)
 
     def test_relabel_replaces_the_project_once_and_refuses_otherwise(self):
-        argv = lane.idle_holder_argv("h", "run", Path(tempfile.mkdtemp()))
+        argv = lane.idle_holder_argv("h", "run", scratch(self))
         relabeled = sr.relabel(argv)
         self.assertIn("com.docker.compose.project=hamcp371-sr", relabeled)
         self.assertNotIn("com.docker.compose.project=hamcp371-s6", relabeled)
@@ -652,7 +680,7 @@ class EngineeringContainerTests(unittest.TestCase):
 
 class CatalogAndControlTests(unittest.TestCase):
     def catalog(self, names):
-        path = Path(tempfile.mkdtemp()) / "peer.json"
+        path = scratch(self) / "peer.json"
         path.write_text(json.dumps({"tool_names_in_wire_order": names}))
         return path
 
@@ -741,7 +769,7 @@ class CatalogAndControlTests(unittest.TestCase):
 
 class BuildTests(unittest.TestCase):
     def repository(self, link=False):
-        path = Path(tempfile.mkdtemp())
+        path = scratch(self)
         git = ["git", "-C", str(path), "-c", "user.name=t", "-c", "user.email=t@example.invalid"]
         subprocess.run(["git", "init", "-q", str(path)], check=True)
         context = path / sr.CONTEXT_PATH
@@ -810,7 +838,7 @@ class BuildTests(unittest.TestCase):
         record = {"schema": sr.IMAGE_SCHEMA, "pushed": False, "tag": "t:1",
                   "image_id": "sha256:" + "3" * 64, "revision": "r" * 40, "tree": "t" * 40,
                   "context": {"sha256": "c" * 64}}
-        path = Path(tempfile.mkdtemp()) / "engineering-image.json"
+        path = scratch(self) / "engineering-image.json"
         path.write_text(json.dumps(record))
 
         def read(*_args):

@@ -10,6 +10,8 @@ from copy import deepcopy
 from pathlib import Path
 from unittest import mock
 
+from tests.support.process_isolation import Guard, restore_after_class
+
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "docs/evidence/hamcp371/sr/p4_parity.py"
 SPEC = importlib.util.spec_from_file_location("hamcp371_p4_parity", SCRIPT)
@@ -17,10 +19,31 @@ p4 = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(p4)
 
 
+# HAMCP-371 (ruling 2026-11-16 08:18, T1 item 3): every gateway this module builds
+# publishes the capability catalog; each class and test restores what it changed,
+# and the module proves the process-wide state after it equals the state before.
+_BEFORE = None
+
+
+def setUpModule():
+    global _BEFORE
+    _BEFORE = Guard().capture()
+
+
+def tearDownModule():
+    changes = Guard.changes(_BEFORE)
+    if changes:
+        raise AssertionError(f"{__name__} left process-wide state: " + "; ".join(changes))
+
+
 class P4ParityTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        restore_after_class(cls)
         cls.report = p4.build(ROOT)
+
+    def setUp(self):
+        self.addCleanup(Guard.restore, Guard().capture())
 
     def test_committed_receipts_have_every_difference_explained(self):
         self.assertEqual(self.report["result"], "all_explained", self.report["unexplained"])
