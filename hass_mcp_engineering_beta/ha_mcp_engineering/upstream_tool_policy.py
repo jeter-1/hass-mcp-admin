@@ -969,7 +969,8 @@ def validate_reviewed_release_catalog(
     """
 
     from .providers.upstream_search_8_6 import search_catalog_view
-    release = search_catalog_view(release, tools)
+    from .providers.upstream_reads_9_2 import search_catalog_view as search_catalog_view_9_2
+    release = search_catalog_view_9_2(search_catalog_view(release, tools), tools)
     runtime_model = release.runtime_contract_fingerprint_model
     expected_contracts = release.tool_contracts_by_name
     expected_policy = release.policy.by_name

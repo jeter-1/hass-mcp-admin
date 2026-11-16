@@ -1391,6 +1391,7 @@ class UpstreamReadGateway:
             if self._admission_validator is not None:
                 self._admission_validator(catalog)
             selected_release = search_catalog_view(selected_release, catalog.tools)
+            selected_release = reads_9_2.search_catalog_view(selected_release, catalog.tools)
             if selected_release is not None:
                 selected_policy = selected_release.policy
             reviewed_contracts = (
@@ -3451,6 +3452,7 @@ class UpstreamReadGateway:
                     )
                 try:
                     live_release = search_catalog_view(live_release, catalog.tools)
+                    live_release = reads_9_2.search_catalog_view(live_release, catalog.tools)
                     if live_release is not None:
                         live_policy = live_release.policy
                     live_evaluation = self._validate_catalog(
@@ -4423,6 +4425,16 @@ class UpstreamReadGateway:
             if redaction is not None:
                 warnings.append(REDACTION_WARNING)
             warnings.extend(completeness_warnings)
+            # D6: the 9.2.0 ha_search descriptor the route pinned and the live
+            # catalog matched before dispatch, and the R-D6-3 budget warning.
+            search_variant = reads_9_2.search_variant_name(
+                policy_entry, mapping.runtime_contract_fingerprint
+            )
+            search_warning_codes = reads_9_2.search_warning_codes(
+                search_variant, arguments
+            )
+            if search_warning_codes:
+                warnings.append(reads_9_2.SEARCH_BUDGET_WARNING)
             if response_adapter is not None:
                 warnings.append(
                     "A reviewed Home Assistant 2026.8 composite-device "
@@ -4444,6 +4456,9 @@ class UpstreamReadGateway:
                 metadata["redaction"] = redaction
             if response_adapter is not None:
                 metadata["response_adapter"] = response_adapter
+            if search_variant is not None:
+                metadata["search_descriptor_variant"] = search_variant
+                metadata["warning_codes"] = list(search_warning_codes)
             success = SuccessResponse(
                 operation=exposed_name,
                 summary=GATEWAY_SUCCESS_SUMMARY,

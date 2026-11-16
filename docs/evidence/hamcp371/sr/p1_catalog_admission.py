@@ -8,7 +8,12 @@ runs its own ``initialize`` against it, the startup path, with the built-in
 reviewed release registry of this checkout (signed registry off). No Home
 Assistant, no network beyond 127.0.0.1, and every secret is synthetic.
 
-Prints one JSON document; exit 0 when 9.2.0 is admitted_exact, else 1.
+P1 re-run gate (architect rulings 2026-11-15 22:26 CST, after D6): 9.2.0 is
+admitted_exact with 28 exposed, which are the 27 Engineering exposes on the
+reviewed 8.5.0 catalog (ha_search among them) plus ha_config_get_yaml;
+ha_list_files and ha_read_file are withheld and ha_get_operation_status is held.
+
+Prints one JSON document; exit 0 when the 9.2.0 gate passes, else 1.
 """
 
 from __future__ import annotations
@@ -23,6 +28,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[4]
 sys.path[:0] = [str(ROOT / "hass_mcp_engineering_beta"), str(ROOT), str(ROOT / "tests")]
 
+import test_hamcp319_no_redirect_useful as useful  # noqa: E402
 import test_hamcp371_admission_core as core  # noqa: E402
 
 S6 = ROOT / "docs/evidence/hamcp371/s6"
@@ -39,7 +45,11 @@ FIELDS = (
     "upstream_server_name", "upstream_server_version", "reviewed_upstream_version",
     "protocol_version", "observed_catalog_fingerprint", "reviewed_catalog_fingerprint",
     "catalog_diff_field_counts", "dashboard_attestation_status",
+    "exposed_tools", "held_tools", "optional_tools", "quarantined_tools",
+    "unreviewed_tools", "readmission_withheld_tools", "core_withheld_tools",
 )
+WITHHELD = ("ha_list_files", "ha_read_file")
+HELD = ["ha_get_operation_status"]
 
 
 def sse_result(body_text):
@@ -85,11 +95,28 @@ def main():
                "peer_tool_calls": len(peer.calls), "exposed_tool_count": len(exposed)}
         row.update({field: health.get(field) for field in FIELDS})
         result["catalogs"][version] = row
-    exact = result["catalogs"]["9.2.0"]["admission_status"] == "admitted_exact"
-    result["p2"] = "9.2.0 admitted_exact: SR-b may start" if exact else (
-        "ADMISSION BLOCKER: 9.2.0 not admitted_exact under the D1 flags")
+    _health, reference, _result, _peer = asyncio.run(
+        core._gateway("8.5.0", useful.reviewed_catalog("8.5.0")))
+    result["reference_8_5_0_exposed"] = sorted(reference)
+    row = result["catalogs"]["9.2.0"]
+    exposed = set(row["exposed_tools"])
+    checks = {
+        "admitted_exact": row["admission_status"] == "admitted_exact",
+        "exposed_28": row["exposed_tool_count"] == len(exposed) == 28,
+        "exposed_is_reference_27_plus_ha_config_get_yaml": (
+            len(reference) == 27 and "ha_search" in reference
+            and exposed == set(reference) | {"ha_config_get_yaml"}),
+        "ha_list_files_and_ha_read_file_withheld": all(
+            row["optional_tools"].get(name) == "prohibited_withheld" and name not in exposed
+            for name in WITHHELD),
+        "ha_get_operation_status_held": row["held_tools"] == HELD and not set(HELD) & exposed,
+    }
+    result["p1_gate"] = checks
+    passed = all(checks.values())
+    result["p2"] = "9.2.0 P1 gate passed: SR-b may start" if passed else (
+        "ADMISSION BLOCKER: the 9.2.0 P1 gate failed under the D1 flags")
     print(json.dumps(result, indent=1, sort_keys=True))
-    return 0 if exact else 1
+    return 0 if passed else 1
 
 
 if __name__ == "__main__":

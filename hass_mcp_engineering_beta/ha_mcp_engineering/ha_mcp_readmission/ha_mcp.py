@@ -46,6 +46,7 @@ from ..providers.upstream_yaml_reader import (
     withheld_reason as optional_withheld_reason,
 )
 from ..providers.upstream_search_8_6 import resolve_search_variant, search_capability_contract
+from ..providers import upstream_reads_9_2 as _search_9_2
 
 
 PROFILE_VERSION = 1
@@ -712,6 +713,10 @@ def observation_for_catalog(
             )
             if resolve_search_variant(selection.binary_release, entry, raw) is not None:
                 contract = search_capability_contract(selection.binary_release, entry)
+            elif _search_9_2.resolve_search_variant(
+                    selection.binary_release, entry, raw) is not None:
+                contract = _search_9_2.search_capability_contract(
+                    selection.binary_release, entry)
 
         else:
             safe_id = name
@@ -767,7 +772,9 @@ def _profile_for_release(
         CapabilityContract(
             capability_id=entry.upstream_name,
             kind=CapabilityKind.ORDINARY_READ,
-            contract_fingerprint=search_capability_contract(release, entry) or _expected_contract_fingerprint(
+            contract_fingerprint=search_capability_contract(release, entry)
+            or _search_9_2.search_capability_contract(release, entry)
+            or _expected_contract_fingerprint(
                 tool_name=entry.upstream_name,
                 argument_restrictions=entry.argument_restrictions,
                 release_contract=contracts[entry.upstream_name],
