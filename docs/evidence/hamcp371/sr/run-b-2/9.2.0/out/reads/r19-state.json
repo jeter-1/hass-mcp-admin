@@ -1,0 +1,99 @@
+{
+ "case": {
+  "arguments": {
+   "entity_id": "input_boolean.hamcp371_helper"
+  },
+  "id": "r19-state",
+  "tool": "ha_get_state"
+ },
+ "exchange": {
+  "body_bytes": 2423,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":120,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\n  \\\"operation\\\": \\\"ha_get_state\\\",\\n  \\\"summary\\\": \\\"Completed a reviewed pure-read operation through the upstream gateway.\\\",\\n  \\\"data\\\": {\\n    \\\"data\\\": {\\n      \\\"entity_id\\\": \\\"input_boolean.hamcp371_helper\\\",\\n      \\\"state\\\": \\\"on\\\",\\n      \\\"attributes\\\": {\\n        \\\"editable\\\": true,\\n        \\\"friendly_name\\\": \\\"HAMCP371 helper\\\"\\n      },\\n      \\\"last_changed\\\": \\\"2026-11-16T06:16:51.374274-06:00\\\",\\n      \\\"last_reported\\\": \\\"2026-11-16T06:16:51.374274-06:00\\\",\\n      \\\"last_updated\\\": \\\"2026-11-16T06:16:51.374274-06:00\\\",\\n      \\\"context\\\": {\\n        \\\"id\\\": \\\"01M7J4KT5DTNH5EVJFTWDAKR88\\\",\\n        \\\"parent_id\\\": null,\\n        \\\"user_id\\\": \\\"a652c117e9f64725aebd7e430da65f70\\\"\\n      }\\n    },\\n    \\\"metadata\\\": {\\n      \\\"home_assistant_timezone\\\": \\\"America/Chicago\\\",\\n      \\\"timestamp_format\\\": \\\"ISO 8601 (America/Chicago)\\\",\\n      \\\"note\\\": \\\"Per-record timestamp fields (last_changed, last_updated, last_reported, when, last_triggered) have been converted to America/Chicago local time. Query-window boundary fields (period, start_time, end_time) remain in UTC.\\\"\\n    },\\n    \\\"fields_withheld\\\": 0,\\n    \\\"fields_dropped_by_policy\\\": 0,\\n    \\\"upstream_warnings_replaced\\\": 0\\n  },\\n  \\\"warnings\\\": [],\\n  \\\"metadata\\\": {\\n    \\\"provider\\\": \\\"upstream_read_gateway\\\",\\n    \\\"upstream_tool\\\": \\\"ha_get_state\\\",\\n    \\\"upstream_server\\\": \\\"ha-mcp\\\",\\n    \\\"upstream_version\\\": \\\"9.2.0\\\",\\n    \\\"classification\\\": \\\"automatic_read\\\",\\n    \\\"schema_fingerprint\\\": \\\"079c4fa378e1f5c2b19f8c46bea46d5f572bc5b3724cb605794ff59edb942226\\\",\\n    \\\"untrusted_upstream_content\\\": true,\\n    \\\"fallback\\\": \\\"none\\\",\\n    \\\"fallback_occurred\\\": false,\\n    \\\"completeness\\\": \\\"complete\\\"\\n  },\\n  \\\"timing\\\": {\\n    \\\"total_ms\\\": 226.803,\\n    \\\"tool_ms\\\": 223.904,\\n    \\\"home_assistant_ms\\\": 0.0,\\n    \\\"home_assistant_cumulative_attempt_ms\\\": 0.0,\\n    \\\"home_assistant_wall_clock_span_ms\\\": 0.0,\\n    \\\"home_assistant_request_count\\\": 0,\\n    \\\"upstream_attempted\\\": true,\\n    \\\"upstream_ms\\\": 219.7,\\n    \\\"upstream_wall_clock_span_ms\\\": 219.7,\\n    \\\"upstream_request_count\\\": 1,\\n    \\\"provider_operations_concurrent\\\": false,\\n    \\\"retry_count\\\": 0,\\n    \\\"timeout_occurred\\\": false\\n  },\\n  \\\"request_id\\\": \\\"2b90a182845b460aaa51578429f048cd\\\",\\n  \\\"success\\\": true\\n}\"}],\"isError\":false}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 120,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\n  \"operation\": \"ha_get_state\",\n  \"summary\": \"Completed a reviewed pure-read operation through the upstream gateway.\",\n  \"data\": {\n    \"data\": {\n      \"entity_id\": \"input_boolean.hamcp371_helper\",\n      \"state\": \"on\",\n      \"attributes\": {\n        \"editable\": true,\n        \"friendly_name\": \"HAMCP371 helper\"\n      },\n      \"last_changed\": \"2026-11-16T06:16:51.374274-06:00\",\n      \"last_reported\": \"2026-11-16T06:16:51.374274-06:00\",\n      \"last_updated\": \"2026-11-16T06:16:51.374274-06:00\",\n      \"context\": {\n        \"id\": \"01M7J4KT5DTNH5EVJFTWDAKR88\",\n        \"parent_id\": null,\n        \"user_id\": \"a652c117e9f64725aebd7e430da65f70\"\n      }\n    },\n    \"metadata\": {\n      \"home_assistant_timezone\": \"America/Chicago\",\n      \"timestamp_format\": \"ISO 8601 (America/Chicago)\",\n      \"note\": \"Per-record timestamp fields (last_changed, last_updated, last_reported, when, last_triggered) have been converted to America/Chicago local time. Query-window boundary fields (period, start_time, end_time) remain in UTC.\"\n    },\n    \"fields_withheld\": 0,\n    \"fields_dropped_by_policy\": 0,\n    \"upstream_warnings_replaced\": 0\n  },\n  \"warnings\": [],\n  \"metadata\": {\n    \"provider\": \"upstream_read_gateway\",\n    \"upstream_tool\": \"ha_get_state\",\n    \"upstream_server\": \"ha-mcp\",\n    \"upstream_version\": \"9.2.0\",\n    \"classification\": \"automatic_read\",\n    \"schema_fingerprint\": \"079c4fa378e1f5c2b19f8c46bea46d5f572bc5b3724cb605794ff59edb942226\",\n    \"untrusted_upstream_content\": true,\n    \"fallback\": \"none\",\n    \"fallback_occurred\": false,\n    \"completeness\": \"complete\"\n  },\n  \"timing\": {\n    \"total_ms\": 226.803,\n    \"tool_ms\": 223.904,\n    \"home_assistant_ms\": 0.0,\n    \"home_assistant_cumulative_attempt_ms\": 0.0,\n    \"home_assistant_wall_clock_span_ms\": 0.0,\n    \"home_assistant_request_count\": 0,\n    \"upstream_attempted\": true,\n    \"upstream_ms\": 219.7,\n    \"upstream_wall_clock_span_ms\": 219.7,\n    \"upstream_request_count\": 1,\n    \"provider_operations_concurrent\": false,\n    \"retry_count\": 0,\n    \"timeout_occurred\": false\n  },\n  \"request_id\": \"2b90a182845b460aaa51578429f048cd\",\n  \"success\": true\n}",
+       "type": "text"
+      }
+     ],
+     "isError": false
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 120,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "entity_id": "input_boolean.hamcp371_helper"
+     },
+     "name": "ha_get_state"
+    }
+   },
+   "method": "POST",
+   "path": "/synthetic-engineering-access-secret/mcp"
+  },
+  "response": {
+   "id": 120,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\n  \"operation\": \"ha_get_state\",\n  \"summary\": \"Completed a reviewed pure-read operation through the upstream gateway.\",\n  \"data\": {\n    \"data\": {\n      \"entity_id\": \"input_boolean.hamcp371_helper\",\n      \"state\": \"on\",\n      \"attributes\": {\n        \"editable\": true,\n        \"friendly_name\": \"HAMCP371 helper\"\n      },\n      \"last_changed\": \"2026-11-16T06:16:51.374274-06:00\",\n      \"last_reported\": \"2026-11-16T06:16:51.374274-06:00\",\n      \"last_updated\": \"2026-11-16T06:16:51.374274-06:00\",\n      \"context\": {\n        \"id\": \"01M7J4KT5DTNH5EVJFTWDAKR88\",\n        \"parent_id\": null,\n        \"user_id\": \"a652c117e9f64725aebd7e430da65f70\"\n      }\n    },\n    \"metadata\": {\n      \"home_assistant_timezone\": \"America/Chicago\",\n      \"timestamp_format\": \"ISO 8601 (America/Chicago)\",\n      \"note\": \"Per-record timestamp fields (last_changed, last_updated, last_reported, when, last_triggered) have been converted to America/Chicago local time. Query-window boundary fields (period, start_time, end_time) remain in UTC.\"\n    },\n    \"fields_withheld\": 0,\n    \"fields_dropped_by_policy\": 0,\n    \"upstream_warnings_replaced\": 0\n  },\n  \"warnings\": [],\n  \"metadata\": {\n    \"provider\": \"upstream_read_gateway\",\n    \"upstream_tool\": \"ha_get_state\",\n    \"upstream_server\": \"ha-mcp\",\n    \"upstream_version\": \"9.2.0\",\n    \"classification\": \"automatic_read\",\n    \"schema_fingerprint\": \"079c4fa378e1f5c2b19f8c46bea46d5f572bc5b3724cb605794ff59edb942226\",\n    \"untrusted_upstream_content\": true,\n    \"fallback\": \"none\",\n    \"fallback_occurred\": false,\n    \"completeness\": \"complete\"\n  },\n  \"timing\": {\n    \"total_ms\": 226.803,\n    \"tool_ms\": 223.904,\n    \"home_assistant_ms\": 0.0,\n    \"home_assistant_cumulative_attempt_ms\": 0.0,\n    \"home_assistant_wall_clock_span_ms\": 0.0,\n    \"home_assistant_request_count\": 0,\n    \"upstream_attempted\": true,\n    \"upstream_ms\": 219.7,\n    \"upstream_wall_clock_span_ms\": 219.7,\n    \"upstream_request_count\": 1,\n    \"provider_operations_concurrent\": false,\n    \"retry_count\": 0,\n    \"timeout_occurred\": false\n  },\n  \"request_id\": \"2b90a182845b460aaa51578429f048cd\",\n  \"success\": true\n}",
+      "type": "text"
+     }
+    ],
+    "isError": false
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Mon, 16 Nov 2026 12:17:08 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "x-request-id",
+    "2b90a182845b460aaa51578429f048cd"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null
+}

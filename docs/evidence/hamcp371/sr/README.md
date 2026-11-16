@@ -1,8 +1,9 @@
-# HAMCP-371 SR-a, P1 and D6: harness, local Engineering image, 2.2.1 tree, catalog admission
+# HAMCP-371 SR: harness, local Engineering image, 2.2.1 tree, catalog admission, Core seed, P3 and SR-b
 
 Ruling: architect ruling 2026-11-15 19:05 CST (SR GO, part SR-a), under the SR
 contract of 2026-11-15 17:50 CST. SR-a prepares the replay; it calls no read.
-SR-b (the replay of the 27 admitted reads) has not run.
+SR-b (the replay of the 27 admitted reads) ran twice: launch 1 failed after
+start (section 7); launch 2 passed (section 11).
 
 The architect accepted SR-a as reported (ruling 2026-11-15 20:17 CST) and
 recorded two known differences from CI:
@@ -345,7 +346,7 @@ Rulings: architect rulings 2026-11-15 22:26 CST (SR-b GO if P1 passes; a
 failure after start is reported, never re-run).
 
 - Unit `hamcp371-sr-b-1`, head `a461dfc7`, image `hamcp371-sr-engineering:a518934a54e0`
-  (section 3, `engineering-image.json`). Heavy gate at start: 12683 MB
+  (`engineering-image.json` as committed at `a461dfc7`; section 9). Heavy gate at start: 12683 MB
   available, load 0.27, 58G root free, no other heavy jobs.
 - Started 23:09:42 CST, ended 23:10:14 CST (31.5 s). Run id
   `0947e551778a497ea19e163a7b9541d2`.
@@ -424,3 +425,172 @@ record.
 - Give the lane a signed registry sequence that names Core 2026.11.0. This
   touches the signed-registry configuration and needs its own ruling.
 - Any re-run is a new launch under a new ruling.
+
+## 8. Core registry seed: seeding (a)
+
+Ruling: architect ruling 2026-11-16 06:05 CST, seeding (a), after the
+step-2 stop at `49ace557`. D7 (the committed key
+`docs/evidence/hamcp222/core-public-key.txt`, sha256 `9b27fb7f…cc9f42`) and
+the registry blob verification were accepted.
+
+`core_registry_seed.py` (commit `49555f68`) runs Engineering's own
+`CoreReleaseRegistry.refresh()` once, offline, in a temporary directory
+whose `data/` stands for the lane's `/data`:
+
+- The fetcher is local and in-process. It accepts only Engineering's Core
+  registry URL and returns the exact blob
+  `upstream-trust/ha-core-release-registry.json` at `917bfa2a`
+  (`git cat-file`; blob `6d91c9b2…`, sha256 `e792670d…db27b092`,
+  408,173 bytes). It was called once.
+- The key is the committed public key above.
+- `refresh()` returned True and wrote the cache and its `.lifecycle`
+  witness under the lane's names. Both were copied unchanged into
+  `core-registry-seed/`; neither was written or edited by hand.
+
+| File (lane path) | sha256 | Bytes |
+|---|---|---|
+| `/data/ha-core-release-registry-cache.json` | `622e29e0f285d3bd45ab488f70f492642365b319d5ba76a70dc43a68826082df` | 408,213 |
+| `/data/ha-core-release-registry-cache.json.lifecycle` | `f8c0918fb763fed3d5e62bae7ca82d6bec2e1e772a6eea64ab90793753577b88` | 141 |
+| `seed-record.json` (the record) | `ab0d8daae9cb50f5b80313dbb3d6b7b98bf3b3fe8164211a4496355912eb4c83` | |
+
+- Authority after the refresh: sequence 18, content digest
+  `sha256:5a68d9a2…6482`, expires 2027-02-12T12:09:02Z, cache valid,
+  freshness current, not surface-denied.
+- The witness holds only `schema_version`, `state` and
+  `authority_journal_sha256`. It binds no path or host value.
+- The harness delivers both files into Engineering's `/data` with the
+  options file, in one `docker cp` tar, as uid 0, mode 0600.
+- **Known difference from production:** same verification and write path,
+  local transport instead of GitHub.
+
+Tests: `tests/test_hamcp371_core_registry_seed.py` (6, OK) and the harness
+tests (50, OK). The Fast tier ran at `49555f68`.
+
+## 9. The local Engineering image for SR-b launch 2
+
+`engineering-image.json` now records the image rebuilt from `49555f68`, the
+same way as `291b2cb6` (section 3): committed-tree tar context, heavy gate,
+local tag only, never pushed. Commit `13f8587b`.
+
+| Field | Value |
+|---|---|
+| Tag | `hamcp371-sr-engineering:49555f68caff` (local only, never pushed) |
+| Image Id | `sha256:2397b9da0b1334d7945b37b9daecdd35c5bd6b4b3b814c2b74ac7ee8962cb532` |
+| Revision | `49555f68caff54ecb44491b34c9dcb129ed7fc1b` |
+| Tree (`hass_mcp_engineering_beta`) | `060d5d9997fd8b67461217c585574449830637e9` |
+| Build-context sha256 | `ac7497f2a5211f7255f6ba9230546eafd44c909a7c263f8e138885d27855bc01` (412 files, 12,963,840 bytes) |
+| Version label | `2.4.2-beta.8` |
+| Size | 316,364,485 bytes |
+
+- The build ran as unit `hamcp371-sr-build-3` from 06:11:34 to 06:11:47 CST
+  on 2026-11-16 (12.1 s). Heavy gate: 12,765 MB available, load 0.03, 58 GB
+  root free, no other heavy job.
+- The context includes the D6 `ha_search` pair commit `7338723e`: the
+  Engineering tree has been `060d5d99` since that commit. That is also why
+  the context sha256 equals the launch-1 image's. Only the revision and
+  build-time arguments differ.
+
+Image history:
+
+| Use | Tag | Image Id | Record commit |
+|---|---|---|---|
+| SR-a (section 3) | `hamcp371-sr-engineering:8b3cadfa06f5` | `sha256:61d89783…c6e655` | `291b2cb6` |
+| SR-b launch 1 (section 7) | `hamcp371-sr-engineering:a518934a54e0` | `sha256:b95ab1f23253f94e1209eaf39799fa1afa62ca2d540fb2b9b70e45a0fef96d13` | `a461dfc7` |
+| SR-b launch 2 (section 11) | `hamcp371-sr-engineering:49555f68caff` | `sha256:2397b9da0b1334d7945b37b9daecdd35c5bd6b4b3b814c2b74ac7ee8962cb532` | `13f8587b` |
+
+## 10. P3 (amended): Core 2026.11.0 authority from the seed — PASS
+
+Ruling: architect ruling 2026-11-16 06:05 CST, P3 (amended). Script
+`p3_core_authority.py`; result `p3-core-authority.json` (commit
+`6b542391`, evaluated 2026-11-16T12:15:13Z at head `13f8587b`, tree
+`060d5d99`).
+
+- The seed files were delivered as the lane delivers them: the harness's
+  `options_archive()` tar, extracted into `data/` under the final names,
+  with nothing renamed. The witness survived the copy.
+- Engineering's `CoreReleaseRegistry` at the branch head, the committed key,
+  and a fetcher that always fails (`aiohttp.ClientConnectionError`).
+- At load and again after one failed `refresh()`: sequence 18, content
+  digest `sha256:5a68d9a2…6482`, expires 2027-02-12T12:09:02Z, cache valid,
+  positive authority current, not surface-denied, not revoked.
+- Entry `ha-core-2026.11.0-reviewed-v1`: image index
+  `sha256:c6c1ca9931036bf3a2c4cc088d8db25dfea3b33935a5ecc83c40349462e2f69e`,
+  source commit `74cf5a49c63ed8d4d87717844bf14f79c28c9cea`, probe profile
+  `core-probes-child-device-name-parts-v1`, 38 capabilities. It equals the
+  blob's sequence-18 entry.
+- 38 selections, all `verified_compatibility` / `positive`.
+- `refresh()` returned False after one fetch call, reason
+  `registry_unavailable`. The files were unchanged (cache `622e29e0…`,
+  witness `f8c0918f…`, both 0600).
+
+Tests: `tests/test_hamcp371_p3_core_authority.py` (3, OK). These cover the
+PASS case, a seed without its witness (FAIL: invalid cache,
+surface-denied), and the fetcher.
+
+## 11. SR-b launch 2: PASS
+
+Ruling: architect ruling 2026-11-16 06:05 CST, step 5 (authorized once).
+
+- Unit `hamcp371-sr-b-2`, harness `6b542391`, image
+  `hamcp371-sr-engineering:49555f68caff` (section 9), Core seed per
+  section 8. Heavy gate at start: 12,704 MB available, load 0.09, 58 GB
+  root free, no other heavy job.
+- Started 06:16:35 CST, ended 06:17:48 CST on 2026-11-16 (72.6 s). Run id
+  `7dbf310e45d745ccbc8ce761aca4fcb9`.
+- Result **PASS**, no failure. Cleanup clean for both setups.
+- Core image `ghcr.io/home-assistant/home-assistant@sha256:c6c1ca99…`
+  (2026.11.0) for both setups.
+- Evidence: `run-b-2/` (768 files, `SHA256SUMS` verified;
+  `receipt.json` sha256
+  `cb01661a395d9da36eb041dc23457ecc513e5f3f5888c0983bc6cc97d56269f0`,
+  `SHA256SUMS` sha256 `9b891e2c…a7382`) and `launches.jsonl` (5 lines).
+  The receipt's secret scan covered 766 files with 8 needles and removed
+  none. The leak check passed.
+- The pattern scan of the 768 committed files reported 12
+  `long_base64url` hits, 6 in each setup's `out/reads/_health.json`. All
+  12 are the same 86-character value of `historical_integrity`:
+  the concatenation of `"validated_at_startup_or_explicit_deep_audit_and_when_"`
+  and `"record_becomes_authority_relevant"`,
+  a string constant in
+  `hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py:18066-18067`.
+  None is a secret. The scanner was not changed.
+
+| | 8.5.0 control | 9.2.0 candidate |
+|---|---|---|
+| Control gate | passed: advertised 80, reviewed 77, `reviewed_exact`, `admitted_exact`; differ `[]` | not gated (candidate) |
+| Upstream read gateway | `admitted_exact`, catalog `exact`, reviewed 77, advertised 80, upstream 8.5.0, `reviewed_exact` | `admitted_exact`, catalog `exact`, reviewed 77, advertised 80, upstream 9.2.0, `reviewed_exact` |
+| Reads | 27: 26 success, 1 `error:provider_error` | 27: 26 success, 1 `error:provider_error` |
+| r12 `ha_get_blueprint` | success | success |
+| r25 `ha_search` | success | success, `search_descriptor_variant` `unified` |
+| r27 `ha_get_app` | `error:provider_error`; note "not replayable in the local lane (no Supervisor)", confirmed by the response | same |
+| 9.2.0 fields | not applicable | recorded for 24 reads: `fields_withheld` 18 (r20) and 13 (r26); `fields_dropped_by_policy` 1 (r16, r17, r18); all others 0 |
+| Peer catalog | 80 tools; `ha_config_get_yaml` present (not required) | 80 tools; `ha_config_get_yaml` present (required) |
+| Lifecycle provider | `upstream_operational_lifecycle`, configured, fallback policy `none`, fallback 0, operational status `unknown` | same |
+
+Core authority in both health records:
+
+- Disposition `admitted_compatible`, compatible 38, held 0, quarantined
+  0, fallback 0, observed Core 2026.11.0, identity agreement true.
+- Release registry: enabled, registry id accepted, sequence 18, cache valid,
+  freshness current, refresh failed, last failure `registry_unavailable`
+  (no egress, as expected), not surface-denied, 3 retained revocations.
+
+### D8 entries for run-b-2
+
+`d8_gitattributes.py run-b-2 --base e741f2ed --write` appended 172
+exact-path `-text -whitespace` entries to `.gitattributes`. They sit under
+a comment naming `run-b-2` and its `SHA256SUMS`. Each file is listed in
+`run-b-2/SHA256SUMS`, matches its listed sha256, and fails
+`git diff --check`. No globs.
+
+- 170 recorded proxy responses, 85 in each of `8.5.0/out/proxy/` and
+  `9.2.0/out/proxy/`. Each directory has 115 `.response` files; the 30 not
+  flagged are `000001`, `000003`, `000006`, and `000009` to `000113` in
+  steps of 4 (the same numbers in both setups). The flagged ones are
+  server-sent-event bodies whose lines end in CRLF
+  (`event: message\r\n`). The exact list is the run-b-2 block in
+  `.gitattributes`.
+- `8.5.0/peer.log` and `9.2.0/peer.log`.
+
+All staged blobs equal the files' bytes; the base `.gitattributes` has no
+line-ending normalization that applies to them.

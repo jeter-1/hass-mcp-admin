@@ -1,0 +1,99 @@
+{
+ "case": {
+  "arguments": {
+   "template": "{{ states('input_boolean.hamcp371_helper') }}"
+  },
+  "id": "r10-template",
+  "tool": "ha_eval_template"
+ },
+ "exchange": {
+  "body_bytes": 2011,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":111,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\n  \\\"operation\\\": \\\"ha_eval_template\\\",\\n  \\\"summary\\\": \\\"Completed a reviewed pure-read operation through the upstream gateway.\\\",\\n  \\\"data\\\": {\\n    \\\"success\\\": true,\\n    \\\"template\\\": \\\"{{ states('input_boolean.hamcp371_helper') }}\\\",\\n    \\\"result\\\": \\\"on\\\",\\n    \\\"listeners\\\": {\\n      \\\"all\\\": false,\\n      \\\"entities\\\": [\\n        \\\"input_boolean.hamcp371_helper\\\"\\n      ],\\n      \\\"domains\\\": [],\\n      \\\"time\\\": false\\n    },\\n    \\\"unavailable_fields\\\": [\\n      \\\"evaluation_time\\\",\\n      \\\"request_id\\\"\\n    ],\\n    \\\"fields_withheld\\\": 0,\\n    \\\"fields_dropped_by_policy\\\": 0,\\n    \\\"upstream_warnings_replaced\\\": 0\\n  },\\n  \\\"warnings\\\": [\\n    \\\"ha-mcp 9.2.0 does not report request_id or evaluation_time for template evaluation; they are listed in unavailable_fields and were not synthesized.\\\"\\n  ],\\n  \\\"metadata\\\": {\\n    \\\"provider\\\": \\\"upstream_read_gateway\\\",\\n    \\\"upstream_tool\\\": \\\"ha_eval_template\\\",\\n    \\\"upstream_server\\\": \\\"ha-mcp\\\",\\n    \\\"upstream_version\\\": \\\"9.2.0\\\",\\n    \\\"classification\\\": \\\"automatic_read\\\",\\n    \\\"schema_fingerprint\\\": \\\"1cd46b20bfefc8bd2489de654de78bdb225f7efb42a210f3cfcf7e97040c9a86\\\",\\n    \\\"untrusted_upstream_content\\\": true,\\n    \\\"fallback\\\": \\\"none\\\",\\n    \\\"fallback_occurred\\\": false,\\n    \\\"completeness\\\": \\\"partial\\\"\\n  },\\n  \\\"timing\\\": {\\n    \\\"total_ms\\\": 228.755,\\n    \\\"tool_ms\\\": 225.88,\\n    \\\"home_assistant_ms\\\": 0.0,\\n    \\\"home_assistant_cumulative_attempt_ms\\\": 0.0,\\n    \\\"home_assistant_wall_clock_span_ms\\\": 0.0,\\n    \\\"home_assistant_request_count\\\": 0,\\n    \\\"upstream_attempted\\\": true,\\n    \\\"upstream_ms\\\": 223.571,\\n    \\\"upstream_wall_clock_span_ms\\\": 223.571,\\n    \\\"upstream_request_count\\\": 1,\\n    \\\"provider_operations_concurrent\\\": false,\\n    \\\"retry_count\\\": 0,\\n    \\\"timeout_occurred\\\": false\\n  },\\n  \\\"request_id\\\": \\\"826a09f457554e3e96918774617ba633\\\",\\n  \\\"success\\\": true\\n}\"}],\"isError\":false}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 111,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\n  \"operation\": \"ha_eval_template\",\n  \"summary\": \"Completed a reviewed pure-read operation through the upstream gateway.\",\n  \"data\": {\n    \"success\": true,\n    \"template\": \"{{ states('input_boolean.hamcp371_helper') }}\",\n    \"result\": \"on\",\n    \"listeners\": {\n      \"all\": false,\n      \"entities\": [\n        \"input_boolean.hamcp371_helper\"\n      ],\n      \"domains\": [],\n      \"time\": false\n    },\n    \"unavailable_fields\": [\n      \"evaluation_time\",\n      \"request_id\"\n    ],\n    \"fields_withheld\": 0,\n    \"fields_dropped_by_policy\": 0,\n    \"upstream_warnings_replaced\": 0\n  },\n  \"warnings\": [\n    \"ha-mcp 9.2.0 does not report request_id or evaluation_time for template evaluation; they are listed in unavailable_fields and were not synthesized.\"\n  ],\n  \"metadata\": {\n    \"provider\": \"upstream_read_gateway\",\n    \"upstream_tool\": \"ha_eval_template\",\n    \"upstream_server\": \"ha-mcp\",\n    \"upstream_version\": \"9.2.0\",\n    \"classification\": \"automatic_read\",\n    \"schema_fingerprint\": \"1cd46b20bfefc8bd2489de654de78bdb225f7efb42a210f3cfcf7e97040c9a86\",\n    \"untrusted_upstream_content\": true,\n    \"fallback\": \"none\",\n    \"fallback_occurred\": false,\n    \"completeness\": \"partial\"\n  },\n  \"timing\": {\n    \"total_ms\": 228.755,\n    \"tool_ms\": 225.88,\n    \"home_assistant_ms\": 0.0,\n    \"home_assistant_cumulative_attempt_ms\": 0.0,\n    \"home_assistant_wall_clock_span_ms\": 0.0,\n    \"home_assistant_request_count\": 0,\n    \"upstream_attempted\": true,\n    \"upstream_ms\": 223.571,\n    \"upstream_wall_clock_span_ms\": 223.571,\n    \"upstream_request_count\": 1,\n    \"provider_operations_concurrent\": false,\n    \"retry_count\": 0,\n    \"timeout_occurred\": false\n  },\n  \"request_id\": \"826a09f457554e3e96918774617ba633\",\n  \"success\": true\n}",
+       "type": "text"
+      }
+     ],
+     "isError": false
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 111,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "template": "{{ states('input_boolean.hamcp371_helper') }}"
+     },
+     "name": "ha_eval_template"
+    }
+   },
+   "method": "POST",
+   "path": "/synthetic-engineering-access-secret/mcp"
+  },
+  "response": {
+   "id": 111,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\n  \"operation\": \"ha_eval_template\",\n  \"summary\": \"Completed a reviewed pure-read operation through the upstream gateway.\",\n  \"data\": {\n    \"success\": true,\n    \"template\": \"{{ states('input_boolean.hamcp371_helper') }}\",\n    \"result\": \"on\",\n    \"listeners\": {\n      \"all\": false,\n      \"entities\": [\n        \"input_boolean.hamcp371_helper\"\n      ],\n      \"domains\": [],\n      \"time\": false\n    },\n    \"unavailable_fields\": [\n      \"evaluation_time\",\n      \"request_id\"\n    ],\n    \"fields_withheld\": 0,\n    \"fields_dropped_by_policy\": 0,\n    \"upstream_warnings_replaced\": 0\n  },\n  \"warnings\": [\n    \"ha-mcp 9.2.0 does not report request_id or evaluation_time for template evaluation; they are listed in unavailable_fields and were not synthesized.\"\n  ],\n  \"metadata\": {\n    \"provider\": \"upstream_read_gateway\",\n    \"upstream_tool\": \"ha_eval_template\",\n    \"upstream_server\": \"ha-mcp\",\n    \"upstream_version\": \"9.2.0\",\n    \"classification\": \"automatic_read\",\n    \"schema_fingerprint\": \"1cd46b20bfefc8bd2489de654de78bdb225f7efb42a210f3cfcf7e97040c9a86\",\n    \"untrusted_upstream_content\": true,\n    \"fallback\": \"none\",\n    \"fallback_occurred\": false,\n    \"completeness\": \"partial\"\n  },\n  \"timing\": {\n    \"total_ms\": 228.755,\n    \"tool_ms\": 225.88,\n    \"home_assistant_ms\": 0.0,\n    \"home_assistant_cumulative_attempt_ms\": 0.0,\n    \"home_assistant_wall_clock_span_ms\": 0.0,\n    \"home_assistant_request_count\": 0,\n    \"upstream_attempted\": true,\n    \"upstream_ms\": 223.571,\n    \"upstream_wall_clock_span_ms\": 223.571,\n    \"upstream_request_count\": 1,\n    \"provider_operations_concurrent\": false,\n    \"retry_count\": 0,\n    \"timeout_occurred\": false\n  },\n  \"request_id\": \"826a09f457554e3e96918774617ba633\",\n  \"success\": true\n}",
+      "type": "text"
+     }
+    ],
+    "isError": false
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Mon, 16 Nov 2026 12:17:05 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "x-request-id",
+    "826a09f457554e3e96918774617ba633"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null
+}

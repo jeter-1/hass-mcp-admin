@@ -1,0 +1,99 @@
+{
+ "case": {
+  "arguments": {
+   "limit": 5
+  },
+  "id": "r13-devices",
+  "tool": "ha_get_device"
+ },
+ "exchange": {
+  "body_bytes": 3309,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":114,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\n  \\\"operation\\\": \\\"ha_get_device\\\",\\n  \\\"summary\\\": \\\"Completed a reviewed pure-read operation through the upstream gateway.\\\",\\n  \\\"data\\\": {\\n    \\\"success\\\": true,\\n    \\\"total_count\\\": 4,\\n    \\\"offset\\\": 0,\\n    \\\"limit\\\": 5,\\n    \\\"count\\\": 4,\\n    \\\"has_more\\\": false,\\n    \\\"next_offset\\\": null,\\n    \\\"total_devices\\\": 4,\\n    \\\"detail_level\\\": \\\"summary\\\",\\n    \\\"devices\\\": [\\n      {\\n        \\\"device_id\\\": \\\"c7f3fbec88a5b1046e43376644e288c9\\\",\\n        \\\"name\\\": \\\"Sun\\\",\\n        \\\"manufacturer\\\": null,\\n        \\\"model\\\": null,\\n        \\\"sw_version\\\": null,\\n        \\\"area_id\\\": null,\\n        \\\"via_device_id\\\": null,\\n        \\\"integration_type\\\": \\\"sun\\\",\\n        \\\"integration_sources\\\": [\\n          \\\"sun\\\"\\n        ]\\n      },\\n      {\\n        \\\"device_id\\\": \\\"51d92b841bb9126536bceff5e5b6e1b8\\\",\\n        \\\"name\\\": \\\"Google Translate en com\\\",\\n        \\\"manufacturer\\\": \\\"Google\\\",\\n        \\\"model\\\": \\\"Google Translate TTS\\\",\\n        \\\"sw_version\\\": null,\\n        \\\"area_id\\\": null,\\n        \\\"via_device_id\\\": null,\\n        \\\"integration_type\\\": \\\"google_translate\\\",\\n        \\\"integration_sources\\\": [\\n          \\\"google_translate\\\"\\n        ]\\n      },\\n      {\\n        \\\"device_id\\\": \\\"9d819f0ece328114b1e99593754b50cc\\\",\\n        \\\"name\\\": \\\"Backup\\\",\\n        \\\"manufacturer\\\": \\\"Home Assistant\\\",\\n        \\\"model\\\": \\\"Home Assistant Backup\\\",\\n        \\\"sw_version\\\": \\\"2026.11.0\\\",\\n        \\\"area_id\\\": null,\\n        \\\"via_device_id\\\": null,\\n        \\\"integration_type\\\": \\\"backup\\\",\\n        \\\"integration_sources\\\": [\\n          \\\"backup\\\"\\n        ]\\n      },\\n      {\\n        \\\"device_id\\\": \\\"95e36e518c603a2499a867492dfc97cd\\\",\\n        \\\"name\\\": \\\"HA-MCP File & YAML Tools\\\",\\n        \\\"manufacturer\\\": \\\"homeassistant-ai\\\",\\n        \\\"model\\\": \\\"File & YAML editing services\\\",\\n        \\\"sw_version\\\": \\\"2.2.1\\\",\\n        \\\"area_id\\\": null,\\n        \\\"via_device_id\\\": null,\\n        \\\"integration_sources\\\": [],\\n        \\\"identity_fields_withheld\\\": 2\\n      }\\n    ],\\n    \\\"warnings\\\": [\\n      \\\"registry_identity_withheld\\\"\\n    ]\\n  },\\n  \\\"warnings\\\": [],\\n  \\\"metadata\\\": {\\n    \\\"provider\\\": \\\"upstream_read_gateway\\\",\\n    \\\"upstream_tool\\\": \\\"ha_get_device\\\",\\n    \\\"upstream_server\\\": \\\"ha-mcp\\\",\\n    \\\"upstream_version\\\": \\\"8.5.0\\\",\\n    \\\"classification\\\": \\\"automatic_read\\\",\\n    \\\"schema_fingerprint\\\": \\\"0cec4531a1543b2a1ff7ff4e65a3bbd076675f95be077f02567eb86fe6cf7dc7\\\",\\n    \\\"untrusted_upstream_content\\\": true,\\n    \\\"fallback\\\": \\\"none\\\",\\n    \\\"fallback_occurred\\\": false,\\n    \\\"completeness\\\": \\\"complete\\\"\\n  },\\n  \\\"timing\\\": {\\n    \\\"total_ms\\\": 229.303,\\n    \\\"tool_ms\\\": 226.484,\\n    \\\"home_assistant_ms\\\": 0.0,\\n    \\\"home_assistant_cumulative_attempt_ms\\\": 0.0,\\n    \\\"home_assistant_wall_clock_span_ms\\\": 0.0,\\n    \\\"home_assistant_request_count\\\": 0,\\n    \\\"upstream_attempted\\\": true,\\n    \\\"upstream_ms\\\": 219.455,\\n    \\\"upstream_wall_clock_span_ms\\\": 219.455,\\n    \\\"upstream_request_count\\\": 1,\\n    \\\"provider_operations_concurrent\\\": false,\\n    \\\"retry_count\\\": 0,\\n    \\\"timeout_occurred\\\": false\\n  },\\n  \\\"request_id\\\": \\\"1dc9bb7842ae4afe8268b7ca5ec85145\\\",\\n  \\\"success\\\": true\\n}\"}],\"isError\":false}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 114,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\n  \"operation\": \"ha_get_device\",\n  \"summary\": \"Completed a reviewed pure-read operation through the upstream gateway.\",\n  \"data\": {\n    \"success\": true,\n    \"total_count\": 4,\n    \"offset\": 0,\n    \"limit\": 5,\n    \"count\": 4,\n    \"has_more\": false,\n    \"next_offset\": null,\n    \"total_devices\": 4,\n    \"detail_level\": \"summary\",\n    \"devices\": [\n      {\n        \"device_id\": \"c7f3fbec88a5b1046e43376644e288c9\",\n        \"name\": \"Sun\",\n        \"manufacturer\": null,\n        \"model\": null,\n        \"sw_version\": null,\n        \"area_id\": null,\n        \"via_device_id\": null,\n        \"integration_type\": \"sun\",\n        \"integration_sources\": [\n          \"sun\"\n        ]\n      },\n      {\n        \"device_id\": \"51d92b841bb9126536bceff5e5b6e1b8\",\n        \"name\": \"Google Translate en com\",\n        \"manufacturer\": \"Google\",\n        \"model\": \"Google Translate TTS\",\n        \"sw_version\": null,\n        \"area_id\": null,\n        \"via_device_id\": null,\n        \"integration_type\": \"google_translate\",\n        \"integration_sources\": [\n          \"google_translate\"\n        ]\n      },\n      {\n        \"device_id\": \"9d819f0ece328114b1e99593754b50cc\",\n        \"name\": \"Backup\",\n        \"manufacturer\": \"Home Assistant\",\n        \"model\": \"Home Assistant Backup\",\n        \"sw_version\": \"2026.11.0\",\n        \"area_id\": null,\n        \"via_device_id\": null,\n        \"integration_type\": \"backup\",\n        \"integration_sources\": [\n          \"backup\"\n        ]\n      },\n      {\n        \"device_id\": \"95e36e518c603a2499a867492dfc97cd\",\n        \"name\": \"HA-MCP File & YAML Tools\",\n        \"manufacturer\": \"homeassistant-ai\",\n        \"model\": \"File & YAML editing services\",\n        \"sw_version\": \"2.2.1\",\n        \"area_id\": null,\n        \"via_device_id\": null,\n        \"integration_sources\": [],\n        \"identity_fields_withheld\": 2\n      }\n    ],\n    \"warnings\": [\n      \"registry_identity_withheld\"\n    ]\n  },\n  \"warnings\": [],\n  \"metadata\": {\n    \"provider\": \"upstream_read_gateway\",\n    \"upstream_tool\": \"ha_get_device\",\n    \"upstream_server\": \"ha-mcp\",\n    \"upstream_version\": \"8.5.0\",\n    \"classification\": \"automatic_read\",\n    \"schema_fingerprint\": \"0cec4531a1543b2a1ff7ff4e65a3bbd076675f95be077f02567eb86fe6cf7dc7\",\n    \"untrusted_upstream_content\": true,\n    \"fallback\": \"none\",\n    \"fallback_occurred\": false,\n    \"completeness\": \"complete\"\n  },\n  \"timing\": {\n    \"total_ms\": 229.303,\n    \"tool_ms\": 226.484,\n    \"home_assistant_ms\": 0.0,\n    \"home_assistant_cumulative_attempt_ms\": 0.0,\n    \"home_assistant_wall_clock_span_ms\": 0.0,\n    \"home_assistant_request_count\": 0,\n    \"upstream_attempted\": true,\n    \"upstream_ms\": 219.455,\n    \"upstream_wall_clock_span_ms\": 219.455,\n    \"upstream_request_count\": 1,\n    \"provider_operations_concurrent\": false,\n    \"retry_count\": 0,\n    \"timeout_occurred\": false\n  },\n  \"request_id\": \"1dc9bb7842ae4afe8268b7ca5ec85145\",\n  \"success\": true\n}",
+       "type": "text"
+      }
+     ],
+     "isError": false
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 114,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "limit": 5
+     },
+     "name": "ha_get_device"
+    }
+   },
+   "method": "POST",
+   "path": "/synthetic-engineering-access-secret/mcp"
+  },
+  "response": {
+   "id": 114,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\n  \"operation\": \"ha_get_device\",\n  \"summary\": \"Completed a reviewed pure-read operation through the upstream gateway.\",\n  \"data\": {\n    \"success\": true,\n    \"total_count\": 4,\n    \"offset\": 0,\n    \"limit\": 5,\n    \"count\": 4,\n    \"has_more\": false,\n    \"next_offset\": null,\n    \"total_devices\": 4,\n    \"detail_level\": \"summary\",\n    \"devices\": [\n      {\n        \"device_id\": \"c7f3fbec88a5b1046e43376644e288c9\",\n        \"name\": \"Sun\",\n        \"manufacturer\": null,\n        \"model\": null,\n        \"sw_version\": null,\n        \"area_id\": null,\n        \"via_device_id\": null,\n        \"integration_type\": \"sun\",\n        \"integration_sources\": [\n          \"sun\"\n        ]\n      },\n      {\n        \"device_id\": \"51d92b841bb9126536bceff5e5b6e1b8\",\n        \"name\": \"Google Translate en com\",\n        \"manufacturer\": \"Google\",\n        \"model\": \"Google Translate TTS\",\n        \"sw_version\": null,\n        \"area_id\": null,\n        \"via_device_id\": null,\n        \"integration_type\": \"google_translate\",\n        \"integration_sources\": [\n          \"google_translate\"\n        ]\n      },\n      {\n        \"device_id\": \"9d819f0ece328114b1e99593754b50cc\",\n        \"name\": \"Backup\",\n        \"manufacturer\": \"Home Assistant\",\n        \"model\": \"Home Assistant Backup\",\n        \"sw_version\": \"2026.11.0\",\n        \"area_id\": null,\n        \"via_device_id\": null,\n        \"integration_type\": \"backup\",\n        \"integration_sources\": [\n          \"backup\"\n        ]\n      },\n      {\n        \"device_id\": \"95e36e518c603a2499a867492dfc97cd\",\n        \"name\": \"HA-MCP File & YAML Tools\",\n        \"manufacturer\": \"homeassistant-ai\",\n        \"model\": \"File & YAML editing services\",\n        \"sw_version\": \"2.2.1\",\n        \"area_id\": null,\n        \"via_device_id\": null,\n        \"integration_sources\": [],\n        \"identity_fields_withheld\": 2\n      }\n    ],\n    \"warnings\": [\n      \"registry_identity_withheld\"\n    ]\n  },\n  \"warnings\": [],\n  \"metadata\": {\n    \"provider\": \"upstream_read_gateway\",\n    \"upstream_tool\": \"ha_get_device\",\n    \"upstream_server\": \"ha-mcp\",\n    \"upstream_version\": \"8.5.0\",\n    \"classification\": \"automatic_read\",\n    \"schema_fingerprint\": \"0cec4531a1543b2a1ff7ff4e65a3bbd076675f95be077f02567eb86fe6cf7dc7\",\n    \"untrusted_upstream_content\": true,\n    \"fallback\": \"none\",\n    \"fallback_occurred\": false,\n    \"completeness\": \"complete\"\n  },\n  \"timing\": {\n    \"total_ms\": 229.303,\n    \"tool_ms\": 226.484,\n    \"home_assistant_ms\": 0.0,\n    \"home_assistant_cumulative_attempt_ms\": 0.0,\n    \"home_assistant_wall_clock_span_ms\": 0.0,\n    \"home_assistant_request_count\": 0,\n    \"upstream_attempted\": true,\n    \"upstream_ms\": 219.455,\n    \"upstream_wall_clock_span_ms\": 219.455,\n    \"upstream_request_count\": 1,\n    \"provider_operations_concurrent\": false,\n    \"retry_count\": 0,\n    \"timeout_occurred\": false\n  },\n  \"request_id\": \"1dc9bb7842ae4afe8268b7ca5ec85145\",\n  \"success\": true\n}",
+      "type": "text"
+     }
+    ],
+    "isError": false
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Mon, 16 Nov 2026 12:17:42 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "x-request-id",
+    "1dc9bb7842ae4afe8268b7ca5ec85145"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null
+}

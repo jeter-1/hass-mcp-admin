@@ -1,0 +1,1 @@
+{"method":"tools/call","params":{"name":"ha_get_skill_guide","arguments":{"skill":"home-assistant-best-practices","file":"SKILL.md"}},"jsonrpc":"2.0","id":2}

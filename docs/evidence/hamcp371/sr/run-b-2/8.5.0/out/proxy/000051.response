@@ -1,0 +1,6 @@
+event: message
+data: {"jsonrpc":"2.0","method":"notifications/message","params":{"level":"info","data":{"msg":"ha_get_automation_traces starting: id=automation.hamcp371_automation run_id=<list>","extra":null}}}
+
+event: message
+data: {"jsonrpc":"2.0","id":2,"result":{"content":[{"text":"{\"success\":true,\"automation_id\":\"automation.hamcp371_automation\",\"trace_count\":1,\"total_available\":1,\"offset\":0,\"order\":\"newest\",\"has_more\":false,\"traces\":[{\"run_id\":\"3f99870f3baa678a8cc8c71058b45f2a\",\"timestamp\":{\"start\":\"2026-11-16T12:17:23.270364+00:00\",\"finish\":\"2026-11-16T12:17:23.271561+00:00\"},\"state\":\"stopped\",\"execution\":\"finished\"}],\"hint\":\"Use run_id with this tool to get detailed trace information\"}","type":"text"}],"isError":false,"structuredContent":{"success":true,"automation_id":"automation.hamcp371_automation","trace_count":1,"total_available":1,"offset":0,"order":"newest","has_more":false,"traces":[{"run_id":"3f99870f3baa678a8cc8c71058b45f2a","timestamp":{"start":"2026-11-16T12:17:23.270364+00:00","finish":"2026-11-16T12:17:23.271561+00:00"},"state":"stopped","execution":"finished"}],"hint":"Use run_id with this tool to get detailed trace information"}}}
+

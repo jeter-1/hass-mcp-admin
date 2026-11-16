@@ -1,0 +1,99 @@
+{
+ "case": {
+  "arguments": {
+   "limit": 5
+  },
+  "id": "r08-groups",
+  "tool": "ha_config_list_groups"
+ },
+ "exchange": {
+  "body_bytes": 2618,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":109,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\n  \\\"operation\\\": \\\"ha_config_list_groups\\\",\\n  \\\"summary\\\": \\\"Completed a reviewed pure-read operation through the upstream gateway.\\\",\\n  \\\"data\\\": {\\n    \\\"success\\\": true,\\n    \\\"groups\\\": [\\n      {\\n        \\\"friendly_name\\\": \\\"HAMCP371 groupe \\\\u00e9\\\\u00fc \\\\u96ea\\\",\\n        \\\"icon\\\": null,\\n        \\\"auto\\\": false,\\n        \\\"order\\\": 0,\\n        \\\"entity_id\\\": \\\"group.hamcp371_group\\\",\\n        \\\"state\\\": \\\"unknown\\\",\\n        \\\"last_changed\\\": \\\"2026-11-16T12:16:45.952489+00:00\\\",\\n        \\\"last_reported\\\": \\\"2026-11-16T12:16:47.696362+00:00\\\",\\n        \\\"last_updated\\\": \\\"2026-11-16T12:16:45.952489+00:00\\\",\\n        \\\"context\\\": {\\n          \\\"id\\\": \\\"01M7J4KMW04FPC0H0GNDPRBZ95\\\",\\n          \\\"parent_id\\\": null,\\n          \\\"user_id\\\": null\\n        },\\n        \\\"object_id\\\": \\\"hamcp371_group\\\",\\n        \\\"entity_ids\\\": [\\n          \\\"sun.sun\\\"\\n        ],\\n        \\\"unavailable_fields\\\": [\\n          \\\"all\\\"\\n        ]\\n      }\\n    ],\\n    \\\"total_count\\\": 1,\\n    \\\"offset\\\": 0,\\n    \\\"limit\\\": 5,\\n    \\\"count\\\": 1,\\n    \\\"has_more\\\": false,\\n    \\\"next_offset\\\": null,\\n    \\\"message\\\": \\\"Found 1 group(s)\\\",\\n    \\\"fields_withheld\\\": 0,\\n    \\\"fields_dropped_by_policy\\\": 0,\\n    \\\"upstream_warnings_replaced\\\": 0\\n  },\\n  \\\"warnings\\\": [\\n    \\\"Some group records do not report the all or order fields on ha-mcp 9.2.0; they are listed in unavailable_fields and were not synthesized.\\\"\\n  ],\\n  \\\"metadata\\\": {\\n    \\\"provider\\\": \\\"upstream_read_gateway\\\",\\n    \\\"upstream_tool\\\": \\\"ha_config_list_groups\\\",\\n    \\\"upstream_server\\\": \\\"ha-mcp\\\",\\n    \\\"upstream_version\\\": \\\"9.2.0\\\",\\n    \\\"classification\\\": \\\"automatic_read\\\",\\n    \\\"schema_fingerprint\\\": \\\"329191e6416743be5cf024e6062f3f00cc858b0ce5ddef87771ea52af88c37e3\\\",\\n    \\\"untrusted_upstream_content\\\": true,\\n    \\\"fallback\\\": \\\"none\\\",\\n    \\\"fallback_occurred\\\": false,\\n    \\\"completeness\\\": \\\"partial\\\"\\n  },\\n  \\\"timing\\\": {\\n    \\\"total_ms\\\": 225.477,\\n    \\\"tool_ms\\\": 222.569,\\n    \\\"home_assistant_ms\\\": 0.0,\\n    \\\"home_assistant_cumulative_attempt_ms\\\": 0.0,\\n    \\\"home_assistant_wall_clock_span_ms\\\": 0.0,\\n    \\\"home_assistant_request_count\\\": 0,\\n    \\\"upstream_attempted\\\": true,\\n    \\\"upstream_ms\\\": 210.177,\\n    \\\"upstream_wall_clock_span_ms\\\": 210.177,\\n    \\\"upstream_request_count\\\": 1,\\n    \\\"provider_operations_concurrent\\\": false,\\n    \\\"retry_count\\\": 0,\\n    \\\"timeout_occurred\\\": false\\n  },\\n  \\\"request_id\\\": \\\"73e15f1c245c4f84bd22fb10f48d3fd4\\\",\\n  \\\"success\\\": true\\n}\"}],\"isError\":false}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 109,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\n  \"operation\": \"ha_config_list_groups\",\n  \"summary\": \"Completed a reviewed pure-read operation through the upstream gateway.\",\n  \"data\": {\n    \"success\": true,\n    \"groups\": [\n      {\n        \"friendly_name\": \"HAMCP371 groupe \\u00e9\\u00fc \\u96ea\",\n        \"icon\": null,\n        \"auto\": false,\n        \"order\": 0,\n        \"entity_id\": \"group.hamcp371_group\",\n        \"state\": \"unknown\",\n        \"last_changed\": \"2026-11-16T12:16:45.952489+00:00\",\n        \"last_reported\": \"2026-11-16T12:16:47.696362+00:00\",\n        \"last_updated\": \"2026-11-16T12:16:45.952489+00:00\",\n        \"context\": {\n          \"id\": \"01M7J4KMW04FPC0H0GNDPRBZ95\",\n          \"parent_id\": null,\n          \"user_id\": null\n        },\n        \"object_id\": \"hamcp371_group\",\n        \"entity_ids\": [\n          \"sun.sun\"\n        ],\n        \"unavailable_fields\": [\n          \"all\"\n        ]\n      }\n    ],\n    \"total_count\": 1,\n    \"offset\": 0,\n    \"limit\": 5,\n    \"count\": 1,\n    \"has_more\": false,\n    \"next_offset\": null,\n    \"message\": \"Found 1 group(s)\",\n    \"fields_withheld\": 0,\n    \"fields_dropped_by_policy\": 0,\n    \"upstream_warnings_replaced\": 0\n  },\n  \"warnings\": [\n    \"Some group records do not report the all or order fields on ha-mcp 9.2.0; they are listed in unavailable_fields and were not synthesized.\"\n  ],\n  \"metadata\": {\n    \"provider\": \"upstream_read_gateway\",\n    \"upstream_tool\": \"ha_config_list_groups\",\n    \"upstream_server\": \"ha-mcp\",\n    \"upstream_version\": \"9.2.0\",\n    \"classification\": \"automatic_read\",\n    \"schema_fingerprint\": \"329191e6416743be5cf024e6062f3f00cc858b0ce5ddef87771ea52af88c37e3\",\n    \"untrusted_upstream_content\": true,\n    \"fallback\": \"none\",\n    \"fallback_occurred\": false,\n    \"completeness\": \"partial\"\n  },\n  \"timing\": {\n    \"total_ms\": 225.477,\n    \"tool_ms\": 222.569,\n    \"home_assistant_ms\": 0.0,\n    \"home_assistant_cumulative_attempt_ms\": 0.0,\n    \"home_assistant_wall_clock_span_ms\": 0.0,\n    \"home_assistant_request_count\": 0,\n    \"upstream_attempted\": true,\n    \"upstream_ms\": 210.177,\n    \"upstream_wall_clock_span_ms\": 210.177,\n    \"upstream_request_count\": 1,\n    \"provider_operations_concurrent\": false,\n    \"retry_count\": 0,\n    \"timeout_occurred\": false\n  },\n  \"request_id\": \"73e15f1c245c4f84bd22fb10f48d3fd4\",\n  \"success\": true\n}",
+       "type": "text"
+      }
+     ],
+     "isError": false
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 109,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "limit": 5
+     },
+     "name": "ha_config_list_groups"
+    }
+   },
+   "method": "POST",
+   "path": "/synthetic-engineering-access-secret/mcp"
+  },
+  "response": {
+   "id": 109,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\n  \"operation\": \"ha_config_list_groups\",\n  \"summary\": \"Completed a reviewed pure-read operation through the upstream gateway.\",\n  \"data\": {\n    \"success\": true,\n    \"groups\": [\n      {\n        \"friendly_name\": \"HAMCP371 groupe \\u00e9\\u00fc \\u96ea\",\n        \"icon\": null,\n        \"auto\": false,\n        \"order\": 0,\n        \"entity_id\": \"group.hamcp371_group\",\n        \"state\": \"unknown\",\n        \"last_changed\": \"2026-11-16T12:16:45.952489+00:00\",\n        \"last_reported\": \"2026-11-16T12:16:47.696362+00:00\",\n        \"last_updated\": \"2026-11-16T12:16:45.952489+00:00\",\n        \"context\": {\n          \"id\": \"01M7J4KMW04FPC0H0GNDPRBZ95\",\n          \"parent_id\": null,\n          \"user_id\": null\n        },\n        \"object_id\": \"hamcp371_group\",\n        \"entity_ids\": [\n          \"sun.sun\"\n        ],\n        \"unavailable_fields\": [\n          \"all\"\n        ]\n      }\n    ],\n    \"total_count\": 1,\n    \"offset\": 0,\n    \"limit\": 5,\n    \"count\": 1,\n    \"has_more\": false,\n    \"next_offset\": null,\n    \"message\": \"Found 1 group(s)\",\n    \"fields_withheld\": 0,\n    \"fields_dropped_by_policy\": 0,\n    \"upstream_warnings_replaced\": 0\n  },\n  \"warnings\": [\n    \"Some group records do not report the all or order fields on ha-mcp 9.2.0; they are listed in unavailable_fields and were not synthesized.\"\n  ],\n  \"metadata\": {\n    \"provider\": \"upstream_read_gateway\",\n    \"upstream_tool\": \"ha_config_list_groups\",\n    \"upstream_server\": \"ha-mcp\",\n    \"upstream_version\": \"9.2.0\",\n    \"classification\": \"automatic_read\",\n    \"schema_fingerprint\": \"329191e6416743be5cf024e6062f3f00cc858b0ce5ddef87771ea52af88c37e3\",\n    \"untrusted_upstream_content\": true,\n    \"fallback\": \"none\",\n    \"fallback_occurred\": false,\n    \"completeness\": \"partial\"\n  },\n  \"timing\": {\n    \"total_ms\": 225.477,\n    \"tool_ms\": 222.569,\n    \"home_assistant_ms\": 0.0,\n    \"home_assistant_cumulative_attempt_ms\": 0.0,\n    \"home_assistant_wall_clock_span_ms\": 0.0,\n    \"home_assistant_request_count\": 0,\n    \"upstream_attempted\": true,\n    \"upstream_ms\": 210.177,\n    \"upstream_wall_clock_span_ms\": 210.177,\n    \"upstream_request_count\": 1,\n    \"provider_operations_concurrent\": false,\n    \"retry_count\": 0,\n    \"timeout_occurred\": false\n  },\n  \"request_id\": \"73e15f1c245c4f84bd22fb10f48d3fd4\",\n  \"success\": true\n}",
+      "type": "text"
+     }
+    ],
+    "isError": false
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Mon, 16 Nov 2026 12:17:05 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "x-request-id",
+    "73e15f1c245c4f84bd22fb10f48d3fd4"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null
+}

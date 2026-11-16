@@ -1,0 +1,105 @@
+{
+ "case": {
+  "arguments": {
+   "end": "2026-11-16T07:16:48-06:00",
+   "entity_id": "calendar.hamcp371_calendar",
+   "max_results": 5,
+   "start": "2026-11-16T04:16:48-06:00"
+  },
+  "id": "r02-calendar-events",
+  "tool": "ha_config_get_calendar_events"
+ },
+ "exchange": {
+  "body_bytes": 2289,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":103,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\n  \\\"operation\\\": \\\"ha_config_get_calendar_events\\\",\\n  \\\"summary\\\": \\\"Completed a reviewed pure-read operation through the upstream gateway.\\\",\\n  \\\"data\\\": {\\n    \\\"success\\\": true,\\n    \\\"entity_id\\\": \\\"calendar.hamcp371_calendar\\\",\\n    \\\"events\\\": [\\n      {\\n        \\\"start\\\": {\\n          \\\"dateTime\\\": \\\"2026-11-16T06:26:48-06:00\\\"\\n        },\\n        \\\"end\\\": {\\n          \\\"dateTime\\\": \\\"2026-11-16T06:56:48-06:00\\\"\\n        },\\n        \\\"summary\\\": \\\"HAMCP371 event\\\",\\n        \\\"description\\\": null,\\n        \\\"location\\\": null,\\n        \\\"uid\\\": \\\"995c6b80-e1b7-11f1-948b-e3d7e9c55534\\\",\\n        \\\"recurrence_id\\\": null,\\n        \\\"rrule\\\": null,\\n        \\\"status\\\": null\\n      }\\n    ],\\n    \\\"count\\\": 1,\\n    \\\"total_available\\\": 1,\\n    \\\"time_range\\\": {\\n      \\\"start\\\": \\\"2026-11-16T04:16:48-06:00\\\",\\n      \\\"end\\\": \\\"2026-11-16T07:16:48-06:00\\\"\\n    },\\n    \\\"message\\\": \\\"Retrieved 1 event(s) from calendar.hamcp371_calendar\\\",\\n    \\\"fields_withheld\\\": 0,\\n    \\\"fields_dropped_by_policy\\\": 0,\\n    \\\"upstream_warnings_replaced\\\": 0\\n  },\\n  \\\"warnings\\\": [],\\n  \\\"metadata\\\": {\\n    \\\"provider\\\": \\\"upstream_read_gateway\\\",\\n    \\\"upstream_tool\\\": \\\"ha_config_get_calendar_events\\\",\\n    \\\"upstream_server\\\": \\\"ha-mcp\\\",\\n    \\\"upstream_version\\\": \\\"9.2.0\\\",\\n    \\\"classification\\\": \\\"automatic_read\\\",\\n    \\\"schema_fingerprint\\\": \\\"756f64f9ecfd7932522df435b7a152545c107aa7eed4b7c9146f1e7b681fc3b2\\\",\\n    \\\"untrusted_upstream_content\\\": true,\\n    \\\"fallback\\\": \\\"none\\\",\\n    \\\"fallback_occurred\\\": false,\\n    \\\"completeness\\\": \\\"complete\\\"\\n  },\\n  \\\"timing\\\": {\\n    \\\"total_ms\\\": 227.065,\\n    \\\"tool_ms\\\": 224.41,\\n    \\\"home_assistant_ms\\\": 0.0,\\n    \\\"home_assistant_cumulative_attempt_ms\\\": 0.0,\\n    \\\"home_assistant_wall_clock_span_ms\\\": 0.0,\\n    \\\"home_assistant_request_count\\\": 0,\\n    \\\"upstream_attempted\\\": true,\\n    \\\"upstream_ms\\\": 220.926,\\n    \\\"upstream_wall_clock_span_ms\\\": 220.926,\\n    \\\"upstream_request_count\\\": 1,\\n    \\\"provider_operations_concurrent\\\": false,\\n    \\\"retry_count\\\": 0,\\n    \\\"timeout_occurred\\\": false\\n  },\\n  \\\"request_id\\\": \\\"2ec6cfc77ebc4df78fc4f20a50ead3da\\\",\\n  \\\"success\\\": true\\n}\"}],\"isError\":false}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 103,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\n  \"operation\": \"ha_config_get_calendar_events\",\n  \"summary\": \"Completed a reviewed pure-read operation through the upstream gateway.\",\n  \"data\": {\n    \"success\": true,\n    \"entity_id\": \"calendar.hamcp371_calendar\",\n    \"events\": [\n      {\n        \"start\": {\n          \"dateTime\": \"2026-11-16T06:26:48-06:00\"\n        },\n        \"end\": {\n          \"dateTime\": \"2026-11-16T06:56:48-06:00\"\n        },\n        \"summary\": \"HAMCP371 event\",\n        \"description\": null,\n        \"location\": null,\n        \"uid\": \"995c6b80-e1b7-11f1-948b-e3d7e9c55534\",\n        \"recurrence_id\": null,\n        \"rrule\": null,\n        \"status\": null\n      }\n    ],\n    \"count\": 1,\n    \"total_available\": 1,\n    \"time_range\": {\n      \"start\": \"2026-11-16T04:16:48-06:00\",\n      \"end\": \"2026-11-16T07:16:48-06:00\"\n    },\n    \"message\": \"Retrieved 1 event(s) from calendar.hamcp371_calendar\",\n    \"fields_withheld\": 0,\n    \"fields_dropped_by_policy\": 0,\n    \"upstream_warnings_replaced\": 0\n  },\n  \"warnings\": [],\n  \"metadata\": {\n    \"provider\": \"upstream_read_gateway\",\n    \"upstream_tool\": \"ha_config_get_calendar_events\",\n    \"upstream_server\": \"ha-mcp\",\n    \"upstream_version\": \"9.2.0\",\n    \"classification\": \"automatic_read\",\n    \"schema_fingerprint\": \"756f64f9ecfd7932522df435b7a152545c107aa7eed4b7c9146f1e7b681fc3b2\",\n    \"untrusted_upstream_content\": true,\n    \"fallback\": \"none\",\n    \"fallback_occurred\": false,\n    \"completeness\": \"complete\"\n  },\n  \"timing\": {\n    \"total_ms\": 227.065,\n    \"tool_ms\": 224.41,\n    \"home_assistant_ms\": 0.0,\n    \"home_assistant_cumulative_attempt_ms\": 0.0,\n    \"home_assistant_wall_clock_span_ms\": 0.0,\n    \"home_assistant_request_count\": 0,\n    \"upstream_attempted\": true,\n    \"upstream_ms\": 220.926,\n    \"upstream_wall_clock_span_ms\": 220.926,\n    \"upstream_request_count\": 1,\n    \"provider_operations_concurrent\": false,\n    \"retry_count\": 0,\n    \"timeout_occurred\": false\n  },\n  \"request_id\": \"2ec6cfc77ebc4df78fc4f20a50ead3da\",\n  \"success\": true\n}",
+       "type": "text"
+      }
+     ],
+     "isError": false
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 103,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "end": "2026-11-16T07:16:48-06:00",
+      "entity_id": "calendar.hamcp371_calendar",
+      "max_results": 5,
+      "start": "2026-11-16T04:16:48-06:00"
+     },
+     "name": "ha_config_get_calendar_events"
+    }
+   },
+   "method": "POST",
+   "path": "/synthetic-engineering-access-secret/mcp"
+  },
+  "response": {
+   "id": 103,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\n  \"operation\": \"ha_config_get_calendar_events\",\n  \"summary\": \"Completed a reviewed pure-read operation through the upstream gateway.\",\n  \"data\": {\n    \"success\": true,\n    \"entity_id\": \"calendar.hamcp371_calendar\",\n    \"events\": [\n      {\n        \"start\": {\n          \"dateTime\": \"2026-11-16T06:26:48-06:00\"\n        },\n        \"end\": {\n          \"dateTime\": \"2026-11-16T06:56:48-06:00\"\n        },\n        \"summary\": \"HAMCP371 event\",\n        \"description\": null,\n        \"location\": null,\n        \"uid\": \"995c6b80-e1b7-11f1-948b-e3d7e9c55534\",\n        \"recurrence_id\": null,\n        \"rrule\": null,\n        \"status\": null\n      }\n    ],\n    \"count\": 1,\n    \"total_available\": 1,\n    \"time_range\": {\n      \"start\": \"2026-11-16T04:16:48-06:00\",\n      \"end\": \"2026-11-16T07:16:48-06:00\"\n    },\n    \"message\": \"Retrieved 1 event(s) from calendar.hamcp371_calendar\",\n    \"fields_withheld\": 0,\n    \"fields_dropped_by_policy\": 0,\n    \"upstream_warnings_replaced\": 0\n  },\n  \"warnings\": [],\n  \"metadata\": {\n    \"provider\": \"upstream_read_gateway\",\n    \"upstream_tool\": \"ha_config_get_calendar_events\",\n    \"upstream_server\": \"ha-mcp\",\n    \"upstream_version\": \"9.2.0\",\n    \"classification\": \"automatic_read\",\n    \"schema_fingerprint\": \"756f64f9ecfd7932522df435b7a152545c107aa7eed4b7c9146f1e7b681fc3b2\",\n    \"untrusted_upstream_content\": true,\n    \"fallback\": \"none\",\n    \"fallback_occurred\": false,\n    \"completeness\": \"complete\"\n  },\n  \"timing\": {\n    \"total_ms\": 227.065,\n    \"tool_ms\": 224.41,\n    \"home_assistant_ms\": 0.0,\n    \"home_assistant_cumulative_attempt_ms\": 0.0,\n    \"home_assistant_wall_clock_span_ms\": 0.0,\n    \"home_assistant_request_count\": 0,\n    \"upstream_attempted\": true,\n    \"upstream_ms\": 220.926,\n    \"upstream_wall_clock_span_ms\": 220.926,\n    \"upstream_request_count\": 1,\n    \"provider_operations_concurrent\": false,\n    \"retry_count\": 0,\n    \"timeout_occurred\": false\n  },\n  \"request_id\": \"2ec6cfc77ebc4df78fc4f20a50ead3da\",\n  \"success\": true\n}",
+      "type": "text"
+     }
+    ],
+    "isError": false
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Mon, 16 Nov 2026 12:17:04 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "x-request-id",
+    "2ec6cfc77ebc4df78fc4f20a50ead3da"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null
+}

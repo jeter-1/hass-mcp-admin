@@ -1,0 +1,99 @@
+{
+ "case": {
+  "arguments": {
+   "entity_id": "input_boolean.hamcp371_helper"
+  },
+  "id": "r15-entity-exposure",
+  "tool": "ha_get_entity_exposure"
+ },
+ "exchange": {
+  "body_bytes": 2014,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":116,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\n  \\\"operation\\\": \\\"ha_get_entity_exposure\\\",\\n  \\\"summary\\\": \\\"Completed a reviewed pure-read operation through the upstream gateway.\\\",\\n  \\\"data\\\": {\\n    \\\"success\\\": true,\\n    \\\"entity_id\\\": \\\"input_boolean.hamcp371_helper\\\",\\n    \\\"exposed_to\\\": {\\n      \\\"conversation\\\": true,\\n      \\\"cloud.alexa\\\": false,\\n      \\\"cloud.google_assistant\\\": false\\n    },\\n    \\\"is_exposed_anywhere\\\": true,\\n    \\\"has_custom_settings\\\": true,\\n    \\\"note\\\": null,\\n    \\\"friendly_name\\\": \\\"HAMCP371 helper\\\",\\n    \\\"domain\\\": \\\"input_boolean\\\",\\n    \\\"area\\\": \\\"HAMCP371 area\\\",\\n    \\\"floor\\\": \\\"HAMCP371 floor\\\",\\n    \\\"labels\\\": [\\n      \\\"HAMCP371 label\\\"\\n    ],\\n    \\\"state\\\": \\\"on\\\",\\n    \\\"fields_withheld\\\": 0,\\n    \\\"fields_dropped_by_policy\\\": 0,\\n    \\\"upstream_warnings_replaced\\\": 0\\n  },\\n  \\\"warnings\\\": [],\\n  \\\"metadata\\\": {\\n    \\\"provider\\\": \\\"upstream_read_gateway\\\",\\n    \\\"upstream_tool\\\": \\\"ha_get_entity_exposure\\\",\\n    \\\"upstream_server\\\": \\\"ha-mcp\\\",\\n    \\\"upstream_version\\\": \\\"9.2.0\\\",\\n    \\\"classification\\\": \\\"automatic_read\\\",\\n    \\\"schema_fingerprint\\\": \\\"596b9a5acf1ba8028ffe67c56c8de52245c63269e3cedb67dde8f7e43eb2c047\\\",\\n    \\\"untrusted_upstream_content\\\": true,\\n    \\\"fallback\\\": \\\"none\\\",\\n    \\\"fallback_occurred\\\": false,\\n    \\\"completeness\\\": \\\"complete\\\"\\n  },\\n  \\\"timing\\\": {\\n    \\\"total_ms\\\": 216.877,\\n    \\\"tool_ms\\\": 214.085,\\n    \\\"home_assistant_ms\\\": 0.0,\\n    \\\"home_assistant_cumulative_attempt_ms\\\": 0.0,\\n    \\\"home_assistant_wall_clock_span_ms\\\": 0.0,\\n    \\\"home_assistant_request_count\\\": 0,\\n    \\\"upstream_attempted\\\": true,\\n    \\\"upstream_ms\\\": 211.177,\\n    \\\"upstream_wall_clock_span_ms\\\": 211.177,\\n    \\\"upstream_request_count\\\": 1,\\n    \\\"provider_operations_concurrent\\\": false,\\n    \\\"retry_count\\\": 0,\\n    \\\"timeout_occurred\\\": false\\n  },\\n  \\\"request_id\\\": \\\"211f99a30ab34153ab59319a317b8ba8\\\",\\n  \\\"success\\\": true\\n}\"}],\"isError\":false}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 116,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\n  \"operation\": \"ha_get_entity_exposure\",\n  \"summary\": \"Completed a reviewed pure-read operation through the upstream gateway.\",\n  \"data\": {\n    \"success\": true,\n    \"entity_id\": \"input_boolean.hamcp371_helper\",\n    \"exposed_to\": {\n      \"conversation\": true,\n      \"cloud.alexa\": false,\n      \"cloud.google_assistant\": false\n    },\n    \"is_exposed_anywhere\": true,\n    \"has_custom_settings\": true,\n    \"note\": null,\n    \"friendly_name\": \"HAMCP371 helper\",\n    \"domain\": \"input_boolean\",\n    \"area\": \"HAMCP371 area\",\n    \"floor\": \"HAMCP371 floor\",\n    \"labels\": [\n      \"HAMCP371 label\"\n    ],\n    \"state\": \"on\",\n    \"fields_withheld\": 0,\n    \"fields_dropped_by_policy\": 0,\n    \"upstream_warnings_replaced\": 0\n  },\n  \"warnings\": [],\n  \"metadata\": {\n    \"provider\": \"upstream_read_gateway\",\n    \"upstream_tool\": \"ha_get_entity_exposure\",\n    \"upstream_server\": \"ha-mcp\",\n    \"upstream_version\": \"9.2.0\",\n    \"classification\": \"automatic_read\",\n    \"schema_fingerprint\": \"596b9a5acf1ba8028ffe67c56c8de52245c63269e3cedb67dde8f7e43eb2c047\",\n    \"untrusted_upstream_content\": true,\n    \"fallback\": \"none\",\n    \"fallback_occurred\": false,\n    \"completeness\": \"complete\"\n  },\n  \"timing\": {\n    \"total_ms\": 216.877,\n    \"tool_ms\": 214.085,\n    \"home_assistant_ms\": 0.0,\n    \"home_assistant_cumulative_attempt_ms\": 0.0,\n    \"home_assistant_wall_clock_span_ms\": 0.0,\n    \"home_assistant_request_count\": 0,\n    \"upstream_attempted\": true,\n    \"upstream_ms\": 211.177,\n    \"upstream_wall_clock_span_ms\": 211.177,\n    \"upstream_request_count\": 1,\n    \"provider_operations_concurrent\": false,\n    \"retry_count\": 0,\n    \"timeout_occurred\": false\n  },\n  \"request_id\": \"211f99a30ab34153ab59319a317b8ba8\",\n  \"success\": true\n}",
+       "type": "text"
+      }
+     ],
+     "isError": false
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 116,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "entity_id": "input_boolean.hamcp371_helper"
+     },
+     "name": "ha_get_entity_exposure"
+    }
+   },
+   "method": "POST",
+   "path": "/synthetic-engineering-access-secret/mcp"
+  },
+  "response": {
+   "id": 116,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\n  \"operation\": \"ha_get_entity_exposure\",\n  \"summary\": \"Completed a reviewed pure-read operation through the upstream gateway.\",\n  \"data\": {\n    \"success\": true,\n    \"entity_id\": \"input_boolean.hamcp371_helper\",\n    \"exposed_to\": {\n      \"conversation\": true,\n      \"cloud.alexa\": false,\n      \"cloud.google_assistant\": false\n    },\n    \"is_exposed_anywhere\": true,\n    \"has_custom_settings\": true,\n    \"note\": null,\n    \"friendly_name\": \"HAMCP371 helper\",\n    \"domain\": \"input_boolean\",\n    \"area\": \"HAMCP371 area\",\n    \"floor\": \"HAMCP371 floor\",\n    \"labels\": [\n      \"HAMCP371 label\"\n    ],\n    \"state\": \"on\",\n    \"fields_withheld\": 0,\n    \"fields_dropped_by_policy\": 0,\n    \"upstream_warnings_replaced\": 0\n  },\n  \"warnings\": [],\n  \"metadata\": {\n    \"provider\": \"upstream_read_gateway\",\n    \"upstream_tool\": \"ha_get_entity_exposure\",\n    \"upstream_server\": \"ha-mcp\",\n    \"upstream_version\": \"9.2.0\",\n    \"classification\": \"automatic_read\",\n    \"schema_fingerprint\": \"596b9a5acf1ba8028ffe67c56c8de52245c63269e3cedb67dde8f7e43eb2c047\",\n    \"untrusted_upstream_content\": true,\n    \"fallback\": \"none\",\n    \"fallback_occurred\": false,\n    \"completeness\": \"complete\"\n  },\n  \"timing\": {\n    \"total_ms\": 216.877,\n    \"tool_ms\": 214.085,\n    \"home_assistant_ms\": 0.0,\n    \"home_assistant_cumulative_attempt_ms\": 0.0,\n    \"home_assistant_wall_clock_span_ms\": 0.0,\n    \"home_assistant_request_count\": 0,\n    \"upstream_attempted\": true,\n    \"upstream_ms\": 211.177,\n    \"upstream_wall_clock_span_ms\": 211.177,\n    \"upstream_request_count\": 1,\n    \"provider_operations_concurrent\": false,\n    \"retry_count\": 0,\n    \"timeout_occurred\": false\n  },\n  \"request_id\": \"211f99a30ab34153ab59319a317b8ba8\",\n  \"success\": true\n}",
+      "type": "text"
+     }
+    ],
+    "isError": false
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Mon, 16 Nov 2026 12:17:08 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "x-request-id",
+    "211f99a30ab34153ab59319a317b8ba8"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null
+}

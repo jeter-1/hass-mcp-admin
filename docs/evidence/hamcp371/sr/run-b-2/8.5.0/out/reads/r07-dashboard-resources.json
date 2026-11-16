@@ -1,0 +1,99 @@
+{
+ "case": {
+  "arguments": {
+   "limit": 5
+  },
+  "id": "r07-dashboard-resources",
+  "tool": "ha_config_list_dashboard_resources"
+ },
+ "exchange": {
+  "body_bytes": 1881,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":108,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\n  \\\"operation\\\": \\\"ha_config_list_dashboard_resources\\\",\\n  \\\"summary\\\": \\\"Completed a reviewed pure-read operation through the upstream gateway.\\\",\\n  \\\"data\\\": {\\n    \\\"success\\\": true,\\n    \\\"action\\\": \\\"list\\\",\\n    \\\"resources\\\": [\\n      {\\n        \\\"id\\\": \\\"afaf4554ff29466f9ee98ac4de754e3f\\\",\\n        \\\"url\\\": \\\"/local/hamcp371-resource.js\\\",\\n        \\\"type\\\": \\\"module\\\"\\n      }\\n    ],\\n    \\\"total_count\\\": 1,\\n    \\\"offset\\\": 0,\\n    \\\"limit\\\": 5,\\n    \\\"count\\\": 1,\\n    \\\"has_more\\\": false,\\n    \\\"next_offset\\\": null,\\n    \\\"inline_count\\\": 0,\\n    \\\"by_type\\\": {\\n      \\\"module\\\": 1,\\n      \\\"js\\\": 0,\\n      \\\"css\\\": 0\\n    }\\n  },\\n  \\\"warnings\\\": [],\\n  \\\"metadata\\\": {\\n    \\\"provider\\\": \\\"upstream_read_gateway\\\",\\n    \\\"upstream_tool\\\": \\\"ha_config_list_dashboard_resources\\\",\\n    \\\"upstream_server\\\": \\\"ha-mcp\\\",\\n    \\\"upstream_version\\\": \\\"8.5.0\\\",\\n    \\\"classification\\\": \\\"automatic_read\\\",\\n    \\\"schema_fingerprint\\\": \\\"da3a8d837239803e621603df0d747dd57c2316f382249ac38aeb61d93a9531fa\\\",\\n    \\\"untrusted_upstream_content\\\": true,\\n    \\\"fallback\\\": \\\"none\\\",\\n    \\\"fallback_occurred\\\": false,\\n    \\\"completeness\\\": \\\"complete\\\"\\n  },\\n  \\\"timing\\\": {\\n    \\\"total_ms\\\": 220.608,\\n    \\\"tool_ms\\\": 217.937,\\n    \\\"home_assistant_ms\\\": 0.0,\\n    \\\"home_assistant_cumulative_attempt_ms\\\": 0.0,\\n    \\\"home_assistant_wall_clock_span_ms\\\": 0.0,\\n    \\\"home_assistant_request_count\\\": 0,\\n    \\\"upstream_attempted\\\": true,\\n    \\\"upstream_ms\\\": 215.465,\\n    \\\"upstream_wall_clock_span_ms\\\": 215.465,\\n    \\\"upstream_request_count\\\": 1,\\n    \\\"provider_operations_concurrent\\\": false,\\n    \\\"retry_count\\\": 0,\\n    \\\"timeout_occurred\\\": false\\n  },\\n  \\\"request_id\\\": \\\"ab46c2cd7a22428e86cc60c64ee02db2\\\",\\n  \\\"success\\\": true\\n}\"}],\"isError\":false}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 108,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\n  \"operation\": \"ha_config_list_dashboard_resources\",\n  \"summary\": \"Completed a reviewed pure-read operation through the upstream gateway.\",\n  \"data\": {\n    \"success\": true,\n    \"action\": \"list\",\n    \"resources\": [\n      {\n        \"id\": \"afaf4554ff29466f9ee98ac4de754e3f\",\n        \"url\": \"/local/hamcp371-resource.js\",\n        \"type\": \"module\"\n      }\n    ],\n    \"total_count\": 1,\n    \"offset\": 0,\n    \"limit\": 5,\n    \"count\": 1,\n    \"has_more\": false,\n    \"next_offset\": null,\n    \"inline_count\": 0,\n    \"by_type\": {\n      \"module\": 1,\n      \"js\": 0,\n      \"css\": 0\n    }\n  },\n  \"warnings\": [],\n  \"metadata\": {\n    \"provider\": \"upstream_read_gateway\",\n    \"upstream_tool\": \"ha_config_list_dashboard_resources\",\n    \"upstream_server\": \"ha-mcp\",\n    \"upstream_version\": \"8.5.0\",\n    \"classification\": \"automatic_read\",\n    \"schema_fingerprint\": \"da3a8d837239803e621603df0d747dd57c2316f382249ac38aeb61d93a9531fa\",\n    \"untrusted_upstream_content\": true,\n    \"fallback\": \"none\",\n    \"fallback_occurred\": false,\n    \"completeness\": \"complete\"\n  },\n  \"timing\": {\n    \"total_ms\": 220.608,\n    \"tool_ms\": 217.937,\n    \"home_assistant_ms\": 0.0,\n    \"home_assistant_cumulative_attempt_ms\": 0.0,\n    \"home_assistant_wall_clock_span_ms\": 0.0,\n    \"home_assistant_request_count\": 0,\n    \"upstream_attempted\": true,\n    \"upstream_ms\": 215.465,\n    \"upstream_wall_clock_span_ms\": 215.465,\n    \"upstream_request_count\": 1,\n    \"provider_operations_concurrent\": false,\n    \"retry_count\": 0,\n    \"timeout_occurred\": false\n  },\n  \"request_id\": \"ab46c2cd7a22428e86cc60c64ee02db2\",\n  \"success\": true\n}",
+       "type": "text"
+      }
+     ],
+     "isError": false
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 108,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "limit": 5
+     },
+     "name": "ha_config_list_dashboard_resources"
+    }
+   },
+   "method": "POST",
+   "path": "/synthetic-engineering-access-secret/mcp"
+  },
+  "response": {
+   "id": 108,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\n  \"operation\": \"ha_config_list_dashboard_resources\",\n  \"summary\": \"Completed a reviewed pure-read operation through the upstream gateway.\",\n  \"data\": {\n    \"success\": true,\n    \"action\": \"list\",\n    \"resources\": [\n      {\n        \"id\": \"afaf4554ff29466f9ee98ac4de754e3f\",\n        \"url\": \"/local/hamcp371-resource.js\",\n        \"type\": \"module\"\n      }\n    ],\n    \"total_count\": 1,\n    \"offset\": 0,\n    \"limit\": 5,\n    \"count\": 1,\n    \"has_more\": false,\n    \"next_offset\": null,\n    \"inline_count\": 0,\n    \"by_type\": {\n      \"module\": 1,\n      \"js\": 0,\n      \"css\": 0\n    }\n  },\n  \"warnings\": [],\n  \"metadata\": {\n    \"provider\": \"upstream_read_gateway\",\n    \"upstream_tool\": \"ha_config_list_dashboard_resources\",\n    \"upstream_server\": \"ha-mcp\",\n    \"upstream_version\": \"8.5.0\",\n    \"classification\": \"automatic_read\",\n    \"schema_fingerprint\": \"da3a8d837239803e621603df0d747dd57c2316f382249ac38aeb61d93a9531fa\",\n    \"untrusted_upstream_content\": true,\n    \"fallback\": \"none\",\n    \"fallback_occurred\": false,\n    \"completeness\": \"complete\"\n  },\n  \"timing\": {\n    \"total_ms\": 220.608,\n    \"tool_ms\": 217.937,\n    \"home_assistant_ms\": 0.0,\n    \"home_assistant_cumulative_attempt_ms\": 0.0,\n    \"home_assistant_wall_clock_span_ms\": 0.0,\n    \"home_assistant_request_count\": 0,\n    \"upstream_attempted\": true,\n    \"upstream_ms\": 215.465,\n    \"upstream_wall_clock_span_ms\": 215.465,\n    \"upstream_request_count\": 1,\n    \"provider_operations_concurrent\": false,\n    \"retry_count\": 0,\n    \"timeout_occurred\": false\n  },\n  \"request_id\": \"ab46c2cd7a22428e86cc60c64ee02db2\",\n  \"success\": true\n}",
+      "type": "text"
+     }
+    ],
+    "isError": false
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Mon, 16 Nov 2026 12:17:39 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "x-request-id",
+    "ab46c2cd7a22428e86cc60c64ee02db2"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null
+}

@@ -1,0 +1,1128 @@
+{
+ "endpoint_form": "engineering access-secret path",
+ "health": {
+  "arguments": {},
+  "control_gate": null,
+  "core_authority": {
+   "active_commit_count": 2,
+   "capacity_exhaustion_count": 0,
+   "capacity_exhaustion_reason": null,
+   "compatible_count": 38,
+   "configured": true,
+   "count_semantics": "withheld_count = held_count + quarantined_count + unavailable_count (a total, not an additional set); compatible_count + withhel",
+   "current_generation": 1,
+   "disposition": "admitted_compatible",
+   "fallback_count": 0,
+   "held_count": 0,
+   "identity_agreement": true,
+   "initialized": true,
+   "issued_lease_count": 0,
+   "model_version": 1,
+   "observed_core_version": "2026.11.0",
+   "quarantined_count": 0,
+   "recent_event_count": 1,
+   "release_registry": {
+    "cache_status": "valid",
+    "enabled": true,
+    "freshness_status": "current",
+    "last_failure_reason": "registry_unavailable",
+    "refresh_status": "failed",
+    "registry_id_status": "accepted",
+    "registry_location": "fixed_repository_https",
+    "retained_revocation_count": 3,
+    "retained_revocation_source_count": 1,
+    "sequence": 18,
+    "surface_denied": false
+   },
+   "retained_retirement_count": 0,
+   "surface": "home_assistant_core",
+   "unavailable_count": 0,
+   "withheld_capabilities_truncated": false,
+   "withheld_count": 0
+  },
+  "engineering_exchange_sha256": "d3210d6d8e04cd7aa906ba6a7913c5dc47270356905d2d40fd795c67d3b958ef",
+  "exchange_failure": null,
+  "file": "_health.json",
+  "lifecycle_provider": {
+   "catalog_validation": null,
+   "configured": true,
+   "fallback_count": 0,
+   "fallback_policy": "none",
+   "last_failure_category": null,
+   "last_success_at": null,
+   "lifecycle_addon_response_contract_model": null,
+   "lifecycle_addon_response_diagnostics": null,
+   "lifecycle_addon_response_envelope_variant": null,
+   "observed_upstream_version": null,
+   "operational_status": "unknown",
+   "provider": "upstream_operational_lifecycle",
+   "runtime_contract_fingerprint_model": null,
+   "runtime_contract_mismatch_diagnostics": null,
+   "selected_compatibility_entry_id": null
+  },
+  "other_upstream_traffic": [
+   "POST initialize",
+   "POST notifications/initialized",
+   "POST tools/list"
+  ],
+  "response_truncated": false,
+  "result_class": "success",
+  "tool": "get_server_health",
+  "upstream_read_gateway": {
+   "admission_status": "admitted_exact",
+   "catalog_comparison_status": "exact",
+   "reviewed_policy_entry_count": 77,
+   "reviewed_upstream_version": "9.2.0",
+   "upstream_advertised_tool_count": 80,
+   "upstream_server_version": "9.2.0",
+   "version_status": "reviewed_exact"
+  },
+  "upstream_tool_calls": 0
+ },
+ "read_count": 27,
+ "reads": [
+  {
+   "arguments": {
+    "identifier": "hamcp371_automation"
+   },
+   "engineering_exchange_sha256": "6f70f831c6605d5968bb3dd14d8802935f666f657af4e0a4e51f691171717300",
+   "exchange_failure": null,
+   "file": "r01-automation.json",
+   "id": "r01-automation",
+   "other_upstream_traffic": [
+    "POST initialize",
+    "POST notifications/initialized",
+    "POST tools/list"
+   ],
+   "result_class": "success",
+   "tool": "ha_config_get_automation",
+   "upstream": [
+    {
+     "outcome": "complete",
+     "raw_response_bytes": 2798,
+     "raw_response_sha256": "f43eb03698c1e9e86f3193ef9e9218969c468f31327098627866a4428990bd78",
+     "request_sha256": "83cbe7e4edc8aebb2c92494d9bdfa3da4a781b63b53f20e3b1f5d52974ea3399",
+     "sequence": 11,
+     "status": 200,
+     "tool": "ha_config_get_automation"
+    }
+   ],
+   "upstream_wire_arguments": [
+    {
+     "entity_id": "hamcp371_automation"
+    }
+   ],
+   "version": "9.2.0",
+   "withheld": {
+    "data.fields_dropped_by_policy": 0,
+    "data.fields_withheld": 0,
+    "data.upstream_warnings_replaced": 0
+   }
+  },
+  {
+   "arguments": {
+    "end": "2026-11-16T07:16:48-06:00",
+    "entity_id": "calendar.hamcp371_calendar",
+    "max_results": 5,
+    "start": "2026-11-16T04:16:48-06:00"
+   },
+   "engineering_exchange_sha256": "1c2cc0497e3158cc87bbc43e05403824e7e8d8ae652617c4d91085db2e36ea71",
+   "exchange_failure": null,
+   "file": "r02-calendar-events.json",
+   "id": "r02-calendar-events",
+   "other_upstream_traffic": [
+    "POST initialize",
+    "POST notifications/initialized",
+    "POST tools/list"
+   ],
+   "result_class": "success",
+   "tool": "ha_config_get_calendar_events",
+   "upstream": [
+    {
+     "outcome": "complete",
+     "raw_response_bytes": 1194,
+     "raw_response_sha256": "7ce0e3dbbad9d7bc238d06f982d1878b4dbd8728b2c433ec7e94804c3a90b29b",
+     "request_sha256": "8a8bf2c0569adea0424813ad8e026e2ec6c3c0fd688ecec8576a4443169956c6",
+     "sequence": 15,
+     "status": 200,
+     "tool": "ha_config_get_calendar_events"
+    }
+   ],
+   "upstream_wire_arguments": [
+    {
+     "end": "2026-11-16T07:16:48-06:00",
+     "entity_id": "calendar.hamcp371_calendar",
+     "max_results": 5,
+     "start": "2026-11-16T04:16:48-06:00"
+    }
+   ],
+   "version": "9.2.0",
+   "withheld": {
+    "data.fields_dropped_by_policy": 0,
+    "data.fields_withheld": 0,
+    "data.upstream_warnings_replaced": 0
+   }
+  },
+  {
+   "arguments": {
+    "scope": "automation"
+   },
+   "engineering_exchange_sha256": "133c8b960d76c5248d2c9dffadd1035318155718276557e6869f3ed68db0a40a",
+   "exchange_failure": null,
+   "file": "r03-category.json",
+   "id": "r03-category",
+   "other_upstream_traffic": [
+    "POST initialize",
+    "POST notifications/initialized",
+    "POST tools/list"
+   ],
+   "result_class": "success",
+   "tool": "ha_config_get_category",
+   "upstream": [
+    {
+     "outcome": "complete",
+     "raw_response_bytes": 694,
+     "raw_response_sha256": "107894151a56c5bf2b385169cb08a926682002577ef19a0f165fe2a6a874f343",
+     "request_sha256": "3b4bb29af219034571270cbe41b153428ffea809a53a652f53aefe01f62dcc8e",
+     "sequence": 19,
+     "status": 200,
+     "tool": "ha_config_get_category"
+    }
+   ],
+   "upstream_wire_arguments": [
+    {
+     "scope": "automation"
+    }
+   ],
+   "version": "9.2.0",
+   "withheld": {
+    "data.fields_dropped_by_policy": 0,
+    "data.fields_withheld": 0,
+    "data.upstream_warnings_replaced": 0
+   }
+  },
+  {
+   "arguments": {},
+   "engineering_exchange_sha256": "0ad0d3ed41e9636221e154dc3ac3e0ca11f77b6673a1a0e75f585892c8daeeda",
+   "exchange_failure": null,
+   "file": "r04-label.json",
+   "id": "r04-label",
+   "other_upstream_traffic": [
+    "POST initialize",
+    "POST notifications/initialized",
+    "POST tools/list"
+   ],
+   "result_class": "success",
+   "tool": "ha_config_get_label",
+   "upstream": [
+    {
+     "outcome": "complete",
+     "raw_response_bytes": 616,
+     "raw_response_sha256": "78a4beac2888147fa6cf1a1e18056b8b3082a733b56dbbabf8df0c3697f60897",
+     "request_sha256": "dc1c3cea58de0a05bf4fbdcf061383d3f838999f516023651114a598c9794f8e",
+     "sequence": 23,
+     "status": 200,
+     "tool": "ha_config_get_label"
+    }
+   ],
+   "upstream_wire_arguments": [
+    {}
+   ],
+   "version": "9.2.0",
+   "withheld": {
+    "data.fields_dropped_by_policy": 0,
+    "data.fields_withheld": 0,
+    "data.upstream_warnings_replaced": 0
+   }
+  },
+  {
+   "arguments": {
+    "scene_id": "hamcp371_scene"
+   },
+   "engineering_exchange_sha256": "b033cc9a255d79a924235c48ddbbb6701faf14e88c68aa4151dd7c946a6c71cc",
+   "exchange_failure": null,
+   "file": "r05-scene.json",
+   "id": "r05-scene",
+   "other_upstream_traffic": [
+    "POST initialize",
+    "POST notifications/initialized",
+    "POST tools/list"
+   ],
+   "result_class": "success",
+   "tool": "ha_config_get_scene",
+   "upstream": [
+    {
+     "outcome": "complete",
+     "raw_response_bytes": 564,
+     "raw_response_sha256": "a81f99c903d598d7f5a9309e9d0fcff2b77c002c9a5505410f348eeeac0e82c8",
+     "request_sha256": "151330c49838b06ed6394438a64a71c931366bfcdba6058949ca0f0681d42211",
+     "sequence": 27,
+     "status": 200,
+     "tool": "ha_config_get_scene"
+    }
+   ],
+   "upstream_wire_arguments": [
+    {
+     "scene_id": "hamcp371_scene"
+    }
+   ],
+   "version": "9.2.0",
+   "withheld": {
+    "data.fields_dropped_by_policy": 0,
+    "data.fields_withheld": 0,
+    "data.upstream_warnings_replaced": 0
+   }
+  },
+  {
+   "arguments": {
+    "script_id": "hamcp371_script"
+   },
+   "engineering_exchange_sha256": "a4291a41788e6393d6fce3f69198f76cd333410fe1117ba1432259bb54750f8e",
+   "exchange_failure": null,
+   "file": "r06-script.json",
+   "id": "r06-script",
+   "other_upstream_traffic": [
+    "POST initialize",
+    "POST notifications/initialized",
+    "POST tools/list"
+   ],
+   "result_class": "success",
+   "tool": "ha_config_get_script",
+   "upstream": [
+    {
+     "outcome": "complete",
+     "raw_response_bytes": 670,
+     "raw_response_sha256": "74b31b3d8c4cdd8e271ba0826c5add48cb23e8858facb1143f05678b58733d98",
+     "request_sha256": "ecc2bff952bdbeaac070827366fc6dc57a21ab9ba11e86886cdf00e830f0539e",
+     "sequence": 31,
+     "status": 200,
+     "tool": "ha_config_get_script"
+    }
+   ],
+   "upstream_wire_arguments": [
+    {
+     "script_id": "hamcp371_script"
+    }
+   ],
+   "version": "9.2.0",
+   "withheld": {
+    "data.fields_dropped_by_policy": 0,
+    "data.fields_withheld": 0,
+    "data.upstream_warnings_replaced": 0
+   }
+  },
+  {
+   "arguments": {
+    "limit": 5
+   },
+   "engineering_exchange_sha256": "de97aee285b8ea334cf25d466adbd0aead6c5d5449e18807bc869b7000660689",
+   "exchange_failure": null,
+   "file": "r07-dashboard-resources.json",
+   "id": "r07-dashboard-resources",
+   "other_upstream_traffic": [
+    "POST initialize",
+    "POST notifications/initialized",
+    "POST tools/list"
+   ],
+   "result_class": "success",
+   "tool": "ha_config_list_dashboard_resources",
+   "upstream": [
+    {
+     "outcome": "complete",
+     "raw_response_bytes": 756,
+     "raw_response_sha256": "07b241546737e60fe1f5ead99c6e0f214ca0d9fe80d5a2405a02136b6dedca20",
+     "request_sha256": "53ed9e0e113ff9c5578c0c69aa5c50f9d3a9bbfe01471cd0141dfbb116432f3a",
+     "sequence": 35,
+     "status": 200,
+     "tool": "ha_config_list_dashboard_resources"
+    }
+   ],
+   "upstream_wire_arguments": [
+    {
+     "limit": 5
+    }
+   ],
+   "version": "9.2.0",
+   "withheld": {
+    "data.fields_dropped_by_policy": 0,
+    "data.fields_withheld": 0,
+    "data.upstream_warnings_replaced": 0
+   }
+  },
+  {
+   "arguments": {
+    "limit": 5
+   },
+   "engineering_exchange_sha256": "2774a0820ff357f4e5154ca18823bdc57255a610d2492d7ca7dca4498235bf77",
+   "exchange_failure": null,
+   "file": "r08-groups.json",
+   "id": "r08-groups",
+   "other_upstream_traffic": [
+    "POST initialize",
+    "POST notifications/initialized",
+    "POST tools/list"
+   ],
+   "result_class": "success",
+   "tool": "ha_config_list_groups",
+   "upstream": [
+    {
+     "outcome": "complete",
+     "raw_response_bytes": 1314,
+     "raw_response_sha256": "105f227471f2c5aa2c2199707d72c0dc2368874d443eb44e1667f63282d05d02",
+     "request_sha256": "e1db94fe4a22794c2d34dc570bc47a07eecaba5a150b6dcace07d794fe4ed18c",
+     "sequence": 39,
+     "status": 200,
+     "tool": "ha_config_list_groups"
+    }
+   ],
+   "upstream_wire_arguments": [
+    {
+     "limit": 5
+    }
+   ],
+   "version": "9.2.0",
+   "withheld": {
+    "data.fields_dropped_by_policy": 0,
+    "data.fields_withheld": 0,
+    "data.upstream_warnings_replaced": 0
+   }
+  },
+  {
+   "arguments": {
+    "helper_type": "input_boolean",
+    "limit": 5
+   },
+   "engineering_exchange_sha256": "c772154af7fca3e2eb8859861e67dc8c2db1c342406caf4ba3b5ad2087d4f468",
+   "exchange_failure": null,
+   "file": "r09-helpers.json",
+   "id": "r09-helpers",
+   "other_upstream_traffic": [
+    "POST initialize",
+    "POST notifications/initialized",
+    "POST tools/list"
+   ],
+   "result_class": "success",
+   "tool": "ha_config_list_helpers",
+   "upstream": [
+    {
+     "outcome": "complete",
+     "raw_response_bytes": 802,
+     "raw_response_sha256": "d700ab72a62d945bffcf325ee299c47cb106921db7c751df9a5817e2966a1e42",
+     "request_sha256": "71b95cce9797f76acb4c366ea380ba739cb0f471a8733f8567b6607abcadcd28",
+     "sequence": 43,
+     "status": 200,
+     "tool": "ha_config_list_helpers"
+    }
+   ],
+   "upstream_wire_arguments": [
+    {
+     "describe": false,
+     "helper_type": "input_boolean",
+     "limit": 5
+    }
+   ],
+   "version": "9.2.0",
+   "withheld": {
+    "data.fields_dropped_by_policy": 0,
+    "data.fields_withheld": 0,
+    "data.upstream_warnings_replaced": 0
+   }
+  },
+  {
+   "arguments": {
+    "template": "{{ states('input_boolean.hamcp371_helper') }}"
+   },
+   "engineering_exchange_sha256": "a6666de8416270f55777bb60b4a365480c2f177bfd927dc594b8aea471e0b974",
+   "exchange_failure": null,
+   "file": "r10-template.json",
+   "id": "r10-template",
+   "other_upstream_traffic": [
+    "POST initialize",
+    "POST notifications/initialized",
+    "POST tools/list"
+   ],
+   "result_class": "success",
+   "tool": "ha_eval_template",
+   "upstream": [
+    {
+     "outcome": "complete",
+     "raw_response_bytes": 530,
+     "raw_response_sha256": "0e55278307977f6f6de7a7f1308414d5ccba637f578794504761c3575ce06c1e",
+     "request_sha256": "f76cade4dc818e3dcb485a491a1e36eb67a4bdcc62b4c12f7f1682b3c76952fc",
+     "sequence": 47,
+     "status": 200,
+     "tool": "ha_eval_template"
+    }
+   ],
+   "upstream_wire_arguments": [
+    {
+     "condition": null,
+     "report_errors": true,
+     "strict": false,
+     "template": "{{ states('input_boolean.hamcp371_helper') }}",
+     "timeout": 3,
+     "variables": null
+    }
+   ],
+   "version": "9.2.0",
+   "withheld": {
+    "data.fields_dropped_by_policy": 0,
+    "data.fields_withheld": 0,
+    "data.upstream_warnings_replaced": 0
+   }
+  },
+  {
+   "arguments": {
+    "automation_id": "automation.hamcp371_automation",
+    "limit": 5
+   },
+   "engineering_exchange_sha256": "3faa25b8e7fb21b4e96125741b384b360fc1594350ddc0ddc9d5b57a5f15c69a",
+   "exchange_failure": null,
+   "file": "r11-automation-traces.json",
+   "id": "r11-automation-traces",
+   "other_upstream_traffic": [
+    "POST initialize",
+    "POST notifications/initialized",
+    "POST tools/list"
+   ],
+   "result_class": "success",
+   "tool": "ha_get_automation_traces",
+   "upstream": [
+    {
+     "outcome": "complete",
+     "raw_response_bytes": 1010,
+     "raw_response_sha256": "7f97fa33d207c6cc4b25f2a527bbad5707d7c33dae36db7565140336e8505225",
+     "request_sha256": "87b74694665cc804627b31df10dde657f169f38cae460420b04e8284e4d887ca",
+     "sequence": 51,
+     "status": 200,
+     "tool": "ha_get_automation_traces"
+    }
+   ],
+   "upstream_wire_arguments": [
+    {
+     "automation_id": "automation.hamcp371_automation",
+     "limit": 5
+    }
+   ],
+   "version": "9.2.0",
+   "withheld": {
+    "data.fields_dropped_by_policy": 0,
+    "data.fields_withheld": 0,
+    "data.upstream_warnings_replaced": 0
+   }
+  },
+  {
+   "arguments": {
+    "domain": "automation",
+    "path": "homeassistant/motion_light.yaml"
+   },
+   "engineering_exchange_sha256": "54285607934c3085f4f1c6c30af053a94598047e9546e3a27bf36ca64360c59c",
+   "exchange_failure": null,
+   "file": "r12-blueprints.json",
+   "id": "r12-blueprints",
+   "other_upstream_traffic": [
+    "POST initialize",
+    "POST notifications/initialized",
+    "POST tools/list"
+   ],
+   "result_class": "success",
+   "tool": "ha_get_blueprint",
+   "upstream": [
+    {
+     "outcome": "complete",
+     "raw_response_bytes": 8462,
+     "raw_response_sha256": "93ca583f67f848852bb9c36fed903e2a5f3b9aacf493a18813f34a63f0793625",
+     "request_sha256": "4d38f6eecc7d2d47e879ee16ed29ce7f8f1a254a7a13ebcbc6753164276724d0",
+     "sequence": 55,
+     "status": 200,
+     "tool": "ha_manage_blueprints"
+    }
+   ],
+   "upstream_wire_arguments": [
+    {
+     "action": "get",
+     "domain": "automation",
+     "path": "homeassistant/motion_light.yaml"
+    }
+   ],
+   "version": "9.2.0",
+   "withheld": {}
+  },
+  {
+   "arguments": {
+    "limit": 5
+   },
+   "engineering_exchange_sha256": "3de4cb8c59666e90be7dbc8b0f8d70eb5708ede32da2f7f31c216dbc5e0cca0f",
+   "exchange_failure": null,
+   "file": "r13-devices.json",
+   "id": "r13-devices",
+   "other_upstream_traffic": [
+    "POST initialize",
+    "POST notifications/initialized",
+    "POST tools/list"
+   ],
+   "result_class": "success",
+   "tool": "ha_get_device",
+   "upstream": [
+    {
+     "outcome": "complete",
+     "raw_response_bytes": 2612,
+     "raw_response_sha256": "3c11485d66302821a115736214b0cc968852ec68a30df2eb6fa6465a909eb244",
+     "request_sha256": "d8592dd721b418e8ea6c36d3cf740aa82ae2de89e0098531c22a125aeebdc037",
+     "sequence": 59,
+     "status": 200,
+     "tool": "ha_get_device"
+    }
+   ],
+   "upstream_wire_arguments": [
+    {
+     "limit": 5
+    }
+   ],
+   "version": "9.2.0",
+   "withheld": {}
+  },
+  {
+   "arguments": {
+    "entity_id": "input_boolean.hamcp371_helper"
+   },
+   "engineering_exchange_sha256": "525cb53cd2aab07bdda388cc1fe421dedc3efa0b702142e03042fa5ffac23d7a",
+   "exchange_failure": null,
+   "file": "r14-entity.json",
+   "id": "r14-entity",
+   "other_upstream_traffic": [
+    "POST initialize",
+    "POST notifications/initialized",
+    "POST tools/list"
+   ],
+   "result_class": "success",
+   "tool": "ha_get_entity",
+   "upstream": [
+    {
+     "outcome": "complete",
+     "raw_response_bytes": 1480,
+     "raw_response_sha256": "34da777309de0a7dd977437379a3b3fdd3f2826b290abacbe0d5c7b486a71e25",
+     "request_sha256": "144ce492de34d31b7eda189ed9322b31b146fb48625b94174550856006e62374",
+     "sequence": 63,
+     "status": 200,
+     "tool": "ha_get_entity"
+    }
+   ],
+   "upstream_wire_arguments": [
+    {
+     "entity_id": "input_boolean.hamcp371_helper"
+    }
+   ],
+   "version": "9.2.0",
+   "withheld": {
+    "data.fields_dropped_by_policy": 0,
+    "data.fields_withheld": 0,
+    "data.upstream_warnings_replaced": 0
+   }
+  },
+  {
+   "arguments": {
+    "entity_id": "input_boolean.hamcp371_helper"
+   },
+   "engineering_exchange_sha256": "9b484b1a2dd472fb0c6ec1ed3f2b9cdc42afa8fe65b77c3f7388852ae4630554",
+   "exchange_failure": null,
+   "file": "r15-entity-exposure.json",
+   "id": "r15-entity-exposure",
+   "other_upstream_traffic": [
+    "POST initialize",
+    "POST notifications/initialized",
+    "POST tools/list"
+   ],
+   "result_class": "success",
+   "tool": "ha_get_entity_exposure",
+   "upstream": [
+    {
+     "outcome": "complete",
+     "raw_response_bytes": 900,
+     "raw_response_sha256": "625a30bdc07aa8b4c607afe63c0dd5d3c78fc9232358e8e56b6291869d4238b1",
+     "request_sha256": "6c74b7ec513bf9129e4582641cb73af23d6bb3d104ae508cf8318ce183537cd7",
+     "sequence": 67,
+     "status": 200,
+     "tool": "ha_get_entity_exposure"
+    }
+   ],
+   "upstream_wire_arguments": [
+    {
+     "entity_id": "input_boolean.hamcp371_helper"
+    }
+   ],
+   "version": "9.2.0",
+   "withheld": {
+    "data.fields_dropped_by_policy": 0,
+    "data.fields_withheld": 0,
+    "data.upstream_warnings_replaced": 0
+   }
+  },
+  {
+   "arguments": {
+    "end_time": "2026-11-16T07:16:48-06:00",
+    "entity_ids": "input_boolean.hamcp371_helper",
+    "limit": 5,
+    "start_time": "2026-11-16T04:16:48-06:00"
+   },
+   "engineering_exchange_sha256": "9da380f608e5706e76d230ab20789009c6b8a97f23f0df797aca3e73ed558807",
+   "exchange_failure": null,
+   "file": "r16-history.json",
+   "id": "r16-history",
+   "other_upstream_traffic": [
+    "POST initialize",
+    "POST notifications/initialized",
+    "POST tools/list"
+   ],
+   "result_class": "success",
+   "tool": "ha_get_history",
+   "upstream": [
+    {
+     "outcome": "complete",
+     "raw_response_bytes": 2996,
+     "raw_response_sha256": "c3d46a05c2f8959ab124650018aacea98574b821131cbf4b0e2591473a8ce894",
+     "request_sha256": "9096cf94c44af6b6f4bca4d1b30a341e2720dd3ea967be81768d70f82a56b8c6",
+     "sequence": 71,
+     "status": 200,
+     "tool": "ha_get_history"
+    }
+   ],
+   "upstream_wire_arguments": [
+    {
+     "core_options": null,
+     "end_time": "2026-11-16T07:16:48-06:00",
+     "entity_ids": "input_boolean.hamcp371_helper",
+     "include_schema": false,
+     "limit": 5,
+     "start_time": "2026-11-16T04:16:48-06:00",
+     "summary": false
+    }
+   ],
+   "version": "9.2.0",
+   "withheld": {
+    "data.fields_dropped_by_policy": 1,
+    "data.fields_withheld": 0,
+    "data.upstream_warnings_replaced": 0
+   }
+  },
+  {
+   "arguments": {
+    "detail_level": "minimal",
+    "domains": [
+     "input_boolean"
+    ],
+    "include_notifications": false,
+    "limit": 5
+   },
+   "engineering_exchange_sha256": "83df3b8fe3a3b46be357feefe493f17c4a0a55a4ea6669b2f2829ae696ea5f2f",
+   "exchange_failure": null,
+   "file": "r17-overview.json",
+   "id": "r17-overview",
+   "other_upstream_traffic": [
+    "POST initialize",
+    "POST notifications/initialized",
+    "POST tools/list"
+   ],
+   "result_class": "success",
+   "tool": "ha_get_overview",
+   "upstream": [
+    {
+     "outcome": "complete",
+     "raw_response_bytes": 2894,
+     "raw_response_sha256": "6aca58fbe7379a18268471a458a6c165fa04caef0de3e9206f8b9aee5b8e4bc2",
+     "request_sha256": "426a8a2db8f7ff152cc72cd88cb42d906b724caef644c6723830dbd3c58cc0d7",
+     "sequence": 75,
+     "status": 200,
+     "tool": "ha_get_overview"
+    }
+   ],
+   "upstream_wire_arguments": [
+    {
+     "detail_level": "minimal",
+     "domains": [
+      "input_boolean"
+     ],
+     "include_notifications": false,
+     "limit": 5
+    }
+   ],
+   "version": "9.2.0",
+   "withheld": {
+    "data.fields_dropped_by_policy": 1,
+    "data.fields_withheld": 0,
+    "data.upstream_warnings_replaced": 0
+   }
+  },
+  {
+   "arguments": {
+    "file": "SKILL.md",
+    "skill": "home-assistant-best-practices"
+   },
+   "engineering_exchange_sha256": "c9fb53a4870cc34615df1e407de3638569282b97f7455bbf8137dcd8753cc8fd",
+   "exchange_failure": null,
+   "file": "r18-skill-guide.json",
+   "id": "r18-skill-guide",
+   "other_upstream_traffic": [
+    "POST initialize",
+    "POST notifications/initialized",
+    "POST tools/list"
+   ],
+   "result_class": "success",
+   "tool": "ha_get_skill_guide",
+   "upstream": [
+    {
+     "outcome": "complete",
+     "raw_response_bytes": 48019,
+     "raw_response_sha256": "5db3768d70b151154943dededd1a35c2b0a88b813cd19848d8b8749ded379834",
+     "request_sha256": "8de199eb384753ec9163e5366092cee1affa53cef1b8680b2da1cb1079965fe2",
+     "sequence": 79,
+     "status": 200,
+     "tool": "ha_get_skill_guide"
+    }
+   ],
+   "upstream_wire_arguments": [
+    {
+     "file": "SKILL.md"
+    }
+   ],
+   "version": "9.2.0",
+   "withheld": {
+    "data.fields_dropped_by_policy": 1,
+    "data.fields_withheld": 0,
+    "data.upstream_warnings_replaced": 0
+   }
+  },
+  {
+   "arguments": {
+    "entity_id": "input_boolean.hamcp371_helper"
+   },
+   "engineering_exchange_sha256": "1ef36059c3fc2e025be06c80dcc9bca5caa661ee0c4ac93415caa4310db2528b",
+   "exchange_failure": null,
+   "file": "r19-state.json",
+   "id": "r19-state",
+   "other_upstream_traffic": [
+    "POST initialize",
+    "POST notifications/initialized",
+    "POST tools/list"
+   ],
+   "result_class": "success",
+   "tool": "ha_get_state",
+   "upstream": [
+    {
+     "outcome": "complete",
+     "raw_response_bytes": 1642,
+     "raw_response_sha256": "7d1ce634ed4bc2b7937234373541cdd5cb65edd5e2902198e2402f93e1d9ee01",
+     "request_sha256": "56ce060ca2c6fc153d23959e516b6af2cbb1311ce93f1e6025318fc888c9b327",
+     "sequence": 83,
+     "status": 200,
+     "tool": "ha_get_state"
+    }
+   ],
+   "upstream_wire_arguments": [
+    {
+     "entity_id": "input_boolean.hamcp371_helper"
+    }
+   ],
+   "version": "9.2.0",
+   "withheld": {
+    "data.fields_dropped_by_policy": 0,
+    "data.fields_withheld": 0,
+    "data.upstream_warnings_replaced": 0
+   }
+  },
+  {
+   "arguments": {},
+   "engineering_exchange_sha256": "90a3c92efba3bca771ae506251e9ae1cedcd17b2f662c703ab2b92ded06274c9",
+   "exchange_failure": null,
+   "file": "r20-system-health.json",
+   "id": "r20-system-health",
+   "other_upstream_traffic": [
+    "POST initialize",
+    "POST notifications/initialized",
+    "POST tools/list"
+   ],
+   "result_class": "success",
+   "tool": "ha_get_system_health",
+   "upstream": [
+    {
+     "outcome": "complete",
+     "raw_response_bytes": 2378,
+     "raw_response_sha256": "78bdc60c5ea3efbb3b5493985e02ea713cc330e93965f3517ca023ae6fbbaa86",
+     "request_sha256": "dd1c3fe3ff9e4e9fd588185c323ce8d17ce8fe5cf879412d354190be588d419a",
+     "sequence": 87,
+     "status": 200,
+     "tool": "ha_get_system_health"
+    }
+   ],
+   "upstream_wire_arguments": [
+    {}
+   ],
+   "version": "9.2.0",
+   "withheld": {
+    "data.fields_dropped_by_policy": 0,
+    "data.fields_withheld": 18,
+    "data.upstream_warnings_replaced": 0
+   }
+  },
+  {
+   "arguments": {},
+   "engineering_exchange_sha256": "c9a6ca5c6fd7218945a2e4d05241256dc876c277ebb065db81f0d4a4d6352db4",
+   "exchange_failure": null,
+   "file": "r21-todo.json",
+   "id": "r21-todo",
+   "other_upstream_traffic": [
+    "POST initialize",
+    "POST notifications/initialized",
+    "POST tools/list"
+   ],
+   "result_class": "success",
+   "tool": "ha_get_todo",
+   "upstream": [
+    {
+     "outcome": "complete",
+     "raw_response_bytes": 788,
+     "raw_response_sha256": "8f8b34413b3fa5882691ee07630a9424563d6f092403d1d98f071ae2cb733e9f",
+     "request_sha256": "e0d76200de90ee213ed76fa3b408a60452d5d03ad280354dfe634e1ace438120",
+     "sequence": 91,
+     "status": 200,
+     "tool": "ha_get_todo"
+    }
+   ],
+   "upstream_wire_arguments": [
+    {}
+   ],
+   "version": "9.2.0",
+   "withheld": {
+    "data.fields_dropped_by_policy": 0,
+    "data.fields_withheld": 0,
+    "data.upstream_warnings_replaced": 0
+   }
+  },
+  {
+   "arguments": {},
+   "engineering_exchange_sha256": "eab54413ee55b1b4e9d7a136be85e3cc79174a179bbb4a6cf2f4d4aa130a0455",
+   "exchange_failure": null,
+   "file": "r22-zones.json",
+   "id": "r22-zones",
+   "other_upstream_traffic": [
+    "POST initialize",
+    "POST notifications/initialized",
+    "POST tools/list"
+   ],
+   "result_class": "success",
+   "tool": "ha_get_zone",
+   "upstream": [
+    {
+     "outcome": "complete",
+     "raw_response_bytes": 1224,
+     "raw_response_sha256": "02e7674e3aabf1653b49222d161dfdaf3fce3ad476db809712ea71beb0bcd3a5",
+     "request_sha256": "fb8c171fcb5aa200dac3341f68cf08cf72fea71e59a3ebe78a908d2f06cc2bd7",
+     "sequence": 95,
+     "status": 200,
+     "tool": "ha_get_zone"
+    }
+   ],
+   "upstream_wire_arguments": [
+    {}
+   ],
+   "version": "9.2.0",
+   "withheld": {
+    "data.fields_dropped_by_policy": 0,
+    "data.fields_withheld": 0,
+    "data.upstream_warnings_replaced": 0
+   }
+  },
+  {
+   "arguments": {},
+   "engineering_exchange_sha256": "01fe561336a801a54807bc7024326db23d3cea253dc8fbc4cea1af84ccab7a8a",
+   "exchange_failure": null,
+   "file": "r23-floors-areas.json",
+   "id": "r23-floors-areas",
+   "other_upstream_traffic": [
+    "POST initialize",
+    "POST notifications/initialized",
+    "POST tools/list"
+   ],
+   "result_class": "success",
+   "tool": "ha_list_floors_areas",
+   "upstream": [
+    {
+     "outcome": "complete",
+     "raw_response_bytes": 2920,
+     "raw_response_sha256": "475be66bd05ce2939dd51d7e3cd68ca75163f1a7732772cfeebe5a3d657f72aa",
+     "request_sha256": "3961483a6d398a325fbd361d39e988d1b39a908592401b41037b755ec288846d",
+     "sequence": 99,
+     "status": 200,
+     "tool": "ha_list_floors_areas"
+    }
+   ],
+   "upstream_wire_arguments": [
+    {}
+   ],
+   "version": "9.2.0",
+   "withheld": {
+    "data.fields_dropped_by_policy": 0,
+    "data.fields_withheld": 0,
+    "data.upstream_warnings_replaced": 0
+   }
+  },
+  {
+   "arguments": {
+    "limit": 5
+   },
+   "engineering_exchange_sha256": "ad04146e5f8c39bb6d58552b6b42dc01f4941c93ed633b618c9b59d658becc77",
+   "exchange_failure": null,
+   "file": "r24-services.json",
+   "id": "r24-services",
+   "other_upstream_traffic": [
+    "POST initialize",
+    "POST notifications/initialized",
+    "POST tools/list"
+   ],
+   "result_class": "success",
+   "tool": "ha_list_services",
+   "upstream": [
+    {
+     "outcome": "complete",
+     "raw_response_bytes": 4000,
+     "raw_response_sha256": "0bd3cda753610d288c8e0517d7c66d00dd4bad5b736696290c04f52f8965e110",
+     "request_sha256": "fb65854ab51ace986b6d4303f4069f5c49570aa70668549af7ea5a241261d82b",
+     "sequence": 103,
+     "status": 200,
+     "tool": "ha_list_services"
+    }
+   ],
+   "upstream_wire_arguments": [
+    {
+     "limit": 5
+    }
+   ],
+   "version": "9.2.0",
+   "withheld": {
+    "data.fields_dropped_by_policy": 0,
+    "data.fields_withheld": 0,
+    "data.upstream_warnings_replaced": 0
+   }
+  },
+  {
+   "arguments": {
+    "domain_filter": "input_boolean",
+    "limit": 5
+   },
+   "engineering_exchange_sha256": "2b20739fd664b46a89a8a1737d050d0633cea3a4d4d7a94acd48b20f9f2f2cfa",
+   "exchange_failure": null,
+   "file": "r25-search.json",
+   "id": "r25-search",
+   "other_upstream_traffic": [
+    "POST initialize",
+    "POST notifications/initialized",
+    "POST tools/list"
+   ],
+   "result_class": "success",
+   "search_descriptor_variant": "unified",
+   "tool": "ha_search",
+   "upstream": [
+    {
+     "outcome": "complete",
+     "raw_response_bytes": 1408,
+     "raw_response_sha256": "ff2be583ff8c414ff7e5d89132c15aca2c17ef616764146234b380989250e278",
+     "request_sha256": "5a7fead1245679931e56a76e52e470fda0d3ed2d2bc85e4dd670f1866e232837",
+     "sequence": 107,
+     "status": 200,
+     "tool": "ha_search"
+    }
+   ],
+   "upstream_wire_arguments": [
+    {
+     "domain_filter": "input_boolean",
+     "limit": 5
+    }
+   ],
+   "version": "9.2.0",
+   "warning_codes": [],
+   "withheld": {
+    "data.fields_dropped_by_policy": 0,
+    "data.fields_withheld": 0,
+    "data.upstream_warnings_replaced": 0
+   }
+  },
+  {
+   "arguments": {
+    "limit": 5
+   },
+   "engineering_exchange_sha256": "d312432343b0ee40717cd28b19be43347eaa67e8411cfbd30bec9260ece24cc8",
+   "exchange_failure": null,
+   "file": "r26-integrations.json",
+   "id": "r26-integrations",
+   "other_upstream_traffic": [
+    "POST initialize",
+    "POST notifications/initialized",
+    "POST tools/list"
+   ],
+   "result_class": "success",
+   "tool": "ha_get_integration",
+   "upstream": [
+    {
+     "outcome": "complete",
+     "raw_response_bytes": 13518,
+     "raw_response_sha256": "95006d965aa7d22fadcaf5295370f2148368b9ba6142508c73e197d3077ba5f4",
+     "request_sha256": "52493d980c9f64804c7c8515bb78cb921d5a362024ce9acf1f151c80c4a03c4d",
+     "sequence": 111,
+     "status": 200,
+     "tool": "ha_get_integration"
+    }
+   ],
+   "upstream_wire_arguments": [
+    {
+     "exact_match": true,
+     "include_options": false,
+     "limit": 200,
+     "offset": 0
+    }
+   ],
+   "version": "9.2.0",
+   "withheld": {
+    "data.fields_dropped_by_policy": 0,
+    "data.fields_withheld": 13,
+    "data.upstream_warnings_replaced": 0
+   }
+  },
+  {
+   "arguments": {},
+   "engineering_exchange_sha256": "d044a21bb9253f9a8820fb34fce0f685ddedd334ea7650feaee069f9730a56f9",
+   "exchange_failure": null,
+   "file": "r27-apps.json",
+   "id": "r27-apps",
+   "note": "not replayable in the local lane (no Supervisor)",
+   "note_confirmed_by_response": true,
+   "other_upstream_traffic": [
+    "POST initialize",
+    "POST notifications/initialized",
+    "POST tools/list"
+   ],
+   "result_class": "error:provider_error",
+   "tool": "ha_get_app",
+   "upstream": [
+    {
+     "outcome": "complete",
+     "raw_response_bytes": 696,
+     "raw_response_sha256": "673376795c92bfa1f2350005159ae5be20568bf3d351f1471f711ab26b04b95d",
+     "request_sha256": "259c43b841e238b69fbd4bf1c585300617dc22ab6e76cc3c094bfdd8d1a65277",
+     "sequence": 115,
+     "status": 200,
+     "tool": "ha_get_app"
+    }
+   ],
+   "upstream_wire_arguments": [
+    {
+     "include_stats": false,
+     "source": "installed"
+    }
+   ],
+   "version": "9.2.0",
+   "withheld": {}
+  }
+ ],
+ "stop": null,
+ "version": "9.2.0"
+}

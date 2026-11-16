@@ -1,0 +1,1 @@
+{"method":"tools/call","params":{"name":"ha_get_device","arguments":{"limit":5}},"jsonrpc":"2.0","id":2}

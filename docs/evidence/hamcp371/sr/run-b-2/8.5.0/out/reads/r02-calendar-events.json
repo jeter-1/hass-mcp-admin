@@ -1,0 +1,105 @@
+{
+ "case": {
+  "arguments": {
+   "end": "2026-11-16T07:17:22-06:00",
+   "entity_id": "calendar.hamcp371_calendar",
+   "max_results": 5,
+   "start": "2026-11-16T04:17:22-06:00"
+  },
+  "id": "r02-calendar-events",
+  "tool": "ha_config_get_calendar_events"
+ },
+ "exchange": {
+  "body_bytes": 2180,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":103,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\n  \\\"operation\\\": \\\"ha_config_get_calendar_events\\\",\\n  \\\"summary\\\": \\\"Completed a reviewed pure-read operation through the upstream gateway.\\\",\\n  \\\"data\\\": {\\n    \\\"success\\\": true,\\n    \\\"entity_id\\\": \\\"calendar.hamcp371_calendar\\\",\\n    \\\"events\\\": [\\n      {\\n        \\\"start\\\": {\\n          \\\"dateTime\\\": \\\"2026-11-16T06:27:22-06:00\\\"\\n        },\\n        \\\"end\\\": {\\n          \\\"dateTime\\\": \\\"2026-11-16T06:57:22-06:00\\\"\\n        },\\n        \\\"summary\\\": \\\"HAMCP371 event\\\",\\n        \\\"description\\\": null,\\n        \\\"location\\\": null,\\n        \\\"uid\\\": \\\"ad92748c-e1b7-11f1-88c5-4f4368b60702\\\",\\n        \\\"recurrence_id\\\": null,\\n        \\\"rrule\\\": null,\\n        \\\"status\\\": null\\n      }\\n    ],\\n    \\\"count\\\": 1,\\n    \\\"total_available\\\": 1,\\n    \\\"time_range\\\": {\\n      \\\"start\\\": \\\"2026-11-16T04:17:22-06:00\\\",\\n      \\\"end\\\": \\\"2026-11-16T07:17:22-06:00\\\"\\n    },\\n    \\\"message\\\": \\\"Retrieved 1 event(s) from calendar.hamcp371_calendar\\\"\\n  },\\n  \\\"warnings\\\": [],\\n  \\\"metadata\\\": {\\n    \\\"provider\\\": \\\"upstream_read_gateway\\\",\\n    \\\"upstream_tool\\\": \\\"ha_config_get_calendar_events\\\",\\n    \\\"upstream_server\\\": \\\"ha-mcp\\\",\\n    \\\"upstream_version\\\": \\\"8.5.0\\\",\\n    \\\"classification\\\": \\\"automatic_read\\\",\\n    \\\"schema_fingerprint\\\": \\\"7e118a769adceb342ce0c3c8acfe69a4bc9d014a80bee7a06c5cc1bf44f57ab6\\\",\\n    \\\"untrusted_upstream_content\\\": true,\\n    \\\"fallback\\\": \\\"none\\\",\\n    \\\"fallback_occurred\\\": false,\\n    \\\"completeness\\\": \\\"complete\\\"\\n  },\\n  \\\"timing\\\": {\\n    \\\"total_ms\\\": 231.07,\\n    \\\"tool_ms\\\": 228.297,\\n    \\\"home_assistant_ms\\\": 0.0,\\n    \\\"home_assistant_cumulative_attempt_ms\\\": 0.0,\\n    \\\"home_assistant_wall_clock_span_ms\\\": 0.0,\\n    \\\"home_assistant_request_count\\\": 0,\\n    \\\"upstream_attempted\\\": true,\\n    \\\"upstream_ms\\\": 225.02,\\n    \\\"upstream_wall_clock_span_ms\\\": 225.02,\\n    \\\"upstream_request_count\\\": 1,\\n    \\\"provider_operations_concurrent\\\": false,\\n    \\\"retry_count\\\": 0,\\n    \\\"timeout_occurred\\\": false\\n  },\\n  \\\"request_id\\\": \\\"ac7f3e749ea64e1ea770ad50df70ed76\\\",\\n  \\\"success\\\": true\\n}\"}],\"isError\":false}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 103,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\n  \"operation\": \"ha_config_get_calendar_events\",\n  \"summary\": \"Completed a reviewed pure-read operation through the upstream gateway.\",\n  \"data\": {\n    \"success\": true,\n    \"entity_id\": \"calendar.hamcp371_calendar\",\n    \"events\": [\n      {\n        \"start\": {\n          \"dateTime\": \"2026-11-16T06:27:22-06:00\"\n        },\n        \"end\": {\n          \"dateTime\": \"2026-11-16T06:57:22-06:00\"\n        },\n        \"summary\": \"HAMCP371 event\",\n        \"description\": null,\n        \"location\": null,\n        \"uid\": \"ad92748c-e1b7-11f1-88c5-4f4368b60702\",\n        \"recurrence_id\": null,\n        \"rrule\": null,\n        \"status\": null\n      }\n    ],\n    \"count\": 1,\n    \"total_available\": 1,\n    \"time_range\": {\n      \"start\": \"2026-11-16T04:17:22-06:00\",\n      \"end\": \"2026-11-16T07:17:22-06:00\"\n    },\n    \"message\": \"Retrieved 1 event(s) from calendar.hamcp371_calendar\"\n  },\n  \"warnings\": [],\n  \"metadata\": {\n    \"provider\": \"upstream_read_gateway\",\n    \"upstream_tool\": \"ha_config_get_calendar_events\",\n    \"upstream_server\": \"ha-mcp\",\n    \"upstream_version\": \"8.5.0\",\n    \"classification\": \"automatic_read\",\n    \"schema_fingerprint\": \"7e118a769adceb342ce0c3c8acfe69a4bc9d014a80bee7a06c5cc1bf44f57ab6\",\n    \"untrusted_upstream_content\": true,\n    \"fallback\": \"none\",\n    \"fallback_occurred\": false,\n    \"completeness\": \"complete\"\n  },\n  \"timing\": {\n    \"total_ms\": 231.07,\n    \"tool_ms\": 228.297,\n    \"home_assistant_ms\": 0.0,\n    \"home_assistant_cumulative_attempt_ms\": 0.0,\n    \"home_assistant_wall_clock_span_ms\": 0.0,\n    \"home_assistant_request_count\": 0,\n    \"upstream_attempted\": true,\n    \"upstream_ms\": 225.02,\n    \"upstream_wall_clock_span_ms\": 225.02,\n    \"upstream_request_count\": 1,\n    \"provider_operations_concurrent\": false,\n    \"retry_count\": 0,\n    \"timeout_occurred\": false\n  },\n  \"request_id\": \"ac7f3e749ea64e1ea770ad50df70ed76\",\n  \"success\": true\n}",
+       "type": "text"
+      }
+     ],
+     "isError": false
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 103,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "end": "2026-11-16T07:17:22-06:00",
+      "entity_id": "calendar.hamcp371_calendar",
+      "max_results": 5,
+      "start": "2026-11-16T04:17:22-06:00"
+     },
+     "name": "ha_config_get_calendar_events"
+    }
+   },
+   "method": "POST",
+   "path": "/synthetic-engineering-access-secret/mcp"
+  },
+  "response": {
+   "id": 103,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\n  \"operation\": \"ha_config_get_calendar_events\",\n  \"summary\": \"Completed a reviewed pure-read operation through the upstream gateway.\",\n  \"data\": {\n    \"success\": true,\n    \"entity_id\": \"calendar.hamcp371_calendar\",\n    \"events\": [\n      {\n        \"start\": {\n          \"dateTime\": \"2026-11-16T06:27:22-06:00\"\n        },\n        \"end\": {\n          \"dateTime\": \"2026-11-16T06:57:22-06:00\"\n        },\n        \"summary\": \"HAMCP371 event\",\n        \"description\": null,\n        \"location\": null,\n        \"uid\": \"ad92748c-e1b7-11f1-88c5-4f4368b60702\",\n        \"recurrence_id\": null,\n        \"rrule\": null,\n        \"status\": null\n      }\n    ],\n    \"count\": 1,\n    \"total_available\": 1,\n    \"time_range\": {\n      \"start\": \"2026-11-16T04:17:22-06:00\",\n      \"end\": \"2026-11-16T07:17:22-06:00\"\n    },\n    \"message\": \"Retrieved 1 event(s) from calendar.hamcp371_calendar\"\n  },\n  \"warnings\": [],\n  \"metadata\": {\n    \"provider\": \"upstream_read_gateway\",\n    \"upstream_tool\": \"ha_config_get_calendar_events\",\n    \"upstream_server\": \"ha-mcp\",\n    \"upstream_version\": \"8.5.0\",\n    \"classification\": \"automatic_read\",\n    \"schema_fingerprint\": \"7e118a769adceb342ce0c3c8acfe69a4bc9d014a80bee7a06c5cc1bf44f57ab6\",\n    \"untrusted_upstream_content\": true,\n    \"fallback\": \"none\",\n    \"fallback_occurred\": false,\n    \"completeness\": \"complete\"\n  },\n  \"timing\": {\n    \"total_ms\": 231.07,\n    \"tool_ms\": 228.297,\n    \"home_assistant_ms\": 0.0,\n    \"home_assistant_cumulative_attempt_ms\": 0.0,\n    \"home_assistant_wall_clock_span_ms\": 0.0,\n    \"home_assistant_request_count\": 0,\n    \"upstream_attempted\": true,\n    \"upstream_ms\": 225.02,\n    \"upstream_wall_clock_span_ms\": 225.02,\n    \"upstream_request_count\": 1,\n    \"provider_operations_concurrent\": false,\n    \"retry_count\": 0,\n    \"timeout_occurred\": false\n  },\n  \"request_id\": \"ac7f3e749ea64e1ea770ad50df70ed76\",\n  \"success\": true\n}",
+      "type": "text"
+     }
+    ],
+    "isError": false
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Mon, 16 Nov 2026 12:17:37 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "x-request-id",
+    "ac7f3e749ea64e1ea770ad50df70ed76"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null
+}

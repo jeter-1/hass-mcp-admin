@@ -1,0 +1,1 @@
+{"method":"tools/call","params":{"name":"ha_get_app","arguments":{"source":"installed","include_stats":false}},"jsonrpc":"2.0","id":2}
