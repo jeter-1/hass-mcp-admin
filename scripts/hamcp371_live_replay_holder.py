@@ -74,6 +74,10 @@ CONTROL_VERSION = "8.5.0"
 CONTROL_GATE = {"upstream_advertised_tool_count": 80, "reviewed_policy_entry_count": 77,
                 "version_status": "reviewed_exact", "admission_status": "admitted_exact"}
 SCALAR_CHARS = 128
+# Rulings 2026-11-16 06:05 CST: both health records carry the Core authority status,
+# recorded and not gated: the scalars of data.home_assistant_core_authority and of
+# its release_registry snapshot.
+CORE_AUTHORITY_KEY = "home_assistant_core_authority"
 # D6 (rulings 2026-11-15 22:26 CST): each ha_search result records its variant.
 SEARCH_TOOL = "ha_search"
 
@@ -313,16 +317,30 @@ def scalars(value):
             if item is None or isinstance(item, (str, int, float, bool))}
 
 
+def health_data(payload):
+    data = payload.get("data") if isinstance(payload, dict) else None
+    return data if isinstance(data, dict) else {}
+
+
 def health_fields(payload):
     """The admission fields and the lifecycle provider status of one health payload."""
-    data = payload.get("data") if isinstance(payload, dict) else None
-    data = data if isinstance(data, dict) else {}
+    data = health_data(payload)
     gateway = data.get("upstream_read_gateway")
     gateway = gateway if isinstance(gateway, dict) else {}
     lifecycle = data.get("governance")
     for key in ("operational_administration", "lifecycle_provider"):
         lifecycle = lifecycle.get(key) if isinstance(lifecycle, dict) else None
     return scalars({field: gateway.get(field) for field in HEALTH_FIELDS}), scalars(lifecycle)
+
+
+def core_authority(payload):
+    """The Core authority status of one health payload, or None when it is absent."""
+    block = health_data(payload).get(CORE_AUTHORITY_KEY)
+    if not isinstance(block, dict):
+        return None
+    status = scalars(block)
+    status["release_registry"] = scalars(block.get("release_registry"))
+    return status
 
 
 def control_gate(version, klass, fields):
@@ -366,6 +384,7 @@ def health_step(session, args, out_dir, proxy_dir, sleep):
               "engineering_exchange_sha256": hashlib.sha256(stored).hexdigest(),
               "exchange_failure": failure, "result_class": klass,
               "upstream_read_gateway": fields, "lifecycle_provider": lifecycle,
+              "core_authority": core_authority(payload),
               "response_truncated": isinstance(payload, dict) and isinstance(
                   payload.get("response_completeness"), dict)
               and payload["response_completeness"].get("truncated") is True,

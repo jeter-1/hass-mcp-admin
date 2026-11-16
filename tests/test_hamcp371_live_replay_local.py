@@ -279,8 +279,14 @@ def health_payload(**gateway):
                  "last_failure_category": "upstream_version_mismatch",
                  "observed_upstream_version": "8.5.0", "selected_compatibility_entry_id": None,
                  "nested": {"left": "out"}}
+    core = {"configured": True, "initialized": True, "observed_core_version": "2026.11.0",
+            "identity_agreement": True, "fallback_count": 0, "counters": {"probes": 1},
+            "release_registry": {"enabled": True, "sequence": 18, "cache_status": "valid",
+                                 "freshness_status": "current", "surface_denied": False,
+                                 "refresh_status": "failed", "failure_reason_counts": []}}
     return {"success": True, "data": {"upstream_read_gateway": values, "governance": {
-        "operational_administration": {"lifecycle_provider": lifecycle}}}}
+        "operational_administration": {"lifecycle_provider": lifecycle}},
+        "home_assistant_core_authority": core}}
 
 
 class FakeSession:
@@ -396,6 +402,12 @@ class ReadsTests(unittest.TestCase):
         self.assertEqual(health["lifecycle_provider"]["last_failure_category"],
                          "upstream_version_mismatch")
         self.assertNotIn("nested", health["lifecycle_provider"])
+        core = health["core_authority"]
+        self.assertEqual((core["observed_core_version"], core["initialized"]), ("2026.11.0", True))
+        self.assertNotIn("counters", core)
+        self.assertEqual(core["release_registry"], {
+            "cache_status": "valid", "enabled": True, "freshness_status": "current",
+            "refresh_status": "failed", "sequence": 18, "surface_denied": False})
         self.assertEqual(health["upstream_tool_calls"], 1)
         stored = (base / "reads" / holder.HEALTH_FILE).read_bytes()
         self.assertEqual(health["engineering_exchange_sha256"], hashlib.sha256(stored).hexdigest())
@@ -422,6 +434,15 @@ class ReadsTests(unittest.TestCase):
                 self.assertEqual(index["health"]["upstream_read_gateway"][field], value)
                 self.assertEqual(sessions[0].tools, ["get_server_health"])
                 self.assertTrue(sessions[0].closed)
+
+    def test_health_without_a_core_authority_block_records_none(self):
+        payload = health_payload()
+        del payload["data"]["home_assistant_core_authority"]
+        self.assertIsNone(holder.core_authority(payload))
+        self.assertIsNone(holder.core_authority(None))
+        payload = health_payload()
+        payload["data"]["home_assistant_core_authority"]["release_registry"] = "unexpected"
+        self.assertIsNone(holder.core_authority(payload)["release_registry"])
 
     def test_a_truncated_health_response_is_named_and_fails_the_control_gate(self):
         cut = {"success": True, "data": {}, "response_completeness": {"truncated": True}}
@@ -524,14 +545,71 @@ class UrlAndArgvTests(unittest.TestCase):
                                          sr.s4.PEER_MEMORY, sr.ENGINEERING_MEMORY))
         self.assertLessEqual(total, memory(lane.MEMORY_CEILING))
 
-    def test_options_archive_is_the_ci_options(self):
-        with tarfile.open(fileobj=io.BytesIO(sr.options_archive())) as archive:
+    def test_options_archive_is_the_ci_options_the_core_key_and_the_committed_seed(self):
+        seed = sr.core_seed()
+        with tarfile.open(fileobj=io.BytesIO(sr.options_archive(seed))) as archive:
             members = archive.getmembers()
-            body = archive.extractfile(members[0]).read()
-        self.assertEqual([m.name for m in members], ["options.json"])
-        self.assertEqual(json.loads(body), sr.ENGINEERING_OPTIONS)
+            bodies = {m.name: archive.extractfile(m).read() for m in members}
+        self.assertEqual([m.name for m in members], ["options.json", *sr.CORE_SEED_FILES])
+        self.assertEqual([(m.mode, m.mtime) for m in members],
+                         [(0o644, 0), (0o600, 0), (0o600, 0)])
+        options = json.loads(bodies["options.json"])
+        self.assertEqual({k: v for k, v in options.items()
+                          if not k.startswith("ha_core_release_registry_")},
+                         sr.ENGINEERING_OPTIONS)
         self.assertEqual(sr.ENGINEERING_OPTIONS["access_secret"], sr.ENGINEERING_SECRET)
-        self.assertFalse(sr.ENGINEERING_OPTIONS["upstream_trust_registry_enabled"])
+        self.assertFalse(options["upstream_trust_registry_enabled"])
+        self.assertIs(options["ha_core_release_registry_enabled"], True)
+        self.assertEqual(options["ha_core_release_registry_public_key"],
+                         (ROOT / "docs/evidence/hamcp222/core-public-key.txt").read_text(
+                             encoding="utf-8").strip())
+        record = json.loads(sr.CORE_SEED_RECORD.read_text(encoding="utf-8"))
+        for name in sr.CORE_SEED_FILES:
+            self.assertEqual(bodies[name], (sr.CORE_SEED_DIR / name).read_bytes())
+            self.assertEqual(hashlib.sha256(bodies[name]).hexdigest(),
+                             record["files"][name]["sha256"])
+            self.assertEqual(record["lane_paths"][name], f"/data/{name}")
+        self.assertNotIn("data", sr.seed_summary(seed))
+        self.assertEqual(sr.seed_summary(seed)["files"][sr.CORE_SEED_FILES[1]]["path"],
+                         "/data/ha-core-release-registry-cache.json.lifecycle")
+
+    def copied_seed(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        directory = Path(tmp.name) / "seed"
+        directory.mkdir()
+        for name in (*sr.CORE_SEED_FILES, "seed-record.json"):
+            (directory / name).write_bytes((sr.CORE_SEED_DIR / name).read_bytes())
+        return directory
+
+    def test_core_seed_refuses_a_changed_missing_or_unbound_file(self):
+        directory = self.copied_seed()
+        self.assertEqual(sorted(sr.core_seed(directory / "seed-record.json")["files"]),
+                         sorted(sr.CORE_SEED_FILES))
+        witness = directory / sr.CORE_SEED_FILES[1]
+        witness.write_bytes(witness.read_bytes().replace(b"committed", b"refreshing"))
+        with self.assertRaisesRegex(Refusal, "core_seed_mismatch"):
+            sr.core_seed(directory / "seed-record.json")
+        witness.unlink()
+        with self.assertRaisesRegex(Refusal, "core_seed_missing"):
+            sr.core_seed(directory / "seed-record.json")
+        directory = self.copied_seed()
+        other_key = directory / "other-key.txt"
+        other_key.write_text("c3ludGhldGljLW5vdC1hLWtleQ==\n", encoding="utf-8")
+        with self.assertRaisesRegex(Refusal, "core_seed_mismatch"):
+            sr.core_seed(directory / "seed-record.json", other_key)
+        record = json.loads((directory / "seed-record.json").read_text(encoding="utf-8"))
+        record["lane_paths"][sr.CORE_SEED_FILES[0]] = "/data/renamed.json"
+        (directory / "seed-record.json").write_text(json.dumps(record), encoding="utf-8")
+        with self.assertRaisesRegex(Refusal, "core_seed_mismatch"):
+            sr.core_seed(directory / "seed-record.json")
+
+    def test_the_harness_never_composes_cache_or_witness_content(self):
+        # Seed bytes reach the archive only as read from the committed files.
+        for module in (sr, holder):
+            source = Path(module.__file__).read_text(encoding="utf-8")
+            for token in ("authority_journal", '"state"', "schema_version"):
+                self.assertNotIn(token, source)
 
 
 class EngineeringContainerTests(unittest.TestCase):

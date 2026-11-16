@@ -26,6 +26,14 @@ is Engineering from the image ``build`` recorded, given the administrator
 token as ``HA_TOKEN`` by name and never a ``SUPERVISOR_TOKEN``.  The holder
 then makes the 27 admitted reads through Engineering's public tools.
 
+Engineering's ``/data`` starts with ci.yml's options plus the Core registry
+switch and the committed Core public key, and with the Core registry cache and
+its ``.lifecycle`` witness that Engineering's own ``refresh()`` wrote offline
+(``core_registry_seed.py``, ruling 2026-11-16 06:05 CST, seeding (a)).  Both
+are copied unchanged under the names refresh() gave them; the preflight checks
+them against the seed record's sha256s.  Known difference from production:
+same verification and write path, local transport instead of GitHub.
+
 "Host network" in the contract is read as the holder's loopback-only
 namespace: Core, the peer, the proxy and Engineering all reach each other on
 127.0.0.1 and nothing reaches out.  The receipt says so.
@@ -82,6 +90,17 @@ ENGINEERING_OPTIONS = {
     "approval_notification_service": "notify.mobile_app_beta31_fixture",
     "upstream_trust_registry_enabled": False,
 }
+# Seeding ruling (a), 2026-11-16 06:05 CST: the Core registry is enabled with the
+# committed key, and its cache and witness are the files Engineering's refresh()
+# wrote offline (docs/evidence/hamcp371/sr/core_registry_seed.py), copied unchanged.
+CORE_KEY_FILE = ROOT / "docs/evidence/hamcp222/core-public-key.txt"
+CORE_SEED_DIR = ROOT / "docs/evidence/hamcp371/sr/core-registry-seed"
+CORE_SEED_RECORD = CORE_SEED_DIR / "seed-record.json"
+CORE_SEED_SCHEMA = "hamcp371.sr.core_registry_seed.v1"
+CORE_SEED_FILES = ("ha-core-release-registry-cache.json",
+                   "ha-core-release-registry-cache.json.lifecycle")
+CORE_SEED_BLOB = "6d91c9b243cd7c0414d134e6620718903ef8fc33"
+CORE_SEED_MODE = 0o600  # The mode refresh() wrote them with.
 ENGINEERING_TOKEN_VARIABLE = "HA_TOKEN"
 FORBIDDEN_VARIABLE = "SUPERVISOR_TOKEN"
 HOLDER_SCRIPT = "/lane/scripts/hamcp371_live_replay_holder.py"
@@ -364,13 +383,57 @@ def engineering_token_environment(token):
             ENGINEERING_TOKEN_VARIABLE: token}
 
 
-def options_archive():
-    raw, body = io.BytesIO(), json.dumps(ENGINEERING_OPTIONS, indent=2, sort_keys=True).encode()
+def engineering_options(key_file=CORE_KEY_FILE):
+    """ci.yml's options with the Core registry enabled under the committed key."""
+    return {**ENGINEERING_OPTIONS, "ha_core_release_registry_enabled": True,
+            "ha_core_release_registry_public_key": Path(key_file).read_text(
+                encoding="utf-8").strip()}
+
+
+def core_seed(record_path=CORE_SEED_RECORD, key_file=CORE_KEY_FILE):
+    """The committed refresh() output, each file exactly as its seed record says."""
+    try:
+        record = s4.read_json(record_path)
+        files = {name: (Path(record_path).parent / name).read_bytes() for name in CORE_SEED_FILES}
+        key = Path(key_file).read_bytes()
+    except (OSError, ValueError):
+        raise Refusal("core_seed_missing") from None
+    recorded = record.get("files") or {}
+    if (record.get("schema") != CORE_SEED_SCHEMA
+            or (record.get("registry") or {}).get("blob") != CORE_SEED_BLOB
+            or (record.get("public_key") or {}).get("sha256") != hashlib.sha256(key).hexdigest()
+            or record.get("lane_paths") != {name: f"{ENGINEERING_DATA}/{name}"
+                                            for name in CORE_SEED_FILES}
+            or sorted(recorded) != sorted(CORE_SEED_FILES)
+            or any(hashlib.sha256(data).hexdigest() != recorded[name].get("sha256")
+                   for name, data in files.items())):
+        raise Refusal("core_seed_mismatch")
+    return {"record": Path(record_path).relative_to(ROOT).as_posix()
+            if Path(record_path).is_relative_to(ROOT) else Path(record_path).name,
+            "record_sha256": hashlib.sha256(Path(record_path).read_bytes()).hexdigest(),
+            "files": {name: {"path": f"{ENGINEERING_DATA}/{name}", "bytes": len(data),
+                             "sha256": recorded[name]["sha256"]}
+                      for name, data in files.items()},
+            "known_difference": record.get("known_difference"), "data": files}
+
+
+def options_archive(seed, options=None):
+    """options.json and the two seed files, under the names Engineering reads in /data."""
+    body = json.dumps(engineering_options() if options is None else options,
+                      indent=2, sort_keys=True).encode()
+    members = [("options.json", body, 0o644)] + [
+        (name, seed["data"][name], CORE_SEED_MODE) for name in CORE_SEED_FILES]
+    raw = io.BytesIO()
     with tarfile.open(fileobj=raw, mode="w", format=tarfile.USTAR_FORMAT) as archive:
-        info = tarfile.TarInfo("options.json")
-        info.size, info.mode, info.mtime = len(body), 0o644, 0
-        archive.addfile(info, io.BytesIO(body))
+        for name, data, mode in members:
+            info = tarfile.TarInfo(name)
+            info.size, info.mode, info.mtime = len(data), mode, 0
+            archive.addfile(info, io.BytesIO(data))
     return raw.getvalue()
+
+
+def seed_summary(seed):
+    return {key: value for key, value in seed.items() if key != "data"}
 
 
 def environment_names(data):
@@ -534,21 +597,22 @@ def start_proxy(section, wanted):
     return section
 
 
-def start_engineering(section, version, wanted, run_id, holder_id, image, token):
+def start_engineering(section, version, wanted, run_id, holder_id, image, token, seed):
     url = upstream_url(version, PROXY_PORT)
     command("docker", "volume", "create", *labels_argv(run_id), wanted["engineering_volume"])
     command(*engineering_argv(wanted["engineering"], run_id, wanted["holder"],
                               wanted["engineering_volume"], image["image"], url),
             env=engineering_token_environment(token))
     lane.stream_in(["docker", "cp", "-", f"{wanted['engineering']}:{ENGINEERING_DATA}"],
-                   options_archive())
+                   options_archive(seed))
     command("docker", "start", wanted["engineering"])
     section["engineering_container"] = verify_engineering(
         s4.inspect_owned(wanted["engineering"], run_id) or {}, holder_id, image,
         wanted["engineering_volume"])
     section["engineering_upstream_url"] = url
     section["engineering_environment"] = [list(item) for item in engineering_environment(url)]
-    section["engineering_options"] = dict(ENGINEERING_OPTIONS)
+    section["engineering_options"] = engineering_options()
+    section["engineering_core_registry_seed"] = seed_summary(seed)
     section["network_after_engineering"] = lane.posture(wanted)
     command(*s4.exec_argv(wanted["holder"], "-c", s4.WAIT_HTTP, ENGINEERING_READY,
                           str(READY_SECONDS), "ok"), timeout=READY_SECONDS + 30)
@@ -689,7 +753,7 @@ def run_setup(section, version, ctx, tokens):
         start_peer(section, version, wanted, run_id, upstream, holder_id, token, setup_dir)
         start_proxy(section, wanted)
         start_engineering(section, version, wanted, run_id, holder_id, ctx["engineering"],
-                          token)
+                          token, ctx["core_seed"])
         network["before_reads"] = lane.posture(wanted)
         run_reads(section, version, wanted, setup_dir)
         section["engineering_after_reads"] = require_running(
@@ -725,6 +789,7 @@ def preflight(args):
         raise Refusal("container_memory_above_ceiling")
     revision = s4.require_clean_checkout()
     engineering = engineering_image()
+    seed = core_seed()
     helper = s4.cached_image(s4.HELPER_IMAGE, s4.HELPER_LABELS)
     core_image = s4.cached_image(core["image"], lane.CORE_LABELS)
     upstream = {version: s4.cached_image(bindings[version]["image"], bindings[version]["labels"])
@@ -740,6 +805,7 @@ def preflight(args):
     return {"core": core, "wheels": wheels, "candidate_built": candidate_built,
             "control_rows": control_rows, "bindings": bindings, "components": components,
             "control_tree": control, "revision": revision, "engineering": engineering,
+            "core_seed": seed,
             "helper": helper, "core_image": core_image, "upstream": upstream,
             "figures": figures, "names": all_names, "memory_total_bytes": total}
 
@@ -762,6 +828,10 @@ INTERPRETATIONS = (
     "whether Engineering admits each peer catalog under the D1 flags was not known before "
     "this run; each read's result class shows it",
     "r12 reads the default Core blueprint homeassistant/motion_light.yaml in get mode",
+    "Engineering's /data holds the Core registry cache and .lifecycle witness its own "
+    "refresh() wrote offline from the registry blob at 917bfa2a (seeding (a)): same "
+    "verification and write path, local transport instead of GitHub; in the lane its "
+    "refresh has no route out and fails, which keeps the copied cache",
 )
 
 
@@ -776,6 +846,7 @@ def execute(args, launch):
         "model": MODEL, "command": args.command, "result": "WITHHELD", "started": now(),
         "harness_commit": ctx["revision"], "run_id": run_id, "notes": list(args.note or []),
         "ruling": "architect ruling 2026-11-15 17:50 CST (SR contract)",
+        "seeding_ruling": "architect ruling 2026-11-16 06:05 CST (seeding (a))",
         "pull": "never", "push": "never",
         "bindings": {"core": ctx["core"], **{v: {k: b[k] for k in sorted(b) if k != "labels"}
                                              for v, b in ctx["bindings"].items()}},
@@ -786,6 +857,7 @@ def execute(args, launch):
         "candidate_requirements": ctx["candidate_built"]["requirements"],
         "wheels": {"wheels": ctx["wheels"]["wheels"], "records": ctx["wheels"]["records"]},
         "engineering_image": ctx["engineering"], "helper_image": ctx["helper"],
+        "core_registry_seed": seed_summary(ctx["core_seed"]),
         "core_image": ctx["core_image"], "upstream_images": ctx["upstream"],
         "host_at_start": ctx["figures"],
         "container_memory": {"holder": s4.HOLDER_MEMORY, "core": lane.CORE_MEMORY,
