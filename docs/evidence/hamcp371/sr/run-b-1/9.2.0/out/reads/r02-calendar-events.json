@@ -1,0 +1,93 @@
+{
+ "case": {
+  "arguments": {
+   "end": "2026-11-16T00:09:55-06:00",
+   "entity_id": "calendar.hamcp371_calendar",
+   "max_results": 5,
+   "start": "2026-11-15T21:09:55-06:00"
+  },
+  "id": "r02-calendar-events",
+  "tool": "ha_config_get_calendar_events"
+ },
+ "exchange": {
+  "body_bytes": 1318,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":103,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\n  \\\"operation\\\": \\\"ha_config_get_calendar_events\\\",\\n  \\\"error\\\": \\\"CoreRequirementUnmapped\\\",\\n  \\\"error_code\\\": \\\"unsupported_operation\\\",\\n  \\\"message\\\": \\\"The tool has no reviewed Core requirement mapping and is refused.\\\",\\n  \\\"details\\\": {\\n    \\\"reason\\\": \\\"core_requirement_unmapped\\\",\\n    \\\"reason_code\\\": \\\"core_requirement_unmapped\\\",\\n    \\\"core_authority_acquired\\\": false,\\n    \\\"provider_dispatch_occurred\\\": false,\\n    \\\"upstream_attempted\\\": false,\\n    \\\"home_assistant_request_count\\\": 0,\\n    \\\"upstream_request_count\\\": 0\\n  },\\n  \\\"retryable\\\": false,\\n  \\\"warnings\\\": [],\\n  \\\"metadata\\\": {},\\n  \\\"timing\\\": {\\n    \\\"total_ms\\\": 0.907,\\n    \\\"tool_ms\\\": null,\\n    \\\"home_assistant_ms\\\": null,\\n    \\\"home_assistant_cumulative_attempt_ms\\\": null,\\n    \\\"home_assistant_wall_clock_span_ms\\\": null,\\n    \\\"home_assistant_request_count\\\": 0,\\n    \\\"upstream_attempted\\\": false,\\n    \\\"upstream_ms\\\": 0.0,\\n    \\\"upstream_wall_clock_span_ms\\\": 0.0,\\n    \\\"upstream_request_count\\\": 0,\\n    \\\"provider_operations_concurrent\\\": false,\\n    \\\"retry_count\\\": 0,\\n    \\\"timeout_occurred\\\": false\\n  },\\n  \\\"request_id\\\": \\\"233bc5509c7c4fa19870815b0fa1836b\\\",\\n  \\\"success\\\": false\\n}\"}],\"isError\":true}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 103,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\n  \"operation\": \"ha_config_get_calendar_events\",\n  \"error\": \"CoreRequirementUnmapped\",\n  \"error_code\": \"unsupported_operation\",\n  \"message\": \"The tool has no reviewed Core requirement mapping and is refused.\",\n  \"details\": {\n    \"reason\": \"core_requirement_unmapped\",\n    \"reason_code\": \"core_requirement_unmapped\",\n    \"core_authority_acquired\": false,\n    \"provider_dispatch_occurred\": false,\n    \"upstream_attempted\": false,\n    \"home_assistant_request_count\": 0,\n    \"upstream_request_count\": 0\n  },\n  \"retryable\": false,\n  \"warnings\": [],\n  \"metadata\": {},\n  \"timing\": {\n    \"total_ms\": 0.907,\n    \"tool_ms\": null,\n    \"home_assistant_ms\": null,\n    \"home_assistant_cumulative_attempt_ms\": null,\n    \"home_assistant_wall_clock_span_ms\": null,\n    \"home_assistant_request_count\": 0,\n    \"upstream_attempted\": false,\n    \"upstream_ms\": 0.0,\n    \"upstream_wall_clock_span_ms\": 0.0,\n    \"upstream_request_count\": 0,\n    \"provider_operations_concurrent\": false,\n    \"retry_count\": 0,\n    \"timeout_occurred\": false\n  },\n  \"request_id\": \"233bc5509c7c4fa19870815b0fa1836b\",\n  \"success\": false\n}",
+       "type": "text"
+      }
+     ],
+     "isError": true
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 103,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "end": "2026-11-16T00:09:55-06:00",
+      "entity_id": "calendar.hamcp371_calendar",
+      "max_results": 5,
+      "start": "2026-11-15T21:09:55-06:00"
+     },
+     "name": "ha_config_get_calendar_events"
+    }
+   },
+   "method": "POST",
+   "path": "/synthetic-engineering-access-secret/mcp"
+  },
+  "response": {
+   "id": 103,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\n  \"operation\": \"ha_config_get_calendar_events\",\n  \"error\": \"CoreRequirementUnmapped\",\n  \"error_code\": \"unsupported_operation\",\n  \"message\": \"The tool has no reviewed Core requirement mapping and is refused.\",\n  \"details\": {\n    \"reason\": \"core_requirement_unmapped\",\n    \"reason_code\": \"core_requirement_unmapped\",\n    \"core_authority_acquired\": false,\n    \"provider_dispatch_occurred\": false,\n    \"upstream_attempted\": false,\n    \"home_assistant_request_count\": 0,\n    \"upstream_request_count\": 0\n  },\n  \"retryable\": false,\n  \"warnings\": [],\n  \"metadata\": {},\n  \"timing\": {\n    \"total_ms\": 0.907,\n    \"tool_ms\": null,\n    \"home_assistant_ms\": null,\n    \"home_assistant_cumulative_attempt_ms\": null,\n    \"home_assistant_wall_clock_span_ms\": null,\n    \"home_assistant_request_count\": 0,\n    \"upstream_attempted\": false,\n    \"upstream_ms\": 0.0,\n    \"upstream_wall_clock_span_ms\": 0.0,\n    \"upstream_request_count\": 0,\n    \"provider_operations_concurrent\": false,\n    \"retry_count\": 0,\n    \"timeout_occurred\": false\n  },\n  \"request_id\": \"233bc5509c7c4fa19870815b0fa1836b\",\n  \"success\": false\n}",
+      "type": "text"
+     }
+    ],
+    "isError": true
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Mon, 16 Nov 2026 05:10:11 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-request-id",
+    "233bc5509c7c4fa19870815b0fa1836b"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null
+}

@@ -1,0 +1,209 @@
+{
+ "endpoint_form": "engineering access-secret path",
+ "health": {
+  "arguments": {},
+  "control_gate": null,
+  "engineering_exchange_sha256": "d94d33b6011234e2e20562457651ee97e16c3fa177f0a05d1401df4eba10c585",
+  "exchange_failure": null,
+  "file": "_health.json",
+  "lifecycle_provider": null,
+  "other_upstream_traffic": [],
+  "response_truncated": false,
+  "result_class": "error:provider_unavailable",
+  "tool": "get_server_health",
+  "upstream_read_gateway": {
+   "admission_status": null,
+   "catalog_comparison_status": null,
+   "reviewed_policy_entry_count": null,
+   "reviewed_upstream_version": null,
+   "upstream_advertised_tool_count": null,
+   "upstream_server_version": null,
+   "version_status": null
+  },
+  "upstream_tool_calls": 0
+ },
+ "read_count": 11,
+ "reads": [
+  {
+   "arguments": {
+    "identifier": "hamcp371_automation"
+   },
+   "engineering_exchange_sha256": "229487ec2eecac4ba798dd976b1383386c5efce209e25e61b23c46457972d953",
+   "exchange_failure": null,
+   "file": "r01-automation.json",
+   "id": "r01-automation",
+   "other_upstream_traffic": [],
+   "result_class": "error:unsupported_operation",
+   "tool": "ha_config_get_automation",
+   "upstream": [],
+   "upstream_wire_arguments": [],
+   "version": "9.2.0",
+   "withheld": {}
+  },
+  {
+   "arguments": {
+    "end": "2026-11-16T00:09:55-06:00",
+    "entity_id": "calendar.hamcp371_calendar",
+    "max_results": 5,
+    "start": "2026-11-15T21:09:55-06:00"
+   },
+   "engineering_exchange_sha256": "3500ebf3f1a3b7693dab8145d123e85506b35a8c0ab3798d38366f9a43eacf8e",
+   "exchange_failure": null,
+   "file": "r02-calendar-events.json",
+   "id": "r02-calendar-events",
+   "other_upstream_traffic": [],
+   "result_class": "error:unsupported_operation",
+   "tool": "ha_config_get_calendar_events",
+   "upstream": [],
+   "upstream_wire_arguments": [],
+   "version": "9.2.0",
+   "withheld": {}
+  },
+  {
+   "arguments": {
+    "scope": "automation"
+   },
+   "engineering_exchange_sha256": "cf7ff03701bec8893fdc5c7c6ec1f8443ec0b4c0b7457235693ea1fd4dde26cc",
+   "exchange_failure": null,
+   "file": "r03-category.json",
+   "id": "r03-category",
+   "other_upstream_traffic": [],
+   "result_class": "error:unsupported_operation",
+   "tool": "ha_config_get_category",
+   "upstream": [],
+   "upstream_wire_arguments": [],
+   "version": "9.2.0",
+   "withheld": {}
+  },
+  {
+   "arguments": {},
+   "engineering_exchange_sha256": "e371096e61a2b6ec27aff9cd634e9965b18dbd59e05e5fa263eccae35734c819",
+   "exchange_failure": null,
+   "file": "r04-label.json",
+   "id": "r04-label",
+   "other_upstream_traffic": [],
+   "result_class": "error:unsupported_operation",
+   "tool": "ha_config_get_label",
+   "upstream": [],
+   "upstream_wire_arguments": [],
+   "version": "9.2.0",
+   "withheld": {}
+  },
+  {
+   "arguments": {
+    "scene_id": "hamcp371_scene"
+   },
+   "engineering_exchange_sha256": "814c7392573054c2c2ef8ec2c89f348a8e6a504534da87a71a3241739a16313e",
+   "exchange_failure": null,
+   "file": "r05-scene.json",
+   "id": "r05-scene",
+   "other_upstream_traffic": [],
+   "result_class": "error:unsupported_operation",
+   "tool": "ha_config_get_scene",
+   "upstream": [],
+   "upstream_wire_arguments": [],
+   "version": "9.2.0",
+   "withheld": {}
+  },
+  {
+   "arguments": {
+    "script_id": "hamcp371_script"
+   },
+   "engineering_exchange_sha256": "93332f3cce95b255bb2035f87e0ec288d4879e5bfa0d3e9a2ea4f4e414c53b69",
+   "exchange_failure": null,
+   "file": "r06-script.json",
+   "id": "r06-script",
+   "other_upstream_traffic": [],
+   "result_class": "error:unsupported_operation",
+   "tool": "ha_config_get_script",
+   "upstream": [],
+   "upstream_wire_arguments": [],
+   "version": "9.2.0",
+   "withheld": {}
+  },
+  {
+   "arguments": {
+    "limit": 5
+   },
+   "engineering_exchange_sha256": "27b4a68fcf02d96f6f96665601293a3db79848563f6422d05517a4c976dcefd9",
+   "exchange_failure": null,
+   "file": "r07-dashboard-resources.json",
+   "id": "r07-dashboard-resources",
+   "other_upstream_traffic": [],
+   "result_class": "error:unsupported_operation",
+   "tool": "ha_config_list_dashboard_resources",
+   "upstream": [],
+   "upstream_wire_arguments": [],
+   "version": "9.2.0",
+   "withheld": {}
+  },
+  {
+   "arguments": {
+    "limit": 5
+   },
+   "engineering_exchange_sha256": "1c44d1d03f3dd4bb765ac12013830f8638eb08dbc6cb44258ebc903a7c34ae64",
+   "exchange_failure": null,
+   "file": "r08-groups.json",
+   "id": "r08-groups",
+   "other_upstream_traffic": [],
+   "result_class": "error:unsupported_operation",
+   "tool": "ha_config_list_groups",
+   "upstream": [],
+   "upstream_wire_arguments": [],
+   "version": "9.2.0",
+   "withheld": {}
+  },
+  {
+   "arguments": {
+    "helper_type": "input_boolean",
+    "limit": 5
+   },
+   "engineering_exchange_sha256": "b0c599348c85b49e904cbbf0ecf46e8ae00c99499dec3d451b5a42c0864fd91f",
+   "exchange_failure": null,
+   "file": "r09-helpers.json",
+   "id": "r09-helpers",
+   "other_upstream_traffic": [],
+   "result_class": "error:unsupported_operation",
+   "tool": "ha_config_list_helpers",
+   "upstream": [],
+   "upstream_wire_arguments": [],
+   "version": "9.2.0",
+   "withheld": {}
+  },
+  {
+   "arguments": {
+    "template": "{{ states('input_boolean.hamcp371_helper') }}"
+   },
+   "engineering_exchange_sha256": "78ab85b446966b8509d1cd3582ec8f191fa09b7ca79205b6ea2c32215c8e9ada",
+   "exchange_failure": null,
+   "file": "r10-template.json",
+   "id": "r10-template",
+   "other_upstream_traffic": [],
+   "result_class": "error:unsupported_operation",
+   "tool": "ha_eval_template",
+   "upstream": [],
+   "upstream_wire_arguments": [],
+   "version": "9.2.0",
+   "withheld": {}
+  },
+  {
+   "arguments": {
+    "automation_id": "automation.hamcp371_automation",
+    "limit": 5
+   },
+   "engineering_exchange_sha256": "0bfc3d51adf2a14a98a58cfa552a687c9928fea888bd232a56f2d306ed94dfc7",
+   "exchange_failure": null,
+   "file": "r11-automation-traces.json",
+   "id": "r11-automation-traces",
+   "other_upstream_traffic": [],
+   "result_class": "error:unsupported_operation",
+   "tool": "ha_get_automation_traces",
+   "upstream": [],
+   "upstream_wire_arguments": [],
+   "version": "9.2.0",
+   "withheld": {}
+  }
+ ],
+ "stop": "blueprint_get_refused",
+ "version": "9.2.0"
+}

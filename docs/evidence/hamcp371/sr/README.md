@@ -136,7 +136,8 @@ own `.dockerignore`.
 - SR-b: the replay of the reads, both setups. At first it was not started,
   because P1 found an admission blocker (section 5) and the ruling of
   2026-11-15 20:17 CST makes SR-b conditional on 9.2.0 being admitted exact.
-  After D6 the P1 re-run passed (section 6). SR-b is recorded separately.
+  After D6 the P1 re-run passed (section 6). SR-b launch 1 then failed after
+  start (section 7) and was not re-run.
 - Full and Evidence tiers.
 - CI: there was no push.
 - S14 and later.
@@ -338,3 +339,88 @@ two lane modules it reuses: 198 OK.
   It is the synthetic `SUPERVISOR_TOKEN` value of the guard test, committed
   at `8b3cadfa`. This change does not touch it. Leak check: PASS.
 
+## 7. SR-b launch 1: failed after start, not re-run
+
+Rulings: architect rulings 2026-11-15 22:26 CST (SR-b GO if P1 passes; a
+failure after start is reported, never re-run).
+
+- Unit `hamcp371-sr-b-1`, head `a461dfc7`, image `hamcp371-sr-engineering:a518934a54e0`
+  (section 3, `engineering-image.json`). Heavy gate at start: 12683 MB
+  available, load 0.27, 58G root free, no other heavy jobs.
+- Started 23:09:42 CST, ended 23:10:14 CST (31.5 s). Run id
+  `0947e551778a497ea19e163a7b9541d2`.
+- Result **WITHHELD**, failure `blueprint_get_refused`, type `Refusal`.
+  Cleanup clean: containers and volumes absent, no Docker network created.
+- Evidence: `run-b-1/` (37 files, `SHA256SUMS` verified; `receipt.json`
+  sha256 `ccb0d19f…88d93c7d`) and `launches.jsonl`. The receipt's secret
+  scan covered 35 files and removed none; the leak check passed and the
+  scan of the 38 committed files had 0 hits.
+
+### What ran
+
+Only the 9.2.0 setup. The run stopped at r12 of that setup, so the 8.5.0
+control setup did not start.
+
+- The component phase passed: `ha_mcp_tools` loaded, the check exited 0.
+- Engineering started. The recording proxy saw `GET /` (404), `initialize`
+  (200), `notifications/initialized` (202) and `tools/list` (200). No tool
+  call reached the peer.
+- `get_server_health` returned `CoreCapabilityUnavailable`
+  (`error:provider_unavailable`) with no `upstream_read_gateway` or
+  lifecycle provider fields. Not truncated. As the candidate setup, it did
+  not gate.
+- r01 to r11 each returned `CoreRequirementUnmapped`
+  (`error:unsupported_operation`, reason `core_requirement_unmapped`), with no
+  upstream traffic.
+- r12 `ha_get_blueprint` returned the same refusal, and the harness stops on
+  a refused blueprint get: `blueprint_get_refused`.
+
+### Engineering's log
+
+- `core_authority_verification_failed`: reason `core_authority_incompatible`,
+  detail `unavailable`, recovery state `incompatible`, 0 of 2 confirmations,
+  1 consecutive failure.
+- `core_catalog_tools_withdrawn`: 28 tools.
+
+### Cause (from source, not tested)
+
+- The lane's Core is `ghcr.io/home-assistant/home-assistant@sha256:c6c1ca99…`,
+  label `io.hass.version` 2026.11.0.
+- `ha_core_readmission/runtime.py:931-943`: `core_authority_incompatible` is
+  set when Engineering observed the exact Core completely, with identity
+  agreeing, but no reviewed contract admits it; the detail is the generation
+  disposition, here `unavailable`.
+- `ha_core_readmission/profiles.py:80-106` (`SUPPORTED_CORE_RELEASES`) and
+  `compiled_exact_authority` (`profiles.py:1364-1372`, no release row, no authority): the built-in compiled
+  Core authority covers 2026.7.2, 2026.8.0, 2026.8.1, 2026.9.0 and 2026.9.1
+  only. The Core 2026.11.0 profiles are signed-only: dormant until an
+  owner-signed registry sequence names them.
+- The lane runs Engineering with `upstream_trust_registry_enabled: false`
+  (ci.yml's synthetic options) and no signed registry. Under that posture
+  Core 2026.11.0 has no authority, so the 28 Core-backed catalog tools are
+  withdrawn. A withdrawn tool is no longer a published delegated read, so
+  `_gateway_core_route` falls back to the static route table
+  (`routing.py:79-87`), which has no mapping for it, and the call is refused
+  with `CoreRequirementUnmapped` before Core acquisition or any provider call
+  (`routing.py:1073-1092`).
+- The same Core image serves the 8.5.0 control setup, so its control gate
+  could not have passed either. This is an inference from the same source.
+  It was not run.
+- P1 (sections 5 and 6) did not show this: it runs the gateway against the
+  saved catalogs offline, without the Core runtime.
+
+### Not exercised
+
+The 8.5.0 control setup and its gate, the 9.2.0 gateway and lifecycle
+provider values, the r13 and later reads, including the `ha_search` variant
+record.
+
+### Options for a ruling (none taken)
+
+- Run the lane's Core at a release the built-in authority admits. Of those,
+  only 2026.7.2 (`sha256:14769243…48097b`, the `SUPPORTED_CORE_RELEASES`
+  digest) is cached locally. Whether component 2.2.1 and 9.2.0 load on it
+  is not known.
+- Give the lane a signed registry sequence that names Core 2026.11.0. This
+  touches the signed-registry configuration and needs its own ruling.
+- Any re-run is a new launch under a new ruling.
