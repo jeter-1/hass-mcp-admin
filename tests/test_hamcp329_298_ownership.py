@@ -406,12 +406,22 @@ class AcknowledgementTests(OwnershipTestCase):
         result = await self.apply(plan)
         self.assertEqual(result["task_state"], "failed_pre_dispatch", result)
         mark = self.mark()
+        # HAMCP-416 (HAAC-E044): the refused plan is terminal, so asking again
+        # plans afresh. The fresh plan has its own hash and needs its own
+        # elevated acknowledgement; the refused plan is never applied.
         again = await self.service.rollback_change(subject.created["plan_id"])
-        self.assertEqual(again["rollback_plan_id"], plan["plan_id"])
-        self.assertEqual(again["plan_hash"], plan["plan_hash"])
+        self.assertNotEqual(again["rollback_plan_id"], plan["plan_id"])
+        self.assertNotEqual(again["plan_hash"], plan["plan_hash"])
+        self.assertEqual(again["rollback_plan_resolution"], "fresh_plan_created")
+        self.assertEqual(again["replaced_rollback_plan_id"], plan["plan_id"])
         with self.assertRaises(GovernanceError) as raised:
             await self.apply(plan)
         self.assertEqual(raised.exception.code, ErrorCode.DUPLICATE_APPLY_ATTEMPT)
+        fresh = {"plan_id": again["rollback_plan_id"], "plan_hash": again["plan_hash"]}
+        pending = await self.plan_approval_only(fresh)
+        self.assertEqual(pending["status"], "approval_pending", pending)
+        self.assertEqual(pending["approval_action"], "elevated_risk_acknowledgement")
+        await self.assert_not_applied(subject, fresh)
         self.assertEqual(self.writes_since(mark), [])
         self.assertTrue(self.present(subject))
 
