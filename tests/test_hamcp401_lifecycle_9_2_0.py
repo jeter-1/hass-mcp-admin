@@ -22,9 +22,11 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
+import importlib.util
 import json
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -33,6 +35,7 @@ sys.path[:0] = [str(ROOT / "hass_mcp_engineering_beta"), str(ROOT)]
 
 from ha_mcp_engineering.clients.mcp import DashboardTransportError  # noqa: E402
 from ha_mcp_engineering.clients.upstream_read import (  # noqa: E402
+    CatalogValidationFailure,
     McpReadCatalog,
     McpReadResult,
 )
@@ -615,6 +618,154 @@ class LegacyReleaseUnchangedTests(unittest.IsolatedAsyncioTestCase):
         provider = provider_for(transport)
         await provider.restart_addon(OTHER_ADDON, before_dispatch=lambda: None)
         self.assertEqual(transport.calls, [(ADDON_ACTION_TOOL, {"slug": OTHER_ADDON, "action": "restart"})])
+
+
+
+def _load_script(name: str):
+    spec = importlib.util.spec_from_file_location(
+        f"{name}_hamcp401_test_module", ROOT / "scripts" / f"{name}.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+gateway_acceptance = _load_script("exact_image_read_gateway_acceptance")
+FIXTURE_COUNTERS = {
+    "rest_reads": 3,
+    "websocket_reads": 2,
+    "http_mutations": 0,
+    "websocket_mutations": 0,
+}
+
+
+class ExactImageOperationalAcceptanceTests(unittest.IsolatedAsyncioTestCase):
+    """Architect ruling 2026-11-16 21:56 CST: the exact-image harness follows
+    each registry row. Held providers expect ``provider_held``; on 9.2.0 the
+    lifecycle probe must bind the reviewed contracts with no dispatch."""
+
+    async def _run(self, version, catalog, *, counters=None):
+        calls = []
+
+        async def discover(_transport):
+            return catalog
+
+        async def execute_read(_transport, tool_name, arguments, *, catalog_validator, **_):
+            calls.append(tool_name)
+            try:
+                catalog_validator(catalog)
+            except Exception as exc:
+                raise CatalogValidationFailure(exc) from None
+            raise AssertionError("a held provider passed its catalog validator")
+
+        transport = gateway_acceptance.McpReadGatewayTransport
+        with patch.object(transport, "discover", discover), patch.object(
+            transport, "execute_read", execute_read
+        ), patch.object(
+            gateway_acceptance,
+            "fixture_stats",
+            side_effect=counters or [dict(FIXTURE_COUNTERS), dict(FIXTURE_COUNTERS)],
+        ):
+            result = await gateway_acceptance.held_operational_provider_acceptance(
+                REGISTRY.by_version[version],
+                endpoint=ENDPOINT,
+                fixture_stats_url="http://fixture.invalid/__fixture__/stats",
+                settings=lifecycle_settings(ENDPOINT),
+            )
+        return result, calls
+
+    async def test_920_backup_held_and_lifecycle_probe_binds_reviewed_contracts(self):
+        (backup, lifecycle), calls = await self._run(VERSION, catalog_920())
+        self.assertEqual(len(calls), 1)  # the held backup attempt only
+        self.assertEqual(backup["status"], "quarantined")
+        self.assertEqual(backup["provider_dispatch_count"], 0)
+        self.assertEqual(lifecycle["status"], "admitted")
+        self.assertTrue(lifecycle["probe_only"])
+        self.assertEqual(lifecycle["compatibility_entry_id"], ENTRY)
+        self.assertEqual(lifecycle["provider_dispatch_count"], 0)
+        contracts = REGISTRY.by_version[VERSION].tool_contracts_by_name
+        expected = {
+            "controlled_reload": (RELOAD_TOOL,),
+            "restart_addon": (APP_READ_TOOL, APP_ACTION_TOOL),
+            "restart_home_assistant": (HA_RESTART_TOOL,),
+        }
+        self.assertEqual(set(lifecycle["operations"]), set(expected))
+        for operation, tools in expected.items():
+            with self.subTest(operation=operation):
+                bound = lifecycle["operations"][operation]
+                self.assertEqual(bound["compatibility_entry_id"], ENTRY)
+                self.assertEqual(
+                    bound["tool_contract_fingerprints"],
+                    {tool: contracts[tool].runtime_contract_fingerprint for tool in tools},
+                )
+        self.assertFalse(
+            lifecycle["operations"]["controlled_reload"]["argument_constraints"]["entry_id_allowed"]
+        )
+        self.assertFalse(
+            lifecycle["operations"]["restart_home_assistant"]["argument_constraints"]["variants_allowed"]
+        )
+
+    async def test_held_850_expects_provider_held_for_both_providers(self):
+        catalog = McpReadCatalog(PROTOCOL, "ha-mcp", HELD_LIFECYCLE, (), 1.0)
+        (backup, lifecycle), calls = await self._run(HELD_LIFECYCLE, catalog)
+        self.assertEqual(len(calls), 2)  # one refused attempt per provider
+        for result in (backup, lifecycle):
+            self.assertEqual(result["status"], "quarantined")
+            self.assertEqual(result["provider_disposition"], "held")
+            self.assertEqual(result["provider_dispatch_count"], 0)
+
+    async def test_920_probe_contract_drift_fails_acceptance(self):
+        catalog = catalog_920()
+        tools = [dict(tool) for tool in catalog.tools]
+        for tool in tools:
+            if tool["name"] == HA_RESTART_TOOL:
+                tool["description"] = "Restart Home Assistant (drifted)."
+        drifted = McpReadCatalog(PROTOCOL, "ha-mcp", VERSION, tuple(tools), 1.0)
+        with self.assertRaisesRegex(
+            gateway_acceptance.AcceptanceFailure, "admitted lifecycle probe"
+        ):
+            await self._run(VERSION, drifted)
+
+    async def test_fixture_counter_change_fails_acceptance(self):
+        changed = dict(FIXTURE_COUNTERS, rest_reads=FIXTURE_COUNTERS["rest_reads"] + 1)
+        with self.assertRaisesRegex(
+            gateway_acceptance.AcceptanceFailure, "reached Home Assistant"
+        ):
+            await self._run(
+                VERSION, catalog_920(), counters=[dict(FIXTURE_COUNTERS), changed]
+            )
+
+    async def test_unreviewed_disposition_or_missing_expectation_fails(self):
+        admitted_backup = SimpleNamespace(
+            provider_disposition=lambda surface: "admitted",
+        )
+        with self.assertRaisesRegex(
+            gateway_acceptance.AcceptanceFailure, "was not held"
+        ):
+            await gateway_acceptance.held_operational_provider_acceptance(
+                admitted_backup,
+                endpoint=ENDPOINT,
+                fixture_stats_url="http://fixture.invalid/__fixture__/stats",
+                settings=lifecycle_settings(ENDPOINT),
+            )
+        with self.assertRaisesRegex(
+            gateway_acceptance.AcceptanceFailure, "no reviewed probe expectation"
+        ):
+            await gateway_acceptance.admitted_lifecycle_probe_acceptance(
+                REGISTRY.by_version["9.1.2"],
+                endpoint=ENDPOINT,
+                settings=lifecycle_settings(ENDPOINT),
+            )
+
+    def test_addon_runtime_harness_expects_provider_held_on_its_held_path(self):
+        source = (ROOT / "scripts" / "exact_addon_runtime_acceptance.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertEqual(
+            source.count('validator_refusal_category\n        == "provider_held"'), 2
+        )
+        self.assertNotIn('== "upstream_version_mismatch"', source)
 
 
 if __name__ == "__main__":
