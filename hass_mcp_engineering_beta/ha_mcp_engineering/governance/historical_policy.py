@@ -36,7 +36,10 @@ from .policy import (
     policy_subject_payload,
 )
 from .storage import is_terminal_plan
-from .validation import validate_automation
+from .validation import (
+    HISTORICAL_AUTOMATION_CONFIGURATION_FIELDS,
+    validate_automation,
+)
 
 
 HISTORICAL_POLICY_PROJECTION_MODEL = (
@@ -759,8 +762,11 @@ def _validation_failed_automation_matches(plan: ChangePlan) -> bool:
     ):
         return False
     try:
+        # HAMCP-419: the shipped writer's field set, not today's.
         valid, errors, _ = validate_automation(
-            plan.target_id, plan.proposed_config
+            plan.target_id,
+            plan.proposed_config,
+            configuration_fields=HISTORICAL_AUTOMATION_CONFIGURATION_FIELDS,
         )
     except (TypeError, ValueError):
         # Malformed values rejected by the writer cannot qualify as its
