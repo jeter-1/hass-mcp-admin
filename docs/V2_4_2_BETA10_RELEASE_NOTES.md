@@ -140,8 +140,11 @@ evidence and the single Evidence tier log of the final release head.
 
 ## Tool catalog
 
-Only CI-observed values are listed. All are from run 44196696582, on the
-I6 head 61d24d15, whose tree carries every landed item.
+Only CI-observed values are listed. All are from run 44196696582, the I6
+pull request run at 61d24d15. No CI run exists on the `release/2.8.0` branch
+itself. 61d24d15 contains the release head fc552ab0 and differs from it only
+in these two documents, so every runtime, script and test file it tested is
+the release head's.
 
 | Lane | Engineering | Delegated | Total | Upstream catalog | Source |
 | --- | --- | --- | --- | --- | --- |
@@ -185,3 +188,8 @@ short:
   beta.10 to beta.9 is not supported and is unproven. CI's rollback image is
   2.4.2-beta.7 and is not the recovery target (HAMCP-405). No landed item
   states a persisted-format change.
+- **Is rolling back safe?** Restoring the pre-deploy full backup is the
+  supported, safe path: it returns Engineering, its storage and Home
+  Assistant together to the backed-up state, and loses every change made
+  since. Rolling Engineering back in place, keeping beta.10 storage, is not
+  proven safe and is not supported.

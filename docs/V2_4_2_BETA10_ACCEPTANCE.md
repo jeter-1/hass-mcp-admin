@@ -389,5 +389,9 @@ Assistant backup taken in Deploy step 0.
   registration change, and #445 keeps the persisted F3 operation label
   (`ha_manage_addon`) unchanged. E049 (#450) only reads the existing
   HAMCP-298 sidecar records and writes nothing.
-- Restoring the backup also returns every Home Assistant change made since
-  it was taken. Whether to restore is Josh's decision.
+- **Safety.** Restoring the full backup is the supported, safe path: it
+  returns Engineering, its storage and Home Assistant together to the
+  backed-up state. It also returns every Home Assistant change made since
+  the backup was taken. Rolling Engineering back in place on beta.10
+  storage is not proven safe; the absence of a stated persisted-format
+  change is not a downgrade proof. Whether to restore is Josh's decision.
