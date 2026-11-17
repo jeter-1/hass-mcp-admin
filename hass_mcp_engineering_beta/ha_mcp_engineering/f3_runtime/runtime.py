@@ -174,6 +174,7 @@ from ..governance.label_registry import (
 )
 from ..governance.resources import resource_fingerprint
 from ..governance.task_models import ExecutionTaskState, TERMINAL_TASK_STATES
+from ..governance.storage import is_terminal_plan
 from ..governance.task_storage import ExecutionTaskStorageError
 from ..request_context import begin_request, current_telemetry, end_request
 from .registry import (
@@ -920,6 +921,10 @@ class _predispatch_read_window:
         return False
 
 
+# HAMCP-416 (HAAC-E044): rollback_change names whether it returned the live
+# rollback plan already linked to the source or planned a fresh one.
+ROLLBACK_RESOLUTION_EXISTING_LIVE = "existing_live_plan_returned"
+ROLLBACK_RESOLUTION_FRESH = "fresh_plan_created"
 ROLLBACK_PLANNING_REQUIREMENTS = ("core.dependency_helper_planning",)
 # The same pair the gateway maps for create_entity_metadata_plan.
 ROLLBACK_ENTITY_METADATA_REQUIREMENTS = (
@@ -5491,9 +5496,10 @@ class F3RuntimeIntegration:
                     "provider_dispatch_occurred": False,
                 },
             )
+        replaced: dict[str, Any] = {}
         if source_plan.rollback.request_id:
             existing = self.service.repository.get(source_plan.rollback.request_id)
-            if existing is not None:
+            if existing is not None and self._rollback_plan_live(existing):
                 prohibited = retry_source and existing.policy_decision.policy_class.value == "prohibited"
                 partial = retry_source and not prohibited and not source_plan.rollback.available
                 return {
@@ -5503,7 +5509,47 @@ class F3RuntimeIntegration:
                     "rollback_plan_id": existing.plan_id,
                     "approval_required": not prohibited and existing.status != PlanStatus.APPLIED,
                     "plan_hash": self.service.plan_hash(existing),
+                    "rollback_plan_resolution": ROLLBACK_RESOLUTION_EXISTING_LIVE,
                 }
+            if existing is not None:
+                # HAMCP-416 (HAAC-E044): a terminal rollback plan is history,
+                # not a usable answer. Plan again from fresh evidence; every
+                # path below reads current state as on a first request.
+                replaced = {
+                    "replaced_rollback_plan_id": existing.plan_id,
+                    "replaced_rollback_plan_status": (
+                        self.service._project_effective_lifecycle(existing)
+                        .status.value
+                    ),
+                }
+        result = await self._create_fresh_rollback_plan(source_plan, retry_source)
+        return {
+            **result,
+            "rollback_plan_resolution": ROLLBACK_RESOLUTION_FRESH,
+            **replaced,
+        }
+
+    def _rollback_plan_live(self, plan: Any) -> bool:
+        """Whether an earlier rollback plan can still be approved or is running.
+
+        Expiry is projected from the clock without persisting it. A plan whose
+        execution task has not settled is live whatever its status says, so a
+        dispatching rollback is never planned twice. A task held for manual
+        review has an unresolved outcome, so it counts as unsettled too: it is
+        reverified, never replanned around.
+        """
+
+        task = self.service.task_repository.get_for_plan(plan.plan_id)
+        if task is not None and (
+            task.state not in TERMINAL_TASK_STATES
+            or task.state == ExecutionTaskState.MANUAL_REVIEW_REQUIRED
+        ):
+            return True
+        return not is_terminal_plan(self.service._project_effective_lifecycle(plan))
+
+    async def _create_fresh_rollback_plan(
+        self, source_plan: Any, retry_source: bool
+    ) -> dict[str, Any]:
         task = self.service.task_repository.get_for_plan(source_plan.plan_id)
         if source_plan.contract_version == 2 and any(
             operation.resource_type == helper_options_contract.RESOURCE_TYPE

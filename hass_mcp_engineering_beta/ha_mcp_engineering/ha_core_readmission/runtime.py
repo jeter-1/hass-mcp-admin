@@ -67,6 +67,15 @@ CORE_RECOVERY_STATES = frozenset({
     "initializing", "stable", "retrying", "backing_off", "confirming",
     "restored", "incompatible",
 })
+# HAMCP-415 (HAAC-E043): a plan created under an admitted Core authority that
+# a transient outage retires stays current when the restored authority is
+# identical; plans created during each such outage stay stale. The windows
+# are bounded: an outage beyond this many voids every earlier plan instead.
+CORE_PLAN_OUTAGE_WINDOW_CAPACITY = 16
+_PLAN_SEMANTIC_COMPONENTS = (
+    "core_identity", "core_connection", "capability_evidence", "authority",
+    "profile_registry", "release_registry", "decisions",
+)
 _RECOVERY_REASONS = frozenset({
     "core_connection_changed", "core_lifecycle_monitor_unavailable",
     "core_observed_version_changed", "core_registry_authority_changed",
@@ -229,6 +238,7 @@ class CoreRuntime:
         self._connection_monitor_epoch: int | None = None
         self._initialized = False
         self._last_material_change_at: datetime | None = None
+        self._reset_plan_continuity_locked()
         self._listeners: list[Callable[[], None]] = []
         self._audit_sink: Callable[[dict[str, Any]], Any] | None = None
         self._events: tuple[dict[str, Any], ...] = ()
@@ -286,6 +296,183 @@ class CoreRuntime:
         self._last_restored_at: datetime | None = None
         self._last_restored_monotonic: float | None = None
         self._monitor_failure_detail: str | None = None
+
+    def _reset_plan_continuity_locked(self) -> None:
+        """Clear HAMCP-415 plan continuity state at one configure boundary."""
+
+        # Semantic components of the published generation.
+        self._published_semantics: dict[str, str] | None = None
+        # The plan cutoff and semantics of the admitted authority that a
+        # transient outage retired, kept until restoration decides.
+        self._preserved_plan_baseline: (
+            tuple[datetime | None, dict[str, str]] | None
+        ) = None
+        self._plan_outage_started_at: datetime | None = None
+        # [start, end) intervals in which created plans stay stale.
+        self._plan_outage_windows: tuple[tuple[datetime, datetime], ...] = ()
+
+    @staticmethod
+    def _authority_semantics(
+        generation: Any, observation: CoreObservation, registry_token: str | None
+    ) -> dict[str, str]:
+        """Fingerprint everything a plan relies on except the session."""
+
+        observed = observation.to_mapping()
+        return {
+            "core_identity": fingerprint({
+                "model": "ha-core-plan-semantics-identity-v1",
+                "identity": observed["identity"],
+                "version": observed["version"],
+                "protocol": observed["protocol"],
+                "versions": observed["versions"],
+            }),
+            "core_connection": fingerprint({
+                "model": "ha-core-plan-semantics-connection-v1",
+                **{
+                    key: observed[key]
+                    for key in (
+                        "model_version", "surface", "connected",
+                        "authenticated", "complete", "stable", "reason_code",
+                    )
+                },
+            }),
+            "capability_evidence": fingerprint({
+                "model": "ha-core-plan-semantics-evidence-v1",
+                "capability_evidence": observed["capability_evidence"],
+            }),
+            "authority": generation.authority_fingerprint,
+            "profile_registry": generation.profile_registry_fingerprint,
+            "release_registry": fingerprint({
+                "model": "ha-core-plan-semantics-release-registry-v1",
+                "selection_token": registry_token,
+            }),
+            "decisions": fingerprint({
+                "model": "ha-core-plan-semantics-decisions-v1",
+                "decisions": [
+                    item.to_mapping()
+                    for item in sorted(
+                        generation.decisions, key=lambda item: item.capability_id
+                    )
+                ],
+            }),
+        }
+
+    @staticmethod
+    def _changed_components(
+        previous: dict[str, str] | None, current: dict[str, str]
+    ) -> list[str]:
+        if previous is None:
+            return list(_PLAN_SEMANTIC_COMPONENTS)
+        return [
+            name for name in _PLAN_SEMANTIC_COMPONENTS
+            if previous.get(name) != current.get(name)
+        ]
+
+    def _void_plans_locked(self, now: datetime, *, transient: bool) -> None:
+        """Move the plan cutoff to ``now``.
+
+        A transient retirement of admitted authority keeps the prior cutoff
+        and semantics so an identical restoration can reinstate them. Any
+        other movement discards that baseline: it observed different
+        authority, so no later restoration can prove the earlier plans
+        current.
+        """
+
+        if not transient:
+            self._preserved_plan_baseline = None
+            self._plan_outage_started_at = None
+            self._plan_outage_windows = ()
+        elif (
+            self._preserved_plan_baseline is None
+            and self._admitted
+            and self._published_semantics is not None
+        ):
+            self._preserved_plan_baseline = (
+                self._last_material_change_at, self._published_semantics
+            )
+            self._plan_outage_started_at = now
+        self._last_material_change_at = now
+
+    def _plan_continuity_locked(
+        self,
+        result: Any,
+        observation: CoreObservation,
+        registry_token: str | None,
+        admitted_now: bool,
+        *,
+        restoring: bool,
+        now: datetime,
+    ) -> dict[str, Any]:
+        """Decide the plan cutoff for one changed publication.
+
+        Returns the reason recorded for it and whether plans created under
+        the preceding authority stay current.
+        """
+
+        semantics = self._authority_semantics(
+            result.generation, observation, registry_token
+        )
+        previous = self._published_semantics
+        was_admitted = self._admitted
+        self._published_semantics = semantics
+        if not admitted_now:
+            # An incompatible complete observation is different authority;
+            # an incomplete one is a transient that restoration may undo.
+            complete = bool(
+                observation.identity_agrees
+                and observation.reason_code == "observation_complete"
+            )
+            self._void_plans_locked(now, transient=not complete)
+            return {"kind": "withdrawn", "plans_preserved": False}
+        if restoring:
+            baseline = self._preserved_plan_baseline
+            started = self._plan_outage_started_at
+            self._preserved_plan_baseline = None
+            self._plan_outage_started_at = None
+            if baseline is None or started is None or baseline[1] != semantics:
+                self._void_plans_locked(now, transient=False)
+                return {
+                    "kind": "restored",
+                    "reason": "core_authority_changed",
+                    "plans_preserved": False,
+                    "changed_components": self._changed_components(
+                        baseline[1] if baseline is not None else None, semantics
+                    ),
+                }
+            prior_cutoff = baseline[0]
+            windows = tuple(
+                window for window in self._plan_outage_windows
+                if prior_cutoff is None or window[1] > prior_cutoff
+            )
+            if len(windows) >= CORE_PLAN_OUTAGE_WINDOW_CAPACITY:
+                self._void_plans_locked(now, transient=False)
+                return {
+                    "kind": "restored",
+                    "reason": "core_plan_window_capacity",
+                    "plans_preserved": False,
+                }
+            self._plan_outage_windows = (*windows, (started, now))
+            self._last_material_change_at = prior_cutoff
+            return {
+                "kind": "restored",
+                "reason": "core_authority_identical",
+                "plans_preserved": True,
+            }
+        if was_admitted and previous == semantics:
+            # Only the authenticated session moved; leases rebind to it and
+            # plans keep the same authority.
+            return {
+                "kind": "refreshed",
+                "reason": "core_session_changed",
+                "plans_preserved": True,
+            }
+        self._void_plans_locked(now, transient=False)
+        return {
+            "kind": "replaced" if was_admitted else "admitted",
+            "reason": "core_authority_semantics_changed",
+            "plans_preserved": False,
+            "changed_components": self._changed_components(previous, semantics),
+        }
 
     def _spend_boot_exception_locked(self) -> None:
         """Close the one-shot first-admission exception; it never reopens."""
@@ -409,6 +596,7 @@ class CoreRuntime:
             self._connection_monitor_epoch = None
             self._initialized = False
             self._last_material_change_at = None
+            self._reset_plan_continuity_locked()
             self._listeners = []
             self._events = ()
             for key in self._counters:
@@ -483,7 +671,9 @@ class CoreRuntime:
                 self._observation = None
                 self._initialized = False
                 now = datetime.now(timezone.utc)
-                self._last_material_change_at = now
+                # A connection movement is transient: an identical restoration
+                # keeps plans created under the retired authority (HAMCP-415).
+                self._void_plans_locked(now, transient=True)
                 self._admitted = False
                 self._admitted_capabilities = frozenset()
                 confirming = self._recovery_confirmations > 0
@@ -823,13 +1013,25 @@ class CoreRuntime:
                     # the preceding evidence, including same-version revocation or
                     # capability-profile changes.  A mere periodic replay remains
                     # idempotent and does not churn this cutoff.
+                    #
+                    # HAMCP-415: the cutoff moves only when the published
+                    # authority differs from the one plans were created under;
+                    # a session-only refresh is not a retirement.
+                    continuity = None
                     if changed:
-                        self._last_material_change_at = now
-                        if prior_observation is not None:
+                        continuity = self._plan_continuity_locked(
+                            result, observation, selected_registry_token,
+                            admitted_now, restoring=gated, now=now,
+                        )
+                        if (
+                            prior_observation is not None
+                            and continuity["kind"] != "refreshed"
+                        ):
                             self._counters["retirements"] += 1
                     records = gate_records + self._record_publication_locked(
                         result, observation, collector, admitted_now, changed,
                         prior_observation is not None, now, restoring=gated,
+                        continuity=continuity,
                     )
                     self._append_event_locked(
                         "core_reconciliation",
@@ -874,6 +1076,7 @@ class CoreRuntime:
         now: datetime,
         *,
         restoring: bool,
+        continuity: dict[str, Any] | None = None,
     ) -> list[tuple[int, str, str, dict[str, Any]]]:
         """Update recovery state after one coordinator publication."""
 
@@ -908,6 +1111,10 @@ class CoreRuntime:
                 self._counters["authority_restorations"] += 1
                 self._last_restored_at = now
                 self._last_restored_monotonic = self._monotonic()
+                restored_continuity = (
+                    continuity if continuity is not None
+                    and continuity["kind"] == "restored" else None
+                )
                 records.append(self._recovery_record_locked(
                     "core_authority_restored",
                     "Home Assistant Core authority restored after complete re-verification",
@@ -916,9 +1123,41 @@ class CoreRuntime:
                     failed_attempts=failed_attempts,
                     verified_confirmations=confirmations,
                     outage_seconds=round(outage, 3) if outage is not None else None,
+                    reason=(
+                        restored_continuity["reason"]
+                        if restored_continuity is not None else None
+                    ),
+                    plans_preserved=(
+                        restored_continuity["plans_preserved"]
+                        if restored_continuity is not None else None
+                    ),
+                    changed_components=(
+                        restored_continuity.get("changed_components")
+                        if restored_continuity is not None else None
+                    ),
                 ))
             elif self._recovery_state not in {"restored", "stable"}:
                 self._recovery_state = "stable"
+            if continuity is not None and continuity["kind"] == "refreshed":
+                records.append(self._recovery_record_locked(
+                    "core_authority_generation_refreshed",
+                    "Home Assistant Core authority republished unchanged for a new session",
+                    now,
+                    level=logging.INFO,
+                    reason=continuity["reason"],
+                    plans_preserved=True,
+                    admitted_count=len(current),
+                ))
+            elif continuity is not None and continuity["kind"] == "replaced":
+                records.append(self._recovery_record_locked(
+                    "core_authority_replaced",
+                    "Home Assistant Core authority replaced; plans created before it are stale",
+                    now,
+                    reason=continuity["reason"],
+                    plans_preserved=False,
+                    changed_components=continuity["changed_components"],
+                    admitted_count=len(current),
+                ))
             if changed and replaced and previous and not previous <= current:
                 records.append(self._recovery_record_locked(
                     "core_authority_capabilities_withdrawn",
@@ -1430,7 +1669,7 @@ class CoreRuntime:
             self._observation = None
             self._initialized = False
             now = datetime.now(timezone.utc)
-            self._last_material_change_at = now
+            self._void_plans_locked(now, transient=False)
             records = self._material_retirement_locked(
                 retired, "core_observed_version_changed", now
             )
@@ -1478,7 +1717,7 @@ class CoreRuntime:
             self._published_registry_token = None
             self._initialized = False
             now = datetime.now(timezone.utc)
-            self._last_material_change_at = now
+            self._void_plans_locked(now, transient=False)
             records = self._material_retirement_locked(
                 retired, "core_registry_authority_changed", now
             )
@@ -1854,7 +2093,8 @@ class CoreRuntime:
 
     def _plan_is_current_locked(self, created_at: str | None) -> bool:
         cutoff = self._last_material_change_at
-        if cutoff is None or created_at is None:
+        windows = self._plan_outage_windows
+        if created_at is None or (cutoff is None and not windows):
             return True
         try:
             created = datetime.fromisoformat(created_at)
@@ -1862,7 +2102,11 @@ class CoreRuntime:
             return False
         if created.tzinfo is None:
             return False
-        return created >= cutoff
+        if cutoff is not None and created < cutoff:
+            return False
+        # HAMCP-415: a plan created while authority was absent stays stale
+        # even after an identical restoration.
+        return not any(start <= created < end for start, end in windows)
 
     def _append_event_locked(
         self, event_type: str, reason_code: str, generation: int | None
