@@ -323,8 +323,10 @@ These apply to every row and are not repeated:
 - **Blockers:** Deferred by owner; reopened only by an explicit owner
   decision.
 - **Effort:** M.
-- **Verdict:** **blocked** (owner deferral). If reopened, it **needs
-  admission**.
+- **Verdict:** **blocked** (owner deferral). Source admission and the owner
+  gate are separate: the provider is admitted on the releases above
+  (HAMCP-401), and the owner deferral still stands until an explicit owner
+  decision reopens it.
 
 ### HAMCP-156: capability-based compatibility policy for routine updates
 

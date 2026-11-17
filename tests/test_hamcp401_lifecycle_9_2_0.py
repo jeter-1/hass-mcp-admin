@@ -42,6 +42,7 @@ from ha_mcp_engineering.clients.upstream_read import (  # noqa: E402
 from ha_mcp_engineering.errors import ErrorCode  # noqa: E402
 from ha_mcp_engineering.governance.operational_lifecycle import (  # noqa: E402
     OperationalLifecycleGateway,
+    _upstream_readmission_matches,
 )
 from ha_mcp_engineering.governance.service import (  # noqa: E402
     ChangeGovernanceService,
@@ -66,6 +67,9 @@ from ha_mcp_engineering.providers.operational_lifecycle import (  # noqa: E402
     ReviewedOperationalLifecycleProvider,
     _TOOL_POLICY,
     _lifecycle_addon_response_contract,
+)
+from ha_mcp_engineering.providers.upstream_read_gateway import (  # noqa: E402
+    _safe_catalog_fingerprint,
 )
 from ha_mcp_engineering.providers.supervisor_self import (  # noqa: E402
     SupervisorSelfAddonIdentity,
@@ -697,6 +701,58 @@ class FilesystemToolsEnabledTests(unittest.IsolatedAsyncioTestCase):
                     )
                 self.assertEqual(raised.exception.category, "catalog_mismatch")
                 self.assertEqual((transport.calls, persisted), ([], []))
+
+    async def test_identity_fingerprint_is_the_gateways_whole_catalog(self):
+        """Cursor I1 F1: the provider identity hashes the advertised catalog,
+        as the read gateway does, so upstream add-on readmission can match
+        while bound optional tools are advertised. Validation still sees the
+        77 stock tools only."""
+
+        def runtime(catalog):
+            return {
+                "upstream_version": VERSION,
+                "upstream_protocol": PROTOCOL,
+                "upstream_catalog_fingerprint": _safe_catalog_fingerprint(
+                    list(catalog.tools)
+                ),
+                "upstream_admission_status": "admitted_exact",
+                "fallback_count": 0,
+            }
+
+        fs_on = catalog_920_filesystem_on()
+        stock = catalog_920()
+        self.assertNotEqual(
+            _safe_catalog_fingerprint(list(fs_on.tools)),
+            _safe_catalog_fingerprint(list(stock.tools)),
+        )
+        for name, catalog in (("filesystem_on", fs_on), ("stock_only", stock)):
+            with self.subTest(catalog=name):
+                transport = Transport920(catalog)
+                provider = provider_for(transport)
+                evidence = (await provider.probe("restart_addon")).as_dict()
+                self.assertEqual(
+                    evidence["catalog_fingerprint"],
+                    _safe_catalog_fingerprint(list(catalog.tools)),
+                )
+                validation = provider.health_snapshot()["catalog_validation"]
+                self.assertEqual(validation["validation_status"], "accepted_exact")
+                self.assertEqual(validation["observed_tool_count"], 77)
+                self.assertTrue(
+                    _upstream_readmission_matches(evidence, evidence, runtime(catalog))
+                )
+                self.assertEqual(transport.calls, [])
+        # A different advertised catalog, or a non-exact admission, never matches.
+        evidence = (
+            await provider_for(Transport920(fs_on)).probe("restart_addon")
+        ).as_dict()
+        self.assertFalse(_upstream_readmission_matches(evidence, evidence, runtime(stock)))
+        self.assertFalse(
+            _upstream_readmission_matches(
+                evidence,
+                evidence,
+                dict(runtime(fs_on), upstream_admission_status="admitted_with_drift"),
+            )
+        )
 
     async def test_missing_stock_tool_is_not_masked_by_optional_tools(self):
         catalog = catalog_920_filesystem_on()

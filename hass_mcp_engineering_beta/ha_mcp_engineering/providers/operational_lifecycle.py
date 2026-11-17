@@ -27,6 +27,7 @@ from . import upstream_yaml_reader as yaml_reader
 from ..request_context import current_telemetry
 from ..sanitization import sanitize_untrusted_data
 from ..upstream_tool_policy import (
+    catalog_fingerprint,
     load_reviewed_upstream_release_registry,
     runtime_contract_field_fingerprints,
     runtime_contract_fingerprint,
@@ -974,16 +975,21 @@ class ReviewedOperationalLifecycleProvider:
             self._state.catalog_validation = catalog_validation.as_dict()
         if not catalog_validation.valid:
             self._fail("catalog_mismatch", dispatched=False)
-        observed_catalog = (
-            catalog_validation.observed_raw_catalog_fingerprint
-        )
         normalized_catalog_fingerprint = (
             catalog_validation.normalized_catalog_fingerprint
         )
         if (
-            observed_catalog is None
+            catalog_validation.observed_raw_catalog_fingerprint is None
             or normalized_catalog_fingerprint is None
         ):
+            self._fail("internal_invariant_violation", dispatched=False)
+        # The provider identity is the whole advertised catalog, the list the
+        # read gateway fingerprints, so upstream add-on readmission compares
+        # like with like when bound optional tools are present. The stock
+        # projection is validated above and stays in catalog_validation.
+        try:
+            observed_catalog = catalog_fingerprint(list(catalog.tools))
+        except (TypeError, ValueError, UnicodeError, OverflowError):
             self._fail("internal_invariant_violation", dispatched=False)
 
         fingerprints: dict[str, str] = {}
