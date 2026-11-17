@@ -1899,6 +1899,10 @@ def classify_risk(
     for field in ("triggers", "conditions", "mode", "maximum_runs", "blueprint_usage"):
         if field in fields:
             medium_reasons.append(f"Behavior-impacting {field} change")
+    if "other:initial_state" in fields:
+        # HAMCP-419: initial_state enables or disables the automation at the
+        # next Home Assistant start.
+        medium_reasons.append("Behavior-impacting initial_state change")
     if "actions" in fields and any(service.startswith(MEDIUM_SERVICE_PREFIXES) for service in services):
         medium_reasons.append("Physical-device action detected")
     if (

@@ -7454,6 +7454,7 @@ class F3RuntimeIntegration:
                         "pre_dispatch_reason": pre_dispatch_reasons.child_reason(
                             declaration, record
                         ),
+                        **self._public_created_identity(declaration),
                     },
                     "summary": {
                         "child_execution_id": declaration["child_id"],
@@ -7467,6 +7468,33 @@ class F3RuntimeIntegration:
                 }
             )
         return rows
+
+    def _public_created_identity(self, declaration: dict[str, Any]) -> dict[str, Any]:
+        """HAMCP-417 (E049): the recorded creation-identity capture, read-only.
+
+        Projects the HAMCP-298 sidecar record of this child only when it is
+        bound to this child's plan and operation.  ``None`` means no capture
+        is recorded: the child is not a verified create, or its capture was
+        not stored.  No Home Assistant read is made here.
+        """
+
+        value = self.created_identities.get(declaration["child_id"])
+        if (
+            value is None
+            or value["plan_id"] != declaration["plan_id"]
+            or value["operation_id"] != declaration["operation_id"]
+        ):
+            return {"created_identity_capture": None, "created_identity": None}
+        identity = value["identity"]
+        return {
+            "created_identity_capture": value["outcome"],
+            "created_identity": None
+            if identity is None
+            else {
+                key: identity[key]
+                for key in created_object_identity.PUBLIC_IDENTITY_FIELDS
+            },
+        }
 
     def _lock_recovery_diagnostics(self, declaration, record, runtime, lock_records):
         """Bounded projection; never an authority to release or dispatch."""

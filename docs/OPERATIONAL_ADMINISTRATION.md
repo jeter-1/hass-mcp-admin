@@ -366,6 +366,45 @@ only when produced by a successful identity read after the qualified outage;
 it is never inferred from acknowledgement, current availability, or the
 reconnection boolean alone.
 
+## ha-mcp 9.2.0 lifecycle (HAMCP-401 Phase 1)
+
+On ha-mcp 9.2.0 the lifecycle provider is admitted for the same three
+governed operations; backup stays held. Each admitted release has its own
+reviewed contract row, and that row names the upstream tools the wrappers
+dispatch. On 9.2.0 they are:
+
+- `ha_reload_core(target=<one reviewed plural target>)`, with no `entry_id`;
+- `ha_manage_app(slug=<exact planned slug>, action="restart")`, with the
+  installed-app reads through `ha_get_app`;
+- `ha_restart(confirm=true)`. `safe_mode` is never sent.
+
+Every earlier admitted release keeps its `ha_manage_addon` and
+`ha_get_addon` names. Engineering never relies on upstream's renamed-tool
+redirect. The names come from the last validated release, and the in-session
+catalog validator refuses a call whose selected name does not match the
+release it reaches. So a 9.2.0 call without a prior governed provider probe is
+refused as `catalog_mismatch` before dispatch. A 9.2.0 catalog that carries
+only the `ha_*_addon` names is refused as `required_tool_missing`. The
+persisted F3 operation label for add-on restart stays `ha_manage_addon`; it
+is a logical label, not the dispatched name.
+
+The 9.2.0 response envelope for `ha_reload_core` and `ha_restart` is
+evidenced by a real-Core 9.2.0 capture of the shared envelope, from another
+tool; not a direct call of `ha_reload_core` or `ha_restart`
+(`docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls/t-large-services.json`,
+one text item whose JSON equals the structured content). All four tools share
+the output schema `{"additionalProperties": true, "type": "object"}`. The
+`ha_get_app` and `ha_manage_app` envelopes are `source_derived` from ha-mcp
+51e3aac7. Live acceptance confirms both.
+
+Home Assistant restart on 9.2.0 is admitted without the app-endpoint binding
+that add-on restart uses. The restart dispatch does not prove which ha-mcp
+endpoint dispatched it. Verification rests on Engineering's own outage
+observation: the direct Core probe described above must observe the outage
+after the durable dispatch, and Core must then be read back. A "restart
+scheduled" reply that is never followed by an observed outage stays
+unverified and is never redispatched.
+
 ## Durable reconciliation
 
 Before any action call, one durable task owner exists and immutable dispatch

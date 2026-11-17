@@ -416,7 +416,62 @@ async def get_history(entity_id: str, hours: float = 24, minimal: bool = True) -
         "/history/period/{}", _utc(hours), kinds=("timestamp",), query=query
     )
     data = await rest("GET", path)
-    return dump(data)
+    return _bounded_history(entity_id, data)
+
+
+# HAMCP-411 (HAAC-E041): room left for the routing envelope around the rows.
+HISTORY_ENVELOPE_RESERVE = 4096
+
+
+def _bounded_history(entity_id: str, data: Any) -> str:
+    """Return every row, or a time-ordered prefix of whole rows marked partial.
+
+    The size bound used to cut fields out of rows while the result still read
+    complete. An oversize single-entity history now keeps whole rows only and
+    says how many were withheld and where to continue. Any other shape keeps
+    the generic bound, which the dispatcher reports as partial.
+    """
+    budget = min(MAX_CHARS, SETTINGS.response_size_limit) - HISTORY_ENVELOPE_RESERVE
+
+    def size(value):
+        return len(json.dumps(value, separators=(",", ":"), default=str))
+
+    rows = data[0] if isinstance(data, list) and len(data) == 1 and isinstance(data[0], list) else None
+    if rows is None or size(data) <= budget:
+        return dump(data)
+    low, high = 0, len(rows)  # the largest prefix whose rows fit
+    while low < high:
+        middle = (low + high + 1) // 2
+        if size([rows[:middle]]) <= budget:
+            low = middle
+        else:
+            high = middle - 1
+    following = rows[low]
+    cursor = following.get("last_changed") if isinstance(following, dict) else None
+    cursor = cursor if isinstance(cursor, str) else None
+    metadata = {
+        "completeness": "partial",
+        "truncated": True,
+        "has_more": True,
+        "returned_states": low,
+        "total_states": len(rows),
+        "cursor": cursor,
+        "continuation": (
+            {"tool": "get_history_slices", "arguments": {"entity_id": entity_id, "start": cursor}}
+            if cursor is not None else None
+        ),
+    }
+    warning = (
+        f"History exceeded the response size limit: returned the first {low} of {len(rows)} "
+        "states as whole rows. "
+        + ("Continue from metadata.cursor with get_history_slices." if cursor is not None
+           else "Request fewer hours to read the rest.")
+    )
+    return json.dumps(
+        {"success": True, "operation": "get_history", "data": [rows[:low]],
+         "warnings": [warning], "metadata": metadata},
+        default=str,
+    )
 
 
 @mcp.tool()

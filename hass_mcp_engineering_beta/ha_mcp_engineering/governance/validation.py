@@ -16,7 +16,10 @@ SENSITIVE_KEYS = {
     "api_key",
     "webhook_id",
 }
-AUTOMATION_CONFIGURATION_FIELDS = frozenset(
+# The top-level fields every shipped writer accepted before HAMCP-419.  Frozen:
+# persisted validation-failed records are recognized by re-running validation
+# with exactly this set, so their recorded error text never changes.
+HISTORICAL_AUTOMATION_CONFIGURATION_FIELDS = frozenset(
     {
         "action",
         "actions",
@@ -37,6 +40,11 @@ AUTOMATION_CONFIGURATION_FIELDS = frozenset(
         "variables",
     }
 )
+# HAMCP-419 (E052): Home Assistant 2026.7.2 accepts a boolean
+# ``initial_state`` (automation/config.py) and stores the submitted item raw.
+AUTOMATION_CONFIGURATION_FIELDS = HISTORICAL_AUTOMATION_CONFIGURATION_FIELDS | {
+    "initial_state"
+}
 READ_ONLY_REGISTRY_METADATA_WARNING = (
     "category is read-only registry metadata; this configuration operation "
     "preserves it and does not include it in the Home Assistant config write"
@@ -44,7 +52,10 @@ READ_ONLY_REGISTRY_METADATA_WARNING = (
 
 
 def validate_automation(
-    automation_id: str, proposed: Any
+    automation_id: str,
+    proposed: Any,
+    *,
+    configuration_fields: frozenset[str] = AUTOMATION_CONFIGURATION_FIELDS,
 ) -> tuple[bool, list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
@@ -56,7 +67,7 @@ def validate_automation(
     if any(not isinstance(key, str) for key in proposed):
         errors.append("automation configuration keys must be strings")
     else:
-        unknown = sorted(set(proposed) - AUTOMATION_CONFIGURATION_FIELDS)
+        unknown = sorted(set(proposed) - configuration_fields)
         if unknown:
             errors.append(
                 "automation config contains unsupported fields: "
@@ -80,6 +91,12 @@ def validate_automation(
         errors.append("automation config requires trigger/triggers or use_blueprint")
     if not any(key in proposed for key in ("action", "actions", "use_blueprint")):
         errors.append("automation config requires action/actions or use_blueprint")
+    if (
+        "initial_state" in configuration_fields
+        and "initial_state" in proposed
+        and not isinstance(proposed["initial_state"], bool)
+    ):
+        errors.append("automation initial_state must be a boolean")
     if "mode" in proposed and proposed["mode"] not in {"single", "restart", "queued", "parallel"}:
         errors.append("automation mode must be single, restart, queued, or parallel")
     if any(key.lower() in SENSITIVE_KEYS for key in _keys(proposed)):

@@ -187,7 +187,7 @@ Do not edit the generated block by hand.
 - The signed Core registry is disabled by default (ha_core_release_registry_enabled: false in hass_mcp_engineering_beta/config.yaml). Runtime-only Core profiles admit nothing until it is enabled and a signed envelope covers the observed Core release; the deployed option value is unknown from source.
 - Signed registry sequence 15 (the journal tip in upstream-trust/ha-core-release-registry.json) carries three exact Core releases. 2026.10.0: 22 profiles, including core.entity_registry_metadata_operation. 2026.10.1: 26, adding core.configuration_delete_operation, core.entity_registry_availability_operation, core.entity_assistant_exposure_operation and core.label_registry_operation (first signed for 2026.10.1 in sequence 13; sequences 14 and 15 carry them, and add 2026.10.3). 2026.10.3: all 31, adding core.config_entry_helper_options_operation, core.typed_input_select_option_operation, core.script_trace_read, core.dashboard_metadata_operation and core.scene_configuration_operation (sequence 15). Runtime enablement and current Core authority still apply to every one. Each exact Core release, including each patch release, needs its own signed entry; Core 2026.11 needs sequence 16 to carry the 31 existing profiles forward (readiness map, Signing). Per-source version-coverage gaps are not repeated.
 - core.scene_configuration_operation is already in sequence 15 for Core 2026.10.3. Text that says it awaits sequence 16 (for example the comment in governance/scene_configuration.py) is stale.
-- Backup creation, add-on restart, Home Assistant restart and reload are admitted for ha-mcp 7.14.1 to 8.1.1 only and held at 8.2.0 to 8.6.0; ha-mcp 8.6.0 itself is on HOLD (HAMCP-156).
+- Backup creation, add-on restart, Home Assistant restart and reload are admitted for ha-mcp 7.14.1 to 8.1.1 and held at 8.2.0 to 9.1.2; on 9.2.0 the three lifecycle operations are admitted and backup stays held (HAMCP-401, HAMCP-381); ha-mcp 8.6.0 itself is on HOLD (HAMCP-156).
 - ha-mcp tools classified mixed_or_requires_wrapper without an adapter (ha_get_logs, ha_manage_backup, ha_manage_energy_prefs, ha_manage_updates) are unreachable and appear only in gaps.
 - Redaction and sanitization of each path are recorded as implemented; this matrix did not re-verify the generic gateway sanitizer.
 - A pending_signed_registry_admission refusal does not by itself prove that a profile is unsigned: the same reason is also reported while Core authority is transiently retired for re-verification (HAMCP-275, architect report on beta.54). HAMCP-276 (options apply refused at dispatch_authority) and HAMCP-274 (input_select option planning refused) are separate apply and planning failures.
@@ -1011,11 +1011,11 @@ Completeness: **partial**. Inventory readable; only restart is writable and only
 
 | Write path | Operations | Policy | Admission | Detail | Code |
 |---|---|---|---|---|---|
-| `create_addon_restart_plan` | restart | governed plan, exact-hash external approval | upstream:ha_get_addon+ha_manage_addon, lifecycle disposition admitted for ha-mcp 7.14.1-8.1.1 only; held at 8.2.0-8.6.0 | Restart only; self-restart refused; tool names hard-coded to the pre-8.4.1 ha_get_addon/ha_manage_addon. | `governance.py:99`<br>`operational_lifecycle.py:53`<br>`operational_lifecycle.py:111` |
+| `create_addon_restart_plan` | restart | governed plan, exact-hash external approval | upstream:ha_get_addon+ha_manage_addon (7.14.1-8.1.1) or ha_get_app+ha_manage_app (9.2.0), lifecycle disposition admitted for ha-mcp 7.14.1-8.1.1 and 9.2.0; held at 8.2.0-9.1.2 | Restart only; self-restart refused; tool names come from each admitted release's reviewed contract row (HAMCP-401), never from the upstream renamed-tool redirect. | `governance.py:99`<br>`operational_lifecycle.py:53`<br>`operational_lifecycle.py:111` |
 
 | Gap | Missing | Requirement type | Requirement to close | Register |
 |---|---|---|---|---|
-| RCG-082 | Add-on restart at ha-mcp 8.2.0+ (lifecycle held; tool renamed to ha_manage_app) | upstream_admission | Review 8.x ha_manage_app surface, update hard-coded tool names, admit lifecycle disposition. | - |
+| RCG-082 | Add-on restart at ha-mcp 8.2.0 to 9.1.2 (lifecycle held; tool renamed to ha_manage_app). 9.2.0 lifecycle is admitted with ha_manage_app and ha_get_app (HAMCP-401). | upstream_admission | Review the 8.x ha_manage_app surface and admit the lifecycle disposition per release; tool names are selected per admitted release. | HAMCP-401 |
 | RCG-083 | Add-on options/config reads | owner_decision | Options may carry secrets; owner decision plus redaction review. | - |
 | RCG-084 | Add-on start/stop/update/options writes | owner_decision | New write surface = security architecture change; explicit scope. | - |
 
@@ -1030,7 +1030,7 @@ Completeness: **partial**. Inventory readable; create only on admitted upstream 
 
 | Write path | Operations | Policy | Admission | Detail | Code |
 |---|---|---|---|---|---|
-| `create_backup_plan` | create | governed plan, exact-hash approval | upstream:ha_manage_backup via upstream_operational_backup; disposition admitted 7.14.1-8.1.1, held 8.2.0-8.6.0 | Create full backup only; fixed args scope snapshot/action create; restore and delete disallowed. | `governance.py:78`<br>`operational_backup.py:34`<br>`operational_backup.py:371` |
+| `create_backup_plan` | create | governed plan, exact-hash approval | upstream:ha_manage_backup via upstream_operational_backup; disposition admitted 7.14.1-8.1.1, held 8.2.0-9.2.0 | Create full backup only; fixed args scope snapshot/action create; restore and delete disallowed. | `governance.py:78`<br>`operational_backup.py:34`<br>`operational_backup.py:371` |
 
 | Gap | Missing | Requirement type | Requirement to close | Register |
 |---|---|---|---|---|
@@ -1111,7 +1111,7 @@ Completeness: **partial**. Planned restarts/reloads only on admitted upstream; l
 
 | Write path | Operations | Policy | Admission | Detail | Code |
 |---|---|---|---|---|---|
-| `create_home_assistant_restart_plan` | restart | governed plan, exact-hash approval | upstream:ha_restart via lifecycle; admitted 7.14.1-8.1.1, held 8.2.0-8.6.0 | Requires check_config pass; ha_restart physical_or_high_risk_action with no adapter at 8.6.0. | `governance.py:100`<br>`operational_lifecycle.py:55` |
+| `create_home_assistant_restart_plan` | restart | governed plan, exact-hash approval | upstream:ha_restart via lifecycle; admitted 7.14.1-8.1.1 and 9.2.0, held 8.2.0-9.1.2 | Requires check_config pass; ha_restart physical_or_high_risk_action with no adapter at 8.6.0. | `governance.py:100`<br>`operational_lifecycle.py:55` |
 | `create_reload_plan` | reload | governed plan; RELOAD_TARGETS automation, script, input_boolean, input_number | upstream:ha_reload_core; same disposition as above | Four domains only. | `governance.py:79`<br>`operational_lifecycle.py:56` |
 
 | Gap | Missing | Requirement type | Requirement to close | Register |

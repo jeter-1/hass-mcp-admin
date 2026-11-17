@@ -36,6 +36,15 @@ terminal for that approval. Public details contain only the safe failure stage,
 dispatch/action booleans, fallback status, bounded category, and required
 operator action.
 
+HAMCP-400 adds the bounded category `provider_held`. A reviewed ha-mcp release
+whose lifecycle or backup provider disposition is held is refused before
+dispatch with this category, not as an unknown version. The public codes are
+unchanged: lifecycle refusals stay `operational_contract_mismatch` and backup
+refusals stay `backup_provider_unavailable`. Provider health and diagnostics
+carry the held release's compatibility entry ID
+(`selected_compatibility_entry_id`). `upstream_version_mismatch` is reserved
+for a version with no reviewed registry row.
+
 For the exact reviewed `ha_get_entity` single-entity-ID registry lookup, its
 reviewed missing-registry `SERVICE_CALL_FAILED` combination maps to
 non-retryable `entity_not_found`. The argument shape must be one syntactically

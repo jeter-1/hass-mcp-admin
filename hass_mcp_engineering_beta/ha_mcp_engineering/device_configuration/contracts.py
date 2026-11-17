@@ -125,6 +125,38 @@ DISCLOSURE_KINDS = (
 )
 
 
+def _codes(code, *names):
+    return {"device_configuration_" + name: code for name in names}
+
+
+# HAMCP-412 (HAAC-E027): the public error_code names what the refusal is,
+# within the existing codes. Unlisted categories stay invalid_request; the
+# message and details keep the exact category.
+REFUSAL_CODES = {
+    **_codes(ErrorCode.STALE_TARGET_STATE, "state_changed", "undo_identity_changed",
+             "undo_post_state_unproven", "hold_release_state_changed", "hold_release_stale"),
+    **_codes(ErrorCode.ENTITY_NOT_FOUND, "entity_not_registered"),
+    **_codes(ErrorCode.UNSUPPORTED_OPERATION, "not_config_category", "no_device",
+             "target_kind_not_admitted", "action_not_supported", "field_not_supported",
+             "number_unit_conversion", "number_bounds_inconsistent", "recovery_is_read_only"),
+    **_codes(ErrorCode.CONFIGURATION_CONFLICT, "target_disabled", "operation_id_rebound",
+             "undo_already_claimed"),
+    **_codes(ErrorCode.ROLLBACK_NOT_AVAILABLE, "undo_unavailable", "undo_not_eligible",
+             "baseline_not_restorable"),
+    **_codes(ErrorCode.RATE_LIMIT_EXCEEDED, "capacity_exhausted", "receipt_capacity_exhausted"),
+    **_codes(ErrorCode.AUTHORIZATION_FAILURE, "connector_authorization_required",
+             "hold_release_authority_required"),
+    **_codes(ErrorCode.INTERNAL_INVARIANT_VIOLATION, "receipt_corrupt", "hold_release_corrupt"),
+    # The renamed fan admission categories no longer match FanRefusal's
+    # suffix test, so they are listed here.
+    **_codes(ErrorCode.PROVIDER_UNAVAILABLE, "contract_unknown", "provider_authority_retired",
+             "provider_identity_unavailable", "provider_contract_mismatch",
+             "provider_admission_failed", "hold_release_unavailable",
+             "hold_release_readback_unavailable"),
+    **dict.fromkeys(UNAVAILABLE_REFUSALS, ErrorCode.PROVIDER_UNAVAILABLE),
+}
+
+
 class DeviceConfigurationRefusal(FanRefusal):
     """Fixed local categories only; never Home Assistant response text."""
 
@@ -132,8 +164,7 @@ class DeviceConfigurationRefusal(FanRefusal):
         if isinstance(category, str) and category.startswith("fan_"):
             category = "device_configuration_" + category[4:]
         super().__init__(category)
-        if category in UNAVAILABLE_REFUSALS:
-            self.code = ErrorCode.PROVIDER_UNAVAILABLE
+        self.code = REFUSAL_CODES.get(self.details["category"], self.code)
         status = "provider_unavailable" if self.code == ErrorCode.PROVIDER_UNAVAILABLE else "refused"
         self.details = {**self.details, "status": status}
 

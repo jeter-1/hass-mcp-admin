@@ -149,6 +149,24 @@ SUPPORTED_PROTOCOLS = frozenset({REVIEWED_PROTOCOL_VERSION})
 RECONCILIATION_RETRY_DELAYS_SECONDS = (1.0, 2.0, 4.0, 8.0, 16.0, 30.0)
 COMPATIBILITY_REPROBE_INTERVAL_SECONDS = 900.0
 MAX_QUARANTINE_RECORDS = 32
+_OBSERVATION_IDENTITY_FIELDS = (
+    "observed_upstream_server_name",
+    "observed_upstream_server_version",
+    "observed_protocol_version",
+)
+_OBSERVATION_COUNT_FIELDS = (
+    "observed_catalog_fingerprint",
+    "upstream_advertised_tool_count",
+    "observed_advertised_tool_count",
+)
+
+
+def _observation_current() -> dict[str, Any]:
+    return {
+        "upstream_observation_status": "current",
+        "upstream_observation_stale_fields": [],
+        "upstream_observation_stale_since": None,
+    }
 
 
 def _readmission_withheld_state(
@@ -1038,6 +1056,11 @@ class UpstreamReadGateway:
             "catalog_diff_field_counts": {},
             "upstream_advertised_tool_count": 0,
             "observed_advertised_tool_count": 0,
+            # HAMCP-409: whether the observed identity, catalog fingerprint
+            # and tool counts come from the latest discovery attempt.
+            "upstream_observation_status": "not_observed",
+            "upstream_observation_stale_fields": [],
+            "upstream_observation_stale_since": None,
             "reviewed_policy_entry_count": 0,
             "reviewed_accounted_tool_count": 0,
             "reviewed_tool_accounting_valid": False,
@@ -2289,6 +2312,7 @@ class UpstreamReadGateway:
                         catalog_diff_field_counts
                     ),
                     "upstream_advertised_tool_count": len(catalog.tools),
+                    **_observation_current(),
                     "reviewed_accounted_tool_count": len(policy.tools),
                     "reviewed_policy_entry_count": len(policy.tools),
                     "reviewed_stock_catalog_tool_count": (
@@ -2587,6 +2611,9 @@ class UpstreamReadGateway:
                     disable_delegation=not transient,
                     discovery=True,
                 )
+                self._mark_observation_stale_locked(
+                    identity_observed=catalog is not None
+                )
                 if not transient:
                     self._remove_registered_tools()
         if stale_discovery:
@@ -2881,6 +2908,21 @@ class UpstreamReadGateway:
         ):
             raise DashboardTransportError("upstream_version_mismatch")
         return self._policy, None, None
+
+    def _mark_observation_stale_locked(self, *, identity_observed: bool) -> None:
+        """HAMCP-409: values kept from the last successful discovery say so."""
+
+        if self._state["upstream_observation_status"] == "not_observed":
+            return
+        fields = (
+            _OBSERVATION_COUNT_FIELDS
+            if identity_observed
+            else _OBSERVATION_IDENTITY_FIELDS + _OBSERVATION_COUNT_FIELDS
+        )
+        if self._state["upstream_observation_status"] != "stale":
+            self._state["upstream_observation_stale_since"] = _utc_now()
+        self._state["upstream_observation_status"] = "stale"
+        self._state["upstream_observation_stale_fields"] = list(fields)
 
     def _record_observed_identity(
         self,
@@ -5635,6 +5677,7 @@ class UpstreamReadGateway:
                     "version_status": "reviewed_exact",
                     "observed_advertised_tool_count": len(catalog.tools),
                     "observed_catalog_fingerprint": None,
+                    **_observation_current(),
                     "observed_strict_full_contract_fingerprint": None,
                     "catalog_diff_field_counts": {},
                     "last_discovery_stable": False,

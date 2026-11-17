@@ -1015,7 +1015,8 @@ envelope containing safe operational data:
 - rate-limiter summary;
 - redaction and configuration-validation state;
 - tool-call, retry, and timeout counts.
-- safe provider-routing counters and explicit `standard_ha_mcp_delegation=unavailable`.
+- safe provider-routing counters and `standard_ha_mcp_delegation`, which is
+  `available` only while delegated ha-mcp reads are admitted (HAMCP-414).
 
 It never returns the secret, tokens, headers, cookies, complete MCP endpoint
 paths, private request payloads, or raw audit/log records.
@@ -1312,3 +1313,24 @@ both `verification_pending_plans` and `indeterminate_outcomes`, increments
 `verified_successes`, and sets `last_successful_operation_timestamp`.
 Expected post-dispatch Core unavailability does not remain a permanent
 operational provider failure after successful recovery.
+
+## 2.8.0 delegated-read health truthfulness
+
+`provider_routing.standard_ha_mcp_delegation` follows the current delegated
+ha-mcp read admission (HAMCP-414). It is `available` while at least one
+delegated read is admitted and `unavailable` otherwise. Before 2.8.0 it was
+fixed at `unavailable`, which contradicted working delegated reads. The field
+describes the internal ha-mcp provider behind the one Engineering endpoint;
+it grants nothing and does not change routing.
+
+`upstream_read_gateway` adds `upstream_observation_status`,
+`upstream_observation_stale_fields` and `upstream_observation_stale_since`
+(HAMCP-409). The status is `not_observed` before any successful discovery,
+`current` after one, and `stale` while a later discovery fails. While stale,
+the observed identity, catalog fingerprint and tool counts are the values kept
+from the last successful discovery, and `upstream_observation_stale_fields`
+names them. When the failing discovery still observed the server identity,
+only the fingerprint and counts are listed. `upstream_observation_stale_since`
+is the time of the first failure in the run; the next successful discovery
+clears all three. The fields appear in server health only; governed lifecycle
+evidence is unchanged.

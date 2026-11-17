@@ -48,12 +48,12 @@ def validate_arguments(arguments: dict) -> tuple[int, int]:
     return limit, offset
 
 
-def _failure(code: ErrorCode, reason: str, status: int | None = None):
+def _failure(code: ErrorCode, reason: str, status: int | None = None, message: str | None = None):
     details = {"endpoint_category": "core_log_history", "reason": reason,
                "fallback_occurred": False}
     if status is not None:
         details.update(status=status, provider_response_received=True)
-    return GovernanceError(code, details=details)
+    return GovernanceError(code, message, details=details)
 
 
 @dataclass(frozen=True)
@@ -78,7 +78,9 @@ class CoreLogReader(HomeAssistantRestClient):
         if not supervisor_token:
             raise _failure(ErrorCode.PROVIDER_UNAVAILABLE, "supervisor_context_unavailable")
         if self._reading:
-            raise _failure(ErrorCode.PROVIDER_UNAVAILABLE, "core_log_read_in_progress")
+            # HAMCP-413 (HAAC-E046): busy, retryable; the provider is available.
+            raise _failure(ErrorCode.RATE_LIMIT_EXCEEDED, "core_log_read_in_progress",
+                           message="Another Core log read is in progress; retry after it completes.")
         headers = {
             "Authorization": f"Bearer {supervisor_token}",
             "Accept": "text/plain",

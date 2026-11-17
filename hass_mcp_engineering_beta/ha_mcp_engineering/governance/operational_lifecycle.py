@@ -65,6 +65,7 @@ _CONCLUSIVE_PROVIDER_CONTRACT_FAILURES = frozenset(
     {
         "addon_response_contract_mismatch",
         "catalog_mismatch",
+        "provider_held",
         "required_tool_missing",
         "reviewed_contract_mismatch",
         "server_identity_mismatch",

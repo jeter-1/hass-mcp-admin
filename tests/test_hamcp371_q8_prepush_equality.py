@@ -7,7 +7,8 @@ state. No quarantined 9.2.0 state may reach the S16 push."
 The check reads the committed JSON documents directly, so a hand edit that
 the loader would still accept cannot pass unseen:
 
-* the registry rows: ``provider_dispositions`` equal, and
+* the registry rows: ``provider_dispositions`` equal except that HAMCP-401
+  Phase 1 admits 9.2.0 ``lifecycle`` (architect ruling 2026-11-16), and
   ``dashboard_attestation.status`` equal and ``reviewed``;
 * the built-in dashboard attestation entries: present for both versions, not
   revoked, and the contract fingerprints (input, output, runtime, security,
@@ -30,6 +31,8 @@ REGISTRY_PATH = PACKAGE / "upstream_release_registry.json"
 ATTESTATIONS_PATH = PACKAGE / "providers" / "contracts" / "upstream_dashboard_builtin_attestations.json"
 
 BASE, CANDIDATE = "9.1.2", "9.2.0"
+# HAMCP-401 Phase 1: the only 9.2.0 disposition that differs from 9.1.2's.
+CANDIDATE_DISPOSITION_OVERRIDES = {"lifecycle": "admitted"}
 ATTESTATION_EQUAL_FIELDS = (
     "contract_family",
     "input_contract_fingerprint",
@@ -63,7 +66,11 @@ def q8_problems(registry: dict, attestations: dict) -> list[str]:
     if problems:
         return problems
     base, candidate = rows[BASE], rows[CANDIDATE]
-    if candidate.get("provider_dispositions") != base.get("provider_dispositions"):
+    expected_dispositions = {
+        **(base.get("provider_dispositions") or {}),
+        **CANDIDATE_DISPOSITION_OVERRIDES,
+    }
+    if candidate.get("provider_dispositions") != expected_dispositions:
         problems.append("provider_dispositions differ from 9.1.2")
     base_status = (base.get("dashboard_attestation") or {}).get("status")
     status = (candidate.get("dashboard_attestation") or {}).get("status")
@@ -111,7 +118,7 @@ class Q8PrePushEquality(unittest.TestCase):
 
     def test_changed_disposition_is_refused(self):
         registry, attestations = _load()
-        for provider, value in (("dashboard", "held"), ("backup", "admitted"), ("lifecycle", "admitted")):
+        for provider, value in (("dashboard", "held"), ("backup", "admitted"), ("lifecycle", "held")):
             with self.subTest(provider=provider):
                 edited = deepcopy(registry)
                 _row(edited, CANDIDATE)["provider_dispositions"][provider] = value
