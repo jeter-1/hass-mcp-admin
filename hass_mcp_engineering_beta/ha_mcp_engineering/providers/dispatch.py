@@ -112,24 +112,34 @@ class CanonicalProviderDispatcher:
                 # this wrapper; unsupported routes fail closed if encountered.
                 raise GovernanceError(ErrorCode.PROVIDER_ERROR)
 
-            routing_metadata = _routing_metadata(tool_name, decision.route, provider_result)
-            metadata = {**inner_metadata, **routing_metadata}
-            warnings = [*inner_warnings, *provider_result.warnings][:20]
-            if telemetry:
-                telemetry.result_status = "partial" if provider_result.completeness == ProviderCompleteness.PARTIAL else "success"
-                telemetry.completeness = provider_result.completeness.value
-            rendered, truncated = dump_json_with_truncation(
-                SuccessResponse(
-                    operation=tool_name,
-                    summary=f"Completed {tool_name} through facilitator provider routing.",
-                    data=data,
-                    warnings=warnings,
-                    metadata=metadata,
-                    timing=timing_since(started),
-                    request_id=current_request_id(),
-                ).as_dict(),
-                response_limit,
-            )
+            def render():
+                routing_metadata = _routing_metadata(tool_name, decision.route, provider_result)
+                if telemetry:
+                    telemetry.result_status = "partial" if provider_result.completeness == ProviderCompleteness.PARTIAL else "success"
+                    telemetry.completeness = provider_result.completeness.value
+                return dump_json_with_truncation(
+                    SuccessResponse(
+                        operation=tool_name,
+                        summary=f"Completed {tool_name} through facilitator provider routing.",
+                        data=data,
+                        warnings=[*inner_warnings, *provider_result.warnings][:20],
+                        metadata={**inner_metadata, **routing_metadata},
+                        timing=timing_since(started),
+                        request_id=current_request_id(),
+                    ).as_dict(),
+                    response_limit,
+                )
+
+            rendered, truncated = render()
+            if truncated and provider_result.completeness == ProviderCompleteness.COMPLETE:
+                # HAMCP-411 (HAAC-E041): content the size bound removed is
+                # never reported complete.
+                provider_result.completeness = ProviderCompleteness.PARTIAL
+                provider_result.warnings = [
+                    *provider_result.warnings,
+                    "The response exceeded the size limit and was bounded; inspect response_completeness.",
+                ]
+                rendered, truncated = render()
             if truncated:
                 METRICS.record_evidence_truncation()
             return rendered
@@ -252,7 +262,12 @@ class CanonicalProviderDispatcher:
             if inspect.isawaitable(value):
                 value = await value
             data, warnings, metadata = _normalize_payload(value)
-            bounded = isinstance(data, dict) and data.get("truncated") is True
+            bounded = isinstance(data, dict) and (
+                data.get("truncated") is True
+                # HAMCP-411: a tool's own size bound also cut the content.
+                or (isinstance(data.get("response_completeness"), dict)
+                    and data["response_completeness"].get("truncated") is True)
+            )
             # HAMCP-225: a direct tool that withheld content itself says so in
             # its envelope metadata; it carries its own warning.
             withheld = metadata.get("completeness") == "partial"

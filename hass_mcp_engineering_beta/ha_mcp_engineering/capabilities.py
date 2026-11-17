@@ -1388,6 +1388,40 @@ def delegated_tool_status(gateway: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+_REVIEWED_DELEGATED_READ_NAMES: frozenset[str] | None = None
+
+
+def reviewed_delegated_read_names() -> frozenset[str]:
+    """Names any reviewed ha-mcp release may publish as a delegated read.
+
+    HAMCP-408 (HAAC-E051): names only, so a call to a delegated read that is
+    not currently published can be refused truthfully. It grants nothing:
+    routing and dispatch still require the current admitted capability.
+    """
+
+    global _REVIEWED_DELEGATED_READ_NAMES
+    if _REVIEWED_DELEGATED_READ_NAMES is None:
+        from .providers.upstream_read_gateway import ALIAS_PREFIX
+        from .upstream_tool_policy import load_reviewed_upstream_release_registry
+
+        try:
+            releases = load_reviewed_upstream_release_registry().by_version.values()
+        except Exception:
+            releases = ()
+        _REVIEWED_DELEGATED_READ_NAMES = frozenset(
+            name
+            for release in releases
+            for entry in release.policy.tools
+            if entry.is_read_route
+            for name in (entry.exposed_name, ALIAS_PREFIX + entry.upstream_name)
+        )
+    return _REVIEWED_DELEGATED_READ_NAMES
+
+
+def delegated_tools_admitted() -> bool:
+    return delegated_tool_status(_UPSTREAM_READ_GATEWAY_SUMMARY)["admitted"]
+
+
 def build_server_metadata(*, ha_url: str, runtime_mode: str, ha_connection: dict[str, Any]) -> dict[str, Any]:
     """Return stable server identity and runtime metadata."""
     return {

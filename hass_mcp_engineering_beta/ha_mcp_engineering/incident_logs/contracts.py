@@ -119,10 +119,16 @@ class IncidentLogsError(GovernanceError):
             reason = "sources_unavailable"
         code = {
             "authority_unavailable": ErrorCode.PROVIDER_UNAVAILABLE,
-            "read_in_progress": ErrorCode.PROVIDER_UNAVAILABLE,
             "invalid_arguments": ErrorCode.INVALID_REQUEST,
         }.get(reason, ErrorCode.ANALYSIS_UNAVAILABLE)
-        super().__init__(code, details={"reason": reason, "fallback_occurred": False})
+        # HAMCP-413 (HAAC-E046): a concurrent read is a retryable busy
+        # refusal, not an unavailable provider.
+        if reason == "read_in_progress":
+            code = ErrorCode.RATE_LIMIT_EXCEEDED
+            message = "Another incident log read is in progress; retry after it completes."
+        else:
+            message = None
+        super().__init__(code, message, details={"reason": reason, "fallback_occurred": False})
         self.reason = reason
 
 

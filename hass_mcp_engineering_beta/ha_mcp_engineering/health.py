@@ -13,6 +13,7 @@ from .capabilities import (
     BETA_NATIVE_CAPABILITIES,
     CAPABILITIES,
     delegated_tool_status,
+    delegated_tools_admitted,
     dynamic_upstream_capabilities,
 )
 from .version import SERVER_ID, SERVER_NAME, SERVER_VERSION
@@ -162,7 +163,11 @@ class HealthRegistry:
             "domain_outcome_counts": metrics["domain_outcome_counts"],
             "provider_routing": {
                 **metrics["provider_routing"],
-                "standard_ha_mcp_delegation": "unavailable",
+                # HAMCP-414: reported from the current delegated-read
+                # admission, not a fixed value.
+                "standard_ha_mcp_delegation": (
+                    "available" if delegated_tools_admitted() else "unavailable"
+                ),
                 "direct_fallback_requires_explicit_policy": True,
                 "approved_direct_read_tools": [
                     "search_entities",
