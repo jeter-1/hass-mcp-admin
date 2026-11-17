@@ -112,25 +112,22 @@ class CanonicalProviderDispatcher:
                 # this wrapper; unsupported routes fail closed if encountered.
                 raise GovernanceError(ErrorCode.PROVIDER_ERROR)
 
-            def render():
+            def envelope():
                 routing_metadata = _routing_metadata(tool_name, decision.route, provider_result)
                 if telemetry:
                     telemetry.result_status = "partial" if provider_result.completeness == ProviderCompleteness.PARTIAL else "success"
                     telemetry.completeness = provider_result.completeness.value
-                return dump_json_with_truncation(
-                    SuccessResponse(
-                        operation=tool_name,
-                        summary=f"Completed {tool_name} through facilitator provider routing.",
-                        data=data,
-                        warnings=[*inner_warnings, *provider_result.warnings][:20],
-                        metadata={**inner_metadata, **routing_metadata},
-                        timing=timing_since(started),
-                        request_id=current_request_id(),
-                    ).as_dict(),
-                    response_limit,
-                )
+                return SuccessResponse(
+                    operation=tool_name,
+                    summary=f"Completed {tool_name} through facilitator provider routing.",
+                    data=data,
+                    warnings=[*inner_warnings, *provider_result.warnings][:20],
+                    metadata={**inner_metadata, **routing_metadata},
+                    timing=timing_since(started),
+                    request_id=current_request_id(),
+                ).as_dict()
 
-            rendered, truncated = render()
+            rendered, truncated = dump_json_with_truncation(envelope(), response_limit)
             if truncated and provider_result.completeness == ProviderCompleteness.COMPLETE:
                 # HAMCP-411 (HAAC-E041): content the size bound removed is
                 # never reported complete.
@@ -139,7 +136,7 @@ class CanonicalProviderDispatcher:
                     *provider_result.warnings,
                     "The response exceeded the size limit and was bounded; inspect response_completeness.",
                 ]
-                rendered, truncated = render()
+                rendered, truncated = dump_json_with_truncation(envelope(), response_limit)
             if truncated:
                 METRICS.record_evidence_truncation()
             return rendered
