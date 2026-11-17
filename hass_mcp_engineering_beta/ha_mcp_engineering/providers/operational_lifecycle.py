@@ -23,9 +23,11 @@ from ..clients.upstream_read import (
     McpReadGatewayTransport,
 )
 from ..configuration import Settings, parse_upstream_dashboard_endpoint
+from . import upstream_yaml_reader as yaml_reader
 from ..request_context import current_telemetry
 from ..sanitization import sanitize_untrusted_data
 from ..upstream_tool_policy import (
+    catalog_fingerprint,
     load_reviewed_upstream_release_registry,
     runtime_contract_field_fingerprints,
     runtime_contract_fingerprint,
@@ -53,6 +55,12 @@ RELOAD_TOOL = "ha_reload_core"
 ADDON_ACTION_TOOL = "ha_manage_addon"
 ADDON_READ_TOOL = "ha_get_addon"
 HA_RESTART_TOOL = "ha_restart"
+# ha-mcp 9.2.0 names the add-on tools "app". Each admitted release's response
+# contract row names its exact add-on tools; the upstream renamed-tool redirect
+# is never relied on.
+APP_ACTION_TOOL = "ha_manage_app"
+APP_READ_TOOL = "ha_get_app"
+_VERSIONED_ADDON_TOOLS = frozenset({ADDON_ACTION_TOOL, ADDON_READ_TOOL})
 RELOAD_TARGETS = {
     "automation": "automations",
     "script": "scripts",
@@ -93,7 +101,20 @@ _TOOL_POLICY = {
     ADDON_ACTION_TOOL: "mixed_or_requires_wrapper",
     ADDON_READ_TOOL: "mixed_or_requires_wrapper",
     HA_RESTART_TOOL: "physical_or_high_risk_action",
+    APP_ACTION_TOOL: "mixed_or_requires_wrapper",
+    APP_READ_TOOL: "mixed_or_requires_wrapper",
 }
+# HAMCP-401 9.2.0 envelope evidence labels (architect ruling 2026-11-16).
+LIFECYCLE_ENVELOPE_EVIDENCE_REAL_CORE_SHARED_9_2_0 = (
+    "real-Core 9.2.0 capture of the shared envelope, from another tool; "
+    "not a direct call of ha_reload_core or ha_restart"
+)
+LIFECYCLE_ENVELOPE_EVIDENCE_REAL_CORE_SHARED_9_2_0_SOURCES = (
+    "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls/"
+    "t-large-services.json",
+    "docs/evidence/hamcp371/s8/registry/strict-tools-response-9.2.0.json",
+)
+LIFECYCLE_ENVELOPE_EVIDENCE_SOURCE_DERIVED = "source_derived"
 
 
 @dataclass(frozen=True)
@@ -102,6 +123,19 @@ class LifecycleAddonResponseContract:
 
     model: str
     envelope_variant: str
+    addon_action_tool: str = ADDON_ACTION_TOOL
+    addon_read_tool: str = ADDON_READ_TOOL
+    # Upstream tool name -> envelope evidence label, for rows that record it.
+    envelope_evidence: tuple[tuple[str, str], ...] = ()
+
+    def upstream_tool(self, tool: str) -> str:
+        """Return the exact upstream name this release reviews for ``tool``."""
+
+        if tool == ADDON_ACTION_TOOL:
+            return self.addon_action_tool
+        if tool == ADDON_READ_TOOL:
+            return self.addon_read_tool
+        return tool
 
 
 _LIFECYCLE_ADDON_RESPONSE_CONTRACTS = {
@@ -152,6 +186,33 @@ _LIFECYCLE_ADDON_RESPONSE_CONTRACTS = {
     ): LifecycleAddonResponseContract(
         model=LIFECYCLE_ADDON_RESPONSE_MODEL_STRUCTURED_V1,
         envelope_variant=LIFECYCLE_ADDON_RESPONSE_ENVELOPE_STRUCTURED,
+    ),
+    # HAMCP-401: every 9.2.0 lifecycle tool shares the output schema
+    # {"additionalProperties": true, "type": "object"}. The reload and
+    # restart envelope rests on a real-Core capture of that shared envelope
+    # from another tool; the app tools are derived from source at 51e3aac7.
+    # Live acceptance confirms both.
+    (
+        "ha-mcp-v9.2.0-9de5bf6c",
+        "9.2.0",
+        "2025-03-26",
+    ): LifecycleAddonResponseContract(
+        model=LIFECYCLE_ADDON_RESPONSE_MODEL_STRUCTURED_V1,
+        envelope_variant=LIFECYCLE_ADDON_RESPONSE_ENVELOPE_STRUCTURED,
+        addon_action_tool=APP_ACTION_TOOL,
+        addon_read_tool=APP_READ_TOOL,
+        envelope_evidence=(
+            (
+                RELOAD_TOOL,
+                LIFECYCLE_ENVELOPE_EVIDENCE_REAL_CORE_SHARED_9_2_0,
+            ),
+            (
+                HA_RESTART_TOOL,
+                LIFECYCLE_ENVELOPE_EVIDENCE_REAL_CORE_SHARED_9_2_0,
+            ),
+            (APP_ACTION_TOOL, LIFECYCLE_ENVELOPE_EVIDENCE_SOURCE_DERIVED),
+            (APP_READ_TOOL, LIFECYCLE_ENVELOPE_EVIDENCE_SOURCE_DERIVED),
+        ),
     ),
 }
 
@@ -245,10 +306,50 @@ class OperationalProviderState:
     lifecycle_addon_response_diagnostics: dict[str, Any] | None = None
     runtime_contract_mismatch_diagnostics: dict[str, Any] | None = None
     catalog_validation: dict[str, Any] | None = None
+    # Exact add-on tool names of the release the last catalog validated.
+    selected_addon_tools: tuple[tuple[str, str], ...] | None = None
     fallback_count: int = 0
 
 
 BeforeDispatch = Callable[[], None | Awaitable[None]]
+
+
+
+def _stock_catalog_tools(
+    tools: Any, version: str
+) -> tuple[Any, ...] | None:
+    """Remove the bound optional upstream tools from one catalog.
+
+    ha-mcp advertises its optional YAML reader and filesystem siblings beside
+    the stock catalog when the add-on enables them. As in the read gateway
+    (HAMCP-162), only a name with an exact per-version binding is accounted
+    outside stock, and only when its single descriptor matches that binding
+    (R4). Any other optional occurrence (drifted, duplicated or unbound)
+    returns ``None``; every remaining tool is validated as the exact reviewed
+    stock catalog, in its observed order. No optional tool is ever routed or
+    dispatched by this provider.
+    """
+
+    items = tuple(tools)
+    bound = [
+        name
+        for name in yaml_reader.optional_names(version)
+        if (version, name) in yaml_reader.OPTIONAL_TOOL_BINDINGS
+    ]
+    accounted: set[str] = set()
+    for name in bound:
+        binding = yaml_reader.OPTIONAL_TOOL_BINDINGS[(version, name)]
+        match = yaml_reader.match_descriptor(items, binding)
+        if match.status == "absent":
+            continue
+        if match.status != "matched":
+            return None
+        accounted.add(name)
+    return tuple(
+        item
+        for item in items
+        if not (isinstance(item, dict) and item.get("name") in accounted)
+    )
 
 
 class ReviewedOperationalLifecycleProvider:
@@ -367,6 +468,7 @@ class ReviewedOperationalLifecycleProvider:
         if self._transport is None:
             self._fail("provider_unavailable", dispatched=False)
         evidence: OperationalProviderEvidence | None = None
+        read_tool = ADDON_READ_TOOL
 
         def validate(catalog: McpReadCatalog) -> None:
             nonlocal evidence
@@ -375,6 +477,8 @@ class ReviewedOperationalLifecycleProvider:
                 (ADDON_READ_TOOL,),
                 operation="restart_addon",
             )
+            if _upstream_tool_name(candidate, ADDON_READ_TOOL) != read_tool:
+                self._fail("catalog_mismatch", dispatched=False)
             if evidence is None:
                 evidence = candidate
                 return
@@ -391,8 +495,9 @@ class ReviewedOperationalLifecycleProvider:
                 )
 
         try:
+            read_tool = self._selected_upstream_tool(ADDON_READ_TOOL)
             inventory_exchange = await self._execute_observed_read(
-                ADDON_READ_TOOL,
+                read_tool,
                 {"source": "installed", "include_stats": False},
                 timeout_seconds=60.0,
                 catalog_validator=validate,
@@ -510,7 +615,7 @@ class ReviewedOperationalLifecycleProvider:
             )
 
             exchange = await self._execute_observed_read(
-                ADDON_READ_TOOL,
+                read_tool,
                 {"slug": slug},
                 timeout_seconds=60.0,
                 catalog_validator=validate,
@@ -702,17 +807,23 @@ class ReviewedOperationalLifecycleProvider:
             with self._lock:
                 self._state.dispatch_counts[operation] += 1
 
+        upstream_tool = tool_name
+
         def validate(catalog: McpReadCatalog) -> None:
             nonlocal evidence
             evidence = self._validate_catalog(
                 catalog, (tool_name,), operation=operation
             )
+            if _upstream_tool_name(evidence, tool_name) != upstream_tool:
+                self._fail("catalog_mismatch", dispatched=False)
 
         with self._lock:
             self._state.request_counts[operation] += 1
         try:
+            if tool_name in _VERSIONED_ADDON_TOOLS:
+                upstream_tool = self._selected_upstream_tool(tool_name)
             exchange = await self._transport.execute_read(
-                tool_name,
+                upstream_tool,
                 arguments,
                 timeout_seconds=timeout_seconds,
                 catalog_validator=validate,
@@ -763,6 +874,21 @@ class ReviewedOperationalLifecycleProvider:
                 dispatched=dispatched,
             )
 
+    def _selected_upstream_tool(self, tool: str) -> str:
+        """Return the add-on tool name of the last validated release.
+
+        The name comes from the admitted release's reviewed contract row, as
+        selected by the last catalog validation (governance probes before it
+        reads or dispatches); with no selection it is the legacy name. The
+        upstream renamed-tool redirect is never relied on: the in-session
+        validator refuses before dispatch when the dispatching catalog's
+        release reviews another name.
+        """
+
+        with self._lock:
+            selected = self._state.selected_addon_tools
+        return dict(selected or ()).get(tool, tool)
+
     def _validate_catalog(
         self,
         catalog: McpReadCatalog,
@@ -784,13 +910,17 @@ class ReviewedOperationalLifecycleProvider:
             self._state.lifecycle_addon_response_envelope_variant = None
             self._state.lifecycle_addon_response_diagnostics = None
             self._state.catalog_validation = None
+            self._state.selected_addon_tools = None
         if catalog.server_name != "ha-mcp":
             self._fail("server_identity_mismatch", dispatched=False)
         release = registry.by_version.get(catalog.server_version)
         if release is None:
             self._fail("upstream_version_mismatch", dispatched=False)
         if release.provider_disposition("lifecycle") != "admitted":
-            self._fail("upstream_version_mismatch", dispatched=False)
+            with self._lock:
+                self._state.selected_compatibility_entry_id = release.entry_id
+                self._state.observed_upstream_version = catalog.server_version
+            self._fail("provider_held", dispatched=False)
         runtime_model = release.runtime_contract_fingerprint_model
         with self._lock:
             self._state.selected_compatibility_entry_id = release.entry_id
@@ -815,31 +945,55 @@ class ReviewedOperationalLifecycleProvider:
             self._state.lifecycle_addon_response_envelope_variant = (
                 response_contract.envelope_variant
             )
+            self._state.selected_addon_tools = tuple(
+                (tool, response_contract.upstream_tool(tool))
+                for tool in sorted(_VERSIONED_ADDON_TOOLS)
+            )
+        upstream_tools = tuple(
+            response_contract.upstream_tool(tool) for tool in required_tools
+        )
+        # A renamed tool must be present under its reviewed upstream name;
+        # the legacy name never satisfies it.
+        for logical, upstream in zip(required_tools, upstream_tools):
+            if upstream != logical and sum(
+                1
+                for item in catalog.tools
+                if isinstance(item, dict) and item.get("name") == upstream
+            ) != 1:
+                self._fail("required_tool_missing", dispatched=False)
+        stock_tools = _stock_catalog_tools(catalog.tools, release.version)
+        if stock_tools is None:
+            self._fail("catalog_mismatch", dispatched=False)
         catalog_validation = validate_reviewed_release_catalog(
             release,
             observed_server_name=catalog.server_name,
             observed_upstream_version=catalog.server_version,
             observed_protocol_version=catalog.protocol_version,
-            tools=catalog.tools,
+            tools=stock_tools,
         )
         with self._lock:
             self._state.catalog_validation = catalog_validation.as_dict()
         if not catalog_validation.valid:
             self._fail("catalog_mismatch", dispatched=False)
-        observed_catalog = (
-            catalog_validation.observed_raw_catalog_fingerprint
-        )
         normalized_catalog_fingerprint = (
             catalog_validation.normalized_catalog_fingerprint
         )
         if (
-            observed_catalog is None
+            catalog_validation.observed_raw_catalog_fingerprint is None
             or normalized_catalog_fingerprint is None
         ):
             self._fail("internal_invariant_violation", dispatched=False)
+        # The provider identity is the whole advertised catalog, the list the
+        # read gateway fingerprints, so upstream add-on readmission compares
+        # like with like when bound optional tools are present. The stock
+        # projection is validated above and stays in catalog_validation.
+        try:
+            observed_catalog = catalog_fingerprint(list(catalog.tools))
+        except (TypeError, ValueError, UnicodeError, OverflowError):
+            self._fail("internal_invariant_violation", dispatched=False)
 
         fingerprints: dict[str, str] = {}
-        for tool_name in required_tools:
+        for tool_name in upstream_tools:
             tools = [
                 item
                 for item in catalog.tools
@@ -1424,6 +1578,22 @@ def _lifecycle_addon_response_contract(
     ):
         return contract
     return None
+
+
+def _upstream_tool_name(
+    evidence: OperationalProviderEvidence,
+    tool: str,
+) -> str | None:
+    """Return the exact upstream name the evidence's release reviews."""
+
+    contract = _lifecycle_addon_response_contract(
+        entry_id=evidence.compatibility_entry_id,
+        upstream_version=evidence.server_version,
+        protocol_version=evidence.protocol_version,
+    )
+    if contract is None:
+        return None
+    return contract.upstream_tool(tool)
 
 
 def _provider_contract_identity(

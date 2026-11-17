@@ -458,11 +458,32 @@ def retired_exposed_names(policy: Any, retired_upstream: frozenset[str]) -> set[
         if entry.is_read_route and entry.upstream_name in retired_upstream
     }
 # Releases whose exact evidence carries the app-tool transition (no
-# ha_get_addon) and held operational backup/lifecycle providers.
-# HAMCP-371: the reviewed capture ha-mcp-9.2.0.json lists ha_get_app and
-# ha_manage_app and no ha_get_addon; backup and lifecycle stay held on 9.2.0.
+# ha_get_addon). Their operational dispositions come from each registry row:
+# backup is held on all of them; lifecycle is held except where the row admits
+# it. HAMCP-371: the reviewed capture ha-mcp-9.2.0.json lists ha_get_app and
+# ha_manage_app and no ha_get_addon. HAMCP-401 Phase 1: 9.2.0 admits lifecycle
+# over those tools; its backup stays held.
 APP_TOOL_TRANSITION_VERSIONS = frozenset(
     {"8.4.1", "8.4.3", "8.5.0", "8.6.0", "9.1.0", "9.1.2", "9.2.0"}
+)
+# HAMCP-401: the reviewed entry and exact upstream tools each admitted
+# lifecycle probe must bind on a transition release. A release whose row
+# admits lifecycle without an entry here fails acceptance.
+ADMITTED_LIFECYCLE_PROBE_EXPECTATIONS = MappingProxyType(
+    {
+        "9.2.0": MappingProxyType(
+            {
+                "entry_id": "ha-mcp-v9.2.0-9de5bf6c",
+                "tools": MappingProxyType(
+                    {
+                        "controlled_reload": ("ha_reload_core",),
+                        "restart_addon": ("ha_get_app", "ha_manage_app"),
+                        "restart_home_assistant": ("ha_restart",),
+                    }
+                ),
+            }
+        ),
+    }
 )
 ACCEPTANCE_TIMEOUT_SECONDS = 120
 MAX_DIAGNOSTIC_ITEMS = 32
@@ -635,16 +656,23 @@ async def held_operational_provider_acceptance(
     fixture_stats_url: str,
     settings: Settings,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Exercise held providers and prove they cannot reach a tool call."""
+    """Exercise each operational provider as its registry row disposes it.
+
+    A held provider must refuse before any tool call. Where the row admits
+    lifecycle (HAMCP-401 Phase 1: 9.2.0), the lifecycle probe must instead
+    bind the reviewed contracts of the real image, again with no dispatch.
+    """
 
     dispositions = {
         surface: release.provider_disposition(surface)
         for surface in ("backup", "lifecycle")
     }
     require(
-        dispositions == {"backup": "held", "lifecycle": "held"},
+        dispositions["backup"] == "held"
+        and dispositions["lifecycle"] in {"held", "admitted"},
         "unreviewed operational provider authority was not held",
     )
+    lifecycle_held = dispositions["lifecycle"] == "held"
     before = fixture_stats(fixture_stats_url)
     backup_transport = _HeldDispositionRecordingTransport(
         endpoint,
@@ -675,50 +703,49 @@ async def held_operational_provider_acceptance(
     else:
         raise AcceptanceFailure("held backup provider became actionable")
 
-    lifecycle_transport = _HeldDispositionRecordingTransport(
-        endpoint,
-        timeout_seconds=30.0,
-        client_version=SERVER_VERSION,
-    )
-    lifecycle = ReviewedOperationalLifecycleProvider()
-    lifecycle.configure(
-        settings,
-        transport=lifecycle_transport,
-    )
-    lifecycle_dispatch_prepared = False
-
-    async def prepare_lifecycle_dispatch() -> None:
-        nonlocal lifecycle_dispatch_prepared
-        lifecycle_dispatch_prepared = True
-
-    try:
-        await lifecycle.restart_addon(
-            "abcdef12_ha_mcp",
-            before_dispatch=prepare_lifecycle_dispatch,
+    if lifecycle_held:
+        lifecycle_transport = _HeldDispositionRecordingTransport(
+            endpoint,
+            timeout_seconds=30.0,
+            client_version=SERVER_VERSION,
         )
-    except OperationalLifecycleProviderError as exc:
-        require(
-            exc.dispatched is False,
-            "held lifecycle provider did not fail before dispatch",
+        lifecycle = ReviewedOperationalLifecycleProvider()
+        lifecycle.configure(
+            settings,
+            transport=lifecycle_transport,
         )
+        lifecycle_dispatch_prepared = False
+
+        async def prepare_lifecycle_dispatch() -> None:
+            nonlocal lifecycle_dispatch_prepared
+            lifecycle_dispatch_prepared = True
+
+        try:
+            await lifecycle.restart_addon(
+                "abcdef12_ha_mcp",
+                before_dispatch=prepare_lifecycle_dispatch,
+            )
+        except OperationalLifecycleProviderError as exc:
+            require(
+                exc.dispatched is False,
+                "held lifecycle provider did not fail before dispatch",
+            )
+        else:
+            raise AcceptanceFailure("held lifecycle provider became actionable")
     else:
-        raise AcceptanceFailure("held lifecycle provider became actionable")
+        lifecycle_result = await admitted_lifecycle_probe_acceptance(
+            release,
+            endpoint=endpoint,
+            settings=settings,
+        )
 
     backup_health = backup.health_snapshot()
-    lifecycle_health = lifecycle.health_snapshot()
     require(
         backup_transport.validator_invoked
         and backup_transport.validator_refusal_category
-        == "upstream_version_mismatch"
+        == "provider_held"
         and backup_transport.validator_refusal_dispatched is False,
         "backup provider did not enforce the held release disposition",
-    )
-    require(
-        lifecycle_transport.validator_invoked
-        and lifecycle_transport.validator_refusal_category
-        == "upstream_version_mismatch"
-        and lifecycle_transport.validator_refusal_dispatched is False,
-        "lifecycle provider did not enforce the held release disposition",
     )
     require(
         backup_health.get("request_count") == 1
@@ -727,19 +754,37 @@ async def held_operational_provider_acceptance(
         and backup_dispatch_prepared is False,
         "held backup provider accounting changed",
     )
-    require(
-        (lifecycle_health.get("request_counts") or {}).get(
-            "restart_addon"
+    if lifecycle_held:
+        lifecycle_health = lifecycle.health_snapshot()
+        require(
+            lifecycle_transport.validator_invoked
+            and lifecycle_transport.validator_refusal_category
+            == "provider_held"
+            and lifecycle_transport.validator_refusal_dispatched is False,
+            "lifecycle provider did not enforce the held release disposition",
         )
-        == 1
-        and sum(
-            (lifecycle_health.get("dispatch_counts") or {}).values()
+        require(
+            (lifecycle_health.get("request_counts") or {}).get(
+                "restart_addon"
+            )
+            == 1
+            and sum(
+                (lifecycle_health.get("dispatch_counts") or {}).values()
+            )
+            == 0
+            and lifecycle_health.get("fallback_count") == 0
+            and lifecycle_dispatch_prepared is False,
+            "held lifecycle provider accounting changed",
         )
-        == 0
-        and lifecycle_health.get("fallback_count") == 0
-        and lifecycle_dispatch_prepared is False,
-        "held lifecycle provider accounting changed",
-    )
+        lifecycle_result = {
+            "status": "quarantined",
+            "provider_disposition": dispositions["lifecycle"],
+            "provider_attempt_count": 1,
+            "provider_dispatch_count": sum(
+                (lifecycle_health.get("dispatch_counts") or {}).values()
+            ),
+            "fallback_count": lifecycle_health.get("fallback_count"),
+        }
     after = fixture_stats(fixture_stats_url)
     require(
         before.get("rest_reads") == after.get("rest_reads")
@@ -761,16 +806,89 @@ async def held_operational_provider_acceptance(
             ),
             "fallback_count": backup_health.get("fallback_count"),
         },
-        {
-            "status": "quarantined",
-            "provider_disposition": dispositions["lifecycle"],
-            "provider_attempt_count": 1,
-            "provider_dispatch_count": sum(
-                (lifecycle_health.get("dispatch_counts") or {}).values()
-            ),
-            "fallback_count": lifecycle_health.get("fallback_count"),
-        },
+        lifecycle_result,
     )
+
+
+async def admitted_lifecycle_probe_acceptance(
+    release: Any,
+    *,
+    endpoint: str,
+    settings: Settings,
+) -> dict[str, Any]:
+    """Probe each admitted lifecycle operation against the real image.
+
+    The probe only lists tools. Each operation must bind the reviewed entry
+    and the reviewed runtime contract fingerprint of each exact upstream
+    tool, with no request and no dispatch. The caller proves the fixture
+    counters are unchanged.
+    """
+
+    expectation = ADMITTED_LIFECYCLE_PROBE_EXPECTATIONS.get(release.version)
+    require(
+        expectation is not None
+        and release.entry_id == expectation["entry_id"],
+        "admitted lifecycle release has no reviewed probe expectation",
+    )
+    lifecycle = ReviewedOperationalLifecycleProvider()
+    lifecycle.configure(
+        settings,
+        transport=McpReadGatewayTransport(
+            endpoint,
+            timeout_seconds=30.0,
+            client_version=SERVER_VERSION,
+        ),
+    )
+    operations: dict[str, Any] = {}
+    for operation, tools in expectation["tools"].items():
+        try:
+            evidence = (await lifecycle.probe(operation)).as_dict()
+        except OperationalLifecycleProviderError as exc:
+            raise AcceptanceFailure(
+                f"admitted lifecycle probe {operation} failed: "
+                f"{exc.category}"
+            ) from None
+        bound = {
+            tool: release.tool_contracts_by_name[
+                tool
+            ].runtime_contract_fingerprint
+            for tool in tools
+        }
+        require(
+            evidence.get("compatibility_entry_id")
+            == expectation["entry_id"]
+            and evidence.get("server_version") == release.version
+            and evidence.get("tool_contract_fingerprints") == bound
+            and evidence.get("fallback_occurred") is False,
+            f"admitted lifecycle probe {operation} did not bind the "
+            "reviewed tool contracts",
+        )
+        operations[operation] = {
+            "compatibility_entry_id": evidence["compatibility_entry_id"],
+            "tool_contract_fingerprints": dict(bound),
+            "argument_constraints": evidence.get("argument_constraints"),
+        }
+    health = lifecycle.health_snapshot()
+    require(
+        health.get("probe_counts")
+        == {operation: 1 for operation in expectation["tools"]}
+        and not health.get("request_counts")
+        and sum((health.get("dispatch_counts") or {}).values()) == 0
+        and health.get("fallback_count") == 0
+        and health.get("selected_compatibility_entry_id")
+        == expectation["entry_id"],
+        "admitted lifecycle probe accounting changed",
+    )
+    return {
+        "status": "admitted",
+        "provider_disposition": "admitted",
+        "probe_only": True,
+        "compatibility_entry_id": expectation["entry_id"],
+        "operations": operations,
+        "provider_attempt_count": 0,
+        "provider_dispatch_count": 0,
+        "fallback_count": health.get("fallback_count"),
+    }
 
 
 DELEGATED_READ_CALLS = {

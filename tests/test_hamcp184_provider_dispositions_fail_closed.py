@@ -83,8 +83,13 @@ EFFECTIVE_BEFORE = {
 # admits 9.1.0 at 8.5.0 parity: backup and lifecycle stay held, exactly as on
 # 8.5.0 and 8.6.0. HAMCP-351 admits 9.1.2 at 9.1.0 parity. HAMCP-371: the S8
 # 9.2.0 registry row's provider_dispositions are read_gateway and dashboard
-# admitted, backup and lifecycle held.
-REVIEWED_AFTER_HAMCP184 = {"9.1.0": OPERATIONAL_HELD, "9.1.2": OPERATIONAL_HELD, "9.2.0": OPERATIONAL_HELD}
+# admitted, backup and lifecycle held. HAMCP-401 Phase 1 admits 9.2.0
+# lifecycle; 9.2.0 backup stays held until HAMCP-381.
+REVIEWED_AFTER_HAMCP184 = {
+    "9.1.0": OPERATIONAL_HELD,
+    "9.1.2": OPERATIONAL_HELD,
+    "9.2.0": {**OPERATIONAL_HELD, "lifecycle": "admitted"},
+}
 # HAMCP-184 effective dispositions: identical to EFFECTIVE_BEFORE except that
 # 8.2.0 backup and lifecycle become held, plus the later reviewed entries.
 EFFECTIVE_AFTER = {
@@ -266,7 +271,7 @@ class ProviderGateRefusalTests(unittest.TestCase):
         ):
             with self.assertRaises(OperationalBackupProviderError) as raised:
                 provider._validate_catalog(catalog)
-        self.assertEqual(raised.exception.category, "upstream_version_mismatch")
+        self.assertEqual(raised.exception.category, "provider_held")
         self.assertFalse(raised.exception.dispatched)
         # The unmodified explicit entry passes the disposition gate and fails
         # later only on the (empty) synthetic tool catalog.
@@ -288,6 +293,9 @@ def _catalog(version: str) -> McpReadCatalog:
 class HeldLegacyOperationalRefusalTests(unittest.TestCase):
     """8.2.0 backup/lifecycle are held: both providers refuse before dispatch.
 
+    HAMCP-400: a held disposition of a reviewed release is ``provider_held``;
+    ``upstream_version_mismatch`` is kept for an unknown version.
+
     8.1.0 (admitted, capability-specific review evidence) is the control: its
     disposition gate passes and validation fails later only on the empty
     synthetic tool catalog.
@@ -296,7 +304,7 @@ class HeldLegacyOperationalRefusalTests(unittest.TestCase):
     def test_backup_provider_refuses_8_2_0_before_dispatch(self):
         with self.assertRaises(OperationalBackupProviderError) as raised:
             ReviewedOperationalBackupProvider()._validate_catalog(_catalog(LEGACY_OPERATIONAL_HELD))
-        self.assertEqual(raised.exception.category, "upstream_version_mismatch")
+        self.assertEqual(raised.exception.category, "provider_held")
         self.assertFalse(raised.exception.dispatched)
         with self.assertRaises(OperationalBackupProviderError) as control:
             ReviewedOperationalBackupProvider()._validate_catalog(_catalog("8.1.0"))
@@ -312,7 +320,7 @@ class HeldLegacyOperationalRefusalTests(unittest.TestCase):
                     ReviewedOperationalLifecycleProvider()._validate_catalog(
                         _catalog(LEGACY_OPERATIONAL_HELD), required, operation=operation
                     )
-                self.assertEqual(raised.exception.category, "upstream_version_mismatch")
+                self.assertEqual(raised.exception.category, "provider_held")
                 self.assertFalse(raised.exception.dispatched)
         with self.assertRaises(OperationalLifecycleProviderError) as control:
             ReviewedOperationalLifecycleProvider()._validate_catalog(

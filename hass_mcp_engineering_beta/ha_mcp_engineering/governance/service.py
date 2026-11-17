@@ -13612,6 +13612,7 @@ class ChangeGovernanceService:
             return ErrorCode.BACKUP_DISPATCH_INDETERMINATE
         if not dispatched and category in {
             "catalog_mismatch",
+            "provider_held",
             "reviewed_contract_mismatch",
             "server_identity_mismatch",
             "upstream_version_mismatch",
@@ -13649,6 +13650,7 @@ class ChangeGovernanceService:
             return ErrorCode.OPERATIONAL_DISPATCH_INDETERMINATE
         if category in {
             "catalog_mismatch",
+            "provider_held",
             "reviewed_contract_mismatch",
             "server_identity_mismatch",
             "upstream_version_mismatch",

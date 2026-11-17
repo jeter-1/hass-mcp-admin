@@ -658,14 +658,14 @@ async def _operational_quarantine_acceptance(
     require(
         backup_transport.validator_invoked
         and backup_transport.validator_refusal_category
-        == "upstream_version_mismatch"
+        == "provider_held"
         and backup_transport.validator_refusal_dispatched is False,
         "backup provider did not enforce the held release disposition",
     )
     require(
         lifecycle_transport.validator_invoked
         and lifecycle_transport.validator_refusal_category
-        == "upstream_version_mismatch"
+        == "provider_held"
         and lifecycle_transport.validator_refusal_dispatched is False,
         "lifecycle provider did not enforce the held release disposition",
     )
