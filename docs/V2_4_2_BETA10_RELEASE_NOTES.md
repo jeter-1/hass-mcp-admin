@@ -43,9 +43,20 @@ that has not landed is not part of this release.
     `replaced_rollback_plan_id` and `replaced_rollback_plan_status`.
   - No persisted format, public input schema or tool registration changes.
 
+- **HAMCP-410 (E042)** (#446, reviewed head fe93a18b, merged as
+  bcf42e52). ha-mcp 9.2.0 key-set maps.
+  - A bulk `ha_get_state` read now returns `states` keyed by entity ID.
+    Before the fix the keys were withheld, so `states` came back `{}`
+    while `metadata.completeness` read `complete`.
+  - `ha_get_entity_exposure` list mode now returns `exposed_entities`
+    keyed by entity ID, with each assistant flag.
+  - If withholding empties every row of a non-empty collection, the read
+    carries the `engineering_notes` entry `COLLECTION_WITHHELD` and is
+    `partial`. An emptied collection no longer reads as complete.
+  - No persisted format, public input schema or tool registration changes.
+
 Not yet landed (no claim is made about their behavior):
 - HAMCP-401 Phase 1, with HAMCP-400 (#445);
-- HAMCP-410 (#446);
 - HAMCP-411, HAMCP-412, HAMCP-413, HAMCP-408, HAMCP-409 and HAMCP-414
   (#447);
 - the optional HAMCP-417 and HAMCP-419.

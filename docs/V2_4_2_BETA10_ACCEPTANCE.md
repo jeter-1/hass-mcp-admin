@@ -44,6 +44,7 @@ final release pull request binds their evidence.
 | --- | --- | --- |
 | HAMCP-401 Phase 1, with HAMCP-400 | governed reload, app restart and Home Assistant restart on ha-mcp 9.2.0; the `provider_held` refusal category | in progress on its branch; not landed; evidence pending |
 | HAMCP-415 / HAMCP-416 | plans survive an identical Core restart (E043); terminal rollback plans are replanned (E044) | landed: #448, reviewed head 5a39a919, merged as 7aa5e0cf; evidence bound by the final release pull request |
+| HAMCP-410 | ha-mcp 9.2.0 key-set maps for bulk `ha_get_state` and exposure listings; emptied collections read `partial` (E042) | landed: #446, reviewed head fe93a18b, merged as bcf42e52; evidence bound by the final release pull request |
 
 ## 1. Source and offline acceptance
 
