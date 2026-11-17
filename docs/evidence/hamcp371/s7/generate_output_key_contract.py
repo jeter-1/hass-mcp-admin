@@ -149,7 +149,7 @@ READS = {
     'ha_get_entity': dict(n=14, upstream='ha_get_entity', named=(f'{E}:103-110', (
         'entity_entry', 'entity_entries', 'errors')), open=('options',), maps={'categories': 1}),
     'ha_get_entity_exposure': dict(n=15, upstream='ha_get_entity_exposure', named=(f'{E}:122-131', (
-        'exposed_to', 'entity_id', 'exposed_entities')), maps={'exposed_to': 1}),
+        'exposed_to', 'entity_id', 'exposed_entities')), maps={'exposed_to': 1, 'exposed_entities': 2}),
     'ha_get_history': dict(n=16, upstream='ha_get_history', named=(f'{H}:37-52,206-224,243-245,331-332,421,498-505', (
         'data', 'metadata', 'warnings', 'success', 'source', 'entities', 'period', 'query_params',
         'period_type', 'time_range', 'statistic_types', 'entity_id', 'states', 'statistics',
@@ -171,7 +171,8 @@ READS = {
     'ha_get_skill_guide': dict(n=18, upstream='ha_get_skill_guide', kind='rebuild', rebuild=(f'{E}:157-179', (
         'skill_content_hint', 'success', 'skill', 'file', 'uri', 'content')), drops=('how_to_use',)),
     'ha_get_state': dict(n=19, upstream='ha_get_state', named=(f'{E}:189-205', (
-        'data', 'metadata', 'states', 'success', 'count', 'errors', 'partial', 'attributes'))),
+        'data', 'metadata', 'states', 'success', 'count', 'errors', 'partial', 'attributes')),
+        maps={'states': 1}),
     'ha_get_system_health': dict(n=20, upstream='ha_get_system_health', kind='rebuild', rebuild=(f'{PL}:422-610', (
         '_PLATFORM_KEYS', 'SECTIONS', '_REPAIR_ISSUE', '_ZHA_DEVICE', '_ZWAVE_CONTROLLER', '_ZWAVE_NODE',
         '_BORDER_ROUTER', '_MATTER', '_DEAD_ITEM')), closed_rebuild=True, qualify=('health_info', 'data', 'info'),
@@ -211,7 +212,9 @@ READS = {
 }
 PROPOSALS = (
     'map containers (dict keys are data, values are closed rows): services, fields, domain_stats, area_analysis, '
-    'states_summary, domains (overview), exposed_to, categories, by_type, data (system health)',
+    'states_summary, domains (overview), exposed_to, categories, by_type, data (system health); '
+    'HAMCP-410 (HAAC-E042): states (ha_get_state, keyed by entity_id, search/state.py:50-91 at 51e3aac7) and '
+    'exposed_entities (two levels, entity_id then assistant, tools_voice_assistant.py:146-193)',
     'extra open containers: capabilities and options (automation entity, entity registry), result (template), '
     'info (system health), example and default (service fields)',
     'S10 E1-R (2026-11-15 14:45 ruling): a key named by the shipped 9.1 projections but not observed in a 9.1.2 receipt '
