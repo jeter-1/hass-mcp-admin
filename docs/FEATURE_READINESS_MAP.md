@@ -51,8 +51,9 @@ These apply to every row and are not repeated:
 - `ha-mcp` 8.6.0 is on HOLD (HAMCP-156). The YAML reader (`ha_config_get_yaml`)
   is admitted on 8.4.3 and 8.5.0 only (RCG-017), and reads `configuration.yaml`
   only: package files and `!include` targets are refused (RCG-016). The
-  lifecycle and backup providers are admitted on 7.14.1 to 8.1.1 only
-  (RCG-082, RCG-085, RCG-091).
+  lifecycle and backup providers are admitted on 7.14.1 to 8.1.1; on 9.2.0
+  lifecycle is admitted and backup stays held (HAMCP-401; RCG-082, RCG-085,
+  RCG-091).
 
 ## Rows
 
@@ -314,9 +315,10 @@ These apply to every row and are not repeated:
 - **Data it must read:** the add-on inventory (`ha_get_app`, 8.4.1 and
   later) and its own add-on identity. Both exist.
 - **Write commands:** add-on restart through the lifecycle provider. It is
-  admitted on ha-mcp 7.14.1 to 8.1.1 and held on 8.2.0 and later; the
-  provider hard-codes pre-8.4.1 tool names (RCG-082). This is a Supervisor
-  matter; it needs no Core signing.
+  admitted on ha-mcp 7.14.1 to 8.1.1 and on 9.2.0, and held on 8.2.0 to
+  9.1.2. Each admitted release's reviewed contract row names its add-on
+  tools; 9.2.0 uses `ha_get_app` and `ha_manage_app` (HAMCP-401, RCG-082).
+  This is a Supervisor matter; it needs no Core signing.
 - **Readback:** add-on state after restart.
 - **Blockers:** Deferred by owner; reopened only by an explicit owner
   decision.
