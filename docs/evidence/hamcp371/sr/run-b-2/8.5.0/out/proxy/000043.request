@@ -1,0 +1,1 @@
+{"method":"tools/call","params":{"name":"ha_config_list_helpers","arguments":{"helper_type":"input_boolean","limit":5}},"jsonrpc":"2.0","id":2}

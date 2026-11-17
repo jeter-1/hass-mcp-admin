@@ -1,0 +1,149 @@
+{
+ "arguments_built_by": "adapter code, policy 9.1.2",
+ "calls_format_version": 1,
+ "exchange": {
+  "body_bytes": 1644,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":101,\"result\":{\"content\":[{\"text\":\"{\\\"data\\\":{\\\"entity_id\\\":\\\"input_boolean.hamcp371_helper\\\",\\\"state\\\":\\\"on\\\",\\\"attributes\\\":{\\\"editable\\\":true,\\\"friendly_name\\\":\\\"HAMCP371 helper\\\"},\\\"last_changed\\\":\\\"2026-11-14T23:03:12.744330-06:00\\\",\\\"last_reported\\\":\\\"2026-11-14T23:03:12.744330-06:00\\\",\\\"last_updated\\\":\\\"2026-11-14T23:03:12.744330-06:00\\\",\\\"context\\\":{\\\"id\\\":\\\"01M7ESD2B75W5ZFSNYN9FJJF4F\\\",\\\"parent_id\\\":null,\\\"user_id\\\":\\\"a3d47721d2484eb2a8034a420935c29c\\\"}},\\\"metadata\\\":{\\\"home_assistant_timezone\\\":\\\"America/Chicago\\\",\\\"timestamp_format\\\":\\\"ISO 8601 (America/Chicago)\\\",\\\"note\\\":\\\"Per-record timestamp fields (last_changed, last_updated, last_reported, when, last_triggered) have been converted to America/Chicago local time. Query-window boundary fields (period, start_time, end_time) remain in UTC.\\\"}}\",\"type\":\"text\"}],\"isError\":false,\"structuredContent\":{\"data\":{\"entity_id\":\"input_boolean.hamcp371_helper\",\"state\":\"on\",\"attributes\":{\"editable\":true,\"friendly_name\":\"HAMCP371 helper\"},\"last_changed\":\"2026-11-14T23:03:12.744330-06:00\",\"last_reported\":\"2026-11-14T23:03:12.744330-06:00\",\"last_updated\":\"2026-11-14T23:03:12.744330-06:00\",\"context\":{\"id\":\"01M7ESD2B75W5ZFSNYN9FJJF4F\",\"parent_id\":null,\"user_id\":\"a3d47721d2484eb2a8034a420935c29c\"}},\"metadata\":{\"home_assistant_timezone\":\"America/Chicago\",\"timestamp_format\":\"ISO 8601 (America/Chicago)\",\"note\":\"Per-record timestamp fields (last_changed, last_updated, last_reported, when, last_triggered) have been converted to America/Chicago local time. Query-window boundary fields (period, start_time, end_time) remain in UTC.\"}}}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 101,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\"data\":{\"entity_id\":\"input_boolean.hamcp371_helper\",\"state\":\"on\",\"attributes\":{\"editable\":true,\"friendly_name\":\"HAMCP371 helper\"},\"last_changed\":\"2026-11-14T23:03:12.744330-06:00\",\"last_reported\":\"2026-11-14T23:03:12.744330-06:00\",\"last_updated\":\"2026-11-14T23:03:12.744330-06:00\",\"context\":{\"id\":\"01M7ESD2B75W5ZFSNYN9FJJF4F\",\"parent_id\":null,\"user_id\":\"a3d47721d2484eb2a8034a420935c29c\"}},\"metadata\":{\"home_assistant_timezone\":\"America/Chicago\",\"timestamp_format\":\"ISO 8601 (America/Chicago)\",\"note\":\"Per-record timestamp fields (last_changed, last_updated, last_reported, when, last_triggered) have been converted to America/Chicago local time. Query-window boundary fields (period, start_time, end_time) remain in UTC.\"}}",
+       "type": "text"
+      }
+     ],
+     "isError": false,
+     "structuredContent": {
+      "data": {
+       "attributes": {
+        "editable": true,
+        "friendly_name": "HAMCP371 helper"
+       },
+       "context": {
+        "id": "01M7ESD2B75W5ZFSNYN9FJJF4F",
+        "parent_id": null,
+        "user_id": "a3d47721d2484eb2a8034a420935c29c"
+       },
+       "entity_id": "input_boolean.hamcp371_helper",
+       "last_changed": "2026-11-14T23:03:12.744330-06:00",
+       "last_reported": "2026-11-14T23:03:12.744330-06:00",
+       "last_updated": "2026-11-14T23:03:12.744330-06:00",
+       "state": "on"
+      },
+      "metadata": {
+       "home_assistant_timezone": "America/Chicago",
+       "note": "Per-record timestamp fields (last_changed, last_updated, last_reported, when, last_triggered) have been converted to America/Chicago local time. Query-window boundary fields (period, start_time, end_time) remain in UTC.",
+       "timestamp_format": "ISO 8601 (America/Chicago)"
+      }
+     }
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 101,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "entity_id": "input_boolean.hamcp371_helper"
+     },
+     "name": "ha_get_state"
+    }
+   },
+   "method": "POST",
+   "path": "/mcp"
+  },
+  "response": {
+   "id": 101,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\"data\":{\"entity_id\":\"input_boolean.hamcp371_helper\",\"state\":\"on\",\"attributes\":{\"editable\":true,\"friendly_name\":\"HAMCP371 helper\"},\"last_changed\":\"2026-11-14T23:03:12.744330-06:00\",\"last_reported\":\"2026-11-14T23:03:12.744330-06:00\",\"last_updated\":\"2026-11-14T23:03:12.744330-06:00\",\"context\":{\"id\":\"01M7ESD2B75W5ZFSNYN9FJJF4F\",\"parent_id\":null,\"user_id\":\"a3d47721d2484eb2a8034a420935c29c\"}},\"metadata\":{\"home_assistant_timezone\":\"America/Chicago\",\"timestamp_format\":\"ISO 8601 (America/Chicago)\",\"note\":\"Per-record timestamp fields (last_changed, last_updated, last_reported, when, last_triggered) have been converted to America/Chicago local time. Query-window boundary fields (period, start_time, end_time) remain in UTC.\"}}",
+      "type": "text"
+     }
+    ],
+    "isError": false,
+    "structuredContent": {
+     "data": {
+      "attributes": {
+       "editable": true,
+       "friendly_name": "HAMCP371 helper"
+      },
+      "context": {
+       "id": "01M7ESD2B75W5ZFSNYN9FJJF4F",
+       "parent_id": null,
+       "user_id": "a3d47721d2484eb2a8034a420935c29c"
+      },
+      "entity_id": "input_boolean.hamcp371_helper",
+      "last_changed": "2026-11-14T23:03:12.744330-06:00",
+      "last_reported": "2026-11-14T23:03:12.744330-06:00",
+      "last_updated": "2026-11-14T23:03:12.744330-06:00",
+      "state": "on"
+     },
+     "metadata": {
+      "home_assistant_timezone": "America/Chicago",
+      "note": "Per-record timestamp fields (last_changed, last_updated, last_reported, when, last_triggered) have been converted to America/Chicago local time. Query-window boundary fields (period, start_time, end_time) remain in UTC.",
+      "timestamp_format": "ISO 8601 (America/Chicago)"
+     }
+    }
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Sun, 15 Nov 2026 05:04:36 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null,
+ "group": "transport",
+ "id": "t-new-session",
+ "idle": false,
+ "kind": "public",
+ "new_session": true,
+ "public_arguments": {
+  "entity_id": "input_boolean.hamcp371_helper"
+ },
+ "public_tool": "ha_get_state",
+ "upstream_tool": "ha_get_state",
+ "wire_arguments": {
+  "entity_id": "input_boolean.hamcp371_helper"
+ }
+}

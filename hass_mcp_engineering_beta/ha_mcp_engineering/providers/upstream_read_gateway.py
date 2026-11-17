@@ -107,6 +107,8 @@ from .upstream_reads_8_6 import (
 )
 from .upstream_search_8_6 import search_catalog_view
 from . import upstream_reads_9_1 as reads_9_1
+from . import upstream_reads_9_2 as reads_9_2
+from .upstream_history_9_2 import HistoryTimeOffsetRequired
 from .upstream_device_projection import project_device_result
 from .upstream_blueprint import (
     is_blueprint_adapter, public_schema as blueprint_public_schema,
@@ -241,6 +243,7 @@ _FAILURE_CATEGORIES = frozenset(
         "schema_mismatch",
         "argument_validation",
         "invalid_request",
+        "history_time_offset_required",
         "capability_unavailable",
         "entity_not_found",
         "automation_not_found",
@@ -346,6 +349,11 @@ _UPSTREAM_DOMAIN_MESSAGES = {
     ("ha_get_entity", "entity_not_found"): (
         "The requested entity registry entry was not found."
     ),
+    ("ha_get_history", "history_time_offset_required"): (
+        "start_time and end_time need a full date and time with an explicit "
+        "UTC offset, for example 2026-11-10T08:00:00-06:00 or "
+        "2026-11-10T14:00:00Z."
+    ),
     ("ha_get_integration", "resource_not_found"): (
         "The requested config entry was not found in the reviewed listing."
     ),
@@ -379,10 +387,27 @@ _YAML_RETRYABLE_CODES = frozenset(
 )
 
 
+def _reads(entry):
+    """The compiled 9.x read-adapter module for this policy entry's release.
+
+    HAMCP-371: the 9.2 module for an entry naming the 9.2.0 adapter token; the
+    9.1 module otherwise, which also keeps its existing pass-through for every
+    entry that names no 9.x adapter. An entry naming both is refused (the
+    policy loader already refuses it with policy_uncompiled_read_adapter).
+    """
+
+    named_9_2 = reads_9_2.names_adapter(entry)
+    if named_9_2 is None:
+        return reads_9_1
+    if reads_9_1.names_adapter(entry) is not None:
+        raise ValueError("read_adapter_release_ambiguous")
+    return reads_9_2
+
+
 def _public_read_schema(entry, observed):
     if is_yaml_adapter(entry):
         return deepcopy(yaml_reader.PUBLIC_SCHEMA)
-    schema = reads_9_1.public_schema(entry, public_schema_8_6(
+    schema = _reads(entry).public_schema(entry, public_schema_8_6(
         entry,
         platform_public_schema(entry, blueprint_public_schema(entry, observed)),
     ))
@@ -1366,6 +1391,7 @@ class UpstreamReadGateway:
             if self._admission_validator is not None:
                 self._admission_validator(catalog)
             selected_release = search_catalog_view(selected_release, catalog.tools)
+            selected_release = reads_9_2.search_catalog_view(selected_release, catalog.tools)
             if selected_release is not None:
                 selected_policy = selected_release.policy
             reviewed_contracts = (
@@ -3307,7 +3333,7 @@ class UpstreamReadGateway:
         if errors:
             raise _GatewayFailure("argument_validation", dispatched=False)
         try:
-            dispatch_arguments = reads_9_1.read_arguments(
+            dispatch_arguments = _reads(policy_entry).read_arguments(
                 policy_entry, read_arguments_8_6(policy_entry, arguments)
             )
             if is_blueprint_adapter(policy_entry):
@@ -3326,7 +3352,12 @@ class UpstreamReadGateway:
                 dispatch_arguments = yaml_reader.upstream_arguments(
                     yaml_reader.validate_arguments(arguments), entry=policy_entry
                 )
-        except reads_9_1.ReadTierUnavailable:
+        except HistoryTimeOffsetRequired:
+            # HAMCP-371 R1: a 9.2.0 time whose meaning changed (no offset).
+            raise _GatewayFailure(
+                "history_time_offset_required", dispatched=False
+            ) from None
+        except _reads(policy_entry).ReadTierUnavailable:
             # HAMCP-319 R4: a shipped 8.5 tier 9.1 cannot serve; never synthesized.
             raise _GatewayFailure(
                 "capability_unavailable", dispatched=False
@@ -3421,6 +3452,7 @@ class UpstreamReadGateway:
                     )
                 try:
                     live_release = search_catalog_view(live_release, catalog.tools)
+                    live_release = reads_9_2.search_catalog_view(live_release, catalog.tools)
                     if live_release is not None:
                         live_policy = live_release.policy
                     live_evaluation = self._validate_catalog(
@@ -4222,7 +4254,7 @@ class UpstreamReadGateway:
                 )
                 if is_blueprint_adapter(policy_entry):
                     try:
-                        validate_blueprint_result(payload, arguments)
+                        validate_blueprint_result(payload, arguments, policy_entry)
                     except ValueError:
                         raise _GatewayFailure("invalid_response", dispatched=True) from None
                 if is_platform_adapter(policy_entry):
@@ -4246,11 +4278,11 @@ class UpstreamReadGateway:
                         raise _GatewayFailure(
                             "invalid_response", dispatched=True
                         ) from None
-                if reads_9_1.is_adapter(policy_entry):
+                if _reads(policy_entry).is_adapter(policy_entry):
                     # HAMCP-319 section 7: compiled 9.1 projections back to the
                     # shipped 8.5 public result before the generic sanitizer.
                     try:
-                        payload = reads_9_1.project_result(
+                        payload = _reads(policy_entry).project_result(
                             policy_entry, payload, arguments
                         )
                     except ValueError:
@@ -4393,6 +4425,16 @@ class UpstreamReadGateway:
             if redaction is not None:
                 warnings.append(REDACTION_WARNING)
             warnings.extend(completeness_warnings)
+            # D6: the 9.2.0 ha_search descriptor the route pinned and the live
+            # catalog matched before dispatch, and the R-D6-3 budget warning.
+            search_variant = reads_9_2.search_variant_name(
+                policy_entry, mapping.runtime_contract_fingerprint
+            )
+            search_warning_codes = reads_9_2.search_warning_codes(
+                search_variant, arguments
+            )
+            if search_warning_codes:
+                warnings.append(reads_9_2.SEARCH_BUDGET_WARNING)
             if response_adapter is not None:
                 warnings.append(
                     "A reviewed Home Assistant 2026.8 composite-device "
@@ -4414,6 +4456,9 @@ class UpstreamReadGateway:
                 metadata["redaction"] = redaction
             if response_adapter is not None:
                 metadata["response_adapter"] = response_adapter
+            if search_variant is not None:
+                metadata["search_descriptor_variant"] = search_variant
+                metadata["warning_codes"] = list(search_warning_codes)
             success = SuccessResponse(
                 operation=exposed_name,
                 summary=GATEWAY_SUCCESS_SUMMARY,
@@ -6253,8 +6298,8 @@ def _compare_tool_contract(
         entry.argument_restrictions[0]
         if is_blueprint_adapter(entry) or is_platform_adapter(entry)
         else READ_ADAPTER_8_6
-        if is_8_6_read_adapter(entry) else reads_9_1.adapter_token(entry)
-        if reads_9_1.is_adapter(entry) else "ha_search_partial_v1"
+        if is_8_6_read_adapter(entry) else _reads(entry).adapter_token(entry)
+        if _reads(entry).is_adapter(entry) else "ha_search_partial_v1"
         if entry.upstream_name == "ha_search"
         else "bounded_opaque_read_v1"
     )
@@ -6680,7 +6725,9 @@ def _recommended_action(compatibility_status: str) -> str:
 
 
 def _public_failure(category: str) -> tuple[str, bool]:
-    if category in {"argument_validation", "invalid_request"}:
+    if category in {
+        "argument_validation", "invalid_request", "history_time_offset_required",
+    }:
         return "invalid_request", False
     if category == "capability_unavailable":
         return "unsupported_operation", False
@@ -7098,8 +7145,8 @@ def _upstream_completeness(
         return blueprint_completeness(payload)
     if is_platform_adapter(policy_entry):
         return platform_completeness(payload)
-    if reads_9_1.is_adapter(policy_entry):
-        partial, warnings = reads_9_1.completeness(policy_entry, payload)
+    if _reads(policy_entry).is_adapter(policy_entry):
+        partial, warnings = _reads(policy_entry).completeness(policy_entry, payload)
         if policy_entry.upstream_name != "ha_search" or partial:
             return partial, warnings
     if policy_entry.upstream_name != "ha_search":

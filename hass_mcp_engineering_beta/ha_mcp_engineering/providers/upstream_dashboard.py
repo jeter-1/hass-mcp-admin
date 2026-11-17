@@ -67,6 +67,7 @@ from .upstream_contracts import (
     decide_admission,
 )
 from .upstream_registry import UpstreamTrustRegistry
+from . import upstream_reads_9_2_dashboard as _dashboard_9_2
 
 
 PROVIDER_ID = "upstream_dashboard"
@@ -116,7 +117,7 @@ DASHBOARD_WRITE_DEPENDENCIES = (
 # HAMCP-319: releases on which the getter read path also requires the getter's
 # whole descriptor to equal its reviewed release runtime contract. Older
 # releases keep their previously reviewed read-path admission.
-EXACT_GETTER_RELEASES = frozenset({"8.5.0", "9.1.0", "9.1.2"})
+EXACT_GETTER_RELEASES = frozenset({"8.5.0", "9.1.0", "9.1.2", "9.2.0"})
 PROHIBITED_UPSTREAM_TOOLS = frozenset(
     {
         "ha_config_set_dashboard",
@@ -188,11 +189,12 @@ RESPONSE_ENVELOPE_RESERVE = 16_000
 # On these releases anything but ``stored_config: true`` never yields a
 # readable configuration, and no hash is derived first.
 # HAMCP-351: tools_config_dashboards.py is unchanged at 9.1.2 (bab615df).
-STORED_CONFIG_REQUIRED_RELEASES = frozenset({"9.1.0", "9.1.2"})
+# HAMCP-371 SB: and unchanged at 9.2.0 (51e3aac7, S8 source file list).
+STORED_CONFIG_REQUIRED_RELEASES = frozenset({"9.1.0", "9.1.2", "9.2.0"})
 # HAMCP-319 section 6.3 (F4): exact releases whose list mode is decoded here
 # and whose ``[]`` cannot prove absence (9.1.0 ``fetch_dashboards_list(...) or
 # []``). An empty inventory from them is reported as not complete.
-COLLAPSIBLE_EMPTY_LIST_RELEASES = frozenset({"9.1.0", "9.1.2"})
+COLLAPSIBLE_EMPTY_LIST_RELEASES = frozenset({"9.1.0", "9.1.2", "9.2.0"})
 # HAMCP-306: the members tools/dashboard.py get_dashboard_config wraps the
 # provider result in. The size estimate serializes this exact wrapper.
 CONFIGURATION_TOOL_OPERATION = "get_dashboard_config"
@@ -738,6 +740,12 @@ class UpstreamDashboardProvider:
             metadata["completeness"] = completeness
             if redactions.applied:
                 metadata["redaction"] = redactions.summary()
+            # HAMCP-371 N30: on ha-mcp 9.2.0 only, the default-withhold counts
+            # and the reviewed-warning rule (upstream_reads_9_2_dashboard).
+            if exchange.handshake.server_version in _dashboard_9_2.RELEASES:
+                warnings, completeness = _dashboard_9_2.apply(
+                    payload, data, metadata, warnings, completeness
+                )
             warnings = warnings[:20]
             # HAMCP-306: the check and the reported size are one measure, the
             # one the general response limit admits a response by.

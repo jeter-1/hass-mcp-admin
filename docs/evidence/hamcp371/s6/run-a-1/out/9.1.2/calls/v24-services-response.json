@@ -1,0 +1,457 @@
+{
+ "arguments_built_by": "adapter code, policy 9.1.2",
+ "calls_format_version": 1,
+ "exchange": {
+  "body_bytes": 4996,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":136,\"result\":{\"content\":[{\"text\":\"{\\\"success\\\":true,\\\"domains\\\":[\\\"calendar\\\"],\\\"services\\\":{\\\"calendar.create_event\\\":{\\\"name\\\":\\\"Create Event\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"calendar\\\",\\\"service\\\":\\\"create_event\\\",\\\"fields\\\":{\\\"summary\\\":{\\\"name\\\":\\\"Summary\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":true,\\\"type\\\":\\\"text\\\",\\\"example\\\":\\\"Department Party\\\",\\\"selector\\\":{\\\"text\\\":{\\\"multiline\\\":false,\\\"multiple\\\":false}}},\\\"description\\\":{\\\"name\\\":\\\"Description\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":false,\\\"type\\\":\\\"text\\\",\\\"example\\\":\\\"Meeting to provide technical review for 'Phoenix' design.\\\",\\\"selector\\\":{\\\"text\\\":{\\\"multiline\\\":false,\\\"multiple\\\":false}}},\\\"start_date_time\\\":{\\\"name\\\":\\\"Start Date Time\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":false,\\\"type\\\":\\\"datetime\\\",\\\"example\\\":\\\"2022-03-22 20:00:00\\\",\\\"selector\\\":{\\\"datetime\\\":{}}},\\\"end_date_time\\\":{\\\"name\\\":\\\"End Date Time\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":false,\\\"type\\\":\\\"datetime\\\",\\\"example\\\":\\\"2022-03-22 22:00:00\\\",\\\"selector\\\":{\\\"datetime\\\":{}}},\\\"start_date\\\":{\\\"name\\\":\\\"Start Date\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":false,\\\"type\\\":\\\"date\\\",\\\"example\\\":\\\"2022-03-22\\\",\\\"selector\\\":{\\\"date\\\":{}}},\\\"end_date\\\":{\\\"name\\\":\\\"End Date\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":false,\\\"type\\\":\\\"date\\\",\\\"example\\\":\\\"2022-03-23\\\",\\\"selector\\\":{\\\"date\\\":{}}},\\\"in\\\":{\\\"name\\\":\\\"In\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":false,\\\"type\\\":\\\"any\\\",\\\"example\\\":\\\"{\\\\\\\"days\\\\\\\": 2} or {\\\\\\\"weeks\\\\\\\": 2}\\\"},\\\"location\\\":{\\\"name\\\":\\\"Location\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":false,\\\"type\\\":\\\"text\\\",\\\"example\\\":\\\"Conference Room - F123, Bldg. 002\\\",\\\"selector\\\":{\\\"text\\\":{\\\"multiline\\\":false,\\\"multiple\\\":false}}}},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"calendar\\\"],\\\"supported_features\\\":[1]}]}},\\\"calendar.get_events\\\":{\\\"name\\\":\\\"Get Events\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"calendar\\\",\\\"service\\\":\\\"get_events\\\",\\\"fields\\\":{\\\"start_date_time\\\":{\\\"name\\\":\\\"Start Date Time\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":false,\\\"type\\\":\\\"datetime\\\",\\\"example\\\":\\\"2022-03-22 20:00:00\\\",\\\"selector\\\":{\\\"datetime\\\":{}}},\\\"end_date_time\\\":{\\\"name\\\":\\\"End Date Time\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":false,\\\"type\\\":\\\"datetime\\\",\\\"example\\\":\\\"2022-03-22 22:00:00\\\",\\\"selector\\\":{\\\"datetime\\\":{}}},\\\"duration\\\":{\\\"name\\\":\\\"Duration\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":false,\\\"type\\\":\\\"duration\\\",\\\"example\\\":null,\\\"selector\\\":{\\\"duration\\\":{\\\"enable_second\\\":true}}}},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"calendar\\\"]}]}}},\\\"total_count\\\":2,\\\"offset\\\":0,\\\"limit\\\":5,\\\"count\\\":2,\\\"has_more\\\":false,\\\"next_offset\\\":null,\\\"detail_level\\\":\\\"full\\\",\\\"filters_applied\\\":{\\\"domain\\\":\\\"calendar\\\",\\\"query\\\":null}}\",\"type\":\"text\"}],\"isError\":false,\"structuredContent\":{\"success\":true,\"domains\":[\"calendar\"],\"services\":{\"calendar.create_event\":{\"name\":\"Create Event\",\"description\":\"\",\"domain\":\"calendar\",\"service\":\"create_event\",\"fields\":{\"summary\":{\"name\":\"Summary\",\"description\":\"\",\"required\":true,\"type\":\"text\",\"example\":\"Department Party\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}}},\"description\":{\"name\":\"Description\",\"description\":\"\",\"required\":false,\"type\":\"text\",\"example\":\"Meeting to provide technical review for 'Phoenix' design.\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}}},\"start_date_time\":{\"name\":\"Start Date Time\",\"description\":\"\",\"required\":false,\"type\":\"datetime\",\"example\":\"2022-03-22 20:00:00\",\"selector\":{\"datetime\":{}}},\"end_date_time\":{\"name\":\"End Date Time\",\"description\":\"\",\"required\":false,\"type\":\"datetime\",\"example\":\"2022-03-22 22:00:00\",\"selector\":{\"datetime\":{}}},\"start_date\":{\"name\":\"Start Date\",\"description\":\"\",\"required\":false,\"type\":\"date\",\"example\":\"2022-03-22\",\"selector\":{\"date\":{}}},\"end_date\":{\"name\":\"End Date\",\"description\":\"\",\"required\":false,\"type\":\"date\",\"example\":\"2022-03-23\",\"selector\":{\"date\":{}}},\"in\":{\"name\":\"In\",\"description\":\"\",\"required\":false,\"type\":\"any\",\"example\":\"{\\\"days\\\": 2} or {\\\"weeks\\\": 2}\"},\"location\":{\"name\":\"Location\",\"description\":\"\",\"required\":false,\"type\":\"text\",\"example\":\"Conference Room - F123, Bldg. 002\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}}}},\"target\":{\"entity\":[{\"domain\":[\"calendar\"],\"supported_features\":[1]}]}},\"calendar.get_events\":{\"name\":\"Get Events\",\"description\":\"\",\"domain\":\"calendar\",\"service\":\"get_events\",\"fields\":{\"start_date_time\":{\"name\":\"Start Date Time\",\"description\":\"\",\"required\":false,\"type\":\"datetime\",\"example\":\"2022-03-22 20:00:00\",\"selector\":{\"datetime\":{}}},\"end_date_time\":{\"name\":\"End Date Time\",\"description\":\"\",\"required\":false,\"type\":\"datetime\",\"example\":\"2022-03-22 22:00:00\",\"selector\":{\"datetime\":{}}},\"duration\":{\"name\":\"Duration\",\"description\":\"\",\"required\":false,\"type\":\"duration\",\"example\":null,\"selector\":{\"duration\":{\"enable_second\":true}}}},\"target\":{\"entity\":[{\"domain\":[\"calendar\"]}]}}},\"total_count\":2,\"offset\":0,\"limit\":5,\"count\":2,\"has_more\":false,\"next_offset\":null,\"detail_level\":\"full\",\"filters_applied\":{\"domain\":\"calendar\",\"query\":null}}}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 136,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\"success\":true,\"domains\":[\"calendar\"],\"services\":{\"calendar.create_event\":{\"name\":\"Create Event\",\"description\":\"\",\"domain\":\"calendar\",\"service\":\"create_event\",\"fields\":{\"summary\":{\"name\":\"Summary\",\"description\":\"\",\"required\":true,\"type\":\"text\",\"example\":\"Department Party\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}}},\"description\":{\"name\":\"Description\",\"description\":\"\",\"required\":false,\"type\":\"text\",\"example\":\"Meeting to provide technical review for 'Phoenix' design.\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}}},\"start_date_time\":{\"name\":\"Start Date Time\",\"description\":\"\",\"required\":false,\"type\":\"datetime\",\"example\":\"2022-03-22 20:00:00\",\"selector\":{\"datetime\":{}}},\"end_date_time\":{\"name\":\"End Date Time\",\"description\":\"\",\"required\":false,\"type\":\"datetime\",\"example\":\"2022-03-22 22:00:00\",\"selector\":{\"datetime\":{}}},\"start_date\":{\"name\":\"Start Date\",\"description\":\"\",\"required\":false,\"type\":\"date\",\"example\":\"2022-03-22\",\"selector\":{\"date\":{}}},\"end_date\":{\"name\":\"End Date\",\"description\":\"\",\"required\":false,\"type\":\"date\",\"example\":\"2022-03-23\",\"selector\":{\"date\":{}}},\"in\":{\"name\":\"In\",\"description\":\"\",\"required\":false,\"type\":\"any\",\"example\":\"{\\\"days\\\": 2} or {\\\"weeks\\\": 2}\"},\"location\":{\"name\":\"Location\",\"description\":\"\",\"required\":false,\"type\":\"text\",\"example\":\"Conference Room - F123, Bldg. 002\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}}}},\"target\":{\"entity\":[{\"domain\":[\"calendar\"],\"supported_features\":[1]}]}},\"calendar.get_events\":{\"name\":\"Get Events\",\"description\":\"\",\"domain\":\"calendar\",\"service\":\"get_events\",\"fields\":{\"start_date_time\":{\"name\":\"Start Date Time\",\"description\":\"\",\"required\":false,\"type\":\"datetime\",\"example\":\"2022-03-22 20:00:00\",\"selector\":{\"datetime\":{}}},\"end_date_time\":{\"name\":\"End Date Time\",\"description\":\"\",\"required\":false,\"type\":\"datetime\",\"example\":\"2022-03-22 22:00:00\",\"selector\":{\"datetime\":{}}},\"duration\":{\"name\":\"Duration\",\"description\":\"\",\"required\":false,\"type\":\"duration\",\"example\":null,\"selector\":{\"duration\":{\"enable_second\":true}}}},\"target\":{\"entity\":[{\"domain\":[\"calendar\"]}]}}},\"total_count\":2,\"offset\":0,\"limit\":5,\"count\":2,\"has_more\":false,\"next_offset\":null,\"detail_level\":\"full\",\"filters_applied\":{\"domain\":\"calendar\",\"query\":null}}",
+       "type": "text"
+      }
+     ],
+     "isError": false,
+     "structuredContent": {
+      "count": 2,
+      "detail_level": "full",
+      "domains": [
+       "calendar"
+      ],
+      "filters_applied": {
+       "domain": "calendar",
+       "query": null
+      },
+      "has_more": false,
+      "limit": 5,
+      "next_offset": null,
+      "offset": 0,
+      "services": {
+       "calendar.create_event": {
+        "description": "",
+        "domain": "calendar",
+        "fields": {
+         "description": {
+          "description": "",
+          "example": "Meeting to provide technical review for 'Phoenix' design.",
+          "name": "Description",
+          "required": false,
+          "selector": {
+           "text": {
+            "multiline": false,
+            "multiple": false
+           }
+          },
+          "type": "text"
+         },
+         "end_date": {
+          "description": "",
+          "example": "2022-03-23",
+          "name": "End Date",
+          "required": false,
+          "selector": {
+           "date": {}
+          },
+          "type": "date"
+         },
+         "end_date_time": {
+          "description": "",
+          "example": "2022-03-22 22:00:00",
+          "name": "End Date Time",
+          "required": false,
+          "selector": {
+           "datetime": {}
+          },
+          "type": "datetime"
+         },
+         "in": {
+          "description": "",
+          "example": "{\"days\": 2} or {\"weeks\": 2}",
+          "name": "In",
+          "required": false,
+          "type": "any"
+         },
+         "location": {
+          "description": "",
+          "example": "Conference Room - F123, Bldg. 002",
+          "name": "Location",
+          "required": false,
+          "selector": {
+           "text": {
+            "multiline": false,
+            "multiple": false
+           }
+          },
+          "type": "text"
+         },
+         "start_date": {
+          "description": "",
+          "example": "2022-03-22",
+          "name": "Start Date",
+          "required": false,
+          "selector": {
+           "date": {}
+          },
+          "type": "date"
+         },
+         "start_date_time": {
+          "description": "",
+          "example": "2022-03-22 20:00:00",
+          "name": "Start Date Time",
+          "required": false,
+          "selector": {
+           "datetime": {}
+          },
+          "type": "datetime"
+         },
+         "summary": {
+          "description": "",
+          "example": "Department Party",
+          "name": "Summary",
+          "required": true,
+          "selector": {
+           "text": {
+            "multiline": false,
+            "multiple": false
+           }
+          },
+          "type": "text"
+         }
+        },
+        "name": "Create Event",
+        "service": "create_event",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "calendar"
+           ],
+           "supported_features": [
+            1
+           ]
+          }
+         ]
+        }
+       },
+       "calendar.get_events": {
+        "description": "",
+        "domain": "calendar",
+        "fields": {
+         "duration": {
+          "description": "",
+          "example": null,
+          "name": "Duration",
+          "required": false,
+          "selector": {
+           "duration": {
+            "enable_second": true
+           }
+          },
+          "type": "duration"
+         },
+         "end_date_time": {
+          "description": "",
+          "example": "2022-03-22 22:00:00",
+          "name": "End Date Time",
+          "required": false,
+          "selector": {
+           "datetime": {}
+          },
+          "type": "datetime"
+         },
+         "start_date_time": {
+          "description": "",
+          "example": "2022-03-22 20:00:00",
+          "name": "Start Date Time",
+          "required": false,
+          "selector": {
+           "datetime": {}
+          },
+          "type": "datetime"
+         }
+        },
+        "name": "Get Events",
+        "service": "get_events",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "calendar"
+           ]
+          }
+         ]
+        }
+       }
+      },
+      "success": true,
+      "total_count": 2
+     }
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 136,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "detail_level": "full",
+      "domain": "calendar",
+      "limit": 5
+     },
+     "name": "ha_list_services"
+    }
+   },
+   "method": "POST",
+   "path": "/mcp"
+  },
+  "response": {
+   "id": 136,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\"success\":true,\"domains\":[\"calendar\"],\"services\":{\"calendar.create_event\":{\"name\":\"Create Event\",\"description\":\"\",\"domain\":\"calendar\",\"service\":\"create_event\",\"fields\":{\"summary\":{\"name\":\"Summary\",\"description\":\"\",\"required\":true,\"type\":\"text\",\"example\":\"Department Party\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}}},\"description\":{\"name\":\"Description\",\"description\":\"\",\"required\":false,\"type\":\"text\",\"example\":\"Meeting to provide technical review for 'Phoenix' design.\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}}},\"start_date_time\":{\"name\":\"Start Date Time\",\"description\":\"\",\"required\":false,\"type\":\"datetime\",\"example\":\"2022-03-22 20:00:00\",\"selector\":{\"datetime\":{}}},\"end_date_time\":{\"name\":\"End Date Time\",\"description\":\"\",\"required\":false,\"type\":\"datetime\",\"example\":\"2022-03-22 22:00:00\",\"selector\":{\"datetime\":{}}},\"start_date\":{\"name\":\"Start Date\",\"description\":\"\",\"required\":false,\"type\":\"date\",\"example\":\"2022-03-22\",\"selector\":{\"date\":{}}},\"end_date\":{\"name\":\"End Date\",\"description\":\"\",\"required\":false,\"type\":\"date\",\"example\":\"2022-03-23\",\"selector\":{\"date\":{}}},\"in\":{\"name\":\"In\",\"description\":\"\",\"required\":false,\"type\":\"any\",\"example\":\"{\\\"days\\\": 2} or {\\\"weeks\\\": 2}\"},\"location\":{\"name\":\"Location\",\"description\":\"\",\"required\":false,\"type\":\"text\",\"example\":\"Conference Room - F123, Bldg. 002\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}}}},\"target\":{\"entity\":[{\"domain\":[\"calendar\"],\"supported_features\":[1]}]}},\"calendar.get_events\":{\"name\":\"Get Events\",\"description\":\"\",\"domain\":\"calendar\",\"service\":\"get_events\",\"fields\":{\"start_date_time\":{\"name\":\"Start Date Time\",\"description\":\"\",\"required\":false,\"type\":\"datetime\",\"example\":\"2022-03-22 20:00:00\",\"selector\":{\"datetime\":{}}},\"end_date_time\":{\"name\":\"End Date Time\",\"description\":\"\",\"required\":false,\"type\":\"datetime\",\"example\":\"2022-03-22 22:00:00\",\"selector\":{\"datetime\":{}}},\"duration\":{\"name\":\"Duration\",\"description\":\"\",\"required\":false,\"type\":\"duration\",\"example\":null,\"selector\":{\"duration\":{\"enable_second\":true}}}},\"target\":{\"entity\":[{\"domain\":[\"calendar\"]}]}}},\"total_count\":2,\"offset\":0,\"limit\":5,\"count\":2,\"has_more\":false,\"next_offset\":null,\"detail_level\":\"full\",\"filters_applied\":{\"domain\":\"calendar\",\"query\":null}}",
+      "type": "text"
+     }
+    ],
+    "isError": false,
+    "structuredContent": {
+     "count": 2,
+     "detail_level": "full",
+     "domains": [
+      "calendar"
+     ],
+     "filters_applied": {
+      "domain": "calendar",
+      "query": null
+     },
+     "has_more": false,
+     "limit": 5,
+     "next_offset": null,
+     "offset": 0,
+     "services": {
+      "calendar.create_event": {
+       "description": "",
+       "domain": "calendar",
+       "fields": {
+        "description": {
+         "description": "",
+         "example": "Meeting to provide technical review for 'Phoenix' design.",
+         "name": "Description",
+         "required": false,
+         "selector": {
+          "text": {
+           "multiline": false,
+           "multiple": false
+          }
+         },
+         "type": "text"
+        },
+        "end_date": {
+         "description": "",
+         "example": "2022-03-23",
+         "name": "End Date",
+         "required": false,
+         "selector": {
+          "date": {}
+         },
+         "type": "date"
+        },
+        "end_date_time": {
+         "description": "",
+         "example": "2022-03-22 22:00:00",
+         "name": "End Date Time",
+         "required": false,
+         "selector": {
+          "datetime": {}
+         },
+         "type": "datetime"
+        },
+        "in": {
+         "description": "",
+         "example": "{\"days\": 2} or {\"weeks\": 2}",
+         "name": "In",
+         "required": false,
+         "type": "any"
+        },
+        "location": {
+         "description": "",
+         "example": "Conference Room - F123, Bldg. 002",
+         "name": "Location",
+         "required": false,
+         "selector": {
+          "text": {
+           "multiline": false,
+           "multiple": false
+          }
+         },
+         "type": "text"
+        },
+        "start_date": {
+         "description": "",
+         "example": "2022-03-22",
+         "name": "Start Date",
+         "required": false,
+         "selector": {
+          "date": {}
+         },
+         "type": "date"
+        },
+        "start_date_time": {
+         "description": "",
+         "example": "2022-03-22 20:00:00",
+         "name": "Start Date Time",
+         "required": false,
+         "selector": {
+          "datetime": {}
+         },
+         "type": "datetime"
+        },
+        "summary": {
+         "description": "",
+         "example": "Department Party",
+         "name": "Summary",
+         "required": true,
+         "selector": {
+          "text": {
+           "multiline": false,
+           "multiple": false
+          }
+         },
+         "type": "text"
+        }
+       },
+       "name": "Create Event",
+       "service": "create_event",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "calendar"
+          ],
+          "supported_features": [
+           1
+          ]
+         }
+        ]
+       }
+      },
+      "calendar.get_events": {
+       "description": "",
+       "domain": "calendar",
+       "fields": {
+        "duration": {
+         "description": "",
+         "example": null,
+         "name": "Duration",
+         "required": false,
+         "selector": {
+          "duration": {
+           "enable_second": true
+          }
+         },
+         "type": "duration"
+        },
+        "end_date_time": {
+         "description": "",
+         "example": "2022-03-22 22:00:00",
+         "name": "End Date Time",
+         "required": false,
+         "selector": {
+          "datetime": {}
+         },
+         "type": "datetime"
+        },
+        "start_date_time": {
+         "description": "",
+         "example": "2022-03-22 20:00:00",
+         "name": "Start Date Time",
+         "required": false,
+         "selector": {
+          "datetime": {}
+         },
+         "type": "datetime"
+        }
+       },
+       "name": "Get Events",
+       "service": "get_events",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "calendar"
+          ]
+         }
+        ]
+       }
+      }
+     },
+     "success": true,
+     "total_count": 2
+    }
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Thu, 12 Nov 2026 06:22:13 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null,
+ "group": "variants",
+ "id": "v24-services-response",
+ "idle": false,
+ "kind": "public",
+ "new_session": false,
+ "public_arguments": {
+  "detail_level": "full",
+  "domain": "calendar",
+  "limit": 5
+ },
+ "public_tool": "ha_list_services",
+ "upstream_tool": "ha_list_services",
+ "wire_arguments": {
+  "detail_level": "full",
+  "domain": "calendar",
+  "limit": 5
+ }
+}

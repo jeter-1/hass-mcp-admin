@@ -1,0 +1,231 @@
+{
+ "arguments_built_by": "adapter code, policy 9.1.2",
+ "calls_format_version": 1,
+ "exchange": {
+  "body_bytes": 2380,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":120,\"result\":{\"content\":[{\"text\":\"{\\\"success\\\":true,\\\"health_info\\\":{\\\"type\\\":\\\"initial\\\",\\\"data\\\":{\\\"homeassistant\\\":{\\\"info\\\":{\\\"version\\\":\\\"core-2026.11.0\\\",\\\"installation_type\\\":\\\"Home Assistant Container\\\",\\\"dev\\\":false,\\\"hassio\\\":false,\\\"docker\\\":true,\\\"container_arch\\\":\\\"amd64\\\",\\\"user\\\":\\\"root\\\",\\\"virtualenv\\\":false,\\\"python_version\\\":\\\"3.14.10\\\",\\\"os_name\\\":\\\"Linux\\\",\\\"os_version\\\":\\\"6.12.116+deb13-amd64\\\",\\\"arch\\\":\\\"x86_64\\\",\\\"timezone\\\":\\\"America/Chicago\\\",\\\"config_dir\\\":\\\"/config\\\"}},\\\"lovelace\\\":{\\\"info\\\":{\\\"dashboards\\\":2,\\\"resources\\\":1,\\\"views\\\":0,\\\"mode\\\":\\\"storage\\\"},\\\"manage_url\\\":\\\"/config/lovelace\\\"},\\\"marketplace\\\":{\\\"info\\\":{\\\"disabled\\\":\\\"The Marketplace is not loaded\\\"},\\\"manage_url\\\":\\\"/marketplace\\\"},\\\"network\\\":{\\\"info\\\":{\\\"error\\\":{\\\"type\\\":\\\"failed\\\",\\\"error\\\":\\\"unknown\\\"}},\\\"manage_url\\\":\\\"/config/network\\\"},\\\"recorder\\\":{\\\"info\\\":{\\\"oldest_recorder_run\\\":{\\\"value\\\":\\\"2026-11-12T06:21:57.252584\\\",\\\"type\\\":\\\"date\\\"},\\\"current_recorder_run\\\":{\\\"value\\\":\\\"2026-11-12T06:23:45.768176+00:00\\\",\\\"type\\\":\\\"date\\\"},\\\"estimated_db_size\\\":\\\"0.27 MiB\\\",\\\"database_engine\\\":\\\"sqlite\\\",\\\"database_version\\\":\\\"3.53.4\\\"}}}},\\\"component_count\\\":2,\\\"message\\\":\\\"Retrieved health info for 2 components\\\"}\",\"type\":\"text\"}],\"isError\":false,\"structuredContent\":{\"success\":true,\"health_info\":{\"type\":\"initial\",\"data\":{\"homeassistant\":{\"info\":{\"version\":\"core-2026.11.0\",\"installation_type\":\"Home Assistant Container\",\"dev\":false,\"hassio\":false,\"docker\":true,\"container_arch\":\"amd64\",\"user\":\"root\",\"virtualenv\":false,\"python_version\":\"3.14.10\",\"os_name\":\"Linux\",\"os_version\":\"6.12.116+deb13-amd64\",\"arch\":\"x86_64\",\"timezone\":\"America/Chicago\",\"config_dir\":\"/config\"}},\"lovelace\":{\"info\":{\"dashboards\":2,\"resources\":1,\"views\":0,\"mode\":\"storage\"},\"manage_url\":\"/config/lovelace\"},\"marketplace\":{\"info\":{\"disabled\":\"The Marketplace is not loaded\"},\"manage_url\":\"/marketplace\"},\"network\":{\"info\":{\"error\":{\"type\":\"failed\",\"error\":\"unknown\"}},\"manage_url\":\"/config/network\"},\"recorder\":{\"info\":{\"oldest_recorder_run\":{\"value\":\"2026-11-12T06:21:57.252584\",\"type\":\"date\"},\"current_recorder_run\":{\"value\":\"2026-11-12T06:23:45.768176+00:00\",\"type\":\"date\"},\"estimated_db_size\":\"0.27 MiB\",\"database_engine\":\"sqlite\",\"database_version\":\"3.53.4\"}}}},\"component_count\":2,\"message\":\"Retrieved health info for 2 components\"}}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 120,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\"success\":true,\"health_info\":{\"type\":\"initial\",\"data\":{\"homeassistant\":{\"info\":{\"version\":\"core-2026.11.0\",\"installation_type\":\"Home Assistant Container\",\"dev\":false,\"hassio\":false,\"docker\":true,\"container_arch\":\"amd64\",\"user\":\"root\",\"virtualenv\":false,\"python_version\":\"3.14.10\",\"os_name\":\"Linux\",\"os_version\":\"6.12.116+deb13-amd64\",\"arch\":\"x86_64\",\"timezone\":\"America/Chicago\",\"config_dir\":\"/config\"}},\"lovelace\":{\"info\":{\"dashboards\":2,\"resources\":1,\"views\":0,\"mode\":\"storage\"},\"manage_url\":\"/config/lovelace\"},\"marketplace\":{\"info\":{\"disabled\":\"The Marketplace is not loaded\"},\"manage_url\":\"/marketplace\"},\"network\":{\"info\":{\"error\":{\"type\":\"failed\",\"error\":\"unknown\"}},\"manage_url\":\"/config/network\"},\"recorder\":{\"info\":{\"oldest_recorder_run\":{\"value\":\"2026-11-12T06:21:57.252584\",\"type\":\"date\"},\"current_recorder_run\":{\"value\":\"2026-11-12T06:23:45.768176+00:00\",\"type\":\"date\"},\"estimated_db_size\":\"0.27 MiB\",\"database_engine\":\"sqlite\",\"database_version\":\"3.53.4\"}}}},\"component_count\":2,\"message\":\"Retrieved health info for 2 components\"}",
+       "type": "text"
+      }
+     ],
+     "isError": false,
+     "structuredContent": {
+      "component_count": 2,
+      "health_info": {
+       "data": {
+        "homeassistant": {
+         "info": {
+          "arch": "x86_64",
+          "config_dir": "/config",
+          "container_arch": "amd64",
+          "dev": false,
+          "docker": true,
+          "hassio": false,
+          "installation_type": "Home Assistant Container",
+          "os_name": "Linux",
+          "os_version": "6.12.116+deb13-amd64",
+          "python_version": "3.14.10",
+          "timezone": "America/Chicago",
+          "user": "root",
+          "version": "core-2026.11.0",
+          "virtualenv": false
+         }
+        },
+        "lovelace": {
+         "info": {
+          "dashboards": 2,
+          "mode": "storage",
+          "resources": 1,
+          "views": 0
+         },
+         "manage_url": "/config/lovelace"
+        },
+        "marketplace": {
+         "info": {
+          "disabled": "The Marketplace is not loaded"
+         },
+         "manage_url": "/marketplace"
+        },
+        "network": {
+         "info": {
+          "error": {
+           "error": "unknown",
+           "type": "failed"
+          }
+         },
+         "manage_url": "/config/network"
+        },
+        "recorder": {
+         "info": {
+          "current_recorder_run": {
+           "type": "date",
+           "value": "2026-11-12T06:23:45.768176+00:00"
+          },
+          "database_engine": "sqlite",
+          "database_version": "3.53.4",
+          "estimated_db_size": "0.27 MiB",
+          "oldest_recorder_run": {
+           "type": "date",
+           "value": "2026-11-12T06:21:57.252584"
+          }
+         }
+        }
+       },
+       "type": "initial"
+      },
+      "message": "Retrieved health info for 2 components",
+      "success": true
+     }
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 120,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {},
+     "name": "ha_get_system_health"
+    }
+   },
+   "method": "POST",
+   "path": "/mcp"
+  },
+  "response": {
+   "id": 120,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\"success\":true,\"health_info\":{\"type\":\"initial\",\"data\":{\"homeassistant\":{\"info\":{\"version\":\"core-2026.11.0\",\"installation_type\":\"Home Assistant Container\",\"dev\":false,\"hassio\":false,\"docker\":true,\"container_arch\":\"amd64\",\"user\":\"root\",\"virtualenv\":false,\"python_version\":\"3.14.10\",\"os_name\":\"Linux\",\"os_version\":\"6.12.116+deb13-amd64\",\"arch\":\"x86_64\",\"timezone\":\"America/Chicago\",\"config_dir\":\"/config\"}},\"lovelace\":{\"info\":{\"dashboards\":2,\"resources\":1,\"views\":0,\"mode\":\"storage\"},\"manage_url\":\"/config/lovelace\"},\"marketplace\":{\"info\":{\"disabled\":\"The Marketplace is not loaded\"},\"manage_url\":\"/marketplace\"},\"network\":{\"info\":{\"error\":{\"type\":\"failed\",\"error\":\"unknown\"}},\"manage_url\":\"/config/network\"},\"recorder\":{\"info\":{\"oldest_recorder_run\":{\"value\":\"2026-11-12T06:21:57.252584\",\"type\":\"date\"},\"current_recorder_run\":{\"value\":\"2026-11-12T06:23:45.768176+00:00\",\"type\":\"date\"},\"estimated_db_size\":\"0.27 MiB\",\"database_engine\":\"sqlite\",\"database_version\":\"3.53.4\"}}}},\"component_count\":2,\"message\":\"Retrieved health info for 2 components\"}",
+      "type": "text"
+     }
+    ],
+    "isError": false,
+    "structuredContent": {
+     "component_count": 2,
+     "health_info": {
+      "data": {
+       "homeassistant": {
+        "info": {
+         "arch": "x86_64",
+         "config_dir": "/config",
+         "container_arch": "amd64",
+         "dev": false,
+         "docker": true,
+         "hassio": false,
+         "installation_type": "Home Assistant Container",
+         "os_name": "Linux",
+         "os_version": "6.12.116+deb13-amd64",
+         "python_version": "3.14.10",
+         "timezone": "America/Chicago",
+         "user": "root",
+         "version": "core-2026.11.0",
+         "virtualenv": false
+        }
+       },
+       "lovelace": {
+        "info": {
+         "dashboards": 2,
+         "mode": "storage",
+         "resources": 1,
+         "views": 0
+        },
+        "manage_url": "/config/lovelace"
+       },
+       "marketplace": {
+        "info": {
+         "disabled": "The Marketplace is not loaded"
+        },
+        "manage_url": "/marketplace"
+       },
+       "network": {
+        "info": {
+         "error": {
+          "error": "unknown",
+          "type": "failed"
+         }
+        },
+        "manage_url": "/config/network"
+       },
+       "recorder": {
+        "info": {
+         "current_recorder_run": {
+          "type": "date",
+          "value": "2026-11-12T06:23:45.768176+00:00"
+         },
+         "database_engine": "sqlite",
+         "database_version": "3.53.4",
+         "estimated_db_size": "0.27 MiB",
+         "oldest_recorder_run": {
+          "type": "date",
+          "value": "2026-11-12T06:21:57.252584"
+         }
+        }
+       }
+      },
+      "type": "initial"
+     },
+     "message": "Retrieved health info for 2 components",
+     "success": true
+    }
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Thu, 12 Nov 2026 06:23:55 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null,
+ "group": "reads",
+ "id": "r20-system-health",
+ "idle": false,
+ "kind": "public",
+ "new_session": false,
+ "public_arguments": {},
+ "public_tool": "ha_get_system_health",
+ "upstream_tool": "ha_get_system_health",
+ "wire_arguments": {}
+}

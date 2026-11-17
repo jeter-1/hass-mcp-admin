@@ -1,0 +1,12 @@
+run PASS harness 4a5ec6f9f3ae03cbf7d4358cdac391640a54c794 2026-11-15T09:46:41-06:00 to 2026-11-15T09:47:21-06:00
+control-standalone-9.1.2-fs-off: found {'tool_count': 77, 'raw': '7c8ee48bfedea7a992a04a3260757b66fe4734c65fd7e311f024733a52f7821d', 'strict': 'c8c44ff32d70724f275dcbbb027cc2ebba715a626d7098be0be563ff4dd8865a'}
+control-standalone-9.1.2-fs-off: HAMCP-351 standalone-fs-off-tools-response.json {'tool_count': 77, 'raw': '7c8ee48bfedea7a992a04a3260757b66fe4734c65fd7e311f024733a52f7821d', 'strict': 'c8c44ff32d70724f275dcbbb027cc2ebba715a626d7098be0be563ff4dd8865a'}
+control-standalone-9.1.2-fs-off: reproduces HAMCP-351 (fingerprints and result) True
+control-standalone-9.1.2-fs-on: found {'tool_count': 82, 'raw': '5f27a09ac608cfb5d2ac5c614a70c659f78eb03b67368c92ad5645c002b6ba68', 'strict': '0783e98b8a6563847ad61514e10db11d702d896e622753d9d6b71a6e282bd0b8'}
+control-standalone-9.1.2-fs-on: HAMCP-351 standalone-fs-on-tools-response.json {'tool_count': 82, 'raw': '5f27a09ac608cfb5d2ac5c614a70c659f78eb03b67368c92ad5645c002b6ba68', 'strict': '0783e98b8a6563847ad61514e10db11d702d896e622753d9d6b71a6e282bd0b8'}
+control-standalone-9.1.2-fs-on: reproduces HAMCP-351 (fingerprints and result) True
+standalone-9.2.0-fs-on: tools 82 capture sha256:8a4d3770f04159b2362308a4207230866dbcf1a1f3e3bb2c5076aeaae000efab two captures identical True
+app-9.2.0-fs-on: tools 82 capture sha256:8a4d3770f04159b2362308a4207230866dbcf1a1f3e3bb2c5076aeaae000efab two captures identical True
+App fs-on capture equals standalone fs-on capture (committed file) True
+tool differences {"standalone_9.2.0_fs_off_only": [], "standalone_9.2.0_fs_on_only": ["ha_config_get_yaml", "ha_delete_file", "ha_list_files", "ha_read_file", "ha_write_file"]}
+profiles-2 recheck PASS

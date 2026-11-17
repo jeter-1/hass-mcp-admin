@@ -1,0 +1,181 @@
+{
+ "arguments_built_by": "adapter code, policy 9.1.2",
+ "calls_format_version": 1,
+ "exchange": {
+  "body_bytes": 1482,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":144,\"result\":{\"content\":[{\"text\":\"{\\\"success\\\":true,\\\"entity_id\\\":\\\"input_boolean.hamcp371_helper\\\",\\\"entity_entry\\\":{\\\"entity_id\\\":\\\"input_boolean.hamcp371_helper\\\",\\\"name\\\":null,\\\"uses_device_name\\\":false,\\\"original_name\\\":\\\"HAMCP371 helper\\\",\\\"icon\\\":null,\\\"area_id\\\":\\\"hamcp371_area\\\",\\\"disabled_by\\\":null,\\\"hidden_by\\\":null,\\\"enabled\\\":true,\\\"hidden\\\":false,\\\"aliases\\\":[null],\\\"labels\\\":[\\\"hamcp371_label\\\"],\\\"categories\\\":{},\\\"device_class\\\":null,\\\"original_device_class\\\":null,\\\"options\\\":{\\\"conversation\\\":{\\\"should_expose\\\":true}},\\\"platform\\\":\\\"input_boolean\\\",\\\"device_id\\\":null,\\\"config_entry_id\\\":null,\\\"unique_id\\\":\\\"hamcp371_helper\\\",\\\"area\\\":\\\"HAMCP371 area\\\",\\\"floor\\\":\\\"HAMCP371 floor\\\",\\\"label_names\\\":[\\\"HAMCP371 label\\\"]}}\",\"type\":\"text\"}],\"isError\":false,\"structuredContent\":{\"success\":true,\"entity_id\":\"input_boolean.hamcp371_helper\",\"entity_entry\":{\"entity_id\":\"input_boolean.hamcp371_helper\",\"name\":null,\"uses_device_name\":false,\"original_name\":\"HAMCP371 helper\",\"icon\":null,\"area_id\":\"hamcp371_area\",\"disabled_by\":null,\"hidden_by\":null,\"enabled\":true,\"hidden\":false,\"aliases\":[null],\"labels\":[\"hamcp371_label\"],\"categories\":{},\"device_class\":null,\"original_device_class\":null,\"options\":{\"conversation\":{\"should_expose\":true}},\"platform\":\"input_boolean\",\"device_id\":null,\"config_entry_id\":null,\"unique_id\":\"hamcp371_helper\",\"area\":\"HAMCP371 area\",\"floor\":\"HAMCP371 floor\",\"label_names\":[\"HAMCP371 label\"]}}}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 144,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\"success\":true,\"entity_id\":\"input_boolean.hamcp371_helper\",\"entity_entry\":{\"entity_id\":\"input_boolean.hamcp371_helper\",\"name\":null,\"uses_device_name\":false,\"original_name\":\"HAMCP371 helper\",\"icon\":null,\"area_id\":\"hamcp371_area\",\"disabled_by\":null,\"hidden_by\":null,\"enabled\":true,\"hidden\":false,\"aliases\":[null],\"labels\":[\"hamcp371_label\"],\"categories\":{},\"device_class\":null,\"original_device_class\":null,\"options\":{\"conversation\":{\"should_expose\":true}},\"platform\":\"input_boolean\",\"device_id\":null,\"config_entry_id\":null,\"unique_id\":\"hamcp371_helper\",\"area\":\"HAMCP371 area\",\"floor\":\"HAMCP371 floor\",\"label_names\":[\"HAMCP371 label\"]}}",
+       "type": "text"
+      }
+     ],
+     "isError": false,
+     "structuredContent": {
+      "entity_entry": {
+       "aliases": [
+        null
+       ],
+       "area": "HAMCP371 area",
+       "area_id": "hamcp371_area",
+       "categories": {},
+       "config_entry_id": null,
+       "device_class": null,
+       "device_id": null,
+       "disabled_by": null,
+       "enabled": true,
+       "entity_id": "input_boolean.hamcp371_helper",
+       "floor": "HAMCP371 floor",
+       "hidden": false,
+       "hidden_by": null,
+       "icon": null,
+       "label_names": [
+        "HAMCP371 label"
+       ],
+       "labels": [
+        "hamcp371_label"
+       ],
+       "name": null,
+       "options": {
+        "conversation": {
+         "should_expose": true
+        }
+       },
+       "original_device_class": null,
+       "original_name": "HAMCP371 helper",
+       "platform": "input_boolean",
+       "unique_id": "hamcp371_helper",
+       "uses_device_name": false
+      },
+      "entity_id": "input_boolean.hamcp371_helper",
+      "success": true
+     }
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 144,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "entity_id": "input_boolean.hamcp371_helper"
+     },
+     "name": "ha_get_entity"
+    }
+   },
+   "method": "POST",
+   "path": "/mcp"
+  },
+  "response": {
+   "id": 144,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\"success\":true,\"entity_id\":\"input_boolean.hamcp371_helper\",\"entity_entry\":{\"entity_id\":\"input_boolean.hamcp371_helper\",\"name\":null,\"uses_device_name\":false,\"original_name\":\"HAMCP371 helper\",\"icon\":null,\"area_id\":\"hamcp371_area\",\"disabled_by\":null,\"hidden_by\":null,\"enabled\":true,\"hidden\":false,\"aliases\":[null],\"labels\":[\"hamcp371_label\"],\"categories\":{},\"device_class\":null,\"original_device_class\":null,\"options\":{\"conversation\":{\"should_expose\":true}},\"platform\":\"input_boolean\",\"device_id\":null,\"config_entry_id\":null,\"unique_id\":\"hamcp371_helper\",\"area\":\"HAMCP371 area\",\"floor\":\"HAMCP371 floor\",\"label_names\":[\"HAMCP371 label\"]}}",
+      "type": "text"
+     }
+    ],
+    "isError": false,
+    "structuredContent": {
+     "entity_entry": {
+      "aliases": [
+       null
+      ],
+      "area": "HAMCP371 area",
+      "area_id": "hamcp371_area",
+      "categories": {},
+      "config_entry_id": null,
+      "device_class": null,
+      "device_id": null,
+      "disabled_by": null,
+      "enabled": true,
+      "entity_id": "input_boolean.hamcp371_helper",
+      "floor": "HAMCP371 floor",
+      "hidden": false,
+      "hidden_by": null,
+      "icon": null,
+      "label_names": [
+       "HAMCP371 label"
+      ],
+      "labels": [
+       "hamcp371_label"
+      ],
+      "name": null,
+      "options": {
+       "conversation": {
+        "should_expose": true
+       }
+      },
+      "original_device_class": null,
+      "original_name": "HAMCP371 helper",
+      "platform": "input_boolean",
+      "unique_id": "hamcp371_helper",
+      "uses_device_name": false
+     },
+     "entity_id": "input_boolean.hamcp371_helper",
+     "success": true
+    }
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Sun, 15 Nov 2026 05:04:36 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null,
+ "group": "transport",
+ "id": "t-after-idle",
+ "idle": true,
+ "kind": "public",
+ "new_session": false,
+ "public_arguments": {
+  "entity_id": "input_boolean.hamcp371_helper"
+ },
+ "public_tool": "ha_get_entity",
+ "upstream_tool": "ha_get_entity",
+ "wire_arguments": {
+  "entity_id": "input_boolean.hamcp371_helper"
+ }
+}

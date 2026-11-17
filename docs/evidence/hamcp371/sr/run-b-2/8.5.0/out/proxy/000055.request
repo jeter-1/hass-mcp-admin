@@ -1,0 +1,1 @@
+{"method":"tools/call","params":{"name":"ha_manage_blueprints","arguments":{"action":"get","domain":"automation","path":"homeassistant/motion_light.yaml"}},"jsonrpc":"2.0","id":2}

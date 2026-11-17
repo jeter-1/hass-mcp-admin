@@ -1,0 +1,61 @@
+{
+ "binding": {
+  "bound_by": "committed S8 registry reads and provenance gate",
+  "image": "ghcr.io/homeassistant-ai/ha-mcp-addon-amd64@sha256:928c55d6ba38d0219058be2e0ae4ae36375eb3db7aad0cb21c5b573848ed9244",
+  "index_digest": "sha256:e0fd8903915be64f65744f7fa78d8d46432388159bc000ff0807079f494fe3ba",
+  "manifest_config_digest": "sha256:9f7fe819b23da647e54d1b354cd019d8b83381cbf71b5bf3a90c4db299216867",
+  "manifest_digest": "sha256:928c55d6ba38d0219058be2e0ae4ae36375eb3db7aad0cb21c5b573848ed9244",
+  "provenance_gate": "PASS",
+  "source_commit": "51e3aac788482a081807591cd5d58d07dc4e540b",
+  "version": "9.2.0"
+ },
+ "command": "pull",
+ "ended": "2026-11-15T08:23:11-06:00",
+ "host_after": {
+  "load_1m": 0.16943359375,
+  "memory_available_gb": 12.52,
+  "root_free_gb": 60.17,
+  "root_total_gb": 143.14
+ },
+ "host_before": {
+  "load_1m": 0.009765625,
+  "memory_available_gb": 12.56,
+  "root_free_gb": 60.36,
+  "root_total_gb": 143.14
+ },
+ "image_kind": "app",
+ "model": "hamcp371-upstream-catalog-capture-local-v1",
+ "notes": [
+  "Q7-b: amd64 App image by manifest digest, after the provenance gate"
+ ],
+ "platform": "linux/amd64",
+ "registry_authentication": "none (empty DOCKER_CONFIG)",
+ "result": "PASS",
+ "started": "2026-11-15T08:23:08-06:00",
+ "upstream_image": {
+  "architecture": "amd64",
+  "config_digest": "sha256:928c55d6ba38d0219058be2e0ae4ae36375eb3db7aad0cb21c5b573848ed9244",
+  "image": "ghcr.io/homeassistant-ai/ha-mcp-addon-amd64@sha256:928c55d6ba38d0219058be2e0ae4ae36375eb3db7aad0cb21c5b573848ed9244",
+  "image_defaults": {
+   "cmd": [
+    "python3",
+    "/start.py"
+   ],
+   "entrypoint": null,
+   "environment": [
+    "HA_MCP_BUILD_VERSION=9.2.0",
+    "LANG=C.UTF-8",
+    "PATH=/app/.venv/bin:/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+    "PYTHON_SHA256=de414a57119abef52784d8993e341d53aed635fc2b05c2607d9f98a2c5b72032",
+    "PYTHON_VERSION=3.14.10"
+   ],
+   "user": null
+  },
+  "labels": {
+   "io.hass.arch": "amd64",
+   "io.hass.type": "addon",
+   "io.hass.version": "9.2.0"
+  },
+  "size_bytes": 379812141
+ }
+}

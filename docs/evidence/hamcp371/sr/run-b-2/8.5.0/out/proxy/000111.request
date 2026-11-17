@@ -1,0 +1,1 @@
+{"method":"tools/call","params":{"name":"ha_get_integration","arguments":{"limit":200,"offset":0,"exact_match":true,"include_options":false}},"jsonrpc":"2.0","id":2}

@@ -1,0 +1,10 @@
+== admission for hamcp371-s5-inventory-3 (lane) in /home/josh/repos/hass-mcp-admin/.claude/worktrees/hamcp-371-ha-mcp-9-2-0
+time=2026-11-11 23:47:53 CST
+units:
+  evidence-hamcp377-478a3d95.service
+lanes(containers):
+
+stray:
+heavy_total=1 evidence=1 mem_avail_gb=11.1 load1=6.03 root_free_gb=49.3
+Running as unit: hamcp371-s5-inventory-3.service; invocation ID: e6c476d7d85a44f98e0432880c0edd34
+launched rc=0 cmd=/bin/bash -c python3\ -I\ -B\ scripts/core_read_replay_capture_local.py\ inventory\ --run-dir\ .artifacts/hamcp371-s5/inventory-3\ --launch-log\ .artifacts/hamcp371-s5/launches.jsonl\ --note\ \'third\ inventory\;\ inventory-2\ showed\ no\ hard-link\ members\,\ so\ the\ 72-distribution\ count\ of\ inventory-1\ stands\;\ this\ launch\ adds\ the\ declared\ requirements\ of\ the\ ha-mcp\ distribution\ \(harness\ change\ 68d87e10\,\ tracked\,\ with\ tests\)\;\ no\ container\ is\ started\'\ \>\ .artifacts/hamcp371-s5/inventory-3.log\ 2\>\&1

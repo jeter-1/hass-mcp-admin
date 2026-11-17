@@ -1,0 +1,2787 @@
+{
+ "arguments_built_by": "harness, sent as written",
+ "calls_format_version": 1,
+ "exchange": {
+  "body_bytes": 36672,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":143,\"result\":{\"content\":[{\"text\":\"{\\\"success\\\":true,\\\"domains\\\":[\\\"ai_task\\\",\\\"alarm_control_panel\\\",\\\"assist_satellite\\\",\\\"automation\\\",\\\"backup\\\",\\\"button\\\",\\\"calendar\\\",\\\"camera\\\",\\\"climate\\\",\\\"conversation\\\",\\\"counter\\\",\\\"cover\\\",\\\"date\\\",\\\"datetime\\\",\\\"device_tracker\\\",\\\"fan\\\",\\\"ffmpeg\\\",\\\"frontend\\\",\\\"group\\\",\\\"homeassistant\\\",\\\"humidifier\\\",\\\"image\\\",\\\"image_processing\\\",\\\"input_boolean\\\",\\\"input_button\\\",\\\"input_datetime\\\",\\\"input_number\\\",\\\"input_select\\\",\\\"input_text\\\",\\\"lawn_mower\\\",\\\"light\\\",\\\"lock\\\",\\\"logbook\\\",\\\"logger\\\",\\\"lovelace\\\",\\\"media_player\\\",\\\"notify\\\",\\\"number\\\",\\\"persistent_notification\\\",\\\"person\\\",\\\"recorder\\\",\\\"remote\\\",\\\"scene\\\",\\\"schedule\\\",\\\"script\\\",\\\"select\\\",\\\"shopping_list\\\",\\\"siren\\\",\\\"switch\\\",\\\"system_log\\\",\\\"template\\\",\\\"text\\\",\\\"time\\\",\\\"timer\\\",\\\"todo\\\",\\\"tts\\\",\\\"update\\\",\\\"vacuum\\\",\\\"valve\\\",\\\"water_heater\\\",\\\"weather\\\",\\\"zone\\\"],\\\"services\\\":{\\\"persistent_notification.create\\\":{\\\"name\\\":\\\"Create\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"persistent_notification\\\",\\\"service\\\":\\\"create\\\",\\\"fields\\\":{\\\"message\\\":{\\\"name\\\":\\\"Message\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":true,\\\"type\\\":\\\"text\\\",\\\"example\\\":\\\"Please check your configuration.yaml.\\\",\\\"selector\\\":{\\\"text\\\":{\\\"multiline\\\":false,\\\"multiple\\\":false}}},\\\"title\\\":{\\\"name\\\":\\\"Title\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":false,\\\"type\\\":\\\"text\\\",\\\"example\\\":\\\"Test notification\\\",\\\"selector\\\":{\\\"text\\\":{\\\"multiline\\\":false,\\\"multiple\\\":false}}},\\\"notification_id\\\":{\\\"name\\\":\\\"Notification Id\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":false,\\\"type\\\":\\\"text\\\",\\\"example\\\":1234,\\\"selector\\\":{\\\"text\\\":{\\\"multiline\\\":false,\\\"multiple\\\":false}}}}},\\\"persistent_notification.dismiss\\\":{\\\"name\\\":\\\"Dismiss\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"persistent_notification\\\",\\\"service\\\":\\\"dismiss\\\",\\\"fields\\\":{\\\"notification_id\\\":{\\\"name\\\":\\\"Notification Id\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":true,\\\"type\\\":\\\"text\\\",\\\"example\\\":1234,\\\"selector\\\":{\\\"text\\\":{\\\"multiline\\\":false,\\\"multiple\\\":false}}}}},\\\"persistent_notification.dismiss_all\\\":{\\\"name\\\":\\\"Dismiss All\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"persistent_notification\\\",\\\"service\\\":\\\"dismiss_all\\\",\\\"fields\\\":{}},\\\"homeassistant.save_persistent_states\\\":{\\\"name\\\":\\\"Save Persistent States\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"homeassistant\\\",\\\"service\\\":\\\"save_persistent_states\\\",\\\"fields\\\":{}},\\\"homeassistant.turn_off\\\":{\\\"name\\\":\\\"Turn Off\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"homeassistant\\\",\\\"service\\\":\\\"turn_off\\\",\\\"fields\\\":{},\\\"target\\\":{}},\\\"homeassistant.turn_on\\\":{\\\"name\\\":\\\"Turn On\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"homeassistant\\\",\\\"service\\\":\\\"turn_on\\\",\\\"fields\\\":{},\\\"target\\\":{}},\\\"homeassistant.toggle\\\":{\\\"name\\\":\\\"Toggle\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"homeassistant\\\",\\\"service\\\":\\\"toggle\\\",\\\"fields\\\":{},\\\"target\\\":{}},\\\"homeassistant.stop\\\":{\\\"name\\\":\\\"Stop\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"homeassistant\\\",\\\"service\\\":\\\"stop\\\",\\\"fields\\\":{}},\\\"homeassistant.restart\\\":{\\\"name\\\":\\\"Restart\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"homeassistant\\\",\\\"service\\\":\\\"restart\\\",\\\"fields\\\":{}},\\\"homeassistant.check_config\\\":{\\\"name\\\":\\\"Check Config\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"homeassistant\\\",\\\"service\\\":\\\"check_config\\\",\\\"fields\\\":{}},\\\"homeassistant.update_entity\\\":{\\\"name\\\":\\\"Update Entity\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"homeassistant\\\",\\\"service\\\":\\\"update_entity\\\",\\\"fields\\\":{\\\"entity_id\\\":{\\\"name\\\":\\\"Entity Id\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":true,\\\"type\\\":\\\"entity\\\",\\\"example\\\":null,\\\"selector\\\":{\\\"entity\\\":{\\\"multiple\\\":true,\\\"reorder\\\":false}}}}},\\\"homeassistant.reload_core_config\\\":{\\\"name\\\":\\\"Reload Core Config\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"homeassistant\\\",\\\"service\\\":\\\"reload_core_config\\\",\\\"fields\\\":{}},\\\"homeassistant.set_location\\\":{\\\"name\\\":\\\"Set Location\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"homeassistant\\\",\\\"service\\\":\\\"set_location\\\",\\\"fields\\\":{\\\"latitude\\\":{\\\"name\\\":\\\"Latitude\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":true,\\\"type\\\":\\\"number (-90.0-90.0)\\\",\\\"example\\\":32.87336,\\\"selector\\\":{\\\"number\\\":{\\\"mode\\\":\\\"box\\\",\\\"min\\\":-90.0,\\\"max\\\":90.0,\\\"step\\\":\\\"any\\\"}}},\\\"longitude\\\":{\\\"name\\\":\\\"Longitude\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":true,\\\"type\\\":\\\"number (-180.0-180.0)\\\",\\\"example\\\":117.22743,\\\"selector\\\":{\\\"number\\\":{\\\"mode\\\":\\\"box\\\",\\\"min\\\":-180.0,\\\"max\\\":180.0,\\\"step\\\":\\\"any\\\"}}},\\\"elevation\\\":{\\\"name\\\":\\\"Elevation\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":false,\\\"type\\\":\\\"number\\\",\\\"example\\\":120,\\\"selector\\\":{\\\"number\\\":{\\\"mode\\\":\\\"box\\\",\\\"step\\\":\\\"any\\\",\\\"unit_of_measurement\\\":\\\"m\\\"}}}}},\\\"homeassistant.reload_custom_templates\\\":{\\\"name\\\":\\\"Reload Custom Templates\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"homeassistant\\\",\\\"service\\\":\\\"reload_custom_templates\\\",\\\"fields\\\":{}},\\\"homeassistant.reload_config_entry\\\":{\\\"name\\\":\\\"Reload Config Entry\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"homeassistant\\\",\\\"service\\\":\\\"reload_config_entry\\\",\\\"fields\\\":{\\\"entry_id\\\":{\\\"name\\\":\\\"Entry Id\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":true,\\\"type\\\":\\\"config_entry\\\",\\\"example\\\":null,\\\"selector\\\":{\\\"config_entry\\\":{}}}}},\\\"homeassistant.reload_all\\\":{\\\"name\\\":\\\"Reload All\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"homeassistant\\\",\\\"service\\\":\\\"reload_all\\\",\\\"fields\\\":{}},\\\"system_log.clear\\\":{\\\"name\\\":\\\"Clear\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"system_log\\\",\\\"service\\\":\\\"clear\\\",\\\"fields\\\":{}},\\\"system_log.write\\\":{\\\"name\\\":\\\"Write\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"system_log\\\",\\\"service\\\":\\\"write\\\",\\\"fields\\\":{\\\"message\\\":{\\\"name\\\":\\\"Message\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":true,\\\"type\\\":\\\"text\\\",\\\"example\\\":\\\"Something went wrong\\\",\\\"selector\\\":{\\\"text\\\":{\\\"multiline\\\":false,\\\"multiple\\\":false}}},\\\"level\\\":{\\\"name\\\":\\\"Level\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":false,\\\"type\\\":\\\"select (debug, info, warning, error, critical)\\\",\\\"example\\\":null,\\\"selector\\\":{\\\"select\\\":{\\\"options\\\":[\\\"debug\\\",\\\"info\\\",\\\"warning\\\",\\\"error\\\",\\\"critical\\\"],\\\"translation_key\\\":\\\"level\\\",\\\"multiple\\\":false,\\\"custom_value\\\":false,\\\"sort\\\":false}},\\\"default\\\":\\\"error\\\"},\\\"logger\\\":{\\\"name\\\":\\\"Logger\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":false,\\\"type\\\":\\\"text\\\",\\\"example\\\":\\\"mycomponent.myplatform\\\",\\\"selector\\\":{\\\"text\\\":{\\\"multiline\\\":false,\\\"multiple\\\":false}}}}},\\\"logger.set_default_level\\\":{\\\"name\\\":\\\"Set Default Level\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"logger\\\",\\\"service\\\":\\\"set_default_level\\\",\\\"fields\\\":{\\\"level\\\":{\\\"name\\\":\\\"Level\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":false,\\\"type\\\":\\\"select\\\",\\\"example\\\":null,\\\"selector\\\":{\\\"select\\\":{\\\"options\\\":[\\\"debug\\\",\\\"info\\\",\\\"warning\\\",\\\"error\\\",\\\"fatal\\\",\\\"critical\\\"],\\\"translation_key\\\":\\\"level\\\",\\\"multiple\\\":false,\\\"custom_value\\\":false,\\\"sort\\\":false}}}}},\\\"logger.set_level\\\":{\\\"name\\\":\\\"Set Level\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"logger\\\",\\\"service\\\":\\\"set_level\\\",\\\"fields\\\":{}},\\\"lovelace.reload_resources\\\":{\\\"name\\\":\\\"Reload Resources\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"lovelace\\\",\\\"service\\\":\\\"reload_resources\\\",\\\"fields\\\":{}},\\\"frontend.set_theme\\\":{\\\"name\\\":\\\"Set Theme\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"frontend\\\",\\\"service\\\":\\\"set_theme\\\",\\\"fields\\\":{\\\"name\\\":{\\\"name\\\":\\\"Name\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":false,\\\"type\\\":\\\"theme\\\",\\\"example\\\":\\\"default\\\",\\\"selector\\\":{\\\"theme\\\":{\\\"include_default\\\":true}}},\\\"name_dark\\\":{\\\"name\\\":\\\"Name Dark\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":false,\\\"type\\\":\\\"theme\\\",\\\"example\\\":\\\"default\\\",\\\"selector\\\":{\\\"theme\\\":{\\\"include_default\\\":true}}}}},\\\"frontend.reload_themes\\\":{\\\"name\\\":\\\"Reload Themes\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"frontend\\\",\\\"service\\\":\\\"reload_themes\\\",\\\"fields\\\":{}},\\\"recorder.purge\\\":{\\\"name\\\":\\\"Purge\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"recorder\\\",\\\"service\\\":\\\"purge\\\",\\\"fields\\\":{\\\"keep_days\\\":{\\\"name\\\":\\\"Keep Days\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":false,\\\"type\\\":\\\"number (0.0-365.0)\\\",\\\"example\\\":null,\\\"selector\\\":{\\\"number\\\":{\\\"min\\\":0.0,\\\"max\\\":365.0,\\\"unit_of_measurement\\\":\\\"days\\\",\\\"step\\\":1.0,\\\"mode\\\":\\\"slider\\\"}}},\\\"repack\\\":{\\\"name\\\":\\\"Repack\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":false,\\\"type\\\":\\\"boolean\\\",\\\"example\\\":null,\\\"selector\\\":{\\\"boolean\\\":{}},\\\"default\\\":false},\\\"apply_filter\\\":{\\\"name\\\":\\\"Apply Filter\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":false,\\\"type\\\":\\\"boolean\\\",\\\"example\\\":null,\\\"selector\\\":{\\\"boolean\\\":{}},\\\"default\\\":false}}},\\\"recorder.purge_entities\\\":{\\\"name\\\":\\\"Purge Entities\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"recorder\\\",\\\"service\\\":\\\"purge_entities\\\",\\\"fields\\\":{\\\"entity_id\\\":{\\\"name\\\":\\\"Entity Id\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":false,\\\"type\\\":\\\"entity\\\",\\\"example\\\":null,\\\"selector\\\":{\\\"entity\\\":{\\\"multiple\\\":true,\\\"reorder\\\":false}}},\\\"domains\\\":{\\\"name\\\":\\\"Domains\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":false,\\\"type\\\":\\\"object\\\",\\\"example\\\":\\\"sun\\\",\\\"selector\\\":{\\\"object\\\":{\\\"multiple\\\":false}}},\\\"entity_globs\\\":{\\\"name\\\":\\\"Entity Globs\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":false,\\\"type\\\":\\\"object\\\",\\\"example\\\":\\\"domain*.object_id*\\\",\\\"selector\\\":{\\\"object\\\":{\\\"multiple\\\":false}}},\\\"keep_days\\\":{\\\"name\\\":\\\"Keep Days\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":false,\\\"type\\\":\\\"number (0.0-365.0)\\\",\\\"example\\\":null,\\\"selector\\\":{\\\"number\\\":{\\\"min\\\":0.0,\\\"max\\\":365.0,\\\"unit_of_measurement\\\":\\\"days\\\",\\\"step\\\":1.0,\\\"mode\\\":\\\"slider\\\"}},\\\"default\\\":0}}},\\\"recorder.enable\\\":{\\\"name\\\":\\\"Enable\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"recorder\\\",\\\"service\\\":\\\"enable\\\",\\\"fields\\\":{}},\\\"recorder.disable\\\":{\\\"name\\\":\\\"Disable\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"recorder\\\",\\\"service\\\":\\\"disable\\\",\\\"fields\\\":{}},\\\"recorder.get_statistics\\\":{\\\"name\\\":\\\"Get Statistics\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"recorder\\\",\\\"service\\\":\\\"get_statistics\\\",\\\"fields\\\":{\\\"start_time\\\":{\\\"name\\\":\\\"Start Time\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":true,\\\"type\\\":\\\"datetime\\\",\\\"example\\\":\\\"2025-01-01 00:00:00\\\",\\\"selector\\\":{\\\"datetime\\\":{}}},\\\"end_time\\\":{\\\"name\\\":\\\"End Time\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":false,\\\"type\\\":\\\"datetime\\\",\\\"example\\\":\\\"2025-01-02 00:00:00\\\",\\\"selector\\\":{\\\"datetime\\\":{}}},\\\"statistic_ids\\\":{\\\"name\\\":\\\"Statistic Ids\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":true,\\\"type\\\":\\\"statistic\\\",\\\"example\\\":[\\\"sensor.energy_consumption\\\",\\\"sensor.temperature\\\"],\\\"selector\\\":{\\\"statistic\\\":{\\\"multiple\\\":true}}},\\\"period\\\":{\\\"name\\\":\\\"Period\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":true,\\\"type\\\":\\\"select\\\",\\\"example\\\":\\\"hour\\\",\\\"selector\\\":{\\\"select\\\":{\\\"options\\\":[\\\"5minute\\\",\\\"hour\\\",\\\"day\\\",\\\"week\\\",\\\"month\\\",\\\"year\\\"],\\\"multiple\\\":false,\\\"custom_value\\\":false,\\\"sort\\\":false}}},\\\"types\\\":{\\\"name\\\":\\\"Types\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":true,\\\"type\\\":\\\"select\\\",\\\"example\\\":[\\\"mean\\\",\\\"sum\\\"],\\\"selector\\\":{\\\"select\\\":{\\\"options\\\":[\\\"change\\\",\\\"last_reset\\\",\\\"max\\\",\\\"mean\\\",\\\"min\\\",\\\"state\\\",\\\"sum\\\"],\\\"multiple\\\":true,\\\"custom_value\\\":false,\\\"sort\\\":false}}},\\\"units\\\":{\\\"name\\\":\\\"Units\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":false,\\\"type\\\":\\\"object\\\",\\\"example\\\":{\\\"energy\\\":\\\"kWh\\\",\\\"temperature\\\":\\\"\u00b0C\\\"},\\\"selector\\\":{\\\"object\\\":{\\\"multiple\\\":false}}}}},\\\"media_player.turn_on\\\":{\\\"name\\\":\\\"Turn On\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"media_player\\\",\\\"service\\\":\\\"turn_on\\\",\\\"fields\\\":{},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"media_player\\\"],\\\"supported_features\\\":[128]}]}},\\\"media_player.turn_off\\\":{\\\"name\\\":\\\"Turn Off\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"media_player\\\",\\\"service\\\":\\\"turn_off\\\",\\\"fields\\\":{},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"media_player\\\"],\\\"supported_features\\\":[256]}]}},\\\"media_player.toggle\\\":{\\\"name\\\":\\\"Toggle\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"media_player\\\",\\\"service\\\":\\\"toggle\\\",\\\"fields\\\":{},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"media_player\\\"],\\\"supported_features\\\":[384]}]}},\\\"media_player.volume_up\\\":{\\\"name\\\":\\\"Volume Up\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"media_player\\\",\\\"service\\\":\\\"volume_up\\\",\\\"fields\\\":{},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"media_player\\\"],\\\"supported_features\\\":[4,1024]}]}},\\\"media_player.volume_down\\\":{\\\"name\\\":\\\"Volume Down\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"media_player\\\",\\\"service\\\":\\\"volume_down\\\",\\\"fields\\\":{},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"media_player\\\"],\\\"supported_features\\\":[4,1024]}]}},\\\"media_player.media_play_pause\\\":{\\\"name\\\":\\\"Media Play Pause\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"media_player\\\",\\\"service\\\":\\\"media_play_pause\\\",\\\"fields\\\":{},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"media_player\\\"],\\\"supported_features\\\":[16385]}]}},\\\"media_player.media_play\\\":{\\\"name\\\":\\\"Media Play\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"media_player\\\",\\\"service\\\":\\\"media_play\\\",\\\"fields\\\":{},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"media_player\\\"],\\\"supported_features\\\":[16384]}]}},\\\"media_player.media_pause\\\":{\\\"name\\\":\\\"Media Pause\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"media_player\\\",\\\"service\\\":\\\"media_pause\\\",\\\"fields\\\":{},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"media_player\\\"],\\\"supported_features\\\":[1]}]}},\\\"media_player.media_stop\\\":{\\\"name\\\":\\\"Media Stop\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"media_player\\\",\\\"service\\\":\\\"media_stop\\\",\\\"fields\\\":{},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"media_player\\\"],\\\"supported_features\\\":[4096]}]}},\\\"media_player.media_next_track\\\":{\\\"name\\\":\\\"Media Next Track\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"media_player\\\",\\\"service\\\":\\\"media_next_track\\\",\\\"fields\\\":{},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"media_player\\\"],\\\"supported_features\\\":[32]}]}},\\\"media_player.media_previous_track\\\":{\\\"name\\\":\\\"Media Previous Track\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"media_player\\\",\\\"service\\\":\\\"media_previous_track\\\",\\\"fields\\\":{},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"media_player\\\"],\\\"supported_features\\\":[16]}]}},\\\"media_player.clear_playlist\\\":{\\\"name\\\":\\\"Clear Playlist\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"media_player\\\",\\\"service\\\":\\\"clear_playlist\\\",\\\"fields\\\":{},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"media_player\\\"],\\\"supported_features\\\":[8192]}]}},\\\"media_player.volume_set\\\":{\\\"name\\\":\\\"Volume Set\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"media_player\\\",\\\"service\\\":\\\"volume_set\\\",\\\"fields\\\":{\\\"volume_level\\\":{\\\"name\\\":\\\"Volume Level\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":true,\\\"type\\\":\\\"number (0.0-1.0)\\\",\\\"example\\\":null,\\\"selector\\\":{\\\"number\\\":{\\\"min\\\":0.0,\\\"max\\\":1.0,\\\"step\\\":0.01,\\\"mode\\\":\\\"slider\\\"}}}},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"media_player\\\"],\\\"supported_features\\\":[4]}]}},\\\"media_player.volume_mute\\\":{\\\"name\\\":\\\"Volume Mute\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"media_player\\\",\\\"service\\\":\\\"volume_mute\\\",\\\"fields\\\":{\\\"is_volume_muted\\\":{\\\"name\\\":\\\"Is Volume Muted\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":true,\\\"type\\\":\\\"boolean\\\",\\\"example\\\":null,\\\"selector\\\":{\\\"boolean\\\":{}}}},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"media_player\\\"],\\\"supported_features\\\":[8]}]}},\\\"media_player.media_seek\\\":{\\\"name\\\":\\\"Media Seek\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"media_player\\\",\\\"service\\\":\\\"media_seek\\\",\\\"fields\\\":{\\\"seek_position\\\":{\\\"name\\\":\\\"Seek Position\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":true,\\\"type\\\":\\\"number (0.0-9.223372036854776e+18)\\\",\\\"example\\\":null,\\\"selector\\\":{\\\"number\\\":{\\\"min\\\":0.0,\\\"max\\\":9.223372036854776e+18,\\\"step\\\":0.01,\\\"mode\\\":\\\"box\\\"}}}},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"media_player\\\"],\\\"supported_features\\\":[2]}]}},\\\"media_player.join\\\":{\\\"name\\\":\\\"Join\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"media_player\\\",\\\"service\\\":\\\"join\\\",\\\"fields\\\":{\\\"group_members\\\":{\\\"name\\\":\\\"Group Members\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":true,\\\"type\\\":\\\"entity (media_player)\\\",\\\"example\\\":\\\"- media_player.multiroom_player2\\\\n- media_player.multiroom_player3\\\\n\\\",\\\"selector\\\":{\\\"entity\\\":{\\\"multiple\\\":true,\\\"domain\\\":[\\\"media_player\\\"],\\\"reorder\\\":false}}}},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"media_player\\\"],\\\"supported_features\\\":[524288]}]}},\\\"media_player.select_source\\\":{\\\"name\\\":\\\"Select Source\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"media_player\\\",\\\"service\\\":\\\"select_source\\\",\\\"fields\\\":{\\\"source\\\":{\\\"name\\\":\\\"Source\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":true,\\\"type\\\":\\\"state\\\",\\\"example\\\":\\\"video1\\\",\\\"selector\\\":{\\\"state\\\":{\\\"attribute\\\":\\\"source\\\",\\\"multiple\\\":false}}}},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"media_player\\\"],\\\"supported_features\\\":[2048]}]}},\\\"media_player.select_sound_mode\\\":{\\\"name\\\":\\\"Select Sound Mode\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"media_player\\\",\\\"service\\\":\\\"select_sound_mode\\\",\\\"fields\\\":{\\\"sound_mode\\\":{\\\"name\\\":\\\"Sound Mode\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":false,\\\"type\\\":\\\"state\\\",\\\"example\\\":\\\"Music\\\",\\\"selector\\\":{\\\"state\\\":{\\\"attribute\\\":\\\"sound_mode\\\",\\\"multiple\\\":false}}}},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"media_player\\\"],\\\"supported_features\\\":[65536]}]}},\\\"media_player.play_media\\\":{\\\"name\\\":\\\"Play Media\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"media_player\\\",\\\"service\\\":\\\"play_media\\\",\\\"fields\\\":{\\\"media\\\":{\\\"name\\\":\\\"Media\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":true,\\\"type\\\":\\\"media\\\",\\\"example\\\":\\\"{\\\\\\\"media_content_id\\\\\\\": \\\\\\\"https://home-assistant.io/images/cast/splash.png\\\\\\\", \\\\\\\"media_content_type\\\\\\\": \\\\\\\"music\\\\\\\"}\\\",\\\"selector\\\":{\\\"media\\\":{\\\"multiple\\\":false,\\\"image_upload\\\":false}}},\\\"enqueue\\\":{\\\"name\\\":\\\"Enqueue\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":false,\\\"type\\\":\\\"select (play, next, add, replace)\\\",\\\"example\\\":null,\\\"selector\\\":{\\\"select\\\":{\\\"options\\\":[\\\"play\\\",\\\"next\\\",\\\"add\\\",\\\"replace\\\"],\\\"translation_key\\\":\\\"enqueue\\\",\\\"multiple\\\":false,\\\"custom_value\\\":false,\\\"sort\\\":false}}},\\\"announce\\\":{\\\"name\\\":\\\"Announce\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":false,\\\"type\\\":\\\"boolean\\\",\\\"example\\\":\\\"true\\\",\\\"selector\\\":{\\\"boolean\\\":{}}}},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"media_player\\\"],\\\"supported_features\\\":[512]}]}},\\\"media_player.browse_media\\\":{\\\"name\\\":\\\"Browse Media\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"media_player\\\",\\\"service\\\":\\\"browse_media\\\",\\\"fields\\\":{\\\"media_content_type\\\":{\\\"name\\\":\\\"Media Content Type\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":false,\\\"type\\\":\\\"text\\\",\\\"example\\\":\\\"music\\\",\\\"selector\\\":{\\\"text\\\":{\\\"multiline\\\":false,\\\"multiple\\\":false}}},\\\"media_content_id\\\":{\\\"name\\\":\\\"Media Content Id\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":false,\\\"type\\\":\\\"text\\\",\\\"example\\\":\\\"A:ALBUMARTIST/Beatles\\\",\\\"selector\\\":{\\\"text\\\":{\\\"multiline\\\":false,\\\"multiple\\\":false}}}},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"media_player\\\"],\\\"supported_features\\\":[131072]}]}},\\\"media_player.search_media\\\":{\\\"name\\\":\\\"Search Media\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"media_player\\\",\\\"service\\\":\\\"search_media\\\",\\\"fields\\\":{\\\"search_query\\\":{\\\"name\\\":\\\"Search Query\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":true,\\\"type\\\":\\\"text\\\",\\\"example\\\":\\\"Beatles\\\",\\\"selector\\\":{\\\"text\\\":{\\\"multiline\\\":false,\\\"multiple\\\":false}}},\\\"media_content_type\\\":{\\\"name\\\":\\\"Media Content Type\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":false,\\\"type\\\":\\\"text\\\",\\\"example\\\":\\\"music\\\",\\\"selector\\\":{\\\"text\\\":{\\\"multiline\\\":false,\\\"multiple\\\":false}}},\\\"media_content_id\\\":{\\\"name\\\":\\\"Media Content Id\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":false,\\\"type\\\":\\\"text\\\",\\\"example\\\":\\\"A:ALBUMARTIST/Beatles\\\",\\\"selector\\\":{\\\"text\\\":{\\\"multiline\\\":false,\\\"multiple\\\":false}}},\\\"media_filter_classes\\\":{\\\"name\\\":\\\"Media Filter Classes\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":false,\\\"type\\\":\\\"text\\\",\\\"example\\\":[\\\"album\\\",\\\"artist\\\"],\\\"selector\\\":{\\\"text\\\":{\\\"multiple\\\":true,\\\"multiline\\\":false}}}},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"media_player\\\"],\\\"supported_features\\\":[4194304]}]}},\\\"media_player.shuffle_set\\\":{\\\"name\\\":\\\"Shuffle Set\\\",\\\"description\\\":\\\"\\\",\\\"domain\\\":\\\"media_player\\\",\\\"service\\\":\\\"shuffle_set\\\",\\\"fields\\\":{\\\"shuffle\\\":{\\\"name\\\":\\\"Shuffle\\\",\\\"description\\\":\\\"\\\",\\\"required\\\":true,\\\"type\\\":\\\"boolean\\\",\\\"example\\\":null,\\\"selector\\\":{\\\"boolean\\\":{}}}},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"media_player\\\"],\\\"supported_features\\\":[32768]}]}}},\\\"total_count\\\":247,\\\"offset\\\":0,\\\"limit\\\":50,\\\"count\\\":50,\\\"has_more\\\":true,\\\"next_offset\\\":50,\\\"detail_level\\\":\\\"full\\\",\\\"filters_applied\\\":{\\\"domain\\\":null,\\\"query\\\":null}}\",\"type\":\"text\"}],\"isError\":false,\"structuredContent\":{\"success\":true,\"domains\":[\"ai_task\",\"alarm_control_panel\",\"assist_satellite\",\"automation\",\"backup\",\"button\",\"calendar\",\"camera\",\"climate\",\"conversation\",\"counter\",\"cover\",\"date\",\"datetime\",\"device_tracker\",\"fan\",\"ffmpeg\",\"frontend\",\"group\",\"homeassistant\",\"humidifier\",\"image\",\"image_processing\",\"input_boolean\",\"input_button\",\"input_datetime\",\"input_number\",\"input_select\",\"input_text\",\"lawn_mower\",\"light\",\"lock\",\"logbook\",\"logger\",\"lovelace\",\"media_player\",\"notify\",\"number\",\"persistent_notification\",\"person\",\"recorder\",\"remote\",\"scene\",\"schedule\",\"script\",\"select\",\"shopping_list\",\"siren\",\"switch\",\"system_log\",\"template\",\"text\",\"time\",\"timer\",\"todo\",\"tts\",\"update\",\"vacuum\",\"valve\",\"water_heater\",\"weather\",\"zone\"],\"services\":{\"persistent_notification.create\":{\"name\":\"Create\",\"description\":\"\",\"domain\":\"persistent_notification\",\"service\":\"create\",\"fields\":{\"message\":{\"name\":\"Message\",\"description\":\"\",\"required\":true,\"type\":\"text\",\"example\":\"Please check your configuration.yaml.\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}}},\"title\":{\"name\":\"Title\",\"description\":\"\",\"required\":false,\"type\":\"text\",\"example\":\"Test notification\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}}},\"notification_id\":{\"name\":\"Notification Id\",\"description\":\"\",\"required\":false,\"type\":\"text\",\"example\":1234,\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}}}}},\"persistent_notification.dismiss\":{\"name\":\"Dismiss\",\"description\":\"\",\"domain\":\"persistent_notification\",\"service\":\"dismiss\",\"fields\":{\"notification_id\":{\"name\":\"Notification Id\",\"description\":\"\",\"required\":true,\"type\":\"text\",\"example\":1234,\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}}}}},\"persistent_notification.dismiss_all\":{\"name\":\"Dismiss All\",\"description\":\"\",\"domain\":\"persistent_notification\",\"service\":\"dismiss_all\",\"fields\":{}},\"homeassistant.save_persistent_states\":{\"name\":\"Save Persistent States\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"save_persistent_states\",\"fields\":{}},\"homeassistant.turn_off\":{\"name\":\"Turn Off\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"turn_off\",\"fields\":{},\"target\":{}},\"homeassistant.turn_on\":{\"name\":\"Turn On\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"turn_on\",\"fields\":{},\"target\":{}},\"homeassistant.toggle\":{\"name\":\"Toggle\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"toggle\",\"fields\":{},\"target\":{}},\"homeassistant.stop\":{\"name\":\"Stop\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"stop\",\"fields\":{}},\"homeassistant.restart\":{\"name\":\"Restart\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"restart\",\"fields\":{}},\"homeassistant.check_config\":{\"name\":\"Check Config\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"check_config\",\"fields\":{}},\"homeassistant.update_entity\":{\"name\":\"Update Entity\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"update_entity\",\"fields\":{\"entity_id\":{\"name\":\"Entity Id\",\"description\":\"\",\"required\":true,\"type\":\"entity\",\"example\":null,\"selector\":{\"entity\":{\"multiple\":true,\"reorder\":false}}}}},\"homeassistant.reload_core_config\":{\"name\":\"Reload Core Config\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"reload_core_config\",\"fields\":{}},\"homeassistant.set_location\":{\"name\":\"Set Location\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"set_location\",\"fields\":{\"latitude\":{\"name\":\"Latitude\",\"description\":\"\",\"required\":true,\"type\":\"number (-90.0-90.0)\",\"example\":32.87336,\"selector\":{\"number\":{\"mode\":\"box\",\"min\":-90.0,\"max\":90.0,\"step\":\"any\"}}},\"longitude\":{\"name\":\"Longitude\",\"description\":\"\",\"required\":true,\"type\":\"number (-180.0-180.0)\",\"example\":117.22743,\"selector\":{\"number\":{\"mode\":\"box\",\"min\":-180.0,\"max\":180.0,\"step\":\"any\"}}},\"elevation\":{\"name\":\"Elevation\",\"description\":\"\",\"required\":false,\"type\":\"number\",\"example\":120,\"selector\":{\"number\":{\"mode\":\"box\",\"step\":\"any\",\"unit_of_measurement\":\"m\"}}}}},\"homeassistant.reload_custom_templates\":{\"name\":\"Reload Custom Templates\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"reload_custom_templates\",\"fields\":{}},\"homeassistant.reload_config_entry\":{\"name\":\"Reload Config Entry\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"reload_config_entry\",\"fields\":{\"entry_id\":{\"name\":\"Entry Id\",\"description\":\"\",\"required\":true,\"type\":\"config_entry\",\"example\":null,\"selector\":{\"config_entry\":{}}}}},\"homeassistant.reload_all\":{\"name\":\"Reload All\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"reload_all\",\"fields\":{}},\"system_log.clear\":{\"name\":\"Clear\",\"description\":\"\",\"domain\":\"system_log\",\"service\":\"clear\",\"fields\":{}},\"system_log.write\":{\"name\":\"Write\",\"description\":\"\",\"domain\":\"system_log\",\"service\":\"write\",\"fields\":{\"message\":{\"name\":\"Message\",\"description\":\"\",\"required\":true,\"type\":\"text\",\"example\":\"Something went wrong\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}}},\"level\":{\"name\":\"Level\",\"description\":\"\",\"required\":false,\"type\":\"select (debug, info, warning, error, critical)\",\"example\":null,\"selector\":{\"select\":{\"options\":[\"debug\",\"info\",\"warning\",\"error\",\"critical\"],\"translation_key\":\"level\",\"multiple\":false,\"custom_value\":false,\"sort\":false}},\"default\":\"error\"},\"logger\":{\"name\":\"Logger\",\"description\":\"\",\"required\":false,\"type\":\"text\",\"example\":\"mycomponent.myplatform\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}}}}},\"logger.set_default_level\":{\"name\":\"Set Default Level\",\"description\":\"\",\"domain\":\"logger\",\"service\":\"set_default_level\",\"fields\":{\"level\":{\"name\":\"Level\",\"description\":\"\",\"required\":false,\"type\":\"select\",\"example\":null,\"selector\":{\"select\":{\"options\":[\"debug\",\"info\",\"warning\",\"error\",\"fatal\",\"critical\"],\"translation_key\":\"level\",\"multiple\":false,\"custom_value\":false,\"sort\":false}}}}},\"logger.set_level\":{\"name\":\"Set Level\",\"description\":\"\",\"domain\":\"logger\",\"service\":\"set_level\",\"fields\":{}},\"lovelace.reload_resources\":{\"name\":\"Reload Resources\",\"description\":\"\",\"domain\":\"lovelace\",\"service\":\"reload_resources\",\"fields\":{}},\"frontend.set_theme\":{\"name\":\"Set Theme\",\"description\":\"\",\"domain\":\"frontend\",\"service\":\"set_theme\",\"fields\":{\"name\":{\"name\":\"Name\",\"description\":\"\",\"required\":false,\"type\":\"theme\",\"example\":\"default\",\"selector\":{\"theme\":{\"include_default\":true}}},\"name_dark\":{\"name\":\"Name Dark\",\"description\":\"\",\"required\":false,\"type\":\"theme\",\"example\":\"default\",\"selector\":{\"theme\":{\"include_default\":true}}}}},\"frontend.reload_themes\":{\"name\":\"Reload Themes\",\"description\":\"\",\"domain\":\"frontend\",\"service\":\"reload_themes\",\"fields\":{}},\"recorder.purge\":{\"name\":\"Purge\",\"description\":\"\",\"domain\":\"recorder\",\"service\":\"purge\",\"fields\":{\"keep_days\":{\"name\":\"Keep Days\",\"description\":\"\",\"required\":false,\"type\":\"number (0.0-365.0)\",\"example\":null,\"selector\":{\"number\":{\"min\":0.0,\"max\":365.0,\"unit_of_measurement\":\"days\",\"step\":1.0,\"mode\":\"slider\"}}},\"repack\":{\"name\":\"Repack\",\"description\":\"\",\"required\":false,\"type\":\"boolean\",\"example\":null,\"selector\":{\"boolean\":{}},\"default\":false},\"apply_filter\":{\"name\":\"Apply Filter\",\"description\":\"\",\"required\":false,\"type\":\"boolean\",\"example\":null,\"selector\":{\"boolean\":{}},\"default\":false}}},\"recorder.purge_entities\":{\"name\":\"Purge Entities\",\"description\":\"\",\"domain\":\"recorder\",\"service\":\"purge_entities\",\"fields\":{\"entity_id\":{\"name\":\"Entity Id\",\"description\":\"\",\"required\":false,\"type\":\"entity\",\"example\":null,\"selector\":{\"entity\":{\"multiple\":true,\"reorder\":false}}},\"domains\":{\"name\":\"Domains\",\"description\":\"\",\"required\":false,\"type\":\"object\",\"example\":\"sun\",\"selector\":{\"object\":{\"multiple\":false}}},\"entity_globs\":{\"name\":\"Entity Globs\",\"description\":\"\",\"required\":false,\"type\":\"object\",\"example\":\"domain*.object_id*\",\"selector\":{\"object\":{\"multiple\":false}}},\"keep_days\":{\"name\":\"Keep Days\",\"description\":\"\",\"required\":false,\"type\":\"number (0.0-365.0)\",\"example\":null,\"selector\":{\"number\":{\"min\":0.0,\"max\":365.0,\"unit_of_measurement\":\"days\",\"step\":1.0,\"mode\":\"slider\"}},\"default\":0}}},\"recorder.enable\":{\"name\":\"Enable\",\"description\":\"\",\"domain\":\"recorder\",\"service\":\"enable\",\"fields\":{}},\"recorder.disable\":{\"name\":\"Disable\",\"description\":\"\",\"domain\":\"recorder\",\"service\":\"disable\",\"fields\":{}},\"recorder.get_statistics\":{\"name\":\"Get Statistics\",\"description\":\"\",\"domain\":\"recorder\",\"service\":\"get_statistics\",\"fields\":{\"start_time\":{\"name\":\"Start Time\",\"description\":\"\",\"required\":true,\"type\":\"datetime\",\"example\":\"2025-01-01 00:00:00\",\"selector\":{\"datetime\":{}}},\"end_time\":{\"name\":\"End Time\",\"description\":\"\",\"required\":false,\"type\":\"datetime\",\"example\":\"2025-01-02 00:00:00\",\"selector\":{\"datetime\":{}}},\"statistic_ids\":{\"name\":\"Statistic Ids\",\"description\":\"\",\"required\":true,\"type\":\"statistic\",\"example\":[\"sensor.energy_consumption\",\"sensor.temperature\"],\"selector\":{\"statistic\":{\"multiple\":true}}},\"period\":{\"name\":\"Period\",\"description\":\"\",\"required\":true,\"type\":\"select\",\"example\":\"hour\",\"selector\":{\"select\":{\"options\":[\"5minute\",\"hour\",\"day\",\"week\",\"month\",\"year\"],\"multiple\":false,\"custom_value\":false,\"sort\":false}}},\"types\":{\"name\":\"Types\",\"description\":\"\",\"required\":true,\"type\":\"select\",\"example\":[\"mean\",\"sum\"],\"selector\":{\"select\":{\"options\":[\"change\",\"last_reset\",\"max\",\"mean\",\"min\",\"state\",\"sum\"],\"multiple\":true,\"custom_value\":false,\"sort\":false}}},\"units\":{\"name\":\"Units\",\"description\":\"\",\"required\":false,\"type\":\"object\",\"example\":{\"energy\":\"kWh\",\"temperature\":\"\u00b0C\"},\"selector\":{\"object\":{\"multiple\":false}}}}},\"media_player.turn_on\":{\"name\":\"Turn On\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"turn_on\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[128]}]}},\"media_player.turn_off\":{\"name\":\"Turn Off\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"turn_off\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[256]}]}},\"media_player.toggle\":{\"name\":\"Toggle\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"toggle\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[384]}]}},\"media_player.volume_up\":{\"name\":\"Volume Up\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"volume_up\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[4,1024]}]}},\"media_player.volume_down\":{\"name\":\"Volume Down\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"volume_down\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[4,1024]}]}},\"media_player.media_play_pause\":{\"name\":\"Media Play Pause\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"media_play_pause\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[16385]}]}},\"media_player.media_play\":{\"name\":\"Media Play\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"media_play\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[16384]}]}},\"media_player.media_pause\":{\"name\":\"Media Pause\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"media_pause\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[1]}]}},\"media_player.media_stop\":{\"name\":\"Media Stop\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"media_stop\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[4096]}]}},\"media_player.media_next_track\":{\"name\":\"Media Next Track\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"media_next_track\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[32]}]}},\"media_player.media_previous_track\":{\"name\":\"Media Previous Track\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"media_previous_track\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[16]}]}},\"media_player.clear_playlist\":{\"name\":\"Clear Playlist\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"clear_playlist\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[8192]}]}},\"media_player.volume_set\":{\"name\":\"Volume Set\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"volume_set\",\"fields\":{\"volume_level\":{\"name\":\"Volume Level\",\"description\":\"\",\"required\":true,\"type\":\"number (0.0-1.0)\",\"example\":null,\"selector\":{\"number\":{\"min\":0.0,\"max\":1.0,\"step\":0.01,\"mode\":\"slider\"}}}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[4]}]}},\"media_player.volume_mute\":{\"name\":\"Volume Mute\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"volume_mute\",\"fields\":{\"is_volume_muted\":{\"name\":\"Is Volume Muted\",\"description\":\"\",\"required\":true,\"type\":\"boolean\",\"example\":null,\"selector\":{\"boolean\":{}}}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[8]}]}},\"media_player.media_seek\":{\"name\":\"Media Seek\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"media_seek\",\"fields\":{\"seek_position\":{\"name\":\"Seek Position\",\"description\":\"\",\"required\":true,\"type\":\"number (0.0-9.223372036854776e+18)\",\"example\":null,\"selector\":{\"number\":{\"min\":0.0,\"max\":9.223372036854776e+18,\"step\":0.01,\"mode\":\"box\"}}}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[2]}]}},\"media_player.join\":{\"name\":\"Join\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"join\",\"fields\":{\"group_members\":{\"name\":\"Group Members\",\"description\":\"\",\"required\":true,\"type\":\"entity (media_player)\",\"example\":\"- media_player.multiroom_player2\\n- media_player.multiroom_player3\\n\",\"selector\":{\"entity\":{\"multiple\":true,\"domain\":[\"media_player\"],\"reorder\":false}}}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[524288]}]}},\"media_player.select_source\":{\"name\":\"Select Source\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"select_source\",\"fields\":{\"source\":{\"name\":\"Source\",\"description\":\"\",\"required\":true,\"type\":\"state\",\"example\":\"video1\",\"selector\":{\"state\":{\"attribute\":\"source\",\"multiple\":false}}}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[2048]}]}},\"media_player.select_sound_mode\":{\"name\":\"Select Sound Mode\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"select_sound_mode\",\"fields\":{\"sound_mode\":{\"name\":\"Sound Mode\",\"description\":\"\",\"required\":false,\"type\":\"state\",\"example\":\"Music\",\"selector\":{\"state\":{\"attribute\":\"sound_mode\",\"multiple\":false}}}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[65536]}]}},\"media_player.play_media\":{\"name\":\"Play Media\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"play_media\",\"fields\":{\"media\":{\"name\":\"Media\",\"description\":\"\",\"required\":true,\"type\":\"media\",\"example\":\"{\\\"media_content_id\\\": \\\"https://home-assistant.io/images/cast/splash.png\\\", \\\"media_content_type\\\": \\\"music\\\"}\",\"selector\":{\"media\":{\"multiple\":false,\"image_upload\":false}}},\"enqueue\":{\"name\":\"Enqueue\",\"description\":\"\",\"required\":false,\"type\":\"select (play, next, add, replace)\",\"example\":null,\"selector\":{\"select\":{\"options\":[\"play\",\"next\",\"add\",\"replace\"],\"translation_key\":\"enqueue\",\"multiple\":false,\"custom_value\":false,\"sort\":false}}},\"announce\":{\"name\":\"Announce\",\"description\":\"\",\"required\":false,\"type\":\"boolean\",\"example\":\"true\",\"selector\":{\"boolean\":{}}}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[512]}]}},\"media_player.browse_media\":{\"name\":\"Browse Media\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"browse_media\",\"fields\":{\"media_content_type\":{\"name\":\"Media Content Type\",\"description\":\"\",\"required\":false,\"type\":\"text\",\"example\":\"music\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}}},\"media_content_id\":{\"name\":\"Media Content Id\",\"description\":\"\",\"required\":false,\"type\":\"text\",\"example\":\"A:ALBUMARTIST/Beatles\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}}}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[131072]}]}},\"media_player.search_media\":{\"name\":\"Search Media\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"search_media\",\"fields\":{\"search_query\":{\"name\":\"Search Query\",\"description\":\"\",\"required\":true,\"type\":\"text\",\"example\":\"Beatles\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}}},\"media_content_type\":{\"name\":\"Media Content Type\",\"description\":\"\",\"required\":false,\"type\":\"text\",\"example\":\"music\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}}},\"media_content_id\":{\"name\":\"Media Content Id\",\"description\":\"\",\"required\":false,\"type\":\"text\",\"example\":\"A:ALBUMARTIST/Beatles\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}}},\"media_filter_classes\":{\"name\":\"Media Filter Classes\",\"description\":\"\",\"required\":false,\"type\":\"text\",\"example\":[\"album\",\"artist\"],\"selector\":{\"text\":{\"multiple\":true,\"multiline\":false}}}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[4194304]}]}},\"media_player.shuffle_set\":{\"name\":\"Shuffle Set\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"shuffle_set\",\"fields\":{\"shuffle\":{\"name\":\"Shuffle\",\"description\":\"\",\"required\":true,\"type\":\"boolean\",\"example\":null,\"selector\":{\"boolean\":{}}}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[32768]}]}}},\"total_count\":247,\"offset\":0,\"limit\":50,\"count\":50,\"has_more\":true,\"next_offset\":50,\"detail_level\":\"full\",\"filters_applied\":{\"domain\":null,\"query\":null}}}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 143,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\"success\":true,\"domains\":[\"ai_task\",\"alarm_control_panel\",\"assist_satellite\",\"automation\",\"backup\",\"button\",\"calendar\",\"camera\",\"climate\",\"conversation\",\"counter\",\"cover\",\"date\",\"datetime\",\"device_tracker\",\"fan\",\"ffmpeg\",\"frontend\",\"group\",\"homeassistant\",\"humidifier\",\"image\",\"image_processing\",\"input_boolean\",\"input_button\",\"input_datetime\",\"input_number\",\"input_select\",\"input_text\",\"lawn_mower\",\"light\",\"lock\",\"logbook\",\"logger\",\"lovelace\",\"media_player\",\"notify\",\"number\",\"persistent_notification\",\"person\",\"recorder\",\"remote\",\"scene\",\"schedule\",\"script\",\"select\",\"shopping_list\",\"siren\",\"switch\",\"system_log\",\"template\",\"text\",\"time\",\"timer\",\"todo\",\"tts\",\"update\",\"vacuum\",\"valve\",\"water_heater\",\"weather\",\"zone\"],\"services\":{\"persistent_notification.create\":{\"name\":\"Create\",\"description\":\"\",\"domain\":\"persistent_notification\",\"service\":\"create\",\"fields\":{\"message\":{\"name\":\"Message\",\"description\":\"\",\"required\":true,\"type\":\"text\",\"example\":\"Please check your configuration.yaml.\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}}},\"title\":{\"name\":\"Title\",\"description\":\"\",\"required\":false,\"type\":\"text\",\"example\":\"Test notification\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}}},\"notification_id\":{\"name\":\"Notification Id\",\"description\":\"\",\"required\":false,\"type\":\"text\",\"example\":1234,\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}}}}},\"persistent_notification.dismiss\":{\"name\":\"Dismiss\",\"description\":\"\",\"domain\":\"persistent_notification\",\"service\":\"dismiss\",\"fields\":{\"notification_id\":{\"name\":\"Notification Id\",\"description\":\"\",\"required\":true,\"type\":\"text\",\"example\":1234,\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}}}}},\"persistent_notification.dismiss_all\":{\"name\":\"Dismiss All\",\"description\":\"\",\"domain\":\"persistent_notification\",\"service\":\"dismiss_all\",\"fields\":{}},\"homeassistant.save_persistent_states\":{\"name\":\"Save Persistent States\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"save_persistent_states\",\"fields\":{}},\"homeassistant.turn_off\":{\"name\":\"Turn Off\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"turn_off\",\"fields\":{},\"target\":{}},\"homeassistant.turn_on\":{\"name\":\"Turn On\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"turn_on\",\"fields\":{},\"target\":{}},\"homeassistant.toggle\":{\"name\":\"Toggle\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"toggle\",\"fields\":{},\"target\":{}},\"homeassistant.stop\":{\"name\":\"Stop\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"stop\",\"fields\":{}},\"homeassistant.restart\":{\"name\":\"Restart\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"restart\",\"fields\":{}},\"homeassistant.check_config\":{\"name\":\"Check Config\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"check_config\",\"fields\":{}},\"homeassistant.update_entity\":{\"name\":\"Update Entity\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"update_entity\",\"fields\":{\"entity_id\":{\"name\":\"Entity Id\",\"description\":\"\",\"required\":true,\"type\":\"entity\",\"example\":null,\"selector\":{\"entity\":{\"multiple\":true,\"reorder\":false}}}}},\"homeassistant.reload_core_config\":{\"name\":\"Reload Core Config\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"reload_core_config\",\"fields\":{}},\"homeassistant.set_location\":{\"name\":\"Set Location\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"set_location\",\"fields\":{\"latitude\":{\"name\":\"Latitude\",\"description\":\"\",\"required\":true,\"type\":\"number (-90.0-90.0)\",\"example\":32.87336,\"selector\":{\"number\":{\"mode\":\"box\",\"min\":-90.0,\"max\":90.0,\"step\":\"any\"}}},\"longitude\":{\"name\":\"Longitude\",\"description\":\"\",\"required\":true,\"type\":\"number (-180.0-180.0)\",\"example\":117.22743,\"selector\":{\"number\":{\"mode\":\"box\",\"min\":-180.0,\"max\":180.0,\"step\":\"any\"}}},\"elevation\":{\"name\":\"Elevation\",\"description\":\"\",\"required\":false,\"type\":\"number\",\"example\":120,\"selector\":{\"number\":{\"mode\":\"box\",\"step\":\"any\",\"unit_of_measurement\":\"m\"}}}}},\"homeassistant.reload_custom_templates\":{\"name\":\"Reload Custom Templates\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"reload_custom_templates\",\"fields\":{}},\"homeassistant.reload_config_entry\":{\"name\":\"Reload Config Entry\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"reload_config_entry\",\"fields\":{\"entry_id\":{\"name\":\"Entry Id\",\"description\":\"\",\"required\":true,\"type\":\"config_entry\",\"example\":null,\"selector\":{\"config_entry\":{}}}}},\"homeassistant.reload_all\":{\"name\":\"Reload All\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"reload_all\",\"fields\":{}},\"system_log.clear\":{\"name\":\"Clear\",\"description\":\"\",\"domain\":\"system_log\",\"service\":\"clear\",\"fields\":{}},\"system_log.write\":{\"name\":\"Write\",\"description\":\"\",\"domain\":\"system_log\",\"service\":\"write\",\"fields\":{\"message\":{\"name\":\"Message\",\"description\":\"\",\"required\":true,\"type\":\"text\",\"example\":\"Something went wrong\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}}},\"level\":{\"name\":\"Level\",\"description\":\"\",\"required\":false,\"type\":\"select (debug, info, warning, error, critical)\",\"example\":null,\"selector\":{\"select\":{\"options\":[\"debug\",\"info\",\"warning\",\"error\",\"critical\"],\"translation_key\":\"level\",\"multiple\":false,\"custom_value\":false,\"sort\":false}},\"default\":\"error\"},\"logger\":{\"name\":\"Logger\",\"description\":\"\",\"required\":false,\"type\":\"text\",\"example\":\"mycomponent.myplatform\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}}}}},\"logger.set_default_level\":{\"name\":\"Set Default Level\",\"description\":\"\",\"domain\":\"logger\",\"service\":\"set_default_level\",\"fields\":{\"level\":{\"name\":\"Level\",\"description\":\"\",\"required\":false,\"type\":\"select\",\"example\":null,\"selector\":{\"select\":{\"options\":[\"debug\",\"info\",\"warning\",\"error\",\"fatal\",\"critical\"],\"translation_key\":\"level\",\"multiple\":false,\"custom_value\":false,\"sort\":false}}}}},\"logger.set_level\":{\"name\":\"Set Level\",\"description\":\"\",\"domain\":\"logger\",\"service\":\"set_level\",\"fields\":{}},\"lovelace.reload_resources\":{\"name\":\"Reload Resources\",\"description\":\"\",\"domain\":\"lovelace\",\"service\":\"reload_resources\",\"fields\":{}},\"frontend.set_theme\":{\"name\":\"Set Theme\",\"description\":\"\",\"domain\":\"frontend\",\"service\":\"set_theme\",\"fields\":{\"name\":{\"name\":\"Name\",\"description\":\"\",\"required\":false,\"type\":\"theme\",\"example\":\"default\",\"selector\":{\"theme\":{\"include_default\":true}}},\"name_dark\":{\"name\":\"Name Dark\",\"description\":\"\",\"required\":false,\"type\":\"theme\",\"example\":\"default\",\"selector\":{\"theme\":{\"include_default\":true}}}}},\"frontend.reload_themes\":{\"name\":\"Reload Themes\",\"description\":\"\",\"domain\":\"frontend\",\"service\":\"reload_themes\",\"fields\":{}},\"recorder.purge\":{\"name\":\"Purge\",\"description\":\"\",\"domain\":\"recorder\",\"service\":\"purge\",\"fields\":{\"keep_days\":{\"name\":\"Keep Days\",\"description\":\"\",\"required\":false,\"type\":\"number (0.0-365.0)\",\"example\":null,\"selector\":{\"number\":{\"min\":0.0,\"max\":365.0,\"unit_of_measurement\":\"days\",\"step\":1.0,\"mode\":\"slider\"}}},\"repack\":{\"name\":\"Repack\",\"description\":\"\",\"required\":false,\"type\":\"boolean\",\"example\":null,\"selector\":{\"boolean\":{}},\"default\":false},\"apply_filter\":{\"name\":\"Apply Filter\",\"description\":\"\",\"required\":false,\"type\":\"boolean\",\"example\":null,\"selector\":{\"boolean\":{}},\"default\":false}}},\"recorder.purge_entities\":{\"name\":\"Purge Entities\",\"description\":\"\",\"domain\":\"recorder\",\"service\":\"purge_entities\",\"fields\":{\"entity_id\":{\"name\":\"Entity Id\",\"description\":\"\",\"required\":false,\"type\":\"entity\",\"example\":null,\"selector\":{\"entity\":{\"multiple\":true,\"reorder\":false}}},\"domains\":{\"name\":\"Domains\",\"description\":\"\",\"required\":false,\"type\":\"object\",\"example\":\"sun\",\"selector\":{\"object\":{\"multiple\":false}}},\"entity_globs\":{\"name\":\"Entity Globs\",\"description\":\"\",\"required\":false,\"type\":\"object\",\"example\":\"domain*.object_id*\",\"selector\":{\"object\":{\"multiple\":false}}},\"keep_days\":{\"name\":\"Keep Days\",\"description\":\"\",\"required\":false,\"type\":\"number (0.0-365.0)\",\"example\":null,\"selector\":{\"number\":{\"min\":0.0,\"max\":365.0,\"unit_of_measurement\":\"days\",\"step\":1.0,\"mode\":\"slider\"}},\"default\":0}}},\"recorder.enable\":{\"name\":\"Enable\",\"description\":\"\",\"domain\":\"recorder\",\"service\":\"enable\",\"fields\":{}},\"recorder.disable\":{\"name\":\"Disable\",\"description\":\"\",\"domain\":\"recorder\",\"service\":\"disable\",\"fields\":{}},\"recorder.get_statistics\":{\"name\":\"Get Statistics\",\"description\":\"\",\"domain\":\"recorder\",\"service\":\"get_statistics\",\"fields\":{\"start_time\":{\"name\":\"Start Time\",\"description\":\"\",\"required\":true,\"type\":\"datetime\",\"example\":\"2025-01-01 00:00:00\",\"selector\":{\"datetime\":{}}},\"end_time\":{\"name\":\"End Time\",\"description\":\"\",\"required\":false,\"type\":\"datetime\",\"example\":\"2025-01-02 00:00:00\",\"selector\":{\"datetime\":{}}},\"statistic_ids\":{\"name\":\"Statistic Ids\",\"description\":\"\",\"required\":true,\"type\":\"statistic\",\"example\":[\"sensor.energy_consumption\",\"sensor.temperature\"],\"selector\":{\"statistic\":{\"multiple\":true}}},\"period\":{\"name\":\"Period\",\"description\":\"\",\"required\":true,\"type\":\"select\",\"example\":\"hour\",\"selector\":{\"select\":{\"options\":[\"5minute\",\"hour\",\"day\",\"week\",\"month\",\"year\"],\"multiple\":false,\"custom_value\":false,\"sort\":false}}},\"types\":{\"name\":\"Types\",\"description\":\"\",\"required\":true,\"type\":\"select\",\"example\":[\"mean\",\"sum\"],\"selector\":{\"select\":{\"options\":[\"change\",\"last_reset\",\"max\",\"mean\",\"min\",\"state\",\"sum\"],\"multiple\":true,\"custom_value\":false,\"sort\":false}}},\"units\":{\"name\":\"Units\",\"description\":\"\",\"required\":false,\"type\":\"object\",\"example\":{\"energy\":\"kWh\",\"temperature\":\"\u00b0C\"},\"selector\":{\"object\":{\"multiple\":false}}}}},\"media_player.turn_on\":{\"name\":\"Turn On\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"turn_on\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[128]}]}},\"media_player.turn_off\":{\"name\":\"Turn Off\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"turn_off\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[256]}]}},\"media_player.toggle\":{\"name\":\"Toggle\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"toggle\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[384]}]}},\"media_player.volume_up\":{\"name\":\"Volume Up\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"volume_up\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[4,1024]}]}},\"media_player.volume_down\":{\"name\":\"Volume Down\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"volume_down\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[4,1024]}]}},\"media_player.media_play_pause\":{\"name\":\"Media Play Pause\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"media_play_pause\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[16385]}]}},\"media_player.media_play\":{\"name\":\"Media Play\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"media_play\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[16384]}]}},\"media_player.media_pause\":{\"name\":\"Media Pause\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"media_pause\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[1]}]}},\"media_player.media_stop\":{\"name\":\"Media Stop\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"media_stop\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[4096]}]}},\"media_player.media_next_track\":{\"name\":\"Media Next Track\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"media_next_track\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[32]}]}},\"media_player.media_previous_track\":{\"name\":\"Media Previous Track\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"media_previous_track\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[16]}]}},\"media_player.clear_playlist\":{\"name\":\"Clear Playlist\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"clear_playlist\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[8192]}]}},\"media_player.volume_set\":{\"name\":\"Volume Set\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"volume_set\",\"fields\":{\"volume_level\":{\"name\":\"Volume Level\",\"description\":\"\",\"required\":true,\"type\":\"number (0.0-1.0)\",\"example\":null,\"selector\":{\"number\":{\"min\":0.0,\"max\":1.0,\"step\":0.01,\"mode\":\"slider\"}}}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[4]}]}},\"media_player.volume_mute\":{\"name\":\"Volume Mute\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"volume_mute\",\"fields\":{\"is_volume_muted\":{\"name\":\"Is Volume Muted\",\"description\":\"\",\"required\":true,\"type\":\"boolean\",\"example\":null,\"selector\":{\"boolean\":{}}}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[8]}]}},\"media_player.media_seek\":{\"name\":\"Media Seek\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"media_seek\",\"fields\":{\"seek_position\":{\"name\":\"Seek Position\",\"description\":\"\",\"required\":true,\"type\":\"number (0.0-9.223372036854776e+18)\",\"example\":null,\"selector\":{\"number\":{\"min\":0.0,\"max\":9.223372036854776e+18,\"step\":0.01,\"mode\":\"box\"}}}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[2]}]}},\"media_player.join\":{\"name\":\"Join\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"join\",\"fields\":{\"group_members\":{\"name\":\"Group Members\",\"description\":\"\",\"required\":true,\"type\":\"entity (media_player)\",\"example\":\"- media_player.multiroom_player2\\n- media_player.multiroom_player3\\n\",\"selector\":{\"entity\":{\"multiple\":true,\"domain\":[\"media_player\"],\"reorder\":false}}}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[524288]}]}},\"media_player.select_source\":{\"name\":\"Select Source\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"select_source\",\"fields\":{\"source\":{\"name\":\"Source\",\"description\":\"\",\"required\":true,\"type\":\"state\",\"example\":\"video1\",\"selector\":{\"state\":{\"attribute\":\"source\",\"multiple\":false}}}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[2048]}]}},\"media_player.select_sound_mode\":{\"name\":\"Select Sound Mode\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"select_sound_mode\",\"fields\":{\"sound_mode\":{\"name\":\"Sound Mode\",\"description\":\"\",\"required\":false,\"type\":\"state\",\"example\":\"Music\",\"selector\":{\"state\":{\"attribute\":\"sound_mode\",\"multiple\":false}}}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[65536]}]}},\"media_player.play_media\":{\"name\":\"Play Media\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"play_media\",\"fields\":{\"media\":{\"name\":\"Media\",\"description\":\"\",\"required\":true,\"type\":\"media\",\"example\":\"{\\\"media_content_id\\\": \\\"https://home-assistant.io/images/cast/splash.png\\\", \\\"media_content_type\\\": \\\"music\\\"}\",\"selector\":{\"media\":{\"multiple\":false,\"image_upload\":false}}},\"enqueue\":{\"name\":\"Enqueue\",\"description\":\"\",\"required\":false,\"type\":\"select (play, next, add, replace)\",\"example\":null,\"selector\":{\"select\":{\"options\":[\"play\",\"next\",\"add\",\"replace\"],\"translation_key\":\"enqueue\",\"multiple\":false,\"custom_value\":false,\"sort\":false}}},\"announce\":{\"name\":\"Announce\",\"description\":\"\",\"required\":false,\"type\":\"boolean\",\"example\":\"true\",\"selector\":{\"boolean\":{}}}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[512]}]}},\"media_player.browse_media\":{\"name\":\"Browse Media\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"browse_media\",\"fields\":{\"media_content_type\":{\"name\":\"Media Content Type\",\"description\":\"\",\"required\":false,\"type\":\"text\",\"example\":\"music\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}}},\"media_content_id\":{\"name\":\"Media Content Id\",\"description\":\"\",\"required\":false,\"type\":\"text\",\"example\":\"A:ALBUMARTIST/Beatles\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}}}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[131072]}]}},\"media_player.search_media\":{\"name\":\"Search Media\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"search_media\",\"fields\":{\"search_query\":{\"name\":\"Search Query\",\"description\":\"\",\"required\":true,\"type\":\"text\",\"example\":\"Beatles\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}}},\"media_content_type\":{\"name\":\"Media Content Type\",\"description\":\"\",\"required\":false,\"type\":\"text\",\"example\":\"music\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}}},\"media_content_id\":{\"name\":\"Media Content Id\",\"description\":\"\",\"required\":false,\"type\":\"text\",\"example\":\"A:ALBUMARTIST/Beatles\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}}},\"media_filter_classes\":{\"name\":\"Media Filter Classes\",\"description\":\"\",\"required\":false,\"type\":\"text\",\"example\":[\"album\",\"artist\"],\"selector\":{\"text\":{\"multiple\":true,\"multiline\":false}}}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[4194304]}]}},\"media_player.shuffle_set\":{\"name\":\"Shuffle Set\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"shuffle_set\",\"fields\":{\"shuffle\":{\"name\":\"Shuffle\",\"description\":\"\",\"required\":true,\"type\":\"boolean\",\"example\":null,\"selector\":{\"boolean\":{}}}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[32768]}]}}},\"total_count\":247,\"offset\":0,\"limit\":50,\"count\":50,\"has_more\":true,\"next_offset\":50,\"detail_level\":\"full\",\"filters_applied\":{\"domain\":null,\"query\":null}}",
+       "type": "text"
+      }
+     ],
+     "isError": false,
+     "structuredContent": {
+      "count": 50,
+      "detail_level": "full",
+      "domains": [
+       "ai_task",
+       "alarm_control_panel",
+       "assist_satellite",
+       "automation",
+       "backup",
+       "button",
+       "calendar",
+       "camera",
+       "climate",
+       "conversation",
+       "counter",
+       "cover",
+       "date",
+       "datetime",
+       "device_tracker",
+       "fan",
+       "ffmpeg",
+       "frontend",
+       "group",
+       "homeassistant",
+       "humidifier",
+       "image",
+       "image_processing",
+       "input_boolean",
+       "input_button",
+       "input_datetime",
+       "input_number",
+       "input_select",
+       "input_text",
+       "lawn_mower",
+       "light",
+       "lock",
+       "logbook",
+       "logger",
+       "lovelace",
+       "media_player",
+       "notify",
+       "number",
+       "persistent_notification",
+       "person",
+       "recorder",
+       "remote",
+       "scene",
+       "schedule",
+       "script",
+       "select",
+       "shopping_list",
+       "siren",
+       "switch",
+       "system_log",
+       "template",
+       "text",
+       "time",
+       "timer",
+       "todo",
+       "tts",
+       "update",
+       "vacuum",
+       "valve",
+       "water_heater",
+       "weather",
+       "zone"
+      ],
+      "filters_applied": {
+       "domain": null,
+       "query": null
+      },
+      "has_more": true,
+      "limit": 50,
+      "next_offset": 50,
+      "offset": 0,
+      "services": {
+       "frontend.reload_themes": {
+        "description": "",
+        "domain": "frontend",
+        "fields": {},
+        "name": "Reload Themes",
+        "service": "reload_themes"
+       },
+       "frontend.set_theme": {
+        "description": "",
+        "domain": "frontend",
+        "fields": {
+         "name": {
+          "description": "",
+          "example": "default",
+          "name": "Name",
+          "required": false,
+          "selector": {
+           "theme": {
+            "include_default": true
+           }
+          },
+          "type": "theme"
+         },
+         "name_dark": {
+          "description": "",
+          "example": "default",
+          "name": "Name Dark",
+          "required": false,
+          "selector": {
+           "theme": {
+            "include_default": true
+           }
+          },
+          "type": "theme"
+         }
+        },
+        "name": "Set Theme",
+        "service": "set_theme"
+       },
+       "homeassistant.check_config": {
+        "description": "",
+        "domain": "homeassistant",
+        "fields": {},
+        "name": "Check Config",
+        "service": "check_config"
+       },
+       "homeassistant.reload_all": {
+        "description": "",
+        "domain": "homeassistant",
+        "fields": {},
+        "name": "Reload All",
+        "service": "reload_all"
+       },
+       "homeassistant.reload_config_entry": {
+        "description": "",
+        "domain": "homeassistant",
+        "fields": {
+         "entry_id": {
+          "description": "",
+          "example": null,
+          "name": "Entry Id",
+          "required": true,
+          "selector": {
+           "config_entry": {}
+          },
+          "type": "config_entry"
+         }
+        },
+        "name": "Reload Config Entry",
+        "service": "reload_config_entry"
+       },
+       "homeassistant.reload_core_config": {
+        "description": "",
+        "domain": "homeassistant",
+        "fields": {},
+        "name": "Reload Core Config",
+        "service": "reload_core_config"
+       },
+       "homeassistant.reload_custom_templates": {
+        "description": "",
+        "domain": "homeassistant",
+        "fields": {},
+        "name": "Reload Custom Templates",
+        "service": "reload_custom_templates"
+       },
+       "homeassistant.restart": {
+        "description": "",
+        "domain": "homeassistant",
+        "fields": {},
+        "name": "Restart",
+        "service": "restart"
+       },
+       "homeassistant.save_persistent_states": {
+        "description": "",
+        "domain": "homeassistant",
+        "fields": {},
+        "name": "Save Persistent States",
+        "service": "save_persistent_states"
+       },
+       "homeassistant.set_location": {
+        "description": "",
+        "domain": "homeassistant",
+        "fields": {
+         "elevation": {
+          "description": "",
+          "example": 120,
+          "name": "Elevation",
+          "required": false,
+          "selector": {
+           "number": {
+            "mode": "box",
+            "step": "any",
+            "unit_of_measurement": "m"
+           }
+          },
+          "type": "number"
+         },
+         "latitude": {
+          "description": "",
+          "example": 32.87336,
+          "name": "Latitude",
+          "required": true,
+          "selector": {
+           "number": {
+            "max": 90.0,
+            "min": -90.0,
+            "mode": "box",
+            "step": "any"
+           }
+          },
+          "type": "number (-90.0-90.0)"
+         },
+         "longitude": {
+          "description": "",
+          "example": 117.22743,
+          "name": "Longitude",
+          "required": true,
+          "selector": {
+           "number": {
+            "max": 180.0,
+            "min": -180.0,
+            "mode": "box",
+            "step": "any"
+           }
+          },
+          "type": "number (-180.0-180.0)"
+         }
+        },
+        "name": "Set Location",
+        "service": "set_location"
+       },
+       "homeassistant.stop": {
+        "description": "",
+        "domain": "homeassistant",
+        "fields": {},
+        "name": "Stop",
+        "service": "stop"
+       },
+       "homeassistant.toggle": {
+        "description": "",
+        "domain": "homeassistant",
+        "fields": {},
+        "name": "Toggle",
+        "service": "toggle",
+        "target": {}
+       },
+       "homeassistant.turn_off": {
+        "description": "",
+        "domain": "homeassistant",
+        "fields": {},
+        "name": "Turn Off",
+        "service": "turn_off",
+        "target": {}
+       },
+       "homeassistant.turn_on": {
+        "description": "",
+        "domain": "homeassistant",
+        "fields": {},
+        "name": "Turn On",
+        "service": "turn_on",
+        "target": {}
+       },
+       "homeassistant.update_entity": {
+        "description": "",
+        "domain": "homeassistant",
+        "fields": {
+         "entity_id": {
+          "description": "",
+          "example": null,
+          "name": "Entity Id",
+          "required": true,
+          "selector": {
+           "entity": {
+            "multiple": true,
+            "reorder": false
+           }
+          },
+          "type": "entity"
+         }
+        },
+        "name": "Update Entity",
+        "service": "update_entity"
+       },
+       "logger.set_default_level": {
+        "description": "",
+        "domain": "logger",
+        "fields": {
+         "level": {
+          "description": "",
+          "example": null,
+          "name": "Level",
+          "required": false,
+          "selector": {
+           "select": {
+            "custom_value": false,
+            "multiple": false,
+            "options": [
+             "debug",
+             "info",
+             "warning",
+             "error",
+             "fatal",
+             "critical"
+            ],
+            "sort": false,
+            "translation_key": "level"
+           }
+          },
+          "type": "select"
+         }
+        },
+        "name": "Set Default Level",
+        "service": "set_default_level"
+       },
+       "logger.set_level": {
+        "description": "",
+        "domain": "logger",
+        "fields": {},
+        "name": "Set Level",
+        "service": "set_level"
+       },
+       "lovelace.reload_resources": {
+        "description": "",
+        "domain": "lovelace",
+        "fields": {},
+        "name": "Reload Resources",
+        "service": "reload_resources"
+       },
+       "media_player.browse_media": {
+        "description": "",
+        "domain": "media_player",
+        "fields": {
+         "media_content_id": {
+          "description": "",
+          "example": "A:ALBUMARTIST/Beatles",
+          "name": "Media Content Id",
+          "required": false,
+          "selector": {
+           "text": {
+            "multiline": false,
+            "multiple": false
+           }
+          },
+          "type": "text"
+         },
+         "media_content_type": {
+          "description": "",
+          "example": "music",
+          "name": "Media Content Type",
+          "required": false,
+          "selector": {
+           "text": {
+            "multiline": false,
+            "multiple": false
+           }
+          },
+          "type": "text"
+         }
+        },
+        "name": "Browse Media",
+        "service": "browse_media",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "media_player"
+           ],
+           "supported_features": [
+            131072
+           ]
+          }
+         ]
+        }
+       },
+       "media_player.clear_playlist": {
+        "description": "",
+        "domain": "media_player",
+        "fields": {},
+        "name": "Clear Playlist",
+        "service": "clear_playlist",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "media_player"
+           ],
+           "supported_features": [
+            8192
+           ]
+          }
+         ]
+        }
+       },
+       "media_player.join": {
+        "description": "",
+        "domain": "media_player",
+        "fields": {
+         "group_members": {
+          "description": "",
+          "example": "- media_player.multiroom_player2\n- media_player.multiroom_player3\n",
+          "name": "Group Members",
+          "required": true,
+          "selector": {
+           "entity": {
+            "domain": [
+             "media_player"
+            ],
+            "multiple": true,
+            "reorder": false
+           }
+          },
+          "type": "entity (media_player)"
+         }
+        },
+        "name": "Join",
+        "service": "join",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "media_player"
+           ],
+           "supported_features": [
+            524288
+           ]
+          }
+         ]
+        }
+       },
+       "media_player.media_next_track": {
+        "description": "",
+        "domain": "media_player",
+        "fields": {},
+        "name": "Media Next Track",
+        "service": "media_next_track",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "media_player"
+           ],
+           "supported_features": [
+            32
+           ]
+          }
+         ]
+        }
+       },
+       "media_player.media_pause": {
+        "description": "",
+        "domain": "media_player",
+        "fields": {},
+        "name": "Media Pause",
+        "service": "media_pause",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "media_player"
+           ],
+           "supported_features": [
+            1
+           ]
+          }
+         ]
+        }
+       },
+       "media_player.media_play": {
+        "description": "",
+        "domain": "media_player",
+        "fields": {},
+        "name": "Media Play",
+        "service": "media_play",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "media_player"
+           ],
+           "supported_features": [
+            16384
+           ]
+          }
+         ]
+        }
+       },
+       "media_player.media_play_pause": {
+        "description": "",
+        "domain": "media_player",
+        "fields": {},
+        "name": "Media Play Pause",
+        "service": "media_play_pause",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "media_player"
+           ],
+           "supported_features": [
+            16385
+           ]
+          }
+         ]
+        }
+       },
+       "media_player.media_previous_track": {
+        "description": "",
+        "domain": "media_player",
+        "fields": {},
+        "name": "Media Previous Track",
+        "service": "media_previous_track",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "media_player"
+           ],
+           "supported_features": [
+            16
+           ]
+          }
+         ]
+        }
+       },
+       "media_player.media_seek": {
+        "description": "",
+        "domain": "media_player",
+        "fields": {
+         "seek_position": {
+          "description": "",
+          "example": null,
+          "name": "Seek Position",
+          "required": true,
+          "selector": {
+           "number": {
+            "max": 9.223372036854776e+18,
+            "min": 0.0,
+            "mode": "box",
+            "step": 0.01
+           }
+          },
+          "type": "number (0.0-9.223372036854776e+18)"
+         }
+        },
+        "name": "Media Seek",
+        "service": "media_seek",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "media_player"
+           ],
+           "supported_features": [
+            2
+           ]
+          }
+         ]
+        }
+       },
+       "media_player.media_stop": {
+        "description": "",
+        "domain": "media_player",
+        "fields": {},
+        "name": "Media Stop",
+        "service": "media_stop",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "media_player"
+           ],
+           "supported_features": [
+            4096
+           ]
+          }
+         ]
+        }
+       },
+       "media_player.play_media": {
+        "description": "",
+        "domain": "media_player",
+        "fields": {
+         "announce": {
+          "description": "",
+          "example": "true",
+          "name": "Announce",
+          "required": false,
+          "selector": {
+           "boolean": {}
+          },
+          "type": "boolean"
+         },
+         "enqueue": {
+          "description": "",
+          "example": null,
+          "name": "Enqueue",
+          "required": false,
+          "selector": {
+           "select": {
+            "custom_value": false,
+            "multiple": false,
+            "options": [
+             "play",
+             "next",
+             "add",
+             "replace"
+            ],
+            "sort": false,
+            "translation_key": "enqueue"
+           }
+          },
+          "type": "select (play, next, add, replace)"
+         },
+         "media": {
+          "description": "",
+          "example": "{\"media_content_id\": \"https://home-assistant.io/images/cast/splash.png\", \"media_content_type\": \"music\"}",
+          "name": "Media",
+          "required": true,
+          "selector": {
+           "media": {
+            "image_upload": false,
+            "multiple": false
+           }
+          },
+          "type": "media"
+         }
+        },
+        "name": "Play Media",
+        "service": "play_media",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "media_player"
+           ],
+           "supported_features": [
+            512
+           ]
+          }
+         ]
+        }
+       },
+       "media_player.search_media": {
+        "description": "",
+        "domain": "media_player",
+        "fields": {
+         "media_content_id": {
+          "description": "",
+          "example": "A:ALBUMARTIST/Beatles",
+          "name": "Media Content Id",
+          "required": false,
+          "selector": {
+           "text": {
+            "multiline": false,
+            "multiple": false
+           }
+          },
+          "type": "text"
+         },
+         "media_content_type": {
+          "description": "",
+          "example": "music",
+          "name": "Media Content Type",
+          "required": false,
+          "selector": {
+           "text": {
+            "multiline": false,
+            "multiple": false
+           }
+          },
+          "type": "text"
+         },
+         "media_filter_classes": {
+          "description": "",
+          "example": [
+           "album",
+           "artist"
+          ],
+          "name": "Media Filter Classes",
+          "required": false,
+          "selector": {
+           "text": {
+            "multiline": false,
+            "multiple": true
+           }
+          },
+          "type": "text"
+         },
+         "search_query": {
+          "description": "",
+          "example": "Beatles",
+          "name": "Search Query",
+          "required": true,
+          "selector": {
+           "text": {
+            "multiline": false,
+            "multiple": false
+           }
+          },
+          "type": "text"
+         }
+        },
+        "name": "Search Media",
+        "service": "search_media",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "media_player"
+           ],
+           "supported_features": [
+            4194304
+           ]
+          }
+         ]
+        }
+       },
+       "media_player.select_sound_mode": {
+        "description": "",
+        "domain": "media_player",
+        "fields": {
+         "sound_mode": {
+          "description": "",
+          "example": "Music",
+          "name": "Sound Mode",
+          "required": false,
+          "selector": {
+           "state": {
+            "attribute": "sound_mode",
+            "multiple": false
+           }
+          },
+          "type": "state"
+         }
+        },
+        "name": "Select Sound Mode",
+        "service": "select_sound_mode",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "media_player"
+           ],
+           "supported_features": [
+            65536
+           ]
+          }
+         ]
+        }
+       },
+       "media_player.select_source": {
+        "description": "",
+        "domain": "media_player",
+        "fields": {
+         "source": {
+          "description": "",
+          "example": "video1",
+          "name": "Source",
+          "required": true,
+          "selector": {
+           "state": {
+            "attribute": "source",
+            "multiple": false
+           }
+          },
+          "type": "state"
+         }
+        },
+        "name": "Select Source",
+        "service": "select_source",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "media_player"
+           ],
+           "supported_features": [
+            2048
+           ]
+          }
+         ]
+        }
+       },
+       "media_player.shuffle_set": {
+        "description": "",
+        "domain": "media_player",
+        "fields": {
+         "shuffle": {
+          "description": "",
+          "example": null,
+          "name": "Shuffle",
+          "required": true,
+          "selector": {
+           "boolean": {}
+          },
+          "type": "boolean"
+         }
+        },
+        "name": "Shuffle Set",
+        "service": "shuffle_set",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "media_player"
+           ],
+           "supported_features": [
+            32768
+           ]
+          }
+         ]
+        }
+       },
+       "media_player.toggle": {
+        "description": "",
+        "domain": "media_player",
+        "fields": {},
+        "name": "Toggle",
+        "service": "toggle",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "media_player"
+           ],
+           "supported_features": [
+            384
+           ]
+          }
+         ]
+        }
+       },
+       "media_player.turn_off": {
+        "description": "",
+        "domain": "media_player",
+        "fields": {},
+        "name": "Turn Off",
+        "service": "turn_off",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "media_player"
+           ],
+           "supported_features": [
+            256
+           ]
+          }
+         ]
+        }
+       },
+       "media_player.turn_on": {
+        "description": "",
+        "domain": "media_player",
+        "fields": {},
+        "name": "Turn On",
+        "service": "turn_on",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "media_player"
+           ],
+           "supported_features": [
+            128
+           ]
+          }
+         ]
+        }
+       },
+       "media_player.volume_down": {
+        "description": "",
+        "domain": "media_player",
+        "fields": {},
+        "name": "Volume Down",
+        "service": "volume_down",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "media_player"
+           ],
+           "supported_features": [
+            4,
+            1024
+           ]
+          }
+         ]
+        }
+       },
+       "media_player.volume_mute": {
+        "description": "",
+        "domain": "media_player",
+        "fields": {
+         "is_volume_muted": {
+          "description": "",
+          "example": null,
+          "name": "Is Volume Muted",
+          "required": true,
+          "selector": {
+           "boolean": {}
+          },
+          "type": "boolean"
+         }
+        },
+        "name": "Volume Mute",
+        "service": "volume_mute",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "media_player"
+           ],
+           "supported_features": [
+            8
+           ]
+          }
+         ]
+        }
+       },
+       "media_player.volume_set": {
+        "description": "",
+        "domain": "media_player",
+        "fields": {
+         "volume_level": {
+          "description": "",
+          "example": null,
+          "name": "Volume Level",
+          "required": true,
+          "selector": {
+           "number": {
+            "max": 1.0,
+            "min": 0.0,
+            "mode": "slider",
+            "step": 0.01
+           }
+          },
+          "type": "number (0.0-1.0)"
+         }
+        },
+        "name": "Volume Set",
+        "service": "volume_set",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "media_player"
+           ],
+           "supported_features": [
+            4
+           ]
+          }
+         ]
+        }
+       },
+       "media_player.volume_up": {
+        "description": "",
+        "domain": "media_player",
+        "fields": {},
+        "name": "Volume Up",
+        "service": "volume_up",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "media_player"
+           ],
+           "supported_features": [
+            4,
+            1024
+           ]
+          }
+         ]
+        }
+       },
+       "persistent_notification.create": {
+        "description": "",
+        "domain": "persistent_notification",
+        "fields": {
+         "message": {
+          "description": "",
+          "example": "Please check your configuration.yaml.",
+          "name": "Message",
+          "required": true,
+          "selector": {
+           "text": {
+            "multiline": false,
+            "multiple": false
+           }
+          },
+          "type": "text"
+         },
+         "notification_id": {
+          "description": "",
+          "example": 1234,
+          "name": "Notification Id",
+          "required": false,
+          "selector": {
+           "text": {
+            "multiline": false,
+            "multiple": false
+           }
+          },
+          "type": "text"
+         },
+         "title": {
+          "description": "",
+          "example": "Test notification",
+          "name": "Title",
+          "required": false,
+          "selector": {
+           "text": {
+            "multiline": false,
+            "multiple": false
+           }
+          },
+          "type": "text"
+         }
+        },
+        "name": "Create",
+        "service": "create"
+       },
+       "persistent_notification.dismiss": {
+        "description": "",
+        "domain": "persistent_notification",
+        "fields": {
+         "notification_id": {
+          "description": "",
+          "example": 1234,
+          "name": "Notification Id",
+          "required": true,
+          "selector": {
+           "text": {
+            "multiline": false,
+            "multiple": false
+           }
+          },
+          "type": "text"
+         }
+        },
+        "name": "Dismiss",
+        "service": "dismiss"
+       },
+       "persistent_notification.dismiss_all": {
+        "description": "",
+        "domain": "persistent_notification",
+        "fields": {},
+        "name": "Dismiss All",
+        "service": "dismiss_all"
+       },
+       "recorder.disable": {
+        "description": "",
+        "domain": "recorder",
+        "fields": {},
+        "name": "Disable",
+        "service": "disable"
+       },
+       "recorder.enable": {
+        "description": "",
+        "domain": "recorder",
+        "fields": {},
+        "name": "Enable",
+        "service": "enable"
+       },
+       "recorder.get_statistics": {
+        "description": "",
+        "domain": "recorder",
+        "fields": {
+         "end_time": {
+          "description": "",
+          "example": "2025-01-02 00:00:00",
+          "name": "End Time",
+          "required": false,
+          "selector": {
+           "datetime": {}
+          },
+          "type": "datetime"
+         },
+         "period": {
+          "description": "",
+          "example": "hour",
+          "name": "Period",
+          "required": true,
+          "selector": {
+           "select": {
+            "custom_value": false,
+            "multiple": false,
+            "options": [
+             "5minute",
+             "hour",
+             "day",
+             "week",
+             "month",
+             "year"
+            ],
+            "sort": false
+           }
+          },
+          "type": "select"
+         },
+         "start_time": {
+          "description": "",
+          "example": "2025-01-01 00:00:00",
+          "name": "Start Time",
+          "required": true,
+          "selector": {
+           "datetime": {}
+          },
+          "type": "datetime"
+         },
+         "statistic_ids": {
+          "description": "",
+          "example": [
+           "sensor.energy_consumption",
+           "sensor.temperature"
+          ],
+          "name": "Statistic Ids",
+          "required": true,
+          "selector": {
+           "statistic": {
+            "multiple": true
+           }
+          },
+          "type": "statistic"
+         },
+         "types": {
+          "description": "",
+          "example": [
+           "mean",
+           "sum"
+          ],
+          "name": "Types",
+          "required": true,
+          "selector": {
+           "select": {
+            "custom_value": false,
+            "multiple": true,
+            "options": [
+             "change",
+             "last_reset",
+             "max",
+             "mean",
+             "min",
+             "state",
+             "sum"
+            ],
+            "sort": false
+           }
+          },
+          "type": "select"
+         },
+         "units": {
+          "description": "",
+          "example": {
+           "energy": "kWh",
+           "temperature": "\u00b0C"
+          },
+          "name": "Units",
+          "required": false,
+          "selector": {
+           "object": {
+            "multiple": false
+           }
+          },
+          "type": "object"
+         }
+        },
+        "name": "Get Statistics",
+        "service": "get_statistics"
+       },
+       "recorder.purge": {
+        "description": "",
+        "domain": "recorder",
+        "fields": {
+         "apply_filter": {
+          "default": false,
+          "description": "",
+          "example": null,
+          "name": "Apply Filter",
+          "required": false,
+          "selector": {
+           "boolean": {}
+          },
+          "type": "boolean"
+         },
+         "keep_days": {
+          "description": "",
+          "example": null,
+          "name": "Keep Days",
+          "required": false,
+          "selector": {
+           "number": {
+            "max": 365.0,
+            "min": 0.0,
+            "mode": "slider",
+            "step": 1.0,
+            "unit_of_measurement": "days"
+           }
+          },
+          "type": "number (0.0-365.0)"
+         },
+         "repack": {
+          "default": false,
+          "description": "",
+          "example": null,
+          "name": "Repack",
+          "required": false,
+          "selector": {
+           "boolean": {}
+          },
+          "type": "boolean"
+         }
+        },
+        "name": "Purge",
+        "service": "purge"
+       },
+       "recorder.purge_entities": {
+        "description": "",
+        "domain": "recorder",
+        "fields": {
+         "domains": {
+          "description": "",
+          "example": "sun",
+          "name": "Domains",
+          "required": false,
+          "selector": {
+           "object": {
+            "multiple": false
+           }
+          },
+          "type": "object"
+         },
+         "entity_globs": {
+          "description": "",
+          "example": "domain*.object_id*",
+          "name": "Entity Globs",
+          "required": false,
+          "selector": {
+           "object": {
+            "multiple": false
+           }
+          },
+          "type": "object"
+         },
+         "entity_id": {
+          "description": "",
+          "example": null,
+          "name": "Entity Id",
+          "required": false,
+          "selector": {
+           "entity": {
+            "multiple": true,
+            "reorder": false
+           }
+          },
+          "type": "entity"
+         },
+         "keep_days": {
+          "default": 0,
+          "description": "",
+          "example": null,
+          "name": "Keep Days",
+          "required": false,
+          "selector": {
+           "number": {
+            "max": 365.0,
+            "min": 0.0,
+            "mode": "slider",
+            "step": 1.0,
+            "unit_of_measurement": "days"
+           }
+          },
+          "type": "number (0.0-365.0)"
+         }
+        },
+        "name": "Purge Entities",
+        "service": "purge_entities"
+       },
+       "system_log.clear": {
+        "description": "",
+        "domain": "system_log",
+        "fields": {},
+        "name": "Clear",
+        "service": "clear"
+       },
+       "system_log.write": {
+        "description": "",
+        "domain": "system_log",
+        "fields": {
+         "level": {
+          "default": "error",
+          "description": "",
+          "example": null,
+          "name": "Level",
+          "required": false,
+          "selector": {
+           "select": {
+            "custom_value": false,
+            "multiple": false,
+            "options": [
+             "debug",
+             "info",
+             "warning",
+             "error",
+             "critical"
+            ],
+            "sort": false,
+            "translation_key": "level"
+           }
+          },
+          "type": "select (debug, info, warning, error, critical)"
+         },
+         "logger": {
+          "description": "",
+          "example": "mycomponent.myplatform",
+          "name": "Logger",
+          "required": false,
+          "selector": {
+           "text": {
+            "multiline": false,
+            "multiple": false
+           }
+          },
+          "type": "text"
+         },
+         "message": {
+          "description": "",
+          "example": "Something went wrong",
+          "name": "Message",
+          "required": true,
+          "selector": {
+           "text": {
+            "multiline": false,
+            "multiple": false
+           }
+          },
+          "type": "text"
+         }
+        },
+        "name": "Write",
+        "service": "write"
+       }
+      },
+      "success": true,
+      "total_count": 247
+     }
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 143,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "detail_level": "full"
+     },
+     "name": "ha_list_services"
+    }
+   },
+   "method": "POST",
+   "path": "/mcp"
+  },
+  "response": {
+   "id": 143,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\"success\":true,\"domains\":[\"ai_task\",\"alarm_control_panel\",\"assist_satellite\",\"automation\",\"backup\",\"button\",\"calendar\",\"camera\",\"climate\",\"conversation\",\"counter\",\"cover\",\"date\",\"datetime\",\"device_tracker\",\"fan\",\"ffmpeg\",\"frontend\",\"group\",\"homeassistant\",\"humidifier\",\"image\",\"image_processing\",\"input_boolean\",\"input_button\",\"input_datetime\",\"input_number\",\"input_select\",\"input_text\",\"lawn_mower\",\"light\",\"lock\",\"logbook\",\"logger\",\"lovelace\",\"media_player\",\"notify\",\"number\",\"persistent_notification\",\"person\",\"recorder\",\"remote\",\"scene\",\"schedule\",\"script\",\"select\",\"shopping_list\",\"siren\",\"switch\",\"system_log\",\"template\",\"text\",\"time\",\"timer\",\"todo\",\"tts\",\"update\",\"vacuum\",\"valve\",\"water_heater\",\"weather\",\"zone\"],\"services\":{\"persistent_notification.create\":{\"name\":\"Create\",\"description\":\"\",\"domain\":\"persistent_notification\",\"service\":\"create\",\"fields\":{\"message\":{\"name\":\"Message\",\"description\":\"\",\"required\":true,\"type\":\"text\",\"example\":\"Please check your configuration.yaml.\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}}},\"title\":{\"name\":\"Title\",\"description\":\"\",\"required\":false,\"type\":\"text\",\"example\":\"Test notification\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}}},\"notification_id\":{\"name\":\"Notification Id\",\"description\":\"\",\"required\":false,\"type\":\"text\",\"example\":1234,\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}}}}},\"persistent_notification.dismiss\":{\"name\":\"Dismiss\",\"description\":\"\",\"domain\":\"persistent_notification\",\"service\":\"dismiss\",\"fields\":{\"notification_id\":{\"name\":\"Notification Id\",\"description\":\"\",\"required\":true,\"type\":\"text\",\"example\":1234,\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}}}}},\"persistent_notification.dismiss_all\":{\"name\":\"Dismiss All\",\"description\":\"\",\"domain\":\"persistent_notification\",\"service\":\"dismiss_all\",\"fields\":{}},\"homeassistant.save_persistent_states\":{\"name\":\"Save Persistent States\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"save_persistent_states\",\"fields\":{}},\"homeassistant.turn_off\":{\"name\":\"Turn Off\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"turn_off\",\"fields\":{},\"target\":{}},\"homeassistant.turn_on\":{\"name\":\"Turn On\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"turn_on\",\"fields\":{},\"target\":{}},\"homeassistant.toggle\":{\"name\":\"Toggle\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"toggle\",\"fields\":{},\"target\":{}},\"homeassistant.stop\":{\"name\":\"Stop\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"stop\",\"fields\":{}},\"homeassistant.restart\":{\"name\":\"Restart\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"restart\",\"fields\":{}},\"homeassistant.check_config\":{\"name\":\"Check Config\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"check_config\",\"fields\":{}},\"homeassistant.update_entity\":{\"name\":\"Update Entity\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"update_entity\",\"fields\":{\"entity_id\":{\"name\":\"Entity Id\",\"description\":\"\",\"required\":true,\"type\":\"entity\",\"example\":null,\"selector\":{\"entity\":{\"multiple\":true,\"reorder\":false}}}}},\"homeassistant.reload_core_config\":{\"name\":\"Reload Core Config\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"reload_core_config\",\"fields\":{}},\"homeassistant.set_location\":{\"name\":\"Set Location\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"set_location\",\"fields\":{\"latitude\":{\"name\":\"Latitude\",\"description\":\"\",\"required\":true,\"type\":\"number (-90.0-90.0)\",\"example\":32.87336,\"selector\":{\"number\":{\"mode\":\"box\",\"min\":-90.0,\"max\":90.0,\"step\":\"any\"}}},\"longitude\":{\"name\":\"Longitude\",\"description\":\"\",\"required\":true,\"type\":\"number (-180.0-180.0)\",\"example\":117.22743,\"selector\":{\"number\":{\"mode\":\"box\",\"min\":-180.0,\"max\":180.0,\"step\":\"any\"}}},\"elevation\":{\"name\":\"Elevation\",\"description\":\"\",\"required\":false,\"type\":\"number\",\"example\":120,\"selector\":{\"number\":{\"mode\":\"box\",\"step\":\"any\",\"unit_of_measurement\":\"m\"}}}}},\"homeassistant.reload_custom_templates\":{\"name\":\"Reload Custom Templates\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"reload_custom_templates\",\"fields\":{}},\"homeassistant.reload_config_entry\":{\"name\":\"Reload Config Entry\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"reload_config_entry\",\"fields\":{\"entry_id\":{\"name\":\"Entry Id\",\"description\":\"\",\"required\":true,\"type\":\"config_entry\",\"example\":null,\"selector\":{\"config_entry\":{}}}}},\"homeassistant.reload_all\":{\"name\":\"Reload All\",\"description\":\"\",\"domain\":\"homeassistant\",\"service\":\"reload_all\",\"fields\":{}},\"system_log.clear\":{\"name\":\"Clear\",\"description\":\"\",\"domain\":\"system_log\",\"service\":\"clear\",\"fields\":{}},\"system_log.write\":{\"name\":\"Write\",\"description\":\"\",\"domain\":\"system_log\",\"service\":\"write\",\"fields\":{\"message\":{\"name\":\"Message\",\"description\":\"\",\"required\":true,\"type\":\"text\",\"example\":\"Something went wrong\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}}},\"level\":{\"name\":\"Level\",\"description\":\"\",\"required\":false,\"type\":\"select (debug, info, warning, error, critical)\",\"example\":null,\"selector\":{\"select\":{\"options\":[\"debug\",\"info\",\"warning\",\"error\",\"critical\"],\"translation_key\":\"level\",\"multiple\":false,\"custom_value\":false,\"sort\":false}},\"default\":\"error\"},\"logger\":{\"name\":\"Logger\",\"description\":\"\",\"required\":false,\"type\":\"text\",\"example\":\"mycomponent.myplatform\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}}}}},\"logger.set_default_level\":{\"name\":\"Set Default Level\",\"description\":\"\",\"domain\":\"logger\",\"service\":\"set_default_level\",\"fields\":{\"level\":{\"name\":\"Level\",\"description\":\"\",\"required\":false,\"type\":\"select\",\"example\":null,\"selector\":{\"select\":{\"options\":[\"debug\",\"info\",\"warning\",\"error\",\"fatal\",\"critical\"],\"translation_key\":\"level\",\"multiple\":false,\"custom_value\":false,\"sort\":false}}}}},\"logger.set_level\":{\"name\":\"Set Level\",\"description\":\"\",\"domain\":\"logger\",\"service\":\"set_level\",\"fields\":{}},\"lovelace.reload_resources\":{\"name\":\"Reload Resources\",\"description\":\"\",\"domain\":\"lovelace\",\"service\":\"reload_resources\",\"fields\":{}},\"frontend.set_theme\":{\"name\":\"Set Theme\",\"description\":\"\",\"domain\":\"frontend\",\"service\":\"set_theme\",\"fields\":{\"name\":{\"name\":\"Name\",\"description\":\"\",\"required\":false,\"type\":\"theme\",\"example\":\"default\",\"selector\":{\"theme\":{\"include_default\":true}}},\"name_dark\":{\"name\":\"Name Dark\",\"description\":\"\",\"required\":false,\"type\":\"theme\",\"example\":\"default\",\"selector\":{\"theme\":{\"include_default\":true}}}}},\"frontend.reload_themes\":{\"name\":\"Reload Themes\",\"description\":\"\",\"domain\":\"frontend\",\"service\":\"reload_themes\",\"fields\":{}},\"recorder.purge\":{\"name\":\"Purge\",\"description\":\"\",\"domain\":\"recorder\",\"service\":\"purge\",\"fields\":{\"keep_days\":{\"name\":\"Keep Days\",\"description\":\"\",\"required\":false,\"type\":\"number (0.0-365.0)\",\"example\":null,\"selector\":{\"number\":{\"min\":0.0,\"max\":365.0,\"unit_of_measurement\":\"days\",\"step\":1.0,\"mode\":\"slider\"}}},\"repack\":{\"name\":\"Repack\",\"description\":\"\",\"required\":false,\"type\":\"boolean\",\"example\":null,\"selector\":{\"boolean\":{}},\"default\":false},\"apply_filter\":{\"name\":\"Apply Filter\",\"description\":\"\",\"required\":false,\"type\":\"boolean\",\"example\":null,\"selector\":{\"boolean\":{}},\"default\":false}}},\"recorder.purge_entities\":{\"name\":\"Purge Entities\",\"description\":\"\",\"domain\":\"recorder\",\"service\":\"purge_entities\",\"fields\":{\"entity_id\":{\"name\":\"Entity Id\",\"description\":\"\",\"required\":false,\"type\":\"entity\",\"example\":null,\"selector\":{\"entity\":{\"multiple\":true,\"reorder\":false}}},\"domains\":{\"name\":\"Domains\",\"description\":\"\",\"required\":false,\"type\":\"object\",\"example\":\"sun\",\"selector\":{\"object\":{\"multiple\":false}}},\"entity_globs\":{\"name\":\"Entity Globs\",\"description\":\"\",\"required\":false,\"type\":\"object\",\"example\":\"domain*.object_id*\",\"selector\":{\"object\":{\"multiple\":false}}},\"keep_days\":{\"name\":\"Keep Days\",\"description\":\"\",\"required\":false,\"type\":\"number (0.0-365.0)\",\"example\":null,\"selector\":{\"number\":{\"min\":0.0,\"max\":365.0,\"unit_of_measurement\":\"days\",\"step\":1.0,\"mode\":\"slider\"}},\"default\":0}}},\"recorder.enable\":{\"name\":\"Enable\",\"description\":\"\",\"domain\":\"recorder\",\"service\":\"enable\",\"fields\":{}},\"recorder.disable\":{\"name\":\"Disable\",\"description\":\"\",\"domain\":\"recorder\",\"service\":\"disable\",\"fields\":{}},\"recorder.get_statistics\":{\"name\":\"Get Statistics\",\"description\":\"\",\"domain\":\"recorder\",\"service\":\"get_statistics\",\"fields\":{\"start_time\":{\"name\":\"Start Time\",\"description\":\"\",\"required\":true,\"type\":\"datetime\",\"example\":\"2025-01-01 00:00:00\",\"selector\":{\"datetime\":{}}},\"end_time\":{\"name\":\"End Time\",\"description\":\"\",\"required\":false,\"type\":\"datetime\",\"example\":\"2025-01-02 00:00:00\",\"selector\":{\"datetime\":{}}},\"statistic_ids\":{\"name\":\"Statistic Ids\",\"description\":\"\",\"required\":true,\"type\":\"statistic\",\"example\":[\"sensor.energy_consumption\",\"sensor.temperature\"],\"selector\":{\"statistic\":{\"multiple\":true}}},\"period\":{\"name\":\"Period\",\"description\":\"\",\"required\":true,\"type\":\"select\",\"example\":\"hour\",\"selector\":{\"select\":{\"options\":[\"5minute\",\"hour\",\"day\",\"week\",\"month\",\"year\"],\"multiple\":false,\"custom_value\":false,\"sort\":false}}},\"types\":{\"name\":\"Types\",\"description\":\"\",\"required\":true,\"type\":\"select\",\"example\":[\"mean\",\"sum\"],\"selector\":{\"select\":{\"options\":[\"change\",\"last_reset\",\"max\",\"mean\",\"min\",\"state\",\"sum\"],\"multiple\":true,\"custom_value\":false,\"sort\":false}}},\"units\":{\"name\":\"Units\",\"description\":\"\",\"required\":false,\"type\":\"object\",\"example\":{\"energy\":\"kWh\",\"temperature\":\"\u00b0C\"},\"selector\":{\"object\":{\"multiple\":false}}}}},\"media_player.turn_on\":{\"name\":\"Turn On\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"turn_on\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[128]}]}},\"media_player.turn_off\":{\"name\":\"Turn Off\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"turn_off\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[256]}]}},\"media_player.toggle\":{\"name\":\"Toggle\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"toggle\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[384]}]}},\"media_player.volume_up\":{\"name\":\"Volume Up\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"volume_up\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[4,1024]}]}},\"media_player.volume_down\":{\"name\":\"Volume Down\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"volume_down\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[4,1024]}]}},\"media_player.media_play_pause\":{\"name\":\"Media Play Pause\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"media_play_pause\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[16385]}]}},\"media_player.media_play\":{\"name\":\"Media Play\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"media_play\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[16384]}]}},\"media_player.media_pause\":{\"name\":\"Media Pause\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"media_pause\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[1]}]}},\"media_player.media_stop\":{\"name\":\"Media Stop\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"media_stop\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[4096]}]}},\"media_player.media_next_track\":{\"name\":\"Media Next Track\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"media_next_track\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[32]}]}},\"media_player.media_previous_track\":{\"name\":\"Media Previous Track\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"media_previous_track\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[16]}]}},\"media_player.clear_playlist\":{\"name\":\"Clear Playlist\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"clear_playlist\",\"fields\":{},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[8192]}]}},\"media_player.volume_set\":{\"name\":\"Volume Set\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"volume_set\",\"fields\":{\"volume_level\":{\"name\":\"Volume Level\",\"description\":\"\",\"required\":true,\"type\":\"number (0.0-1.0)\",\"example\":null,\"selector\":{\"number\":{\"min\":0.0,\"max\":1.0,\"step\":0.01,\"mode\":\"slider\"}}}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[4]}]}},\"media_player.volume_mute\":{\"name\":\"Volume Mute\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"volume_mute\",\"fields\":{\"is_volume_muted\":{\"name\":\"Is Volume Muted\",\"description\":\"\",\"required\":true,\"type\":\"boolean\",\"example\":null,\"selector\":{\"boolean\":{}}}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[8]}]}},\"media_player.media_seek\":{\"name\":\"Media Seek\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"media_seek\",\"fields\":{\"seek_position\":{\"name\":\"Seek Position\",\"description\":\"\",\"required\":true,\"type\":\"number (0.0-9.223372036854776e+18)\",\"example\":null,\"selector\":{\"number\":{\"min\":0.0,\"max\":9.223372036854776e+18,\"step\":0.01,\"mode\":\"box\"}}}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[2]}]}},\"media_player.join\":{\"name\":\"Join\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"join\",\"fields\":{\"group_members\":{\"name\":\"Group Members\",\"description\":\"\",\"required\":true,\"type\":\"entity (media_player)\",\"example\":\"- media_player.multiroom_player2\\n- media_player.multiroom_player3\\n\",\"selector\":{\"entity\":{\"multiple\":true,\"domain\":[\"media_player\"],\"reorder\":false}}}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[524288]}]}},\"media_player.select_source\":{\"name\":\"Select Source\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"select_source\",\"fields\":{\"source\":{\"name\":\"Source\",\"description\":\"\",\"required\":true,\"type\":\"state\",\"example\":\"video1\",\"selector\":{\"state\":{\"attribute\":\"source\",\"multiple\":false}}}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[2048]}]}},\"media_player.select_sound_mode\":{\"name\":\"Select Sound Mode\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"select_sound_mode\",\"fields\":{\"sound_mode\":{\"name\":\"Sound Mode\",\"description\":\"\",\"required\":false,\"type\":\"state\",\"example\":\"Music\",\"selector\":{\"state\":{\"attribute\":\"sound_mode\",\"multiple\":false}}}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[65536]}]}},\"media_player.play_media\":{\"name\":\"Play Media\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"play_media\",\"fields\":{\"media\":{\"name\":\"Media\",\"description\":\"\",\"required\":true,\"type\":\"media\",\"example\":\"{\\\"media_content_id\\\": \\\"https://home-assistant.io/images/cast/splash.png\\\", \\\"media_content_type\\\": \\\"music\\\"}\",\"selector\":{\"media\":{\"multiple\":false,\"image_upload\":false}}},\"enqueue\":{\"name\":\"Enqueue\",\"description\":\"\",\"required\":false,\"type\":\"select (play, next, add, replace)\",\"example\":null,\"selector\":{\"select\":{\"options\":[\"play\",\"next\",\"add\",\"replace\"],\"translation_key\":\"enqueue\",\"multiple\":false,\"custom_value\":false,\"sort\":false}}},\"announce\":{\"name\":\"Announce\",\"description\":\"\",\"required\":false,\"type\":\"boolean\",\"example\":\"true\",\"selector\":{\"boolean\":{}}}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[512]}]}},\"media_player.browse_media\":{\"name\":\"Browse Media\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"browse_media\",\"fields\":{\"media_content_type\":{\"name\":\"Media Content Type\",\"description\":\"\",\"required\":false,\"type\":\"text\",\"example\":\"music\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}}},\"media_content_id\":{\"name\":\"Media Content Id\",\"description\":\"\",\"required\":false,\"type\":\"text\",\"example\":\"A:ALBUMARTIST/Beatles\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}}}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[131072]}]}},\"media_player.search_media\":{\"name\":\"Search Media\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"search_media\",\"fields\":{\"search_query\":{\"name\":\"Search Query\",\"description\":\"\",\"required\":true,\"type\":\"text\",\"example\":\"Beatles\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}}},\"media_content_type\":{\"name\":\"Media Content Type\",\"description\":\"\",\"required\":false,\"type\":\"text\",\"example\":\"music\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}}},\"media_content_id\":{\"name\":\"Media Content Id\",\"description\":\"\",\"required\":false,\"type\":\"text\",\"example\":\"A:ALBUMARTIST/Beatles\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}}},\"media_filter_classes\":{\"name\":\"Media Filter Classes\",\"description\":\"\",\"required\":false,\"type\":\"text\",\"example\":[\"album\",\"artist\"],\"selector\":{\"text\":{\"multiple\":true,\"multiline\":false}}}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[4194304]}]}},\"media_player.shuffle_set\":{\"name\":\"Shuffle Set\",\"description\":\"\",\"domain\":\"media_player\",\"service\":\"shuffle_set\",\"fields\":{\"shuffle\":{\"name\":\"Shuffle\",\"description\":\"\",\"required\":true,\"type\":\"boolean\",\"example\":null,\"selector\":{\"boolean\":{}}}},\"target\":{\"entity\":[{\"domain\":[\"media_player\"],\"supported_features\":[32768]}]}}},\"total_count\":247,\"offset\":0,\"limit\":50,\"count\":50,\"has_more\":true,\"next_offset\":50,\"detail_level\":\"full\",\"filters_applied\":{\"domain\":null,\"query\":null}}",
+      "type": "text"
+     }
+    ],
+    "isError": false,
+    "structuredContent": {
+     "count": 50,
+     "detail_level": "full",
+     "domains": [
+      "ai_task",
+      "alarm_control_panel",
+      "assist_satellite",
+      "automation",
+      "backup",
+      "button",
+      "calendar",
+      "camera",
+      "climate",
+      "conversation",
+      "counter",
+      "cover",
+      "date",
+      "datetime",
+      "device_tracker",
+      "fan",
+      "ffmpeg",
+      "frontend",
+      "group",
+      "homeassistant",
+      "humidifier",
+      "image",
+      "image_processing",
+      "input_boolean",
+      "input_button",
+      "input_datetime",
+      "input_number",
+      "input_select",
+      "input_text",
+      "lawn_mower",
+      "light",
+      "lock",
+      "logbook",
+      "logger",
+      "lovelace",
+      "media_player",
+      "notify",
+      "number",
+      "persistent_notification",
+      "person",
+      "recorder",
+      "remote",
+      "scene",
+      "schedule",
+      "script",
+      "select",
+      "shopping_list",
+      "siren",
+      "switch",
+      "system_log",
+      "template",
+      "text",
+      "time",
+      "timer",
+      "todo",
+      "tts",
+      "update",
+      "vacuum",
+      "valve",
+      "water_heater",
+      "weather",
+      "zone"
+     ],
+     "filters_applied": {
+      "domain": null,
+      "query": null
+     },
+     "has_more": true,
+     "limit": 50,
+     "next_offset": 50,
+     "offset": 0,
+     "services": {
+      "frontend.reload_themes": {
+       "description": "",
+       "domain": "frontend",
+       "fields": {},
+       "name": "Reload Themes",
+       "service": "reload_themes"
+      },
+      "frontend.set_theme": {
+       "description": "",
+       "domain": "frontend",
+       "fields": {
+        "name": {
+         "description": "",
+         "example": "default",
+         "name": "Name",
+         "required": false,
+         "selector": {
+          "theme": {
+           "include_default": true
+          }
+         },
+         "type": "theme"
+        },
+        "name_dark": {
+         "description": "",
+         "example": "default",
+         "name": "Name Dark",
+         "required": false,
+         "selector": {
+          "theme": {
+           "include_default": true
+          }
+         },
+         "type": "theme"
+        }
+       },
+       "name": "Set Theme",
+       "service": "set_theme"
+      },
+      "homeassistant.check_config": {
+       "description": "",
+       "domain": "homeassistant",
+       "fields": {},
+       "name": "Check Config",
+       "service": "check_config"
+      },
+      "homeassistant.reload_all": {
+       "description": "",
+       "domain": "homeassistant",
+       "fields": {},
+       "name": "Reload All",
+       "service": "reload_all"
+      },
+      "homeassistant.reload_config_entry": {
+       "description": "",
+       "domain": "homeassistant",
+       "fields": {
+        "entry_id": {
+         "description": "",
+         "example": null,
+         "name": "Entry Id",
+         "required": true,
+         "selector": {
+          "config_entry": {}
+         },
+         "type": "config_entry"
+        }
+       },
+       "name": "Reload Config Entry",
+       "service": "reload_config_entry"
+      },
+      "homeassistant.reload_core_config": {
+       "description": "",
+       "domain": "homeassistant",
+       "fields": {},
+       "name": "Reload Core Config",
+       "service": "reload_core_config"
+      },
+      "homeassistant.reload_custom_templates": {
+       "description": "",
+       "domain": "homeassistant",
+       "fields": {},
+       "name": "Reload Custom Templates",
+       "service": "reload_custom_templates"
+      },
+      "homeassistant.restart": {
+       "description": "",
+       "domain": "homeassistant",
+       "fields": {},
+       "name": "Restart",
+       "service": "restart"
+      },
+      "homeassistant.save_persistent_states": {
+       "description": "",
+       "domain": "homeassistant",
+       "fields": {},
+       "name": "Save Persistent States",
+       "service": "save_persistent_states"
+      },
+      "homeassistant.set_location": {
+       "description": "",
+       "domain": "homeassistant",
+       "fields": {
+        "elevation": {
+         "description": "",
+         "example": 120,
+         "name": "Elevation",
+         "required": false,
+         "selector": {
+          "number": {
+           "mode": "box",
+           "step": "any",
+           "unit_of_measurement": "m"
+          }
+         },
+         "type": "number"
+        },
+        "latitude": {
+         "description": "",
+         "example": 32.87336,
+         "name": "Latitude",
+         "required": true,
+         "selector": {
+          "number": {
+           "max": 90.0,
+           "min": -90.0,
+           "mode": "box",
+           "step": "any"
+          }
+         },
+         "type": "number (-90.0-90.0)"
+        },
+        "longitude": {
+         "description": "",
+         "example": 117.22743,
+         "name": "Longitude",
+         "required": true,
+         "selector": {
+          "number": {
+           "max": 180.0,
+           "min": -180.0,
+           "mode": "box",
+           "step": "any"
+          }
+         },
+         "type": "number (-180.0-180.0)"
+        }
+       },
+       "name": "Set Location",
+       "service": "set_location"
+      },
+      "homeassistant.stop": {
+       "description": "",
+       "domain": "homeassistant",
+       "fields": {},
+       "name": "Stop",
+       "service": "stop"
+      },
+      "homeassistant.toggle": {
+       "description": "",
+       "domain": "homeassistant",
+       "fields": {},
+       "name": "Toggle",
+       "service": "toggle",
+       "target": {}
+      },
+      "homeassistant.turn_off": {
+       "description": "",
+       "domain": "homeassistant",
+       "fields": {},
+       "name": "Turn Off",
+       "service": "turn_off",
+       "target": {}
+      },
+      "homeassistant.turn_on": {
+       "description": "",
+       "domain": "homeassistant",
+       "fields": {},
+       "name": "Turn On",
+       "service": "turn_on",
+       "target": {}
+      },
+      "homeassistant.update_entity": {
+       "description": "",
+       "domain": "homeassistant",
+       "fields": {
+        "entity_id": {
+         "description": "",
+         "example": null,
+         "name": "Entity Id",
+         "required": true,
+         "selector": {
+          "entity": {
+           "multiple": true,
+           "reorder": false
+          }
+         },
+         "type": "entity"
+        }
+       },
+       "name": "Update Entity",
+       "service": "update_entity"
+      },
+      "logger.set_default_level": {
+       "description": "",
+       "domain": "logger",
+       "fields": {
+        "level": {
+         "description": "",
+         "example": null,
+         "name": "Level",
+         "required": false,
+         "selector": {
+          "select": {
+           "custom_value": false,
+           "multiple": false,
+           "options": [
+            "debug",
+            "info",
+            "warning",
+            "error",
+            "fatal",
+            "critical"
+           ],
+           "sort": false,
+           "translation_key": "level"
+          }
+         },
+         "type": "select"
+        }
+       },
+       "name": "Set Default Level",
+       "service": "set_default_level"
+      },
+      "logger.set_level": {
+       "description": "",
+       "domain": "logger",
+       "fields": {},
+       "name": "Set Level",
+       "service": "set_level"
+      },
+      "lovelace.reload_resources": {
+       "description": "",
+       "domain": "lovelace",
+       "fields": {},
+       "name": "Reload Resources",
+       "service": "reload_resources"
+      },
+      "media_player.browse_media": {
+       "description": "",
+       "domain": "media_player",
+       "fields": {
+        "media_content_id": {
+         "description": "",
+         "example": "A:ALBUMARTIST/Beatles",
+         "name": "Media Content Id",
+         "required": false,
+         "selector": {
+          "text": {
+           "multiline": false,
+           "multiple": false
+          }
+         },
+         "type": "text"
+        },
+        "media_content_type": {
+         "description": "",
+         "example": "music",
+         "name": "Media Content Type",
+         "required": false,
+         "selector": {
+          "text": {
+           "multiline": false,
+           "multiple": false
+          }
+         },
+         "type": "text"
+        }
+       },
+       "name": "Browse Media",
+       "service": "browse_media",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "media_player"
+          ],
+          "supported_features": [
+           131072
+          ]
+         }
+        ]
+       }
+      },
+      "media_player.clear_playlist": {
+       "description": "",
+       "domain": "media_player",
+       "fields": {},
+       "name": "Clear Playlist",
+       "service": "clear_playlist",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "media_player"
+          ],
+          "supported_features": [
+           8192
+          ]
+         }
+        ]
+       }
+      },
+      "media_player.join": {
+       "description": "",
+       "domain": "media_player",
+       "fields": {
+        "group_members": {
+         "description": "",
+         "example": "- media_player.multiroom_player2\n- media_player.multiroom_player3\n",
+         "name": "Group Members",
+         "required": true,
+         "selector": {
+          "entity": {
+           "domain": [
+            "media_player"
+           ],
+           "multiple": true,
+           "reorder": false
+          }
+         },
+         "type": "entity (media_player)"
+        }
+       },
+       "name": "Join",
+       "service": "join",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "media_player"
+          ],
+          "supported_features": [
+           524288
+          ]
+         }
+        ]
+       }
+      },
+      "media_player.media_next_track": {
+       "description": "",
+       "domain": "media_player",
+       "fields": {},
+       "name": "Media Next Track",
+       "service": "media_next_track",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "media_player"
+          ],
+          "supported_features": [
+           32
+          ]
+         }
+        ]
+       }
+      },
+      "media_player.media_pause": {
+       "description": "",
+       "domain": "media_player",
+       "fields": {},
+       "name": "Media Pause",
+       "service": "media_pause",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "media_player"
+          ],
+          "supported_features": [
+           1
+          ]
+         }
+        ]
+       }
+      },
+      "media_player.media_play": {
+       "description": "",
+       "domain": "media_player",
+       "fields": {},
+       "name": "Media Play",
+       "service": "media_play",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "media_player"
+          ],
+          "supported_features": [
+           16384
+          ]
+         }
+        ]
+       }
+      },
+      "media_player.media_play_pause": {
+       "description": "",
+       "domain": "media_player",
+       "fields": {},
+       "name": "Media Play Pause",
+       "service": "media_play_pause",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "media_player"
+          ],
+          "supported_features": [
+           16385
+          ]
+         }
+        ]
+       }
+      },
+      "media_player.media_previous_track": {
+       "description": "",
+       "domain": "media_player",
+       "fields": {},
+       "name": "Media Previous Track",
+       "service": "media_previous_track",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "media_player"
+          ],
+          "supported_features": [
+           16
+          ]
+         }
+        ]
+       }
+      },
+      "media_player.media_seek": {
+       "description": "",
+       "domain": "media_player",
+       "fields": {
+        "seek_position": {
+         "description": "",
+         "example": null,
+         "name": "Seek Position",
+         "required": true,
+         "selector": {
+          "number": {
+           "max": 9.223372036854776e+18,
+           "min": 0.0,
+           "mode": "box",
+           "step": 0.01
+          }
+         },
+         "type": "number (0.0-9.223372036854776e+18)"
+        }
+       },
+       "name": "Media Seek",
+       "service": "media_seek",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "media_player"
+          ],
+          "supported_features": [
+           2
+          ]
+         }
+        ]
+       }
+      },
+      "media_player.media_stop": {
+       "description": "",
+       "domain": "media_player",
+       "fields": {},
+       "name": "Media Stop",
+       "service": "media_stop",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "media_player"
+          ],
+          "supported_features": [
+           4096
+          ]
+         }
+        ]
+       }
+      },
+      "media_player.play_media": {
+       "description": "",
+       "domain": "media_player",
+       "fields": {
+        "announce": {
+         "description": "",
+         "example": "true",
+         "name": "Announce",
+         "required": false,
+         "selector": {
+          "boolean": {}
+         },
+         "type": "boolean"
+        },
+        "enqueue": {
+         "description": "",
+         "example": null,
+         "name": "Enqueue",
+         "required": false,
+         "selector": {
+          "select": {
+           "custom_value": false,
+           "multiple": false,
+           "options": [
+            "play",
+            "next",
+            "add",
+            "replace"
+           ],
+           "sort": false,
+           "translation_key": "enqueue"
+          }
+         },
+         "type": "select (play, next, add, replace)"
+        },
+        "media": {
+         "description": "",
+         "example": "{\"media_content_id\": \"https://home-assistant.io/images/cast/splash.png\", \"media_content_type\": \"music\"}",
+         "name": "Media",
+         "required": true,
+         "selector": {
+          "media": {
+           "image_upload": false,
+           "multiple": false
+          }
+         },
+         "type": "media"
+        }
+       },
+       "name": "Play Media",
+       "service": "play_media",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "media_player"
+          ],
+          "supported_features": [
+           512
+          ]
+         }
+        ]
+       }
+      },
+      "media_player.search_media": {
+       "description": "",
+       "domain": "media_player",
+       "fields": {
+        "media_content_id": {
+         "description": "",
+         "example": "A:ALBUMARTIST/Beatles",
+         "name": "Media Content Id",
+         "required": false,
+         "selector": {
+          "text": {
+           "multiline": false,
+           "multiple": false
+          }
+         },
+         "type": "text"
+        },
+        "media_content_type": {
+         "description": "",
+         "example": "music",
+         "name": "Media Content Type",
+         "required": false,
+         "selector": {
+          "text": {
+           "multiline": false,
+           "multiple": false
+          }
+         },
+         "type": "text"
+        },
+        "media_filter_classes": {
+         "description": "",
+         "example": [
+          "album",
+          "artist"
+         ],
+         "name": "Media Filter Classes",
+         "required": false,
+         "selector": {
+          "text": {
+           "multiline": false,
+           "multiple": true
+          }
+         },
+         "type": "text"
+        },
+        "search_query": {
+         "description": "",
+         "example": "Beatles",
+         "name": "Search Query",
+         "required": true,
+         "selector": {
+          "text": {
+           "multiline": false,
+           "multiple": false
+          }
+         },
+         "type": "text"
+        }
+       },
+       "name": "Search Media",
+       "service": "search_media",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "media_player"
+          ],
+          "supported_features": [
+           4194304
+          ]
+         }
+        ]
+       }
+      },
+      "media_player.select_sound_mode": {
+       "description": "",
+       "domain": "media_player",
+       "fields": {
+        "sound_mode": {
+         "description": "",
+         "example": "Music",
+         "name": "Sound Mode",
+         "required": false,
+         "selector": {
+          "state": {
+           "attribute": "sound_mode",
+           "multiple": false
+          }
+         },
+         "type": "state"
+        }
+       },
+       "name": "Select Sound Mode",
+       "service": "select_sound_mode",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "media_player"
+          ],
+          "supported_features": [
+           65536
+          ]
+         }
+        ]
+       }
+      },
+      "media_player.select_source": {
+       "description": "",
+       "domain": "media_player",
+       "fields": {
+        "source": {
+         "description": "",
+         "example": "video1",
+         "name": "Source",
+         "required": true,
+         "selector": {
+          "state": {
+           "attribute": "source",
+           "multiple": false
+          }
+         },
+         "type": "state"
+        }
+       },
+       "name": "Select Source",
+       "service": "select_source",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "media_player"
+          ],
+          "supported_features": [
+           2048
+          ]
+         }
+        ]
+       }
+      },
+      "media_player.shuffle_set": {
+       "description": "",
+       "domain": "media_player",
+       "fields": {
+        "shuffle": {
+         "description": "",
+         "example": null,
+         "name": "Shuffle",
+         "required": true,
+         "selector": {
+          "boolean": {}
+         },
+         "type": "boolean"
+        }
+       },
+       "name": "Shuffle Set",
+       "service": "shuffle_set",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "media_player"
+          ],
+          "supported_features": [
+           32768
+          ]
+         }
+        ]
+       }
+      },
+      "media_player.toggle": {
+       "description": "",
+       "domain": "media_player",
+       "fields": {},
+       "name": "Toggle",
+       "service": "toggle",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "media_player"
+          ],
+          "supported_features": [
+           384
+          ]
+         }
+        ]
+       }
+      },
+      "media_player.turn_off": {
+       "description": "",
+       "domain": "media_player",
+       "fields": {},
+       "name": "Turn Off",
+       "service": "turn_off",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "media_player"
+          ],
+          "supported_features": [
+           256
+          ]
+         }
+        ]
+       }
+      },
+      "media_player.turn_on": {
+       "description": "",
+       "domain": "media_player",
+       "fields": {},
+       "name": "Turn On",
+       "service": "turn_on",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "media_player"
+          ],
+          "supported_features": [
+           128
+          ]
+         }
+        ]
+       }
+      },
+      "media_player.volume_down": {
+       "description": "",
+       "domain": "media_player",
+       "fields": {},
+       "name": "Volume Down",
+       "service": "volume_down",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "media_player"
+          ],
+          "supported_features": [
+           4,
+           1024
+          ]
+         }
+        ]
+       }
+      },
+      "media_player.volume_mute": {
+       "description": "",
+       "domain": "media_player",
+       "fields": {
+        "is_volume_muted": {
+         "description": "",
+         "example": null,
+         "name": "Is Volume Muted",
+         "required": true,
+         "selector": {
+          "boolean": {}
+         },
+         "type": "boolean"
+        }
+       },
+       "name": "Volume Mute",
+       "service": "volume_mute",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "media_player"
+          ],
+          "supported_features": [
+           8
+          ]
+         }
+        ]
+       }
+      },
+      "media_player.volume_set": {
+       "description": "",
+       "domain": "media_player",
+       "fields": {
+        "volume_level": {
+         "description": "",
+         "example": null,
+         "name": "Volume Level",
+         "required": true,
+         "selector": {
+          "number": {
+           "max": 1.0,
+           "min": 0.0,
+           "mode": "slider",
+           "step": 0.01
+          }
+         },
+         "type": "number (0.0-1.0)"
+        }
+       },
+       "name": "Volume Set",
+       "service": "volume_set",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "media_player"
+          ],
+          "supported_features": [
+           4
+          ]
+         }
+        ]
+       }
+      },
+      "media_player.volume_up": {
+       "description": "",
+       "domain": "media_player",
+       "fields": {},
+       "name": "Volume Up",
+       "service": "volume_up",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "media_player"
+          ],
+          "supported_features": [
+           4,
+           1024
+          ]
+         }
+        ]
+       }
+      },
+      "persistent_notification.create": {
+       "description": "",
+       "domain": "persistent_notification",
+       "fields": {
+        "message": {
+         "description": "",
+         "example": "Please check your configuration.yaml.",
+         "name": "Message",
+         "required": true,
+         "selector": {
+          "text": {
+           "multiline": false,
+           "multiple": false
+          }
+         },
+         "type": "text"
+        },
+        "notification_id": {
+         "description": "",
+         "example": 1234,
+         "name": "Notification Id",
+         "required": false,
+         "selector": {
+          "text": {
+           "multiline": false,
+           "multiple": false
+          }
+         },
+         "type": "text"
+        },
+        "title": {
+         "description": "",
+         "example": "Test notification",
+         "name": "Title",
+         "required": false,
+         "selector": {
+          "text": {
+           "multiline": false,
+           "multiple": false
+          }
+         },
+         "type": "text"
+        }
+       },
+       "name": "Create",
+       "service": "create"
+      },
+      "persistent_notification.dismiss": {
+       "description": "",
+       "domain": "persistent_notification",
+       "fields": {
+        "notification_id": {
+         "description": "",
+         "example": 1234,
+         "name": "Notification Id",
+         "required": true,
+         "selector": {
+          "text": {
+           "multiline": false,
+           "multiple": false
+          }
+         },
+         "type": "text"
+        }
+       },
+       "name": "Dismiss",
+       "service": "dismiss"
+      },
+      "persistent_notification.dismiss_all": {
+       "description": "",
+       "domain": "persistent_notification",
+       "fields": {},
+       "name": "Dismiss All",
+       "service": "dismiss_all"
+      },
+      "recorder.disable": {
+       "description": "",
+       "domain": "recorder",
+       "fields": {},
+       "name": "Disable",
+       "service": "disable"
+      },
+      "recorder.enable": {
+       "description": "",
+       "domain": "recorder",
+       "fields": {},
+       "name": "Enable",
+       "service": "enable"
+      },
+      "recorder.get_statistics": {
+       "description": "",
+       "domain": "recorder",
+       "fields": {
+        "end_time": {
+         "description": "",
+         "example": "2025-01-02 00:00:00",
+         "name": "End Time",
+         "required": false,
+         "selector": {
+          "datetime": {}
+         },
+         "type": "datetime"
+        },
+        "period": {
+         "description": "",
+         "example": "hour",
+         "name": "Period",
+         "required": true,
+         "selector": {
+          "select": {
+           "custom_value": false,
+           "multiple": false,
+           "options": [
+            "5minute",
+            "hour",
+            "day",
+            "week",
+            "month",
+            "year"
+           ],
+           "sort": false
+          }
+         },
+         "type": "select"
+        },
+        "start_time": {
+         "description": "",
+         "example": "2025-01-01 00:00:00",
+         "name": "Start Time",
+         "required": true,
+         "selector": {
+          "datetime": {}
+         },
+         "type": "datetime"
+        },
+        "statistic_ids": {
+         "description": "",
+         "example": [
+          "sensor.energy_consumption",
+          "sensor.temperature"
+         ],
+         "name": "Statistic Ids",
+         "required": true,
+         "selector": {
+          "statistic": {
+           "multiple": true
+          }
+         },
+         "type": "statistic"
+        },
+        "types": {
+         "description": "",
+         "example": [
+          "mean",
+          "sum"
+         ],
+         "name": "Types",
+         "required": true,
+         "selector": {
+          "select": {
+           "custom_value": false,
+           "multiple": true,
+           "options": [
+            "change",
+            "last_reset",
+            "max",
+            "mean",
+            "min",
+            "state",
+            "sum"
+           ],
+           "sort": false
+          }
+         },
+         "type": "select"
+        },
+        "units": {
+         "description": "",
+         "example": {
+          "energy": "kWh",
+          "temperature": "\u00b0C"
+         },
+         "name": "Units",
+         "required": false,
+         "selector": {
+          "object": {
+           "multiple": false
+          }
+         },
+         "type": "object"
+        }
+       },
+       "name": "Get Statistics",
+       "service": "get_statistics"
+      },
+      "recorder.purge": {
+       "description": "",
+       "domain": "recorder",
+       "fields": {
+        "apply_filter": {
+         "default": false,
+         "description": "",
+         "example": null,
+         "name": "Apply Filter",
+         "required": false,
+         "selector": {
+          "boolean": {}
+         },
+         "type": "boolean"
+        },
+        "keep_days": {
+         "description": "",
+         "example": null,
+         "name": "Keep Days",
+         "required": false,
+         "selector": {
+          "number": {
+           "max": 365.0,
+           "min": 0.0,
+           "mode": "slider",
+           "step": 1.0,
+           "unit_of_measurement": "days"
+          }
+         },
+         "type": "number (0.0-365.0)"
+        },
+        "repack": {
+         "default": false,
+         "description": "",
+         "example": null,
+         "name": "Repack",
+         "required": false,
+         "selector": {
+          "boolean": {}
+         },
+         "type": "boolean"
+        }
+       },
+       "name": "Purge",
+       "service": "purge"
+      },
+      "recorder.purge_entities": {
+       "description": "",
+       "domain": "recorder",
+       "fields": {
+        "domains": {
+         "description": "",
+         "example": "sun",
+         "name": "Domains",
+         "required": false,
+         "selector": {
+          "object": {
+           "multiple": false
+          }
+         },
+         "type": "object"
+        },
+        "entity_globs": {
+         "description": "",
+         "example": "domain*.object_id*",
+         "name": "Entity Globs",
+         "required": false,
+         "selector": {
+          "object": {
+           "multiple": false
+          }
+         },
+         "type": "object"
+        },
+        "entity_id": {
+         "description": "",
+         "example": null,
+         "name": "Entity Id",
+         "required": false,
+         "selector": {
+          "entity": {
+           "multiple": true,
+           "reorder": false
+          }
+         },
+         "type": "entity"
+        },
+        "keep_days": {
+         "default": 0,
+         "description": "",
+         "example": null,
+         "name": "Keep Days",
+         "required": false,
+         "selector": {
+          "number": {
+           "max": 365.0,
+           "min": 0.0,
+           "mode": "slider",
+           "step": 1.0,
+           "unit_of_measurement": "days"
+          }
+         },
+         "type": "number (0.0-365.0)"
+        }
+       },
+       "name": "Purge Entities",
+       "service": "purge_entities"
+      },
+      "system_log.clear": {
+       "description": "",
+       "domain": "system_log",
+       "fields": {},
+       "name": "Clear",
+       "service": "clear"
+      },
+      "system_log.write": {
+       "description": "",
+       "domain": "system_log",
+       "fields": {
+        "level": {
+         "default": "error",
+         "description": "",
+         "example": null,
+         "name": "Level",
+         "required": false,
+         "selector": {
+          "select": {
+           "custom_value": false,
+           "multiple": false,
+           "options": [
+            "debug",
+            "info",
+            "warning",
+            "error",
+            "critical"
+           ],
+           "sort": false,
+           "translation_key": "level"
+          }
+         },
+         "type": "select (debug, info, warning, error, critical)"
+        },
+        "logger": {
+         "description": "",
+         "example": "mycomponent.myplatform",
+         "name": "Logger",
+         "required": false,
+         "selector": {
+          "text": {
+           "multiline": false,
+           "multiple": false
+          }
+         },
+         "type": "text"
+        },
+        "message": {
+         "description": "",
+         "example": "Something went wrong",
+         "name": "Message",
+         "required": true,
+         "selector": {
+          "text": {
+           "multiline": false,
+           "multiple": false
+          }
+         },
+         "type": "text"
+        }
+       },
+       "name": "Write",
+       "service": "write"
+      }
+     },
+     "success": true,
+     "total_count": 247
+    }
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Thu, 12 Nov 2026 06:22:13 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null,
+ "group": "transport",
+ "id": "t-large-services",
+ "idle": false,
+ "kind": "upstream",
+ "new_session": false,
+ "public_arguments": {
+  "detail_level": "full"
+ },
+ "public_tool": "ha_list_services",
+ "upstream_tool": "ha_list_services",
+ "wire_arguments": {
+  "detail_level": "full"
+ }
+}

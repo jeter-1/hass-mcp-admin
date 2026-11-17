@@ -1,0 +1,24 @@
+receipts walked: 168
+('ha_config_list_groups', 'all') NO RECEIPT
+('ha_config_list_groups', 'unavailable_fields') NO RECEIPT
+('ha_eval_template', 'unavailable_fields') NO RECEIPT
+('ha_get_entity', 'partial') NO RECEIPT
+('ha_get_entity', 'warnings') NO RECEIPT
+('ha_get_entity_exposure', 'partial') NO RECEIPT
+('ha_get_entity_exposure', 'warnings') NO RECEIPT
+('ha_get_overview', 'partial') NO RECEIPT
+('ha_get_overview', 'warnings') NO RECEIPT
+('ha_get_state', 'partial') NO RECEIPT
+('ha_get_state', 'warnings') NO RECEIPT
+('ha_get_todo', 'partial') NO RECEIPT
+('ha_get_todo', 'warnings') NO RECEIPT
+('ha_get_zone', 'partial') NO RECEIPT
+('ha_get_zone', 'warnings') NO RECEIPT
+('ha_list_floors_areas', 'partial') NO RECEIPT
+('ha_list_floors_areas', 'warnings') NO RECEIPT
+('ha_list_services', 'collapsed') ['run-b-9.2.0-2/out/9.2.0/calls/t-large-services.json:/exchange/response/result/structuredContent/services/light.toggle/fields/additional_fields/collapsed', 'run-b-9.2.0-2/out/9.2.0/calls/t-large-services.json:/exchange/response/result/structuredContent/services/light.turn_off/fields/additional_fields/collapsed', 'run-b-9.2.0-2/out/9.2.0/calls/t-large-services.json:/exchange/response/result/structuredContent/services/light.turn_on/fields/additional_fields/collapsed']
+('ha_list_services', 'integration') ['run-a-1/out/9.2.0/calls/t-large-services.json:/exchange/response/result/structuredContent/services/scene.delete/target/entity/0/integration', 'run-b-9.2.0-2/out/9.2.0/calls/t-large-services.json:/exchange/response/result/structuredContent/services/scene.delete/target/entity/0/integration']
+('ha_list_services', 'optional') ['run-a-1/out/9.2.0/calls/t-large-services.json:/exchange/response/result/structuredContent/services/recorder.get_statistics/response/optional', 'run-a-1/out/9.2.0/calls/v24-services-response.json:/exchange/response/result/structuredContent/services/calendar.get_events/response/optional', 'run-b-9.2.0-2/out/9.2.0/calls/t-large-services.json:/exchange/response/result/structuredContent/services/recorder.get_statistics/response/optional']
+('ha_list_services', 'partial') NO RECEIPT
+('ha_list_services', 'response') ['run-a-1/out/9.2.0/calls/t-large-services.json:/exchange/response/result/structuredContent/services/recorder.get_statistics/response', 'run-a-1/out/9.2.0/calls/v24-services-response.json:/exchange/response/result/structuredContent/services/calendar.get_events/response', 'run-b-9.2.0-2/out/9.2.0/calls/t-large-services.json:/exchange/response/result/structuredContent/services/recorder.get_statistics/response']
+('ha_list_services', 'warnings') NO RECEIPT

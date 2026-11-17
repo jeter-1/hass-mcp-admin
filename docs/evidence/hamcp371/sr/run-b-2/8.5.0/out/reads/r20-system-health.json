@@ -1,0 +1,95 @@
+{
+ "case": {
+  "arguments": {},
+  "id": "r20-system-health",
+  "tool": "ha_get_system_health"
+ },
+ "exchange": {
+  "body_bytes": 2216,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":121,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\n  \\\"operation\\\": \\\"ha_get_system_health\\\",\\n  \\\"summary\\\": \\\"Completed a reviewed pure-read operation through the upstream gateway.\\\",\\n  \\\"data\\\": {\\n    \\\"success\\\": true,\\n    \\\"baseline_available\\\": true,\\n    \\\"platform\\\": {\\n      \\\"homeassistant\\\": {\\n        \\\"version\\\": \\\"core-2026.11.0\\\",\\n        \\\"installation_type\\\": \\\"Home Assistant Container\\\",\\n        \\\"dev\\\": false,\\n        \\\"hassio\\\": false,\\n        \\\"docker\\\": true,\\n        \\\"virtualenv\\\": false,\\n        \\\"python_version\\\": \\\"3.14.10\\\",\\n        \\\"os_name\\\": \\\"Linux\\\",\\n        \\\"os_version\\\": \\\"6.12.116+deb13-amd64\\\",\\n        \\\"arch\\\": \\\"x86_64\\\"\\n      },\\n      \\\"other_domains\\\": [\\n        \\\"lovelace\\\",\\n        \\\"marketplace\\\",\\n        \\\"network\\\",\\n        \\\"recorder\\\"\\n      ],\\n      \\\"other_domains_total_count\\\": 4,\\n      \\\"other_domains_truncated\\\": false\\n    },\\n    \\\"sections\\\": {},\\n    \\\"warnings\\\": [],\\n    \\\"completeness\\\": {\\n      \\\"status\\\": \\\"complete\\\",\\n      \\\"reasons\\\": []\\n    }\\n  },\\n  \\\"warnings\\\": [],\\n  \\\"metadata\\\": {\\n    \\\"provider\\\": \\\"upstream_read_gateway\\\",\\n    \\\"upstream_tool\\\": \\\"ha_get_system_health\\\",\\n    \\\"upstream_server\\\": \\\"ha-mcp\\\",\\n    \\\"upstream_version\\\": \\\"8.5.0\\\",\\n    \\\"classification\\\": \\\"automatic_read\\\",\\n    \\\"schema_fingerprint\\\": \\\"0c51da5b9c5251dd16d134658f38a65feadb18801791865c736cea1ffc0cd623\\\",\\n    \\\"untrusted_upstream_content\\\": true,\\n    \\\"fallback\\\": \\\"none\\\",\\n    \\\"fallback_occurred\\\": false,\\n    \\\"completeness\\\": \\\"complete\\\"\\n  },\\n  \\\"timing\\\": {\\n    \\\"total_ms\\\": 261.753,\\n    \\\"tool_ms\\\": 258.478,\\n    \\\"home_assistant_ms\\\": 0.0,\\n    \\\"home_assistant_cumulative_attempt_ms\\\": 0.0,\\n    \\\"home_assistant_wall_clock_span_ms\\\": 0.0,\\n    \\\"home_assistant_request_count\\\": 0,\\n    \\\"upstream_attempted\\\": true,\\n    \\\"upstream_ms\\\": 254.834,\\n    \\\"upstream_wall_clock_span_ms\\\": 254.834,\\n    \\\"upstream_request_count\\\": 1,\\n    \\\"provider_operations_concurrent\\\": false,\\n    \\\"retry_count\\\": 0,\\n    \\\"timeout_occurred\\\": false\\n  },\\n  \\\"request_id\\\": \\\"79d5f91641154f258857366a9d5a1c54\\\",\\n  \\\"success\\\": true\\n}\"}],\"isError\":false}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 121,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\n  \"operation\": \"ha_get_system_health\",\n  \"summary\": \"Completed a reviewed pure-read operation through the upstream gateway.\",\n  \"data\": {\n    \"success\": true,\n    \"baseline_available\": true,\n    \"platform\": {\n      \"homeassistant\": {\n        \"version\": \"core-2026.11.0\",\n        \"installation_type\": \"Home Assistant Container\",\n        \"dev\": false,\n        \"hassio\": false,\n        \"docker\": true,\n        \"virtualenv\": false,\n        \"python_version\": \"3.14.10\",\n        \"os_name\": \"Linux\",\n        \"os_version\": \"6.12.116+deb13-amd64\",\n        \"arch\": \"x86_64\"\n      },\n      \"other_domains\": [\n        \"lovelace\",\n        \"marketplace\",\n        \"network\",\n        \"recorder\"\n      ],\n      \"other_domains_total_count\": 4,\n      \"other_domains_truncated\": false\n    },\n    \"sections\": {},\n    \"warnings\": [],\n    \"completeness\": {\n      \"status\": \"complete\",\n      \"reasons\": []\n    }\n  },\n  \"warnings\": [],\n  \"metadata\": {\n    \"provider\": \"upstream_read_gateway\",\n    \"upstream_tool\": \"ha_get_system_health\",\n    \"upstream_server\": \"ha-mcp\",\n    \"upstream_version\": \"8.5.0\",\n    \"classification\": \"automatic_read\",\n    \"schema_fingerprint\": \"0c51da5b9c5251dd16d134658f38a65feadb18801791865c736cea1ffc0cd623\",\n    \"untrusted_upstream_content\": true,\n    \"fallback\": \"none\",\n    \"fallback_occurred\": false,\n    \"completeness\": \"complete\"\n  },\n  \"timing\": {\n    \"total_ms\": 261.753,\n    \"tool_ms\": 258.478,\n    \"home_assistant_ms\": 0.0,\n    \"home_assistant_cumulative_attempt_ms\": 0.0,\n    \"home_assistant_wall_clock_span_ms\": 0.0,\n    \"home_assistant_request_count\": 0,\n    \"upstream_attempted\": true,\n    \"upstream_ms\": 254.834,\n    \"upstream_wall_clock_span_ms\": 254.834,\n    \"upstream_request_count\": 1,\n    \"provider_operations_concurrent\": false,\n    \"retry_count\": 0,\n    \"timeout_occurred\": false\n  },\n  \"request_id\": \"79d5f91641154f258857366a9d5a1c54\",\n  \"success\": true\n}",
+       "type": "text"
+      }
+     ],
+     "isError": false
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 121,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {},
+     "name": "ha_get_system_health"
+    }
+   },
+   "method": "POST",
+   "path": "/synthetic-engineering-access-secret/mcp"
+  },
+  "response": {
+   "id": 121,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\n  \"operation\": \"ha_get_system_health\",\n  \"summary\": \"Completed a reviewed pure-read operation through the upstream gateway.\",\n  \"data\": {\n    \"success\": true,\n    \"baseline_available\": true,\n    \"platform\": {\n      \"homeassistant\": {\n        \"version\": \"core-2026.11.0\",\n        \"installation_type\": \"Home Assistant Container\",\n        \"dev\": false,\n        \"hassio\": false,\n        \"docker\": true,\n        \"virtualenv\": false,\n        \"python_version\": \"3.14.10\",\n        \"os_name\": \"Linux\",\n        \"os_version\": \"6.12.116+deb13-amd64\",\n        \"arch\": \"x86_64\"\n      },\n      \"other_domains\": [\n        \"lovelace\",\n        \"marketplace\",\n        \"network\",\n        \"recorder\"\n      ],\n      \"other_domains_total_count\": 4,\n      \"other_domains_truncated\": false\n    },\n    \"sections\": {},\n    \"warnings\": [],\n    \"completeness\": {\n      \"status\": \"complete\",\n      \"reasons\": []\n    }\n  },\n  \"warnings\": [],\n  \"metadata\": {\n    \"provider\": \"upstream_read_gateway\",\n    \"upstream_tool\": \"ha_get_system_health\",\n    \"upstream_server\": \"ha-mcp\",\n    \"upstream_version\": \"8.5.0\",\n    \"classification\": \"automatic_read\",\n    \"schema_fingerprint\": \"0c51da5b9c5251dd16d134658f38a65feadb18801791865c736cea1ffc0cd623\",\n    \"untrusted_upstream_content\": true,\n    \"fallback\": \"none\",\n    \"fallback_occurred\": false,\n    \"completeness\": \"complete\"\n  },\n  \"timing\": {\n    \"total_ms\": 261.753,\n    \"tool_ms\": 258.478,\n    \"home_assistant_ms\": 0.0,\n    \"home_assistant_cumulative_attempt_ms\": 0.0,\n    \"home_assistant_wall_clock_span_ms\": 0.0,\n    \"home_assistant_request_count\": 0,\n    \"upstream_attempted\": true,\n    \"upstream_ms\": 254.834,\n    \"upstream_wall_clock_span_ms\": 254.834,\n    \"upstream_request_count\": 1,\n    \"provider_operations_concurrent\": false,\n    \"retry_count\": 0,\n    \"timeout_occurred\": false\n  },\n  \"request_id\": \"79d5f91641154f258857366a9d5a1c54\",\n  \"success\": true\n}",
+      "type": "text"
+     }
+    ],
+    "isError": false
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Mon, 16 Nov 2026 12:17:44 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "x-request-id",
+    "79d5f91641154f258857366a9d5a1c54"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null
+}

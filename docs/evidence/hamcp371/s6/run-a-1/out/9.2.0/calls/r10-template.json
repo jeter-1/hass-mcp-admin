@@ -1,0 +1,139 @@
+{
+ "arguments_built_by": "adapter code, policy 9.1.2",
+ "calls_format_version": 1,
+ "exchange": {
+  "body_bytes": 532,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":110,\"result\":{\"content\":[{\"text\":\"{\\\"success\\\":true,\\\"template\\\":\\\"{{ states('input_boolean.hamcp371_helper') }}\\\",\\\"result\\\":\\\"on\\\",\\\"listeners\\\":{\\\"all\\\":false,\\\"entities\\\":[\\\"input_boolean.hamcp371_helper\\\"],\\\"domains\\\":[],\\\"time\\\":false}}\",\"type\":\"text\"}],\"isError\":false,\"structuredContent\":{\"success\":true,\"template\":\"{{ states('input_boolean.hamcp371_helper') }}\",\"result\":\"on\",\"listeners\":{\"all\":false,\"entities\":[\"input_boolean.hamcp371_helper\"],\"domains\":[],\"time\":false}}}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 110,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\"success\":true,\"template\":\"{{ states('input_boolean.hamcp371_helper') }}\",\"result\":\"on\",\"listeners\":{\"all\":false,\"entities\":[\"input_boolean.hamcp371_helper\"],\"domains\":[],\"time\":false}}",
+       "type": "text"
+      }
+     ],
+     "isError": false,
+     "structuredContent": {
+      "listeners": {
+       "all": false,
+       "domains": [],
+       "entities": [
+        "input_boolean.hamcp371_helper"
+       ],
+       "time": false
+      },
+      "result": "on",
+      "success": true,
+      "template": "{{ states('input_boolean.hamcp371_helper') }}"
+     }
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 110,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "condition": null,
+      "report_errors": true,
+      "strict": false,
+      "template": "{{ states('input_boolean.hamcp371_helper') }}",
+      "timeout": 3,
+      "variables": null
+     },
+     "name": "ha_eval_template"
+    }
+   },
+   "method": "POST",
+   "path": "/mcp"
+  },
+  "response": {
+   "id": 110,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\"success\":true,\"template\":\"{{ states('input_boolean.hamcp371_helper') }}\",\"result\":\"on\",\"listeners\":{\"all\":false,\"entities\":[\"input_boolean.hamcp371_helper\"],\"domains\":[],\"time\":false}}",
+      "type": "text"
+     }
+    ],
+    "isError": false,
+    "structuredContent": {
+     "listeners": {
+      "all": false,
+      "domains": [],
+      "entities": [
+       "input_boolean.hamcp371_helper"
+      ],
+      "time": false
+     },
+     "result": "on",
+     "success": true,
+     "template": "{{ states('input_boolean.hamcp371_helper') }}"
+    }
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Thu, 12 Nov 2026 06:23:55 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null,
+ "group": "reads",
+ "id": "r10-template",
+ "idle": false,
+ "kind": "public",
+ "new_session": false,
+ "public_arguments": {
+  "template": "{{ states('input_boolean.hamcp371_helper') }}"
+ },
+ "public_tool": "ha_eval_template",
+ "upstream_tool": "ha_eval_template",
+ "wire_arguments": {
+  "condition": null,
+  "report_errors": true,
+  "strict": false,
+  "template": "{{ states('input_boolean.hamcp371_helper') }}",
+  "timeout": 3,
+  "variables": null
+ }
+}

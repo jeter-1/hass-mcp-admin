@@ -1,0 +1,99 @@
+{
+ "case": {
+  "arguments": {
+   "limit": 5
+  },
+  "id": "r24-services",
+  "tool": "ha_list_services"
+ },
+ "exchange": {
+  "body_bytes": 4063,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":125,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\n  \\\"operation\\\": \\\"ha_list_services\\\",\\n  \\\"summary\\\": \\\"Completed a reviewed pure-read operation through the upstream gateway.\\\",\\n  \\\"data\\\": {\\n    \\\"success\\\": true,\\n    \\\"domains\\\": [\\n      \\\"ai_task\\\",\\n      \\\"alarm_control_panel\\\",\\n      \\\"assist_satellite\\\",\\n      \\\"automation\\\",\\n      \\\"backup\\\",\\n      \\\"button\\\",\\n      \\\"calendar\\\",\\n      \\\"camera\\\",\\n      \\\"climate\\\",\\n      \\\"conversation\\\",\\n      \\\"counter\\\",\\n      \\\"cover\\\",\\n      \\\"date\\\",\\n      \\\"datetime\\\",\\n      \\\"device_tracker\\\",\\n      \\\"fan\\\",\\n      \\\"ffmpeg\\\",\\n      \\\"frontend\\\",\\n      \\\"group\\\",\\n      \\\"ha_mcp_tools\\\",\\n      \\\"homeassistant\\\",\\n      \\\"humidifier\\\",\\n      \\\"image\\\",\\n      \\\"image_processing\\\",\\n      \\\"input_boolean\\\",\\n      \\\"input_button\\\",\\n      \\\"input_datetime\\\",\\n      \\\"input_number\\\",\\n      \\\"input_select\\\",\\n      \\\"input_text\\\",\\n      \\\"lawn_mower\\\",\\n      \\\"light\\\",\\n      \\\"lock\\\",\\n      \\\"logbook\\\",\\n      \\\"logger\\\",\\n      \\\"lovelace\\\",\\n      \\\"media_player\\\",\\n      \\\"notify\\\",\\n      \\\"number\\\",\\n      \\\"persistent_notification\\\",\\n      \\\"person\\\",\\n      \\\"recorder\\\",\\n      \\\"remote\\\",\\n      \\\"scene\\\",\\n      \\\"schedule\\\",\\n      \\\"script\\\",\\n      \\\"select\\\",\\n      \\\"shopping_list\\\",\\n      \\\"siren\\\",\\n      \\\"switch\\\",\\n      \\\"system_log\\\",\\n      \\\"template\\\",\\n      \\\"text\\\",\\n      \\\"time\\\",\\n      \\\"timer\\\",\\n      \\\"todo\\\",\\n      \\\"tts\\\",\\n      \\\"update\\\",\\n      \\\"vacuum\\\",\\n      \\\"valve\\\",\\n      \\\"water_heater\\\",\\n      \\\"weather\\\",\\n      \\\"zone\\\"\\n    ],\\n    \\\"services\\\": {\\n      \\\"homeassistant.save_persistent_states\\\": {\\n        \\\"name\\\": \\\"Save Persistent States\\\",\\n        \\\"description\\\": \\\"\\\",\\n        \\\"domain\\\": \\\"homeassistant\\\",\\n        \\\"service\\\": \\\"save_persistent_states\\\"\\n      },\\n      \\\"homeassistant.turn_off\\\": {\\n        \\\"name\\\": \\\"Turn Off\\\",\\n        \\\"description\\\": \\\"\\\",\\n        \\\"domain\\\": \\\"homeassistant\\\",\\n        \\\"service\\\": \\\"turn_off\\\",\\n        \\\"target\\\": {}\\n      },\\n      \\\"homeassistant.turn_on\\\": {\\n        \\\"name\\\": \\\"Turn On\\\",\\n        \\\"description\\\": \\\"\\\",\\n        \\\"domain\\\": \\\"homeassistant\\\",\\n        \\\"service\\\": \\\"turn_on\\\",\\n        \\\"target\\\": {}\\n      },\\n      \\\"homeassistant.toggle\\\": {\\n        \\\"name\\\": \\\"Toggle\\\",\\n        \\\"description\\\": \\\"\\\",\\n        \\\"domain\\\": \\\"homeassistant\\\",\\n        \\\"service\\\": \\\"toggle\\\",\\n        \\\"target\\\": {}\\n      },\\n      \\\"homeassistant.stop\\\": {\\n        \\\"name\\\": \\\"Stop\\\",\\n        \\\"description\\\": \\\"\\\",\\n        \\\"domain\\\": \\\"homeassistant\\\",\\n        \\\"service\\\": \\\"stop\\\"\\n      }\\n    },\\n    \\\"total_count\\\": 259,\\n    \\\"offset\\\": 0,\\n    \\\"limit\\\": 5,\\n    \\\"count\\\": 5,\\n    \\\"has_more\\\": true,\\n    \\\"next_offset\\\": 5,\\n    \\\"detail_level\\\": \\\"summary\\\",\\n    \\\"filters_applied\\\": {\\n      \\\"domain\\\": null,\\n      \\\"query\\\": null\\n    }\\n  },\\n  \\\"warnings\\\": [],\\n  \\\"metadata\\\": {\\n    \\\"provider\\\": \\\"upstream_read_gateway\\\",\\n    \\\"upstream_tool\\\": \\\"ha_list_services\\\",\\n    \\\"upstream_server\\\": \\\"ha-mcp\\\",\\n    \\\"upstream_version\\\": \\\"8.5.0\\\",\\n    \\\"classification\\\": \\\"automatic_read\\\",\\n    \\\"schema_fingerprint\\\": \\\"95f2155e569c1fd77f1bd1fbd77413b151deb4d8acd300ad743be4a90e9dfdcc\\\",\\n    \\\"untrusted_upstream_content\\\": true,\\n    \\\"fallback\\\": \\\"none\\\",\\n    \\\"fallback_occurred\\\": false,\\n    \\\"completeness\\\": \\\"complete\\\"\\n  },\\n  \\\"timing\\\": {\\n    \\\"total_ms\\\": 233.371,\\n    \\\"tool_ms\\\": 229.976,\\n    \\\"home_assistant_ms\\\": 0.0,\\n    \\\"home_assistant_cumulative_attempt_ms\\\": 0.0,\\n    \\\"home_assistant_wall_clock_span_ms\\\": 0.0,\\n    \\\"home_assistant_request_count\\\": 0,\\n    \\\"upstream_attempted\\\": true,\\n    \\\"upstream_ms\\\": 219.63,\\n    \\\"upstream_wall_clock_span_ms\\\": 219.63,\\n    \\\"upstream_request_count\\\": 1,\\n    \\\"provider_operations_concurrent\\\": false,\\n    \\\"retry_count\\\": 0,\\n    \\\"timeout_occurred\\\": false\\n  },\\n  \\\"request_id\\\": \\\"9c50696ede134c82b51f7a7a3f72cca9\\\",\\n  \\\"success\\\": true\\n}\"}],\"isError\":false}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 125,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\n  \"operation\": \"ha_list_services\",\n  \"summary\": \"Completed a reviewed pure-read operation through the upstream gateway.\",\n  \"data\": {\n    \"success\": true,\n    \"domains\": [\n      \"ai_task\",\n      \"alarm_control_panel\",\n      \"assist_satellite\",\n      \"automation\",\n      \"backup\",\n      \"button\",\n      \"calendar\",\n      \"camera\",\n      \"climate\",\n      \"conversation\",\n      \"counter\",\n      \"cover\",\n      \"date\",\n      \"datetime\",\n      \"device_tracker\",\n      \"fan\",\n      \"ffmpeg\",\n      \"frontend\",\n      \"group\",\n      \"ha_mcp_tools\",\n      \"homeassistant\",\n      \"humidifier\",\n      \"image\",\n      \"image_processing\",\n      \"input_boolean\",\n      \"input_button\",\n      \"input_datetime\",\n      \"input_number\",\n      \"input_select\",\n      \"input_text\",\n      \"lawn_mower\",\n      \"light\",\n      \"lock\",\n      \"logbook\",\n      \"logger\",\n      \"lovelace\",\n      \"media_player\",\n      \"notify\",\n      \"number\",\n      \"persistent_notification\",\n      \"person\",\n      \"recorder\",\n      \"remote\",\n      \"scene\",\n      \"schedule\",\n      \"script\",\n      \"select\",\n      \"shopping_list\",\n      \"siren\",\n      \"switch\",\n      \"system_log\",\n      \"template\",\n      \"text\",\n      \"time\",\n      \"timer\",\n      \"todo\",\n      \"tts\",\n      \"update\",\n      \"vacuum\",\n      \"valve\",\n      \"water_heater\",\n      \"weather\",\n      \"zone\"\n    ],\n    \"services\": {\n      \"homeassistant.save_persistent_states\": {\n        \"name\": \"Save Persistent States\",\n        \"description\": \"\",\n        \"domain\": \"homeassistant\",\n        \"service\": \"save_persistent_states\"\n      },\n      \"homeassistant.turn_off\": {\n        \"name\": \"Turn Off\",\n        \"description\": \"\",\n        \"domain\": \"homeassistant\",\n        \"service\": \"turn_off\",\n        \"target\": {}\n      },\n      \"homeassistant.turn_on\": {\n        \"name\": \"Turn On\",\n        \"description\": \"\",\n        \"domain\": \"homeassistant\",\n        \"service\": \"turn_on\",\n        \"target\": {}\n      },\n      \"homeassistant.toggle\": {\n        \"name\": \"Toggle\",\n        \"description\": \"\",\n        \"domain\": \"homeassistant\",\n        \"service\": \"toggle\",\n        \"target\": {}\n      },\n      \"homeassistant.stop\": {\n        \"name\": \"Stop\",\n        \"description\": \"\",\n        \"domain\": \"homeassistant\",\n        \"service\": \"stop\"\n      }\n    },\n    \"total_count\": 259,\n    \"offset\": 0,\n    \"limit\": 5,\n    \"count\": 5,\n    \"has_more\": true,\n    \"next_offset\": 5,\n    \"detail_level\": \"summary\",\n    \"filters_applied\": {\n      \"domain\": null,\n      \"query\": null\n    }\n  },\n  \"warnings\": [],\n  \"metadata\": {\n    \"provider\": \"upstream_read_gateway\",\n    \"upstream_tool\": \"ha_list_services\",\n    \"upstream_server\": \"ha-mcp\",\n    \"upstream_version\": \"8.5.0\",\n    \"classification\": \"automatic_read\",\n    \"schema_fingerprint\": \"95f2155e569c1fd77f1bd1fbd77413b151deb4d8acd300ad743be4a90e9dfdcc\",\n    \"untrusted_upstream_content\": true,\n    \"fallback\": \"none\",\n    \"fallback_occurred\": false,\n    \"completeness\": \"complete\"\n  },\n  \"timing\": {\n    \"total_ms\": 233.371,\n    \"tool_ms\": 229.976,\n    \"home_assistant_ms\": 0.0,\n    \"home_assistant_cumulative_attempt_ms\": 0.0,\n    \"home_assistant_wall_clock_span_ms\": 0.0,\n    \"home_assistant_request_count\": 0,\n    \"upstream_attempted\": true,\n    \"upstream_ms\": 219.63,\n    \"upstream_wall_clock_span_ms\": 219.63,\n    \"upstream_request_count\": 1,\n    \"provider_operations_concurrent\": false,\n    \"retry_count\": 0,\n    \"timeout_occurred\": false\n  },\n  \"request_id\": \"9c50696ede134c82b51f7a7a3f72cca9\",\n  \"success\": true\n}",
+       "type": "text"
+      }
+     ],
+     "isError": false
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 125,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "limit": 5
+     },
+     "name": "ha_list_services"
+    }
+   },
+   "method": "POST",
+   "path": "/synthetic-engineering-access-secret/mcp"
+  },
+  "response": {
+   "id": 125,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\n  \"operation\": \"ha_list_services\",\n  \"summary\": \"Completed a reviewed pure-read operation through the upstream gateway.\",\n  \"data\": {\n    \"success\": true,\n    \"domains\": [\n      \"ai_task\",\n      \"alarm_control_panel\",\n      \"assist_satellite\",\n      \"automation\",\n      \"backup\",\n      \"button\",\n      \"calendar\",\n      \"camera\",\n      \"climate\",\n      \"conversation\",\n      \"counter\",\n      \"cover\",\n      \"date\",\n      \"datetime\",\n      \"device_tracker\",\n      \"fan\",\n      \"ffmpeg\",\n      \"frontend\",\n      \"group\",\n      \"ha_mcp_tools\",\n      \"homeassistant\",\n      \"humidifier\",\n      \"image\",\n      \"image_processing\",\n      \"input_boolean\",\n      \"input_button\",\n      \"input_datetime\",\n      \"input_number\",\n      \"input_select\",\n      \"input_text\",\n      \"lawn_mower\",\n      \"light\",\n      \"lock\",\n      \"logbook\",\n      \"logger\",\n      \"lovelace\",\n      \"media_player\",\n      \"notify\",\n      \"number\",\n      \"persistent_notification\",\n      \"person\",\n      \"recorder\",\n      \"remote\",\n      \"scene\",\n      \"schedule\",\n      \"script\",\n      \"select\",\n      \"shopping_list\",\n      \"siren\",\n      \"switch\",\n      \"system_log\",\n      \"template\",\n      \"text\",\n      \"time\",\n      \"timer\",\n      \"todo\",\n      \"tts\",\n      \"update\",\n      \"vacuum\",\n      \"valve\",\n      \"water_heater\",\n      \"weather\",\n      \"zone\"\n    ],\n    \"services\": {\n      \"homeassistant.save_persistent_states\": {\n        \"name\": \"Save Persistent States\",\n        \"description\": \"\",\n        \"domain\": \"homeassistant\",\n        \"service\": \"save_persistent_states\"\n      },\n      \"homeassistant.turn_off\": {\n        \"name\": \"Turn Off\",\n        \"description\": \"\",\n        \"domain\": \"homeassistant\",\n        \"service\": \"turn_off\",\n        \"target\": {}\n      },\n      \"homeassistant.turn_on\": {\n        \"name\": \"Turn On\",\n        \"description\": \"\",\n        \"domain\": \"homeassistant\",\n        \"service\": \"turn_on\",\n        \"target\": {}\n      },\n      \"homeassistant.toggle\": {\n        \"name\": \"Toggle\",\n        \"description\": \"\",\n        \"domain\": \"homeassistant\",\n        \"service\": \"toggle\",\n        \"target\": {}\n      },\n      \"homeassistant.stop\": {\n        \"name\": \"Stop\",\n        \"description\": \"\",\n        \"domain\": \"homeassistant\",\n        \"service\": \"stop\"\n      }\n    },\n    \"total_count\": 259,\n    \"offset\": 0,\n    \"limit\": 5,\n    \"count\": 5,\n    \"has_more\": true,\n    \"next_offset\": 5,\n    \"detail_level\": \"summary\",\n    \"filters_applied\": {\n      \"domain\": null,\n      \"query\": null\n    }\n  },\n  \"warnings\": [],\n  \"metadata\": {\n    \"provider\": \"upstream_read_gateway\",\n    \"upstream_tool\": \"ha_list_services\",\n    \"upstream_server\": \"ha-mcp\",\n    \"upstream_version\": \"8.5.0\",\n    \"classification\": \"automatic_read\",\n    \"schema_fingerprint\": \"95f2155e569c1fd77f1bd1fbd77413b151deb4d8acd300ad743be4a90e9dfdcc\",\n    \"untrusted_upstream_content\": true,\n    \"fallback\": \"none\",\n    \"fallback_occurred\": false,\n    \"completeness\": \"complete\"\n  },\n  \"timing\": {\n    \"total_ms\": 233.371,\n    \"tool_ms\": 229.976,\n    \"home_assistant_ms\": 0.0,\n    \"home_assistant_cumulative_attempt_ms\": 0.0,\n    \"home_assistant_wall_clock_span_ms\": 0.0,\n    \"home_assistant_request_count\": 0,\n    \"upstream_attempted\": true,\n    \"upstream_ms\": 219.63,\n    \"upstream_wall_clock_span_ms\": 219.63,\n    \"upstream_request_count\": 1,\n    \"provider_operations_concurrent\": false,\n    \"retry_count\": 0,\n    \"timeout_occurred\": false\n  },\n  \"request_id\": \"9c50696ede134c82b51f7a7a3f72cca9\",\n  \"success\": true\n}",
+      "type": "text"
+     }
+    ],
+    "isError": false
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Mon, 16 Nov 2026 12:17:44 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "x-request-id",
+    "9c50696ede134c82b51f7a7a3f72cca9"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null
+}

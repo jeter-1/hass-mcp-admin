@@ -1,0 +1,112 @@
+HAMCP-371 S14 Full tier: failures extracted from the run logs (unit hamcp371-s14-full).
+Tested head 9e6f8063cf5c4099ef2b4da3355d78ef6b81c697, base origin/main e741f2ed17e33bc1516aaddc5b05664d4b7561c1.
+Absolute worktree prefixes are shortened to <W>/.
+
+=== shard 3
+FAIL: test_all_reviewed_versions_have_exact_builtin_attestations (test_rc2dev9_upstream_admission.ContractFamilyTests.test_all_reviewed_versions_have_exact_builtin_attestations)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<W>/tests/test_rc2dev9_upstream_admission.py", line 186, in test_all_reviewed_versions_have_exact_builtin_attestations
+    self.assertEqual(
+AssertionError: Items in the first set but not the second:
+'9.2.0'
+----------------------------------------------------------------------
+Ran 1498 tests in 921.445s
+FAILED (failures=1, skipped=2)
+Shard 3: 1498 of 15158 tests executed.
+
+=== shard 5
+Ran 1429 tests in 1020.970s
+OK (skipped=1)
+Shard 5: 1429 of 15158 tests executed.
+Scratch leaks: 28, by creator:
+  1 <W>/tests/test_hamcp371_live_replay_local.py:205 (test_unreachable_upstream_is_a_502_and_a_record)
+  3 <W>/tests/test_hamcp371_live_replay_local.py:241 (setUp)
+  16 <W>/tests/test_hamcp371_live_replay_local.py:316 (run_reads)
+  1 <W>/tests/test_hamcp371_live_replay_local.py:534 (test_relabel_replaces_the_project_once_and_refuses_otherwise)
+  3 <W>/tests/test_hamcp371_live_replay_local.py:655 (catalog)
+  3 <W>/tests/test_hamcp371_live_replay_local.py:744 (repository)
+  1 <W>/tests/test_hamcp371_live_replay_local.py:813 (test_recorded_image_must_be_unchanged)
+
+=== shard 7
+ERROR: tearDownModule (test_hamcp371_blueprint_9_2)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<W>/tests/support/process_isolation.py", line 719, in handle_module_teardown
+    raise ProcessStateLeak(message)
+tests.support.process_isolation.ProcessStateLeak: test module 'test_hamcp371_blueprint_9_2' leaked process-wide state past its own tests (class or module fixtures); restored for later modules: ha_mcp_engineering.capabilities._DYNAMIC_UPSTREAM_CAPABILITIES: 0 -> 27 entries; added None; ha_mcp_engineering.capabilities._UPSTREAM_READ_GATEWAY_SUMMARY: keys changed: accounted_automatic_read_count, admission_complete, admission_status, advertised_is_callable, annotation_mismatch_count, automatic_read_accounting_valid, automatic_read_count, blocked_classification_counts, blocked_mixed_tool_count, blocked_physical_high_risk_count, ... and 117 more
+ERROR: tearDownModule (test_hamcp371_p4_parity)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<W>/tests/support/process_isolation.py", line 719, in handle_module_teardown
+    raise ProcessStateLeak(message)
+tests.support.process_isolation.ProcessStateLeak: test module 'test_hamcp371_p4_parity' leaked process-wide state past its own tests (class or module fixtures); restored for later modules: ha_mcp_engineering.capabilities._DYNAMIC_UPSTREAM_CAPABILITIES: 0 -> 28 entries; added None; ha_mcp_engineering.capabilities._UPSTREAM_READ_GATEWAY_SUMMARY: keys changed: accounted_automatic_read_count, admission_complete, admission_status, advertised_is_callable, annotation_mismatch_count, automatic_read_accounting_valid, automatic_read_count, blocked_classification_counts, blocked_mixed_tool_count, blocked_physical_high_risk_count, ... and 117 more; logger 'httpcore': disabled, propagate changed; logger 'httpx': disabled, propagate changed; logger 'mcp.client.streamable_http': disabled, propagate changed
+----------------------------------------------------------------------
+Ran 1349 tests in 1161.424s
+FAILED (errors=2, skipped=2)
+Shard 7: 1349 of 15158 tests executed.
+
+=== shard 9
+ERROR: tearDownModule (test_hamcp371_overview_search_9_2)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<W>/tests/support/process_isolation.py", line 719, in handle_module_teardown
+    raise ProcessStateLeak(message)
+tests.support.process_isolation.ProcessStateLeak: test module 'test_hamcp371_overview_search_9_2' leaked process-wide state past its own tests (class or module fixtures); restored for later modules: ha_mcp_engineering.capabilities._DYNAMIC_UPSTREAM_CAPABILITIES: 0 -> 27 entries; added None; ha_mcp_engineering.capabilities._UPSTREAM_READ_GATEWAY_SUMMARY: keys changed: accounted_automatic_read_count, admission_complete, admission_status, advertised_is_callable, annotation_mismatch_count, automatic_read_accounting_valid, automatic_read_count, blocked_classification_counts, blocked_mixed_tool_count, blocked_physical_high_risk_count, ... and 117 more
+FAIL: test_step0_corpus_has_no_strict_value_outside_hamcp319_tests (test_hamcp319_endpoint_selector.Step0CorpusTests.test_step0_corpus_has_no_strict_value_outside_hamcp319_tests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<W>/tests/test_hamcp319_endpoint_selector.py", line 322, in test_step0_corpus_has_no_strict_value_outside_hamcp319_tests
+    self.assertEqual(strict, [])
+AssertionError: Lists differ: ['test_hamcp371_live_replay_local.py:486'] != []
+First list contains 1 additional elements.
+First extra element 0:
+'test_hamcp371_live_replay_local.py:486'
+- ['test_hamcp371_live_replay_local.py:486']
++ []
+----------------------------------------------------------------------
+Ran 1409 tests in 1388.231s
+FAILED (failures=1, errors=1, skipped=2)
+Shard 9: 1409 of 15158 tests executed.
+
+=== check.ps1 output after the unit suite
+Sharded unittest run FAILED: shard_3:exit_code_1; shard_3:runner_reported_failure; shard_5:exit_code_1; shard_7:exit_code_1; shard_7:runner_reported_failure; shard_9:exit_code_1; shard_9:runner_reported_failure
+Summary: .artifacts/unit-test-shards/latest/summary.json
+Sharded unittest step failed: sharded run exited 1; sharded summary result is failed
+
+==> Validate add-on metadata
+<W>/.artifacts/venv/bin/python scripts/validate_addon_metadata.py --repo-root . --base-ref e741f2ed17e33bc1516aaddc5b05664d4b7561c1
+Metadata validation failed: Beta version was not bumped above the deployed/base version
+
+==> Parse repository YAML
+<W>/.artifacts/venv/bin/python -c "import pathlib,yaml; paths=sorted([*pathlib.Path('.').rglob('*.yml'),*pathlib.Path('.').rglob('*.yaml')]); [yaml.safe_load(p.read_text(encoding='utf-8')) for p in paths]; print(f'Parsed {len(paths)} YAML file(s).')"
+Parsed 133 YAML file(s).
+
+==> Check installed dependency consistency
+<W>/.artifacts/venv/bin/python -m pip check
+No broken requirements found.
+
+==> Scan for high-confidence secret patterns
+bounded offline credential-pattern scan
+No bounded high-confidence credential pattern was found.
+
+==> Parse PowerShell syntax
+[scriptblock]::Create for scripts/*.ps1
+Parsed 2 PowerShell script(s).
+
+==> Check Git whitespace
+git diff --check
+
+==> Check staged Git whitespace
+git diff --cached --check
+
+==> Check committed Git whitespace
+git diff --check e741f2ed17e33bc1516aaddc5b05664d4b7561c1...HEAD
+
+==> Check changed text whitespace
+scan changed text files for trailing whitespace
+Changed text files contain no trailing whitespace.
+
+Validation failed. Review the failed steps above.
+rc=1
+end 2026-11-16 07:49:41 CST

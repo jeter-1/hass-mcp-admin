@@ -1,0 +1,189 @@
+2026-11-16 12:17:32 INFO:     127.0.0.1:54394 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:32 INFO:     127.0.0.1:54406 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 202 Accepted
+2026-11-16 12:17:32 INFO:     127.0.0.1:54410 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:34 INFO:     127.0.0.1:54422 - "GET / HTTP/1.1" 404 Not Found
+2026-11-16 12:17:37 INFO:     127.0.0.1:54426 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:37 INFO:     127.0.0.1:54432 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 202 Accepted
+2026-11-16 12:17:37 INFO:     127.0.0.1:54434 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:38 INFO:     127.0.0.1:54446 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:38 INFO:     127.0.0.1:54460 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 202 Accepted
+2026-11-16 12:17:38 INFO:     127.0.0.1:54468 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:39 INFO:     127.0.0.1:54470 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:39 INFO:     127.0.0.1:54472 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 202 Accepted
+2026-11-16 12:17:39 INFO:     127.0.0.1:54482 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:39 INFO:     127.0.0.1:54494 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:39 INFO:     127.0.0.1:54500 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:39 INFO:     127.0.0.1:54512 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 202 Accepted
+2026-11-16 12:17:39 INFO:     127.0.0.1:54516 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:39 INFO:     127.0.0.1:54522 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:39 INFO:     127.0.0.1:54524 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:39 INFO:     127.0.0.1:54532 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 202 Accepted
+2026-11-16 12:17:39 INFO:     127.0.0.1:54538 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:39 INFO:     127.0.0.1:54546 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:39 INFO:     127.0.0.1:54550 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:40 INFO:     127.0.0.1:54562 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 202 Accepted
+2026-11-16 12:17:40 INFO:     127.0.0.1:54578 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:40 INFO:     127.0.0.1:54582 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:40 INFO:     127.0.0.1:54586 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:40 INFO:     127.0.0.1:54588 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 202 Accepted
+2026-11-16 12:17:40 INFO:     127.0.0.1:54594 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:40 INFO:     127.0.0.1:54608 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:40 INFO:     127.0.0.1:54620 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:40 INFO:     127.0.0.1:54630 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 202 Accepted
+2026-11-16 12:17:40 INFO:     127.0.0.1:54640 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:40 INFO:     127.0.0.1:54652 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:40 INFO:     127.0.0.1:54658 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:40 INFO:     127.0.0.1:54670 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 202 Accepted
+2026-11-16 12:17:40 INFO:     127.0.0.1:54682 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:40 INFO:     127.0.0.1:54696 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:40 INFO:     127.0.0.1:54698 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:40 INFO:     127.0.0.1:54712 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 202 Accepted
+2026-11-16 12:17:40 INFO:     127.0.0.1:54714 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:41 INFO:     127.0.0.1:54718 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:41 INFO:     127.0.0.1:54728 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:41 INFO:     127.0.0.1:54730 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 202 Accepted
+2026-11-16 12:17:41 INFO:     127.0.0.1:54746 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:41 INFO:     127.0.0.1:54752 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:41 INFO:     127.0.0.1:54760 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:41 INFO:     127.0.0.1:54762 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 202 Accepted
+2026-11-16 12:17:41 INFO:     127.0.0.1:54772 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:41 INFO:     127.0.0.1:54776 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:41 INFO:     127.0.0.1:54778 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:41 INFO:     127.0.0.1:54790 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 202 Accepted
+2026-11-16 12:17:41 INFO:     127.0.0.1:54804 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:41 INFO:     127.0.0.1:54820 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:42 INFO:     127.0.0.1:54832 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:42 INFO:     127.0.0.1:54842 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 202 Accepted
+2026-11-16 12:17:42 INFO:     127.0.0.1:54848 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:42 INFO:     127.0.0.1:54864 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:42 INFO:     127.0.0.1:54868 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:42 INFO:     127.0.0.1:54870 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 202 Accepted
+2026-11-16 12:17:42 INFO:     127.0.0.1:54880 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:42 INFO:     127.0.0.1:54882 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:42 INFO:     127.0.0.1:54888 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:42 INFO:     127.0.0.1:54896 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 202 Accepted
+2026-11-16 12:17:42 INFO:     127.0.0.1:54912 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:42 INFO:     127.0.0.1:55966 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:42 INFO:     127.0.0.1:55970 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:42 INFO:     127.0.0.1:55978 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 202 Accepted
+2026-11-16 12:17:42 INFO:     127.0.0.1:55990 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:42 INFO:     127.0.0.1:55998 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:43 INFO:     127.0.0.1:56004 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:43 INFO:     127.0.0.1:56018 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 202 Accepted
+2026-11-16 12:17:43 INFO:     127.0.0.1:56030 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:43 INFO:     127.0.0.1:56044 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:43 INFO:     127.0.0.1:56058 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:43 INFO:     127.0.0.1:56074 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 202 Accepted
+2026-11-16 12:17:43 INFO:     127.0.0.1:56078 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:43 INFO:     127.0.0.1:56094 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:43 INFO:     127.0.0.1:56104 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:43 INFO:     127.0.0.1:56112 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 202 Accepted
+2026-11-16 12:17:43 INFO:     127.0.0.1:56118 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:43 INFO:     127.0.0.1:56134 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:43 INFO:     127.0.0.1:56136 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:43 INFO:     127.0.0.1:56146 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 202 Accepted
+2026-11-16 12:17:43 INFO:     127.0.0.1:56154 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:44 INFO:     127.0.0.1:56162 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:44 INFO:     127.0.0.1:56164 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:44 INFO:     127.0.0.1:56180 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 202 Accepted
+2026-11-16 12:17:44 INFO:     127.0.0.1:56184 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:44 INFO:     127.0.0.1:56194 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:44 INFO:     127.0.0.1:56198 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:44 INFO:     127.0.0.1:56214 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 202 Accepted
+2026-11-16 12:17:44 INFO:     127.0.0.1:56226 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:44 INFO:     127.0.0.1:56242 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:44 INFO:     127.0.0.1:56254 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:44 INFO:     127.0.0.1:56256 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 202 Accepted
+2026-11-16 12:17:44 INFO:     127.0.0.1:56258 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:44 INFO:     127.0.0.1:56262 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:44 INFO:     127.0.0.1:56278 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:44 INFO:     127.0.0.1:56288 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 202 Accepted
+2026-11-16 12:17:44 INFO:     127.0.0.1:56300 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:45 INFO:     127.0.0.1:56314 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:45 INFO:     127.0.0.1:56322 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:45 INFO:     127.0.0.1:56324 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 202 Accepted
+2026-11-16 12:17:45 INFO:     127.0.0.1:56340 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:45 INFO:     127.0.0.1:56354 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:45 INFO:     127.0.0.1:56362 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:45 INFO:     127.0.0.1:56372 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 202 Accepted
+2026-11-16 12:17:45 INFO:     127.0.0.1:56386 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:45 INFO:     127.0.0.1:56396 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:45 INFO:     127.0.0.1:56400 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:45 INFO:     127.0.0.1:56414 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 202 Accepted
+2026-11-16 12:17:45 INFO:     127.0.0.1:56418 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:45 INFO:     127.0.0.1:56430 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:45 INFO:     127.0.0.1:56434 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:45 INFO:     127.0.0.1:56446 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 202 Accepted
+2026-11-16 12:17:45 INFO:     127.0.0.1:56452 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:46 INFO:     127.0.0.1:56456 - "POST /synthetic-upstream-secret/mcp HTTP/1.1" 200 OK
+2026-11-16 12:17:31 ha_mcp.__main__ INFO: ha-mcp 8.5.0
+2026-11-16 12:17:31 ha_mcp.settings_ui._persistence INFO: Saved tool config to /tmp/ha-mcp/tool_config.json
+2026-11-16 12:17:31 ha_mcp.settings_ui._persistence INFO: Seeded tool config from env vars (2 entries)
+2026-11-16 12:17:31 ha_mcp.client.rest_client INFO: Initialized Home Assistant client for http://127.0.0.1:8123
+2026-11-16 12:17:31 ha_mcp.tools.tools_filesystem INFO: Filesystem tools enabled via feature flag
+2026-11-16 12:17:32 ha_mcp.tools.registry INFO: Auto-discovery registered tools from 43 modules
+2026-11-16 12:17:32 ha_mcp.server INFO: Registered bundled skills as MCP resources
+2026-11-16 12:17:32 ha_mcp.server INFO: Registered ha_get_skill_guide (1 bundled skill(s))
+2026-11-16 12:17:32 ha_mcp.server INFO: Skill system summary: provider=ok, tool=ok, guidance_count=1
+2026-11-16 12:17:32 ha_mcp.server INFO: Env-pinned tools active (DISABLED_TOOLS / PINNED_TOOLS): ha_delete_file=disabled, ha_write_file=disabled
+2026-11-16 12:17:32 ha_mcp.settings_ui._tools_meta INFO: Disabled tools: ha_config_set_yaml, ha_delete_file, ha_write_file
+2026-11-16 12:17:32 ha_mcp.server INFO: Applied persisted tool config (2 entries)
+2026-11-16 12:17:32 ha_mcp.server INFO: Search keyword enrichment applied (14 boosts)
+2026-11-16 12:17:32 ha_mcp.__main__ INFO: Settings UI disabled (HA_MCP_DISABLE_SETTINGS_UI); routes not registered.
+
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                         ▄▀▀ ▄▀█ █▀▀ ▀█▀ █▀▄▀█ █▀▀ █▀█                        │
+│                         █▀  █▀█ ▄▄█  █  █ ▀ █ █▄▄ █▀▀                        │
+│                                                                              │
+│                                                                              │
+│                                FastMCP 4.0.3                                 │
+│                            https://gofastmcp.com                             │
+│                                                                              │
+│                  🖥  Server:      ha-mcp, 8.5.0                               │
+│                  🚀 Deploy free: https://horizon.prefect.io                  │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+[11/16/26 12:17:32] INFO     Starting MCP server 'ha-mcp' with  transport.py:363
+                             transport 'http' (stateless) on                    
+                             http://127.0.0.1:18086/synthetic-u                 
+                             pstream-secret/mcp                                 
+2026-11-16 12:17:32 INFO:     Started server process [1]
+2026-11-16 12:17:32 INFO:     Waiting for application startup.
+2026-11-16 12:17:32 ha_mcp.hacs_auto_refresh INFO: HACS auto-refresh: startup pass due (server 8.5.0); asking HACS for repository state
+2026-11-16 12:17:32 ha_mcp.client.websocket_client INFO: Connecting to Home Assistant WebSocket: ws://127.0.0.1:8123/api/websocket
+2026-11-16 12:17:32 mcp.server.streamable_http_manager INFO: StreamableHTTP session manager started
+2026-11-16 12:17:32 INFO:     Application startup complete.
+2026-11-16 12:17:32 INFO:     Uvicorn running on http://127.0.0.1:18086 (Press CTRL+C to quit)
+2026-11-16 12:17:32 ha_mcp.client.websocket_client INFO: WebSocket connected and authenticated successfully
+2026-11-16 12:17:32 ha_mcp.browser_landing INFO: GET /synthetic-upstream-secret/mcp -> 405 (NORMAL for most non-SSE connections)
+2026-11-16 12:17:39 httpx INFO: HTTP Request: GET http://127.0.0.1:8123/api/config/automation/config/hamcp371_automation "HTTP/1.1 200 OK"
+2026-11-16 12:17:39 httpx INFO: HTTP Request: GET http://127.0.0.1:8123/api/states "HTTP/1.1 200 OK"
+2026-11-16 12:17:39 httpx INFO: HTTP Request: GET http://127.0.0.1:8123/api/calendars/calendar.hamcp371_calendar?start=2026-11-16T04%3A17%3A22-06%3A00&end=2026-11-16T07%3A17%3A22-06%3A00 "HTTP/1.1 200 OK"
+2026-11-16 12:17:40 httpx INFO: HTTP Request: GET http://127.0.0.1:8123/api/config/scene/config/hamcp371_scene "HTTP/1.1 200 OK"
+2026-11-16 12:17:40 httpx INFO: HTTP Request: GET http://127.0.0.1:8123/api/config/script/config/hamcp371_script "HTTP/1.1 200 OK"
+2026-11-16 12:17:41 httpx INFO: HTTP Request: GET http://127.0.0.1:8123/api/states "HTTP/1.1 200 OK"
+[11/16/26 12:17:41] DEBUG    Sending INFO to client:             context.py:1349
+                             ha_get_automation_traces starting:                 
+                             id=automation.hamcp371_automation                  
+                             run_id=<list>                                      
+/app/src/ha_mcp/_vendor/fastmcp/server/context.py:1357: MCPDeprecationWarning: The logging capability is deprecated as of 2026-07-28 (SEP-2577).
+  await session.send_log_message(  # ty: ignore[deprecated]
+2026-11-16 12:17:42 ha_mcp.tools.tools_entities INFO: Getting entity registry entry for input_boolean.hamcp371_helper
+[11/16/26 12:17:43] DEBUG    Sending INFO to client:             context.py:1349
+                             ha_get_history starting:                           
+                             source=history entities=1                          
+                             window=2026-11-16T04:17:22-06:00..2                
+                             026-11-16T07:17:22-06:00                           
+2026-11-16 12:17:44 ha_mcp.client.websocket_client INFO: Connecting to Home Assistant WebSocket: ws://127.0.0.1:8123/api/websocket
+2026-11-16 12:17:44 ha_mcp.client.websocket_client INFO: WebSocket connected and authenticated successfully
+2026-11-16 12:17:44 ha_mcp.client.websocket_client INFO: WebSocket disconnected
+2026-11-16 12:17:44 httpx INFO: HTTP Request: GET http://127.0.0.1:8123/api/states "HTTP/1.1 200 OK"
+2026-11-16 12:17:45 httpx INFO: HTTP Request: GET http://127.0.0.1:8123/api/states "HTTP/1.1 200 OK"
+2026-11-16 12:17:46 ha_mcp.client.rest_client ERROR: WebSocket message failed (supervisor/api): Command failed: Unknown command.
+2026-11-16 12:17:46 ha_mcp.tools.tools_addons ERROR: Error calling Supervisor API /addons: Command failed: Unknown command.
+[11/16/26 12:17:46] Error calling tool 'ha_get_app'                             

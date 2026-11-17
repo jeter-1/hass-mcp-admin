@@ -1,0 +1,3 @@
+event: message
+data: {"jsonrpc":"2.0","id":2,"result":{"content":[{"text":"{\"success\":true,\"count\":1,\"labels\":[{\"color\":null,\"created_at\":1794831408.55124,\"description\":null,\"icon\":null,\"label_id\":\"hamcp371_label\",\"name\":\"HAMCP371 label\",\"modified_at\":1794831408.551242}],\"message\":\"Found 1 label(s)\"}","type":"text"}],"isError":false,"structuredContent":{"success":true,"count":1,"labels":[{"color":null,"created_at":1794831408.55124,"description":null,"icon":null,"label_id":"hamcp371_label","name":"HAMCP371 label","modified_at":1794831408.551242}],"message":"Found 1 label(s)"}}}
+

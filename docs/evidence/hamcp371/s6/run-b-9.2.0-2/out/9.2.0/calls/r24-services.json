@@ -1,0 +1,327 @@
+{
+ "arguments_built_by": "adapter code, policy 9.1.2",
+ "calls_format_version": 1,
+ "exchange": {
+  "body_bytes": 4314,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":124,\"result\":{\"content\":[{\"text\":\"{\\\"success\\\":true,\\\"domains\\\":[\\\"ai_task\\\",\\\"alarm_control_panel\\\",\\\"assist_satellite\\\",\\\"automation\\\",\\\"backup\\\",\\\"button\\\",\\\"calendar\\\",\\\"camera\\\",\\\"climate\\\",\\\"conversation\\\",\\\"counter\\\",\\\"cover\\\",\\\"date\\\",\\\"datetime\\\",\\\"device_tracker\\\",\\\"fan\\\",\\\"ffmpeg\\\",\\\"frontend\\\",\\\"group\\\",\\\"ha_mcp_tools\\\",\\\"homeassistant\\\",\\\"humidifier\\\",\\\"image\\\",\\\"image_processing\\\",\\\"input_boolean\\\",\\\"input_button\\\",\\\"input_datetime\\\",\\\"input_number\\\",\\\"input_select\\\",\\\"input_text\\\",\\\"lawn_mower\\\",\\\"light\\\",\\\"lock\\\",\\\"logbook\\\",\\\"logger\\\",\\\"lovelace\\\",\\\"media_player\\\",\\\"notify\\\",\\\"number\\\",\\\"persistent_notification\\\",\\\"person\\\",\\\"recorder\\\",\\\"remote\\\",\\\"scene\\\",\\\"schedule\\\",\\\"script\\\",\\\"select\\\",\\\"shopping_list\\\",\\\"siren\\\",\\\"switch\\\",\\\"system_log\\\",\\\"template\\\",\\\"text\\\",\\\"time\\\",\\\"timer\\\",\\\"todo\\\",\\\"tts\\\",\\\"update\\\",\\\"vacuum\\\",\\\"valve\\\",\\\"water_heater\\\",\\\"weather\\\",\\\"zone\\\"],\\\"services\\\":{\\\"persistent_notification.create\\\":{\\\"name\\\":\\\"Create persistent notification\\\",\\\"description\\\":\\\"Shows a persistent notification on the notifications panel.\\\",\\\"domain\\\":\\\"persistent_notification\\\",\\\"service\\\":\\\"create\\\"},\\\"persistent_notification.dismiss\\\":{\\\"name\\\":\\\"Dismiss persistent notification\\\",\\\"description\\\":\\\"Deletes a persistent notification from the notifications panel.\\\",\\\"domain\\\":\\\"persistent_notification\\\",\\\"service\\\":\\\"dismiss\\\"},\\\"persistent_notification.dismiss_all\\\":{\\\"name\\\":\\\"Dismiss all persistent notifications\\\",\\\"description\\\":\\\"Deletes all persistent notifications from the notifications panel.\\\",\\\"domain\\\":\\\"persistent_notification\\\",\\\"service\\\":\\\"dismiss_all\\\"},\\\"homeassistant.save_persistent_states\\\":{\\\"name\\\":\\\"Save persistent states\\\",\\\"description\\\":\\\"Saves the persistent states immediately. Maintains the normal periodic saving interval.\\\",\\\"domain\\\":\\\"homeassistant\\\",\\\"service\\\":\\\"save_persistent_states\\\"},\\\"homeassistant.turn_off\\\":{\\\"name\\\":\\\"Generic turn off\\\",\\\"description\\\":\\\"Generic action to turn devices off under any domain.\\\",\\\"domain\\\":\\\"homeassistant\\\",\\\"service\\\":\\\"turn_off\\\",\\\"target\\\":{}}},\\\"total_count\\\":261,\\\"offset\\\":0,\\\"limit\\\":5,\\\"count\\\":5,\\\"has_more\\\":true,\\\"next_offset\\\":5,\\\"detail_level\\\":\\\"summary\\\",\\\"filters_applied\\\":{\\\"domain\\\":null,\\\"query\\\":null}}\",\"type\":\"text\"}],\"isError\":false,\"structuredContent\":{\"success\":true,\"domains\":[\"ai_task\",\"alarm_control_panel\",\"assist_satellite\",\"automation\",\"backup\",\"button\",\"calendar\",\"camera\",\"climate\",\"conversation\",\"counter\",\"cover\",\"date\",\"datetime\",\"device_tracker\",\"fan\",\"ffmpeg\",\"frontend\",\"group\",\"ha_mcp_tools\",\"homeassistant\",\"humidifier\",\"image\",\"image_processing\",\"input_boolean\",\"input_button\",\"input_datetime\",\"input_number\",\"input_select\",\"input_text\",\"lawn_mower\",\"light\",\"lock\",\"logbook\",\"logger\",\"lovelace\",\"media_player\",\"notify\",\"number\",\"persistent_notification\",\"person\",\"recorder\",\"remote\",\"scene\",\"schedule\",\"script\",\"select\",\"shopping_list\",\"siren\",\"switch\",\"system_log\",\"template\",\"text\",\"time\",\"timer\",\"todo\",\"tts\",\"update\",\"vacuum\",\"valve\",\"water_heater\",\"weather\",\"zone\"],\"services\":{\"persistent_notification.create\":{\"name\":\"Create persistent notification\",\"description\":\"Shows a persistent notification on the notifications panel.\",\"domain\":\"persistent_notification\",\"service\":\"create\"},\"persistent_notification.dismiss\":{\"name\":\"Dismiss persistent notification\",\"description\":\"Deletes a persistent notification from the notifications panel.\",\"domain\":\"persistent_notification\",\"service\":\"dismiss\"},\"persistent_notification.dismiss_all\":{\"name\":\"Dismiss all persistent notifications\",\"description\":\"Deletes all persistent notifications from the notifications panel.\",\"domain\":\"persistent_notification\",\"service\":\"dismiss_all\"},\"homeassistant.save_persistent_states\":{\"name\":\"Save persistent states\",\"description\":\"Saves the persistent states immediately. Maintains the normal periodic saving interval.\",\"domain\":\"homeassistant\",\"service\":\"save_persistent_states\"},\"homeassistant.turn_off\":{\"name\":\"Generic turn off\",\"description\":\"Generic action to turn devices off under any domain.\",\"domain\":\"homeassistant\",\"service\":\"turn_off\",\"target\":{}}},\"total_count\":261,\"offset\":0,\"limit\":5,\"count\":5,\"has_more\":true,\"next_offset\":5,\"detail_level\":\"summary\",\"filters_applied\":{\"domain\":null,\"query\":null}}}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 124,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\"success\":true,\"domains\":[\"ai_task\",\"alarm_control_panel\",\"assist_satellite\",\"automation\",\"backup\",\"button\",\"calendar\",\"camera\",\"climate\",\"conversation\",\"counter\",\"cover\",\"date\",\"datetime\",\"device_tracker\",\"fan\",\"ffmpeg\",\"frontend\",\"group\",\"ha_mcp_tools\",\"homeassistant\",\"humidifier\",\"image\",\"image_processing\",\"input_boolean\",\"input_button\",\"input_datetime\",\"input_number\",\"input_select\",\"input_text\",\"lawn_mower\",\"light\",\"lock\",\"logbook\",\"logger\",\"lovelace\",\"media_player\",\"notify\",\"number\",\"persistent_notification\",\"person\",\"recorder\",\"remote\",\"scene\",\"schedule\",\"script\",\"select\",\"shopping_list\",\"siren\",\"switch\",\"system_log\",\"template\",\"text\",\"time\",\"timer\",\"todo\",\"tts\",\"update\",\"vacuum\",\"valve\",\"water_heater\",\"weather\",\"zone\"],\"services\":{\"persistent_notification.create\":{\"name\":\"Create persistent notification\",\"description\":\"Shows a persistent notification on the notifications panel.\",\"domain\":\"persistent_notification\",\"service\":\"create\"},\"persistent_notification.dismiss\":{\"name\":\"Dismiss persistent notification\",\"description\":\"Deletes a persistent notification from the notifications panel.\",\"domain\":\"persistent_notification\",\"service\":\"dismiss\"},\"persistent_notification.dismiss_all\":{\"name\":\"Dismiss all persistent notifications\",\"description\":\"Deletes all persistent notifications from the notifications panel.\",\"domain\":\"persistent_notification\",\"service\":\"dismiss_all\"},\"homeassistant.save_persistent_states\":{\"name\":\"Save persistent states\",\"description\":\"Saves the persistent states immediately. Maintains the normal periodic saving interval.\",\"domain\":\"homeassistant\",\"service\":\"save_persistent_states\"},\"homeassistant.turn_off\":{\"name\":\"Generic turn off\",\"description\":\"Generic action to turn devices off under any domain.\",\"domain\":\"homeassistant\",\"service\":\"turn_off\",\"target\":{}}},\"total_count\":261,\"offset\":0,\"limit\":5,\"count\":5,\"has_more\":true,\"next_offset\":5,\"detail_level\":\"summary\",\"filters_applied\":{\"domain\":null,\"query\":null}}",
+       "type": "text"
+      }
+     ],
+     "isError": false,
+     "structuredContent": {
+      "count": 5,
+      "detail_level": "summary",
+      "domains": [
+       "ai_task",
+       "alarm_control_panel",
+       "assist_satellite",
+       "automation",
+       "backup",
+       "button",
+       "calendar",
+       "camera",
+       "climate",
+       "conversation",
+       "counter",
+       "cover",
+       "date",
+       "datetime",
+       "device_tracker",
+       "fan",
+       "ffmpeg",
+       "frontend",
+       "group",
+       "ha_mcp_tools",
+       "homeassistant",
+       "humidifier",
+       "image",
+       "image_processing",
+       "input_boolean",
+       "input_button",
+       "input_datetime",
+       "input_number",
+       "input_select",
+       "input_text",
+       "lawn_mower",
+       "light",
+       "lock",
+       "logbook",
+       "logger",
+       "lovelace",
+       "media_player",
+       "notify",
+       "number",
+       "persistent_notification",
+       "person",
+       "recorder",
+       "remote",
+       "scene",
+       "schedule",
+       "script",
+       "select",
+       "shopping_list",
+       "siren",
+       "switch",
+       "system_log",
+       "template",
+       "text",
+       "time",
+       "timer",
+       "todo",
+       "tts",
+       "update",
+       "vacuum",
+       "valve",
+       "water_heater",
+       "weather",
+       "zone"
+      ],
+      "filters_applied": {
+       "domain": null,
+       "query": null
+      },
+      "has_more": true,
+      "limit": 5,
+      "next_offset": 5,
+      "offset": 0,
+      "services": {
+       "homeassistant.save_persistent_states": {
+        "description": "Saves the persistent states immediately. Maintains the normal periodic saving interval.",
+        "domain": "homeassistant",
+        "name": "Save persistent states",
+        "service": "save_persistent_states"
+       },
+       "homeassistant.turn_off": {
+        "description": "Generic action to turn devices off under any domain.",
+        "domain": "homeassistant",
+        "name": "Generic turn off",
+        "service": "turn_off",
+        "target": {}
+       },
+       "persistent_notification.create": {
+        "description": "Shows a persistent notification on the notifications panel.",
+        "domain": "persistent_notification",
+        "name": "Create persistent notification",
+        "service": "create"
+       },
+       "persistent_notification.dismiss": {
+        "description": "Deletes a persistent notification from the notifications panel.",
+        "domain": "persistent_notification",
+        "name": "Dismiss persistent notification",
+        "service": "dismiss"
+       },
+       "persistent_notification.dismiss_all": {
+        "description": "Deletes all persistent notifications from the notifications panel.",
+        "domain": "persistent_notification",
+        "name": "Dismiss all persistent notifications",
+        "service": "dismiss_all"
+       }
+      },
+      "success": true,
+      "total_count": 261
+     }
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 124,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "limit": 5
+     },
+     "name": "ha_list_services"
+    }
+   },
+   "method": "POST",
+   "path": "/mcp"
+  },
+  "response": {
+   "id": 124,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\"success\":true,\"domains\":[\"ai_task\",\"alarm_control_panel\",\"assist_satellite\",\"automation\",\"backup\",\"button\",\"calendar\",\"camera\",\"climate\",\"conversation\",\"counter\",\"cover\",\"date\",\"datetime\",\"device_tracker\",\"fan\",\"ffmpeg\",\"frontend\",\"group\",\"ha_mcp_tools\",\"homeassistant\",\"humidifier\",\"image\",\"image_processing\",\"input_boolean\",\"input_button\",\"input_datetime\",\"input_number\",\"input_select\",\"input_text\",\"lawn_mower\",\"light\",\"lock\",\"logbook\",\"logger\",\"lovelace\",\"media_player\",\"notify\",\"number\",\"persistent_notification\",\"person\",\"recorder\",\"remote\",\"scene\",\"schedule\",\"script\",\"select\",\"shopping_list\",\"siren\",\"switch\",\"system_log\",\"template\",\"text\",\"time\",\"timer\",\"todo\",\"tts\",\"update\",\"vacuum\",\"valve\",\"water_heater\",\"weather\",\"zone\"],\"services\":{\"persistent_notification.create\":{\"name\":\"Create persistent notification\",\"description\":\"Shows a persistent notification on the notifications panel.\",\"domain\":\"persistent_notification\",\"service\":\"create\"},\"persistent_notification.dismiss\":{\"name\":\"Dismiss persistent notification\",\"description\":\"Deletes a persistent notification from the notifications panel.\",\"domain\":\"persistent_notification\",\"service\":\"dismiss\"},\"persistent_notification.dismiss_all\":{\"name\":\"Dismiss all persistent notifications\",\"description\":\"Deletes all persistent notifications from the notifications panel.\",\"domain\":\"persistent_notification\",\"service\":\"dismiss_all\"},\"homeassistant.save_persistent_states\":{\"name\":\"Save persistent states\",\"description\":\"Saves the persistent states immediately. Maintains the normal periodic saving interval.\",\"domain\":\"homeassistant\",\"service\":\"save_persistent_states\"},\"homeassistant.turn_off\":{\"name\":\"Generic turn off\",\"description\":\"Generic action to turn devices off under any domain.\",\"domain\":\"homeassistant\",\"service\":\"turn_off\",\"target\":{}}},\"total_count\":261,\"offset\":0,\"limit\":5,\"count\":5,\"has_more\":true,\"next_offset\":5,\"detail_level\":\"summary\",\"filters_applied\":{\"domain\":null,\"query\":null}}",
+      "type": "text"
+     }
+    ],
+    "isError": false,
+    "structuredContent": {
+     "count": 5,
+     "detail_level": "summary",
+     "domains": [
+      "ai_task",
+      "alarm_control_panel",
+      "assist_satellite",
+      "automation",
+      "backup",
+      "button",
+      "calendar",
+      "camera",
+      "climate",
+      "conversation",
+      "counter",
+      "cover",
+      "date",
+      "datetime",
+      "device_tracker",
+      "fan",
+      "ffmpeg",
+      "frontend",
+      "group",
+      "ha_mcp_tools",
+      "homeassistant",
+      "humidifier",
+      "image",
+      "image_processing",
+      "input_boolean",
+      "input_button",
+      "input_datetime",
+      "input_number",
+      "input_select",
+      "input_text",
+      "lawn_mower",
+      "light",
+      "lock",
+      "logbook",
+      "logger",
+      "lovelace",
+      "media_player",
+      "notify",
+      "number",
+      "persistent_notification",
+      "person",
+      "recorder",
+      "remote",
+      "scene",
+      "schedule",
+      "script",
+      "select",
+      "shopping_list",
+      "siren",
+      "switch",
+      "system_log",
+      "template",
+      "text",
+      "time",
+      "timer",
+      "todo",
+      "tts",
+      "update",
+      "vacuum",
+      "valve",
+      "water_heater",
+      "weather",
+      "zone"
+     ],
+     "filters_applied": {
+      "domain": null,
+      "query": null
+     },
+     "has_more": true,
+     "limit": 5,
+     "next_offset": 5,
+     "offset": 0,
+     "services": {
+      "homeassistant.save_persistent_states": {
+       "description": "Saves the persistent states immediately. Maintains the normal periodic saving interval.",
+       "domain": "homeassistant",
+       "name": "Save persistent states",
+       "service": "save_persistent_states"
+      },
+      "homeassistant.turn_off": {
+       "description": "Generic action to turn devices off under any domain.",
+       "domain": "homeassistant",
+       "name": "Generic turn off",
+       "service": "turn_off",
+       "target": {}
+      },
+      "persistent_notification.create": {
+       "description": "Shows a persistent notification on the notifications panel.",
+       "domain": "persistent_notification",
+       "name": "Create persistent notification",
+       "service": "create"
+      },
+      "persistent_notification.dismiss": {
+       "description": "Deletes a persistent notification from the notifications panel.",
+       "domain": "persistent_notification",
+       "name": "Dismiss persistent notification",
+       "service": "dismiss"
+      },
+      "persistent_notification.dismiss_all": {
+       "description": "Deletes all persistent notifications from the notifications panel.",
+       "domain": "persistent_notification",
+       "name": "Dismiss all persistent notifications",
+       "service": "dismiss_all"
+      }
+     },
+     "success": true,
+     "total_count": 261
+    }
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Sun, 15 Nov 2026 05:03:21 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null,
+ "group": "reads",
+ "id": "r24-services",
+ "idle": false,
+ "kind": "public",
+ "new_session": false,
+ "public_arguments": {
+  "limit": 5
+ },
+ "public_tool": "ha_list_services",
+ "upstream_tool": "ha_list_services",
+ "wire_arguments": {
+  "limit": 5
+ }
+}

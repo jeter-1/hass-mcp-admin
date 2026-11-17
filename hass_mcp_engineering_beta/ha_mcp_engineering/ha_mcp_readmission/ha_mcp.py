@@ -46,6 +46,7 @@ from ..providers.upstream_yaml_reader import (
     withheld_reason as optional_withheld_reason,
 )
 from ..providers.upstream_search_8_6 import resolve_search_variant, search_capability_contract
+from ..providers import upstream_reads_9_2 as _search_9_2
 
 
 PROFILE_VERSION = 1
@@ -174,6 +175,22 @@ _ERROR_ADAPTERS = (
         ),
         upstream_versions=frozenset({"9.1.2"}),
         evidence_class="source_derived",
+    ),
+    # HAMCP-371 N31: exact 9.2.0 is bound by its own adapter, never by analogy
+    # to 9.1.2. The four exact review probes ran against a real disposable
+    # Core before seeding (docs/evidence/hamcp371/s8/probes-1) and every shape
+    # and the aggregate equal the bound 9.1.2 record.
+    _BinaryErrorContractAdapter(
+        adapter_id="ha_mcp_error_contract_9_2_0_v1",
+        aggregate_fingerprint="4ed5b1b4c0aaad0036b4625206e96739b40fc83ec1c944754fef1ed667a10437",
+        probes=(
+            _BinaryErrorProbeContract('invalid_search', 'ha_search', 'VALIDATION_FAILED', 'fc0f1e8bf02be61d2056f1c6f11fb7b861a74ecd98978a5a38076617ac5bf939'),
+            _BinaryErrorProbeContract('missing_state', 'ha_get_state', 'ENTITY_NOT_FOUND', '8a705d923e27b7f0bd5675c49b972697874db226303b0ad8e159b83793f1950c'),
+            _BinaryErrorProbeContract('missing_automation', 'ha_config_get_automation', 'RESOURCE_NOT_FOUND', '8053f5169c2558019d1a5adab930c1ed65855ff20cf3e677863ddfbe224c3aa3'),
+            _BinaryErrorProbeContract('missing_registry_entity', 'ha_get_entity', 'SERVICE_CALL_FAILED', '3e1148ad27428880af39facca3605d530996850931d3e55c5d908f69ecc2d9c8'),
+        ),
+        upstream_versions=frozenset({"9.2.0"}),
+        evidence_class="real_core_capture",
     ),
     _BinaryErrorContractAdapter(
         adapter_id="ha_mcp_error_contract_8_5_0_v1",
@@ -696,6 +713,10 @@ def observation_for_catalog(
             )
             if resolve_search_variant(selection.binary_release, entry, raw) is not None:
                 contract = search_capability_contract(selection.binary_release, entry)
+            elif _search_9_2.resolve_search_variant(
+                    selection.binary_release, entry, raw) is not None:
+                contract = _search_9_2.search_capability_contract(
+                    selection.binary_release, entry)
 
         else:
             safe_id = name
@@ -751,7 +772,9 @@ def _profile_for_release(
         CapabilityContract(
             capability_id=entry.upstream_name,
             kind=CapabilityKind.ORDINARY_READ,
-            contract_fingerprint=search_capability_contract(release, entry) or _expected_contract_fingerprint(
+            contract_fingerprint=search_capability_contract(release, entry)
+            or _search_9_2.search_capability_contract(release, entry)
+            or _expected_contract_fingerprint(
                 tool_name=entry.upstream_name,
                 argument_restrictions=entry.argument_restrictions,
                 release_contract=contracts[entry.upstream_name],

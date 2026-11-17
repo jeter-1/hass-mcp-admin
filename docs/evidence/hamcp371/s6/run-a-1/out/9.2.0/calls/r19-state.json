@@ -1,0 +1,149 @@
+{
+ "arguments_built_by": "adapter code, policy 9.1.2",
+ "calls_format_version": 1,
+ "exchange": {
+  "body_bytes": 1582,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":119,\"result\":{\"content\":[{\"text\":\"{\\\"data\\\":{\\\"entity_id\\\":\\\"input_boolean.hamcp371_helper\\\",\\\"state\\\":\\\"on\\\",\\\"attributes\\\":{\\\"editable\\\":true,\\\"friendly_name\\\":\\\"HAMCP371 helper\\\"},\\\"last_changed\\\":\\\"2026-11-12T00:23:46.489442-06:00\\\",\\\"last_reported\\\":\\\"2026-11-12T00:23:46.489442-06:00\\\",\\\"last_updated\\\":\\\"2026-11-12T00:23:46.489442-06:00\\\",\\\"context\\\":{\\\"id\\\":\\\"01M776TDSS6T3VKPB6RG40K85Z\\\",\\\"parent_id\\\":null,\\\"user_id\\\":null}},\\\"metadata\\\":{\\\"home_assistant_timezone\\\":\\\"America/Chicago\\\",\\\"timestamp_format\\\":\\\"ISO 8601 (America/Chicago)\\\",\\\"note\\\":\\\"Per-record timestamp fields (last_changed, last_updated, last_reported, when, last_triggered) have been converted to America/Chicago local time. Query-window boundary fields (period, start_time, end_time) remain in UTC.\\\"}}\",\"type\":\"text\"}],\"isError\":false,\"structuredContent\":{\"data\":{\"entity_id\":\"input_boolean.hamcp371_helper\",\"state\":\"on\",\"attributes\":{\"editable\":true,\"friendly_name\":\"HAMCP371 helper\"},\"last_changed\":\"2026-11-12T00:23:46.489442-06:00\",\"last_reported\":\"2026-11-12T00:23:46.489442-06:00\",\"last_updated\":\"2026-11-12T00:23:46.489442-06:00\",\"context\":{\"id\":\"01M776TDSS6T3VKPB6RG40K85Z\",\"parent_id\":null,\"user_id\":null}},\"metadata\":{\"home_assistant_timezone\":\"America/Chicago\",\"timestamp_format\":\"ISO 8601 (America/Chicago)\",\"note\":\"Per-record timestamp fields (last_changed, last_updated, last_reported, when, last_triggered) have been converted to America/Chicago local time. Query-window boundary fields (period, start_time, end_time) remain in UTC.\"}}}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 119,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\"data\":{\"entity_id\":\"input_boolean.hamcp371_helper\",\"state\":\"on\",\"attributes\":{\"editable\":true,\"friendly_name\":\"HAMCP371 helper\"},\"last_changed\":\"2026-11-12T00:23:46.489442-06:00\",\"last_reported\":\"2026-11-12T00:23:46.489442-06:00\",\"last_updated\":\"2026-11-12T00:23:46.489442-06:00\",\"context\":{\"id\":\"01M776TDSS6T3VKPB6RG40K85Z\",\"parent_id\":null,\"user_id\":null}},\"metadata\":{\"home_assistant_timezone\":\"America/Chicago\",\"timestamp_format\":\"ISO 8601 (America/Chicago)\",\"note\":\"Per-record timestamp fields (last_changed, last_updated, last_reported, when, last_triggered) have been converted to America/Chicago local time. Query-window boundary fields (period, start_time, end_time) remain in UTC.\"}}",
+       "type": "text"
+      }
+     ],
+     "isError": false,
+     "structuredContent": {
+      "data": {
+       "attributes": {
+        "editable": true,
+        "friendly_name": "HAMCP371 helper"
+       },
+       "context": {
+        "id": "01M776TDSS6T3VKPB6RG40K85Z",
+        "parent_id": null,
+        "user_id": null
+       },
+       "entity_id": "input_boolean.hamcp371_helper",
+       "last_changed": "2026-11-12T00:23:46.489442-06:00",
+       "last_reported": "2026-11-12T00:23:46.489442-06:00",
+       "last_updated": "2026-11-12T00:23:46.489442-06:00",
+       "state": "on"
+      },
+      "metadata": {
+       "home_assistant_timezone": "America/Chicago",
+       "note": "Per-record timestamp fields (last_changed, last_updated, last_reported, when, last_triggered) have been converted to America/Chicago local time. Query-window boundary fields (period, start_time, end_time) remain in UTC.",
+       "timestamp_format": "ISO 8601 (America/Chicago)"
+      }
+     }
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 119,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "entity_id": "input_boolean.hamcp371_helper"
+     },
+     "name": "ha_get_state"
+    }
+   },
+   "method": "POST",
+   "path": "/mcp"
+  },
+  "response": {
+   "id": 119,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\"data\":{\"entity_id\":\"input_boolean.hamcp371_helper\",\"state\":\"on\",\"attributes\":{\"editable\":true,\"friendly_name\":\"HAMCP371 helper\"},\"last_changed\":\"2026-11-12T00:23:46.489442-06:00\",\"last_reported\":\"2026-11-12T00:23:46.489442-06:00\",\"last_updated\":\"2026-11-12T00:23:46.489442-06:00\",\"context\":{\"id\":\"01M776TDSS6T3VKPB6RG40K85Z\",\"parent_id\":null,\"user_id\":null}},\"metadata\":{\"home_assistant_timezone\":\"America/Chicago\",\"timestamp_format\":\"ISO 8601 (America/Chicago)\",\"note\":\"Per-record timestamp fields (last_changed, last_updated, last_reported, when, last_triggered) have been converted to America/Chicago local time. Query-window boundary fields (period, start_time, end_time) remain in UTC.\"}}",
+      "type": "text"
+     }
+    ],
+    "isError": false,
+    "structuredContent": {
+     "data": {
+      "attributes": {
+       "editable": true,
+       "friendly_name": "HAMCP371 helper"
+      },
+      "context": {
+       "id": "01M776TDSS6T3VKPB6RG40K85Z",
+       "parent_id": null,
+       "user_id": null
+      },
+      "entity_id": "input_boolean.hamcp371_helper",
+      "last_changed": "2026-11-12T00:23:46.489442-06:00",
+      "last_reported": "2026-11-12T00:23:46.489442-06:00",
+      "last_updated": "2026-11-12T00:23:46.489442-06:00",
+      "state": "on"
+     },
+     "metadata": {
+      "home_assistant_timezone": "America/Chicago",
+      "note": "Per-record timestamp fields (last_changed, last_updated, last_reported, when, last_triggered) have been converted to America/Chicago local time. Query-window boundary fields (period, start_time, end_time) remain in UTC.",
+      "timestamp_format": "ISO 8601 (America/Chicago)"
+     }
+    }
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Thu, 12 Nov 2026 06:23:55 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null,
+ "group": "reads",
+ "id": "r19-state",
+ "idle": false,
+ "kind": "public",
+ "new_session": false,
+ "public_arguments": {
+  "entity_id": "input_boolean.hamcp371_helper"
+ },
+ "public_tool": "ha_get_state",
+ "upstream_tool": "ha_get_state",
+ "wire_arguments": {
+  "entity_id": "input_boolean.hamcp371_helper"
+ }
+}

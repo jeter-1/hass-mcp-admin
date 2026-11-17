@@ -1,0 +1,17 @@
+{
+ "automation_entity": "automation.hamcp371_automation",
+ "automation_id": "hamcp371_automation",
+ "calendar_entity": "calendar.hamcp371_calendar",
+ "helper_entity": "input_boolean.hamcp371_helper",
+ "scene_id": "hamcp371_scene",
+ "script_id": "hamcp371_script",
+ "search_text": "HAMCP371",
+ "statistics_entity": "sensor.hamcp371_energy",
+ "template": "{{ states('input_boolean.hamcp371_helper') }}",
+ "todo_entity": "todo.hamcp371_todo",
+ "window_end": "2026-11-16T07:16:48-06:00",
+ "window_end_offset_free": "2026-11-16T07:16:48",
+ "window_start": "2026-11-16T04:16:48-06:00",
+ "window_start_offset_free": "2026-11-16T04:16:48",
+ "zone_id": "hamcp371_zone"
+}

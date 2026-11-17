@@ -1,0 +1,109 @@
+{
+ "arguments_built_by": "adapter code, policy 9.1.2",
+ "calls_format_version": 1,
+ "exchange": {
+  "body_bytes": 1019,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":101,\"result\":{\"content\":[{\"text\":\"{\\n  \\\"success\\\": false,\\n  \\\"error\\\": {\\n    \\\"code\\\": \\\"AUTH_INSUFFICIENT_PERMISSIONS\\\",\\n    \\\"message\\\": \\\"Service ha_mcp_tools.get_caller_token is admin-only in Home Assistant and this token's user is not an administrator\\\",\\n    \\\"suggestion\\\": \\\"Use a long-lived access token from an administrator's profile\\\",\\n    \\\"suggestions\\\": [\\n      \\\"Use a long-lived access token from an administrator's profile\\\",\\n      \\\"Or, on the in-process server, use a token issued in the integration's forms from the login of a local-only administrator account\\\"\\n    ]\\n  },\\n  \\\"tool\\\": \\\"ha_config_get_yaml\\\",\\n  \\\"file\\\": \\\"configuration.yaml\\\",\\n  \\\"yaml_path\\\": \\\"group\\\",\\n  \\\"warnings\\\": [\\n    \\\"ha-mcp does not officially support non-admin Home Assistant tokens. They still work, but admin-only operations fail. Use a long-lived access token from an administrator's profile for full access.\\\"\\n  ]\\n}\",\"type\":\"text\"}],\"isError\":true}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 101,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\n  \"success\": false,\n  \"error\": {\n    \"code\": \"AUTH_INSUFFICIENT_PERMISSIONS\",\n    \"message\": \"Service ha_mcp_tools.get_caller_token is admin-only in Home Assistant and this token's user is not an administrator\",\n    \"suggestion\": \"Use a long-lived access token from an administrator's profile\",\n    \"suggestions\": [\n      \"Use a long-lived access token from an administrator's profile\",\n      \"Or, on the in-process server, use a token issued in the integration's forms from the login of a local-only administrator account\"\n    ]\n  },\n  \"tool\": \"ha_config_get_yaml\",\n  \"file\": \"configuration.yaml\",\n  \"yaml_path\": \"group\",\n  \"warnings\": [\n    \"ha-mcp does not officially support non-admin Home Assistant tokens. They still work, but admin-only operations fail. Use a long-lived access token from an administrator's profile for full access.\"\n  ]\n}",
+       "type": "text"
+      }
+     ],
+     "isError": true
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 101,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "file": "configuration.yaml",
+      "include_content": true,
+      "include_parsed": true,
+      "yaml_path": "group"
+     },
+     "name": "ha_config_get_yaml"
+    }
+   },
+   "method": "POST",
+   "path": "/mcp"
+  },
+  "response": {
+   "id": 101,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\n  \"success\": false,\n  \"error\": {\n    \"code\": \"AUTH_INSUFFICIENT_PERMISSIONS\",\n    \"message\": \"Service ha_mcp_tools.get_caller_token is admin-only in Home Assistant and this token's user is not an administrator\",\n    \"suggestion\": \"Use a long-lived access token from an administrator's profile\",\n    \"suggestions\": [\n      \"Use a long-lived access token from an administrator's profile\",\n      \"Or, on the in-process server, use a token issued in the integration's forms from the login of a local-only administrator account\"\n    ]\n  },\n  \"tool\": \"ha_config_get_yaml\",\n  \"file\": \"configuration.yaml\",\n  \"yaml_path\": \"group\",\n  \"warnings\": [\n    \"ha-mcp does not officially support non-admin Home Assistant tokens. They still work, but admin-only operations fail. Use a long-lived access token from an administrator's profile for full access.\"\n  ]\n}",
+      "type": "text"
+     }
+    ],
+    "isError": true
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Sun, 15 Nov 2026 05:05:01 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null,
+ "group": "yaml",
+ "id": "y-group",
+ "idle": false,
+ "kind": "yaml",
+ "new_session": false,
+ "public_arguments": {
+  "yaml_path": "group"
+ },
+ "public_tool": "ha_config_get_yaml",
+ "upstream_tool": "ha_config_get_yaml",
+ "wire_arguments": {
+  "file": "configuration.yaml",
+  "include_content": true,
+  "include_parsed": true,
+  "yaml_path": "group"
+ }
+}

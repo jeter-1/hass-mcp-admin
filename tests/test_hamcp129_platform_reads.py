@@ -49,7 +49,9 @@ VERSIONS = ("8.4.3", "8.5.0", "8.6.0")
 # class S: 8.6.0 replays, since the 9.1.0 input schemas equal 8.6.0).
 # HAMCP-351: exact 9.1.2 binds its own tokens; ha_get_integration re-binds to
 # the 9.1.2 wire fingerprint (82aec3a9), health and apps equal 9.1.0.
-BINDING_VERSIONS = VERSIONS + ("9.1.0", "9.1.2")
+# HAMCP-371: exact 9.2.0 binds its own tokens (upstream_platform_reads.py
+# ADAPTER_BINDINGS, from the S8 9.2.0 registry capture ha-mcp-9.2.0.json).
+BINDING_VERSIONS = VERSIONS + ("9.1.0", "9.1.2", "9.2.0")
 CANARY = "CANARY"
 REFUSED = {"argument_validation", "invalid_arguments"}
 POLICY = ROOT / "hass_mcp_engineering_beta/ha_mcp_engineering"
@@ -59,6 +61,8 @@ SOURCES = {
     "8.6.0": ("v8.6.0", "fc54437a804858732e4bc927add98e202d879a09"),
     "9.1.0": ("v9.1.0", "d2e3f4b0647d815fb32d530fed15a6a99b1d4b33"),
     "9.1.2": ("v9.1.2", "bab615dfc90cc510f5e19a9118707d0fae03a37c"),
+    # HAMCP-371: release_tag and source_commit of the S8 9.2.0 registry row.
+    "9.2.0": ("v9.2.0", "51e3aac788482a081807591cd5d58d07dc4e540b"),
 }
 TOKEN_KIND = {HEALTH: "health", APP: "apps", INTEGRATION: "integrations"}
 

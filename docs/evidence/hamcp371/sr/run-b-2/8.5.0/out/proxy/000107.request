@@ -1,0 +1,1 @@
+{"method":"tools/call","params":{"name":"ha_search","arguments":{"domain_filter":"input_boolean","limit":5}},"jsonrpc":"2.0","id":2}

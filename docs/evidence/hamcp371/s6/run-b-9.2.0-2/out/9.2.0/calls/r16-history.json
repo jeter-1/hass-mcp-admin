@@ -1,0 +1,238 @@
+{
+ "arguments_built_by": "adapter code, policy 9.1.2",
+ "calls_format_version": 1,
+ "exchange": {
+  "body_bytes": 2998,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":116,\"result\":{\"content\":[{\"text\":\"{\\\"data\\\":{\\\"success\\\":true,\\\"source\\\":\\\"history\\\",\\\"entities\\\":[{\\\"entity_id\\\":\\\"input_boolean.hamcp371_helper\\\",\\\"period\\\":{\\\"start\\\":\\\"2026-11-14T21:03:09-06:00\\\",\\\"end\\\":\\\"2026-11-15T00:03:09-06:00\\\"},\\\"states\\\":[{\\\"state\\\":\\\"on\\\",\\\"last_updated\\\":\\\"2026-11-14T23:03:12.744330-06:00\\\",\\\"last_changed\\\":\\\"2026-11-14T23:03:12.744330-06:00\\\"},{\\\"state\\\":\\\"off\\\",\\\"last_updated\\\":\\\"2026-11-14T23:03:11.741374-06:00\\\",\\\"last_changed\\\":\\\"2026-11-14T23:03:11.741374-06:00\\\"},{\\\"state\\\":\\\"on\\\",\\\"last_updated\\\":\\\"2026-11-14T23:03:10.738931-06:00\\\",\\\"last_changed\\\":\\\"2026-11-14T23:03:10.738931-06:00\\\"},{\\\"state\\\":\\\"off\\\",\\\"last_updated\\\":\\\"2026-11-14T23:03:10.115595-06:00\\\",\\\"last_changed\\\":\\\"2026-11-14T23:03:10.115595-06:00\\\"}],\\\"total_count\\\":4,\\\"offset\\\":0,\\\"limit\\\":5,\\\"count\\\":4,\\\"has_more\\\":false,\\\"next_offset\\\":null}],\\\"period\\\":{\\\"start\\\":\\\"2026-11-14T21:03:09-06:00\\\",\\\"end\\\":\\\"2026-11-15T00:03:09-06:00\\\"},\\\"query_params\\\":{\\\"minimal_response\\\":true,\\\"significant_changes_only\\\":true,\\\"limit\\\":5,\\\"offset\\\":0,\\\"order\\\":\\\"desc\\\",\\\"summary\\\":false}},\\\"metadata\\\":{\\\"home_assistant_timezone\\\":\\\"America/Chicago\\\",\\\"timestamp_format\\\":\\\"ISO 8601 (America/Chicago)\\\",\\\"note\\\":\\\"History event times use America/Chicago. When Core omits lc, last_changed falls back to last_updated; it may not be the actual state-change time with significant_changes_only or a window-start snapshot. Attributes, unknown fields and query bounds are unchanged. UTC is used if HA's timezone is unavailable.\\\"}}\",\"type\":\"text\"}],\"isError\":false,\"structuredContent\":{\"data\":{\"success\":true,\"source\":\"history\",\"entities\":[{\"entity_id\":\"input_boolean.hamcp371_helper\",\"period\":{\"start\":\"2026-11-14T21:03:09-06:00\",\"end\":\"2026-11-15T00:03:09-06:00\"},\"states\":[{\"state\":\"on\",\"last_updated\":\"2026-11-14T23:03:12.744330-06:00\",\"last_changed\":\"2026-11-14T23:03:12.744330-06:00\"},{\"state\":\"off\",\"last_updated\":\"2026-11-14T23:03:11.741374-06:00\",\"last_changed\":\"2026-11-14T23:03:11.741374-06:00\"},{\"state\":\"on\",\"last_updated\":\"2026-11-14T23:03:10.738931-06:00\",\"last_changed\":\"2026-11-14T23:03:10.738931-06:00\"},{\"state\":\"off\",\"last_updated\":\"2026-11-14T23:03:10.115595-06:00\",\"last_changed\":\"2026-11-14T23:03:10.115595-06:00\"}],\"total_count\":4,\"offset\":0,\"limit\":5,\"count\":4,\"has_more\":false,\"next_offset\":null}],\"period\":{\"start\":\"2026-11-14T21:03:09-06:00\",\"end\":\"2026-11-15T00:03:09-06:00\"},\"query_params\":{\"minimal_response\":true,\"significant_changes_only\":true,\"limit\":5,\"offset\":0,\"order\":\"desc\",\"summary\":false}},\"metadata\":{\"home_assistant_timezone\":\"America/Chicago\",\"timestamp_format\":\"ISO 8601 (America/Chicago)\",\"note\":\"History event times use America/Chicago. When Core omits lc, last_changed falls back to last_updated; it may not be the actual state-change time with significant_changes_only or a window-start snapshot. Attributes, unknown fields and query bounds are unchanged. UTC is used if HA's timezone is unavailable.\"}}}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 116,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\"data\":{\"success\":true,\"source\":\"history\",\"entities\":[{\"entity_id\":\"input_boolean.hamcp371_helper\",\"period\":{\"start\":\"2026-11-14T21:03:09-06:00\",\"end\":\"2026-11-15T00:03:09-06:00\"},\"states\":[{\"state\":\"on\",\"last_updated\":\"2026-11-14T23:03:12.744330-06:00\",\"last_changed\":\"2026-11-14T23:03:12.744330-06:00\"},{\"state\":\"off\",\"last_updated\":\"2026-11-14T23:03:11.741374-06:00\",\"last_changed\":\"2026-11-14T23:03:11.741374-06:00\"},{\"state\":\"on\",\"last_updated\":\"2026-11-14T23:03:10.738931-06:00\",\"last_changed\":\"2026-11-14T23:03:10.738931-06:00\"},{\"state\":\"off\",\"last_updated\":\"2026-11-14T23:03:10.115595-06:00\",\"last_changed\":\"2026-11-14T23:03:10.115595-06:00\"}],\"total_count\":4,\"offset\":0,\"limit\":5,\"count\":4,\"has_more\":false,\"next_offset\":null}],\"period\":{\"start\":\"2026-11-14T21:03:09-06:00\",\"end\":\"2026-11-15T00:03:09-06:00\"},\"query_params\":{\"minimal_response\":true,\"significant_changes_only\":true,\"limit\":5,\"offset\":0,\"order\":\"desc\",\"summary\":false}},\"metadata\":{\"home_assistant_timezone\":\"America/Chicago\",\"timestamp_format\":\"ISO 8601 (America/Chicago)\",\"note\":\"History event times use America/Chicago. When Core omits lc, last_changed falls back to last_updated; it may not be the actual state-change time with significant_changes_only or a window-start snapshot. Attributes, unknown fields and query bounds are unchanged. UTC is used if HA's timezone is unavailable.\"}}",
+       "type": "text"
+      }
+     ],
+     "isError": false,
+     "structuredContent": {
+      "data": {
+       "entities": [
+        {
+         "count": 4,
+         "entity_id": "input_boolean.hamcp371_helper",
+         "has_more": false,
+         "limit": 5,
+         "next_offset": null,
+         "offset": 0,
+         "period": {
+          "end": "2026-11-15T00:03:09-06:00",
+          "start": "2026-11-14T21:03:09-06:00"
+         },
+         "states": [
+          {
+           "last_changed": "2026-11-14T23:03:12.744330-06:00",
+           "last_updated": "2026-11-14T23:03:12.744330-06:00",
+           "state": "on"
+          },
+          {
+           "last_changed": "2026-11-14T23:03:11.741374-06:00",
+           "last_updated": "2026-11-14T23:03:11.741374-06:00",
+           "state": "off"
+          },
+          {
+           "last_changed": "2026-11-14T23:03:10.738931-06:00",
+           "last_updated": "2026-11-14T23:03:10.738931-06:00",
+           "state": "on"
+          },
+          {
+           "last_changed": "2026-11-14T23:03:10.115595-06:00",
+           "last_updated": "2026-11-14T23:03:10.115595-06:00",
+           "state": "off"
+          }
+         ],
+         "total_count": 4
+        }
+       ],
+       "period": {
+        "end": "2026-11-15T00:03:09-06:00",
+        "start": "2026-11-14T21:03:09-06:00"
+       },
+       "query_params": {
+        "limit": 5,
+        "minimal_response": true,
+        "offset": 0,
+        "order": "desc",
+        "significant_changes_only": true,
+        "summary": false
+       },
+       "source": "history",
+       "success": true
+      },
+      "metadata": {
+       "home_assistant_timezone": "America/Chicago",
+       "note": "History event times use America/Chicago. When Core omits lc, last_changed falls back to last_updated; it may not be the actual state-change time with significant_changes_only or a window-start snapshot. Attributes, unknown fields and query bounds are unchanged. UTC is used if HA's timezone is unavailable.",
+       "timestamp_format": "ISO 8601 (America/Chicago)"
+      }
+     }
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 116,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "core_options": null,
+      "end_time": "2026-11-15T00:03:09-06:00",
+      "entity_ids": "input_boolean.hamcp371_helper",
+      "include_schema": false,
+      "limit": 5,
+      "start_time": "2026-11-14T21:03:09-06:00",
+      "summary": false
+     },
+     "name": "ha_get_history"
+    }
+   },
+   "method": "POST",
+   "path": "/mcp"
+  },
+  "response": {
+   "id": 116,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\"data\":{\"success\":true,\"source\":\"history\",\"entities\":[{\"entity_id\":\"input_boolean.hamcp371_helper\",\"period\":{\"start\":\"2026-11-14T21:03:09-06:00\",\"end\":\"2026-11-15T00:03:09-06:00\"},\"states\":[{\"state\":\"on\",\"last_updated\":\"2026-11-14T23:03:12.744330-06:00\",\"last_changed\":\"2026-11-14T23:03:12.744330-06:00\"},{\"state\":\"off\",\"last_updated\":\"2026-11-14T23:03:11.741374-06:00\",\"last_changed\":\"2026-11-14T23:03:11.741374-06:00\"},{\"state\":\"on\",\"last_updated\":\"2026-11-14T23:03:10.738931-06:00\",\"last_changed\":\"2026-11-14T23:03:10.738931-06:00\"},{\"state\":\"off\",\"last_updated\":\"2026-11-14T23:03:10.115595-06:00\",\"last_changed\":\"2026-11-14T23:03:10.115595-06:00\"}],\"total_count\":4,\"offset\":0,\"limit\":5,\"count\":4,\"has_more\":false,\"next_offset\":null}],\"period\":{\"start\":\"2026-11-14T21:03:09-06:00\",\"end\":\"2026-11-15T00:03:09-06:00\"},\"query_params\":{\"minimal_response\":true,\"significant_changes_only\":true,\"limit\":5,\"offset\":0,\"order\":\"desc\",\"summary\":false}},\"metadata\":{\"home_assistant_timezone\":\"America/Chicago\",\"timestamp_format\":\"ISO 8601 (America/Chicago)\",\"note\":\"History event times use America/Chicago. When Core omits lc, last_changed falls back to last_updated; it may not be the actual state-change time with significant_changes_only or a window-start snapshot. Attributes, unknown fields and query bounds are unchanged. UTC is used if HA's timezone is unavailable.\"}}",
+      "type": "text"
+     }
+    ],
+    "isError": false,
+    "structuredContent": {
+     "data": {
+      "entities": [
+       {
+        "count": 4,
+        "entity_id": "input_boolean.hamcp371_helper",
+        "has_more": false,
+        "limit": 5,
+        "next_offset": null,
+        "offset": 0,
+        "period": {
+         "end": "2026-11-15T00:03:09-06:00",
+         "start": "2026-11-14T21:03:09-06:00"
+        },
+        "states": [
+         {
+          "last_changed": "2026-11-14T23:03:12.744330-06:00",
+          "last_updated": "2026-11-14T23:03:12.744330-06:00",
+          "state": "on"
+         },
+         {
+          "last_changed": "2026-11-14T23:03:11.741374-06:00",
+          "last_updated": "2026-11-14T23:03:11.741374-06:00",
+          "state": "off"
+         },
+         {
+          "last_changed": "2026-11-14T23:03:10.738931-06:00",
+          "last_updated": "2026-11-14T23:03:10.738931-06:00",
+          "state": "on"
+         },
+         {
+          "last_changed": "2026-11-14T23:03:10.115595-06:00",
+          "last_updated": "2026-11-14T23:03:10.115595-06:00",
+          "state": "off"
+         }
+        ],
+        "total_count": 4
+       }
+      ],
+      "period": {
+       "end": "2026-11-15T00:03:09-06:00",
+       "start": "2026-11-14T21:03:09-06:00"
+      },
+      "query_params": {
+       "limit": 5,
+       "minimal_response": true,
+       "offset": 0,
+       "order": "desc",
+       "significant_changes_only": true,
+       "summary": false
+      },
+      "source": "history",
+      "success": true
+     },
+     "metadata": {
+      "home_assistant_timezone": "America/Chicago",
+      "note": "History event times use America/Chicago. When Core omits lc, last_changed falls back to last_updated; it may not be the actual state-change time with significant_changes_only or a window-start snapshot. Attributes, unknown fields and query bounds are unchanged. UTC is used if HA's timezone is unavailable.",
+      "timestamp_format": "ISO 8601 (America/Chicago)"
+     }
+    }
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Sun, 15 Nov 2026 05:03:21 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null,
+ "group": "reads",
+ "id": "r16-history",
+ "idle": false,
+ "kind": "public",
+ "new_session": false,
+ "public_arguments": {
+  "end_time": "2026-11-15T00:03:09-06:00",
+  "entity_ids": "input_boolean.hamcp371_helper",
+  "limit": 5,
+  "start_time": "2026-11-14T21:03:09-06:00"
+ },
+ "public_tool": "ha_get_history",
+ "upstream_tool": "ha_get_history",
+ "wire_arguments": {
+  "core_options": null,
+  "end_time": "2026-11-15T00:03:09-06:00",
+  "entity_ids": "input_boolean.hamcp371_helper",
+  "include_schema": false,
+  "limit": 5,
+  "start_time": "2026-11-14T21:03:09-06:00",
+  "summary": false
+ }
+}

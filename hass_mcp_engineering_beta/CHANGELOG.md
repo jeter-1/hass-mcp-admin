@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.4.2-beta.9 - 2.7.0 build, in progress (HAMCP-371)
+
+Builds on 2.4.2-beta.8 (HAMCP-332, #438). In progress: items land through
+reviewed pull requests into `release/2.7.0`, and the final release pull
+request completes this entry.
+
+- Version materialized at the base of `release/2.7.0` (`main` at
+  e741f2ed), so item pull requests carry no version change. The release
+  transition from 2.4.2-beta.8 is to 2.4.2-beta.9.
+- Landed: none yet. HAMCP-371 (ha-mcp 9.2.0 admission, with the HAMCP-374
+  per-read real-output replay) is in progress on its own branch.
+- New in-progress `V2_4_2_BETA9` release notes and acceptance contract.
+- Rollback: pending; stated by the final release pull request.
+
 ## 2.4.2-beta.8 - 2.6.0 build, in progress (HAMCP-354)
 
 Builds on 2.4.2-beta.7 (HAMCP-331, #383). In progress: items land through

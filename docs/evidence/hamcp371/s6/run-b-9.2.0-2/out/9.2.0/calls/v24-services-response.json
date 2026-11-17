@@ -1,0 +1,419 @@
+{
+ "arguments_built_by": "adapter code, policy 9.1.2",
+ "calls_format_version": 1,
+ "exchange": {
+  "body_bytes": 5634,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":136,\"result\":{\"content\":[{\"text\":\"{\\\"success\\\":true,\\\"domains\\\":[\\\"calendar\\\"],\\\"services\\\":{\\\"calendar.create_event\\\":{\\\"name\\\":\\\"Create calendar event\\\",\\\"description\\\":\\\"Adds a new calendar event.\\\",\\\"domain\\\":\\\"calendar\\\",\\\"service\\\":\\\"create_event\\\",\\\"fields\\\":{\\\"summary\\\":{\\\"required\\\":true,\\\"example\\\":\\\"Department Party\\\",\\\"selector\\\":{\\\"text\\\":{\\\"multiline\\\":false,\\\"multiple\\\":false}},\\\"name\\\":\\\"Summary\\\",\\\"description\\\":\\\"Defines the short summary or subject for the event.\\\"},\\\"description\\\":{\\\"example\\\":\\\"Meeting to provide technical review for 'Phoenix' design.\\\",\\\"selector\\\":{\\\"text\\\":{\\\"multiline\\\":false,\\\"multiple\\\":false}},\\\"name\\\":\\\"Description\\\",\\\"description\\\":\\\"A more complete description of the event than the one provided by the summary.\\\"},\\\"start_date_time\\\":{\\\"example\\\":\\\"2022-03-22 20:00:00\\\",\\\"selector\\\":{\\\"datetime\\\":{}},\\\"name\\\":\\\"Start time\\\",\\\"description\\\":\\\"The date and time the event should start.\\\"},\\\"end_date_time\\\":{\\\"example\\\":\\\"2022-03-22 22:00:00\\\",\\\"selector\\\":{\\\"datetime\\\":{}},\\\"name\\\":\\\"End time\\\",\\\"description\\\":\\\"The date and time the event should end.\\\"},\\\"start_date\\\":{\\\"example\\\":\\\"2022-03-22\\\",\\\"selector\\\":{\\\"date\\\":{}},\\\"name\\\":\\\"Start date\\\",\\\"description\\\":\\\"The date the all-day event should start.\\\"},\\\"end_date\\\":{\\\"example\\\":\\\"2022-03-23\\\",\\\"selector\\\":{\\\"date\\\":{}},\\\"name\\\":\\\"End date\\\",\\\"description\\\":\\\"The date the all-day event should end (exclusive).\\\"},\\\"in\\\":{\\\"example\\\":\\\"{\\\\\\\"days\\\\\\\": 2} or {\\\\\\\"weeks\\\\\\\": 2}\\\",\\\"name\\\":\\\"In\\\",\\\"description\\\":\\\"Days or weeks that you want to create the event in.\\\"},\\\"location\\\":{\\\"example\\\":\\\"Conference Room - F123, Bldg. 002\\\",\\\"selector\\\":{\\\"text\\\":{\\\"multiline\\\":false,\\\"multiple\\\":false}},\\\"name\\\":\\\"Location\\\",\\\"description\\\":\\\"The location of the event.\\\"}},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"calendar\\\"],\\\"supported_features\\\":[1]}]}},\\\"calendar.get_events\\\":{\\\"name\\\":\\\"Get calendar events\\\",\\\"description\\\":\\\"Retrieves events on a calendar within a time range.\\\",\\\"domain\\\":\\\"calendar\\\",\\\"service\\\":\\\"get_events\\\",\\\"fields\\\":{\\\"start_date_time\\\":{\\\"example\\\":\\\"2022-03-22 20:00:00\\\",\\\"selector\\\":{\\\"datetime\\\":{}},\\\"name\\\":\\\"Start time\\\",\\\"description\\\":\\\"Returns active events after this time (exclusive). When not set, defaults to now.\\\"},\\\"end_date_time\\\":{\\\"example\\\":\\\"2022-03-22 22:00:00\\\",\\\"selector\\\":{\\\"datetime\\\":{}},\\\"name\\\":\\\"End time\\\",\\\"description\\\":\\\"Returns active events before this time (exclusive). Cannot be used with Duration.\\\"},\\\"duration\\\":{\\\"selector\\\":{\\\"duration\\\":{\\\"enable_second\\\":true}},\\\"name\\\":\\\"Duration\\\",\\\"description\\\":\\\"Returns active events from Start time for the specified duration.\\\"}},\\\"target\\\":{\\\"entity\\\":[{\\\"domain\\\":[\\\"calendar\\\"]}]},\\\"response\\\":{\\\"optional\\\":false}}},\\\"total_count\\\":2,\\\"offset\\\":0,\\\"limit\\\":5,\\\"count\\\":2,\\\"has_more\\\":false,\\\"next_offset\\\":null,\\\"detail_level\\\":\\\"full\\\",\\\"filters_applied\\\":{\\\"domain\\\":\\\"calendar\\\",\\\"query\\\":null}}\",\"type\":\"text\"}],\"isError\":false,\"structuredContent\":{\"success\":true,\"domains\":[\"calendar\"],\"services\":{\"calendar.create_event\":{\"name\":\"Create calendar event\",\"description\":\"Adds a new calendar event.\",\"domain\":\"calendar\",\"service\":\"create_event\",\"fields\":{\"summary\":{\"required\":true,\"example\":\"Department Party\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}},\"name\":\"Summary\",\"description\":\"Defines the short summary or subject for the event.\"},\"description\":{\"example\":\"Meeting to provide technical review for 'Phoenix' design.\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}},\"name\":\"Description\",\"description\":\"A more complete description of the event than the one provided by the summary.\"},\"start_date_time\":{\"example\":\"2022-03-22 20:00:00\",\"selector\":{\"datetime\":{}},\"name\":\"Start time\",\"description\":\"The date and time the event should start.\"},\"end_date_time\":{\"example\":\"2022-03-22 22:00:00\",\"selector\":{\"datetime\":{}},\"name\":\"End time\",\"description\":\"The date and time the event should end.\"},\"start_date\":{\"example\":\"2022-03-22\",\"selector\":{\"date\":{}},\"name\":\"Start date\",\"description\":\"The date the all-day event should start.\"},\"end_date\":{\"example\":\"2022-03-23\",\"selector\":{\"date\":{}},\"name\":\"End date\",\"description\":\"The date the all-day event should end (exclusive).\"},\"in\":{\"example\":\"{\\\"days\\\": 2} or {\\\"weeks\\\": 2}\",\"name\":\"In\",\"description\":\"Days or weeks that you want to create the event in.\"},\"location\":{\"example\":\"Conference Room - F123, Bldg. 002\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}},\"name\":\"Location\",\"description\":\"The location of the event.\"}},\"target\":{\"entity\":[{\"domain\":[\"calendar\"],\"supported_features\":[1]}]}},\"calendar.get_events\":{\"name\":\"Get calendar events\",\"description\":\"Retrieves events on a calendar within a time range.\",\"domain\":\"calendar\",\"service\":\"get_events\",\"fields\":{\"start_date_time\":{\"example\":\"2022-03-22 20:00:00\",\"selector\":{\"datetime\":{}},\"name\":\"Start time\",\"description\":\"Returns active events after this time (exclusive). When not set, defaults to now.\"},\"end_date_time\":{\"example\":\"2022-03-22 22:00:00\",\"selector\":{\"datetime\":{}},\"name\":\"End time\",\"description\":\"Returns active events before this time (exclusive). Cannot be used with Duration.\"},\"duration\":{\"selector\":{\"duration\":{\"enable_second\":true}},\"name\":\"Duration\",\"description\":\"Returns active events from Start time for the specified duration.\"}},\"target\":{\"entity\":[{\"domain\":[\"calendar\"]}]},\"response\":{\"optional\":false}}},\"total_count\":2,\"offset\":0,\"limit\":5,\"count\":2,\"has_more\":false,\"next_offset\":null,\"detail_level\":\"full\",\"filters_applied\":{\"domain\":\"calendar\",\"query\":null}}}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 136,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\"success\":true,\"domains\":[\"calendar\"],\"services\":{\"calendar.create_event\":{\"name\":\"Create calendar event\",\"description\":\"Adds a new calendar event.\",\"domain\":\"calendar\",\"service\":\"create_event\",\"fields\":{\"summary\":{\"required\":true,\"example\":\"Department Party\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}},\"name\":\"Summary\",\"description\":\"Defines the short summary or subject for the event.\"},\"description\":{\"example\":\"Meeting to provide technical review for 'Phoenix' design.\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}},\"name\":\"Description\",\"description\":\"A more complete description of the event than the one provided by the summary.\"},\"start_date_time\":{\"example\":\"2022-03-22 20:00:00\",\"selector\":{\"datetime\":{}},\"name\":\"Start time\",\"description\":\"The date and time the event should start.\"},\"end_date_time\":{\"example\":\"2022-03-22 22:00:00\",\"selector\":{\"datetime\":{}},\"name\":\"End time\",\"description\":\"The date and time the event should end.\"},\"start_date\":{\"example\":\"2022-03-22\",\"selector\":{\"date\":{}},\"name\":\"Start date\",\"description\":\"The date the all-day event should start.\"},\"end_date\":{\"example\":\"2022-03-23\",\"selector\":{\"date\":{}},\"name\":\"End date\",\"description\":\"The date the all-day event should end (exclusive).\"},\"in\":{\"example\":\"{\\\"days\\\": 2} or {\\\"weeks\\\": 2}\",\"name\":\"In\",\"description\":\"Days or weeks that you want to create the event in.\"},\"location\":{\"example\":\"Conference Room - F123, Bldg. 002\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}},\"name\":\"Location\",\"description\":\"The location of the event.\"}},\"target\":{\"entity\":[{\"domain\":[\"calendar\"],\"supported_features\":[1]}]}},\"calendar.get_events\":{\"name\":\"Get calendar events\",\"description\":\"Retrieves events on a calendar within a time range.\",\"domain\":\"calendar\",\"service\":\"get_events\",\"fields\":{\"start_date_time\":{\"example\":\"2022-03-22 20:00:00\",\"selector\":{\"datetime\":{}},\"name\":\"Start time\",\"description\":\"Returns active events after this time (exclusive). When not set, defaults to now.\"},\"end_date_time\":{\"example\":\"2022-03-22 22:00:00\",\"selector\":{\"datetime\":{}},\"name\":\"End time\",\"description\":\"Returns active events before this time (exclusive). Cannot be used with Duration.\"},\"duration\":{\"selector\":{\"duration\":{\"enable_second\":true}},\"name\":\"Duration\",\"description\":\"Returns active events from Start time for the specified duration.\"}},\"target\":{\"entity\":[{\"domain\":[\"calendar\"]}]},\"response\":{\"optional\":false}}},\"total_count\":2,\"offset\":0,\"limit\":5,\"count\":2,\"has_more\":false,\"next_offset\":null,\"detail_level\":\"full\",\"filters_applied\":{\"domain\":\"calendar\",\"query\":null}}",
+       "type": "text"
+      }
+     ],
+     "isError": false,
+     "structuredContent": {
+      "count": 2,
+      "detail_level": "full",
+      "domains": [
+       "calendar"
+      ],
+      "filters_applied": {
+       "domain": "calendar",
+       "query": null
+      },
+      "has_more": false,
+      "limit": 5,
+      "next_offset": null,
+      "offset": 0,
+      "services": {
+       "calendar.create_event": {
+        "description": "Adds a new calendar event.",
+        "domain": "calendar",
+        "fields": {
+         "description": {
+          "description": "A more complete description of the event than the one provided by the summary.",
+          "example": "Meeting to provide technical review for 'Phoenix' design.",
+          "name": "Description",
+          "selector": {
+           "text": {
+            "multiline": false,
+            "multiple": false
+           }
+          }
+         },
+         "end_date": {
+          "description": "The date the all-day event should end (exclusive).",
+          "example": "2022-03-23",
+          "name": "End date",
+          "selector": {
+           "date": {}
+          }
+         },
+         "end_date_time": {
+          "description": "The date and time the event should end.",
+          "example": "2022-03-22 22:00:00",
+          "name": "End time",
+          "selector": {
+           "datetime": {}
+          }
+         },
+         "in": {
+          "description": "Days or weeks that you want to create the event in.",
+          "example": "{\"days\": 2} or {\"weeks\": 2}",
+          "name": "In"
+         },
+         "location": {
+          "description": "The location of the event.",
+          "example": "Conference Room - F123, Bldg. 002",
+          "name": "Location",
+          "selector": {
+           "text": {
+            "multiline": false,
+            "multiple": false
+           }
+          }
+         },
+         "start_date": {
+          "description": "The date the all-day event should start.",
+          "example": "2022-03-22",
+          "name": "Start date",
+          "selector": {
+           "date": {}
+          }
+         },
+         "start_date_time": {
+          "description": "The date and time the event should start.",
+          "example": "2022-03-22 20:00:00",
+          "name": "Start time",
+          "selector": {
+           "datetime": {}
+          }
+         },
+         "summary": {
+          "description": "Defines the short summary or subject for the event.",
+          "example": "Department Party",
+          "name": "Summary",
+          "required": true,
+          "selector": {
+           "text": {
+            "multiline": false,
+            "multiple": false
+           }
+          }
+         }
+        },
+        "name": "Create calendar event",
+        "service": "create_event",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "calendar"
+           ],
+           "supported_features": [
+            1
+           ]
+          }
+         ]
+        }
+       },
+       "calendar.get_events": {
+        "description": "Retrieves events on a calendar within a time range.",
+        "domain": "calendar",
+        "fields": {
+         "duration": {
+          "description": "Returns active events from Start time for the specified duration.",
+          "name": "Duration",
+          "selector": {
+           "duration": {
+            "enable_second": true
+           }
+          }
+         },
+         "end_date_time": {
+          "description": "Returns active events before this time (exclusive). Cannot be used with Duration.",
+          "example": "2022-03-22 22:00:00",
+          "name": "End time",
+          "selector": {
+           "datetime": {}
+          }
+         },
+         "start_date_time": {
+          "description": "Returns active events after this time (exclusive). When not set, defaults to now.",
+          "example": "2022-03-22 20:00:00",
+          "name": "Start time",
+          "selector": {
+           "datetime": {}
+          }
+         }
+        },
+        "name": "Get calendar events",
+        "response": {
+         "optional": false
+        },
+        "service": "get_events",
+        "target": {
+         "entity": [
+          {
+           "domain": [
+            "calendar"
+           ]
+          }
+         ]
+        }
+       }
+      },
+      "success": true,
+      "total_count": 2
+     }
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 136,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "detail_level": "full",
+      "domain": "calendar",
+      "limit": 5
+     },
+     "name": "ha_list_services"
+    }
+   },
+   "method": "POST",
+   "path": "/mcp"
+  },
+  "response": {
+   "id": 136,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\"success\":true,\"domains\":[\"calendar\"],\"services\":{\"calendar.create_event\":{\"name\":\"Create calendar event\",\"description\":\"Adds a new calendar event.\",\"domain\":\"calendar\",\"service\":\"create_event\",\"fields\":{\"summary\":{\"required\":true,\"example\":\"Department Party\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}},\"name\":\"Summary\",\"description\":\"Defines the short summary or subject for the event.\"},\"description\":{\"example\":\"Meeting to provide technical review for 'Phoenix' design.\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}},\"name\":\"Description\",\"description\":\"A more complete description of the event than the one provided by the summary.\"},\"start_date_time\":{\"example\":\"2022-03-22 20:00:00\",\"selector\":{\"datetime\":{}},\"name\":\"Start time\",\"description\":\"The date and time the event should start.\"},\"end_date_time\":{\"example\":\"2022-03-22 22:00:00\",\"selector\":{\"datetime\":{}},\"name\":\"End time\",\"description\":\"The date and time the event should end.\"},\"start_date\":{\"example\":\"2022-03-22\",\"selector\":{\"date\":{}},\"name\":\"Start date\",\"description\":\"The date the all-day event should start.\"},\"end_date\":{\"example\":\"2022-03-23\",\"selector\":{\"date\":{}},\"name\":\"End date\",\"description\":\"The date the all-day event should end (exclusive).\"},\"in\":{\"example\":\"{\\\"days\\\": 2} or {\\\"weeks\\\": 2}\",\"name\":\"In\",\"description\":\"Days or weeks that you want to create the event in.\"},\"location\":{\"example\":\"Conference Room - F123, Bldg. 002\",\"selector\":{\"text\":{\"multiline\":false,\"multiple\":false}},\"name\":\"Location\",\"description\":\"The location of the event.\"}},\"target\":{\"entity\":[{\"domain\":[\"calendar\"],\"supported_features\":[1]}]}},\"calendar.get_events\":{\"name\":\"Get calendar events\",\"description\":\"Retrieves events on a calendar within a time range.\",\"domain\":\"calendar\",\"service\":\"get_events\",\"fields\":{\"start_date_time\":{\"example\":\"2022-03-22 20:00:00\",\"selector\":{\"datetime\":{}},\"name\":\"Start time\",\"description\":\"Returns active events after this time (exclusive). When not set, defaults to now.\"},\"end_date_time\":{\"example\":\"2022-03-22 22:00:00\",\"selector\":{\"datetime\":{}},\"name\":\"End time\",\"description\":\"Returns active events before this time (exclusive). Cannot be used with Duration.\"},\"duration\":{\"selector\":{\"duration\":{\"enable_second\":true}},\"name\":\"Duration\",\"description\":\"Returns active events from Start time for the specified duration.\"}},\"target\":{\"entity\":[{\"domain\":[\"calendar\"]}]},\"response\":{\"optional\":false}}},\"total_count\":2,\"offset\":0,\"limit\":5,\"count\":2,\"has_more\":false,\"next_offset\":null,\"detail_level\":\"full\",\"filters_applied\":{\"domain\":\"calendar\",\"query\":null}}",
+      "type": "text"
+     }
+    ],
+    "isError": false,
+    "structuredContent": {
+     "count": 2,
+     "detail_level": "full",
+     "domains": [
+      "calendar"
+     ],
+     "filters_applied": {
+      "domain": "calendar",
+      "query": null
+     },
+     "has_more": false,
+     "limit": 5,
+     "next_offset": null,
+     "offset": 0,
+     "services": {
+      "calendar.create_event": {
+       "description": "Adds a new calendar event.",
+       "domain": "calendar",
+       "fields": {
+        "description": {
+         "description": "A more complete description of the event than the one provided by the summary.",
+         "example": "Meeting to provide technical review for 'Phoenix' design.",
+         "name": "Description",
+         "selector": {
+          "text": {
+           "multiline": false,
+           "multiple": false
+          }
+         }
+        },
+        "end_date": {
+         "description": "The date the all-day event should end (exclusive).",
+         "example": "2022-03-23",
+         "name": "End date",
+         "selector": {
+          "date": {}
+         }
+        },
+        "end_date_time": {
+         "description": "The date and time the event should end.",
+         "example": "2022-03-22 22:00:00",
+         "name": "End time",
+         "selector": {
+          "datetime": {}
+         }
+        },
+        "in": {
+         "description": "Days or weeks that you want to create the event in.",
+         "example": "{\"days\": 2} or {\"weeks\": 2}",
+         "name": "In"
+        },
+        "location": {
+         "description": "The location of the event.",
+         "example": "Conference Room - F123, Bldg. 002",
+         "name": "Location",
+         "selector": {
+          "text": {
+           "multiline": false,
+           "multiple": false
+          }
+         }
+        },
+        "start_date": {
+         "description": "The date the all-day event should start.",
+         "example": "2022-03-22",
+         "name": "Start date",
+         "selector": {
+          "date": {}
+         }
+        },
+        "start_date_time": {
+         "description": "The date and time the event should start.",
+         "example": "2022-03-22 20:00:00",
+         "name": "Start time",
+         "selector": {
+          "datetime": {}
+         }
+        },
+        "summary": {
+         "description": "Defines the short summary or subject for the event.",
+         "example": "Department Party",
+         "name": "Summary",
+         "required": true,
+         "selector": {
+          "text": {
+           "multiline": false,
+           "multiple": false
+          }
+         }
+        }
+       },
+       "name": "Create calendar event",
+       "service": "create_event",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "calendar"
+          ],
+          "supported_features": [
+           1
+          ]
+         }
+        ]
+       }
+      },
+      "calendar.get_events": {
+       "description": "Retrieves events on a calendar within a time range.",
+       "domain": "calendar",
+       "fields": {
+        "duration": {
+         "description": "Returns active events from Start time for the specified duration.",
+         "name": "Duration",
+         "selector": {
+          "duration": {
+           "enable_second": true
+          }
+         }
+        },
+        "end_date_time": {
+         "description": "Returns active events before this time (exclusive). Cannot be used with Duration.",
+         "example": "2022-03-22 22:00:00",
+         "name": "End time",
+         "selector": {
+          "datetime": {}
+         }
+        },
+        "start_date_time": {
+         "description": "Returns active events after this time (exclusive). When not set, defaults to now.",
+         "example": "2022-03-22 20:00:00",
+         "name": "Start time",
+         "selector": {
+          "datetime": {}
+         }
+        }
+       },
+       "name": "Get calendar events",
+       "response": {
+        "optional": false
+       },
+       "service": "get_events",
+       "target": {
+        "entity": [
+         {
+          "domain": [
+           "calendar"
+          ]
+         }
+        ]
+       }
+      }
+     },
+     "success": true,
+     "total_count": 2
+    }
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Sun, 15 Nov 2026 05:03:21 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null,
+ "group": "variants",
+ "id": "v24-services-response",
+ "idle": false,
+ "kind": "public",
+ "new_session": false,
+ "public_arguments": {
+  "detail_level": "full",
+  "domain": "calendar",
+  "limit": 5
+ },
+ "public_tool": "ha_list_services",
+ "upstream_tool": "ha_list_services",
+ "wire_arguments": {
+  "detail_level": "full",
+  "domain": "calendar",
+  "limit": 5
+ }
+}

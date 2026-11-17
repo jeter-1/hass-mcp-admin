@@ -1,0 +1,112 @@
+{
+ "arguments_built_by": "harness, sent as written",
+ "calls_format_version": 1,
+ "exchange": {
+  "body_bytes": 594,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":138,\"result\":{\"content\":[{\"text\":\"{\\n  \\\"success\\\": false,\\n  \\\"error\\\": {\\n    \\\"code\\\": \\\"VALIDATION_FAILED\\\",\\n    \\\"message\\\": \\\"`limit`: Input should be a valid integer\\\",\\n    \\\"details\\\": \\\"int_type\\\",\\n    \\\"suggestion\\\": \\\"Check the parameter values and format against the tool documentation\\\",\\n    \\\"suggestions\\\": [\\n      \\\"Check the parameter values and format against the tool documentation\\\",\\n      \\\"Review the message and details fields for the specific constraint that failed\\\"\\n    ]\\n  }\\n}\",\"type\":\"text\"}],\"isError\":true}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 138,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\n  \"success\": false,\n  \"error\": {\n    \"code\": \"VALIDATION_FAILED\",\n    \"message\": \"`limit`: Input should be a valid integer\",\n    \"details\": \"int_type\",\n    \"suggestion\": \"Check the parameter values and format against the tool documentation\",\n    \"suggestions\": [\n      \"Check the parameter values and format against the tool documentation\",\n      \"Review the message and details fields for the specific constraint that failed\"\n    ]\n  }\n}",
+       "type": "text"
+      }
+     ],
+     "isError": true
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 138,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "limit": {
+       "synthetic": true
+      },
+      "query": "hamcp371"
+     },
+     "name": "ha_search"
+    }
+   },
+   "method": "POST",
+   "path": "/mcp"
+  },
+  "response": {
+   "id": 138,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\n  \"success\": false,\n  \"error\": {\n    \"code\": \"VALIDATION_FAILED\",\n    \"message\": \"`limit`: Input should be a valid integer\",\n    \"details\": \"int_type\",\n    \"suggestion\": \"Check the parameter values and format against the tool documentation\",\n    \"suggestions\": [\n      \"Check the parameter values and format against the tool documentation\",\n      \"Review the message and details fields for the specific constraint that failed\"\n    ]\n  }\n}",
+      "type": "text"
+     }
+    ],
+    "isError": true
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Sun, 15 Nov 2026 05:03:21 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null,
+ "group": "errors",
+ "id": "p3-wrong-type",
+ "idle": false,
+ "kind": "upstream",
+ "new_session": false,
+ "public_arguments": {
+  "limit": {
+   "synthetic": true
+  },
+  "query": "hamcp371"
+ },
+ "public_tool": "ha_search",
+ "upstream_tool": "ha_search",
+ "wire_arguments": {
+  "limit": {
+   "synthetic": true
+  },
+  "query": "hamcp371"
+ }
+}

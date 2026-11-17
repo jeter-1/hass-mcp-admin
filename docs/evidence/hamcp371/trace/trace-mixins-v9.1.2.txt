@@ -1,0 +1,35 @@
+== _collect_independent_overview (tools/search/overview.py)
+  REST GET /config                                                  client/rest_client.py:644
+  WS   persistent_notification/get                                  tools/search/overview.py:324
+  WS   repairs/list_issues                                          tools/search/overview.py:379
+== _collect_overview (tools/search/overview.py)
+  REST GET /config                                                  client/rest_client.py:644
+  WS   <dynamic>                                                    tools/component_api.py:494
+  WS   ha_mcp_tools/overview                                        tools/search/overview.py:520
+  WS   persistent_notification/get                                  tools/search/overview.py:324
+  WS   repairs/list_issues                                          tools/search/overview.py:379
+  unresolved: self._smart_tools.get_system_overview@tools/search/overview.py:538
+== _get_single_entity_state (tools/search/state.py)
+  REST GET /config                                                  client/rest_client.py:644
+  REST GET /states/{}                                               client/rest_client.py:679
+  WS   <dynamic>                                                    tools/component_api.py:494
+  WS   ha_mcp_tools/states                                          tools/search/state.py:350
+== _get_bulk_entity_states (tools/search/state.py)
+  REST GET /config                                                  client/rest_client.py:644
+  REST GET /states/{}                                               client/rest_client.py:679
+  WS   <dynamic>                                                    tools/component_api.py:494
+  WS   ha_mcp_tools/states                                          tools/search/state.py:350
+== _ha_search_via_component (tools/search/component.py)
+  WS   ha_mcp_tools/search                                          tools/search/component.py:912
+  unresolved: self._legacy_ha_search@tools/search/component.py:787; self._smart_tools._search_dashboards_surface@tools/search/component.py:877
+== _legacy_ha_search (tools/search/legacy.py)
+  REST GET /states                                                  client/rest_client.py:660
+  WS   config/entity_registry/list                                  tools/search/response.py:370
+  unresolved: self._search_area_only@tools/search/legacy.py:343; self._search_area_with_query@tools/search/legacy.py:330; self._search_domain_only@tools/search/legacy.py:363; self._search_regular@tools/search/legacy.py:386; self._search_state_only@tools/search/legacy.py:376; self._smart_tools.deep_search@tools/search/legacy.py:556; self._smart_tools.get_entities_by_area@tools/search/legacy.py:319
+== eval_template (tools/tools_utility.py)
+  WS   <dynamic>                                                    tools/component_api.py:494
+  WS   <dynamic>                                                    tools/tools_utility.py:153
+  WS   ha_mcp_tools/template_diagnose                               tools/tools_utility.py:268
+  WS   test_condition                                               tools/tools_utility.py:297
+== get_addon (tools/tools_addons.py)
+  WS   supervisor/api                                               tools/tools_addons.py:448

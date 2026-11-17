@@ -1,0 +1,563 @@
+{
+ "arguments_built_by": "adapter code, policy 9.1.2",
+ "calls_format_version": 1,
+ "exchange": {
+  "body_bytes": 6062,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":131,\"result\":{\"content\":[{\"text\":\"{\\\"success\\\":true,\\\"system_summary\\\":{\\\"total_entities\\\":28,\\\"total_domains\\\":14,\\\"total_services\\\":247,\\\"total_areas\\\":4,\\\"version\\\":\\\"2026.11.0\\\"},\\\"domain_stats\\\":{\\\"sensor\\\":{\\\"count\\\":12,\\\"states_summary\\\":{\\\"2026-11-13T05:18:43+00:00\\\":1,\\\"2026-11-12T18:09:34+00:00\\\":1,\\\"2026-11-12T23:44:15+00:00\\\":1,\\\"2026-11-12T11:44:02+00:00\\\":1,\\\"2026-11-13T05:40:52+00:00\\\":1,\\\"2026-11-12T17:47:26+00:00\\\":1,\\\"1.0\\\":1,\\\"idle\\\":1,\\\"unknown\\\":4},\\\"entities\\\":[{\\\"friendly_name\\\":\\\"Sun Next dawn\\\"}],\\\"truncated\\\":true},\\\"zone\\\":{\\\"count\\\":2,\\\"states_summary\\\":{\\\"0\\\":2},\\\"entities\\\":[{\\\"friendly_name\\\":\\\"HAMCP371 disposable\\\"}],\\\"truncated\\\":true},\\\"person\\\":{\\\"count\\\":2,\\\"states_summary\\\":{\\\"unknown\\\":2},\\\"entities\\\":[{\\\"friendly_name\\\":\\\"HAMCP371 owner\\\"}],\\\"truncated\\\":true},\\\"todo\\\":{\\\"count\\\":2,\\\"states_summary\\\":{\\\"0\\\":1,\\\"1\\\":1},\\\"entities\\\":[{\\\"friendly_name\\\":\\\"Shopping list\\\"}],\\\"truncated\\\":true},\\\"group\\\":{\\\"count\\\":1,\\\"states_summary\\\":{\\\"unknown\\\":1},\\\"entities\\\":[{\\\"friendly_name\\\":\\\"HAMCP371 groupe \u00e9\u00fc \u96ea\\\"}],\\\"truncated\\\":false},\\\"sun\\\":{\\\"count\\\":1,\\\"states_summary\\\":{\\\"above_horizon\\\":1},\\\"entities\\\":[],\\\"truncated\\\":true},\\\"conversation\\\":{\\\"count\\\":1,\\\"states_summary\\\":{\\\"unknown\\\":1},\\\"entities\\\":[],\\\"truncated\\\":true},\\\"tts\\\":{\\\"count\\\":1,\\\"states_summary\\\":{\\\"unknown\\\":1},\\\"entities\\\":[],\\\"truncated\\\":true},\\\"event\\\":{\\\"count\\\":1,\\\"states_summary\\\":{\\\"unknown\\\":1},\\\"entities\\\":[],\\\"truncated\\\":true},\\\"input_boolean\\\":{\\\"count\\\":1,\\\"states_summary\\\":{\\\"on\\\":1},\\\"entities\\\":[],\\\"truncated\\\":true},\\\"automation\\\":{\\\"count\\\":1,\\\"states_summary\\\":{\\\"on\\\":1},\\\"entities\\\":[],\\\"truncated\\\":true},\\\"script\\\":{\\\"count\\\":1,\\\"states_summary\\\":{\\\"off\\\":1},\\\"entities\\\":[],\\\"truncated\\\":true},\\\"scene\\\":{\\\"count\\\":1,\\\"states_summary\\\":{\\\"unknown\\\":1},\\\"entities\\\":[],\\\"truncated\\\":true},\\\"calendar\\\":{\\\"count\\\":1,\\\"states_summary\\\":{\\\"off\\\":1},\\\"entities\\\":[],\\\"truncated\\\":true}},\\\"area_analysis\\\":{\\\"living_room\\\":{\\\"name\\\":\\\"Living Room\\\",\\\"count\\\":0,\\\"domains\\\":{}},\\\"kitchen\\\":{\\\"name\\\":\\\"Kitchen\\\",\\\"count\\\":0,\\\"domains\\\":{}},\\\"bedroom\\\":{\\\"name\\\":\\\"Bedroom\\\",\\\"count\\\":0,\\\"domains\\\":{}},\\\"hamcp371_area\\\":{\\\"name\\\":\\\"HAMCP371 area\\\",\\\"count\\\":1,\\\"domains\\\":{\\\"input_boolean\\\":1}}},\\\"ai_insights\\\":{\\\"most_common_domains\\\":[\\\"sensor\\\",\\\"zone\\\",\\\"person\\\",\\\"todo\\\",\\\"group\\\"],\\\"controllable_devices\\\":[],\\\"monitoring_sensors\\\":[\\\"sensor\\\"],\\\"automation_ready\\\":true},\\\"pagination\\\":{\\\"total_entity_results\\\":28,\\\"offset\\\":0,\\\"limit\\\":5,\\\"entities_returned\\\":5,\\\"has_more\\\":true,\\\"next_offset\\\":5},\\\"system_info\\\":{\\\"base_url\\\":\\\"http://127.0.0.1:8123\\\",\\\"version\\\":\\\"2026.11.0\\\",\\\"location_name\\\":\\\"HAMCP371 disposable\\\",\\\"time_zone\\\":\\\"America/Chicago\\\",\\\"language\\\":\\\"en\\\",\\\"state\\\":\\\"RUNNING\\\"},\\\"repair_count\\\":1,\\\"repairs\\\":[{\\\"issue_id\\\":\\\"deprecated_yaml\\\",\\\"domain\\\":\\\"http\\\",\\\"severity\\\":\\\"warning\\\",\\\"translation_key\\\":\\\"deprecated_yaml\\\",\\\"ignored\\\":false,\\\"dismissed_version\\\":null,\\\"is_fixable\\\":false,\\\"breaks_in_ha_version\\\":\\\"2027.2.0\\\",\\\"created\\\":\\\"2026-11-12T06:21:57.232164+00:00\\\",\\\"issue_domain\\\":null}],\\\"mcp_client\\\":{\\\"protocol_version\\\":\\\"2025-03-26\\\",\\\"client_info\\\":{},\\\"capabilities\\\":null}}\",\"type\":\"text\"}],\"isError\":false,\"structuredContent\":{\"success\":true,\"system_summary\":{\"total_entities\":28,\"total_domains\":14,\"total_services\":247,\"total_areas\":4,\"version\":\"2026.11.0\"},\"domain_stats\":{\"sensor\":{\"count\":12,\"states_summary\":{\"2026-11-13T05:18:43+00:00\":1,\"2026-11-12T18:09:34+00:00\":1,\"2026-11-12T23:44:15+00:00\":1,\"2026-11-12T11:44:02+00:00\":1,\"2026-11-13T05:40:52+00:00\":1,\"2026-11-12T17:47:26+00:00\":1,\"1.0\":1,\"idle\":1,\"unknown\":4},\"entities\":[{\"friendly_name\":\"Sun Next dawn\"}],\"truncated\":true},\"zone\":{\"count\":2,\"states_summary\":{\"0\":2},\"entities\":[{\"friendly_name\":\"HAMCP371 disposable\"}],\"truncated\":true},\"person\":{\"count\":2,\"states_summary\":{\"unknown\":2},\"entities\":[{\"friendly_name\":\"HAMCP371 owner\"}],\"truncated\":true},\"todo\":{\"count\":2,\"states_summary\":{\"0\":1,\"1\":1},\"entities\":[{\"friendly_name\":\"Shopping list\"}],\"truncated\":true},\"group\":{\"count\":1,\"states_summary\":{\"unknown\":1},\"entities\":[{\"friendly_name\":\"HAMCP371 groupe \u00e9\u00fc \u96ea\"}],\"truncated\":false},\"sun\":{\"count\":1,\"states_summary\":{\"above_horizon\":1},\"entities\":[],\"truncated\":true},\"conversation\":{\"count\":1,\"states_summary\":{\"unknown\":1},\"entities\":[],\"truncated\":true},\"tts\":{\"count\":1,\"states_summary\":{\"unknown\":1},\"entities\":[],\"truncated\":true},\"event\":{\"count\":1,\"states_summary\":{\"unknown\":1},\"entities\":[],\"truncated\":true},\"input_boolean\":{\"count\":1,\"states_summary\":{\"on\":1},\"entities\":[],\"truncated\":true},\"automation\":{\"count\":1,\"states_summary\":{\"on\":1},\"entities\":[],\"truncated\":true},\"script\":{\"count\":1,\"states_summary\":{\"off\":1},\"entities\":[],\"truncated\":true},\"scene\":{\"count\":1,\"states_summary\":{\"unknown\":1},\"entities\":[],\"truncated\":true},\"calendar\":{\"count\":1,\"states_summary\":{\"off\":1},\"entities\":[],\"truncated\":true}},\"area_analysis\":{\"living_room\":{\"name\":\"Living Room\",\"count\":0,\"domains\":{}},\"kitchen\":{\"name\":\"Kitchen\",\"count\":0,\"domains\":{}},\"bedroom\":{\"name\":\"Bedroom\",\"count\":0,\"domains\":{}},\"hamcp371_area\":{\"name\":\"HAMCP371 area\",\"count\":1,\"domains\":{\"input_boolean\":1}}},\"ai_insights\":{\"most_common_domains\":[\"sensor\",\"zone\",\"person\",\"todo\",\"group\"],\"controllable_devices\":[],\"monitoring_sensors\":[\"sensor\"],\"automation_ready\":true},\"pagination\":{\"total_entity_results\":28,\"offset\":0,\"limit\":5,\"entities_returned\":5,\"has_more\":true,\"next_offset\":5},\"system_info\":{\"base_url\":\"http://127.0.0.1:8123\",\"version\":\"2026.11.0\",\"location_name\":\"HAMCP371 disposable\",\"time_zone\":\"America/Chicago\",\"language\":\"en\",\"state\":\"RUNNING\"},\"repair_count\":1,\"repairs\":[{\"issue_id\":\"deprecated_yaml\",\"domain\":\"http\",\"severity\":\"warning\",\"translation_key\":\"deprecated_yaml\",\"ignored\":false,\"dismissed_version\":null,\"is_fixable\":false,\"breaks_in_ha_version\":\"2027.2.0\",\"created\":\"2026-11-12T06:21:57.232164+00:00\",\"issue_domain\":null}],\"mcp_client\":{\"protocol_version\":\"2025-03-26\",\"client_info\":{},\"capabilities\":null}}}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 131,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\"success\":true,\"system_summary\":{\"total_entities\":28,\"total_domains\":14,\"total_services\":247,\"total_areas\":4,\"version\":\"2026.11.0\"},\"domain_stats\":{\"sensor\":{\"count\":12,\"states_summary\":{\"2026-11-13T05:18:43+00:00\":1,\"2026-11-12T18:09:34+00:00\":1,\"2026-11-12T23:44:15+00:00\":1,\"2026-11-12T11:44:02+00:00\":1,\"2026-11-13T05:40:52+00:00\":1,\"2026-11-12T17:47:26+00:00\":1,\"1.0\":1,\"idle\":1,\"unknown\":4},\"entities\":[{\"friendly_name\":\"Sun Next dawn\"}],\"truncated\":true},\"zone\":{\"count\":2,\"states_summary\":{\"0\":2},\"entities\":[{\"friendly_name\":\"HAMCP371 disposable\"}],\"truncated\":true},\"person\":{\"count\":2,\"states_summary\":{\"unknown\":2},\"entities\":[{\"friendly_name\":\"HAMCP371 owner\"}],\"truncated\":true},\"todo\":{\"count\":2,\"states_summary\":{\"0\":1,\"1\":1},\"entities\":[{\"friendly_name\":\"Shopping list\"}],\"truncated\":true},\"group\":{\"count\":1,\"states_summary\":{\"unknown\":1},\"entities\":[{\"friendly_name\":\"HAMCP371 groupe \u00e9\u00fc \u96ea\"}],\"truncated\":false},\"sun\":{\"count\":1,\"states_summary\":{\"above_horizon\":1},\"entities\":[],\"truncated\":true},\"conversation\":{\"count\":1,\"states_summary\":{\"unknown\":1},\"entities\":[],\"truncated\":true},\"tts\":{\"count\":1,\"states_summary\":{\"unknown\":1},\"entities\":[],\"truncated\":true},\"event\":{\"count\":1,\"states_summary\":{\"unknown\":1},\"entities\":[],\"truncated\":true},\"input_boolean\":{\"count\":1,\"states_summary\":{\"on\":1},\"entities\":[],\"truncated\":true},\"automation\":{\"count\":1,\"states_summary\":{\"on\":1},\"entities\":[],\"truncated\":true},\"script\":{\"count\":1,\"states_summary\":{\"off\":1},\"entities\":[],\"truncated\":true},\"scene\":{\"count\":1,\"states_summary\":{\"unknown\":1},\"entities\":[],\"truncated\":true},\"calendar\":{\"count\":1,\"states_summary\":{\"off\":1},\"entities\":[],\"truncated\":true}},\"area_analysis\":{\"living_room\":{\"name\":\"Living Room\",\"count\":0,\"domains\":{}},\"kitchen\":{\"name\":\"Kitchen\",\"count\":0,\"domains\":{}},\"bedroom\":{\"name\":\"Bedroom\",\"count\":0,\"domains\":{}},\"hamcp371_area\":{\"name\":\"HAMCP371 area\",\"count\":1,\"domains\":{\"input_boolean\":1}}},\"ai_insights\":{\"most_common_domains\":[\"sensor\",\"zone\",\"person\",\"todo\",\"group\"],\"controllable_devices\":[],\"monitoring_sensors\":[\"sensor\"],\"automation_ready\":true},\"pagination\":{\"total_entity_results\":28,\"offset\":0,\"limit\":5,\"entities_returned\":5,\"has_more\":true,\"next_offset\":5},\"system_info\":{\"base_url\":\"http://127.0.0.1:8123\",\"version\":\"2026.11.0\",\"location_name\":\"HAMCP371 disposable\",\"time_zone\":\"America/Chicago\",\"language\":\"en\",\"state\":\"RUNNING\"},\"repair_count\":1,\"repairs\":[{\"issue_id\":\"deprecated_yaml\",\"domain\":\"http\",\"severity\":\"warning\",\"translation_key\":\"deprecated_yaml\",\"ignored\":false,\"dismissed_version\":null,\"is_fixable\":false,\"breaks_in_ha_version\":\"2027.2.0\",\"created\":\"2026-11-12T06:21:57.232164+00:00\",\"issue_domain\":null}],\"mcp_client\":{\"protocol_version\":\"2025-03-26\",\"client_info\":{},\"capabilities\":null}}",
+       "type": "text"
+      }
+     ],
+     "isError": false,
+     "structuredContent": {
+      "ai_insights": {
+       "automation_ready": true,
+       "controllable_devices": [],
+       "monitoring_sensors": [
+        "sensor"
+       ],
+       "most_common_domains": [
+        "sensor",
+        "zone",
+        "person",
+        "todo",
+        "group"
+       ]
+      },
+      "area_analysis": {
+       "bedroom": {
+        "count": 0,
+        "domains": {},
+        "name": "Bedroom"
+       },
+       "hamcp371_area": {
+        "count": 1,
+        "domains": {
+         "input_boolean": 1
+        },
+        "name": "HAMCP371 area"
+       },
+       "kitchen": {
+        "count": 0,
+        "domains": {},
+        "name": "Kitchen"
+       },
+       "living_room": {
+        "count": 0,
+        "domains": {},
+        "name": "Living Room"
+       }
+      },
+      "domain_stats": {
+       "automation": {
+        "count": 1,
+        "entities": [],
+        "states_summary": {
+         "on": 1
+        },
+        "truncated": true
+       },
+       "calendar": {
+        "count": 1,
+        "entities": [],
+        "states_summary": {
+         "off": 1
+        },
+        "truncated": true
+       },
+       "conversation": {
+        "count": 1,
+        "entities": [],
+        "states_summary": {
+         "unknown": 1
+        },
+        "truncated": true
+       },
+       "event": {
+        "count": 1,
+        "entities": [],
+        "states_summary": {
+         "unknown": 1
+        },
+        "truncated": true
+       },
+       "group": {
+        "count": 1,
+        "entities": [
+         {
+          "friendly_name": "HAMCP371 groupe \u00e9\u00fc \u96ea"
+         }
+        ],
+        "states_summary": {
+         "unknown": 1
+        },
+        "truncated": false
+       },
+       "input_boolean": {
+        "count": 1,
+        "entities": [],
+        "states_summary": {
+         "on": 1
+        },
+        "truncated": true
+       },
+       "person": {
+        "count": 2,
+        "entities": [
+         {
+          "friendly_name": "HAMCP371 owner"
+         }
+        ],
+        "states_summary": {
+         "unknown": 2
+        },
+        "truncated": true
+       },
+       "scene": {
+        "count": 1,
+        "entities": [],
+        "states_summary": {
+         "unknown": 1
+        },
+        "truncated": true
+       },
+       "script": {
+        "count": 1,
+        "entities": [],
+        "states_summary": {
+         "off": 1
+        },
+        "truncated": true
+       },
+       "sensor": {
+        "count": 12,
+        "entities": [
+         {
+          "friendly_name": "Sun Next dawn"
+         }
+        ],
+        "states_summary": {
+         "1.0": 1,
+         "2026-11-12T11:44:02+00:00": 1,
+         "2026-11-12T17:47:26+00:00": 1,
+         "2026-11-12T18:09:34+00:00": 1,
+         "2026-11-12T23:44:15+00:00": 1,
+         "2026-11-13T05:18:43+00:00": 1,
+         "2026-11-13T05:40:52+00:00": 1,
+         "idle": 1,
+         "unknown": 4
+        },
+        "truncated": true
+       },
+       "sun": {
+        "count": 1,
+        "entities": [],
+        "states_summary": {
+         "above_horizon": 1
+        },
+        "truncated": true
+       },
+       "todo": {
+        "count": 2,
+        "entities": [
+         {
+          "friendly_name": "Shopping list"
+         }
+        ],
+        "states_summary": {
+         "0": 1,
+         "1": 1
+        },
+        "truncated": true
+       },
+       "tts": {
+        "count": 1,
+        "entities": [],
+        "states_summary": {
+         "unknown": 1
+        },
+        "truncated": true
+       },
+       "zone": {
+        "count": 2,
+        "entities": [
+         {
+          "friendly_name": "HAMCP371 disposable"
+         }
+        ],
+        "states_summary": {
+         "0": 2
+        },
+        "truncated": true
+       }
+      },
+      "mcp_client": {
+       "capabilities": null,
+       "client_info": {},
+       "protocol_version": "2025-03-26"
+      },
+      "pagination": {
+       "entities_returned": 5,
+       "has_more": true,
+       "limit": 5,
+       "next_offset": 5,
+       "offset": 0,
+       "total_entity_results": 28
+      },
+      "repair_count": 1,
+      "repairs": [
+       {
+        "breaks_in_ha_version": "2027.2.0",
+        "created": "2026-11-12T06:21:57.232164+00:00",
+        "dismissed_version": null,
+        "domain": "http",
+        "ignored": false,
+        "is_fixable": false,
+        "issue_domain": null,
+        "issue_id": "deprecated_yaml",
+        "severity": "warning",
+        "translation_key": "deprecated_yaml"
+       }
+      ],
+      "success": true,
+      "system_info": {
+       "base_url": "http://127.0.0.1:8123",
+       "language": "en",
+       "location_name": "HAMCP371 disposable",
+       "state": "RUNNING",
+       "time_zone": "America/Chicago",
+       "version": "2026.11.0"
+      },
+      "system_summary": {
+       "total_areas": 4,
+       "total_domains": 14,
+       "total_entities": 28,
+       "total_services": 247,
+       "version": "2026.11.0"
+      }
+     }
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 131,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "detail_level": "standard",
+      "include_notifications": false,
+      "limit": 5
+     },
+     "name": "ha_get_overview"
+    }
+   },
+   "method": "POST",
+   "path": "/mcp"
+  },
+  "response": {
+   "id": 131,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\"success\":true,\"system_summary\":{\"total_entities\":28,\"total_domains\":14,\"total_services\":247,\"total_areas\":4,\"version\":\"2026.11.0\"},\"domain_stats\":{\"sensor\":{\"count\":12,\"states_summary\":{\"2026-11-13T05:18:43+00:00\":1,\"2026-11-12T18:09:34+00:00\":1,\"2026-11-12T23:44:15+00:00\":1,\"2026-11-12T11:44:02+00:00\":1,\"2026-11-13T05:40:52+00:00\":1,\"2026-11-12T17:47:26+00:00\":1,\"1.0\":1,\"idle\":1,\"unknown\":4},\"entities\":[{\"friendly_name\":\"Sun Next dawn\"}],\"truncated\":true},\"zone\":{\"count\":2,\"states_summary\":{\"0\":2},\"entities\":[{\"friendly_name\":\"HAMCP371 disposable\"}],\"truncated\":true},\"person\":{\"count\":2,\"states_summary\":{\"unknown\":2},\"entities\":[{\"friendly_name\":\"HAMCP371 owner\"}],\"truncated\":true},\"todo\":{\"count\":2,\"states_summary\":{\"0\":1,\"1\":1},\"entities\":[{\"friendly_name\":\"Shopping list\"}],\"truncated\":true},\"group\":{\"count\":1,\"states_summary\":{\"unknown\":1},\"entities\":[{\"friendly_name\":\"HAMCP371 groupe \u00e9\u00fc \u96ea\"}],\"truncated\":false},\"sun\":{\"count\":1,\"states_summary\":{\"above_horizon\":1},\"entities\":[],\"truncated\":true},\"conversation\":{\"count\":1,\"states_summary\":{\"unknown\":1},\"entities\":[],\"truncated\":true},\"tts\":{\"count\":1,\"states_summary\":{\"unknown\":1},\"entities\":[],\"truncated\":true},\"event\":{\"count\":1,\"states_summary\":{\"unknown\":1},\"entities\":[],\"truncated\":true},\"input_boolean\":{\"count\":1,\"states_summary\":{\"on\":1},\"entities\":[],\"truncated\":true},\"automation\":{\"count\":1,\"states_summary\":{\"on\":1},\"entities\":[],\"truncated\":true},\"script\":{\"count\":1,\"states_summary\":{\"off\":1},\"entities\":[],\"truncated\":true},\"scene\":{\"count\":1,\"states_summary\":{\"unknown\":1},\"entities\":[],\"truncated\":true},\"calendar\":{\"count\":1,\"states_summary\":{\"off\":1},\"entities\":[],\"truncated\":true}},\"area_analysis\":{\"living_room\":{\"name\":\"Living Room\",\"count\":0,\"domains\":{}},\"kitchen\":{\"name\":\"Kitchen\",\"count\":0,\"domains\":{}},\"bedroom\":{\"name\":\"Bedroom\",\"count\":0,\"domains\":{}},\"hamcp371_area\":{\"name\":\"HAMCP371 area\",\"count\":1,\"domains\":{\"input_boolean\":1}}},\"ai_insights\":{\"most_common_domains\":[\"sensor\",\"zone\",\"person\",\"todo\",\"group\"],\"controllable_devices\":[],\"monitoring_sensors\":[\"sensor\"],\"automation_ready\":true},\"pagination\":{\"total_entity_results\":28,\"offset\":0,\"limit\":5,\"entities_returned\":5,\"has_more\":true,\"next_offset\":5},\"system_info\":{\"base_url\":\"http://127.0.0.1:8123\",\"version\":\"2026.11.0\",\"location_name\":\"HAMCP371 disposable\",\"time_zone\":\"America/Chicago\",\"language\":\"en\",\"state\":\"RUNNING\"},\"repair_count\":1,\"repairs\":[{\"issue_id\":\"deprecated_yaml\",\"domain\":\"http\",\"severity\":\"warning\",\"translation_key\":\"deprecated_yaml\",\"ignored\":false,\"dismissed_version\":null,\"is_fixable\":false,\"breaks_in_ha_version\":\"2027.2.0\",\"created\":\"2026-11-12T06:21:57.232164+00:00\",\"issue_domain\":null}],\"mcp_client\":{\"protocol_version\":\"2025-03-26\",\"client_info\":{},\"capabilities\":null}}",
+      "type": "text"
+     }
+    ],
+    "isError": false,
+    "structuredContent": {
+     "ai_insights": {
+      "automation_ready": true,
+      "controllable_devices": [],
+      "monitoring_sensors": [
+       "sensor"
+      ],
+      "most_common_domains": [
+       "sensor",
+       "zone",
+       "person",
+       "todo",
+       "group"
+      ]
+     },
+     "area_analysis": {
+      "bedroom": {
+       "count": 0,
+       "domains": {},
+       "name": "Bedroom"
+      },
+      "hamcp371_area": {
+       "count": 1,
+       "domains": {
+        "input_boolean": 1
+       },
+       "name": "HAMCP371 area"
+      },
+      "kitchen": {
+       "count": 0,
+       "domains": {},
+       "name": "Kitchen"
+      },
+      "living_room": {
+       "count": 0,
+       "domains": {},
+       "name": "Living Room"
+      }
+     },
+     "domain_stats": {
+      "automation": {
+       "count": 1,
+       "entities": [],
+       "states_summary": {
+        "on": 1
+       },
+       "truncated": true
+      },
+      "calendar": {
+       "count": 1,
+       "entities": [],
+       "states_summary": {
+        "off": 1
+       },
+       "truncated": true
+      },
+      "conversation": {
+       "count": 1,
+       "entities": [],
+       "states_summary": {
+        "unknown": 1
+       },
+       "truncated": true
+      },
+      "event": {
+       "count": 1,
+       "entities": [],
+       "states_summary": {
+        "unknown": 1
+       },
+       "truncated": true
+      },
+      "group": {
+       "count": 1,
+       "entities": [
+        {
+         "friendly_name": "HAMCP371 groupe \u00e9\u00fc \u96ea"
+        }
+       ],
+       "states_summary": {
+        "unknown": 1
+       },
+       "truncated": false
+      },
+      "input_boolean": {
+       "count": 1,
+       "entities": [],
+       "states_summary": {
+        "on": 1
+       },
+       "truncated": true
+      },
+      "person": {
+       "count": 2,
+       "entities": [
+        {
+         "friendly_name": "HAMCP371 owner"
+        }
+       ],
+       "states_summary": {
+        "unknown": 2
+       },
+       "truncated": true
+      },
+      "scene": {
+       "count": 1,
+       "entities": [],
+       "states_summary": {
+        "unknown": 1
+       },
+       "truncated": true
+      },
+      "script": {
+       "count": 1,
+       "entities": [],
+       "states_summary": {
+        "off": 1
+       },
+       "truncated": true
+      },
+      "sensor": {
+       "count": 12,
+       "entities": [
+        {
+         "friendly_name": "Sun Next dawn"
+        }
+       ],
+       "states_summary": {
+        "1.0": 1,
+        "2026-11-12T11:44:02+00:00": 1,
+        "2026-11-12T17:47:26+00:00": 1,
+        "2026-11-12T18:09:34+00:00": 1,
+        "2026-11-12T23:44:15+00:00": 1,
+        "2026-11-13T05:18:43+00:00": 1,
+        "2026-11-13T05:40:52+00:00": 1,
+        "idle": 1,
+        "unknown": 4
+       },
+       "truncated": true
+      },
+      "sun": {
+       "count": 1,
+       "entities": [],
+       "states_summary": {
+        "above_horizon": 1
+       },
+       "truncated": true
+      },
+      "todo": {
+       "count": 2,
+       "entities": [
+        {
+         "friendly_name": "Shopping list"
+        }
+       ],
+       "states_summary": {
+        "0": 1,
+        "1": 1
+       },
+       "truncated": true
+      },
+      "tts": {
+       "count": 1,
+       "entities": [],
+       "states_summary": {
+        "unknown": 1
+       },
+       "truncated": true
+      },
+      "zone": {
+       "count": 2,
+       "entities": [
+        {
+         "friendly_name": "HAMCP371 disposable"
+        }
+       ],
+       "states_summary": {
+        "0": 2
+       },
+       "truncated": true
+      }
+     },
+     "mcp_client": {
+      "capabilities": null,
+      "client_info": {},
+      "protocol_version": "2025-03-26"
+     },
+     "pagination": {
+      "entities_returned": 5,
+      "has_more": true,
+      "limit": 5,
+      "next_offset": 5,
+      "offset": 0,
+      "total_entity_results": 28
+     },
+     "repair_count": 1,
+     "repairs": [
+      {
+       "breaks_in_ha_version": "2027.2.0",
+       "created": "2026-11-12T06:21:57.232164+00:00",
+       "dismissed_version": null,
+       "domain": "http",
+       "ignored": false,
+       "is_fixable": false,
+       "issue_domain": null,
+       "issue_id": "deprecated_yaml",
+       "severity": "warning",
+       "translation_key": "deprecated_yaml"
+      }
+     ],
+     "success": true,
+     "system_info": {
+      "base_url": "http://127.0.0.1:8123",
+      "language": "en",
+      "location_name": "HAMCP371 disposable",
+      "state": "RUNNING",
+      "time_zone": "America/Chicago",
+      "version": "2026.11.0"
+     },
+     "system_summary": {
+      "total_areas": 4,
+      "total_domains": 14,
+      "total_entities": 28,
+      "total_services": 247,
+      "version": "2026.11.0"
+     }
+    }
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Thu, 12 Nov 2026 06:22:13 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null,
+ "group": "variants",
+ "id": "v17-overview-standard",
+ "idle": false,
+ "kind": "public",
+ "new_session": false,
+ "public_arguments": {
+  "detail_level": "standard",
+  "include_notifications": false,
+  "limit": 5
+ },
+ "public_tool": "ha_get_overview",
+ "upstream_tool": "ha_get_overview",
+ "wire_arguments": {
+  "detail_level": "standard",
+  "include_notifications": false,
+  "limit": 5
+ }
+}

@@ -1,0 +1,148 @@
+{
+ "arguments_built_by": "adapter code, policy 9.1.2",
+ "calls_format_version": 1,
+ "exchange": {
+  "body_bytes": 1012,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":111,\"result\":{\"content\":[{\"text\":\"{\\\"success\\\":true,\\\"automation_id\\\":\\\"automation.hamcp371_automation\\\",\\\"trace_count\\\":1,\\\"total_available\\\":1,\\\"offset\\\":0,\\\"order\\\":\\\"newest\\\",\\\"has_more\\\":false,\\\"traces\\\":[{\\\"run_id\\\":\\\"b0c718c7f36a809712bd962333c0d6c9\\\",\\\"timestamp\\\":{\\\"start\\\":\\\"2026-11-15T05:03:10.738399+00:00\\\",\\\"finish\\\":\\\"2026-11-15T05:03:10.739013+00:00\\\"},\\\"state\\\":\\\"stopped\\\",\\\"execution\\\":\\\"finished\\\"}],\\\"hint\\\":\\\"Use run_id with this tool to get detailed trace information\\\"}\",\"type\":\"text\"}],\"isError\":false,\"structuredContent\":{\"success\":true,\"automation_id\":\"automation.hamcp371_automation\",\"trace_count\":1,\"total_available\":1,\"offset\":0,\"order\":\"newest\",\"has_more\":false,\"traces\":[{\"run_id\":\"b0c718c7f36a809712bd962333c0d6c9\",\"timestamp\":{\"start\":\"2026-11-15T05:03:10.738399+00:00\",\"finish\":\"2026-11-15T05:03:10.739013+00:00\"},\"state\":\"stopped\",\"execution\":\"finished\"}],\"hint\":\"Use run_id with this tool to get detailed trace information\"}}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 111,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\"success\":true,\"automation_id\":\"automation.hamcp371_automation\",\"trace_count\":1,\"total_available\":1,\"offset\":0,\"order\":\"newest\",\"has_more\":false,\"traces\":[{\"run_id\":\"b0c718c7f36a809712bd962333c0d6c9\",\"timestamp\":{\"start\":\"2026-11-15T05:03:10.738399+00:00\",\"finish\":\"2026-11-15T05:03:10.739013+00:00\"},\"state\":\"stopped\",\"execution\":\"finished\"}],\"hint\":\"Use run_id with this tool to get detailed trace information\"}",
+       "type": "text"
+      }
+     ],
+     "isError": false,
+     "structuredContent": {
+      "automation_id": "automation.hamcp371_automation",
+      "has_more": false,
+      "hint": "Use run_id with this tool to get detailed trace information",
+      "offset": 0,
+      "order": "newest",
+      "success": true,
+      "total_available": 1,
+      "trace_count": 1,
+      "traces": [
+       {
+        "execution": "finished",
+        "run_id": "b0c718c7f36a809712bd962333c0d6c9",
+        "state": "stopped",
+        "timestamp": {
+         "finish": "2026-11-15T05:03:10.739013+00:00",
+         "start": "2026-11-15T05:03:10.738399+00:00"
+        }
+       }
+      ]
+     }
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 111,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "automation_id": "automation.hamcp371_automation",
+      "limit": 5
+     },
+     "name": "ha_get_automation_traces"
+    }
+   },
+   "method": "POST",
+   "path": "/mcp"
+  },
+  "response": {
+   "id": 111,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\"success\":true,\"automation_id\":\"automation.hamcp371_automation\",\"trace_count\":1,\"total_available\":1,\"offset\":0,\"order\":\"newest\",\"has_more\":false,\"traces\":[{\"run_id\":\"b0c718c7f36a809712bd962333c0d6c9\",\"timestamp\":{\"start\":\"2026-11-15T05:03:10.738399+00:00\",\"finish\":\"2026-11-15T05:03:10.739013+00:00\"},\"state\":\"stopped\",\"execution\":\"finished\"}],\"hint\":\"Use run_id with this tool to get detailed trace information\"}",
+      "type": "text"
+     }
+    ],
+    "isError": false,
+    "structuredContent": {
+     "automation_id": "automation.hamcp371_automation",
+     "has_more": false,
+     "hint": "Use run_id with this tool to get detailed trace information",
+     "offset": 0,
+     "order": "newest",
+     "success": true,
+     "total_available": 1,
+     "trace_count": 1,
+     "traces": [
+      {
+       "execution": "finished",
+       "run_id": "b0c718c7f36a809712bd962333c0d6c9",
+       "state": "stopped",
+       "timestamp": {
+        "finish": "2026-11-15T05:03:10.739013+00:00",
+        "start": "2026-11-15T05:03:10.738399+00:00"
+       }
+      }
+     ]
+    }
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Sun, 15 Nov 2026 05:03:21 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null,
+ "group": "reads",
+ "id": "r11-automation-traces",
+ "idle": false,
+ "kind": "public",
+ "new_session": false,
+ "public_arguments": {
+  "automation_id": "automation.hamcp371_automation",
+  "limit": 5
+ },
+ "public_tool": "ha_get_automation_traces",
+ "upstream_tool": "ha_get_automation_traces",
+ "wire_arguments": {
+  "automation_id": "automation.hamcp371_automation",
+  "limit": 5
+ }
+}

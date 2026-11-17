@@ -25,8 +25,9 @@ import re
 from typing import Any
 
 # HAMCP-351: 9.1.2 (bab615df) leaves tools_registry.py and device_enrichment.py
-# unchanged from 9.1.0.
-REVIEWED_VERSIONS = frozenset({"8.5.0", "9.1.0", "9.1.2"})
+# unchanged from 9.1.0; HAMCP-371: 9.2.0 (51e3aac7) leaves both unchanged from
+# 9.1.2.
+REVIEWED_VERSIONS = frozenset({"8.5.0", "9.1.0", "9.1.2", "9.2.0"})
 
 # Closed disclosure codes. Nothing else is ever written to ``warnings``.
 REGISTRY_PAIR_WITHHELD = "registry_pair_withheld"

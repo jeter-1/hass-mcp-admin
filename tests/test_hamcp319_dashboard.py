@@ -66,6 +66,22 @@ STRICT_URL = 'http://synthetic.invalid/base/catalog/full'
 # the 9.1 peer shapes below serve both (tests/test_hamcp319_used_tool_exact_admission).
 NINE_ONE = ('9.1.0', '9.1.2')
 URLS = {'9.1.0': STRICT_URL, '9.1.2': STRICT_URL, '8.5.0': ''}
+# HAMCP-371 (SB used-tool ruling): a 9.2.0 peer row, additive only; VERSIONS
+# below is unchanged, so this module's own tests run as before.
+# - Descriptors: the used-tool module serves the committed 9.2.0 standalone
+#   filesystem-on tools/list (docs/evidence/hamcp371/s8/profiles-2/out/
+#   standalone-9.2.0-fs-on/observation.json, 82 tools). catalog() below keeps
+#   the reviewed 9.2.0 capture's runtime order (77 tools), which other modules
+#   use; its getter, guide and setter descriptors equal the wire capture's.
+# - Reply envelopes: the seven source files in
+#   tests/fixtures/ha_mcp_9_1_0/dashboard/provenance.json have the same sha256
+#   at v9.2.0 (51e3aac7) as at v9.1.0 (source review, HAMCP-371 SB README), so
+#   the transcribed envelopes describe 9.2.0 by source identity.
+# - Guide: docs/evidence/hamcp371/s4/ha-mcp-9.2.0/image-resources.json records
+#   the 9.2.0 image's dashboard-guide.md sha256 as GUIDE_SHA256.
+NINE_TWO = ('9.2.0',)
+NINE_ONE = NINE_ONE + NINE_TWO
+URLS['9.2.0'] = STRICT_URL
 KEY_PATTERN = re.compile(r'I-HAVE-READ-THE-BEST-PRACTICES-GUIDE-[0-9a-f]{8}')
 KEY_91 = 'I-HAVE-READ-THE-BEST-PRACTICES-GUIDE-9a1b2c3d'
 KEY_85 = 'I-HAVE-READ-THE-BEST-PRACTICES-GUIDE-0123abcd'

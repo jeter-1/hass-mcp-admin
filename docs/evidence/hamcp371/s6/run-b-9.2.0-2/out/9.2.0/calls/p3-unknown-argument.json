@@ -1,0 +1,106 @@
+{
+ "arguments_built_by": "harness, sent as written",
+ "calls_format_version": 1,
+ "exchange": {
+  "body_bytes": 1054,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":139,\"result\":{\"content\":[{\"text\":\"{\\n  \\\"success\\\": false,\\n  \\\"error\\\": {\\n    \\\"code\\\": \\\"VALIDATION_FAILED\\\",\\n    \\\"message\\\": \\\"`hamcp371_unknown_argument`: unknown parameter. Valid parameters: entity_id, fields, attribute_keys.\\\",\\n    \\\"details\\\": \\\"unexpected_keyword_argument\\\",\\n    \\\"suggestion\\\": \\\"If your tool list shows `hamcp371_unknown_argument` on this tool, that list is a stale copy from before an ha-mcp update renamed or removed it, not a server bug. Ask the user to reconnect this MCP server in their client (Claude Desktop custom connector: disconnect and reconnect it; server in claude_desktop_config.json: quit and reopen Claude Desktop; claude.ai: refresh the connector's tools list; Claude Code: /mcp, reconnect; ChatGPT: open Settings, then the plugin settings, select the connector and click Refresh tools), then start a new conversation.\\\"\\n  },\\n  \\\"valid_parameters\\\": [\\n    \\\"entity_id\\\",\\n    \\\"fields\\\",\\n    \\\"attribute_keys\\\"\\n  ]\\n}\",\"type\":\"text\"}],\"isError\":true}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 139,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\n  \"success\": false,\n  \"error\": {\n    \"code\": \"VALIDATION_FAILED\",\n    \"message\": \"`hamcp371_unknown_argument`: unknown parameter. Valid parameters: entity_id, fields, attribute_keys.\",\n    \"details\": \"unexpected_keyword_argument\",\n    \"suggestion\": \"If your tool list shows `hamcp371_unknown_argument` on this tool, that list is a stale copy from before an ha-mcp update renamed or removed it, not a server bug. Ask the user to reconnect this MCP server in their client (Claude Desktop custom connector: disconnect and reconnect it; server in claude_desktop_config.json: quit and reopen Claude Desktop; claude.ai: refresh the connector's tools list; Claude Code: /mcp, reconnect; ChatGPT: open Settings, then the plugin settings, select the connector and click Refresh tools), then start a new conversation.\"\n  },\n  \"valid_parameters\": [\n    \"entity_id\",\n    \"fields\",\n    \"attribute_keys\"\n  ]\n}",
+       "type": "text"
+      }
+     ],
+     "isError": true
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 139,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "entity_id": "input_boolean.hamcp371_helper",
+      "hamcp371_unknown_argument": true
+     },
+     "name": "ha_get_state"
+    }
+   },
+   "method": "POST",
+   "path": "/mcp"
+  },
+  "response": {
+   "id": 139,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\n  \"success\": false,\n  \"error\": {\n    \"code\": \"VALIDATION_FAILED\",\n    \"message\": \"`hamcp371_unknown_argument`: unknown parameter. Valid parameters: entity_id, fields, attribute_keys.\",\n    \"details\": \"unexpected_keyword_argument\",\n    \"suggestion\": \"If your tool list shows `hamcp371_unknown_argument` on this tool, that list is a stale copy from before an ha-mcp update renamed or removed it, not a server bug. Ask the user to reconnect this MCP server in their client (Claude Desktop custom connector: disconnect and reconnect it; server in claude_desktop_config.json: quit and reopen Claude Desktop; claude.ai: refresh the connector's tools list; Claude Code: /mcp, reconnect; ChatGPT: open Settings, then the plugin settings, select the connector and click Refresh tools), then start a new conversation.\"\n  },\n  \"valid_parameters\": [\n    \"entity_id\",\n    \"fields\",\n    \"attribute_keys\"\n  ]\n}",
+      "type": "text"
+     }
+    ],
+    "isError": true
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Sun, 15 Nov 2026 05:03:21 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null,
+ "group": "errors",
+ "id": "p3-unknown-argument",
+ "idle": false,
+ "kind": "upstream",
+ "new_session": false,
+ "public_arguments": {
+  "entity_id": "input_boolean.hamcp371_helper",
+  "hamcp371_unknown_argument": true
+ },
+ "public_tool": "ha_get_state",
+ "upstream_tool": "ha_get_state",
+ "wire_arguments": {
+  "entity_id": "input_boolean.hamcp371_helper",
+  "hamcp371_unknown_argument": true
+ }
+}

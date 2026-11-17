@@ -463,7 +463,9 @@ class WorkflowTests(unittest.TestCase):
                           # lane selection belongs to the support window (PR #404).
                           "9.1.0",
                           # HAMCP-351: the reviewed 9.1.2 registry row.
-                          "9.1.2"})
+                          "9.1.2",
+                          # HAMCP-371: the reviewed S8 9.2.0 registry row.
+                          "9.2.0"})
         candidate = next(entry for entry in entries if entry["upstream_version"] == "8.5.0")
         self.assertEqual(candidate["source_commit"], "311d6dc273fb4e9a5b8cde0de15f69472a64fe44")
 

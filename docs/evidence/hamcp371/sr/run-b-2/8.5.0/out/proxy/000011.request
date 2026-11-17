@@ -1,0 +1,1 @@
+{"method":"tools/call","params":{"name":"ha_config_get_automation","arguments":{"identifier":"hamcp371_automation"}},"jsonrpc":"2.0","id":2}

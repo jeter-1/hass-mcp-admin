@@ -1,0 +1,10 @@
+== admission for hamcp371-s6-recapture-1 (lane) in /home/josh/repos/hass-mcp-admin/.claude/worktrees/hamcp-371-ha-mcp-9-2-0
+time=2026-11-14 16:20:11 CST
+units:
+
+lanes(containers):
+
+stray:
+heavy_total=0 evidence=0 mem_avail_gb=12.4 load1=0.04 root_free_gb=60.4
+Running as unit: hamcp371-s6-recapture-1.service; invocation ID: 21be4ef819ae47a7a6fe46b4bd000f09
+launched rc=0 cmd=bash -c python3\ -I\ -B\ scripts/core_read_replay_capture_local.py\ recapture\ --run-dir\ .artifacts/hamcp371-s6/recapture-1\ --launch-log\ .artifacts/hamcp371-s6/launches.jsonl\ --note\ \'R1\ and\ R2\ of\ 2026-11-14\ 16:15:\ profile\ A\,\ 9.1.2\ and\ 9.2.0\ back\ to\ back\ on\ one\ disposable\ Core\ 2026.11.0\ after\ one\ restart\;\ order\ group\ before\ the\ restart\ for\ page-order\ stability\;\ harness\ 3bacd06f\;\ images\ from\ the\ local\ cache\ by\ digest\,\ no\ pull\'\ \>\ .artifacts/hamcp371-s6/recapture-1.log\ 2\>\&1

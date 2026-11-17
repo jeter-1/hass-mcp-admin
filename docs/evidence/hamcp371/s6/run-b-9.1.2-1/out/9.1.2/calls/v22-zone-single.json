@@ -1,0 +1,135 @@
+{
+ "arguments_built_by": "adapter code, policy 9.1.2",
+ "calls_format_version": 1,
+ "exchange": {
+  "body_bytes": 664,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":133,\"result\":{\"content\":[{\"text\":\"{\\\"success\\\":true,\\\"zone_id\\\":\\\"hamcp371_zone\\\",\\\"zone\\\":{\\\"id\\\":\\\"hamcp371_zone\\\",\\\"name\\\":\\\"HAMCP371 zone\\\",\\\"latitude\\\":1.0,\\\"longitude\\\":1.0,\\\"radius\\\":100.0,\\\"icon\\\":\\\"mdi:flask\\\",\\\"passive\\\":false,\\\"entity_id\\\":\\\"zone.hamcp371_zone\\\",\\\"editable\\\":true,\\\"source\\\":\\\"storage\\\"}}\",\"type\":\"text\"}],\"isError\":false,\"structuredContent\":{\"success\":true,\"zone_id\":\"hamcp371_zone\",\"zone\":{\"id\":\"hamcp371_zone\",\"name\":\"HAMCP371 zone\",\"latitude\":1.0,\"longitude\":1.0,\"radius\":100.0,\"icon\":\"mdi:flask\",\"passive\":false,\"entity_id\":\"zone.hamcp371_zone\",\"editable\":true,\"source\":\"storage\"}}}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 133,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\"success\":true,\"zone_id\":\"hamcp371_zone\",\"zone\":{\"id\":\"hamcp371_zone\",\"name\":\"HAMCP371 zone\",\"latitude\":1.0,\"longitude\":1.0,\"radius\":100.0,\"icon\":\"mdi:flask\",\"passive\":false,\"entity_id\":\"zone.hamcp371_zone\",\"editable\":true,\"source\":\"storage\"}}",
+       "type": "text"
+      }
+     ],
+     "isError": false,
+     "structuredContent": {
+      "success": true,
+      "zone": {
+       "editable": true,
+       "entity_id": "zone.hamcp371_zone",
+       "icon": "mdi:flask",
+       "id": "hamcp371_zone",
+       "latitude": 1.0,
+       "longitude": 1.0,
+       "name": "HAMCP371 zone",
+       "passive": false,
+       "radius": 100.0,
+       "source": "storage"
+      },
+      "zone_id": "hamcp371_zone"
+     }
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 133,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "zone_id": "hamcp371_zone"
+     },
+     "name": "ha_get_zone"
+    }
+   },
+   "method": "POST",
+   "path": "/mcp"
+  },
+  "response": {
+   "id": 133,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\"success\":true,\"zone_id\":\"hamcp371_zone\",\"zone\":{\"id\":\"hamcp371_zone\",\"name\":\"HAMCP371 zone\",\"latitude\":1.0,\"longitude\":1.0,\"radius\":100.0,\"icon\":\"mdi:flask\",\"passive\":false,\"entity_id\":\"zone.hamcp371_zone\",\"editable\":true,\"source\":\"storage\"}}",
+      "type": "text"
+     }
+    ],
+    "isError": false,
+    "structuredContent": {
+     "success": true,
+     "zone": {
+      "editable": true,
+      "entity_id": "zone.hamcp371_zone",
+      "icon": "mdi:flask",
+      "id": "hamcp371_zone",
+      "latitude": 1.0,
+      "longitude": 1.0,
+      "name": "HAMCP371 zone",
+      "passive": false,
+      "radius": 100.0,
+      "source": "storage"
+     },
+     "zone_id": "hamcp371_zone"
+    }
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Sun, 15 Nov 2026 05:07:37 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null,
+ "group": "variants",
+ "id": "v22-zone-single",
+ "idle": false,
+ "kind": "public",
+ "new_session": false,
+ "public_arguments": {
+  "zone_id": "hamcp371_zone"
+ },
+ "public_tool": "ha_get_zone",
+ "upstream_tool": "ha_get_zone",
+ "wire_arguments": {
+  "zone_id": "hamcp371_zone"
+ }
+}

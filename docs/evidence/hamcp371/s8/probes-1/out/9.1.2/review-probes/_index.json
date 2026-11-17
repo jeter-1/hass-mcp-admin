@@ -1,0 +1,160 @@
+{
+ "calls": [
+  {
+   "arguments_built_by": "harness, sent as written",
+   "body_bytes": 646,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "e-invalid-search.json",
+   "group": "review_probes",
+   "has_structured_content": false,
+   "http_status": 200,
+   "id": "e-invalid-search",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": true,
+   "json_rpc_error_code": null,
+   "kind": "upstream",
+   "new_session": false,
+   "public_arguments": {
+    "search_types": []
+   },
+   "public_tool": "ha_search",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.006,
+   "session": 0,
+   "sha256": "b5c571d2aff9bb0a0b8aed9b3852edfe21fcdcd6ae6404890a2d48a281d5e999",
+   "upstream_tool": "ha_search",
+   "wire_arguments": {
+    "search_types": []
+   }
+  },
+  {
+   "arguments_built_by": "harness, sent as written",
+   "body_bytes": 741,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "e-missing-state.json",
+   "group": "review_probes",
+   "has_structured_content": false,
+   "http_status": 200,
+   "id": "e-missing-state",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": true,
+   "json_rpc_error_code": null,
+   "kind": "upstream",
+   "new_session": false,
+   "public_arguments": {
+    "entity_id": "sensor.compatibility_review_missing_state"
+   },
+   "public_tool": "ha_get_state",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.008,
+   "session": 0,
+   "sha256": "8eaa73c0852fa831172c4b46d736c2e058b42fbf8c68d57a766503fadcf29dca",
+   "upstream_tool": "ha_get_state",
+   "wire_arguments": {
+    "entity_id": "sensor.compatibility_review_missing_state"
+   }
+  },
+  {
+   "arguments_built_by": "harness, sent as written",
+   "body_bytes": 488,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "e-missing-automation.json",
+   "group": "review_probes",
+   "has_structured_content": false,
+   "http_status": 200,
+   "id": "e-missing-automation",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": true,
+   "json_rpc_error_code": null,
+   "kind": "upstream",
+   "new_session": false,
+   "public_arguments": {
+    "identifier": "compatibility_review_missing_automation"
+   },
+   "public_tool": "ha_config_get_automation",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.033,
+   "session": 0,
+   "sha256": "96cfb976bf53e42edd69429f3a86d6c9324f9a1a37a239a9927785fb2d8dfd14",
+   "upstream_tool": "ha_config_get_automation",
+   "wire_arguments": {
+    "identifier": "compatibility_review_missing_automation"
+   }
+  },
+  {
+   "arguments_built_by": "harness, sent as written",
+   "body_bytes": 584,
+   "content_type": "text/event-stream",
+   "exchange_failure": null,
+   "file": "e-missing-registry-entity.json",
+   "group": "review_probes",
+   "has_structured_content": false,
+   "http_status": 200,
+   "id": "e-missing-registry-entity",
+   "idle": false,
+   "idle_seconds_before": 0,
+   "is_error": true,
+   "json_rpc_error_code": null,
+   "kind": "upstream",
+   "new_session": false,
+   "public_arguments": {
+    "entity_id": "sensor.compatibility_review_missing_registry_entity"
+   },
+   "public_tool": "ha_get_entity",
+   "response_header_names": [
+    "cache-control",
+    "connection",
+    "content-type",
+    "date",
+    "server",
+    "transfer-encoding",
+    "x-accel-buffering"
+   ],
+   "seconds": 0.005,
+   "session": 0,
+   "sha256": "a9d47f661e3955d228cd98fd81377f927da4bce4955f38ed863c56d08e227af4",
+   "upstream_tool": "ha_get_entity",
+   "wire_arguments": {
+    "entity_id": "sensor.compatibility_review_missing_registry_entity"
+   }
+  }
+ ],
+ "calls_format_version": 1,
+ "endpoint": "http://127.0.0.1:18086/mcp",
+ "negotiated_protocol_version": "2025-03-26",
+ "session_delete_status": [
+  null
+ ],
+ "session_header_present": false,
+ "sessions_opened": 1
+}

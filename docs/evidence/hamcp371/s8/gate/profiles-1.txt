@@ -1,0 +1,10 @@
+== admission for hamcp371-s8-profiles-1 (lane) in /home/josh/repos/hass-mcp-admin/.claude/worktrees/hamcp-371-ha-mcp-9-2-0
+time=2026-11-15 08:23:44 CST
+units:
+  
+lanes(containers):
+  
+stray:
+heavy_total=0 evidence=0 mem_avail_gb=12.3 load1=0.18 root_free_gb=60.2
+Running as unit: hamcp371-s8-profiles-1.service; invocation ID: 228655198a3644d7b8da0758730011e5
+launched rc=0 cmd=/bin/bash -c TMPDIR=/home/josh/repos/hass-mcp-admin/.claude/worktrees/hamcp-371-ha-mcp-9-2-0/.artifacts/tmp\ python3\ -I\ -B\ scripts/upstream_catalog_capture_local.py\ profiles\ --run-dir\ .artifacts/hamcp371-s8/profiles-1\ --launch-log\ .artifacts/hamcp371-s8/launches.jsonl\ --note\ \'Q7-b:\ App\ fs-off\ and\ fs-on\,\ standalone\ 9.2.0\ fs-on\,\ 9.1.2\ fs-on\ control\;\ two\ captures\ each\'\ \>\ .artifacts/hamcp371-s8/profiles-1.log\ 2\>\&1 

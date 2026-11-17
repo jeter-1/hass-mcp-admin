@@ -599,9 +599,9 @@ def _parse_9_1(raw: Any, entity_id: str, offset: int, *, version: str = "9.1.0")
     row 16 projection (``providers/upstream_history_9_1.py``) has already
     re-emitted each row as ``{state, last_changed, last_updated[, attributes]}``.
     ``attributes`` is optional (absent means unavailable, never ``{}``). The
-    envelope must attribute the result to the row's exact release (9.1.0 or,
-    for HAMCP-351, 9.1.2), so an 8.5/8.6 session, or the other 9.1 release,
-    never maps through this row.
+    envelope must attribute the result to the row's exact release (9.1.0,
+    for HAMCP-351, 9.1.2, or, for HAMCP-371, 9.2.0), so an 8.5/8.6 session, or
+    another 9.x release, never maps through this row.
     """
 
     if type(raw) is dict and raw.get("success") is True:
@@ -630,7 +630,14 @@ def _parse_9_1_2(raw: Any, entity_id: str, offset: int):
     return _parse_9_1(raw, entity_id, offset, version="9.1.2")
 
 
-_PARSERS = {"8.5.0": _parse, "8.6.0": _parse, "9.1.0": _parse_9_1, "9.1.2": _parse_9_1_2}
+def _parse_9_2_0(raw: Any, entity_id: str, offset: int):
+    return _parse_9_1(raw, entity_id, offset, version="9.2.0")
+
+
+_PARSERS = {
+    "8.5.0": _parse, "8.6.0": _parse, "9.1.0": _parse_9_1, "9.1.2": _parse_9_1_2,
+    "9.2.0": _parse_9_2_0,
+}
 
 
 def _truncate_state(state: str) -> str:

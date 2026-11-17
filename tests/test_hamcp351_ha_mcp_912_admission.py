@@ -78,6 +78,15 @@ PLATFORMS_912 = {
 REVISION_912 = "b35a3d22a97b262e5d8520cc419cf0acdba9cac1"
 SOURCE_912 = "bab615dfc90cc510f5e19a9118707d0fae03a37c"
 SOURCE_910 = "d2e3f4b0647d815fb32d530fed15a6a99b1d4b33"
+# HAMCP-371 S13-1: the typed lane's single CI candidate slot is 9.2.0. These
+# are the pinned 9.2.0 image digests from docs/evidence/hamcp371/s4
+# (index-9.2.0.raw.json and inspect-digest-9.2.0.txt); 9.1.2 admission above
+# is unchanged.
+INDEX_920 = "sha256:9de5bf6c4216142fdffe862900abe72dac8dfe9621dd0b2b050d132372b676ba"
+PLATFORMS_920 = {
+    "linux/amd64": "sha256:349a3ec6b2f4fa0797651b2c5d8985ca28d7a1028156eefba8d94fe51683fdb8",
+    "linux/arm64": "sha256:5799ff6f0b85f01710b725792e32caf79255934a6e80b8af28373768d42e9a80",
+}
 INTEGRATION_FP_910 = "798a5110a0e7717c3db87c8ff231103cdba9e887c35001164f850cf13887cacf"
 INTEGRATION_FP_912 = "82aec3a9ea8ffa0250d292b40d3c2d7bc0653233320b02d854a02451243bf4f5"
 HELPERS = "ha_config_list_helpers"
@@ -114,7 +123,7 @@ class RegistryIdentityTests(unittest.TestCase):
         self.assertEqual(kept.entry_id, "ha-mcp-v9.1.0-4259f247")
         self.assertFalse(kept.revoked)
         self.assertNotIn("9.1.1", REGISTRY.by_version)
-        self.assertEqual(USED_TOOL_ADMISSION_RELEASES, frozenset({"9.1.0", "9.1.2"}))
+        self.assertEqual(USED_TOOL_ADMISSION_RELEASES, frozenset({"9.1.0", "9.1.2", "9.2.0"}))  # HAMCP-371 appends 9.2.0
 
     def test_provider_dispositions_equal_910(self):
         self.assertEqual(REGISTRY.by_version["9.1.2"].provider_dispositions,
@@ -384,9 +393,13 @@ class VersionBoundContractTests(unittest.TestCase):
 
 
 class LanePeerSelectionTests(unittest.TestCase):
-    def row(self, **changes):
-        release = typed_lane.reviewed_release("9.1.2")
-        row = {"upstream_version": "9.1.2",
+    """Typed-lane peer selection. HAMCP-371 S13-1: the lane's single candidate
+    slot moved from 9.1.2 to 9.2.0, as bcdff105 moved it from 9.1.0 to 9.1.2.
+    This is lane selection only; 9.1.2 stays admitted in the registry."""
+
+    def row(self, version="9.2.0", **changes):
+        release = typed_lane.reviewed_release(version)
+        row = {"upstream_version": version,
                "upstream_image": "ghcr.io/homeassistant-ai/ha-mcp@" + release.image_index_digest,
                "image_index_digest": release.image_index_digest,
                "architecture_image_digests": dict(release.architecture_image_digests_by_platform),
@@ -394,24 +407,26 @@ class LanePeerSelectionTests(unittest.TestCase):
         row.update(changes)
         return {"candidate": row}
 
-    def test_pinned_912_row_selects_each_architecture(self):
+    def test_pinned_920_row_selects_each_architecture(self):
         for arch in ("amd64", "arm64"):
             with self.subTest(arch=arch):
                 peer = typed_lane.select_peer_image(self.row(), arch)
-                self.assertEqual(peer["image_index_digest"], INDEX_912)
-                self.assertEqual(peer["platform_manifest_digest"], PLATFORMS_912["linux/" + arch])
-                self.assertEqual(peer["version"], "9.1.2")
+                self.assertEqual(peer["image_index_digest"], INDEX_920)
+                self.assertEqual(peer["platform_manifest_digest"], PLATFORMS_920["linux/" + arch])
+                self.assertEqual(peer["version"], "9.2.0")
 
-    def test_911_and_unpinned_digests_are_refused(self):
+    def test_912_911_and_unpinned_digests_are_refused(self):
         other = "sha256:" + "1" * 64
         cases = {
-            "version_911": (self.row(upstream_version="9.1.1"), "peer_version_not_9_1_2"),
-            "version_910": (self.row(upstream_version="9.1.0"), "peer_version_not_9_1_2"),
-            "tag_only": (self.row(upstream_image="ghcr.io/homeassistant-ai/ha-mcp:9.1.2"),
+            "pinned_912_row": (self.row("9.1.2"), "peer_version_not_9_2_0"),
+            "version_912": (self.row(upstream_version="9.1.2"), "peer_version_not_9_2_0"),
+            "version_911": (self.row(upstream_version="9.1.1"), "peer_version_not_9_2_0"),
+            "version_910": (self.row(upstream_version="9.1.0"), "peer_version_not_9_2_0"),
+            "tag_only": (self.row(upstream_image="ghcr.io/homeassistant-ai/ha-mcp:9.2.0"),
                          "peer_image_not_digest_pinned"),
             "other_index": (self.row(upstream_image="ghcr.io/homeassistant-ai/ha-mcp@" + other,
                                      image_index_digest=other), "peer_row_differs_from_reviewed_registry"),
-            "other_platform": (self.row(architecture_image_digests={**PLATFORMS_912, "linux/amd64": other}),
+            "other_platform": (self.row(architecture_image_digests={**PLATFORMS_920, "linux/amd64": other}),
                                "peer_row_differs_from_reviewed_registry"),
         }
         for label, (peers, code) in cases.items():

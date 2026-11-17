@@ -1,0 +1,1 @@
+{"method":"tools/call","params":{"name":"ha_eval_template","arguments":{"template":"{{ states('input_boolean.hamcp371_helper') }}","timeout":3,"report_errors":true,"condition":null,"variables":null,"strict":false}},"jsonrpc":"2.0","id":2}

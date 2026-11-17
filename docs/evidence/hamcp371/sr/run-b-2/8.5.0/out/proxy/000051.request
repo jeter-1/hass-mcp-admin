@@ -1,0 +1,1 @@
+{"method":"tools/call","params":{"name":"ha_get_automation_traces","arguments":{"automation_id":"automation.hamcp371_automation","limit":5}},"jsonrpc":"2.0","id":2}

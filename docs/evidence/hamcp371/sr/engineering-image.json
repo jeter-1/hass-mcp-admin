@@ -1,0 +1,55 @@
+{
+ "architecture": "amd64",
+ "build_arguments": [
+  [
+   "BUILD_VERSION",
+   "2.4.2-beta.8"
+  ],
+  [
+   "HAMCP_BUILD_SHA",
+   "49555f68caff54ecb44491b34c9dcb129ed7fc1b"
+  ],
+  [
+   "HAMCP_BUILD_TIME",
+   "2026-11-16T12:11:35Z"
+  ],
+  [
+   "HAMCP_BUILD_DIRTY",
+   "false"
+  ]
+ ],
+ "build_seconds": 12.1,
+ "built_at": "2026-11-16T12:11:35Z",
+ "context": {
+  "bytes": 12963840,
+  "files": 412,
+  "listing_sha256": "d8471a13b312b4b591bb91b14980b947ad8cedc6b2165eb36fc2deb1eaaae5ab",
+  "sha256": "ac7497f2a5211f7255f6ba9230546eafd44c909a7c263f8e138885d27855bc01"
+ },
+ "context_path": "hass_mcp_engineering_beta",
+ "host_at_start": {
+  "load_1m": 0.0244140625,
+  "memory_available_gb": 12.46,
+  "root_free_gb": 57.58,
+  "root_total_gb": 143.14
+ },
+ "image_id": "sha256:2397b9da0b1334d7945b37b9daecdd35c5bd6b4b3b814c2b74ac7ee8962cb532",
+ "labels": {
+  "io.hass-mcp.build.dirty": "false",
+  "org.opencontainers.image.created": "2026-11-16T12:11:35Z",
+  "org.opencontainers.image.revision": "49555f68caff54ecb44491b34c9dcb129ed7fc1b",
+  "org.opencontainers.image.source": "https://github.com/jeter-1/hass-mcp-admin",
+  "org.opencontainers.image.version": "2.4.2-beta.8"
+ },
+ "method": "git ls-tree and cat-file of the committed tree into one tar stream (mtime 0, uid 0, modes from git), checked against each blob id, then docker build - with ci.yml's build arguments; local tag only, never pushed",
+ "pushed": false,
+ "repo_digests": [
+  "hamcp371-sr-engineering@sha256:2397b9da0b1334d7945b37b9daecdd35c5bd6b4b3b814c2b74ac7ee8962cb532"
+ ],
+ "revision": "49555f68caff54ecb44491b34c9dcb129ed7fc1b",
+ "schema": "hamcp371.sr.engineering_image.v1",
+ "size_bytes": 316364485,
+ "tag": "hamcp371-sr-engineering:49555f68caff",
+ "tree": "060d5d9997fd8b67461217c585574449830637e9",
+ "version": "2.4.2-beta.8"
+}

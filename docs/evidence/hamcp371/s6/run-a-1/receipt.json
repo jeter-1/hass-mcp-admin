@@ -1,0 +1,449 @@
+{
+ "bindings": {
+  "9.1.2": {
+   "bound_by": "reviewed registry row",
+   "committed_capture_sha256": "sha256:cf60ccfba99f33b3afd7d9efd5a60b90daedeee2dfddddcaf53d3e067e0408c8",
+   "index_digest": "sha256:381b1e01635d3c51f35a01882863610bc0b76a22bae93835a6a5a5c926d9ecb4",
+   "revision": "b35a3d22a97b262e5d8520cc419cf0acdba9cac1",
+   "source_commit": "bab615dfc90cc510f5e19a9118707d0fae03a37c",
+   "version": "9.1.2"
+  },
+  "9.2.0": {
+   "bound_by": "committed provenance record",
+   "index_digest": "sha256:9de5bf6c4216142fdffe862900abe72dac8dfe9621dd0b2b050d132372b676ba",
+   "provenance_record_sha256": "sha256:100f0142934a6b10fc6df88db19aeaaca0cd45304e4577dcc20d8341e0bb2771",
+   "revision": "4d7148309af7e4d3da95e16ced8bb67d6a43b9c1",
+   "source_commit": "51e3aac788482a081807591cd5d58d07dc4e540b",
+   "version": "9.2.0"
+  },
+  "core": {
+   "bound_by": "scripts/core_lane_bindings.py",
+   "image": "ghcr.io/home-assistant/home-assistant@sha256:c6c1ca9931036bf3a2c4cc088d8db25dfea3b33935a5ecc83c40349462e2f69e",
+   "index_digest": "sha256:c6c1ca9931036bf3a2c4cc088d8db25dfea3b33935a5ecc83c40349462e2f69e",
+   "version": "2026.11.0"
+  }
+ },
+ "captures": {
+  "9.1.2": {
+   "calls": {
+    "arguments_built_with_policy": "9.1.2",
+    "calls": 45,
+    "exchange_failures": 0,
+    "groups": [
+     "reads",
+     "variants",
+     "errors",
+     "transport"
+    ],
+    "is_error": 6,
+    "sessions_opened": 2
+   },
+   "calls_after_core_restart": {
+    "arguments_built_with_policy": "9.1.2",
+    "calls": 2,
+    "exchange_failures": 0,
+    "groups": [
+     "after_restart"
+    ],
+    "is_error": 0,
+    "sessions_opened": 1
+   },
+   "network_after_core_restart": {
+    "checked": "2026-11-12T00:23:43-06:00",
+    "seen_from_core": {
+     "egress_errno": 101,
+     "interfaces": [
+      "lo"
+     ],
+     "ipv4_routes": 0
+    },
+    "seen_from_holder": {
+     "egress_errno": 101,
+     "interfaces": [
+      "lo"
+     ],
+     "ipv4_routes": 0
+    }
+   },
+   "network_before_capture": {
+    "checked": "2026-11-12T00:22:06-06:00",
+    "seen_from_core": {
+     "egress_errno": 101,
+     "interfaces": [
+      "lo"
+     ],
+     "ipv4_routes": 0
+    },
+    "seen_from_holder": {
+     "egress_errno": 101,
+     "interfaces": [
+      "lo"
+     ],
+     "ipv4_routes": 0
+    }
+   },
+   "peer_network": {
+    "docker_networks": [],
+    "mounts": [],
+    "network_mode": "container:<holder>",
+    "tmpfs": [
+     "/home/mcpuser/.ha-mcp",
+     "/tmp"
+    ]
+   }
+  },
+  "9.2.0": {
+   "calls": {
+    "arguments_built_with_policy": "9.1.2",
+    "calls": 45,
+    "exchange_failures": 0,
+    "groups": [
+     "reads",
+     "variants",
+     "errors",
+     "transport"
+    ],
+    "is_error": 6,
+    "sessions_opened": 2
+   },
+   "calls_after_core_restart": {
+    "arguments_built_with_policy": "9.1.2",
+    "calls": 2,
+    "exchange_failures": 0,
+    "groups": [
+     "after_restart"
+    ],
+    "is_error": 0,
+    "sessions_opened": 1
+   },
+   "network_after_core_restart": {
+    "checked": "2026-11-12T00:25:26-06:00",
+    "seen_from_core": {
+     "egress_errno": 101,
+     "interfaces": [
+      "lo"
+     ],
+     "ipv4_routes": 0
+    },
+    "seen_from_holder": {
+     "egress_errno": 101,
+     "interfaces": [
+      "lo"
+     ],
+     "ipv4_routes": 0
+    }
+   },
+   "network_before_capture": {
+    "checked": "2026-11-12T00:23:50-06:00",
+    "seen_from_core": {
+     "egress_errno": 101,
+     "interfaces": [
+      "lo"
+     ],
+     "ipv4_routes": 0
+    },
+    "seen_from_holder": {
+     "egress_errno": 101,
+     "interfaces": [
+      "lo"
+     ],
+     "ipv4_routes": 0
+    }
+   },
+   "peer_network": {
+    "docker_networks": [],
+    "mounts": [],
+    "network_mode": "container:<holder>",
+    "tmpfs": [
+     "/home/mcpuser/.ha-mcp",
+     "/tmp"
+    ]
+   }
+  }
+ },
+ "cleanup": {
+  "clean": true,
+  "containers_absent": true,
+  "docker_networks_created": 0,
+  "volume_absent": true
+ },
+ "command": "run",
+ "container_memory": {
+  "ceiling": "3g",
+  "core": "1536m",
+  "holder": "384m",
+  "one_peer_at_a_time": true,
+  "peer": "768m"
+ },
+ "core_container": {
+  "docker_networks": [],
+  "memory": "1536m",
+  "mounts": [
+   "volume:/config"
+  ],
+  "network_mode": "container:<holder>",
+  "no_new_privileges": true,
+  "pids_limit": 1024,
+  "privileged": false,
+  "published_ports": []
+ },
+ "core_image": {
+  "architecture": "amd64",
+  "config_digest": "sha256:c6c1ca9931036bf3a2c4cc088d8db25dfea3b33935a5ecc83c40349462e2f69e",
+  "image": "ghcr.io/home-assistant/home-assistant@sha256:c6c1ca9931036bf3a2c4cc088d8db25dfea3b33935a5ecc83c40349462e2f69e",
+  "image_defaults": {
+   "cmd": null,
+   "entrypoint": [
+    "/init"
+   ],
+   "environment": [
+    "LANG=C.UTF-8",
+    "PATH=/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+    "PIP_EXTRA_INDEX_URL=https://wheels.home-assistant.io/musllinux-index/",
+    "S6_BEHAVIOUR_IF_STAGE2_FAILS=2",
+    "S6_CMD_WAIT_FOR_SERVICES=1",
+    "S6_CMD_WAIT_FOR_SERVICES_MAXTIME=0",
+    "S6_SERVICES_GRACETIME=240000",
+    "S6_SERVICES_READYTIME=50",
+    "UV_EXTRA_INDEX_URL=https://wheels.home-assistant.io/musllinux-index/",
+    "UV_NO_CACHE=true",
+    "UV_SYSTEM_PYTHON=true"
+   ],
+   "user": null
+  },
+  "labels": {
+   "io.hass.type": "core",
+   "io.hass.version": "2026.11.0",
+   "org.opencontainers.image.source": "https://github.com/home-assistant/core"
+  },
+  "size_bytes": 3557221384
+ },
+ "ended": "2026-11-12T00:25:34-06:00",
+ "harness_commit": "6f10c4a256bd0c61df1bbbc72e611089ffa00e54",
+ "helper_image": {
+  "architecture": "amd64",
+  "config_digest": "sha256:5801d42fd19bfe813cccfe0a81b218d9f3a8cabf6f12ee044a160c0603c83c47",
+  "image": "ghcr.io/jeter-1/hass-mcp-engineering-beta@sha256:5801d42fd19bfe813cccfe0a81b218d9f3a8cabf6f12ee044a160c0603c83c47",
+  "image_defaults": {
+   "cmd": [
+    "python",
+    "-u",
+    "-m",
+    "ha_mcp_engineering"
+   ],
+   "entrypoint": null,
+   "environment": [
+    "BUILD_VERSION=2.4.2-beta.7",
+    "GPG_KEY=7169605F62C751356D054A26A821E680E5FA6305",
+    "HAMCP_BUILD_DIRTY=false",
+    "HAMCP_BUILD_SHA=b614be43f8c56ae06fdec0ac0bcb479b9da39715",
+    "HAMCP_BUILD_TIME=2026-11-09T12:44:12Z",
+    "LANG=C.UTF-8",
+    "MCP_PORT=8100",
+    "PATH=/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+    "PYTHONDONTWRITEBYTECODE=1",
+    "PYTHON_SHA256=b5796915dc45ff745cfb4e990a7e7c93d6f546328a102ce31448d69ebc37575c",
+    "PYTHON_VERSION=3.12.16"
+   ],
+   "user": null
+  },
+  "labels": {
+   "io.hass-mcp.build.dirty": "false",
+   "org.opencontainers.image.revision": "b614be43f8c56ae06fdec0ac0bcb479b9da39715",
+   "org.opencontainers.image.source": "https://github.com/jeter-1/hass-mcp-admin"
+  },
+  "size_bytes": 314840865
+ },
+ "helper_runtime": {
+  "aiohttp": "3.14.4",
+  "mcp": "1.30.0",
+  "python": "3.12.16"
+ },
+ "home_assistant": "one disposable Core started by this run in a namespace with no interface but loopback; removed with its volume at the end",
+ "host_at_end": {
+  "load_1m": 5.58203125,
+  "memory_available_gb": 10.08,
+  "root_free_gb": 48.47,
+  "root_total_gb": 143.14
+ },
+ "host_at_start": {
+  "load_1m": 5.68408203125,
+  "memory_available_gb": 9.9,
+  "root_free_gb": 48.47,
+  "root_total_gb": 143.14
+ },
+ "model": "hamcp371-core-read-replay-capture-local-v1",
+ "network_posture": {
+  "before_seed": {
+   "checked": "2026-11-12T00:21:51-06:00",
+   "seen_from_core": {
+    "egress_errno": 101,
+    "interfaces": [
+     "lo"
+    ],
+    "ipv4_routes": 0
+   },
+   "seen_from_holder": {
+    "egress_errno": 101,
+    "interfaces": [
+     "lo"
+    ],
+    "ipv4_routes": 0
+   }
+  },
+  "holder": {
+   "docker_networks": [
+    "none"
+   ],
+   "docker_networks_created": [],
+   "egress_errno": 101,
+   "interfaces": [
+    "lo"
+   ],
+   "ipv4_routes": 0,
+   "network_mode": "none",
+   "published_ports": []
+  }
+ },
+ "not_built": [
+  "profile B overlay (component tree and package copy): refused at preflight until the owner answers how the missing requirements may be supplied",
+  "Supervisor facade (form 2): not built; reads that need a Supervisor record what the peer returns without one",
+  "token revocation between calls (P4): not exercised; the unknown-identifier cases only"
+ ],
+ "notes": [
+  "S6 profile A, 9.1.2 then 9.2.0 against one disposable Core; follows selftest-1 (PASS) on the same harness 6f10c4a2; images from the local cache by digest, no pull"
+ ],
+ "pass_means": "the lane ran to its end, every posture check held, nothing stored carries a token and cleanup is proven; a call the peer answered with an error or broke is a stored result, counted here, not a failure",
+ "profile": "A",
+ "pull": "never",
+ "redaction": {
+  "detail": "the lane passes no redaction option or variable to the peer",
+  "peer_command": "ha-mcp-web",
+  "peer_environment": [
+   [
+    "HOMEASSISTANT_URL",
+    "http://127.0.0.1:8123"
+   ],
+   [
+    "MCP_HOST",
+    "127.0.0.1"
+   ],
+   [
+    "MCP_PORT",
+    "18086"
+   ],
+   [
+    "MCP_SECRET_PATH",
+    "/mcp"
+   ],
+   [
+    "HA_MCP_DISABLE_SETTINGS_UI",
+    "true"
+   ]
+  ],
+  "peer_environment_by_name_only": [
+   "HOMEASSISTANT_TOKEN"
+  ],
+  "production_setting": "not read by any agent; an entry in the upgrade decision record, filled at upgrade time",
+  "setting": "image defaults"
+ },
+ "result": "PASS",
+ "run_id": "d11d2ceb88da4a9ebae0ffeba432ba21",
+ "seconds": 225.1,
+ "secret_scan": {
+  "files_removed_for_a_secret": [],
+  "files_scanned": 108,
+  "links": [],
+  "method": "exact bytes of each token and of its signature segment",
+  "needles": 4
+ },
+ "seed": {
+  "all_steps_ok": true,
+  "steps": {
+   "activity": "ok",
+   "administrator_token": "ok",
+   "calendar": "ok",
+   "configured_objects": "ok",
+   "dashboard_resource": "ok",
+   "helper": "ok",
+   "metadata": "ok",
+   "onboard": "ok",
+   "ordinary_user_token": "ok",
+   "readback": "ok",
+   "ready": "ok",
+   "registries": "ok",
+   "statistics": "ok",
+   "todo": "ok",
+   "zone_and_person": "ok"
+  },
+  "tokens_issued": [
+   "administrator",
+   "ordinary_user"
+  ]
+ },
+ "started": "2026-11-12T00:21:48-06:00",
+ "tokens": {
+  "held": "in the memory of the host process and in the environment of the peer container; written to no file; gone with the Core",
+  "kind": "two long-lived access tokens minted in this disposable Core: its owner (administrator) and one ordinary user",
+  "production_equivalence": "assumed, not established: whether the token ha-mcp is given in production is of the same kind is for the owner to confirm"
+ },
+ "upstream_images": {
+  "9.1.2": {
+   "architecture": "amd64",
+   "config_digest": "sha256:381b1e01635d3c51f35a01882863610bc0b76a22bae93835a6a5a5c926d9ecb4",
+   "image": "ghcr.io/homeassistant-ai/ha-mcp@sha256:381b1e01635d3c51f35a01882863610bc0b76a22bae93835a6a5a5c926d9ecb4",
+   "image_defaults": {
+    "cmd": [
+     "ha-mcp"
+    ],
+    "entrypoint": null,
+    "environment": [
+     "GPG_KEY=7169605F62C751356D054A26A821E680E5FA6305",
+     "HA_MCP_BUILD_VERSION=9.1.2",
+     "HOME=/home/mcpuser",
+     "HOMEASSISTANT_TOKEN=",
+     "HOMEASSISTANT_URL=",
+     "LANG=C.UTF-8",
+     "PATH=/app/.venv/bin:/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+     "PYTHON_SHA256=abb0102e6d4ae027509bcb82327d9dd85515b44a3ba8ad538cfc5e9847029f68",
+     "PYTHON_VERSION=3.13.18"
+    ],
+    "user": "mcpuser"
+   },
+   "labels": {
+    "org.opencontainers.image.revision": "b35a3d22a97b262e5d8520cc419cf0acdba9cac1",
+    "org.opencontainers.image.source": "https://github.com/homeassistant-ai/ha-mcp",
+    "org.opencontainers.image.version": "9.1.2"
+   },
+   "size_bytes": 351128214
+  },
+  "9.2.0": {
+   "architecture": "amd64",
+   "config_digest": "sha256:9de5bf6c4216142fdffe862900abe72dac8dfe9621dd0b2b050d132372b676ba",
+   "image": "ghcr.io/homeassistant-ai/ha-mcp@sha256:9de5bf6c4216142fdffe862900abe72dac8dfe9621dd0b2b050d132372b676ba",
+   "image_defaults": {
+    "cmd": [
+     "ha-mcp"
+    ],
+    "entrypoint": null,
+    "environment": [
+     "HA_MCP_BUILD_VERSION=9.2.0",
+     "HOME=/home/mcpuser",
+     "HOMEASSISTANT_TOKEN=",
+     "HOMEASSISTANT_URL=",
+     "LANG=C.UTF-8",
+     "PATH=/app/.venv/bin:/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+     "PYTHON_SHA256=de414a57119abef52784d8993e341d53aed635fc2b05c2607d9f98a2c5b72032",
+     "PYTHON_VERSION=3.14.10"
+    ],
+    "user": "mcpuser"
+   },
+   "labels": {
+    "org.opencontainers.image.revision": "4d7148309af7e4d3da95e16ced8bb67d6a43b9c1",
+    "org.opencontainers.image.source": "https://github.com/homeassistant-ai/ha-mcp",
+    "org.opencontainers.image.version": "9.2.0"
+   },
+   "size_bytes": 359128729
+  }
+ }
+}

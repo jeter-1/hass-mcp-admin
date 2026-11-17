@@ -1,0 +1,83 @@
+{
+ "case": {
+  "arguments": {},
+  "id": "r04-label",
+  "tool": "ha_config_get_label"
+ },
+ "exchange": {
+  "body_bytes": 1308,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":105,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\n  \\\"operation\\\": \\\"ha_config_get_label\\\",\\n  \\\"error\\\": \\\"CoreRequirementUnmapped\\\",\\n  \\\"error_code\\\": \\\"unsupported_operation\\\",\\n  \\\"message\\\": \\\"The tool has no reviewed Core requirement mapping and is refused.\\\",\\n  \\\"details\\\": {\\n    \\\"reason\\\": \\\"core_requirement_unmapped\\\",\\n    \\\"reason_code\\\": \\\"core_requirement_unmapped\\\",\\n    \\\"core_authority_acquired\\\": false,\\n    \\\"provider_dispatch_occurred\\\": false,\\n    \\\"upstream_attempted\\\": false,\\n    \\\"home_assistant_request_count\\\": 0,\\n    \\\"upstream_request_count\\\": 0\\n  },\\n  \\\"retryable\\\": false,\\n  \\\"warnings\\\": [],\\n  \\\"metadata\\\": {},\\n  \\\"timing\\\": {\\n    \\\"total_ms\\\": 0.851,\\n    \\\"tool_ms\\\": null,\\n    \\\"home_assistant_ms\\\": null,\\n    \\\"home_assistant_cumulative_attempt_ms\\\": null,\\n    \\\"home_assistant_wall_clock_span_ms\\\": null,\\n    \\\"home_assistant_request_count\\\": 0,\\n    \\\"upstream_attempted\\\": false,\\n    \\\"upstream_ms\\\": 0.0,\\n    \\\"upstream_wall_clock_span_ms\\\": 0.0,\\n    \\\"upstream_request_count\\\": 0,\\n    \\\"provider_operations_concurrent\\\": false,\\n    \\\"retry_count\\\": 0,\\n    \\\"timeout_occurred\\\": false\\n  },\\n  \\\"request_id\\\": \\\"2e73cb1e0a8b46a19a2736720c627e84\\\",\\n  \\\"success\\\": false\\n}\"}],\"isError\":true}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 105,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\n  \"operation\": \"ha_config_get_label\",\n  \"error\": \"CoreRequirementUnmapped\",\n  \"error_code\": \"unsupported_operation\",\n  \"message\": \"The tool has no reviewed Core requirement mapping and is refused.\",\n  \"details\": {\n    \"reason\": \"core_requirement_unmapped\",\n    \"reason_code\": \"core_requirement_unmapped\",\n    \"core_authority_acquired\": false,\n    \"provider_dispatch_occurred\": false,\n    \"upstream_attempted\": false,\n    \"home_assistant_request_count\": 0,\n    \"upstream_request_count\": 0\n  },\n  \"retryable\": false,\n  \"warnings\": [],\n  \"metadata\": {},\n  \"timing\": {\n    \"total_ms\": 0.851,\n    \"tool_ms\": null,\n    \"home_assistant_ms\": null,\n    \"home_assistant_cumulative_attempt_ms\": null,\n    \"home_assistant_wall_clock_span_ms\": null,\n    \"home_assistant_request_count\": 0,\n    \"upstream_attempted\": false,\n    \"upstream_ms\": 0.0,\n    \"upstream_wall_clock_span_ms\": 0.0,\n    \"upstream_request_count\": 0,\n    \"provider_operations_concurrent\": false,\n    \"retry_count\": 0,\n    \"timeout_occurred\": false\n  },\n  \"request_id\": \"2e73cb1e0a8b46a19a2736720c627e84\",\n  \"success\": false\n}",
+       "type": "text"
+      }
+     ],
+     "isError": true
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 105,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {},
+     "name": "ha_config_get_label"
+    }
+   },
+   "method": "POST",
+   "path": "/synthetic-engineering-access-secret/mcp"
+  },
+  "response": {
+   "id": 105,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\n  \"operation\": \"ha_config_get_label\",\n  \"error\": \"CoreRequirementUnmapped\",\n  \"error_code\": \"unsupported_operation\",\n  \"message\": \"The tool has no reviewed Core requirement mapping and is refused.\",\n  \"details\": {\n    \"reason\": \"core_requirement_unmapped\",\n    \"reason_code\": \"core_requirement_unmapped\",\n    \"core_authority_acquired\": false,\n    \"provider_dispatch_occurred\": false,\n    \"upstream_attempted\": false,\n    \"home_assistant_request_count\": 0,\n    \"upstream_request_count\": 0\n  },\n  \"retryable\": false,\n  \"warnings\": [],\n  \"metadata\": {},\n  \"timing\": {\n    \"total_ms\": 0.851,\n    \"tool_ms\": null,\n    \"home_assistant_ms\": null,\n    \"home_assistant_cumulative_attempt_ms\": null,\n    \"home_assistant_wall_clock_span_ms\": null,\n    \"home_assistant_request_count\": 0,\n    \"upstream_attempted\": false,\n    \"upstream_ms\": 0.0,\n    \"upstream_wall_clock_span_ms\": 0.0,\n    \"upstream_request_count\": 0,\n    \"provider_operations_concurrent\": false,\n    \"retry_count\": 0,\n    \"timeout_occurred\": false\n  },\n  \"request_id\": \"2e73cb1e0a8b46a19a2736720c627e84\",\n  \"success\": false\n}",
+      "type": "text"
+     }
+    ],
+    "isError": true
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Mon, 16 Nov 2026 05:10:11 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-request-id",
+    "2e73cb1e0a8b46a19a2736720c627e84"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null
+}

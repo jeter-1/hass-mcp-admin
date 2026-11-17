@@ -704,7 +704,9 @@ def delegated_provider_compatibility(
     # device builder are byte-identical to 8.5.0 apart from the enrichment
     # helpers' module; signed Core profiles and fingerprints are unchanged.
     # HAMCP-351: exact 9.1.2 leaves those files unchanged (bab615df).
-    if adapter_version in {"9.1.0", "9.1.2"} and probe_profile in (
+    # HAMCP-371: exact 9.2.0 leaves tools_registry.py and device_enrichment.py
+    # byte-identical to 9.1.2 (51e3aac7); r13-devices replays identically.
+    if adapter_version in {"9.1.0", "9.1.2", "9.2.0"} and probe_profile in (
         CHILD_DEVICE_PROBE_PROFILE,
         CHILD_DEVICE_NAME_PARTS_PROBE_PROFILE,
     ):

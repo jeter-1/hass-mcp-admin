@@ -60,7 +60,7 @@ SHORT_STRICT = "http://abcdef12-ha-mcp:18086/synthetic-upstream-secret/catalog/f
 LEGACY = "http://abcdef12-ha-mcp:18086/synthetic-upstream-secret/mcp"
 PEER_STRICT = "http://127.0.0.1:18086/synthetic-upstream-secret/mcp/catalog/full"
 PEER_LEGACY = "http://127.0.0.1:18086/synthetic-upstream-secret/mcp"
-LANE_VERSION = "2.4.2-beta.8"
+LANE_VERSION = "2.4.2-beta.9"
 PROTOCOL = "2025-03-26"
 COMMIT = "a" * 40
 
@@ -96,13 +96,13 @@ def health(version: str = LANE_VERSION, **view) -> dict:
             "data": {"server": {"version": version}, "upstream_read_gateway": view}}
 
 
-# The reviewed 9.1.2 capture the runtime's strict-full fingerprint is bound to,
-# and the five optional filesystem descriptors as the 9.1.2 image advertises
-# them with the toggle enabled (HAMCP-351 standalone capture).
+# The reviewed 9.2.0 capture the runtime's strict-full fingerprint is bound to,
+# and the five optional filesystem descriptors as the 9.2.0 image advertises
+# them with the toggle enabled (HAMCP-371 S8 standalone fs-on capture).
 REVIEWED_91 = runners.load_reviewed_91_capture()
-OPTIONAL_91 = [tool for tool in json.loads((ROOT / "docs" / "evidence" / "hamcp351" / "catalogs"
-                                            / "standalone-fs-on-tools-response.json")
-                                           .read_text(encoding="utf-8"))["result"]["tools"]
+OPTIONAL_91 = [tool for tool in json.loads((ROOT / "docs" / "evidence" / "hamcp371" / "s8" / "profiles-2"
+                                            / "out" / "standalone-9.2.0-fs-on" / "capture.json")
+                                           .read_text(encoding="utf-8"))["tools"]
                if tool["name"] in runners.OPTIONAL_NAMES]
 AUTOMATIC_READS = 27
 
@@ -114,8 +114,8 @@ def peer_tools_91() -> list:
 def strict_91_view(**overrides) -> dict:
     view = {
         "initialized": True, "admission_status": "admitted_exact", "version_status": "reviewed_exact",
-        "observed_identity_status": "accepted", "observed_upstream_server_version": "9.1.2",
-        "selected_compatibility_entry_id": "ha-mcp-v9.1.2-reviewed",
+        "observed_identity_status": "accepted", "observed_upstream_server_version": "9.2.0",
+        "selected_compatibility_entry_id": "ha-mcp-v9.2.0-reviewed",
         "reviewed_strict_full_contract_fingerprint": runners.canonical_fingerprint({"tools": REVIEWED_91}),
         "observed_strict_full_contract_fingerprint": runners.canonical_fingerprint({"tools": peer_tools_91()}),
         "catalog_admission_mode": "reviewed_per_tool_contract_subset",
@@ -142,7 +142,7 @@ def strict_91_view(**overrides) -> dict:
     return view
 
 
-def served_probe(version: str = "9.1.2") -> dict:
+def served_probe(version: str = "9.2.0") -> dict:
     return {"success": True, "metadata": {"provider": "upstream_read_gateway", "upstream_version": version,
                                           "upstream_dispatch_occurred": True}}
 
@@ -181,7 +181,7 @@ def rollback_refused_probe() -> dict:
 def rollback_view(**overrides) -> dict:
     view = {
         "initialized": False, "admission_status": "blocked_incompatible_upstream",
-        "last_failure_category": runners.VERSION_MISMATCH, "observed_upstream_server_version": "9.1.2",
+        "last_failure_category": runners.VERSION_MISMATCH, "observed_upstream_server_version": "9.2.0",
         "observed_identity_status": "rejected", "version_status": "rejected_unreviewed",
         "reviewed_supported_versions": ["8.5.0"], "dynamically_exposed_count": 0,
     }
@@ -395,7 +395,7 @@ def persisted_ok(case: str = runners.ROLL_FORWARD_CASE) -> dict:
             "mount_source": MOUNT}
 
 
-PEER_VERSIONS = {"baseline": "8.5.0", "candidate": "9.1.2"}
+PEER_VERSIONS = {"baseline": "8.5.0", "candidate": "9.2.0"}
 
 
 def synthetic_peer(role: str) -> dict:
@@ -540,7 +540,7 @@ class StrictFullEndpointTests(unittest.TestCase):
 
 
 class PeerCommandTests(unittest.TestCase):
-    def row(self, version: str = "9.1.2") -> dict:
+    def row(self, version: str = "9.2.0") -> dict:
         digest = "sha256:" + "d" * 64
         return {"upstream_image": f"ghcr.io/homeassistant-ai/ha-mcp@{digest}", "image_index_digest": digest,
                 "upstream_version": version}
@@ -557,7 +557,7 @@ class PeerCommandTests(unittest.TestCase):
 
     def test_peer_must_be_digest_pinned_from_the_reviewed_row(self) -> None:
         row = self.row()
-        row["upstream_image"] = "ghcr.io/homeassistant-ai/ha-mcp:9.1.2"
+        row["upstream_image"] = "ghcr.io/homeassistant-ai/ha-mcp:9.2.0"
         with self.assertRaisesRegex(lanes.LaneFailure, "peer_row_not_digest_pinned"):
             runners.peer_command(row, "candidate", filesystem="enabled")
         with self.assertRaisesRegex(lanes.LaneFailure, "peer_row_version_unexpected"):
@@ -652,7 +652,7 @@ class RollbackStageTests(unittest.TestCase):
         self.assertEqual(health_case("unsupported_version_rollback")[:2], ("passed", ""))
         negatives = {
             "rollback_engineering_has_91_entry": dict(health_after=health(
-                runners.ROLLBACK_ENGINEERING_VERSION, **rollback_view(reviewed_supported_versions=["8.5.0", "9.1.2"]))),
+                runners.ROLLBACK_ENGINEERING_VERSION, **rollback_view(reviewed_supported_versions=["8.5.0", "9.2.0"]))),
             "rollback_not_version_mismatch": dict(health_after=health(
                 runners.ROLLBACK_ENGINEERING_VERSION, **rollback_view(last_failure_category=None))),
             "fixture_read_observed": dict(fixture_after={**FIXTURE, "rest_reads": 11}),
@@ -817,13 +817,13 @@ class GatewayCaseTests(unittest.TestCase):
     def test_gateway_negatives(self) -> None:
         name = ("91_only", "91_parity_read_gateway_acceptance")
         self.assertEqual(gateway_case(*name, source=None)[:2], ("failed", "acceptance_result_missing"))
-        self.assertEqual(gateway_case(*name, source={**gateway_source("9.1.2", "admitted"), "result": "FAIL"})[:2],
+        self.assertEqual(gateway_case(*name, source={**gateway_source("9.2.0", "admitted"), "result": "FAIL"})[:2],
                          ("failed", "acceptance_result_not_pass"))
         self.assertEqual(gateway_case(*name, health=None)[:2], ("failed", "health_missing"))
-        self.assertEqual(gateway_case(*name, source=gateway_source("9.1.2", "absent"))[:2],
+        self.assertEqual(gateway_case(*name, source=gateway_source("9.2.0", "absent"))[:2],
                          ("failed", "filesystem_tools_not_on_wire"))
         self.assertEqual(gateway_case("91_only", "91_filesystem_disabled_variant",
-                                      source=gateway_source("9.1.2", "admitted"))[:2],
+                                      source=gateway_source("9.2.0", "admitted"))[:2],
                          ("failed", "filesystem_disabled_tools_on_wire"))
         self.assertEqual(gateway_case(*name, health=gateway_health("8.5.0", "admitted"))[:2],
                          ("failed", "health_version_mismatch"))

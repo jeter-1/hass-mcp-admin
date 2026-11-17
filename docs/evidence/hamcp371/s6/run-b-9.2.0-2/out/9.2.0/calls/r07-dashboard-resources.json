@@ -1,0 +1,147 @@
+{
+ "arguments_built_by": "adapter code, policy 9.1.2",
+ "calls_format_version": 1,
+ "exchange": {
+  "body_bytes": 758,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":107,\"result\":{\"content\":[{\"text\":\"{\\\"success\\\":true,\\\"action\\\":\\\"list\\\",\\\"resources\\\":[{\\\"id\\\":\\\"eded5c9c57044be4b8bcc24d12ba298d\\\",\\\"url\\\":\\\"/local/hamcp371-resource.js\\\",\\\"type\\\":\\\"module\\\"}],\\\"total_count\\\":1,\\\"offset\\\":0,\\\"limit\\\":5,\\\"count\\\":1,\\\"has_more\\\":false,\\\"next_offset\\\":null,\\\"inline_count\\\":0,\\\"by_type\\\":{\\\"module\\\":1},\\\"resource_mode\\\":\\\"storage\\\"}\",\"type\":\"text\"}],\"isError\":false,\"structuredContent\":{\"success\":true,\"action\":\"list\",\"resources\":[{\"id\":\"eded5c9c57044be4b8bcc24d12ba298d\",\"url\":\"/local/hamcp371-resource.js\",\"type\":\"module\"}],\"total_count\":1,\"offset\":0,\"limit\":5,\"count\":1,\"has_more\":false,\"next_offset\":null,\"inline_count\":0,\"by_type\":{\"module\":1},\"resource_mode\":\"storage\"}}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 107,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\"success\":true,\"action\":\"list\",\"resources\":[{\"id\":\"eded5c9c57044be4b8bcc24d12ba298d\",\"url\":\"/local/hamcp371-resource.js\",\"type\":\"module\"}],\"total_count\":1,\"offset\":0,\"limit\":5,\"count\":1,\"has_more\":false,\"next_offset\":null,\"inline_count\":0,\"by_type\":{\"module\":1},\"resource_mode\":\"storage\"}",
+       "type": "text"
+      }
+     ],
+     "isError": false,
+     "structuredContent": {
+      "action": "list",
+      "by_type": {
+       "module": 1
+      },
+      "count": 1,
+      "has_more": false,
+      "inline_count": 0,
+      "limit": 5,
+      "next_offset": null,
+      "offset": 0,
+      "resource_mode": "storage",
+      "resources": [
+       {
+        "id": "eded5c9c57044be4b8bcc24d12ba298d",
+        "type": "module",
+        "url": "/local/hamcp371-resource.js"
+       }
+      ],
+      "success": true,
+      "total_count": 1
+     }
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 107,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "limit": 5
+     },
+     "name": "ha_config_list_dashboard_resources"
+    }
+   },
+   "method": "POST",
+   "path": "/mcp"
+  },
+  "response": {
+   "id": 107,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\"success\":true,\"action\":\"list\",\"resources\":[{\"id\":\"eded5c9c57044be4b8bcc24d12ba298d\",\"url\":\"/local/hamcp371-resource.js\",\"type\":\"module\"}],\"total_count\":1,\"offset\":0,\"limit\":5,\"count\":1,\"has_more\":false,\"next_offset\":null,\"inline_count\":0,\"by_type\":{\"module\":1},\"resource_mode\":\"storage\"}",
+      "type": "text"
+     }
+    ],
+    "isError": false,
+    "structuredContent": {
+     "action": "list",
+     "by_type": {
+      "module": 1
+     },
+     "count": 1,
+     "has_more": false,
+     "inline_count": 0,
+     "limit": 5,
+     "next_offset": null,
+     "offset": 0,
+     "resource_mode": "storage",
+     "resources": [
+      {
+       "id": "eded5c9c57044be4b8bcc24d12ba298d",
+       "type": "module",
+       "url": "/local/hamcp371-resource.js"
+      }
+     ],
+     "success": true,
+     "total_count": 1
+    }
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Sun, 15 Nov 2026 05:03:21 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null,
+ "group": "reads",
+ "id": "r07-dashboard-resources",
+ "idle": false,
+ "kind": "public",
+ "new_session": false,
+ "public_arguments": {
+  "limit": 5
+ },
+ "public_tool": "ha_config_list_dashboard_resources",
+ "upstream_tool": "ha_config_list_dashboard_resources",
+ "wire_arguments": {
+  "limit": 5
+ }
+}

@@ -1,0 +1,103 @@
+{
+ "arguments_built_by": "harness, sent as written",
+ "calls_format_version": 1,
+ "exchange": {
+  "body_bytes": 584,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":104,\"result\":{\"content\":[{\"text\":\"{\\n  \\\"success\\\": false,\\n  \\\"error\\\": {\\n    \\\"code\\\": \\\"SERVICE_CALL_FAILED\\\",\\n    \\\"message\\\": \\\"Entity not found: Command failed: Entity not found\\\",\\n    \\\"suggestion\\\": \\\"Use ha_search() to find valid entity IDs\\\",\\n    \\\"suggestions\\\": [\\n      \\\"Use ha_search() to find valid entity IDs\\\",\\n      \\\"Check the entity_id spelling and format (e.g., 'sensor.temperature')\\\"\\n    ]\\n  },\\n  \\\"entity_id\\\": \\\"sensor.compatibility_review_missing_registry_entity\\\"\\n}\",\"type\":\"text\"}],\"isError\":true}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 104,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\n  \"success\": false,\n  \"error\": {\n    \"code\": \"SERVICE_CALL_FAILED\",\n    \"message\": \"Entity not found: Command failed: Entity not found\",\n    \"suggestion\": \"Use ha_search() to find valid entity IDs\",\n    \"suggestions\": [\n      \"Use ha_search() to find valid entity IDs\",\n      \"Check the entity_id spelling and format (e.g., 'sensor.temperature')\"\n    ]\n  },\n  \"entity_id\": \"sensor.compatibility_review_missing_registry_entity\"\n}",
+       "type": "text"
+      }
+     ],
+     "isError": true
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 104,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "entity_id": "sensor.compatibility_review_missing_registry_entity"
+     },
+     "name": "ha_get_entity"
+    }
+   },
+   "method": "POST",
+   "path": "/mcp"
+  },
+  "response": {
+   "id": 104,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\n  \"success\": false,\n  \"error\": {\n    \"code\": \"SERVICE_CALL_FAILED\",\n    \"message\": \"Entity not found: Command failed: Entity not found\",\n    \"suggestion\": \"Use ha_search() to find valid entity IDs\",\n    \"suggestions\": [\n      \"Use ha_search() to find valid entity IDs\",\n      \"Check the entity_id spelling and format (e.g., 'sensor.temperature')\"\n    ]\n  },\n  \"entity_id\": \"sensor.compatibility_review_missing_registry_entity\"\n}",
+      "type": "text"
+     }
+    ],
+    "isError": true
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Sun, 15 Nov 2026 13:06:03 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null,
+ "group": "review_probes",
+ "id": "e-missing-registry-entity",
+ "idle": false,
+ "kind": "upstream",
+ "new_session": false,
+ "public_arguments": {
+  "entity_id": "sensor.compatibility_review_missing_registry_entity"
+ },
+ "public_tool": "ha_get_entity",
+ "upstream_tool": "ha_get_entity",
+ "wire_arguments": {
+  "entity_id": "sensor.compatibility_review_missing_registry_entity"
+ }
+}

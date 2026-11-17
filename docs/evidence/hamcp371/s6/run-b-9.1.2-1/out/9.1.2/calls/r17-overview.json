@@ -1,0 +1,288 @@
+{
+ "arguments_built_by": "adapter code, policy 9.1.2",
+ "calls_format_version": 1,
+ "exchange": {
+  "body_bytes": 2742,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":117,\"result\":{\"content\":[{\"text\":\"{\\\"success\\\":true,\\\"system_summary\\\":{\\\"total_entities\\\":28,\\\"total_domains\\\":14,\\\"total_services\\\":260,\\\"total_areas\\\":4,\\\"filtered_domains\\\":[\\\"input_boolean\\\"],\\\"version\\\":\\\"2026.11.0\\\"},\\\"domain_stats\\\":{\\\"input_boolean\\\":{\\\"count\\\":1,\\\"states_summary\\\":{\\\"on\\\":1},\\\"entities\\\":[{\\\"friendly_name\\\":\\\"HAMCP371 helper\\\"}],\\\"truncated\\\":false}},\\\"area_analysis\\\":{\\\"living_room\\\":{\\\"count\\\":0},\\\"kitchen\\\":{\\\"count\\\":0},\\\"bedroom\\\":{\\\"count\\\":0},\\\"hamcp371_area\\\":{\\\"count\\\":1}},\\\"ai_insights\\\":{\\\"most_common_domains\\\":[\\\"input_boolean\\\"],\\\"controllable_devices\\\":[],\\\"monitoring_sensors\\\":[],\\\"automation_ready\\\":false},\\\"pagination\\\":{\\\"total_entity_results\\\":1,\\\"offset\\\":0,\\\"limit\\\":5,\\\"entities_returned\\\":1,\\\"has_more\\\":false,\\\"next_offset\\\":null},\\\"system_info\\\":{\\\"base_url\\\":\\\"http://127.0.0.1:8123\\\",\\\"version\\\":\\\"2026.11.0\\\",\\\"location_name\\\":\\\"HAMCP371 disposable\\\",\\\"time_zone\\\":\\\"America/Chicago\\\",\\\"language\\\":\\\"en\\\",\\\"state\\\":\\\"RUNNING\\\"},\\\"repair_count\\\":1,\\\"repairs\\\":[{\\\"issue_id\\\":\\\"deprecated_yaml\\\",\\\"domain\\\":\\\"http\\\",\\\"severity\\\":\\\"warning\\\",\\\"translation_key\\\":\\\"deprecated_yaml\\\",\\\"ignored\\\":false,\\\"dismissed_version\\\":null,\\\"is_fixable\\\":false,\\\"breaks_in_ha_version\\\":\\\"2027.2.0\\\",\\\"created\\\":\\\"2026-11-15T05:07:24.021159+00:00\\\",\\\"issue_domain\\\":null}],\\\"mcp_client\\\":{\\\"protocol_version\\\":\\\"2025-03-26\\\",\\\"client_info\\\":{},\\\"capabilities\\\":null}}\",\"type\":\"text\"}],\"isError\":false,\"structuredContent\":{\"success\":true,\"system_summary\":{\"total_entities\":28,\"total_domains\":14,\"total_services\":260,\"total_areas\":4,\"filtered_domains\":[\"input_boolean\"],\"version\":\"2026.11.0\"},\"domain_stats\":{\"input_boolean\":{\"count\":1,\"states_summary\":{\"on\":1},\"entities\":[{\"friendly_name\":\"HAMCP371 helper\"}],\"truncated\":false}},\"area_analysis\":{\"living_room\":{\"count\":0},\"kitchen\":{\"count\":0},\"bedroom\":{\"count\":0},\"hamcp371_area\":{\"count\":1}},\"ai_insights\":{\"most_common_domains\":[\"input_boolean\"],\"controllable_devices\":[],\"monitoring_sensors\":[],\"automation_ready\":false},\"pagination\":{\"total_entity_results\":1,\"offset\":0,\"limit\":5,\"entities_returned\":1,\"has_more\":false,\"next_offset\":null},\"system_info\":{\"base_url\":\"http://127.0.0.1:8123\",\"version\":\"2026.11.0\",\"location_name\":\"HAMCP371 disposable\",\"time_zone\":\"America/Chicago\",\"language\":\"en\",\"state\":\"RUNNING\"},\"repair_count\":1,\"repairs\":[{\"issue_id\":\"deprecated_yaml\",\"domain\":\"http\",\"severity\":\"warning\",\"translation_key\":\"deprecated_yaml\",\"ignored\":false,\"dismissed_version\":null,\"is_fixable\":false,\"breaks_in_ha_version\":\"2027.2.0\",\"created\":\"2026-11-15T05:07:24.021159+00:00\",\"issue_domain\":null}],\"mcp_client\":{\"protocol_version\":\"2025-03-26\",\"client_info\":{},\"capabilities\":null}}}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 117,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\"success\":true,\"system_summary\":{\"total_entities\":28,\"total_domains\":14,\"total_services\":260,\"total_areas\":4,\"filtered_domains\":[\"input_boolean\"],\"version\":\"2026.11.0\"},\"domain_stats\":{\"input_boolean\":{\"count\":1,\"states_summary\":{\"on\":1},\"entities\":[{\"friendly_name\":\"HAMCP371 helper\"}],\"truncated\":false}},\"area_analysis\":{\"living_room\":{\"count\":0},\"kitchen\":{\"count\":0},\"bedroom\":{\"count\":0},\"hamcp371_area\":{\"count\":1}},\"ai_insights\":{\"most_common_domains\":[\"input_boolean\"],\"controllable_devices\":[],\"monitoring_sensors\":[],\"automation_ready\":false},\"pagination\":{\"total_entity_results\":1,\"offset\":0,\"limit\":5,\"entities_returned\":1,\"has_more\":false,\"next_offset\":null},\"system_info\":{\"base_url\":\"http://127.0.0.1:8123\",\"version\":\"2026.11.0\",\"location_name\":\"HAMCP371 disposable\",\"time_zone\":\"America/Chicago\",\"language\":\"en\",\"state\":\"RUNNING\"},\"repair_count\":1,\"repairs\":[{\"issue_id\":\"deprecated_yaml\",\"domain\":\"http\",\"severity\":\"warning\",\"translation_key\":\"deprecated_yaml\",\"ignored\":false,\"dismissed_version\":null,\"is_fixable\":false,\"breaks_in_ha_version\":\"2027.2.0\",\"created\":\"2026-11-15T05:07:24.021159+00:00\",\"issue_domain\":null}],\"mcp_client\":{\"protocol_version\":\"2025-03-26\",\"client_info\":{},\"capabilities\":null}}",
+       "type": "text"
+      }
+     ],
+     "isError": false,
+     "structuredContent": {
+      "ai_insights": {
+       "automation_ready": false,
+       "controllable_devices": [],
+       "monitoring_sensors": [],
+       "most_common_domains": [
+        "input_boolean"
+       ]
+      },
+      "area_analysis": {
+       "bedroom": {
+        "count": 0
+       },
+       "hamcp371_area": {
+        "count": 1
+       },
+       "kitchen": {
+        "count": 0
+       },
+       "living_room": {
+        "count": 0
+       }
+      },
+      "domain_stats": {
+       "input_boolean": {
+        "count": 1,
+        "entities": [
+         {
+          "friendly_name": "HAMCP371 helper"
+         }
+        ],
+        "states_summary": {
+         "on": 1
+        },
+        "truncated": false
+       }
+      },
+      "mcp_client": {
+       "capabilities": null,
+       "client_info": {},
+       "protocol_version": "2025-03-26"
+      },
+      "pagination": {
+       "entities_returned": 1,
+       "has_more": false,
+       "limit": 5,
+       "next_offset": null,
+       "offset": 0,
+       "total_entity_results": 1
+      },
+      "repair_count": 1,
+      "repairs": [
+       {
+        "breaks_in_ha_version": "2027.2.0",
+        "created": "2026-11-15T05:07:24.021159+00:00",
+        "dismissed_version": null,
+        "domain": "http",
+        "ignored": false,
+        "is_fixable": false,
+        "issue_domain": null,
+        "issue_id": "deprecated_yaml",
+        "severity": "warning",
+        "translation_key": "deprecated_yaml"
+       }
+      ],
+      "success": true,
+      "system_info": {
+       "base_url": "http://127.0.0.1:8123",
+       "language": "en",
+       "location_name": "HAMCP371 disposable",
+       "state": "RUNNING",
+       "time_zone": "America/Chicago",
+       "version": "2026.11.0"
+      },
+      "system_summary": {
+       "filtered_domains": [
+        "input_boolean"
+       ],
+       "total_areas": 4,
+       "total_domains": 14,
+       "total_entities": 28,
+       "total_services": 260,
+       "version": "2026.11.0"
+      }
+     }
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 117,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {
+      "detail_level": "minimal",
+      "domains": [
+       "input_boolean"
+      ],
+      "include_notifications": false,
+      "limit": 5
+     },
+     "name": "ha_get_overview"
+    }
+   },
+   "method": "POST",
+   "path": "/mcp"
+  },
+  "response": {
+   "id": 117,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\"success\":true,\"system_summary\":{\"total_entities\":28,\"total_domains\":14,\"total_services\":260,\"total_areas\":4,\"filtered_domains\":[\"input_boolean\"],\"version\":\"2026.11.0\"},\"domain_stats\":{\"input_boolean\":{\"count\":1,\"states_summary\":{\"on\":1},\"entities\":[{\"friendly_name\":\"HAMCP371 helper\"}],\"truncated\":false}},\"area_analysis\":{\"living_room\":{\"count\":0},\"kitchen\":{\"count\":0},\"bedroom\":{\"count\":0},\"hamcp371_area\":{\"count\":1}},\"ai_insights\":{\"most_common_domains\":[\"input_boolean\"],\"controllable_devices\":[],\"monitoring_sensors\":[],\"automation_ready\":false},\"pagination\":{\"total_entity_results\":1,\"offset\":0,\"limit\":5,\"entities_returned\":1,\"has_more\":false,\"next_offset\":null},\"system_info\":{\"base_url\":\"http://127.0.0.1:8123\",\"version\":\"2026.11.0\",\"location_name\":\"HAMCP371 disposable\",\"time_zone\":\"America/Chicago\",\"language\":\"en\",\"state\":\"RUNNING\"},\"repair_count\":1,\"repairs\":[{\"issue_id\":\"deprecated_yaml\",\"domain\":\"http\",\"severity\":\"warning\",\"translation_key\":\"deprecated_yaml\",\"ignored\":false,\"dismissed_version\":null,\"is_fixable\":false,\"breaks_in_ha_version\":\"2027.2.0\",\"created\":\"2026-11-15T05:07:24.021159+00:00\",\"issue_domain\":null}],\"mcp_client\":{\"protocol_version\":\"2025-03-26\",\"client_info\":{},\"capabilities\":null}}",
+      "type": "text"
+     }
+    ],
+    "isError": false,
+    "structuredContent": {
+     "ai_insights": {
+      "automation_ready": false,
+      "controllable_devices": [],
+      "monitoring_sensors": [],
+      "most_common_domains": [
+       "input_boolean"
+      ]
+     },
+     "area_analysis": {
+      "bedroom": {
+       "count": 0
+      },
+      "hamcp371_area": {
+       "count": 1
+      },
+      "kitchen": {
+       "count": 0
+      },
+      "living_room": {
+       "count": 0
+      }
+     },
+     "domain_stats": {
+      "input_boolean": {
+       "count": 1,
+       "entities": [
+        {
+         "friendly_name": "HAMCP371 helper"
+        }
+       ],
+       "states_summary": {
+        "on": 1
+       },
+       "truncated": false
+      }
+     },
+     "mcp_client": {
+      "capabilities": null,
+      "client_info": {},
+      "protocol_version": "2025-03-26"
+     },
+     "pagination": {
+      "entities_returned": 1,
+      "has_more": false,
+      "limit": 5,
+      "next_offset": null,
+      "offset": 0,
+      "total_entity_results": 1
+     },
+     "repair_count": 1,
+     "repairs": [
+      {
+       "breaks_in_ha_version": "2027.2.0",
+       "created": "2026-11-15T05:07:24.021159+00:00",
+       "dismissed_version": null,
+       "domain": "http",
+       "ignored": false,
+       "is_fixable": false,
+       "issue_domain": null,
+       "issue_id": "deprecated_yaml",
+       "severity": "warning",
+       "translation_key": "deprecated_yaml"
+      }
+     ],
+     "success": true,
+     "system_info": {
+      "base_url": "http://127.0.0.1:8123",
+      "language": "en",
+      "location_name": "HAMCP371 disposable",
+      "state": "RUNNING",
+      "time_zone": "America/Chicago",
+      "version": "2026.11.0"
+     },
+     "system_summary": {
+      "filtered_domains": [
+       "input_boolean"
+      ],
+      "total_areas": 4,
+      "total_domains": 14,
+      "total_entities": 28,
+      "total_services": 260,
+      "version": "2026.11.0"
+     }
+    }
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Sun, 15 Nov 2026 05:07:37 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null,
+ "group": "reads",
+ "id": "r17-overview",
+ "idle": false,
+ "kind": "public",
+ "new_session": false,
+ "public_arguments": {
+  "detail_level": "minimal",
+  "domains": [
+   "input_boolean"
+  ],
+  "include_notifications": false,
+  "limit": 5
+ },
+ "public_tool": "ha_get_overview",
+ "upstream_tool": "ha_get_overview",
+ "wire_arguments": {
+  "detail_level": "minimal",
+  "domains": [
+   "input_boolean"
+  ],
+  "include_notifications": false,
+  "limit": 5
+ }
+}

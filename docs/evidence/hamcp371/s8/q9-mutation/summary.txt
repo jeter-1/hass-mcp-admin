@@ -1,0 +1,14 @@
+HAMCP-371 S8 Q9 mutation check, 2026-11-15 09:45 CST (local, not a heavy job).
+Tree: a git clone --shared of 5f734ad3 outside the task worktree, with the uncommitted Q9 fix applied (committed unchanged as 4a5ec6f9), then this one mutation in scripts/upstream_catalog_capture_local.py profile_environment:
+-    return PEER_ENVIRONMENT + ((BETA_FLAG, FILESYSTEM_FLAG) if filesystem else ())
++    return PEER_ENVIRONMENT + ((FILESYSTEM_FLAG,) if filesystem else ())
+Command: .artifacts/venv/bin/python -B tests/test_upstream_catalog_capture_local.py (exit 1).
+Raw output sha256: e4df93d20e818d8f84eee6ffcf5648e9de7e01493f13e00c3946570fd3a678b5 (kept in the ignored .artifacts/; its assertion messages print the synthetic fixture token, so only this summary is committed).
+
+FAIL: test_profile_argv_and_observation_shape (__main__.AppBindingTests.test_profile_argv_and_observation_shape)
+FAIL: test_catalog_differences_and_unstable_captures_are_withheld (__main__.ProfileTests.test_catalog_differences_and_unstable_captures_are_withheld) (reason='app_catalog_differs_from_standalone', options=['app_differs'])
+FAIL: test_catalog_differences_and_unstable_captures_are_withheld (__main__.ProfileTests.test_catalog_differences_and_unstable_captures_are_withheld) (reason='capture_not_deterministic', options=['unstable'])
+FAIL: test_every_filesystem_on_profile_passes_the_beta_and_filesystem_flags (__main__.ProfileTests.test_every_filesystem_on_profile_passes_the_beta_and_filesystem_flags)
+FAIL: test_profiles_pass_one_peer_at_a_time_with_the_hamcp351_definitions (__main__.ProfileTests.test_profiles_pass_one_peer_at_a_time_with_the_hamcp351_definitions)
+Ran 33 tests in 0.598s
+FAILED (failures=5)

@@ -76,6 +76,8 @@ _SIBLING_TOOLS_BY_VERSION: dict[str, tuple[str, ...]] = {
     "9.1.0": ("ha_delete_file", "ha_list_files", "ha_read_file", "ha_write_file"),
     # HAMCP-351: exact 9.1.2 carries the same four, all still prohibited.
     "9.1.2": ("ha_delete_file", "ha_list_files", "ha_read_file", "ha_write_file"),
+    # HAMCP-371: exact 9.2.0 carries the same four, all still prohibited.
+    "9.2.0": ("ha_delete_file", "ha_list_files", "ha_read_file", "ha_write_file"),
 }
 ALL_SIBLING_TOOLS = tuple(
     sorted(set(SIBLING_TOOLS).union(*_SIBLING_TOOLS_BY_VERSION.values()))
@@ -348,6 +350,10 @@ YAML_READ_CONTRACTS: dict[str, YamlReadContract] = {
     "9.1.0": _CONTRACT_9_1,
     # HAMCP-351: tools_yaml_read.py is unchanged at bab615df.
     "9.1.2": _CONTRACT_9_1,
+    # HAMCP-371 SY (docs/evidence/hamcp371/sy-yaml-read-path.md):
+    # tools_yaml_read.py is byte-identical at 51e3aac7 and the tools_filesystem
+    # functions it imports are unchanged by AST hash.
+    "9.2.0": _CONTRACT_9_1,
 }
 
 
@@ -1996,6 +2002,9 @@ _GET_YAML_RUNTIME_BY_VERSION = {
     "9.1.0": "e5100d0819eab49dfe9cf56335bd3544694de420c2cfe29a8578c77d58e0f3d1",
     # HAMCP-351: the 9.1.2 descriptor is byte-identical to 9.1.0.
     "9.1.2": "e5100d0819eab49dfe9cf56335bd3544694de420c2cfe29a8578c77d58e0f3d1",
+    # HAMCP-371: computed from the 9.2.0 filesystem-on capture below; the
+    # descriptor is byte-identical to 9.1.2.
+    "9.2.0": "e5100d0819eab49dfe9cf56335bd3544694de420c2cfe29a8578c77d58e0f3d1",
 }
 _SAME = "f31334156d7e5209dfc90f4f42f19e829fa93f75741665019395b045576b09a5"
 _TITLE_FP = "b5a58f2039cce78043c7e31875567abf2a0b4114ea7880071aaa09ab791cbce8"
@@ -2041,6 +2050,7 @@ _GET_YAML_DIAGNOSTICS_BY_VERSION = {
     "8.5.0": _GET_YAML_DIAGNOSTICS,
     "9.1.0": _GET_YAML_DIAGNOSTICS_9_1,
     "9.1.2": _GET_YAML_DIAGNOSTICS_9_1,
+    "9.2.0": _GET_YAML_DIAGNOSTICS_9_1,
 }
 DIAGNOSTIC_POINTERS = tuple(sorted(_GET_YAML_DIAGNOSTICS))
 assert all(
@@ -2104,6 +2114,13 @@ _CAPTURES = {
         "docs/evidence/hamcp351/catalogs/standalone-fs-on-tools-response.json",
         "340f3baa402ef3646b0289d26a72ec6f5662f6f0414e2366617490145f9e6ae9",
     ),
+    # HAMCP-371 S8 profiles-2: exact standalone 9.2.0 filesystem-on capture
+    # (SHA256SUMS entries out/standalone-9.2.0-fs-on/capture-1.json and -2).
+    "9.2.0": (
+        "51e3aac788482a081807591cd5d58d07dc4e540b",
+        "docs/evidence/hamcp371/s8/profiles-2/out/standalone-9.2.0-fs-on/capture.json",
+        "8a4d3770f04159b2362308a4207230866dbcf1a1f3e3bb2c5076aeaae000efab",
+    ),
 }
 _SIBLING_RUNTIME = {
     ("8.4.3", "ha_list_files"): "71e51bafd62d0837b7f2056b7a8bd007aa20b0c8c42c169981a8af1796c0e083",
@@ -2121,14 +2138,22 @@ _SIBLING_RUNTIME = {
     ("9.1.2", "ha_list_files"): "3067d3b409433dffe271d029290a982bc83822e8c93a2d50ec928fd8015a9368",
     ("9.1.2", "ha_read_file"): "23be6da4beb909264997d88911624318a3ef80077943b26e20c3e6c6a2b66534",
     ("9.1.2", "ha_write_file"): "0f638d1b0f3795e12ebada76456605192c28704a3222060c6d121842ab5bdffe",
+    # HAMCP-371: three 9.2.0 siblings are byte-identical to 9.1.2; the write
+    # tool's descriptor changed. All four stay prohibited and never route.
+    ("9.2.0", "ha_delete_file"): "be5ce90da53a6261268888fe5905fb3658141a066c4ae827f93b1e4e667ae7e2",
+    ("9.2.0", "ha_list_files"): "3067d3b409433dffe271d029290a982bc83822e8c93a2d50ec928fd8015a9368",
+    ("9.2.0", "ha_read_file"): "23be6da4beb909264997d88911624318a3ef80077943b26e20c3e6c6a2b66534",
+    ("9.2.0", "ha_write_file"): "bff12e49d5942240622b584f73c77401bb9eafe66c5f0136cdbb871af98a1a2f",
 }
 _INPUT_SCHEMA_BY_VERSION = {
     "9.1.0": INPUT_SCHEMA_FINGERPRINT_9_1,
     "9.1.2": INPUT_SCHEMA_FINGERPRINT_9_1,
+    "9.2.0": INPUT_SCHEMA_FINGERPRINT_9_1,
 }
 _ARGUMENT_CONSTRAINTS_BY_VERSION = {
     "9.1.0": ARGUMENT_CONSTRAINTS_ID_9_1,
     "9.1.2": ARGUMENT_CONSTRAINTS_ID_9_1,
+    "9.2.0": ARGUMENT_CONSTRAINTS_ID_9_1,
 }
 
 
@@ -2192,6 +2217,9 @@ OPTIONAL_TOOL_DISPOSITIONS: dict[str, str] = {
     "9.1.0": "admitted",
     # HAMCP-351: admitted under the unchanged 9.1 read contract.
     "9.1.2": "admitted",
+    # HAMCP-371 N29: admitted under the unchanged 9.1 read contract; the
+    # replay conditions are tests/test_hamcp371_real_core_replay.py.
+    "9.2.0": "admitted",
 }
 OPTIONAL_NAMES = (TOOL_NAME,) + SIBLING_TOOLS
 ALL_OPTIONAL_NAMES = (TOOL_NAME,) + ALL_SIBLING_TOOLS

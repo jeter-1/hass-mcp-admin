@@ -1,0 +1,95 @@
+{
+ "case": {
+  "arguments": {},
+  "id": "r23-floors-areas",
+  "tool": "ha_list_floors_areas"
+ },
+ "exchange": {
+  "body_bytes": 3732,
+  "body_text": "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":124,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\n  \\\"operation\\\": \\\"ha_list_floors_areas\\\",\\n  \\\"summary\\\": \\\"Completed a reviewed pure-read operation through the upstream gateway.\\\",\\n  \\\"data\\\": {\\n    \\\"success\\\": true,\\n    \\\"floor_count\\\": 1,\\n    \\\"area_count\\\": 4,\\n    \\\"unassigned_count\\\": 3,\\n    \\\"orphaned_count\\\": 0,\\n    \\\"floors\\\": [\\n      {\\n        \\\"aliases\\\": [],\\n        \\\"created_at\\\": 1794831408.549917,\\n        \\\"floor_id\\\": \\\"hamcp371_floor\\\",\\n        \\\"icon\\\": null,\\n        \\\"level\\\": 1,\\n        \\\"name\\\": \\\"HAMCP371 floor\\\",\\n        \\\"modified_at\\\": 1794831408.549919,\\n        \\\"areas\\\": [\\n          {\\n            \\\"aliases\\\": [],\\n            \\\"area_id\\\": \\\"hamcp371_area\\\",\\n            \\\"floor_id\\\": \\\"hamcp371_floor\\\",\\n            \\\"icon\\\": null,\\n            \\\"labels\\\": [],\\n            \\\"name\\\": \\\"HAMCP371 area\\\",\\n            \\\"picture\\\": null,\\n            \\\"created_at\\\": 1794831408.550711,\\n            \\\"modified_at\\\": 1794831408.550713,\\n            \\\"humidity_entity_id\\\": null,\\n            \\\"temperature_entity_id\\\": null\\n          }\\n        ]\\n      }\\n    ],\\n    \\\"unassigned_areas\\\": [\\n      {\\n        \\\"aliases\\\": [],\\n        \\\"area_id\\\": \\\"living_room\\\",\\n        \\\"floor_id\\\": null,\\n        \\\"icon\\\": \\\"mdi:sofa\\\",\\n        \\\"labels\\\": [],\\n        \\\"name\\\": \\\"Living Room\\\",\\n        \\\"picture\\\": null,\\n        \\\"created_at\\\": 1794831407.071313,\\n        \\\"modified_at\\\": 1794831407.071315,\\n        \\\"humidity_entity_id\\\": null,\\n        \\\"temperature_entity_id\\\": null\\n      },\\n      {\\n        \\\"aliases\\\": [],\\n        \\\"area_id\\\": \\\"kitchen\\\",\\n        \\\"floor_id\\\": null,\\n        \\\"icon\\\": \\\"mdi:stove\\\",\\n        \\\"labels\\\": [],\\n        \\\"name\\\": \\\"Kitchen\\\",\\n        \\\"picture\\\": null,\\n        \\\"created_at\\\": 1794831407.071391,\\n        \\\"modified_at\\\": 1794831407.071392,\\n        \\\"humidity_entity_id\\\": null,\\n        \\\"temperature_entity_id\\\": null\\n      },\\n      {\\n        \\\"aliases\\\": [],\\n        \\\"area_id\\\": \\\"bedroom\\\",\\n        \\\"floor_id\\\": null,\\n        \\\"icon\\\": \\\"mdi:bed\\\",\\n        \\\"labels\\\": [],\\n        \\\"name\\\": \\\"Bedroom\\\",\\n        \\\"picture\\\": null,\\n        \\\"created_at\\\": 1794831407.071449,\\n        \\\"modified_at\\\": 1794831407.07145,\\n        \\\"humidity_entity_id\\\": null,\\n        \\\"temperature_entity_id\\\": null\\n      }\\n    ],\\n    \\\"orphaned_areas\\\": [],\\n    \\\"message\\\": \\\"Found 1 floor(s), 4 area(s), 3 unassigned, 0 orphaned\\\",\\n    \\\"fields_withheld\\\": 0,\\n    \\\"fields_dropped_by_policy\\\": 0,\\n    \\\"upstream_warnings_replaced\\\": 0\\n  },\\n  \\\"warnings\\\": [],\\n  \\\"metadata\\\": {\\n    \\\"provider\\\": \\\"upstream_read_gateway\\\",\\n    \\\"upstream_tool\\\": \\\"ha_list_floors_areas\\\",\\n    \\\"upstream_server\\\": \\\"ha-mcp\\\",\\n    \\\"upstream_version\\\": \\\"9.2.0\\\",\\n    \\\"classification\\\": \\\"automatic_read\\\",\\n    \\\"schema_fingerprint\\\": \\\"b81375d58db7ba1a03224194d3e054d4124e4261b99d76e54b7dda41cb38b55a\\\",\\n    \\\"untrusted_upstream_content\\\": true,\\n    \\\"fallback\\\": \\\"none\\\",\\n    \\\"fallback_occurred\\\": false,\\n    \\\"completeness\\\": \\\"complete\\\"\\n  },\\n  \\\"timing\\\": {\\n    \\\"total_ms\\\": 223.931,\\n    \\\"tool_ms\\\": 220.824,\\n    \\\"home_assistant_ms\\\": 0.0,\\n    \\\"home_assistant_cumulative_attempt_ms\\\": 0.0,\\n    \\\"home_assistant_wall_clock_span_ms\\\": 0.0,\\n    \\\"home_assistant_request_count\\\": 0,\\n    \\\"upstream_attempted\\\": true,\\n    \\\"upstream_ms\\\": 213.692,\\n    \\\"upstream_wall_clock_span_ms\\\": 213.692,\\n    \\\"upstream_request_count\\\": 1,\\n    \\\"provider_operations_concurrent\\\": false,\\n    \\\"retry_count\\\": 0,\\n    \\\"timeout_occurred\\\": false\\n  },\\n  \\\"request_id\\\": \\\"0a271c8c9c134c3cabeeae21ce710abf\\\",\\n  \\\"success\\\": true\\n}\"}],\"isError\":false}}\r\n\r\n",
+  "content_type": "text/event-stream",
+  "messages": [
+   {
+    "id": 124,
+    "jsonrpc": "2.0",
+    "result": {
+     "content": [
+      {
+       "text": "{\n  \"operation\": \"ha_list_floors_areas\",\n  \"summary\": \"Completed a reviewed pure-read operation through the upstream gateway.\",\n  \"data\": {\n    \"success\": true,\n    \"floor_count\": 1,\n    \"area_count\": 4,\n    \"unassigned_count\": 3,\n    \"orphaned_count\": 0,\n    \"floors\": [\n      {\n        \"aliases\": [],\n        \"created_at\": 1794831408.549917,\n        \"floor_id\": \"hamcp371_floor\",\n        \"icon\": null,\n        \"level\": 1,\n        \"name\": \"HAMCP371 floor\",\n        \"modified_at\": 1794831408.549919,\n        \"areas\": [\n          {\n            \"aliases\": [],\n            \"area_id\": \"hamcp371_area\",\n            \"floor_id\": \"hamcp371_floor\",\n            \"icon\": null,\n            \"labels\": [],\n            \"name\": \"HAMCP371 area\",\n            \"picture\": null,\n            \"created_at\": 1794831408.550711,\n            \"modified_at\": 1794831408.550713,\n            \"humidity_entity_id\": null,\n            \"temperature_entity_id\": null\n          }\n        ]\n      }\n    ],\n    \"unassigned_areas\": [\n      {\n        \"aliases\": [],\n        \"area_id\": \"living_room\",\n        \"floor_id\": null,\n        \"icon\": \"mdi:sofa\",\n        \"labels\": [],\n        \"name\": \"Living Room\",\n        \"picture\": null,\n        \"created_at\": 1794831407.071313,\n        \"modified_at\": 1794831407.071315,\n        \"humidity_entity_id\": null,\n        \"temperature_entity_id\": null\n      },\n      {\n        \"aliases\": [],\n        \"area_id\": \"kitchen\",\n        \"floor_id\": null,\n        \"icon\": \"mdi:stove\",\n        \"labels\": [],\n        \"name\": \"Kitchen\",\n        \"picture\": null,\n        \"created_at\": 1794831407.071391,\n        \"modified_at\": 1794831407.071392,\n        \"humidity_entity_id\": null,\n        \"temperature_entity_id\": null\n      },\n      {\n        \"aliases\": [],\n        \"area_id\": \"bedroom\",\n        \"floor_id\": null,\n        \"icon\": \"mdi:bed\",\n        \"labels\": [],\n        \"name\": \"Bedroom\",\n        \"picture\": null,\n        \"created_at\": 1794831407.071449,\n        \"modified_at\": 1794831407.07145,\n        \"humidity_entity_id\": null,\n        \"temperature_entity_id\": null\n      }\n    ],\n    \"orphaned_areas\": [],\n    \"message\": \"Found 1 floor(s), 4 area(s), 3 unassigned, 0 orphaned\",\n    \"fields_withheld\": 0,\n    \"fields_dropped_by_policy\": 0,\n    \"upstream_warnings_replaced\": 0\n  },\n  \"warnings\": [],\n  \"metadata\": {\n    \"provider\": \"upstream_read_gateway\",\n    \"upstream_tool\": \"ha_list_floors_areas\",\n    \"upstream_server\": \"ha-mcp\",\n    \"upstream_version\": \"9.2.0\",\n    \"classification\": \"automatic_read\",\n    \"schema_fingerprint\": \"b81375d58db7ba1a03224194d3e054d4124e4261b99d76e54b7dda41cb38b55a\",\n    \"untrusted_upstream_content\": true,\n    \"fallback\": \"none\",\n    \"fallback_occurred\": false,\n    \"completeness\": \"complete\"\n  },\n  \"timing\": {\n    \"total_ms\": 223.931,\n    \"tool_ms\": 220.824,\n    \"home_assistant_ms\": 0.0,\n    \"home_assistant_cumulative_attempt_ms\": 0.0,\n    \"home_assistant_wall_clock_span_ms\": 0.0,\n    \"home_assistant_request_count\": 0,\n    \"upstream_attempted\": true,\n    \"upstream_ms\": 213.692,\n    \"upstream_wall_clock_span_ms\": 213.692,\n    \"upstream_request_count\": 1,\n    \"provider_operations_concurrent\": false,\n    \"retry_count\": 0,\n    \"timeout_occurred\": false\n  },\n  \"request_id\": \"0a271c8c9c134c3cabeeae21ce710abf\",\n  \"success\": true\n}",
+       "type": "text"
+      }
+     ],
+     "isError": false
+    }
+   }
+  ],
+  "reason": "OK",
+  "request": {
+   "headers": [
+    "Accept",
+    "Content-Type",
+    "Mcp-Protocol-Version"
+   ],
+   "json": {
+    "id": 124,
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+     "arguments": {},
+     "name": "ha_list_floors_areas"
+    }
+   },
+   "method": "POST",
+   "path": "/synthetic-engineering-access-secret/mcp"
+  },
+  "response": {
+   "id": 124,
+   "jsonrpc": "2.0",
+   "result": {
+    "content": [
+     {
+      "text": "{\n  \"operation\": \"ha_list_floors_areas\",\n  \"summary\": \"Completed a reviewed pure-read operation through the upstream gateway.\",\n  \"data\": {\n    \"success\": true,\n    \"floor_count\": 1,\n    \"area_count\": 4,\n    \"unassigned_count\": 3,\n    \"orphaned_count\": 0,\n    \"floors\": [\n      {\n        \"aliases\": [],\n        \"created_at\": 1794831408.549917,\n        \"floor_id\": \"hamcp371_floor\",\n        \"icon\": null,\n        \"level\": 1,\n        \"name\": \"HAMCP371 floor\",\n        \"modified_at\": 1794831408.549919,\n        \"areas\": [\n          {\n            \"aliases\": [],\n            \"area_id\": \"hamcp371_area\",\n            \"floor_id\": \"hamcp371_floor\",\n            \"icon\": null,\n            \"labels\": [],\n            \"name\": \"HAMCP371 area\",\n            \"picture\": null,\n            \"created_at\": 1794831408.550711,\n            \"modified_at\": 1794831408.550713,\n            \"humidity_entity_id\": null,\n            \"temperature_entity_id\": null\n          }\n        ]\n      }\n    ],\n    \"unassigned_areas\": [\n      {\n        \"aliases\": [],\n        \"area_id\": \"living_room\",\n        \"floor_id\": null,\n        \"icon\": \"mdi:sofa\",\n        \"labels\": [],\n        \"name\": \"Living Room\",\n        \"picture\": null,\n        \"created_at\": 1794831407.071313,\n        \"modified_at\": 1794831407.071315,\n        \"humidity_entity_id\": null,\n        \"temperature_entity_id\": null\n      },\n      {\n        \"aliases\": [],\n        \"area_id\": \"kitchen\",\n        \"floor_id\": null,\n        \"icon\": \"mdi:stove\",\n        \"labels\": [],\n        \"name\": \"Kitchen\",\n        \"picture\": null,\n        \"created_at\": 1794831407.071391,\n        \"modified_at\": 1794831407.071392,\n        \"humidity_entity_id\": null,\n        \"temperature_entity_id\": null\n      },\n      {\n        \"aliases\": [],\n        \"area_id\": \"bedroom\",\n        \"floor_id\": null,\n        \"icon\": \"mdi:bed\",\n        \"labels\": [],\n        \"name\": \"Bedroom\",\n        \"picture\": null,\n        \"created_at\": 1794831407.071449,\n        \"modified_at\": 1794831407.07145,\n        \"humidity_entity_id\": null,\n        \"temperature_entity_id\": null\n      }\n    ],\n    \"orphaned_areas\": [],\n    \"message\": \"Found 1 floor(s), 4 area(s), 3 unassigned, 0 orphaned\",\n    \"fields_withheld\": 0,\n    \"fields_dropped_by_policy\": 0,\n    \"upstream_warnings_replaced\": 0\n  },\n  \"warnings\": [],\n  \"metadata\": {\n    \"provider\": \"upstream_read_gateway\",\n    \"upstream_tool\": \"ha_list_floors_areas\",\n    \"upstream_server\": \"ha-mcp\",\n    \"upstream_version\": \"9.2.0\",\n    \"classification\": \"automatic_read\",\n    \"schema_fingerprint\": \"b81375d58db7ba1a03224194d3e054d4124e4261b99d76e54b7dda41cb38b55a\",\n    \"untrusted_upstream_content\": true,\n    \"fallback\": \"none\",\n    \"fallback_occurred\": false,\n    \"completeness\": \"complete\"\n  },\n  \"timing\": {\n    \"total_ms\": 223.931,\n    \"tool_ms\": 220.824,\n    \"home_assistant_ms\": 0.0,\n    \"home_assistant_cumulative_attempt_ms\": 0.0,\n    \"home_assistant_wall_clock_span_ms\": 0.0,\n    \"home_assistant_request_count\": 0,\n    \"upstream_attempted\": true,\n    \"upstream_ms\": 213.692,\n    \"upstream_wall_clock_span_ms\": 213.692,\n    \"upstream_request_count\": 1,\n    \"provider_operations_concurrent\": false,\n    \"retry_count\": 0,\n    \"timeout_occurred\": false\n  },\n  \"request_id\": \"0a271c8c9c134c3cabeeae21ce710abf\",\n  \"success\": true\n}",
+      "type": "text"
+     }
+    ],
+    "isError": false
+   }
+  },
+  "response_headers": [
+   [
+    "date",
+    "Mon, 16 Nov 2026 12:17:10 GMT"
+   ],
+   [
+    "server",
+    "uvicorn"
+   ],
+   [
+    "cache-control",
+    "no-cache, no-transform"
+   ],
+   [
+    "connection",
+    "keep-alive"
+   ],
+   [
+    "content-type",
+    "text/event-stream"
+   ],
+   [
+    "x-accel-buffering",
+    "no"
+   ],
+   [
+    "x-request-id",
+    "0a271c8c9c134c3cabeeae21ce710abf"
+   ],
+   [
+    "Transfer-Encoding",
+    "chunked"
+   ]
+  ],
+  "status": 200
+ },
+ "exchange_failure": null
+}
