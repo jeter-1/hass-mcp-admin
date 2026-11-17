@@ -19,7 +19,11 @@ from .audit import (
     AuditLogger,
     AuditRecord,
 )
-from .capabilities import capability_for_tool
+from .capabilities import (
+    capability_for_tool,
+    delegated_tools_admitted,
+    reviewed_delegated_read_names,
+)
 from .configuration import Settings
 from .inbound_security import bounded_request_id, compile_policy
 from .errors import ErrorCode, error_definition
@@ -684,6 +688,7 @@ class AuthenticatedMcpGateway:
         core_authority = None
         core_commits = None
         core_unmapped_refused = False
+        core_unmapped_reason = CORE_REQUIREMENT_UNMAPPED
         response_capture = bytearray()
         authenticated_request_accepted = False
         try:
@@ -1080,24 +1085,44 @@ class AuthenticatedMcpGateway:
                 # so no provider, upstream, or Home Assistant call occurs.
                 # Production always installs the Core runtime; a gateway
                 # composed without one enforces no Core gate at all.
-                definition = error_definition(
-                    ErrorCode.UNSUPPORTED_OPERATION
+                refusal_code = ErrorCode.UNSUPPORTED_OPERATION
+                refusal_error = "CoreRequirementUnmapped"
+                refusal_message = (
+                    "The tool has no reviewed Core requirement mapping "
+                    "and is refused."
                 )
-                telemetry.error_code = ErrorCode.UNSUPPORTED_OPERATION.value
+                if not capability and tool_name in reviewed_delegated_read_names():
+                    # HAMCP-408 (HAAC-E051): a reviewed delegated read that is
+                    # not currently published says so. The refusal point and
+                    # the zero-dispatch guarantee are unchanged.
+                    refusal_code = ErrorCode.PROVIDER_UNAVAILABLE
+                    if delegated_tools_admitted():
+                        refusal_error = "DelegatedToolNotAdmitted"
+                        core_unmapped_reason = "delegated_tool_not_admitted"
+                        refusal_message = (
+                            "This delegated ha-mcp read is not admitted for the "
+                            "current ha-mcp catalog and is refused."
+                        )
+                    else:
+                        refusal_error = "UpstreamNotAdmitted"
+                        core_unmapped_reason = "upstream_not_admitted"
+                        refusal_message = (
+                            "Delegated ha-mcp tools are not admitted, so this "
+                            "delegated read is refused."
+                        )
+                definition = error_definition(refusal_code)
+                telemetry.error_code = refusal_code.value
                 telemetry.result_status = "failure"
                 telemetry.completeness = "failed"
                 telemetry.response_status = 200
                 failure = FailureResponse(
                     operation=tool_name[:128],
-                    error="CoreRequirementUnmapped",
+                    error=refusal_error,
                     error_code=telemetry.error_code,
-                    message=(
-                        "The tool has no reviewed Core requirement mapping "
-                        "and is refused."
-                    ),
+                    message=refusal_message,
                     details={
-                        "reason": CORE_REQUIREMENT_UNMAPPED,
-                        "reason_code": CORE_REQUIREMENT_UNMAPPED,
+                        "reason": core_unmapped_reason,
+                        "reason_code": core_unmapped_reason,
                         "core_authority_acquired": False,
                         "provider_dispatch_occurred": (
                             telemetry.provider_dispatch_count > 0
@@ -1331,7 +1356,7 @@ class AuthenticatedMcpGateway:
                     # refusal fact.
                     audit_parameters = {
                         "core_route": "unmapped",
-                        "reason_code": CORE_REQUIREMENT_UNMAPPED,
+                        "reason_code": core_unmapped_reason,
                         "argument_fields": sorted(
                             str(key)[:64] for key in parameters
                         )[:32],

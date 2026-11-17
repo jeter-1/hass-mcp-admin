@@ -84,9 +84,15 @@ class HistorySlicesError(GovernanceError):
         code = {
             "invalid_arguments": ErrorCode.INVALID_REQUEST,
             "history_route_unavailable": ErrorCode.PROVIDER_UNAVAILABLE,
-            "read_in_progress": ErrorCode.PROVIDER_UNAVAILABLE,
         }.get(reason, ErrorCode.ANALYSIS_UNAVAILABLE)
-        super().__init__(code, details={"reason": reason, "fallback_occurred": False})
+        # HAMCP-413 (HAAC-E046): a concurrent read is a retryable busy
+        # refusal, not an unavailable provider.
+        if reason == "read_in_progress":
+            code = ErrorCode.RATE_LIMIT_EXCEEDED
+            message = "Another history read is in progress; retry after it completes."
+        else:
+            message = None
+        super().__init__(code, message, details={"reason": reason, "fallback_occurred": False})
         self.reason = reason
 
 
