@@ -85,6 +85,17 @@ IDENTITY_FIELDS = frozenset(
         "capture_fingerprint",
     }
 )
+# HAMCP-417 (E049): the identity fields get_execution_task and
+# get_change_plan show after readback.  Fingerprints, timestamps and the
+# delete argument stay internal to rollback.
+PUBLIC_IDENTITY_FIELDS = (
+    "resource_type",
+    "resource_target",
+    "storage_object_id",
+    "entity_id",
+    "registry_entry_id",
+    "registry_unique_id",
+)
 STORE_FIELDS = frozenset(
     {
         "model",
