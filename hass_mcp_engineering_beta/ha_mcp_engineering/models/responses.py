@@ -393,6 +393,100 @@ def _minimal_receipt(value: dict[str, Any], limit: int) -> str:
     return output
 
 
+_GOVERNED_IDENTITY = frozenset({"plan_id", "plan_hash", "task_id"})
+
+
+def _page_list(value: dict[str, Any], protected: set[tuple]) -> tuple | None:
+    """Locate the list a list response is made of: ``data`` or ``data.<list>``.
+
+    HAMCP-418 (E048): governed receipts, failures and the separately sized
+    logbook keep the general projection.
+    """
+    if value.get("success", True) is not True or value.get("operation") == "get_logbook":
+        return None
+    data = value.get("data")
+    if isinstance(data, list) and data:
+        path = ("data",)
+    elif isinstance(data, dict):
+        lists = [(len(_compact_json(item)), key) for key, item in data.items()
+                 if isinstance(item, list) and item and key not in _RECEIPT_BRANCHES]
+        if not lists:
+            return None
+        # The largest list is the one that made the response oversize; ties
+        # keep upstream key order.
+        path = ("data", max(lists, key=lambda item: item[0])[1])
+    else:
+        return None
+    for receipt in protected:
+        if receipt[:len(path)] != path and receipt[-1] in _GOVERNED_IDENTITY:
+            return None
+    return path
+
+
+def _list_first_page(value: dict[str, Any], protected: set[tuple],
+                     original_chars: int, limit: int) -> str | None:
+    """Return whole leading rows in upstream order, or None for the general bound.
+
+    HAMCP-418 (E048): the general projection removes the largest optional
+    subtree, which is the whole list, so an oversize list returned zero rows.
+    Rows are never cut: a first row larger than the bound keeps the general
+    projection, which still reports truncation.
+    """
+    path = _page_list(value, protected)
+    if path is None:
+        return None
+    parent = value if len(path) == 1 else value["data"]
+    key = path[-1]
+    rows = parent[key]
+    received = len(rows)
+    completeness = {
+        "truncated": True,
+        "reason": "response_size_limit",
+        "completeness": "partial",
+        "projection": "list_first_page",
+        "list_path": "/" + "/".join(
+            part.replace("~", "~0").replace("/", "~1") for part in path
+        ),
+        "returned_count": received,
+        "omitted_count": received,
+    }
+    declared = value["data"].get("total_count") if len(path) == 2 else None
+    if type(declared) is int and declared >= received:
+        # Only a total the response itself declares is reported; the rows
+        # Engineering received may already be an upstream page.
+        completeness["total_count"] = declared
+    completeness.update({"limit_chars": limit, "original_chars": original_chars})
+
+    def notice(returned: int) -> str:
+        # Keep the recognized prefix inside the JSON envelope.
+        return (f"... [truncated at {limit} chars] Returned the first {returned} of "
+                f"{received} rows in upstream order; narrow the query to see the rest.")
+
+    # Size the envelope with the largest possible counts, then add rows.
+    completeness["notice"] = notice(received)
+    parent[key] = []
+    value["response_completeness"] = completeness
+    budget = limit - len(_compact_json(value))
+    kept = 0
+    for row in rows:
+        cost = len(_compact_json(row)) + (kept > 0)
+        if cost > budget:
+            break
+        budget -= cost
+        kept += 1
+    if kept:
+        parent[key] = rows[:kept]
+        completeness["returned_count"] = kept
+        completeness["omitted_count"] = received - kept
+        completeness["notice"] = notice(kept)
+        rendered = _compact_json(value)
+        if len(rendered) <= limit:
+            return rendered
+    parent[key] = rows
+    del value["response_completeness"]
+    return None
+
+
 def _bounded_json(output: str, limit: int) -> str:
     # Work on a decoded copy: projection must not mutate a persisted result or
     # a provider's evidence. Default serialization semantics remain unchanged.
@@ -400,6 +494,9 @@ def _bounded_json(output: str, limit: int) -> str:
     if not isinstance(value, dict):
         value = {"data": value}
     protected = _receipt_paths(value)
+    paged = _list_first_page(value, protected, len(output), limit)
+    if paged is not None:
+        return paged
     if value.get("operation") == "get_logbook" and value.get("success") is True:
         protected.add(("data",))
         protected.add(("metadata", "source_coverage"))
