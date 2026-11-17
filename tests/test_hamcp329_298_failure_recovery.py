@@ -342,10 +342,17 @@ class UncertainDeleteTests(FailureTestCase):
         )
         self.assertEqual(self.writes_since(mark), [SCENE_DELETE])
         self.assertIn(EVENING, self.config_rest.scenes)
-        # Asking again returns the same failed plan; it is never sent again.
+        # The failed plan is never sent again. HAMCP-416 (HAAC-E044): it is
+        # terminal, so asking again plans afresh from current evidence (the
+        # scene is still there) under a new hash that needs its own approval.
         mark = self.mark()
         again = await self.service.rollback_change(created["plan_id"])
-        self.assertEqual(again["rollback_plan_id"], plan["plan_id"])
+        self.assertNotEqual(again["rollback_plan_id"], plan["plan_id"])
+        self.assertEqual(again["rollback_plan_resolution"], "fresh_plan_created")
+        self.assertEqual(again["replaced_rollback_plan_id"], plan["plan_id"])
+        self.assertNotEqual(again["plan_hash"], plan["plan_hash"])
+        self.assertIs(again["approval_required"], True)
+        self.assertIs(again["provider_dispatch_occurred"], False)
         with self.assertRaises(GovernanceError) as raised:
             await self.apply(plan)
         self.assertEqual(raised.exception.code, ErrorCode.DUPLICATE_APPLY_ATTEMPT)

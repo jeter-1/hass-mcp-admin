@@ -194,9 +194,18 @@ class RollbackPlanningTests(CreatedObjectRollbackTestCase):
             [("DELETE", f"/config/{resource_type}/config/{target_id}")],
         )
         self.assertNotIn(target_id, self.config_rest.configs[resource_type])
-        # Re-requesting returns the same plan; nothing is planned twice.
-        again = await self.service.rollback_change(created["plan_id"])
-        self.assertEqual(again["rollback_plan_id"], rollback["rollback_plan_id"])
+        # HAMCP-416 (HAAC-E044): the applied rollback is terminal, so asking
+        # again plans from fresh evidence. The object is gone, so nothing is
+        # eligible: the request refuses, writes nothing and keeps the link.
+        writes = len(self.config_rest.writes())
+        with self.assertRaises(GovernanceError) as raised:
+            await self.service.rollback_change(created["plan_id"])
+        self.assertEqual(raised.exception.code, ErrorCode.ROLLBACK_NOT_AVAILABLE)
+        self.assertEqual(len(self.config_rest.writes()), writes)
+        self.assertEqual(
+            self.service._load(created["plan_id"]).rollback.request_id,
+            rollback["rollback_plan_id"],
+        )
 
     async def test_owned_automation_create_rolls_back_by_governed_delete(self):
         await self.assert_owned_rollback("automation", "porch_light")
