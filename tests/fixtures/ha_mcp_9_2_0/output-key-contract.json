@@ -2,7 +2,7 @@
   "contract_format": "hamcp371-output-key-contract-v1",
   "generator": "docs/evidence/hamcp371/s7/generate_output_key_contract.py",
   "proposals_pending_ruling": [
-    "map containers (dict keys are data, values are closed rows): services, fields, domain_stats, area_analysis, states_summary, domains (overview), exposed_to, categories, by_type, data (system health)",
+    "map containers (dict keys are data, values are closed rows): services, fields, domain_stats, area_analysis, states_summary, domains (overview), exposed_to, categories, by_type, data (system health); HAMCP-410 (HAAC-E042): states (ha_get_state, keyed by entity_id, search/state.py:50-91 at 51e3aac7) and exposed_entities (two levels, entity_id then assistant, tools_voice_assistant.py:146-193)",
     "extra open containers: capabilities and options (automation entity, entity registry), result (template), info (system health), example and default (service fields)",
     "S10 E1-R (2026-11-15 14:45 ruling): a key named by the shipped 9.1 projections but not observed in a 9.1.2 receipt stays only as a source-review key, cited to the 9.2.0 upstream line that can write it; none is observed in a lane receipt",
     "reviewed warnings are the exact upstream strings observed in the 9.1.2 receipts; the upstream source-string review is deferred",
@@ -1516,6 +1516,7 @@
       },
       "consumed_structure": [],
       "map_containers": {
+        "exposed_entities": 2,
         "exposed_to": 1
       },
       "new_in_9_2_0": {},
@@ -2280,7 +2281,9 @@
         ]
       },
       "consumed_structure": [],
-      "map_containers": {},
+      "map_containers": {
+        "states": 1
+      },
       "new_in_9_2_0": {},
       "notes": [],
       "number": 19,
