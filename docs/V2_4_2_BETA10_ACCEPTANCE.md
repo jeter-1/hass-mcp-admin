@@ -29,7 +29,7 @@ The contract has five stages:
 2. release CI;
 3. publication;
 4. installed read-only acceptance;
-5. installed governed-change acceptance (E043).
+5. installed governed-change acceptance (I1, E043, E044, E052).
 
 It authorizes none of the later stages.
 
@@ -82,48 +82,204 @@ release. Every step is a read.
    - `2.4.2-beta.10`;
    - the merged release SHA as build SHA;
    - `dirty: false`.
-2. **Item checks.** **Pending.** One read-only check per landed item.
+2. **Item checks.** Run a check only for an item that has landed; the final
+   release pull request removes the rows for any item that has not.
+   - **Batch state (HAMCP-410, I2).** Call `ha_get_state` with
+     `entity_id` set to a list of two existing entities. Expected:
+     - `data.states` is an object keyed by both entity IDs, each holding its
+       state;
+     - `data.fields_withheld` is `0`;
+     - `metadata.completeness` is `complete`;
+     - no `COLLECTION_WITHHELD` in the engineering notes or warnings.
+
+     Stop and record the response if an entity is missing, a field is
+     withheld, or the result is partial.
+   - **History against logbook (HAMCP-411, I3).** Pick one entity with a few
+     state changes in the last 24 hours. Call `get_history` and `get_logbook`
+     for that entity over the same window. Expected:
+     - every logbook entry that records a state for the entity has a
+       history row with the same state and a `last_changed` within the
+       window;
+     - history may hold more rows than the logbook (attribute-only
+       changes), never fewer state changes;
+     - a history result that is not `complete` says so, with `truncated`,
+       `has_more` and a `get_history_slices` continuation.
+
+     Stop and record both responses if a logbook state change is missing
+     from a history result that reports itself `complete`.
 3. **Tool catalog.** A fresh `tools/list` matches the catalog the final
    release pull request declares. **Pending.**
 
 PASS needs every check. If a step fails, record the response in the release
 task. Whether to roll back is Josh's decision.
 
-## 5. Installed governed-change acceptance: E043 (separately authorized)
+## 5. Installed governed-change acceptance (separately authorized)
 
-This stage writes. It runs only after section 4 passes and only when Josh
-separately authorizes this governed change and the Core restart. Use a test
-object that Josh names, such as the description of a dedicated test
-automation. Add the object to the Deploy step 0 list.
+This stage writes, reloads and restarts. It runs only after section 4
+passes. Each numbered step below is a live change that Josh authorizes
+separately. Nothing here authorizes it. Run a step only for an item that has
+landed.
 
-The restart must leave Core authority identical. Do not combine it with a
-Core, HACS component or ha-mcp app update, or with an integration change.
-Any of those changes the authority, and the plan is then correctly voided.
+**Before starting, Josh names:**
+- a dedicated test automation (the test object);
+- the add-on to restart in step 2.
 
-1. **Before the restart.** Create a governed plan on the test object (for
-   example `create_configuration_plan` updating its description). Josh
-   approves it externally at its exact hash. Do not apply it.
-2. **Restart Home Assistant Core.** Wait until `get_server_health` shows the
-   Core readmission `recovery_state` as `restored`, with `last_restored_at`
-   later than the restart.
-3. **After the restart.** Apply the approved plan with `apply_change_plan`.
-4. **Expected result:**
-   - `get_execution_task` shows the task `succeeded_verified`, with exactly
-     one dispatch and an exact read-back;
-   - the Engineering add-on log has one `core_authority_restored` record for
-     this restart, with `reason: core_authority_identical` and
-     `plans_preserved: true`.
+Add both to the Deploy step 0 list, together with every plan and task that
+acceptance creates.
 
-PASS needs every expected value. On any other outcome, stop and record the
-plan, the task and the log record in the release task. Do not retry the step
-on another object. Examples:
-- the plan is refused as stale or voided;
+**General rules for every step:**
+- Josh approves each plan externally at its exact hash.
+- Every expected result includes exactly one provider dispatch per applied
+  plan (`get_execution_task`).
+- Never re-apply a plan, redispatch, or create a second plan to retry a
+  failed step. On a stop condition, record the plan, the task and the
+  response in the release task, and stop the stage.
+- Whether to keep each test change or revert it is Josh's decision. A revert
+  is its own governed plan.
+
+Run the steps in this order. Step 4 is the only Home Assistant restart in
+acceptance.
+
+### Step 1. Reload (HAMCP-401, I1)
+
+1. `create_reload_plan` with `reload_target: "automation"`. Josh approves.
+2. `apply_change_plan`, then `get_execution_task`.
+
+**Expected:**
+- the task is `succeeded_verified`, with exactly one dispatch;
+- verification shows the configuration validation `valid` and the
+  automation reload service available.
+
+**Stop if:**
+- apply is refused before dispatch (record the category, for example
+  `provider_held`, `catalog_mismatch` or `required_tool_missing`);
+- verification reports `configuration_validation` or `reload_service` in
+  `mismatch_fields`;
+- the dispatch count is not one.
+
+### Step 2. Add-on restart (HAMCP-401, I1)
+
+1. `create_addon_restart_plan` with `addon_slug` set to the exact slug of the
+   add-on Josh named. Record the plan's target class. Josh approves.
+2. `apply_change_plan`, then `get_execution_task` until the task is terminal.
+
+**Expected:**
+- the task is `succeeded_verified`, with exactly one dispatch;
+- `operational.verification.evidence.restart_proof` matches the target
+  class:
+
+  | Target class | `restart_proof` |
+  | --- | --- |
+  | `engineering_addon` | `process_identity` |
+  | `upstream_ha_mcp_addon` | `upstream_readmission` |
+  | `other_addon` | `provider_acknowledgement` |
+
+Restarting Engineering itself drops the client connection until it is back.
+Restarting the ha-mcp add-on makes delegated reads unavailable until
+readmission.
+
+**Stop if:**
+- the target class is not the one Josh expected for that add-on;
+- the task ends `operational_verification_failed`, or reports
+  `restart_evidence` in `mismatch_fields`;
+- the proof grade does not match the table;
+- the dispatch count is not one.
+
+### Step 3. `initial_state` change (HAMCP-419, E052)
+
+1. Read the test automation with `get_automation_config`.
+2. Negative check: `create_change_plan` with `operation: "update_automation"`
+   and the current configuration plus `initial_state: "false"` (a string).
+   Expected: refused with `automation initial_state must be a boolean`, and
+   no plan is created.
+3. `create_change_plan` with the current configuration plus a JSON boolean
+   `initial_state` (the opposite of the automation's current value if it has
+   one, otherwise `true`). Josh approves.
+4. `apply_change_plan`, then `get_execution_task`, then
+   `get_automation_config`.
+
+**Expected:**
+- the task is `succeeded_verified`, with exactly one dispatch and an exact
+  read-back;
+- `get_automation_config` shows `initial_state` equal to the planned boolean,
+  and every other field unchanged.
+
+**Stop if:**
+- the boolean plan is refused;
+- the read-back differs in any field;
+- the string value is accepted.
+
+### Step 4. Home Assistant restart, with E043 (HAMCP-401 I1, HAMCP-415)
+
+This restart serves both the I1 governed restart and the E043 check. The
+restart must leave Core authority identical. Do not combine it with a Core,
+HACS component or ha-mcp app update, or with an integration change. Any of
+those changes the authority, and the E043 plan is then correctly voided.
+
+1. **E043 test plan, before the restart.** `create_configuration_plan`
+   updating the test automation's description. Josh approves it at its exact
+   hash. Do not apply it.
+2. **Governed restart.** `create_home_assistant_restart_plan`. Josh approves.
+   `apply_change_plan`, then `get_execution_task` until the task is
+   terminal.
+3. **Wait for readmission.** `get_server_health` shows the Core readmission
+   `recovery_state` as `restored`, with `last_restored_at` later than the
+   restart dispatch.
+4. **E043 apply, after the restart.** Apply the step 1 plan with
+   `apply_change_plan`, then `get_execution_task`.
+
+**Expected for the restart (I1):**
+- the task is `succeeded_verified`, with exactly one `ha_restart` dispatch;
+- the verification evidence shows `restart_dispatch_confirmed: true`,
+  `authoritative_outage_observed: true` and
+  `home_assistant_reconnected: true`.
+
+**Expected for E043:**
+- the step 4 task is `succeeded_verified`, with exactly one dispatch and an
+  exact read-back;
+- the Engineering add-on log has one `core_authority_restored` record for
+  this restart, with `reason: core_authority_identical` and
+  `plans_preserved: true`.
+
+**Stop if:**
+- the restart plan is refused while the E043 plan is approved and pending;
+- the restart task ends `restart_evidence_window_expired` or
+  `operational_verification_failed`, or stays
+  `operational_verification_pending` after Core is back and readmitted;
+- the E043 plan is refused as stale or voided;
 - the record shows `core_authority_changed` (with `changed_components`) or
   `core_plan_window_capacity`;
-- a dispatch count other than one.
+- any dispatch count is not one.
 
-Whether to keep the test change or revert it is Josh's decision. A revert is
-its own governed plan.
+Do not restart Home Assistant again to retry, and do not retry E043 on
+another object.
+
+### Step 5. Rollback replanning (HAMCP-416, E044)
+
+This step uses the change applied in step 4. Calling `rollback_change`
+creates a plan and does not write to Home Assistant.
+
+1. `rollback_change` with the step 4 plan ID. Expected:
+   - `status: rollback_plan_created`;
+   - a `rollback_plan_id` (R1), with `approval_required`.
+2. Call `rollback_change` again for the same plan. Expected:
+   - `rollback_plan_resolution: existing_live_plan_returned`;
+   - the same R1.
+3. Josh rejects R1 on the external approval page.
+4. `rollback_change` a third time. Expected:
+   - `rollback_plan_resolution: fresh_plan_created`;
+   - a new `rollback_plan_id` (R2), different from R1;
+   - `replaced_rollback_plan_id` equal to R1;
+   - `replaced_rollback_plan_status: rejected`.
+
+**Stop if:**
+- step 2 creates a new plan;
+- step 4 returns R1, or `existing_live_plan_returned`, or any refusal.
+
+Approving and applying R2 reverts the step 4 description change. That is
+Josh's decision; otherwise R2 expires unapplied.
+
+PASS for the stage needs every expected value in every step that ran.
 
 ## Deploy (Engineering 2.4.2-beta.10 with the ha-mcp 9.2.0 pair)
 
