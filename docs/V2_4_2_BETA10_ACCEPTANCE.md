@@ -24,11 +24,12 @@ materialized, unstaged release whatever its base
 The release is materialized in all three version authorities, with no staged
 declaration left. Nothing is published or deployed.
 
-The contract has four stages:
+The contract has five stages:
 1. source and offline acceptance;
 2. release CI;
 3. publication;
-4. installed read-only acceptance.
+4. installed read-only acceptance;
+5. installed governed-change acceptance (E043).
 
 It authorizes none of the later stages.
 
@@ -42,6 +43,7 @@ final release pull request binds their evidence.
 | Item | Scope | State |
 | --- | --- | --- |
 | HAMCP-401 Phase 1, with HAMCP-400 | governed reload, app restart and Home Assistant restart on ha-mcp 9.2.0; the `provider_held` refusal category | in progress on its branch; not landed; evidence pending |
+| HAMCP-415 / HAMCP-416 | plans survive an identical Core restart (E043); terminal rollback plans are replanned (E044) | landed: #448, reviewed head 5a39a919, merged as 7aa5e0cf; evidence bound by the final release pull request |
 
 ## 1. Source and offline acceptance
 
@@ -87,8 +89,110 @@ release. Every step is a read.
 PASS needs every check. If a step fails, record the response in the release
 task. Whether to roll back is Josh's decision.
 
+## 5. Installed governed-change acceptance: E043 (separately authorized)
+
+This stage writes. It runs only after section 4 passes and only when Josh
+separately authorizes this governed change and the Core restart. Use a test
+object that Josh names, such as the description of a dedicated test
+automation. Add the object to the Deploy step 0 list.
+
+The restart must leave Core authority identical. Do not combine it with a
+Core, HACS component or ha-mcp app update, or with an integration change.
+Any of those changes the authority, and the plan is then correctly voided.
+
+1. **Before the restart.** Create a governed plan on the test object (for
+   example `create_configuration_plan` updating its description). Josh
+   approves it externally at its exact hash. Do not apply it.
+2. **Restart Home Assistant Core.** Wait until `get_server_health` shows the
+   Core readmission `recovery_state` as `restored`, with `last_restored_at`
+   later than the restart.
+3. **After the restart.** Apply the approved plan with `apply_change_plan`.
+4. **Expected result:**
+   - `get_execution_task` shows the task `succeeded_verified`, with exactly
+     one dispatch and an exact read-back;
+   - the Engineering add-on log has one `core_authority_restored` record for
+     this restart, with `reason: core_authority_identical` and
+     `plans_preserved: true`.
+
+PASS needs every expected value. On any other outcome, stop and record the
+plan, the task and the log record in the release task. Do not retry the step
+on another object. Examples:
+- the plan is refused as stale or voided;
+- the record shows `core_authority_changed` (with `changed_components`) or
+  `core_plan_window_capacity`;
+- a dispatch count other than one.
+
+Whether to keep the test change or revert it is Josh's decision. A revert is
+its own governed plan.
+
+## Deploy (Engineering 2.4.2-beta.10 with the ha-mcp 9.2.0 pair)
+
+Deploying is separately authorized by Josh. Nothing here authorizes it. Each
+numbered step that changes the house is a live change that Josh authorizes.
+
+`upstream_dashboard_mcp_url` contains the ha-mcp secret path. Read and edit
+it only in the Engineering add-on configuration. Never paste it into a chat,
+a task, a log or a document. Engineering redacts it from every response.
+
+0. **Prepare.**
+   - Export the beta.9 audit (`get_audit_log`).
+   - Take a FULL Home Assistant backup in the UI.
+   - List every object acceptance creates as it is created.
+   - Record, without copying it anywhere, whether `upstream_dashboard_mcp_url`
+     ends with `/catalog/full`. Note the ha-mcp version that
+     `get_server_health` detects.
+1. **Deploy Engineering 2.4.2-beta.10.**
+2. **If ha-mcp still runs 8.5.0.** Confirm beta.10 works on 8.5.0 before
+   going on: health shows `reviewed_exact` and `admitted_exact`, with no
+   `upstream_redirect_refused`. Then:
+   1. take a partial backup of the ha-mcp add-on plus the Home Assistant
+      configuration folder;
+   2. update the ha-mcp add-on to 9.2.0, then the HACS `ha_mcp_tools`
+      component to 9.2.0, then restart Core. Server and component deploy as
+      a pair; never run one without the other. Confirm the image digest as
+      in [beta.9 Deploy step 6](V2_4_2_BETA9_ACCEPTANCE.md).
+
+   If ha-mcp already runs the 9.2.0 pair, skip this step.
+3. **Set `upstream_dashboard_mcp_url` for 9.x.** If the value does not yet
+   end with `/catalog/full`, append exactly `/catalog/full` to the existing
+   value: no trailing slash, encoding or case change. Restart Engineering.
+   Engineering never repairs or canonicalizes the value. Without the suffix,
+   Engineering refuses the 9.x server after initialize and before any
+   `tools/list` (`upstream_catalog_mode_unadmitted`, or
+   `upstream_catalog_selector_invalid` for a misspelled selector), and every
+   delegated read is unavailable. This happened after the beta.9 upgrade.
+4. **Confirm 9.2.0 admission.**
+   - `get_server_health` shows `upstream_dashboard.upstream_server_version`
+     `9.2.0`, reachable, and the read gateway `admitted_exact`.
+   - None of `upstream_catalog_mode_unadmitted`,
+     `upstream_catalog_selector_invalid` or `upstream_redirect_refused` is
+     present.
+   - Confirm 9.2.0 from Engineering's detected upstream version, not the
+     store label.
+5. **Acceptance:** section 4, then, if Josh authorizes it, section 5.
+
 ## Rollback
 
-**Pending.** The final release pull request states the rollback target and
-whether rolling back is safe, from the storage, provider and option changes
-that actually landed. No rollback claim is made yet.
+**ha-mcp pair (9.2.0 back to 8.5.0).** The pair rollback also restores the
+URL.
+1. Restore the Deploy step 2 add-on backup, redownload component 2.2.1 in
+   HACS, and restart Core.
+2. Restore `upstream_dashboard_mcp_url` to the value recorded before the 9.x
+   change by removing the `/catalog/full` suffix, then restart Engineering.
+   - With the suffix left in place, 8.5.0 serves no selector route. It
+     answers 404 at initialize, and the delegated surface stays
+     unavailable (fail-closed) until the suffix is removed
+     ([`HAMCP_319_PHASE2_DESIGN.md`](HAMCP_319_PHASE2_DESIGN.md), the
+     rollback row of the URL-form table).
+3. Restore the configuration folder only if the HACS redownload fails. It
+   reverts every configuration change made since the backup.
+
+If the house was already on the 9.2.0 pair before this deploy (Deploy step
+2 skipped), there is no pair rollback for this release. Leave the URL
+unchanged.
+
+**Engineering.** **Pending** until every item has landed. The final release
+pull request states the rollback target and whether rolling back is safe,
+from the storage, provider and option changes that actually landed. Export
+`get_audit_log` before any restore. HAMCP-415 and HAMCP-416 change no
+persisted format.
