@@ -59,7 +59,8 @@ Not yet landed (no claim is made about their behavior):
 - HAMCP-401 Phase 1, with HAMCP-400 (#445);
 - HAMCP-411, HAMCP-412, HAMCP-413, HAMCP-408, HAMCP-409 and HAMCP-414
   (#447);
-- the optional HAMCP-417 and HAMCP-419.
+- the optional HAMCP-417 and HAMCP-419 (#450);
+- HAMCP-418, the first page of an oversize list (E048) (#451).
 
 ## Evidence
 
