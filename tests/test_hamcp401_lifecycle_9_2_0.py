@@ -111,6 +111,39 @@ def catalog_920(*, rename=None, server_version=VERSION) -> McpReadCatalog:
     return McpReadCatalog(PROTOCOL, "ha-mcp", server_version, tuple(tools), 1.0)
 
 
+FS_ON_CAPTURE = (
+    ROOT / "docs/evidence/hamcp371/s8/profiles-2/out/standalone-9.2.0-fs-on/capture.json"
+)
+OPTIONAL_TOOLS = (
+    "ha_config_get_yaml",
+    "ha_delete_file",
+    "ha_list_files",
+    "ha_read_file",
+    "ha_write_file",
+)
+
+
+def catalog_920_filesystem_on(*, mutate=None, duplicate=None, extra=None) -> McpReadCatalog:
+    """The reviewed 9.2.0 stock catalog plus the committed fs-on optional tools.
+
+    The five optional descriptors come from the real 9.2.0 capture with
+    filesystem tools enabled; they are interleaved, not appended.
+    """
+
+    capture = json.loads(FS_ON_CAPTURE.read_text(encoding="utf-8"))
+    optional = {t["name"]: deepcopy(t) for t in capture["tools"] if t["name"] in OPTIONAL_TOOLS}
+    if mutate:
+        mutate(optional)
+    tools = list(catalog_920().tools)
+    for index, name in enumerate(OPTIONAL_TOOLS):
+        tools.insert(index * 15, optional[name])
+    if duplicate:
+        tools.append(deepcopy(optional[duplicate]))
+    if extra:
+        tools.insert(7, extra)
+    return McpReadCatalog(PROTOCOL, "ha-mcp", VERSION, tuple(tools), 1.0)
+
+
 class Transport920(FakeMcpTransport):
     """A 9.2.0 ha-mcp peer: app tool names and the structured envelope."""
 
@@ -590,6 +623,92 @@ class RefusalTests(unittest.IsolatedAsyncioTestCase):
                     )
                 self.assertEqual(backup.exception.category, "upstream_version_mismatch")
                 self.assertEqual(transport.calls, [])
+
+
+class FilesystemToolsEnabledTests(unittest.IsolatedAsyncioTestCase):
+    """I1: a real 9.2.0 session with the optional filesystem tools enabled.
+
+    The exact-image 91_only lane reproduced locally failed every lifecycle
+    probe as catalog_mismatch: 82 advertised tools, the 77 reviewed plus the
+    five bound optional ones. They are accounted outside stock only on an
+    exact per-version binding match, and never dispatched.
+    """
+
+    def test_capture_is_the_bound_fs_on_capture(self):
+        capture = json.loads(FS_ON_CAPTURE.read_text(encoding="utf-8"))
+        self.assertEqual((capture["server_version"], capture["tool_count"]), (VERSION, 82))
+        reviewed = set(REGISTRY.by_version[VERSION].tool_contracts_by_name)
+        self.assertEqual({t["name"] for t in capture["tools"]} - reviewed, set(OPTIONAL_TOOLS))
+
+    async def test_every_operation_probes_and_binds_with_filesystem_tools_enabled(self):
+        for operation in ("controlled_reload", "restart_addon", "restart_home_assistant"):
+            with self.subTest(operation=operation):
+                transport = Transport920(catalog_920_filesystem_on())
+                provider = provider_for(transport)
+                evidence = (await provider.probe(operation)).as_dict()
+                self.assertEqual(evidence["compatibility_entry_id"], ENTRY)
+                self.assertFalse(evidence["fallback_occurred"])
+                validation = provider.health_snapshot()["catalog_validation"]
+                self.assertEqual(validation["validation_status"], "accepted_exact")
+                self.assertEqual(validation["observed_tool_count"], 77)
+                self.assertEqual(validation["additional_tools"], [])
+                self.assertEqual(transport.calls, [])
+
+    async def test_app_restart_dispatches_once_and_never_an_optional_tool(self):
+        transport = Transport920(catalog_920_filesystem_on())
+        provider = provider_for(transport)
+        await provider.probe("restart_addon")
+        persisted = []
+        await provider.restart_addon(OTHER_ADDON, before_dispatch=lambda: persisted.append(1))
+        self.assertEqual(
+            action_calls(transport),
+            [(APP_ACTION_TOOL, {"slug": OTHER_ADDON, "action": "restart"})],
+        )
+        self.assertEqual(persisted, [1])
+        self.assertFalse({name for name, _ in transport.calls} & set(OPTIONAL_TOOLS))
+
+    async def test_drifted_duplicated_or_unbound_extras_stay_catalog_mismatch(self):
+        def drift(optional):
+            optional["ha_write_file"]["description"] += " Drifted."
+
+        def drift_fields(optional):
+            optional["ha_config_get_yaml"]["_meta"] = {"synthetic": True}
+
+        cases = {
+            "drifted_sibling": catalog_920_filesystem_on(mutate=drift),
+            "drifted_fields": catalog_920_filesystem_on(mutate=drift_fields),
+            "duplicated_optional": catalog_920_filesystem_on(duplicate="ha_read_file"),
+            "unbound_extra": catalog_920_filesystem_on(
+                extra={"name": "ha_unreviewed_tool", "inputSchema": {"type": "object"}}
+            ),
+        }
+        for name, catalog in cases.items():
+            with self.subTest(case=name):
+                transport = Transport920(catalog)
+                provider = provider_for(transport)
+                with self.assertRaises(OperationalLifecycleProviderError) as raised:
+                    await provider.probe("restart_addon")
+                self.assertEqual(raised.exception.category, "catalog_mismatch")
+                self.assertFalse(raised.exception.dispatched)
+                persisted = []
+                with self.assertRaises(OperationalLifecycleProviderError) as raised:
+                    await provider.restart_addon(
+                        OTHER_ADDON, before_dispatch=lambda: persisted.append(1)
+                    )
+                self.assertEqual(raised.exception.category, "catalog_mismatch")
+                self.assertEqual((transport.calls, persisted), ([], []))
+
+    async def test_missing_stock_tool_is_not_masked_by_optional_tools(self):
+        catalog = catalog_920_filesystem_on()
+        stock = [t for t in catalog.tools if t["name"] != "ha_get_overview"]
+        self.assertEqual(len(stock), len(catalog.tools) - 1)
+        transport = Transport920(McpReadCatalog(PROTOCOL, "ha-mcp", VERSION, tuple(stock), 1.0))
+        provider = provider_for(transport)
+        with self.assertRaises(OperationalLifecycleProviderError) as raised:
+            await provider.probe("controlled_reload")
+        self.assertEqual(raised.exception.category, "catalog_mismatch")
+        validation = provider.health_snapshot()["catalog_validation"]
+        self.assertEqual(validation["missing_tools"], ["ha_get_overview"])
 
 
 class LegacyReleaseUnchangedTests(unittest.IsolatedAsyncioTestCase):

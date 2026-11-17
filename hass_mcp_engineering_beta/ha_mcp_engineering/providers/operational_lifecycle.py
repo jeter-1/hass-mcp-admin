@@ -23,6 +23,7 @@ from ..clients.upstream_read import (
     McpReadGatewayTransport,
 )
 from ..configuration import Settings, parse_upstream_dashboard_endpoint
+from . import upstream_yaml_reader as yaml_reader
 from ..request_context import current_telemetry
 from ..sanitization import sanitize_untrusted_data
 from ..upstream_tool_policy import (
@@ -310,6 +311,44 @@ class OperationalProviderState:
 
 
 BeforeDispatch = Callable[[], None | Awaitable[None]]
+
+
+
+def _stock_catalog_tools(
+    tools: Any, version: str
+) -> tuple[Any, ...] | None:
+    """Remove the bound optional upstream tools from one catalog.
+
+    ha-mcp advertises its optional YAML reader and filesystem siblings beside
+    the stock catalog when the add-on enables them. As in the read gateway
+    (HAMCP-162), only a name with an exact per-version binding is accounted
+    outside stock, and only when its single descriptor matches that binding
+    (R4). Any other optional occurrence (drifted, duplicated or unbound)
+    returns ``None``; every remaining tool is validated as the exact reviewed
+    stock catalog, in its observed order. No optional tool is ever routed or
+    dispatched by this provider.
+    """
+
+    items = tuple(tools)
+    bound = [
+        name
+        for name in yaml_reader.optional_names(version)
+        if (version, name) in yaml_reader.OPTIONAL_TOOL_BINDINGS
+    ]
+    accounted: set[str] = set()
+    for name in bound:
+        binding = yaml_reader.OPTIONAL_TOOL_BINDINGS[(version, name)]
+        match = yaml_reader.match_descriptor(items, binding)
+        if match.status == "absent":
+            continue
+        if match.status != "matched":
+            return None
+        accounted.add(name)
+    return tuple(
+        item
+        for item in items
+        if not (isinstance(item, dict) and item.get("name") in accounted)
+    )
 
 
 class ReviewedOperationalLifecycleProvider:
@@ -921,12 +960,15 @@ class ReviewedOperationalLifecycleProvider:
                 if isinstance(item, dict) and item.get("name") == upstream
             ) != 1:
                 self._fail("required_tool_missing", dispatched=False)
+        stock_tools = _stock_catalog_tools(catalog.tools, release.version)
+        if stock_tools is None:
+            self._fail("catalog_mismatch", dispatched=False)
         catalog_validation = validate_reviewed_release_catalog(
             release,
             observed_server_name=catalog.server_name,
             observed_upstream_version=catalog.server_version,
             observed_protocol_version=catalog.protocol_version,
-            tools=catalog.tools,
+            tools=stock_tools,
         )
         with self._lock:
             self._state.catalog_validation = catalog_validation.as_dict()
