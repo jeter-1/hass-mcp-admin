@@ -163,7 +163,7 @@
   "receipt_sha256": "cb01661a395d9da36eb041dc23457ecc513e5f3f5888c0983bc6cc97d56269f0",
   "run": "docs/evidence/hamcp371/sr/run-b-2",
   "s7_walk": "docs/evidence/hamcp371/s7/generate_output_key_contract.py",
-  "s7_walk_sha256": "76a6aa83f312bf3681aa97853adf697ca248d3a8d8a52666f61b2d8a477b264c",
+  "s7_walk_sha256": "9ef30d2179727e29b58c624f6386218fe6720eb60a5f48b92763d95c1ffd80ce",
   "sha256sums_sha256": "9b891e2c6f78bcfb89ce18a63cede38ddf501dc042d58150f4aba531987a7382"
  },
  "reads": [
