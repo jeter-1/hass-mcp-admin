@@ -35,19 +35,18 @@ It authorizes none of the later stages.
 
 ## Items
 
-Each item is reviewed in its own pull request into `release/2.8.0`. An item
-that has not landed is not part of this release, and this contract makes no
-claim about its behavior. Landed items are listed by their pull request; the
-final release pull request binds their evidence.
+Each item is reviewed in its own pull request into `release/2.8.0`. Every
+item has landed; each is listed by its pull request. The final release pull
+request binds their evidence.
 
 | Item | Scope | State |
 | --- | --- | --- |
-| HAMCP-401 Phase 1, with HAMCP-400 | governed reload, app restart and Home Assistant restart on ha-mcp 9.2.0; the `provider_held` refusal category | in progress on its branch; not landed; evidence pending |
+| HAMCP-401 Phase 1, with HAMCP-400 | governed reload, app restart and Home Assistant restart on ha-mcp 9.2.0; the `provider_held` refusal category | landed: #445, reviewed head ae9c637b, merged as 6587849d; evidence bound by the final release pull request |
 | HAMCP-415 / HAMCP-416 | plans survive an identical Core restart (E043); terminal rollback plans are replanned (E044) | landed: #448, reviewed head 5a39a919, merged as 7aa5e0cf; evidence bound by the final release pull request |
 | HAMCP-410 | ha-mcp 9.2.0 key-set maps for bulk `ha_get_state` and exposure listings; emptied collections read `partial` (E042) | landed: #446, reviewed head fe93a18b, merged as bcf42e52; evidence bound by the final release pull request |
-| HAMCP-411 bundle (HAMCP-408, 409, 411, 412, 413, 414) | truthfulness fixes, including bounded `get_history` with a continuation (E041) | in progress: #447; not landed; evidence pending |
-| HAMCP-417 / HAMCP-419 (optional) | I5, including the automation `initial_state` field (E052) | in progress: #450; not landed; evidence pending |
-| HAMCP-418 | an oversize list response returns a first page of whole rows, flagged `partial` (E048) | in progress: #451; not landed; evidence pending |
+| HAMCP-411 bundle (HAMCP-408, 409, 411, 412, 413, 414) | truthfulness fixes, including bounded `get_history` with a continuation (E041) | landed: #447, reviewed head d19aac9b, merged as 8f7e2a70; evidence bound by the final release pull request |
+| HAMCP-417 / HAMCP-419 (optional) | I5: `created_identity` on task and plan reads (E049); the automation `initial_state` field (E052) | landed: #450, reviewed head 40b1b5ef, merged as 3fb1dd83; evidence bound by the final release pull request |
+| HAMCP-418 | an oversize list response returns a first page of whole rows, flagged `partial` (E048) | landed: #451, reviewed head 20e69176, merged as fc552ab0; evidence bound by the final release pull request |
 
 ## 1. Source and offline acceptance
 
@@ -86,8 +85,7 @@ release. Every step is a read.
    - `2.4.2-beta.10`;
    - the merged release SHA as build SHA;
    - `dirty: false`.
-2. **Item checks.** Run a check only for an item that has landed; the final
-   release pull request removes the rows for any item that has not.
+2. **Item checks.**
    - **Batch state (HAMCP-410, I2).** Call `ha_get_state` with
      `entity_id` set to a list of two existing entities. Expected:
      - `data.states` is an object keyed by both entity IDs, each holding its
@@ -111,8 +109,29 @@ release. Every step is a read.
 
      Stop and record both responses if a logbook state change is missing
      from a history result that reports itself `complete`.
-3. **Tool catalog.** A fresh `tools/list` matches the catalog the final
-   release pull request declares. **Pending.**
+   - **List first page (HAMCP-418, E048).** Make one broad list read whose
+     result exceeds the 60,000-character response bound, for example
+     `list_entity_registry` with no filter, or `list_automations`, on the
+     whole house. Expected:
+     - the response holds rows, never zero rows;
+     - `response_completeness` shows `truncated: true`, `completeness:
+       partial`, `projection: list_first_page`, a `list_path` naming the
+       paged list, `returned_count` greater than 0 and `omitted_count`
+       greater than 0;
+     - `returned_count` equals the number of rows in the paged list;
+     - the `notice` ends with "narrow the query to see the rest";
+     - every returned row is a whole row, with no field cut.
+
+     If the response carries no `response_completeness`, the list fit
+     within the bound and the check is not exercised. Try one broader read;
+     if that fits too, record "not exercised" rather than PASS. Stop and
+     record the response if a cut list returns zero rows, a row is cut, or
+     the counts are missing or do not match the rows returned.
+3. **Tool catalog.** A fresh `tools/list` shows the counts the release notes
+   record under "Tool catalog". CI records the delegated read count on ha-mcp
+   9.2.0 (27, catalog fingerprint `0f1a2c75...`) but not the 9.2.0
+   Engineering count or connector total; record both here. Stop and record
+   the list if the delegated count differs from 27.
 
 PASS needs every check. If a step fails, record the response in the release
 task. Whether to roll back is Josh's decision.
@@ -121,8 +140,12 @@ task. Whether to roll back is Josh's decision.
 
 This stage writes, reloads and restarts. It runs only after section 4
 passes. Each numbered step below is a live change that Josh authorizes
-separately. Nothing here authorizes it. Run a step only for an item that has
-landed.
+separately. Nothing here authorizes it.
+
+No step in this stage creates a Home Assistant object: every write changes
+the existing test automation. The E049 `created_identity` check (HAMCP-417)
+therefore does not apply here. Its offline evidence is bound by the final
+release pull request.
 
 **Before starting, Josh names:**
 - a dedicated test automation (the test object);
@@ -351,8 +374,20 @@ If the house was already on the 9.2.0 pair before this deploy (Deploy step
 2 skipped), there is no pair rollback for this release. Leave the URL
 unchanged.
 
-**Engineering.** **Pending** until every item has landed. The final release
-pull request states the rollback target and whether rolling back is safe,
-from the storage, provider and option changes that actually landed. Export
-`get_audit_log` before any restore. HAMCP-415 and HAMCP-416 change no
-persisted format.
+**Engineering.** Recovery is 2.4.2-beta.9, by restoring the full Home
+Assistant backup taken in Deploy step 0.
+- Target: tag `v2.4.2-beta.9`, commit 02b8f013, image
+  `ghcr.io/jeter-1/hass-mcp-engineering-beta:2.4.2-beta.9`, OCI digest
+  `sha256:42815cd10bfcb8dbbe57bf64a0c60e3f829f2c3ee454296ec0412900e7274c85`.
+- Export `get_audit_log` before any restore.
+- In-place downgrade from beta.10 to beta.9 is not supported and is
+  unproven.
+- CI's rollback image is still 2.4.2-beta.7 (`ROLLBACK_ENGINEERING_VERSION`
+  in `.github/workflows/ci.yml`). It is not the recovery target (HAMCP-405).
+- No landed item states a persisted-format change. #446, #448, #450 and
+  #451 each state none. #445 and #447 state no public schema or tool
+  registration change, and #445 keeps the persisted F3 operation label
+  (`ha_manage_addon`) unchanged. E049 (#450) only reads the existing
+  HAMCP-298 sidecar records and writes nothing.
+- Restoring the backup also returns every Home Assistant change made since
+  it was taken. Whether to restore is Josh's decision.
