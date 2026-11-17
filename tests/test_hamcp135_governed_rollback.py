@@ -252,10 +252,21 @@ class RollbackTests(ConfigurationPlanTestCase):
         count=len(self.writes())
         duplicate=await self.service.apply(request['plan_id'],request['plan_hash'])
         self.assertEqual(duplicate['task_id'],applied['task_id'])
-        again,req2=await self.rollback(source)
-        self.assertEqual(req2,request)
-        self.assertFalse(again['approval_required'])
+        # HAMCP-416 (E044): an applied inverse is terminal, so it is never
+        # returned as if usable. Its id is the proof id of the source, so no
+        # fresh plan can be minted either: the request is refused truthfully.
+        await self.assert_terminal_inverse_refused(source,request,'applied')
         self.assertEqual(len(self.writes()),count)
+
+    async def assert_terminal_inverse_refused(self, source, request, status):
+        with self.assertRaises(GovernanceError) as refused:
+            await self.service.rollback_change(source['plan_id'],source['plan_hash'])
+        self.assertEqual(refused.exception.code,ErrorCode.ROLLBACK_NOT_AVAILABLE)
+        self.assertEqual(refused.exception.details['reason_code'],'rollback_plan_terminal')
+        self.assertEqual(refused.exception.details['rollback_plan_id'],request['plan_id'])
+        self.assertEqual(refused.exception.details['rollback_plan_status'],status)
+        self.assertIs(refused.exception.details['provider_dispatch_occurred'],False)
+        self.assertEqual(self.repository.get(source['plan_id']).rollback.request_id,request['plan_id'])
 
     async def test_continuous_union_at_every_boundary_and_fenced_previous_handles(self):
         from ha_mcp_engineering.f3.locks import DurableLockStore, LockConflict, LockOwnershipError
@@ -663,8 +674,9 @@ class RollbackTests(ConfigurationPlanTestCase):
                 self.assertEqual(result['task_state'],'succeeded_verified')
                 self.assertFalse(any(c[2]=='script' for c in self.writes()))
                 self.assertEqual(len(self.writes()),4 if changed==0 else 3)
-                again,_=await self.rollback(source)
-                self.assertEqual(again['status'],'rollback_partial_plan_created')
+                writes=len(self.writes())
+                await self.assert_terminal_inverse_refused(source,request,'applied')
+                self.assertEqual(len(self.writes()),writes)
 
     async def test_each_member_drift_after_approval_preserves_approval_and_blocks_writes(self):
         for changed in range(5):
