@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.4.2-beta.10 - 2.8.0 build, in progress (HAMCP-401)
+
+Builds on 2.4.2-beta.9 (HAMCP-371, #444). In progress: items land through
+reviewed pull requests into `release/2.8.0`, and the final release pull
+request completes this entry.
+
+- Version materialized at the base of `release/2.8.0` (`main` at
+  02b8f013), so item pull requests carry no version change. The release
+  transition from 2.4.2-beta.9 is to 2.4.2-beta.10.
+- Landed: none yet. HAMCP-401 Phase 1 (governed lifecycle on ha-mcp 9.2.0)
+  with HAMCP-400 (the provider_held refusal category) is in progress on its
+  own branch.
+- New in-progress `V2_4_2_BETA10` release notes and acceptance contract.
+- Rollback: pending; stated by the final release pull request.
+
 ## 2.4.2-beta.9 - 2.7.0 build, in progress (HAMCP-371)
 
 Builds on 2.4.2-beta.8 (HAMCP-332, #438). In progress: items land through
