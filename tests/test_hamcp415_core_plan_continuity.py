@@ -139,12 +139,25 @@ class CorePlanContinuity(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("core_identity", context["changed_components"])
 
     async def test_version_change_voids_plan_even_if_it_returns(self):
-        self.source.snapshot = core_tests._core_2026_9_snapshot(version="2026.9.1")
-        await reconcile_through_gate(self.core)
-        self.source.snapshot = core_tests._core_2026_9_snapshot(session_id="core-session-back")
-        await reconcile_through_gate(self.core)
+        with self.assertLogs(LOGGER, level=logging.INFO) as logs:
+            self.source.snapshot = core_tests._core_2026_9_snapshot(version="2026.9.1")
+            await reconcile_through_gate(self.core)
+            self.source.snapshot = core_tests._core_2026_9_snapshot(
+                session_id="core-session-back"
+            )
+            await reconcile_through_gate(self.core)
         self.assertTrue(self.core.route_status(CAPABILITY)["available"])
         self.assert_stale(self.plan_at)
+        restored = [r for r in logs.records if getattr(r, "event", None) == "core_authority_restored"]
+        self.assertTrue(restored)
+        context = _context(restored[-1])
+        self.assertEqual(context["reason"], "core_authority_changed")
+        self.assertIs(context["plans_preserved"], False)
+        self.assertEqual(context["baseline_discarded_reason"], "core_observed_version_changed")
+        # Only what really moved is named: the version, not the whole set.
+        self.assertIn("core_identity", context["changed_components"])
+        self.assertNotIn("core_connection", context["changed_components"])
+        self.assertNotIn("profile_registry", context["changed_components"])
 
     async def test_incompatible_observation_between_voids_plan(self):
         self.source.snapshot["session_id"] = "core-session-reconnected"
@@ -156,9 +169,47 @@ class CorePlanContinuity(unittest.IsolatedAsyncioTestCase):
         await self.core.reconcile_once("periodic")
         self.assertFalse(self.core.route_status(CAPABILITY)["available"])
         self.source.snapshot = original
-        await reconcile_through_gate(self.core)
+        with self.assertLogs(LOGGER, level=logging.INFO) as logs:
+            await reconcile_through_gate(self.core)
         self.assertTrue(self.core.route_status(CAPABILITY)["available"])
         self.assert_stale(self.plan_at)
+        restored = [r for r in logs.records if getattr(r, "event", None) == "core_authority_restored"]
+        self.assertEqual(len(restored), 1)
+        context = _context(restored[0])
+        self.assertIs(context["plans_preserved"], False)
+        self.assertEqual(context["baseline_discarded_reason"], "core_authority_incompatible")
+        # The restored authority equals the last admitted one; the void comes
+        # from the incompatible observation in between, not from the failed
+        # observation's fingerprints.
+        self.assertEqual(context["changed_components"], [])
+
+    async def test_incomplete_observation_then_identical_restore_keeps_plan(self):
+        # An incomplete observation (Core not connected, nothing proven) is a
+        # transient outage, not an incompatible authority: the preserved
+        # baseline is the admitted authority, never the failed observation.
+        authority = self.core.acquire_decision(
+            CAPABILITY, plan_created_at=self.plan_at
+        ).authority
+        self.assertIsNotNone(authority)
+        self.source.snapshot = core_tests._snapshot(
+            "2026.9.0", session_id="core-session-2026-9", connected=False, evidence=[]
+        )
+        await self.core.reconcile_once("periodic")
+        self.assertFalse(self.core.route_status(CAPABILITY)["available"])
+        self.assertEqual(
+            self.core._preserved_plan_baseline[1], self.core._admitted_semantics
+        )
+        self.source.snapshot = core_tests._core_2026_9_snapshot()
+        with self.assertLogs(LOGGER, level=logging.INFO) as logs:
+            await reconcile_through_gate(self.core)
+        self.assertTrue(self.core.route_status(CAPABILITY)["available"])
+        self.assert_current(self.plan_at)
+        # A lease from the retired generation still cannot dispatch.
+        self.assertIsNone(self.core.consume(authority))
+        restored = [r for r in logs.records if getattr(r, "event", None) == "core_authority_restored"]
+        self.assertEqual(len(restored), 1)
+        self.assertEqual(_context(restored[0])["reason"], "core_authority_identical")
+        self.assertNotIn("baseline_discarded_reason", _context(restored[0]))
 
     async def test_window_capacity_overflow_fails_closed(self):
         capacity = runtime_module.CORE_PLAN_OUTAGE_WINDOW_CAPACITY

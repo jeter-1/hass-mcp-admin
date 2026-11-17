@@ -302,6 +302,11 @@ class CoreRuntime:
 
         # Semantic components of the published generation.
         self._published_semantics: dict[str, str] | None = None
+        # Semantic components of the last admitted generation, and why a
+        # preserved baseline was last discarded; both name what a later
+        # restoration is compared with.
+        self._admitted_semantics: dict[str, str] | None = None
+        self._plan_baseline_discarded_reason: str | None = None
         # The plan cutoff and semantics of the admitted authority that a
         # transient outage retired, kept until restoration decides.
         self._preserved_plan_baseline: (
@@ -368,29 +373,33 @@ class CoreRuntime:
             if previous.get(name) != current.get(name)
         ]
 
-    def _void_plans_locked(self, now: datetime, *, transient: bool) -> None:
+    def _void_plans_locked(
+        self, now: datetime, *, transient: bool, reason: str | None = None
+    ) -> None:
         """Move the plan cutoff to ``now``.
 
         A transient retirement of admitted authority keeps the prior cutoff
-        and semantics so an identical restoration can reinstate them. Any
-        other movement discards that baseline: it observed different
-        authority, so no later restoration can prove the earlier plans
-        current.
+        and the admitted semantics so an identical restoration can reinstate
+        them. Any other movement discards that baseline, recording ``reason``:
+        it observed different authority, so no later restoration can prove
+        the earlier plans current.
         """
 
         if not transient:
             self._preserved_plan_baseline = None
             self._plan_outage_started_at = None
             self._plan_outage_windows = ()
+            self._plan_baseline_discarded_reason = reason
         elif (
             self._preserved_plan_baseline is None
             and self._admitted
-            and self._published_semantics is not None
+            and self._admitted_semantics is not None
         ):
             self._preserved_plan_baseline = (
-                self._last_material_change_at, self._published_semantics
+                self._last_material_change_at, self._admitted_semantics
             )
             self._plan_outage_started_at = now
+            self._plan_baseline_discarded_reason = None
         self._last_material_change_at = now
 
     def _plan_continuity_locked(
@@ -413,39 +422,56 @@ class CoreRuntime:
             result.generation, observation, registry_token
         )
         previous = self._published_semantics
+        last_admitted = self._admitted_semantics
         was_admitted = self._admitted
         self._published_semantics = semantics
         if not admitted_now:
             # An incompatible complete observation is different authority;
             # an incomplete one is a transient that restoration may undo.
+            # The baseline is the admitted authority, never this failure.
             complete = bool(
                 observation.identity_agrees
                 and observation.reason_code == "observation_complete"
             )
-            self._void_plans_locked(now, transient=not complete)
+            self._void_plans_locked(
+                now, transient=not complete,
+                reason="core_authority_incompatible" if complete else None,
+            )
             return {"kind": "withdrawn", "plans_preserved": False}
+        self._admitted_semantics = semantics
         if restoring:
             baseline = self._preserved_plan_baseline
             started = self._plan_outage_started_at
+            discarded = self._plan_baseline_discarded_reason
             self._preserved_plan_baseline = None
             self._plan_outage_started_at = None
             if baseline is None or started is None or baseline[1] != semantics:
-                self._void_plans_locked(now, transient=False)
-                return {
+                self._void_plans_locked(
+                    now, transient=False, reason="core_authority_changed"
+                )
+                restored = {
                     "kind": "restored",
                     "reason": "core_authority_changed",
                     "plans_preserved": False,
+                    # Compared with the authority plans were bound to, or,
+                    # once that baseline is gone, the last admitted one.
                     "changed_components": self._changed_components(
-                        baseline[1] if baseline is not None else None, semantics
+                        baseline[1] if baseline is not None else last_admitted,
+                        semantics,
                     ),
                 }
+                if baseline is None and discarded is not None:
+                    restored["baseline_discarded_reason"] = discarded
+                return restored
             prior_cutoff = baseline[0]
             windows = tuple(
                 window for window in self._plan_outage_windows
                 if prior_cutoff is None or window[1] > prior_cutoff
             )
             if len(windows) >= CORE_PLAN_OUTAGE_WINDOW_CAPACITY:
-                self._void_plans_locked(now, transient=False)
+                self._void_plans_locked(
+                    now, transient=False, reason="core_plan_window_capacity"
+                )
                 return {
                     "kind": "restored",
                     "reason": "core_plan_window_capacity",
@@ -466,7 +492,9 @@ class CoreRuntime:
                 "reason": "core_session_changed",
                 "plans_preserved": True,
             }
-        self._void_plans_locked(now, transient=False)
+        self._void_plans_locked(
+            now, transient=False, reason="core_authority_semantics_changed"
+        )
         return {
             "kind": "replaced" if was_admitted else "admitted",
             "reason": "core_authority_semantics_changed",
@@ -1135,6 +1163,10 @@ class CoreRuntime:
                         restored_continuity.get("changed_components")
                         if restored_continuity is not None else None
                     ),
+                    baseline_discarded_reason=(
+                        restored_continuity.get("baseline_discarded_reason")
+                        if restored_continuity is not None else None
+                    ),
                 ))
             elif self._recovery_state not in {"restored", "stable"}:
                 self._recovery_state = "stable"
@@ -1669,7 +1701,9 @@ class CoreRuntime:
             self._observation = None
             self._initialized = False
             now = datetime.now(timezone.utc)
-            self._void_plans_locked(now, transient=False)
+            self._void_plans_locked(
+                now, transient=False, reason="core_observed_version_changed"
+            )
             records = self._material_retirement_locked(
                 retired, "core_observed_version_changed", now
             )
@@ -1717,7 +1751,9 @@ class CoreRuntime:
             self._published_registry_token = None
             self._initialized = False
             now = datetime.now(timezone.utc)
-            self._void_plans_locked(now, transient=False)
+            self._void_plans_locked(
+                now, transient=False, reason="core_registry_authority_changed"
+            )
             records = self._material_retirement_locked(
                 retired, "core_registry_authority_changed", now
             )

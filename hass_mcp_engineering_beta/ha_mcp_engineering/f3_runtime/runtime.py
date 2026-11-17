@@ -174,7 +174,7 @@ from ..governance.label_registry import (
 )
 from ..governance.resources import resource_fingerprint
 from ..governance.task_models import ExecutionTaskState, TERMINAL_TASK_STATES
-from ..governance.storage import is_terminal_plan
+from ..governance.storage import TERMINAL_STATUSES, is_terminal_plan
 from ..governance.task_storage import ExecutionTaskStorageError
 from ..request_context import begin_request, current_telemetry, end_request
 from .registry import (
@@ -5366,25 +5366,70 @@ class F3RuntimeIntegration:
             # Recover the single plan-before-backlink crash without changing
             # approval, history, payload, expiration or execution identity.
             self.persist_rollback_plan(existing, {"snapshot": snapshot})
-            return self._garage_inverse_result(existing)
+            self._require_live_garage_inverse(source, existing)
+            return {
+                **self._garage_inverse_result(existing),
+                "rollback_plan_resolution": ROLLBACK_RESOLUTION_EXISTING_LIVE,
+            }
         if source.rollback.request_id:
             cached = self.service.repository.get(source.rollback.request_id)
             if cached is None and source.rollback.request_id != plan_id:
                 raise GovernanceError(ErrorCode.ROLLBACK_NOT_AVAILABLE)
             if cached is not None and cached.policy_decision.policy_class.value != "prohibited":
                 # Never silently replace a usable historical partial attempt.
+                self._require_live_garage_inverse(source, cached)
                 return {
                     "status": "rollback_partial_plan_created",
                     "source_plan_id": source.plan_id, "rollback_plan_id": cached.plan_id,
                     "approval_required": cached.status != PlanStatus.APPLIED,
                     "plan_hash": self.service.plan_hash(cached),
+                    "rollback_plan_resolution": ROLLBACK_RESOLUTION_EXISTING_LIVE,
                 }
         async with _rollback_planning_lease(
             self.core_runtime, ROLLBACK_PLANNING_REQUIREMENTS
         ) as lease:
-            return await self._plan_garage_inverse(
+            result = await self._plan_garage_inverse(
                 source, snapshot, plan_id, lease
             )
+        return {**result, "rollback_plan_resolution": ROLLBACK_RESOLUTION_FRESH}
+
+    def _require_live_garage_inverse(self, source, plan):
+        """Refuse a terminal caller-owned-retry inverse instead of returning it.
+
+        HAMCP-416 (HAAC-E044): the inverse's identity is the deterministic
+        proof id of the source snapshot, so a fresh plan cannot be minted
+        for it. A terminal one is refused truthfully; the link is kept.
+        """
+
+        if self._rollback_plan_live(plan):
+            return
+        raise GovernanceError(
+            ErrorCode.ROLLBACK_NOT_AVAILABLE,
+            details={
+                "resource_id": source.plan_id,
+                "reason": "rollback_plan_terminal",
+                "reason_code": "rollback_plan_terminal",
+                "rollback_plan_id": plan.plan_id,
+                "rollback_plan_status": self._rollback_plan_status(plan),
+                "plan_created": False,
+                "provider_dispatch_occurred": False,
+            },
+        )
+
+    def _rollback_plan_status(self, plan) -> str:
+        """The public status of an earlier rollback plan, expiry projected.
+
+        A prohibited plan keeps ``awaiting_approval`` as its stored status
+        while its bundle is terminal, so it is named for what it is.
+        """
+
+        projected = self.service._project_effective_lifecycle(plan)
+        if (
+            projected.status not in TERMINAL_STATUSES
+            and is_terminal_plan(projected)
+        ):
+            return "prohibited"
+        return projected.status.value
 
     async def _plan_garage_inverse(self, source, snapshot, plan_id, lease):
         from ..governance.resources import resource_identity_matches
@@ -5476,9 +5521,14 @@ class F3RuntimeIntegration:
         ):
             # HAMCP-145 OD-12: a separately approved return to the captured
             # prior option.  Admission is checked first, before any read.
-            return await self.service.create_input_select_rollback_plan(
+            # It never reuses an earlier plan: each request plans afresh.
+            result = await self.service.create_input_select_rollback_plan(
                 source_plan
             )
+            return {
+                **result,
+                "rollback_plan_resolution": ROLLBACK_RESOLUTION_FRESH,
+            }
         if source_plan.contract_version == 3:
             raise GovernanceError(ErrorCode.ROLLBACK_NOT_AVAILABLE)
         if any(
@@ -5518,8 +5568,7 @@ class F3RuntimeIntegration:
                 replaced = {
                     "replaced_rollback_plan_id": existing.plan_id,
                     "replaced_rollback_plan_status": (
-                        self.service._project_effective_lifecycle(existing)
-                        .status.value
+                        self._rollback_plan_status(existing)
                     ),
                 }
         result = await self._create_fresh_rollback_plan(source_plan, retry_source)

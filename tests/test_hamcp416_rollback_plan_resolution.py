@@ -10,6 +10,7 @@ request writes Home Assistant; all stores and peers are synthetic.
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import timedelta
 from pathlib import Path
 import sys
@@ -26,11 +27,17 @@ from ha_mcp_engineering.f3_runtime.runtime import (  # noqa: E402
     ROLLBACK_RESOLUTION_EXISTING_LIVE,
     ROLLBACK_RESOLUTION_FRESH,
 )
-from ha_mcp_engineering.governance.models import PlanStatus  # noqa: E402
+from ha_mcp_engineering.governance.models import (  # noqa: E402
+    ApprovalPolicyClass,
+    PlanStatus,
+)
 from ha_mcp_engineering.governance.task_models import (  # noqa: E402
     ExecutionTaskState,
 )
 
+from tests import (  # noqa: E402
+    test_hamcp135_configuration_eligibility as eligibility_fixtures,
+)
 from tests.test_dev14_configuration_plans import (  # noqa: E402
     ConfigurationPlanTestCase,
 )
@@ -42,6 +49,8 @@ from tests.test_hamcp189_rollback_core_lease import LeaseCore  # noqa: E402
 
 
 class RollbackPlanResolutionTests(ConfigurationPlanTestCase):
+    create_retry_plan = eligibility_fixtures.EligibilityTests.create_retry_plan
+
     async def asyncSetUp(self):
         await super().asyncSetUp()
         self.runtime = F3RuntimeIntegration(
@@ -223,6 +232,85 @@ class RollbackPlanResolutionTests(ConfigurationPlanTestCase):
             self.repository.get(first["rollback_plan_id"]).status,
             PlanStatus.AWAITING_APPROVAL,
         )
+
+    def prohibit(self, plan_id):
+        plan = self.repository.get(plan_id)
+        plan.policy_decision = dataclasses.replace(
+            plan.policy_decision, policy_class=ApprovalPolicyClass.PROHIBITED
+        )
+        plan.approval.bundle_state = "prohibited"
+        self.repository.save(plan)
+
+    async def test_prohibited_rollback_plan_is_replanned_and_named_prohibited(self):
+        source, first = await self.first_rollback()
+        self.prohibit(first["rollback_plan_id"])
+        # Its stored status is still awaiting_approval; it is terminal anyway.
+        self.assertEqual(
+            self.repository.get(first["rollback_plan_id"]).status,
+            PlanStatus.AWAITING_APPROVAL,
+        )
+        again = await self.service.rollback_change(
+            source["plan_id"], source["plan_hash"]
+        )
+        self.assertEqual(again["rollback_plan_resolution"], ROLLBACK_RESOLUTION_FRESH)
+        self.assertEqual(again["replaced_rollback_plan_id"], first["rollback_plan_id"])
+        self.assertEqual(again["replaced_rollback_plan_status"], "prohibited")
+        self.assertIs(again["approval_required"], True)
+        self.assertEqual(self.writes(), [])
+
+    async def garage_inverse(self):
+        source = await self.applied(await self.create_retry_plan())
+        first = await self.service.rollback_change(
+            source["plan_id"], source["plan_hash"]
+        )
+        self.assertIn(
+            first["status"],
+            {"rollback_plan_created", "rollback_partial_plan_created"},
+        )
+        self.assertEqual(first["rollback_plan_resolution"], ROLLBACK_RESOLUTION_FRESH)
+        self.gateway.calls.clear()
+        return source, first
+
+    async def test_live_garage_inverse_is_returned_and_named_existing(self):
+        source, first = await self.garage_inverse()
+        again = await self.service.rollback_change(
+            source["plan_id"], source["plan_hash"]
+        )
+        self.assertEqual(again["rollback_plan_id"], first["rollback_plan_id"])
+        self.assertEqual(
+            again["rollback_plan_resolution"], ROLLBACK_RESOLUTION_EXISTING_LIVE
+        )
+        self.assertEqual(self.reads(), [])
+        self.assertEqual(self.writes(), [])
+
+    async def test_terminal_garage_inverse_is_refused_not_returned(self):
+        # The caller-owned-retry inverse is identified by the deterministic
+        # proof id of its source snapshot, so no fresh plan can be minted for
+        # it. A terminal one is refused truthfully instead of returned.
+        for terminal in ("expired", "prohibited"):
+            with self.subTest(terminal=terminal):
+                source, first = await self.garage_inverse()
+                if terminal == "expired":
+                    self.expire(first["rollback_plan_id"])
+                else:
+                    self.prohibit(first["rollback_plan_id"])
+                with self.assertRaises(GovernanceError) as raised:
+                    await self.service.rollback_change(
+                        source["plan_id"], source["plan_hash"]
+                    )
+                error = raised.exception
+                self.assertEqual(error.code, ErrorCode.ROLLBACK_NOT_AVAILABLE)
+                self.assertEqual(error.details["reason_code"], "rollback_plan_terminal")
+                self.assertEqual(error.details["rollback_plan_id"], first["rollback_plan_id"])
+                self.assertEqual(error.details["rollback_plan_status"], terminal)
+                self.assertIs(error.details["plan_created"], False)
+                self.assertIs(error.details["provider_dispatch_occurred"], False)
+                self.assertEqual(self.reads(), [])
+                self.assertEqual(self.writes(), [])
+                self.assertEqual(
+                    self.repository.get(source["plan_id"]).rollback.request_id,
+                    first["rollback_plan_id"],
+                )
 
 
 if __name__ == "__main__":
