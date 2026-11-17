@@ -258,6 +258,26 @@ class RollbackPlanResolutionTests(ConfigurationPlanTestCase):
         self.assertIs(again["approval_required"], True)
         self.assertEqual(self.writes(), [])
 
+    async def test_verification_failed_rollback_is_named_for_its_status(self):
+        # Contract-v2 verification_failed is terminal outside TERMINAL_STATUSES;
+        # it is a verification outcome, not a policy prohibition.
+        source, first = await self.first_rollback()
+        plan = self.repository.get(first["rollback_plan_id"])
+        self.assertGreaterEqual(plan.contract_version, 2)
+        plan.status = PlanStatus.VERIFICATION_FAILED
+        self.repository.save(plan)
+        again = await self.service.rollback_change(
+            source["plan_id"], source["plan_hash"]
+        )
+        self.assertEqual(again["rollback_plan_resolution"], ROLLBACK_RESOLUTION_FRESH)
+        self.assertNotEqual(again["rollback_plan_id"], first["rollback_plan_id"])
+        self.assertEqual(again["replaced_rollback_plan_id"], first["rollback_plan_id"])
+        self.assertEqual(
+            again["replaced_rollback_plan_status"], "verification_failed"
+        )
+        self.assertIs(again["approval_required"], True)
+        self.assertEqual(self.writes(), [])
+
     async def garage_inverse(self):
         source = await self.applied(await self.create_retry_plan())
         first = await self.service.rollback_change(

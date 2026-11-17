@@ -115,6 +115,7 @@ from ..f3_dashboard.adapter import (
 from ..f3_dashboard.identity import operational_identity_from_mapping
 from ..f3_dashboard.errors import DashboardFoundationError
 from ..governance.models import (
+    ApprovalPolicyClass,
     ApprovalState,
     ChangeOperation,
     ChangeVerification,
@@ -5420,13 +5421,17 @@ class F3RuntimeIntegration:
         """The public status of an earlier rollback plan, expiry projected.
 
         A prohibited plan keeps ``awaiting_approval`` as its stored status
-        while its bundle is terminal, so it is named for what it is.
+        while its bundle is terminal, so it is named for what it is. Any
+        other status, ``verification_failed`` included, is its own name.
         """
 
         projected = self.service._project_effective_lifecycle(plan)
         if (
             projected.status not in TERMINAL_STATUSES
-            and is_terminal_plan(projected)
+            and projected.policy_decision is not None
+            and projected.policy_decision.policy_class
+            == ApprovalPolicyClass.PROHIBITED
+            and projected.approval.bundle_state == "prohibited"
         ):
             return "prohibited"
         return projected.status.value
