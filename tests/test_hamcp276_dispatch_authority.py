@@ -73,6 +73,9 @@ KILOWATT = {"entity_id": TEMPLATE, "set": {"unit_of_measurement": "kW"}}
 
 # Compiled Core profiles that no F3 identity requires, each with the reason
 # F3 does not activate it.  Adding a compiled profile forces a decision here.
+# Withheld by ``SignedCore.retire_and_replace``: a direct typed read that no
+# F3 identity requires (HAMCP-231), so only the authority's semantics change.
+REPLACED_PROFILE = "core.thread_matter_topology_read"
 NOT_F3 = {
     "core.basic_rest_read": "read",
     "core.basic_websocket_read": "read",
@@ -227,6 +230,12 @@ class SignedCore(unittest.IsolatedAsyncioTestCase):
     async def admit(self, *withheld: str) -> dict:
         """Publish the next signed envelope in one authenticated chain."""
 
+        await self.sign_next(*withheld)
+        return await reconcile_through_gate(self.core)
+
+    async def sign_next(self, *withheld: str) -> None:
+        """Refresh the registry onto the next signed envelope in the chain."""
+
         chain = getattr(self, "chain", [])
         sequence = len(chain) + 1
         envelope = json.loads(self.signer.raw(
@@ -240,13 +249,30 @@ class SignedCore(unittest.IsolatedAsyncioTestCase):
         self.chain = [*chain, envelope]
         self.raw = self.signer.journal_raw(envelopes=self.chain)
         self.assertTrue(await self.registry.refresh())
-        return await reconcile_through_gate(self.core)
 
     async def retire_and_restore(self) -> dict:
-        """The live 14:37:05Z retirement and 14:37:26Z restoration."""
+        """The live 14:37:05Z retirement and 14:37:26Z restoration.
+
+        The restored authority is identical, so plans created before the
+        retirement stay current (HAMCP-415, HAAC-E043).
+        """
 
         self.core.request_reconciliation(connection_changed=True)
         self.assertFalse(self.core.route_status((contract.PROFILE,))["available"])
+        return await reconcile_through_gate(self.core, "failure_retry")
+
+    async def retire_and_replace(self) -> dict:
+        """A retirement whose restoration verifies different signed authority.
+
+        The envelope signed during the outage withholds one direct read no F3
+        plan requires, so the restored capability set differs and earlier
+        plans are stale after restoration. A re-signed identical envelope
+        selects the same authority and would not do (HAMCP-415).
+        """
+
+        self.core.request_reconciliation(connection_changed=True)
+        self.assertFalse(self.core.route_status((contract.PROFILE,))["available"])
+        await self.sign_next(REPLACED_PROFILE)
         return await reconcile_through_gate(self.core, "failure_retry")
 
 
@@ -304,6 +330,11 @@ class RealCoreServiceTests(HelperOptionsServiceTestCase):
         self.clock[0] = datetime.now(timezone.utc)
         return restored
 
+    async def retire_and_replace(self, authority: SignedCore) -> dict:
+        restored = await authority.retire_and_replace()
+        self.clock[0] = datetime.now(timezone.utc)
+        return restored
+
     async def approved_availability(self) -> dict:
         # ``create``/``approved`` here are the configuration-delete helpers.
         created = await self.service.create_entity_availability_exposure_plan(
@@ -314,13 +345,29 @@ class RealCoreServiceTests(HelperOptionsServiceTestCase):
 
     # -- reproduction --------------------------------------------------------
 
-    async def test_reproduction_plan_predating_retirement_is_refused_truthfully(self):
+    async def test_reproduction_plan_survives_an_identical_restoration(self):
+        # HAMCP-415 (HAAC-E043): the live retirement restored identical
+        # authority, so the plan approved before it applies exactly once.
         authority = await self.use_signed_core()
         self.add_template_sensor()
         created = await self.approved_options(KILOWATT)
         restored = await self.retire_and_restore(authority)
         # Restored at the full admitted set, exactly as live (31/0).
         self.assertEqual(restored["compatible_count"], len(COMPILED))
+        self.assertTrue(authority.core.route_status((contract.PROFILE,))["available"])
+        result = await self.apply(created)
+        self.assertEqual(result["task_state"], "succeeded_verified", result)
+        self.assertEqual(len(self.options_rest.submits()), 1)
+        self.assertEqual(self.options_rest.visible("templateentry01")["unit_of_measurement"], "kW")
+        counters = authority.core.health_snapshot()["counters"]
+        self.assertEqual(counters["stale_plan_rejections"], 0)
+
+    async def test_reproduction_plan_predating_a_changed_restoration_is_refused_truthfully(self):
+        authority = await self.use_signed_core()
+        self.add_template_sensor()
+        created = await self.approved_options(KILOWATT)
+        restored = await self.retire_and_replace(authority)
+        self.assertEqual(restored["compatible_count"], len(COMPILED) - 1)
         self.assertTrue(authority.core.route_status((contract.PROFILE,))["available"])
         calls = self.ha_calls()
         result = await self.apply(created)
@@ -342,7 +389,7 @@ class RealCoreServiceTests(HelperOptionsServiceTestCase):
         authority = await self.use_signed_core()
         self.add_template_sensor()
         created = await self.approved_options(KILOWATT)
-        await self.retire_and_restore(authority)
+        await self.retire_and_replace(authority)
         result = await self.apply(created)
         self.assert_stale_refusal(authority, result)
         task = self.service.task_repository.get(result["task_id"])
@@ -364,7 +411,7 @@ class RealCoreServiceTests(HelperOptionsServiceTestCase):
         authority = await self.use_signed_core()
         self.add_template_sensor()
         created = await self.approved_options(KILOWATT)
-        await self.retire_and_restore(authority)
+        await self.retire_and_replace(authority)
         plan = self.service.get_plan(created["plan_id"])
         prepared = OPTIONS_PREPARED
         decision = authority.core.acquire_f3_decision(
@@ -405,7 +452,7 @@ class RealCoreServiceTests(HelperOptionsServiceTestCase):
             with self.subTest(boundary=boundary):
                 authority = await self.use_signed_core()
                 created = await self.approved_options(KILOWATT)
-                restore = (lambda: self.retire_and_restore(authority))
+                restore = (lambda: self.retire_and_replace(authority))
                 if boundary == "preflight":
                     await restore()
                 decisions = interleave(
@@ -557,7 +604,7 @@ class RealCoreServiceTests(HelperOptionsServiceTestCase):
         authority = await self.use_signed_core()
         self.add_entity("light.porch")
         created = await self.approved_availability()
-        await self.retire_and_restore(authority)
+        await self.retire_and_replace(authority)
         result = await self.apply(created)
         self.assert_stale_refusal(authority, result)
         self.assertEqual(self.ws.writes(), [])
@@ -570,7 +617,7 @@ class RealCoreServiceTests(HelperOptionsServiceTestCase):
         self.add("automation", "synthetic_cleanup")
         created = await self.create_one("automation", "synthetic_cleanup")
         await self.approve(created)
-        await self.retire_and_restore(authority)
+        await self.retire_and_replace(authority)
         result = await self.apply(created)
         self.assert_stale_refusal(authority, result)
         self.assertEqual(self.config_rest.writes(), [])
@@ -679,9 +726,16 @@ class F3AuthorityMatrixTests(HelperOptionsServiceTestCase):
                 await self.authority.admit()
                 self.assertEqual(await self.attempt(entry, self.now()), ("authorized", 1))
 
-    async def test_plan_predating_authority_change_is_refused_with_its_reason(self):
+    async def test_plan_predating_an_identical_restoration_stays_current(self):
         before = self.now()
         await self.authority.retire_and_restore()
+        for entry in self.entries:
+            with self.subTest(identity=entry.capability_id):
+                self.assertEqual(await self.attempt(entry, before), ("authorized", 1))
+
+    async def test_plan_predating_authority_change_is_refused_with_its_reason(self):
+        before = self.now()
+        await self.authority.retire_and_replace()
         for entry in self.entries:
             with self.subTest(identity=entry.capability_id):
                 self.assertEqual(await self.attempt(entry, before), (STALE, 0))
@@ -691,7 +745,7 @@ class F3AuthorityMatrixTests(HelperOptionsServiceTestCase):
         # The executor's guard acquisition after a passed preflight (a
         # retirement between the two) reports the same reason.
         before = self.now()
-        await self.authority.retire_and_restore()
+        await self.authority.retire_and_replace()
         entry = self.runtime.registry.entry(contract.CAPABILITY_IDENTITY)
         for created_at, expected in ((before, STALE), (None, None)):
             guard = _CoreDispatchAuthorityGuard(self.core, created_at)
