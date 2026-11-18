@@ -21,10 +21,15 @@ The version is materialized at the base of `release/2.9.0` (`main` at
 None has landed yet. The final release pull request describes each item's
 behavior from the landed source.
 
-- **HAMCP-436** (in progress on its own branch). The E022 lifecycle catalog:
-  governed reload, app restart and Home Assistant restart on ha-mcp 9.2.0
-  with the `ha_mcp_tools` component, with exact contracts required only for
-  the tools each operation dispatches.
+- **HAMCP-436** (in its draft item pull request into `release/2.9.0`; not
+  landed). The E022 lifecycle catalog: governed reload, app restart and Home
+  Assistant restart on ha-mcp 9.2.0 with the `ha_mcp_tools` component. Exact
+  contracts are required only for the tools each operation dispatches and
+  the reviewed versioned add-on tools. The reviewed tool name set stays a
+  whole-catalog gate. Descriptor drift on any other reviewed tool is
+  recorded in provider health (`catalog_admission`), not rejected. The
+  backup provider applies the same rule and stays held on 9.2.0
+  (HAMCP-381).
 
 ## Evidence
 

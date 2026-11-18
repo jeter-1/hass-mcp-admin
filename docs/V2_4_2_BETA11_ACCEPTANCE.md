@@ -41,7 +41,7 @@ final release pull request binds their evidence.
 
 | Item | Scope | State |
 | --- | --- | --- |
-| HAMCP-436 | E022 lifecycle catalog: governed reload, app restart and Home Assistant restart on ha-mcp 9.2.0 with the `ha_mcp_tools` component; exact contracts for the dispatched tools only | in progress on its branch; not landed; evidence pending |
+| HAMCP-436 | E022 lifecycle catalog: governed reload, app restart and Home Assistant restart on ha-mcp 9.2.0 with the `ha_mcp_tools` component; exact contracts for the dispatched tools only | in its draft item pull request into `release/2.9.0`; not landed; evidence pending |
 
 ## 1. Source and offline acceptance
 

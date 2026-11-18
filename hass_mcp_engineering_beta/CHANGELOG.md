@@ -11,7 +11,8 @@ request completes this entry.
   transition from 2.4.2-beta.10 is to 2.4.2-beta.11.
 - Landed: none yet. HAMCP-436 (the E022 lifecycle catalog: exact contracts
   for the dispatched tools only, other descriptor drift recorded in
-  lifecycle health) is in progress on its own branch.
+  lifecycle health) is in its draft item pull request into
+  `release/2.9.0`.
 - New in-progress `V2_4_2_BETA11` release notes and acceptance contract.
 - Rollback: pending; stated by the final release pull request.
 

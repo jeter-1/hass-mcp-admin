@@ -21,6 +21,7 @@ from ..clients.upstream_read import (
 )
 from ..configuration import Settings, parse_upstream_dashboard_endpoint
 from ..upstream_tool_policy import (
+    admit_reviewed_catalog_for_dispatch,
     load_reviewed_upstream_release_registry,
     runtime_contract_fingerprint,
     runtime_description_fingerprint,
@@ -124,6 +125,8 @@ class BackupProviderState:
     observed_upstream_version: str | None = None
     runtime_contract_fingerprint_model: str | None = None
     catalog_validation: dict[str, Any] | None = None
+    # HAMCP-436: the dispatch-scoped admission of the last validated catalog.
+    catalog_admission: dict[str, Any] | None = None
     fallback_count: int = 0
 
 
@@ -333,15 +336,22 @@ class ReviewedOperationalBackupProvider:
             observed_protocol_version=catalog.protocol_version,
             tools=catalog.tools,
         )
+        # HAMCP-436: only the dispatched tool needs an exact contract; the
+        # reviewed name set stays a whole-catalog gate, and descriptor drift
+        # on any other reviewed tool is recorded, not rejected.
+        catalog_admission = admit_reviewed_catalog_for_dispatch(
+            catalog_validation, (REQUIRED_TOOL,)
+        )
         with self._lock:
             self._state.catalog_validation = catalog_validation.as_dict()
-        if not catalog_validation.valid:
+            self._state.catalog_admission = catalog_admission.as_dict()
+        if not catalog_admission.admitted:
             self._fail("catalog_mismatch", dispatched=False)
         observed_catalog_fingerprint = (
             catalog_validation.observed_raw_catalog_fingerprint
         )
         normalized_catalog_fingerprint = (
-            catalog_validation.normalized_catalog_fingerprint
+            catalog_admission.normalized_catalog_fingerprint
         )
         if (
             observed_catalog_fingerprint is None
@@ -500,6 +510,11 @@ class ReviewedOperationalBackupProvider:
                 "catalog_validation": (
                     deepcopy(self._state.catalog_validation)
                     if self._state.catalog_validation is not None
+                    else None
+                ),
+                "catalog_admission": (
+                    deepcopy(self._state.catalog_admission)
+                    if self._state.catalog_admission is not None
                     else None
                 ),
                 "fallback_count": self._state.fallback_count,
