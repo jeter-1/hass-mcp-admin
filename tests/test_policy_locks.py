@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import sys
 import tempfile
 import textwrap
 import unittest
@@ -22,7 +23,11 @@ provenance_spec = importlib.util.spec_from_file_location(
 provenance = importlib.util.module_from_spec(provenance_spec)
 provenance_spec.loader.exec_module(provenance)
 WORKFLOW = ROOT / ".github/workflows/policy-locks.yml"
+SCRATCH_SCRIPT = ROOT / "scripts/policy-locks-scratch-refusal.sh"
 SHA = "a" * 40
+# Synthetic credential-shaped value, assembled at runtime so no committed file
+# matches; it is not a credential.
+SYNTHETIC = "gh" + "p_" + "Y" * 36
 
 CLEAN = f"""
 name: Clean
@@ -65,7 +70,7 @@ class LintTests(unittest.TestCase):
                 text = CLEAN.replace("contents: read", f"{scope}: write")
                 self.assertIn("write_permission", self.kinds(text))
                 job = CLEAN.replace("    runs-on:", f"    permissions:\n      {scope}: write\n    runs-on:")
-                self.assertIn(("job test", f"{scope}: write"),
+                self.assertIn(("job 1", f"{scope}: write"),
                               {(w, d) for _p, k, w, d in self.lint({"x.yml": job})})
         self.assertIn("write_permission", self.kinds(CLEAN.replace(
             "permissions:\n  contents: read", "permissions: write-all")))
@@ -144,13 +149,139 @@ class LintTests(unittest.TestCase):
     runs-on: ${{ matrix.os }}""")
         self.assertEqual(self.kinds(matrix), {"floating_runner"})
         self.assertEqual(self.kinds(matrix.replace(", ubuntu-latest", "")), set())
-        for runs_on in ("${{ inputs.runner }}", "${{ matrix.runner || 'ubuntu-latest' }}"):
+        for runs_on in ("${{ inputs.runner }}", "${{ matrix.runner || 'ubuntu-24.04' }}"):
             with self.subTest(runs_on=runs_on):
-                text = CLEAN.replace("ubuntu-24.04", f'"{runs_on}"')
+                text = CLEAN.replace("ubuntu-24.04", f'"{runs_on}"', 1)
                 self.assertEqual(self.kinds(text), {"dynamic_runner"})
+        # A quoted literal fallback is still a runner the job can use.
+        text = CLEAN.replace("ubuntu-24.04", '"${{ matrix.runner || \'ubuntu-latest\' }}"')
+        self.assertEqual(self.kinds(text), {"dynamic_runner", "floating_runner"})
         computed = matrix.replace("os: [ubuntu-24.04, ubuntu-latest]",
                                   "os: ${{ fromJSON(needs.m.outputs.os) }}")
         self.assertEqual(self.kinds(computed), {"dynamic_runner"})
+
+    def test_publication_with_global_options_quoting_and_continuations_fails(self):
+        commands = (
+            "git -C . push origin HEAD", "git -C . tag x", "git --no-pager push",
+            "git -c user.name=x --git-dir=.git --work-tree . push", "git --git-dir .git tag v1",
+            "'git' \"push\" origin", "g\\it push", "git \\\n  -C . \\\n  push origin HEAD",
+            "sudo git push", "bash -c 'git push origin HEAD'", "x=$(git -C . push)",
+            "true && git push", "git -c alias.p=push p", "$GIT push", "/usr/bin/git push",
+            "X=1 sudo ${tool} tag v1", "if true; then $GIT push; fi",
+            "gh -R o/r release create v1", "gh release --repo o/r upload v1 f",
+            "gh -R o/r pr merge 1", "gh pr --repo=o/r merge 1", "gh workflow -R o/r run x.yml",
+            "gh api -XPOST repos/o/r/issues", "gh api --method 'PATCH' repos/o/r",
+            "docker --context x push i", "docker -H tcp://h image push i",
+            "docker --config /c buildx --builder b build --push .", "docker build --push .",
+            "docker buildx imagetools create -t i a", "docker manifest push i",
+        )
+        for command in commands:
+            with self.subTest(command=command):
+                text = CLEAN.replace("python -m unittest", "|\n          " + command.replace(
+                    "\n", "\n          "))
+                self.assertEqual(self.kinds(text), {"publish_step"})
+
+    def test_read_only_counterparts_with_global_options_pass(self):
+        for command in ("git -C . log", "git -C . status", "git --no-pager diff",
+                        "git -C . tag", "git -C . tag --list", "git -c x=y fetch origin",
+                        "gh -R o/r pr view 1", "gh release -R o/r view v1",
+                        "gh -R o/r api repos/o/r/pulls", "docker --context x pull i",
+                        "docker -H tcp://h image ls", "docker buildx --builder b build --load .",
+                        "git log --grep push", "echo $VERSION release notes to publish"):
+            with self.subTest(command=command):
+                text = CLEAN.replace("python -m unittest", f"|\n          {command}")
+                self.assertEqual(self.kinds(text), set())
+
+    def test_new_local_actions_fail_and_existing_ones_are_grandfathered(self):
+        step = CLEAN.replace(f"actions/checkout@{SHA} # v5", "./.github/actions/wrapper")
+        job = f"""
+        on: pull_request
+        permissions: {{contents: read}}
+        jobs:
+          call:
+            uses: ./.github/workflows/other.yml
+        """
+        for text in (step, job, CLEAN.replace(f"actions/checkout@{SHA} # v5", "./")):
+            with self.subTest(text=text):
+                self.assertEqual(self.kinds(text), {"local_action"})
+                self.assertEqual(self.lint({"x.yml": text}, base={"x.yml": text}), [])
+        # Another local reference in the same place is new, not grandfathered.
+        other = step.replace("wrapper", "other-wrapper")
+        self.assertEqual([k for _p, k, _w, _d in self.lint({"x.yml": other},
+                                                           base={"x.yml": step})],
+                         ["local_action"])
+        with tempfile.TemporaryDirectory() as b, tempfile.TemporaryDirectory() as h:
+            tree(b, {})
+            tree(h, {"x.yml": step})
+            out = io.StringIO()
+            self.assertEqual(locks.main(["lint", "--base", b, "--head", h], stdout=out), 1)
+        self.assertIn("Inline these steps in the workflow", out.getvalue())
+        self.assertNotIn("wrapper", out.getvalue())
+
+    def test_findings_never_echo_pull_request_values(self):
+        text = f"""
+        on: pull_request
+        jobs:
+          {SYNTHETIC}:
+            name: ${{{{ 'validate' }}}}-{SYNTHETIC}
+            permissions: {{contents: write}}
+            runs-on: "${{{{ inputs.{SYNTHETIC} || '{SYNTHETIC}-latest' }}}}"
+            strategy:
+              matrix:
+                runner: [{SYNTHETIC}-latest]
+            steps:
+              - uses: actions/checkout@{SYNTHETIC}
+              - uses: docker://{SYNTHETIC}
+              - uses: ./{SYNTHETIC}
+              - uses: {SYNTHETIC}/release-action@{SHA}
+              - run: git push https://x:{SYNTHETIC}@github.com/o/r HEAD
+          other:
+            runs-on: [{SYNTHETIC}-latest]
+            uses: {SYNTHETIC}/r/.github/workflows/w.yml@{SYNTHETIC}
+        """
+        with tempfile.TemporaryDirectory() as b, tempfile.TemporaryDirectory() as h:
+            tree(b, {})
+            tree(h, {f"ci-{'x'}.yml": text})
+            result = subprocess.run(
+                [sys.executable, "-I", str(ROOT / "scripts/policy_locks.py"), "lint",
+                 "--base", b, "--head", h], capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 1)
+        kinds = {line.split(": ", 1)[1].split(" ", 1)[0].rstrip(".")
+                 for line in result.stdout.splitlines() if line.startswith("::error")}
+        self.assertTrue({"write_permission", "reserved_check", "dynamic_runner",
+                         "floating_runner", "unpinned_action", "local_action",
+                         "publish_step"} <= kinds, kinds)
+        for stream in (result.stdout, result.stderr):
+            self.assertNotIn(SYNTHETIC, stream)
+            self.assertNotIn(SYNTHETIC[4:20], stream)
+        self.assertIn("::error file=.github/workflows/ci-x.yml,line=4::job 1:", result.stdout)
+        self.assertRegex(result.stdout, r"line=\d+::job 1 step 5: publish_step \(git push\)")
+
+    def test_ci_matrix_runner_changes_are_not_grandfathered(self):
+        ci = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        computed = ("      matrix: ${{ fromJSON(needs.prepare_exact_image_matrix"
+                    ".outputs.admission) }}\n")
+        self.assertIn(computed, ci)
+        with tempfile.TemporaryDirectory() as b, tempfile.TemporaryDirectory() as h:
+            base, head = tree(b, {}), tree(h, {})
+            (base / ".github/workflows/ci.yml").write_text(ci, encoding="utf-8")
+
+            def lint_head(text):
+                (head / ".github/workflows/ci.yml").write_text(text, encoding="utf-8")
+                return [(f.kind, f.detail) for f in locks.lint(base, head)]
+
+            self.assertEqual(lint_head(ci), [])
+            floating = lint_head(ci.replace(computed, "      matrix:\n"
+                                                      "        runner: [ubuntu-latest]\n"))
+            self.assertIn(("floating_runner", "matrix value"), floating)
+            self.assertIn(("dynamic_runner", "runner expression"), floating)
+            included = lint_head(ci.replace(computed, "      matrix:\n        include:\n"
+                                                      "          - runner: macos-latest\n"))
+            self.assertIn(("floating_runner", "matrix value"), included)
+            # An explicit image still changes the expression's inputs.
+            self.assertEqual(lint_head(ci.replace(computed, "      matrix:\n"
+                                                            "        runner: [ubuntu-24.04]\n")),
+                             [("dynamic_runner", "runner expression")])
 
     def test_reserved_check_names_belong_to_their_producers(self):
         for job_name in ("validate", "policy-workflow-lint", "policy-secret-scan"):
@@ -300,6 +431,24 @@ class ScanTests(unittest.TestCase):
             (Path(root) / "b.bin").write_bytes(b"\xff\xfe\x00" + self.SAMPLES["GitHub token"].encode())
             self.assertEqual([label for _p, _l, label in locks.scan(root)], ["GitHub token"])
 
+    def test_byte_order_marked_text_is_decoded(self):
+        value = self.SAMPLES["GitHub token"]
+        encodings = {"u8.txt": ("utf-8", b"\xef\xbb\xbf"), "u16le.txt": ("utf-16-le", b"\xff\xfe"),
+                     "u16be.txt": ("utf-16-be", b"\xfe\xff"),
+                     "u32le.txt": ("utf-32-le", b"\xff\xfe\x00\x00"),
+                     "u32be.txt": ("utf-32-be", b"\x00\x00\xfe\xff")}
+        with tempfile.TemporaryDirectory() as root:
+            for name, (encoding, bom) in encodings.items():
+                (Path(root) / name).write_bytes(
+                    bom + f"one\ntwo\nthree {value}\n".encode(encoding))
+            self.assertEqual(locks.scan(root), sorted((name, 3, "GitHub token")
+                                                      for name in encodings))
+            out = io.StringIO()
+            self.assertEqual(locks.main(["scan", "--root", root], stdout=out), 1)
+        self.assertNotIn(value, out.getvalue())
+        self.assertIn("::error file=u16le.txt,line=3::Potential GitHub token", out.getvalue())
+        self.assertIn("::error file=u16be.txt,line=3::Potential GitHub token", out.getvalue())
+
     def test_repository_tree_is_clean(self):
         tracked = subprocess.run(["git", "-C", str(ROOT), "ls-files", "-z"], check=True,
                                  capture_output=True, text=True).stdout.split("\0")
@@ -373,6 +522,56 @@ class WorkflowStructureTests(unittest.TestCase):
         self.assertEqual(body.strip(), entry.strip())
         self.assertIn("--require-hashes", self.text)
         self.assertIn("--only-binary=:all:", self.text)
+
+
+class ScratchScriptTests(unittest.TestCase):
+    URL = "https://github.com/jeter-1/rules-day-scratch.git"
+
+    def check(self, *configure):
+        """Run only the push-target guard against a disposable local clone."""
+
+        with tempfile.TemporaryDirectory() as root:
+            env = {"PATH": os.environ.get("PATH", ""), "HOME": root,
+                   "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+            repo = Path(root) / "r"
+            subprocess.run(["git", "init", "-q", str(repo)], check=True, env=env)
+            for args in configure:
+                subprocess.run(["git", "-C", str(repo), *args], check=True, env=env)
+            return subprocess.run(["bash", str(SCRATCH_SCRIPT), "--check-push-target",
+                                   str(repo)], capture_output=True, text=True, env=env)
+
+    def test_guard_accepts_only_the_exact_scratch_push_url(self):
+        origin = ("remote", "add", "origin", self.URL)
+        self.assertEqual(self.check(origin).returncode, 0)
+        refusals = {
+            "no origin": (),
+            "pushurl": (origin, ("remote", "set-url", "--push", "origin",
+                                 "https://github.com/jeter-1/hass-mcp-admin.git")),
+            "second pushurl": (origin, ("remote", "set-url", "--add", "--push", "origin",
+                                        "https://github.com/jeter-1/hass-mcp-admin.git")),
+            "insteadOf": (origin, ("config", "url.https://example.invalid/.insteadOf",
+                                   "https://unrelated.invalid/")),
+            "pushInsteadOf": (origin, ("config", "url.https://example.invalid/.pushInsteadOf",
+                                       "https://unrelated.invalid/")),
+            "include": (origin, ("config", "include.path", os.devnull)),
+        }
+        for name, configure in refusals.items():
+            with self.subTest(name=name):
+                result = self.check(*configure)
+                self.assertEqual(result.returncode, 3)
+                self.assertIn("Refusing to push", result.stderr)
+                self.assertIn("Use a fresh clone of " + self.URL, result.stderr)
+
+    def test_every_push_goes_to_the_explicit_url_through_the_guard(self):
+        text = SCRATCH_SCRIPT.read_text(encoding="utf-8")
+        pushes = [line.strip() for line in text.splitlines()
+                  if re.search(r"\bgit\b.*\spush(?:\s|$)", line) and not line.lstrip().startswith("#")]
+        self.assertEqual(pushes, ['git "${GH_CREDENTIAL[@]}" push --quiet "$SCRATCH_URL" "$@"'])
+        self.assertNotIn("--force", text)
+        self.assertNotIn("origin HEAD", text)
+        self.assertIn("export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1", text)
+        body = text[text.index("push_scratch() {"):]
+        self.assertLess(body.index("assert_push_target ."), body.index("push --quiet"))
 
 
 if __name__ == "__main__":

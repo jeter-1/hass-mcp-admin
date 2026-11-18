@@ -10,13 +10,63 @@
 #                                            -> main's lint still runs and fails
 #   (d) a clean change                        -> both checks pass
 # Usage: policy-locks-scratch-refusal.sh <hass-mcp-admin commit sha>
+#        policy-locks-scratch-refusal.sh --check-push-target <clone>  (guard only)
 # Needs: gh authenticated as jeter-1, git, Actions enabled on the scratch repo,
-# and pull_request_target allowed for policy-locks.yml there.
+# and pull_request_target allowed for policy-locks.yml there. Pushes never go
+# through a remote name: git runs without global or system configuration and
+# pushes to the exact scratch URL, after checking that the clone cannot
+# redirect it. The case-* branches are never force-pushed, so a rerun
+# needs a fresh scratch repository or the old case-* branches deleted by hand.
 set -euo pipefail
 
 readonly SCRATCH="jeter-1/rules-day-scratch"
+readonly SCRATCH_URL="https://github.com/$SCRATCH.git"
 readonly SOURCE="jeter-1/hass-mcp-admin"
 readonly CHECKS=(policy-workflow-lint policy-secret-scan)
+
+# Isolated git: no global, system or environment-supplied configuration.
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0
+unset GIT_CONFIG GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT GIT_DIR GIT_WORK_TREE \
+  GIT_PUSH_OPTION_COUNT
+# Without global configuration, commits need an explicit identity.
+export GIT_AUTHOR_NAME="CODEX-022 refusal test" GIT_COMMITTER_NAME="CODEX-022 refusal test"
+export GIT_AUTHOR_EMAIL="jeter-1@users.noreply.github.com"
+export GIT_COMMITTER_EMAIL="jeter-1@users.noreply.github.com"
+# Credentials come only from gh, named explicitly for each network command.
+readonly GH_CREDENTIAL=(-c credential.helper= -c 'credential.helper=!gh auth git-credential')
+
+refuse_push() {
+  echo "Refusing to push: $1 Use a fresh clone of $SCRATCH_URL with no pushurl," \
+    "insteadOf, pushInsteadOf or include settings, then rerun." >&2
+  exit 3
+}
+
+assert_push_target() {  # clone directory; local checks only, no network
+  local urls rewrites includes status=0
+  urls="$(git -C "$1" remote get-url --push --all origin 2>/dev/null)" ||
+    refuse_push "the clone has no origin remote."
+  [[ "$urls" == "$SCRATCH_URL" ]] ||
+    refuse_push "origin's push URL is not exactly $SCRATCH_URL."
+  # Exit status 1 means no match; anything else is an error, never a pass.
+  rewrites="$(git -C "$1" config --get-regexp '^url\..*\.(push)?insteadof$')" || status=$?
+  includes="$(git -C "$1" config --get-regexp '^include(if)?\.')" || status=$((status | $?))
+  (( status <= 1 )) || refuse_push "git could not read the clone's configuration."
+  [[ -z "$rewrites" ]] || refuse_push "the clone rewrites URLs (url.*.insteadOf)."
+  [[ -z "$includes" ]] || refuse_push "the clone includes other configuration files."
+}
+
+push_scratch() {  # refspec...
+  assert_push_target .
+  git "${GH_CREDENTIAL[@]}" push --quiet "$SCRATCH_URL" "$@"
+}
+
+if [[ "${1:-}" == "--check-push-target" ]]; then
+  [[ -n "${2:-}" ]] || { echo "Pass the clone directory to check." >&2; exit 2; }
+  assert_push_target "$2"
+  echo "Push target is exactly $SCRATCH_URL."
+  exit 0
+fi
+
 source_sha="${1:-}"
 [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]] || {
   echo "Pass the exact 40-character hass-mcp-admin commit to test." >&2; exit 2; }
@@ -29,9 +79,15 @@ gh repo view "$SCRATCH" --json nameWithOwner --jq .nameWithOwner | grep -qx "$SC
 read -r -p "Seed main of $SCRATCH from $SOURCE@$source_sha and open 4 PRs? [y/N] " answer
 [[ "$answer" == "y" || "$answer" == "Y" ]] || { echo "Cancelled."; exit 1; }
 
-git clone --quiet "https://github.com/$SCRATCH.git" "$work/repo"
+git "${GH_CREDENTIAL[@]}" clone --quiet "$SCRATCH_URL" "$work/repo"
 cd "$work/repo"
-[[ "$(git remote get-url origin)" == "https://github.com/$SCRATCH.git" ]]
+assert_push_target .
+# Work on main even when the scratch repository is still empty.
+if git rev-parse --verify --quiet HEAD >/dev/null; then
+  git checkout --quiet -B main
+else
+  git symbolic-ref HEAD refs/heads/main
+fi
 mkdir -p .github/workflows scripts
 for path in .github/workflows/policy-locks.yml scripts/policy_locks.py \
             scripts/policy_locks.requirements.txt; do
@@ -51,13 +107,13 @@ YAML
 echo "rules-day scratch" > README.md
 git add -A
 git commit --quiet -m "Seed policy locks from $SOURCE@$source_sha" || true
-git push --quiet origin HEAD:main
+push_scratch HEAD:main
 
 open_case() {  # name, title; the working tree holds the change
   git checkout --quiet -b "case-$1"
   git add -A
   git commit --quiet -m "$2"
-  git push --quiet --force origin "case-$1"
+  push_scratch "refs/heads/case-$1:refs/heads/case-$1"
   gh pr create --repo "$SCRATCH" --base main --head "case-$1" --title "$2" \
     --body "CODEX-022 refusal test $1." >/dev/null
   git rev-parse HEAD > "$work/$1.sha"
