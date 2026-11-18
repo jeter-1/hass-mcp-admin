@@ -607,6 +607,38 @@ class BackupDispatchScopedCatalogTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(transport.tool_name)
         self.assertEqual(provider.health_snapshot()["dispatch_count"], 0)
 
+    async def test_a_later_refusal_clears_the_earlier_admission(self):
+        # Cursor round 1, HAMCP-436-R1-1: a refusal that returns before
+        # admission must not leave the previous catalog reported as admitted.
+        exact = exact_catalog(BACKUP_VERSION)
+        refusals = {
+            "reviewed_contract_mismatch": _with_tools(
+                exact, _drift_description(exact.tools, "ha_manage_backup")
+            ),
+            "required_tool_missing": _with_tools(
+                exact,
+                [tool for tool in exact.tools if tool["name"] != "ha_manage_backup"],
+            ),
+            "provider_held": catalog_920_component(),
+        }
+        for category, refused in refusals.items():
+            with self.subTest(category=category):
+                provider, transport = self._provider(exact)
+                await provider.probe()
+                health = provider.health_snapshot()
+                self.assertEqual(health["catalog_admission"]["status"], "accepted_exact")
+                self.assertIsNotNone(health["catalog_validation"])
+                transport.catalog = refused
+                with self.assertRaises(OperationalBackupProviderError) as raised:
+                    await provider.create_full_backup("Exact backup", before_dispatch=lambda: None)
+                self.assertEqual(raised.exception.category, category)
+                self.assertFalse(raised.exception.dispatched)
+                self.assertIsNone(transport.tool_name)
+                health = provider.health_snapshot()
+                self.assertEqual(health["dispatch_count"], 0)
+                self.assertIsNone(health["catalog_admission"])
+                self.assertIsNone(health["catalog_validation"])
+
     def test_920_with_the_component_stays_provider_held(self):
         provider = ReviewedOperationalBackupProvider()
         with self.assertRaises(OperationalBackupProviderError) as raised:

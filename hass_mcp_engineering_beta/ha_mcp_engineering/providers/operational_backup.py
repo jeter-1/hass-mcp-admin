@@ -265,6 +265,11 @@ class ReviewedOperationalBackupProvider:
         self, catalog: McpReadCatalog
     ) -> BackupProviderEvidence:
         registry = load_reviewed_upstream_release_registry()
+        # HAMCP-436: health reports this attempt's catalog result only; a
+        # refusal before admission must not leave an earlier admission.
+        with self._lock:
+            self._state.catalog_validation = None
+            self._state.catalog_admission = None
         if catalog.server_name != "ha-mcp":
             self._fail("server_identity_mismatch", dispatched=False)
         release = registry.by_version.get(catalog.server_version)
