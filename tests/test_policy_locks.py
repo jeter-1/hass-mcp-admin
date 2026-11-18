@@ -185,6 +185,15 @@ class LintTests(unittest.TestCase):
             "gh pr merge>/dev/null 1", "gh pr merge >/dev/null 1",
             "docker push>/dev/null image", "docker push >/dev/null image",
             "git 2>&1 push origin", "git push 2>>log origin", "git push</dev/null",
+            # &> and &>> are redirections, not separators.
+            "git &>/dev/null push origin HEAD", "gh release &>/dev/null create v1",
+            "docker &>>log push image",
+            # Shell text inside a quoted word or a here-string is checked as a script.
+            "bash -c 'git -c \"user.name=Policy Bot\" push origin HEAD'",
+            "sh -c 'git -C \"a b\" push origin'", "bash -c 'docker --config \"x y\" push image'",
+            "bash <<< 'git push origin HEAD'", "bash <<< \"gh pr merge 1\"",
+            "bash <<< 'docker push image'", "bash <<< 'gh release create v1'",
+            "eval \"git push origin\"",
         )
         for command in commands:
             with self.subTest(command=command):
@@ -203,7 +212,9 @@ class LintTests(unittest.TestCase):
                         "docker --config \"path with spaces\" pull image",
                         "git log>/dev/null", "git log >/dev/null", "gh release view>/dev/null v1",
                         "gh pr view >/dev/null 1", "docker pull>/dev/null image",
-                        "git status 2>&1", "git log --grep \"a push\" >out.txt"):
+                        "git status 2>&1", "git log --grep \"a push\" >out.txt",
+                        "git &>/dev/null status", "gh pr view 1 &> out", "git fetch & wait",
+                        "bash <<< \"git log\"", "bash -c 'git -c \"a=b c\" fetch'"):
             with self.subTest(command=command):
                 text = CLEAN.replace("python -m unittest", f"|\n          {command}")
                 self.assertEqual(self.kinds(text), set())

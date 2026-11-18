@@ -344,9 +344,13 @@ def runner_findings(path, where, job):
 # backslashes (so a command inside a quoted string, such as
 # ``bash -c 'git push'``, is split and checked too). Both passes join
 # continued lines, split at ; & | ( ) ` and newlines, and remove redirections
-# and their targets (``push>/dev/null`` is ``push``). Every word naming one of
-# these tools is checked, wherever it sits, after skipping the tool's global
-# options. Over-matching text such as ``echo git push`` is accepted.
+# and their targets (``push>/dev/null`` is ``push``; ``&>`` is a redirection,
+# not a separator). Quoted words that hold more than one word, and here-string
+# (``<<<``) inputs, are shell text that ``bash -c``, ``eval`` or a shell's
+# input can run, so they are split and checked again as scripts, up to
+# MAX_NESTING levels deep. Every word naming one of these tools is checked,
+# wherever it sits, after skipping the tool's global options. Over-matching
+# text such as ``echo git push`` is accepted.
 SEPARATORS = re.compile(r"[\n;&|()`]")
 PUBLISH_WORDS = frozenset({"push", "tag", "release", "merge", "publish", "upload"})
 WRAPPERS = frozenset({"sudo", "env", "exec", "command", "builtin", "nohup", "time", "eval",
@@ -368,29 +372,41 @@ COMPOSE_VALUE_OPTIONS = frozenset({"-f", "--file", "-p", "--project-name", "--pr
 
 
 REDIRECT = object()  # Marks a redirection operator while splitting.
+HERE_STRING = object()  # Marks <<<, whose target is shell input.
+MAX_NESTING = 4
 
 
 def split_commands(script, keep_quotes):
-    """Return the simple commands of ``script`` as lists of words."""
+    """Return ``(commands, nested)`` for ``script``.
+
+    ``commands`` are its simple commands as lists of words; ``nested`` is the
+    shell text inside them (multi-word quoted words and here-string inputs)
+    to check again as scripts.
+    """
 
     script = re.sub(r"\\\r?\n", " ", script)  # Join continued lines.
-    commands, words, word, quote, index = [], [], None, None, 0
+    commands, nested, words, word, quote, quoted, index = [], [], [], None, None, False, 0
 
     def end_word():
-        nonlocal word
+        nonlocal word, quoted
         if word is not None:
             words.append(word)
+            if quoted and len(word.split()) > 1:
+                nested.append(word)  # Shell text that bash -c or eval can run.
             word = None
+        quoted = False
 
     def end_command():
         nonlocal words
         end_word()
-        kept, skip = [], False
+        kept, skip = [], None
         for item in words:
-            if item is REDIRECT:
-                skip = True  # The next word is the redirection's target.
-            elif skip:
-                skip = False
+            if item is REDIRECT or item is HERE_STRING:
+                skip = item  # The next word is the redirection's target.
+            elif skip is not None:
+                if skip is HERE_STRING:
+                    nested.append(item)  # A here-string is the shell's input.
+                skip = None
             else:
                 kept.append(item)
         if kept:
@@ -414,7 +430,7 @@ def split_commands(script, keep_quotes):
             else:
                 word += char
         elif char in "'\"" and keep_quotes:
-            quote = char
+            quote, quoted = char, True
             word = word or ""
         elif char == "\\" and keep_quotes:
             if index < len(script):
@@ -422,29 +438,41 @@ def split_commands(script, keep_quotes):
                 index += 1
         elif char in "'\"\\":
             continue  # Dropped: the quoted text is split like the rest.
-        elif SEPARATORS.match(char):
-            end_command()
-        elif char in "<>":
+        elif char in "<>" or (char == "&" and script[index:index + 1] == ">"):
             if word is not None and word.isdigit():
                 word = None  # A file descriptor number such as the 2 in 2>.
             end_word()
+            start = index - 1
             while index < len(script) and script[index] in "<>&|":
-                index += 1  # The rest of the operator: >> >& <<< >| and so on.
-            if words[-1:] != [REDIRECT]:
-                words.append(REDIRECT)
+                index += 1  # The rest of the operator: >> >& &> &>> <<< >| and so on.
+            marker = HERE_STRING if script[start:index].startswith("<<<") else REDIRECT
+            if words[-1:] not in ([REDIRECT], [HERE_STRING]):
+                words.append(marker)
+        elif SEPARATORS.match(char):
+            end_command()
         elif char.isspace():
             end_word()
         else:
             word = (word or "") + char
     end_command()
-    return commands
+    return commands, nested
 
 
 def command_words(script):
-    """Yield each simple command of a run script as a list of words."""
+    """Yield each simple command of a run script, and of the shell text inside
+    it, as a list of words."""
 
-    for keep_quotes in (True, False):
-        yield from split_commands(script, keep_quotes)
+    scripts, seen = [(script, 0)], set()
+    while scripts:
+        text, depth = scripts.pop()
+        if text in seen:
+            continue
+        seen.add(text)
+        for keep_quotes in (True, False):
+            commands, nested = split_commands(text, keep_quotes)
+            yield from commands
+            if depth < MAX_NESTING:
+                scripts += [(inner, depth + 1) for inner in nested]
 
 
 def options(words, start, value_options, leading=True):
