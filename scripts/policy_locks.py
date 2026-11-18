@@ -338,8 +338,13 @@ def runner_findings(path, where, job):
 
 
 # Publication or merge commands in a validation workflow's run scripts. The
-# script is normalized first (continuations joined; quotes and backslashes
-# dropped; split at ; & | ( ) ` and newlines), and every word naming one of
+# script is split into simple commands twice and both are checked: once
+# keeping quoted text as one word (so a quoted option value such as
+# ``-c "user.name=A B"`` stays one word), and once dropping quotes and
+# backslashes (so a command inside a quoted string, such as
+# ``bash -c 'git push'``, is split and checked too). Both passes join
+# continued lines, split at ; & | ( ) ` and newlines, and remove redirections
+# and their targets (``push>/dev/null`` is ``push``). Every word naming one of
 # these tools is checked, wherever it sits, after skipping the tool's global
 # options. Over-matching text such as ``echo git push`` is accepted.
 SEPARATORS = re.compile(r"[\n;&|()`]")
@@ -362,15 +367,84 @@ COMPOSE_VALUE_OPTIONS = frozenset({"-f", "--file", "-p", "--project-name", "--pr
                                    "--progress", "--parallel"})
 
 
+REDIRECT = object()  # Marks a redirection operator while splitting.
+
+
+def split_commands(script, keep_quotes):
+    """Return the simple commands of ``script`` as lists of words."""
+
+    script = re.sub(r"\\\r?\n", " ", script)  # Join continued lines.
+    commands, words, word, quote, index = [], [], None, None, 0
+
+    def end_word():
+        nonlocal word
+        if word is not None:
+            words.append(word)
+            word = None
+
+    def end_command():
+        nonlocal words
+        end_word()
+        kept, skip = [], False
+        for item in words:
+            if item is REDIRECT:
+                skip = True  # The next word is the redirection's target.
+            elif skip:
+                skip = False
+            else:
+                kept.append(item)
+        if kept:
+            commands.append(kept)
+        words = []
+
+    while index < len(script):
+        char = script[index]
+        index += 1
+        if quote == "'":
+            if char == "'":
+                quote = None
+            else:
+                word += char
+        elif quote == '"':
+            if char == '"':
+                quote = None
+            elif char == "\\" and index < len(script):
+                word += script[index]
+                index += 1
+            else:
+                word += char
+        elif char in "'\"" and keep_quotes:
+            quote = char
+            word = word or ""
+        elif char == "\\" and keep_quotes:
+            if index < len(script):
+                word = (word or "") + script[index]
+                index += 1
+        elif char in "'\"\\":
+            continue  # Dropped: the quoted text is split like the rest.
+        elif SEPARATORS.match(char):
+            end_command()
+        elif char in "<>":
+            if word is not None and word.isdigit():
+                word = None  # A file descriptor number such as the 2 in 2>.
+            end_word()
+            while index < len(script) and script[index] in "<>&|":
+                index += 1  # The rest of the operator: >> >& <<< >| and so on.
+            if words[-1:] != [REDIRECT]:
+                words.append(REDIRECT)
+        elif char.isspace():
+            end_word()
+        else:
+            word = (word or "") + char
+    end_command()
+    return commands
+
+
 def command_words(script):
     """Yield each simple command of a run script as a list of words."""
 
-    script = re.sub(r"\\\r?\n", " ", script)  # Join continued lines.
-    script = re.sub(r"[\\'\"]", "", script)  # Drop quoting and escapes.
-    for segment in SEPARATORS.split(script):
-        words = segment.split()
-        if words:
-            yield words
+    for keep_quotes in (True, False):
+        yield from split_commands(script, keep_quotes)
 
 
 def options(words, start, value_options, leading=True):

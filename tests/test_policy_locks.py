@@ -174,6 +174,17 @@ class LintTests(unittest.TestCase):
             "docker --context x push i", "docker -H tcp://h image push i",
             "docker --config /c buildx --builder b build --push .", "docker build --push .",
             "docker buildx imagetools create -t i a", "docker manifest push i",
+            # Quoted option values keep their word boundaries.
+            "git -c \"user.name=Policy Bot\" push origin HEAD",
+            "git -C \"path with spaces\" push origin HEAD",
+            "docker --config \"path with spaces\" push image",
+            "git -C 'a b' -c 'x=1 2' tag v1",
+            # Redirections, with or without whitespace, are not arguments.
+            "git push>/dev/null origin HEAD", "git push >/dev/null origin HEAD",
+            "gh release create>/dev/null v1", "gh release create >/dev/null v1",
+            "gh pr merge>/dev/null 1", "gh pr merge >/dev/null 1",
+            "docker push>/dev/null image", "docker push >/dev/null image",
+            "git 2>&1 push origin", "git push 2>>log origin", "git push</dev/null",
         )
         for command in commands:
             with self.subTest(command=command):
@@ -187,7 +198,12 @@ class LintTests(unittest.TestCase):
                         "gh -R o/r pr view 1", "gh release -R o/r view v1",
                         "gh -R o/r api repos/o/r/pulls", "docker --context x pull i",
                         "docker -H tcp://h image ls", "docker buildx --builder b build --load .",
-                        "git log --grep push", "echo $VERSION release notes to publish"):
+                        "git log --grep push", "echo $VERSION release notes to publish",
+                        "git -c \"user.name=Policy Bot\" log", "git -C \"path with spaces\" status",
+                        "docker --config \"path with spaces\" pull image",
+                        "git log>/dev/null", "git log >/dev/null", "gh release view>/dev/null v1",
+                        "gh pr view >/dev/null 1", "docker pull>/dev/null image",
+                        "git status 2>&1", "git log --grep \"a push\" >out.txt"):
             with self.subTest(command=command):
                 text = CLEAN.replace("python -m unittest", f"|\n          {command}")
                 self.assertEqual(self.kinds(text), set())
