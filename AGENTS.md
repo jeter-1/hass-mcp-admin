@@ -122,6 +122,10 @@ guidance conflicts. Nonconflicting root instructions continue to apply.
   Full/Evidence validation on a stable review candidate before independent
   review. The pull request states which tier ran and why. The implementer's
   self-review is not independent review.
+  Exception: a pull request into a `release/*` branch runs the Fast checks and
+  CI. When the release contract requires Evidence, it runs once on the release
+  head before the release pull request into `main` is reviewed. The sub-PR
+  states its tier and cites the contract section that sets it.
   Use a separately tasked reviewer/session that did not implement the change;
   a separate worktree provides optional file isolation, not independence.
   The default budget is one read-only independent review, one batch of accepted
@@ -144,6 +148,13 @@ guidance conflicts. Nonconflicting root instructions continue to apply.
   head or lifecycle change withdraws that Ready authorization and cancels the
   in-flight merge run. A corrected head requires the bounded delta rereview
   before Josh marks it Ready again.
+- The merge workflow also accepts an exact `@merge` comment by `jeter-1` as a
+  retry of a transient merge-workflow failure. It merges only while the latest
+  Ready action still authorizes the unchanged current head (see **Independent
+  review and Ready automation** in `docs/CODEX_WORKFLOW.md`). Agents act as
+  `jeter-1`, so the workflow cannot tell an agent's comment from Josh's; the
+  retry stays reachable by agents until they have a separate GitHub identity.
+  Agents must not post `@merge`; a retry is Josh's action.
 - If that authorized pull request contains a fully materialized Engineering
   version transition, the same Ready action authorizes publication of the exact
   protected `main` merge commit as the version image, immutable commit image,
