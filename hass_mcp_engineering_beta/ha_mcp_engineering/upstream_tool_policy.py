@@ -132,6 +132,13 @@ REVIEWED_CATALOG_COMPONENTS = (
     "output_contract_fingerprint",
     "runtime_contract_fingerprint",
 )
+# HAMCP-436: an operational provider admits a catalog for the exact tools it
+# dispatches. The reviewed tool name set, count, order and descriptor validity
+# stay whole-catalog gates; descriptor drift on any other reviewed tool is
+# recorded, not admitted into dispatch and not a rejection.
+DISPATCH_SCOPED_CATALOG_ADMISSION_MODEL_V1 = (
+    "reviewed-dispatch-scoped-catalog-v1"
+)
 RUNTIME_CONTRACT_DIAGNOSTIC_PATHS = (
     "/title",
     "/annotations/title",
@@ -843,6 +850,13 @@ class ReviewedCatalogValidation:
     expected_normalized_catalog_fingerprint: str | None
     normalized_catalog_fingerprint: str | None
     validation_status: str
+    # Every reviewed tool observed once whose every component matched; not
+    # bounded and not projected, so dispatch scoping never reads the bounded
+    # diagnostics.
+    accounted_tool_names: tuple[str, ...] = ()
+    # Unbounded count of observed reviewed tools whose classification or
+    # descriptor validity failed, for the same reason.
+    classification_or_invalid_tool_count: int = 0
 
     @property
     def valid(self) -> bool:
@@ -1070,6 +1084,8 @@ def validate_reviewed_release_catalog(
     observed_entries: list[dict[str, str]] = []
     mismatch_items: list[ReviewedCatalogToolMismatch] = []
     accounted = 0
+    accounted_names: list[str] = []
+    classification_or_invalid = 0
     for name in sorted(expected_names & observed_names):
         descriptors = descriptors_by_name[name]
         if len(descriptors) != 1:
@@ -1133,6 +1149,10 @@ def validate_reviewed_release_catalog(
                     RecursionError,
                 ):
                     diff_fields = ()
+        if "classification" in components or (
+            "descriptor_invalid" in components
+        ):
+            classification_or_invalid += 1
         if components:
             mismatch_items.append(
                 ReviewedCatalogToolMismatch(
@@ -1143,6 +1163,7 @@ def validate_reviewed_release_catalog(
             )
         else:
             accounted += 1
+            accounted_names.append(name)
 
     normalized_fingerprint: str | None = None
     if (
@@ -1245,6 +1266,120 @@ def validate_reviewed_release_catalog(
         expected_normalized_catalog_fingerprint=expected_normalized,
         normalized_catalog_fingerprint=normalized_fingerprint,
         validation_status=validation_status,
+        accounted_tool_names=tuple(accounted_names),
+        classification_or_invalid_tool_count=classification_or_invalid,
+    )
+
+
+@dataclass(frozen=True)
+class ReviewedDispatchCatalogAdmission:
+    """HAMCP-436: one validated catalog admitted for the tools a provider dispatches."""
+
+    status: str
+    exact_tools: tuple[str, ...]
+    exact_tool_mismatches: tuple[str, ...]
+    unused_tool_drift_count: int
+    unused_tool_drift: tuple[ReviewedCatalogToolMismatch, ...]
+    unused_tool_drift_truncated: bool
+    normalized_catalog_fingerprint: str | None
+
+    @property
+    def admitted(self) -> bool:
+        return self.status in {"accepted_exact", "accepted_unused_tool_drift"}
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "model": DISPATCH_SCOPED_CATALOG_ADMISSION_MODEL_V1,
+            "status": self.status,
+            "admitted": self.admitted,
+            "exact_tools": list(self.exact_tools),
+            "exact_tool_mismatches": list(self.exact_tool_mismatches),
+            "unused_tool_drift_count": self.unused_tool_drift_count,
+            "unused_tool_drift": [
+                item.as_dict() for item in self.unused_tool_drift
+            ],
+            "unused_tool_drift_truncated": self.unused_tool_drift_truncated,
+        }
+
+
+def admit_reviewed_catalog_for_dispatch(
+    validation: ReviewedCatalogValidation,
+    exact_tools: Sequence[str],
+) -> ReviewedDispatchCatalogAdmission:
+    """Admit one whole-catalog validation for exactly ``exact_tools``.
+
+    Fail closed unless the identity is accepted; the observed tool count is
+    the reviewed count; no reviewed name is missing, additional, duplicated or
+    unreviewed; every descriptor is valid and fingerprinted in the reviewed
+    order; and the release's classifications agree, including on every
+    diagnosed tool. Each tool in ``exact_tools`` must then match every
+    reviewed component. Component drift on any other reviewed tool is
+    returned as bounded value-free diagnostics and does not reject.
+
+    The admitted normalized catalog fingerprint is the reviewed one: it binds
+    the reviewed release model under which the exact tools were admitted, is
+    the value an exact catalog yields, and does not move with drift on a tool
+    the provider never dispatches.
+    """
+
+    exact = tuple(sorted(set(exact_tools)))
+    accounted = set(validation.accounted_tool_names)
+    mismatches = tuple(name for name in exact if name not in accounted)
+    drift_count = max(
+        validation.expected_tool_count - validation.reviewed_accounted_count,
+        0,
+    )
+    drift = tuple(
+        item
+        for item in validation.mismatch_diagnostics
+        if item.tool_name not in exact
+    )
+    structure_exact = (
+        validation.validation_status in {"accepted_exact", "rejected_catalog_mismatch"}
+        and validation.observed_tool_count == validation.expected_tool_count
+        and validation.missing_tool_count == 0
+        and validation.additional_tool_count == 0
+        and validation.duplicated_tool_count == 0
+        and validation.unreviewed_tool_count == 0
+        and validation.invalid_descriptor_count == 0
+        and validation.classification_mismatch_count == 0
+        and dict(validation.component_mismatch_counts).get("classification", 0)
+        == 0
+        and validation.classification_or_invalid_tool_count == 0
+        and validation.observed_raw_catalog_fingerprint is not None
+        and validation.expected_normalized_catalog_fingerprint is not None
+        and validation.normalized_catalog_fingerprint is not None
+        and len(accounted) == validation.reviewed_accounted_count
+    )
+    if not exact:
+        status = "rejected_no_exact_tools"
+    elif not structure_exact:
+        status = (
+            validation.validation_status
+            if validation.validation_status != "accepted_exact"
+            else "rejected_catalog_mismatch"
+        )
+    elif mismatches:
+        status = "rejected_dispatched_tool_mismatch"
+    elif validation.valid and drift_count == 0:
+        status = "accepted_exact"
+    else:
+        status = "accepted_unused_tool_drift"
+    admitted = status in {"accepted_exact", "accepted_unused_tool_drift"}
+    return ReviewedDispatchCatalogAdmission(
+        status=status,
+        exact_tools=exact,
+        exact_tool_mismatches=mismatches,
+        unused_tool_drift_count=drift_count if admitted else 0,
+        unused_tool_drift=drift if admitted else (),
+        unused_tool_drift_truncated=(
+            admitted and len(drift) < drift_count
+        ),
+        normalized_catalog_fingerprint=(
+            validation.expected_normalized_catalog_fingerprint
+            if admitted
+            else None
+        ),
     )
 
 

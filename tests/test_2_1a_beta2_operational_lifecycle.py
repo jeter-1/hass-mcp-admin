@@ -4873,21 +4873,34 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(OperationalLifecycleProviderError) as raised:
             await provider.reload("all", before_dispatch=lambda: None)
         self.assertEqual(raised.exception.category, "invalid_request")
-        changed = list(transport.catalog.tools)
-        changed[0] = {**changed[0], "description": "drift"}
-        transport.catalog = McpReadCatalog(
-            protocol_version=transport.catalog.protocol_version,
-            server_name=transport.catalog.server_name,
-            server_version=transport.catalog.server_version,
-            tools=tuple(changed),
-            connection_latency_ms=1.0,
-        )
-        with self.assertRaises(OperationalLifecycleProviderError) as raised:
-            await provider.restart_home_assistant(
-                before_dispatch=lambda: None
+        exact = transport.catalog
+        # HAMCP-436: structural catalog drift (an unreviewed tool name) and
+        # drift on the dispatched tool both refuse before dispatch.
+        extra = list(exact.tools)
+        extra.append({**extra[0], "name": "ha_unreviewed_extra"})
+        dispatched_drift = [
+            {**item, "description": "drift"}
+            if item.get("name") == "ha_restart"
+            else item
+            for item in exact.tools
+        ]
+        self.assertNotEqual(dispatched_drift, list(exact.tools))
+        for changed in (extra, dispatched_drift):
+            transport.catalog = McpReadCatalog(
+                protocol_version=exact.protocol_version,
+                server_name=exact.server_name,
+                server_version=exact.server_version,
+                tools=tuple(changed),
+                connection_latency_ms=1.0,
             )
-        self.assertEqual(raised.exception.category, "catalog_mismatch")
-        self.assertEqual(transport.calls, [])
+            with self.assertRaises(
+                OperationalLifecycleProviderError
+            ) as raised:
+                await provider.restart_home_assistant(
+                    before_dispatch=lambda: None
+                )
+            self.assertEqual(raised.exception.category, "catalog_mismatch")
+            self.assertEqual(transport.calls, [])
 
     async def test_untrusted_provider_result_fails_closed_after_one_dispatch(self):
         for text in (

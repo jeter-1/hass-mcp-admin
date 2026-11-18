@@ -540,18 +540,80 @@ class SpecialProviderCatalogAdmissionTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(health["fallback_count"], 0)
 
     async def test_catalog_drift_fails_before_special_provider_dispatch(self):
-        tools = addon_8_tools()
-        tools[0]["_meta"]["ha_mcp"]["pinned"] = not tools[0][
-            "_meta"
-        ]["ha_mcp"]["pinned"]
+        # HAMCP-436: drift on a tool the provider dispatches still refuses
+        # before dispatch.
+        def flip_pinned(tools: list[dict], name: str) -> None:
+            tool = next(item for item in tools if item["name"] == name)
+            tool["_meta"]["ha_mcp"]["pinned"] = not tool["_meta"]["ha_mcp"][
+                "pinned"
+            ]
 
+        tools = addon_8_tools()
+        flip_pinned(tools, "ha_manage_backup")
         backup_transport = CatalogTransport("8.0.0", tools)
         backup = ReviewedOperationalBackupProvider()
         backup._transport = backup_transport
         backup._state.configured = True
         with self.assertRaises(OperationalBackupProviderError) as caught:
             await backup.probe()
-        self.assertEqual(caught.exception.category, "catalog_mismatch")
+        self.assertEqual(
+            caught.exception.category, "reviewed_contract_mismatch"
+        )
+        self.assertEqual(backup.health_snapshot()["dispatch_count"], 0)
+
+        for dispatched in ("ha_manage_addon", "ha_get_addon"):
+            with self.subTest(dispatched=dispatched):
+                tools = addon_8_tools()
+                flip_pinned(tools, dispatched)
+                lifecycle_transport = CatalogTransport("8.0.0", tools)
+                lifecycle = ReviewedOperationalLifecycleProvider()
+                lifecycle._transport = lifecycle_transport
+                lifecycle._state.configured = True
+                with self.assertRaises(
+                    OperationalLifecycleProviderError
+                ) as caught:
+                    await lifecycle.probe("restart_addon")
+                self.assertEqual(caught.exception.category, "catalog_mismatch")
+                lifecycle_health = lifecycle.health_snapshot()
+                self.assertEqual(
+                    sum(lifecycle_health["dispatch_counts"].values()), 0
+                )
+                self.assertEqual(lifecycle_health["fallback_count"], 0)
+                self.assertEqual(
+                    lifecycle_health["catalog_admission"]["status"],
+                    "rejected_dispatched_tool_mismatch",
+                )
+                self.assertEqual(
+                    lifecycle_health["catalog_admission"][
+                        "exact_tool_mismatches"
+                    ],
+                    [dispatched],
+                )
+
+    async def test_unused_tool_drift_is_recorded_not_rejected(self):
+        # HAMCP-436: drift on a reviewed tool neither provider dispatches is
+        # recorded in health, and the reviewed normalized fingerprint binds.
+        exact_backup = ReviewedOperationalBackupProvider()
+        exact_backup._transport = CatalogTransport("8.0.0", addon_8_tools())
+        exact_backup._state.configured = True
+        exact_backup_evidence = await exact_backup.probe()
+        exact_lifecycle = ReviewedOperationalLifecycleProvider()
+        exact_lifecycle._transport = CatalogTransport(
+            "8.0.0", addon_8_tools()
+        )
+        exact_lifecycle._state.configured = True
+        exact_lifecycle_evidence = await exact_lifecycle.probe("restart_addon")
+
+        tools = addon_8_tools()
+        self.assertEqual(tools[0]["name"], "ha_bulk_control")
+        tools[0]["_meta"]["ha_mcp"]["pinned"] = not tools[0][
+            "_meta"
+        ]["ha_mcp"]["pinned"]
+
+        backup = ReviewedOperationalBackupProvider()
+        backup._transport = CatalogTransport("8.0.0", tools)
+        backup._state.configured = True
+        backup_evidence = await backup.probe()
         backup_health = backup.health_snapshot()
         self.assertEqual(backup_health["dispatch_count"], 0)
         self.assertEqual(
@@ -559,22 +621,47 @@ class SpecialProviderCatalogAdmissionTests(unittest.IsolatedAsyncioTestCase):
             "rejected_catalog_mismatch",
         )
         self.assertEqual(
-            backup_health["catalog_validation"]["mismatch_diagnostics"][
-                0
-            ]["runtime_contract_diff_fields"],
-            ["/_meta/ha_mcp/pinned"],
+            backup_health["catalog_admission"]["status"],
+            "accepted_unused_tool_drift",
+        )
+        self.assertEqual(
+            backup_health["catalog_admission"]["unused_tool_drift"],
+            [
+                {
+                    "tool_name": "ha_bulk_control",
+                    "components": ["runtime_contract_fingerprint"],
+                    "runtime_contract_diff_fields": ["/_meta/ha_mcp/pinned"],
+                }
+            ],
+        )
+        self.assertEqual(
+            backup_evidence.normalized_catalog_fingerprint,
+            exact_backup_evidence.normalized_catalog_fingerprint,
+        )
+        self.assertNotEqual(
+            backup_evidence.catalog_fingerprint,
+            exact_backup_evidence.catalog_fingerprint,
         )
 
-        lifecycle_transport = CatalogTransport("8.0.0", tools)
         lifecycle = ReviewedOperationalLifecycleProvider()
-        lifecycle._transport = lifecycle_transport
+        lifecycle._transport = CatalogTransport("8.0.0", tools)
         lifecycle._state.configured = True
-        with self.assertRaises(OperationalLifecycleProviderError) as caught:
-            await lifecycle.probe("restart_addon")
-        self.assertEqual(caught.exception.category, "catalog_mismatch")
+        lifecycle_evidence = await lifecycle.probe("restart_addon")
         lifecycle_health = lifecycle.health_snapshot()
         self.assertEqual(sum(lifecycle_health["dispatch_counts"].values()), 0)
         self.assertEqual(lifecycle_health["fallback_count"], 0)
+        self.assertEqual(
+            lifecycle_health["catalog_admission"]["status"],
+            "accepted_unused_tool_drift",
+        )
+        self.assertEqual(
+            lifecycle_health["catalog_admission"]["unused_tool_drift_count"],
+            1,
+        )
+        self.assertEqual(
+            lifecycle_evidence.normalized_catalog_fingerprint,
+            exact_lifecycle_evidence.normalized_catalog_fingerprint,
+        )
 
 
 class DashboardV3RuntimeAdmissionTests(unittest.IsolatedAsyncioTestCase):

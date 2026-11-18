@@ -159,8 +159,12 @@ reviewed `ha_manage_backup` contract:
 
 Both compiled `ha-mcp` 7.14.1 and 7.14.2 releases carry the same exact tool
 contract. The provider requires the reviewed server identity, release,
-protocol, complete catalog, and all five `ha_manage_backup` fingerprints.
-Unknown releases or drift fail closed. The mixed upstream tool is not
+protocol, the complete reviewed tool name set, and all five
+`ha_manage_backup` fingerprints. Unknown releases, a missing, duplicate,
+additional or unreviewed tool, or `ha_manage_backup` drift fail closed.
+Descriptor drift on a reviewed tool the provider does not dispatch is
+recorded in provider health (`catalog_admission`) and is not a rejection
+(HAMCP-436). The mixed upstream tool is not
 reclassified or generically registered. Restore, delete, list, download,
 retention, credentials, arbitrary selections, provider arguments, service
 calls, and direct-Home-Assistant fallback are unreachable.
@@ -241,9 +245,14 @@ are never registered generically. Engineering-owned wrappers construct only:
 - `ha_restart(confirm=true)`.
 
 Every wrapper requires exact server identity, reviewed 7.14.1 or 7.14.2
-release, protocol, complete catalog, and per-tool input, description,
-annotation, output, and runtime fingerprints. Start, stop, install, uninstall,
-update, configuration mutation, proxy calls, arbitrary provider arguments,
+release, protocol, the complete reviewed tool name set (and its reviewed order
+where the release pins one), and per-tool input, description, annotation,
+output, and runtime fingerprints for the tools the operation dispatches and
+the reviewed versioned add-on tools. Descriptor drift on any other reviewed
+tool, such as the `ha_config_set_helper` rewrite by the `ha_mcp_tools`
+component on 9.2.0, is recorded in provider health (`catalog_admission`) and
+is not a rejection (HAMCP-436). Start, stop, install, uninstall, update,
+configuration mutation, proxy calls, arbitrary provider arguments,
 `reload_all`, config-entry reload, and generic service calls remain
 unreachable. There is no fallback.
 

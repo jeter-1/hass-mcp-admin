@@ -1642,12 +1642,17 @@ class OperationalProviderContractTests(unittest.IsolatedAsyncioTestCase):
                     if item["name"] == "ha_manage_backup"
                 )
                 if drift_kind == "catalog_mismatch":
+                    # HAMCP-436: the reviewed name set is a whole-catalog
+                    # gate; descriptor drift on a tool backup never
+                    # dispatches is recorded, not rejected.
                     other = next(
                         item
                         for item in tools
                         if item["name"] == "ha_get_state"
                     )
-                    other["description"] = "Unreviewed catalog drift."
+                    tools.append(
+                        {**deepcopy(other), "name": "ha_unreviewed_extra"}
+                    )
                 elif drift_kind == "tool_removed":
                     tools.remove(target)
                 elif drift_kind == "input_changed":

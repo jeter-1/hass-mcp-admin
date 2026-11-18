@@ -27,6 +27,7 @@ from . import upstream_yaml_reader as yaml_reader
 from ..request_context import current_telemetry
 from ..sanitization import sanitize_untrusted_data
 from ..upstream_tool_policy import (
+    admit_reviewed_catalog_for_dispatch,
     catalog_fingerprint,
     load_reviewed_upstream_release_registry,
     runtime_contract_field_fingerprints,
@@ -306,6 +307,10 @@ class OperationalProviderState:
     lifecycle_addon_response_diagnostics: dict[str, Any] | None = None
     runtime_contract_mismatch_diagnostics: dict[str, Any] | None = None
     catalog_validation: dict[str, Any] | None = None
+    # HAMCP-436: the dispatch-scoped admission of the last validated catalog,
+    # including value-free drift on reviewed tools this provider never
+    # dispatches.
+    catalog_admission: dict[str, Any] | None = None
     # Exact add-on tool names of the release the last catalog validated.
     selected_addon_tools: tuple[tuple[str, str], ...] | None = None
     fallback_count: int = 0
@@ -910,6 +915,7 @@ class ReviewedOperationalLifecycleProvider:
             self._state.lifecycle_addon_response_envelope_variant = None
             self._state.lifecycle_addon_response_diagnostics = None
             self._state.catalog_validation = None
+            self._state.catalog_admission = None
             self._state.selected_addon_tools = None
         if catalog.server_name != "ha-mcp":
             self._fail("server_identity_mismatch", dispatched=False)
@@ -971,12 +977,27 @@ class ReviewedOperationalLifecycleProvider:
             observed_protocol_version=catalog.protocol_version,
             tools=stock_tools,
         )
+        # HAMCP-436: exact contracts are required for the tools this
+        # operation dispatches and for the reviewed versioned add-on tools;
+        # the reviewed name set stays a whole-catalog gate, and descriptor
+        # drift on any other reviewed tool is recorded, not rejected.
+        catalog_admission = admit_reviewed_catalog_for_dispatch(
+            catalog_validation,
+            (
+                *upstream_tools,
+                *(
+                    response_contract.upstream_tool(tool)
+                    for tool in sorted(_VERSIONED_ADDON_TOOLS)
+                ),
+            ),
+        )
         with self._lock:
             self._state.catalog_validation = catalog_validation.as_dict()
-        if not catalog_validation.valid:
+            self._state.catalog_admission = catalog_admission.as_dict()
+        if not catalog_admission.admitted:
             self._fail("catalog_mismatch", dispatched=False)
         normalized_catalog_fingerprint = (
-            catalog_validation.normalized_catalog_fingerprint
+            catalog_admission.normalized_catalog_fingerprint
         )
         if (
             catalog_validation.observed_raw_catalog_fingerprint is None
@@ -986,7 +1007,8 @@ class ReviewedOperationalLifecycleProvider:
         # The provider identity is the whole advertised catalog, the list the
         # read gateway fingerprints, so upstream add-on readmission compares
         # like with like when bound optional tools are present. The stock
-        # projection is validated above and stays in catalog_validation.
+        # projection is validated above and stays in catalog_validation and
+        # catalog_admission.
         try:
             observed_catalog = catalog_fingerprint(list(catalog.tools))
         except (TypeError, ValueError, UnicodeError, OverflowError):
@@ -1546,6 +1568,11 @@ class ReviewedOperationalLifecycleProvider:
                 "catalog_validation": (
                     deepcopy(self._state.catalog_validation)
                     if self._state.catalog_validation is not None
+                    else None
+                ),
+                "catalog_admission": (
+                    deepcopy(self._state.catalog_admission)
+                    if self._state.catalog_admission is not None
                     else None
                 ),
                 "fallback_count": self._state.fallback_count,
