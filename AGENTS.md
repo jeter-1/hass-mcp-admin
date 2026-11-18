@@ -122,10 +122,13 @@ guidance conflicts. Nonconflicting root instructions continue to apply.
   Full/Evidence validation on a stable review candidate before independent
   review. The pull request states which tier ran and why. The implementer's
   self-review is not independent review.
-  Exception: a pull request into a `release/*` branch runs the Fast checks and
-  CI. When the release contract requires Evidence, it runs once on the release
-  head before the release pull request into `main` is reviewed. The sub-PR
-  states its tier and cites the contract section that sets it.
+  Exception: a pull request whose base is a `release/*` branch runs the Fast
+  checks and CI, whatever files it changes, and cites this exception for its
+  tier. Sub-PRs do not each run Evidence. The release pull request into `main`
+  stays on the file-type rule above. Evidence that the release contract
+  requires runs on the final release head, after materialization when
+  materialization changes the head, and that pull request cites the contract
+  section that sets it.
   Use a separately tasked reviewer/session that did not implement the change;
   a separate worktree provides optional file isolation, not independence.
   The default budget is one read-only independent review, one batch of accepted
