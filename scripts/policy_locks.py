@@ -348,7 +348,10 @@ def runner_findings(path, where, job):
 # not a separator). Quoted words that hold more than one word, and here-string
 # (``<<<``) inputs, are shell text that ``bash -c``, ``eval`` or a shell's
 # input can run, so they are split and checked again as scripts, up to
-# MAX_NESTING levels deep. Every word naming one of these tools is checked,
+# MAX_NESTING levels deep; shell text nested deeper is a finding, not skipped.
+# A backslash before a newline is removed everywhere, even inside single
+# quotes, because a shell that later runs that text joins the two lines.
+# Every word naming one of these tools is checked,
 # wherever it sits, after skipping the tool's global options. Over-matching
 # text such as ``echo git push`` is accepted.
 SEPARATORS = re.compile(r"[\n;&|()`]")
@@ -373,6 +376,7 @@ COMPOSE_VALUE_OPTIONS = frozenset({"-f", "--file", "-p", "--project-name", "--pr
 
 REDIRECT = object()  # Marks a redirection operator while splitting.
 HERE_STRING = object()  # Marks <<<, whose target is shell input.
+TOO_DEEP = object()  # Yielded for shell text nested deeper than MAX_NESTING.
 MAX_NESTING = 4
 
 
@@ -384,15 +388,18 @@ def split_commands(script, keep_quotes):
     to check again as scripts.
     """
 
-    script = re.sub(r"\\\r?\n", " ", script)  # Join continued lines.
+    script = re.sub(r"\\\r?\n", "", script)  # Join continued lines.
     commands, nested, words, word, quote, quoted, index = [], [], [], None, None, False, 0
+    # ``word`` is None between words, else a list of characters (joined once
+    # at the end of the word, so long words parse in linear time).
 
     def end_word():
         nonlocal word, quoted
         if word is not None:
-            words.append(word)
-            if quoted and len(word.split()) > 1:
-                nested.append(word)  # Shell text that bash -c or eval can run.
+            text = "".join(word)
+            words.append(text)
+            if quoted and len(text.split()) > 1:
+                nested.append(text)  # Shell text that bash -c or eval can run.
             word = None
         quoted = False
 
@@ -420,26 +427,27 @@ def split_commands(script, keep_quotes):
             if char == "'":
                 quote = None
             else:
-                word += char
+                word.append(char)
         elif quote == '"':
             if char == '"':
                 quote = None
             elif char == "\\" and index < len(script):
-                word += script[index]
+                word.append(script[index])
                 index += 1
             else:
-                word += char
+                word.append(char)
         elif char in "'\"" and keep_quotes:
             quote, quoted = char, True
-            word = word or ""
+            word = word if word is not None else []
         elif char == "\\" and keep_quotes:
             if index < len(script):
-                word = (word or "") + script[index]
+                word = word if word is not None else []
+                word.append(script[index])
                 index += 1
         elif char in "'\"\\":
             continue  # Dropped: the quoted text is split like the rest.
         elif char in "<>" or (char == "&" and script[index:index + 1] == ">"):
-            if word is not None and word.isdigit():
+            if word is not None and "".join(word).isdigit():
                 word = None  # A file descriptor number such as the 2 in 2>.
             end_word()
             start = index - 1
@@ -453,16 +461,18 @@ def split_commands(script, keep_quotes):
         elif char.isspace():
             end_word()
         else:
-            word = (word or "") + char
+            word = word if word is not None else []
+            word.append(char)
     end_command()
     return commands, nested
 
 
 def command_words(script):
     """Yield each simple command of a run script, and of the shell text inside
-    it, as a list of words."""
+    it, as a list of words; yield TOO_DEEP once if shell text is nested deeper
+    than MAX_NESTING."""
 
-    scripts, seen = [(script, 0)], set()
+    scripts, seen, too_deep = [(script, 0)], set(), False
     while scripts:
         text, depth = scripts.pop()
         if text in seen:
@@ -473,6 +483,9 @@ def command_words(script):
             yield from commands
             if depth < MAX_NESTING:
                 scripts += [(inner, depth + 1) for inner in nested]
+            elif nested and not too_deep:
+                too_deep = True
+                yield TOO_DEEP
 
 
 def options(words, start, value_options, leading=True):
@@ -624,7 +637,10 @@ def command_publish(words):
 def publish_findings(path, where, script):
     labels = []
     for words in command_words(script):
-        labels += command_publish(words)
+        if words is TOO_DEEP:
+            labels.append("shell text nested too deep to check")
+        else:
+            labels += command_publish(words)
     return [Finding(path, "publish_step", where, label)
             for label in dict.fromkeys(labels)]
 

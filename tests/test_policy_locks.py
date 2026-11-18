@@ -5,10 +5,12 @@ import io
 import os
 from pathlib import Path
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
 import textwrap
+import time
 import unittest
 
 import yaml
@@ -194,6 +196,9 @@ class LintTests(unittest.TestCase):
             "bash <<< 'git push origin HEAD'", "bash <<< \"gh pr merge 1\"",
             "bash <<< 'docker push image'", "bash <<< 'gh release create v1'",
             "eval \"git push origin\"",
+            # A backslash before a newline joins lines, even in shell text run later.
+            "bash <<< 'git pu\\\nsh origin HEAD'", "bash -c 'git pu\\\nsh origin HEAD'",
+            "bash <<'EOF'\ngit pu\\\nsh origin HEAD\nEOF",
         )
         for command in commands:
             with self.subTest(command=command):
@@ -218,6 +223,36 @@ class LintTests(unittest.TestCase):
             with self.subTest(command=command):
                 text = CLEAN.replace("python -m unittest", f"|\n          {command}")
                 self.assertEqual(self.kinds(text), set())
+
+    def test_shell_text_nested_past_the_limit_fails_closed(self):
+        def wrapped(command, times):
+            for _ in range(times):
+                command = "bash -c " + shlex.quote(command)
+            return command
+
+        def details(command):
+            text = CLEAN.replace("python -m unittest", "|\n          " + command)
+            return {d for _p, kind, _w, d in self.lint({"x.yml": text}) if kind == "publish_step"}
+
+        limit = locks.MAX_NESTING
+        for times in (limit - 1, limit, limit + 1, limit + 3):
+            with self.subTest(times=times):
+                found = details(wrapped('git -c "user.name=Policy Bot" push origin HEAD', times))
+                self.assertTrue(found)
+        # Read-only text is checked up to the limit; deeper text is refused unchecked.
+        self.assertEqual(details(wrapped("git log origin", limit)), set())
+        self.assertEqual(details(wrapped("git log origin", limit + 1)),
+                         {"shell text nested too deep to check"})
+
+    def test_long_quoted_words_parse_in_linear_time(self):
+        # A run script near the 512 KiB workflow limit; quadratic word building
+        # took 6-9 s here on scriptbox, linear building under a second.
+        for script in ("echo '" + "x" * 520_000 + "'",
+                       "bash -c 'echo " + "x " * 260_000 + "'"):
+            with self.subTest(size=len(script)):
+                start = time.monotonic()
+                list(locks.command_words(script))
+                self.assertLess(time.monotonic() - start, 3)
 
     def test_new_local_actions_fail_and_existing_ones_are_grandfathered(self):
         step = CLEAN.replace(f"actions/checkout@{SHA} # v5", "./.github/actions/wrapper")
