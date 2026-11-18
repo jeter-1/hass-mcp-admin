@@ -124,7 +124,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Wait for the exact-head deterministic validate check
+      - name: Wait for every exact-head required check
         shell: bash
         env:
           AUTHORIZED_BASE_SHA: ${{ steps.context.outputs.base_sha }}
@@ -151,19 +151,31 @@ jobs:
               exit 1
             fi
 
-            if ! provenance_json="$(python3 scripts/validate_ci_provenance.py \
-              --repository "$REPOSITORY" --pr-number "$PR_NUMBER" \
-              --base-sha "$AUTHORIZED_BASE_SHA" --head-sha "$AUTHORIZED_HEAD_SHA")"; then
+            # Every required check, as an explicit list (CODEX-022): the
+            # protect-main ruleset names the same checks. Each is bound to
+            # its only producer workflow by validate_ci_provenance.py.
+            required_checks=(validate policy-workflow-lint policy-secret-scan)
+            all_succeeded=true
+            for check_name in "${required_checks[@]}"; do
+              if ! provenance_json="$(python3 scripts/validate_ci_provenance.py \
+                --repository "$REPOSITORY" --pr-number "$PR_NUMBER" \
+                --base-sha "$AUTHORIZED_BASE_SHA" --head-sha "$AUTHORIZED_HEAD_SHA" \
+                --check-name "$check_name")"; then
+                echo "$provenance_json"
+                exit 1
+              fi
+              if [[ "$(jq -r '.status' <<< "$provenance_json")" != "success" ]]; then
+                all_succeeded=false
+                break
+              fi
               echo "$provenance_json"
-              exit 1
-            fi
-            if [[ "$(jq -r '.status' <<< "$provenance_json")" == "success" ]]; then
-              echo "$provenance_json"
+            done
+            if [[ "$all_succeeded" == "true" ]]; then
               break
             fi
 
             if [[ "$attempt" -eq "$VALIDATE_MAX_ATTEMPTS" ]]; then
-              echo "::error::The exact-head deterministic validate check did not finish within 35 minutes."
+              echo "::error::The exact-head required checks (${required_checks[*]}) did not all finish within 35 minutes."
               exit 1
             fi
             sleep "$VALIDATE_POLL_SECONDS"
@@ -211,10 +223,13 @@ jobs:
             exit 1
           fi
 
-          python3 scripts/validate_ci_provenance.py \
-            --repository "$REPOSITORY" --pr-number "$PR_NUMBER" \
-            --base-sha "$AUTHORIZED_BASE_SHA" --head-sha "$AUTHORIZED_HEAD_SHA" \
-            --require-success
+          required_checks=(validate policy-workflow-lint policy-secret-scan)
+          for check_name in "${required_checks[@]}"; do
+            python3 scripts/validate_ci_provenance.py \
+              --repository "$REPOSITORY" --pr-number "$PR_NUMBER" \
+              --base-sha "$AUTHORIZED_BASE_SHA" --head-sha "$AUTHORIZED_HEAD_SHA" \
+              --check-name "$check_name" --require-success
+          done
 
           gh pr merge "$PR_NUMBER" \
             --repo "$REPOSITORY" \

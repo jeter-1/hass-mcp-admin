@@ -996,7 +996,7 @@ class BackstopAndWorkflowTests(unittest.TestCase):
             "pull-requests": "write",
         })
         steps = {step.get("name"): str(step.get("run", "")) for step in job["steps"]}
-        wait = steps["Wait for the exact-head deterministic validate check"]
+        wait = steps["Wait for every exact-head required check"]
         merge = steps["Revalidate Ready authority and merge the exact head"]
         for script in (wait, merge):
             self.assertNotIn("gh api", script)
