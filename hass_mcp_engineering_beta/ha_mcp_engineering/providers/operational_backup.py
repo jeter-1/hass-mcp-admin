@@ -268,7 +268,10 @@ class ReviewedOperationalBackupProvider:
         if release is None:
             self._fail("upstream_version_mismatch", dispatched=False)
         if release.provider_disposition("backup") != "admitted":
-            self._fail("upstream_version_mismatch", dispatched=False)
+            with self._lock:
+                self._state.selected_compatibility_entry_id = release.entry_id
+                self._state.observed_upstream_version = catalog.server_version
+            self._fail("provider_held", dispatched=False)
         if catalog.protocol_version not in release.allowed_protocol_versions:
             self._fail("unsupported_protocol_version", dispatched=False)
         with self._lock:

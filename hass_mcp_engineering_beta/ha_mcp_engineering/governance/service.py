@@ -2517,6 +2517,18 @@ class ChangeGovernanceService:
             value["verification_summary"] = deepcopy(
                 public_task["verification_summary"]
             )
+            # HAMCP-417 (E049): each recorded creation-identity capture, from
+            # the same child projection get_execution_task shows.
+            value["created_identities"] = [
+                {
+                    "operation_id": child["operation_id"],
+                    "child_execution_id": child["child_execution_id"],
+                    "created_identity_capture": child["created_identity_capture"],
+                    "created_identity": deepcopy(child["created_identity"]),
+                }
+                for child in public_task.get("f3_children", ())
+                if child.get("created_identity_capture") is not None
+            ]
         # HAMCP-181 S4/S5: additive qualifiers from the same facts object.
         projected = facts.public_fields()
         projected.pop("provider_dispatch_occurred")
@@ -13612,6 +13624,7 @@ class ChangeGovernanceService:
             return ErrorCode.BACKUP_DISPATCH_INDETERMINATE
         if not dispatched and category in {
             "catalog_mismatch",
+            "provider_held",
             "reviewed_contract_mismatch",
             "server_identity_mismatch",
             "upstream_version_mismatch",
@@ -13649,6 +13662,7 @@ class ChangeGovernanceService:
             return ErrorCode.OPERATIONAL_DISPATCH_INDETERMINATE
         if category in {
             "catalog_mismatch",
+            "provider_held",
             "reviewed_contract_mismatch",
             "server_identity_mismatch",
             "upstream_version_mismatch",

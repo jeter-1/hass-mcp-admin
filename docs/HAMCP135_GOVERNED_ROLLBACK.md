@@ -27,8 +27,12 @@ unavailable; no dependent new dispatch is allowed. Source evidence refusal is
 local. Genuine new durable write failures retain normal fail-closed protections.
 
 There is one deterministic inverse attempt per exact source plan/hash/task. Calling
-the existing rollback interface again returns that attempt; it does not refresh
-approval, expiry or execution ownership. A cached beta.16 prohibited inverse stays
+the existing rollback interface again returns that attempt while it is live; it
+does not refresh approval, expiry or execution ownership. Once that attempt is
+terminal (expired, applied, rejected, prohibited or otherwise final) it still
+occupies the proof id, so a later call is refused with `ROLLBACK_NOT_AVAILABLE`
+and reason code `rollback_plan_terminal`, creating no plan and dispatching
+nothing (HAMCP-416). A cached beta.16 prohibited inverse stays
 unchanged and prohibited. The internal path creates a distinct eligible attempt
 and updates the source's existing rollback link. A short existing projection
 transaction serializes plan/link issuance. A crash leaving the link before the

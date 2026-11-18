@@ -267,6 +267,16 @@ The body fields are:
 The telemetry fields are read from the request's own counters, not hard-coded,
 so they cannot claim an attempt that did not happen.
 
+**HAMCP-408 (2.8.0).** A name that some reviewed ha-mcp release publishes as a
+delegated read, but that is not currently published, now says why. When no
+delegated read is admitted the refusal is `UpstreamNotAdmitted` with reason
+`upstream_not_admitted`; when other delegated reads are admitted it is
+`DelegatedToolNotAdmitted` with reason `delegated_tool_not_admitted`. Both use
+the existing `provider_unavailable` code with `retryable=false`, and the
+refusal point, `isError`, zero-dispatch fields and audit shape are unchanged.
+Every other unmapped name keeps `CoreRequirementUnmapped`. The reviewed-name
+set grants nothing: routing still requires the current admitted capability.
+
 **Audit.** One record is written per refusal with `result_status=failure` and
 `error_code=unsupported_operation`. Its `parameters` hold only:
 

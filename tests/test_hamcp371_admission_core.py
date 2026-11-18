@@ -139,10 +139,14 @@ class RegistryIdentityTests(unittest.TestCase):
         self.assertEqual(USED_TOOL_ADMISSION_RELEASES, frozenset({"9.1.0", "9.1.2", "9.2.0"}))
 
     def test_provider_dispositions_equal_912(self):
-        self.assertEqual(REGISTRY.by_version["9.2.0"].provider_dispositions,
-                         REGISTRY.by_version["9.1.2"].provider_dispositions)
-        self.assertEqual(dict(REGISTRY.by_version["9.2.0"].provider_dispositions), {
-            "backup": "held", "dashboard": "admitted", "lifecycle": "held",
+        # HAMCP-401 Phase 1 admits 9.2.0 lifecycle; every other surface stays
+        # equal to 9.1.2's, and backup stays held until HAMCP-381.
+        candidate = dict(REGISTRY.by_version["9.2.0"].provider_dispositions)
+        base = dict(REGISTRY.by_version["9.1.2"].provider_dispositions)
+        self.assertEqual({k: v for k, v in candidate.items() if k != "lifecycle"},
+                         {k: v for k, v in base.items() if k != "lifecycle"})
+        self.assertEqual(candidate, {
+            "backup": "held", "dashboard": "admitted", "lifecycle": "admitted",
             "read_gateway": "admitted"})
 
     def test_every_other_registry_entry_is_unchanged(self):

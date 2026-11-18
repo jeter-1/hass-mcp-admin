@@ -384,18 +384,21 @@ class GatewayFailClosedTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         replace_dynamic_upstream_capabilities((), {})
 
-    def assertUnmappedRefusal(self, body: bytes, app, core) -> dict:
+    def assertUnmappedRefusal(
+        self, body: bytes, app, core, *, error="CoreRequirementUnmapped",
+        error_code="unsupported_operation", reason=CORE_REQUIREMENT_UNMAPPED,
+    ) -> dict:
         # An unmapped name is not a callable tool: like the MCP SDK's unknown
         # tool result, the refusal sets isError=true (the exact-image read
         # gateway acceptance requires it for ha_call_service).
         self.assertIs(tool_result(body)["isError"], True)
         payload = failure_payload(body)
-        self.assertEqual(payload["error"], "CoreRequirementUnmapped")
-        self.assertEqual(payload["error_code"], "unsupported_operation")
+        self.assertEqual(payload["error"], error)
+        self.assertEqual(payload["error_code"], error_code)
         self.assertFalse(payload["retryable"])
         details = payload["details"]
-        self.assertEqual(details["reason"], CORE_REQUIREMENT_UNMAPPED)
-        self.assertEqual(details["reason_code"], CORE_REQUIREMENT_UNMAPPED)
+        self.assertEqual(details["reason"], reason)
+        self.assertEqual(details["reason_code"], reason)
         self.assertFalse(details["core_authority_acquired"])
         self.assertFalse(details["provider_dispatch_occurred"])
         self.assertFalse(details["upstream_attempted"])
@@ -431,12 +434,20 @@ class GatewayFailClosedTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_unpublished_delegated_names_are_refused(self):
         # A delegated name reaches Core only through a currently published
-        # read-gateway route; a withheld or unknown one is unmapped here.
-        for name in ("ha_get_state", "ha_mcp__ha_get_state", "ha_call_service"):
+        # read-gateway route. HAMCP-408: a reviewed delegated read says the
+        # upstream is not admitted; any other name stays unmapped.
+        for name in ("ha_get_state", "ha_mcp__ha_get_state"):
             with self.subTest(tool=name):
                 core = RecordingCore()
                 gateway, app = gateway_for(core)
-                self.assertUnmappedRefusal(await call(gateway, name), app, core)
+                self.assertUnmappedRefusal(
+                    await call(gateway, name), app, core,
+                    error="UpstreamNotAdmitted", error_code="provider_unavailable",
+                    reason="upstream_not_admitted",
+                )
+        core = RecordingCore()
+        gateway, app = gateway_for(core)
+        self.assertUnmappedRefusal(await call(gateway, "ha_call_service"), app, core)
 
     async def test_refusal_is_audited_without_argument_values(self):
         with tempfile.TemporaryDirectory() as directory:

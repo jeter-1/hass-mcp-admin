@@ -992,6 +992,9 @@ class RollbackTests(InputSelectServiceTestCase):
         plan = await self.forward("Away")
         rollback = await self.service.rollback_change(plan["plan_id"])
         self.assertEqual(rollback["status"], "rollback_plan_created", rollback)
+        # HAMCP-416 (E044): every rollback result names which happened; this
+        # path always plans afresh.
+        self.assertEqual(rollback["rollback_plan_resolution"], "fresh_plan_created")
         self.assertTrue(rollback["approval_required"])
         self.assertFalse(rollback["provider_dispatch_occurred"])
         self.assertEqual(len(self.sent()), 1, "rollback never runs itself")

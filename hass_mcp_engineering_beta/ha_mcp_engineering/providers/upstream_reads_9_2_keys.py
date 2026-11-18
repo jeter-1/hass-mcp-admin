@@ -21,6 +21,10 @@ test asserts equality. Each read then runs its unedited 9.1 projection, or the
   sentence. Any other warning is removed, counted per occurrence and the fixed
   code ``upstream_warning_replaced`` is appended once to that list (item 12).
 - The three counts sit at the top level of the read's ``data`` (D1).
+- HAMCP-410 (HAAC-E042): when withholding empties every row of a non-empty
+  collection (a list of objects, or an object whose values are all objects),
+  ``engineering_notes`` carries ``COLLECTION_WITHHELD`` and the read is partial,
+  so an emptied collection never reads as complete.
 
 The blueprint, system health, integration and app reads use their own shipped
 projections and are not routed here; ``ha_get_history`` (S9) and
@@ -45,6 +49,11 @@ ENGINEERING_ADDED = (
 REPLACED_PARTIAL = (
     "Some upstream warnings were not reviewed; each was replaced by "
     "upstream_warning_replaced."
+)
+NOTES = "engineering_notes"
+COLLECTION_WITHHELD = (
+    "Engineering withheld every field of every row in at least one returned "
+    "collection; those rows are missing or empty, so the result is incomplete."
 )
 
 # The 9.1 automation projection removes this family (tools_config_automations.py
@@ -212,7 +221,9 @@ ROWS: dict = {
             'friendly_name', 'has_custom_settings', 'is_exposed_anywhere', 'labels',
             'note', 'state', 'success'
         }),
-        maps={'exposed_to': 1},
+        # HAMCP-410: exposed_entities is keyed by entity_id, then by assistant
+        # (tools_voice_assistant.py:146-193 at 51e3aac7).
+        maps={'exposed_entities': 2, 'exposed_to': 1},
     ),
     # Row 17.
     'ha_get_overview': KeySet(
@@ -251,6 +262,9 @@ ROWS: dict = {
             'last_updated', 'metadata', 'note', 'parent_id', 'partial', 'state',
             'states', 'success', 'timestamp_format', 'user_id'
         }),
+        # HAMCP-410 (HAAC-E042): the bulk states map is keyed by entity_id
+        # (search/state.py:50-91 at 51e3aac7).
+        maps={'states': 1},
     ),
     # Row 21.
     'ha_get_todo': KeySet(
@@ -342,11 +356,15 @@ def _map_names(value: Any, levels: int, row: KeySet, acc: set) -> None:
 
 
 class _Warnings:
-    """Reviewed warnings pass; every other one is replaced and counted."""
+    """Reviewed warnings pass; every other one is replaced and counted.
+
+    ``collapsed`` counts the row collections the key set emptied (HAMCP-410).
+    """
 
     def __init__(self, row: KeySet):
         self.row = row
         self.replaced = 0
+        self.collapsed = 0
 
     def filter(self, warnings: list) -> list:
         kept, replaced = [], 0
@@ -376,16 +394,39 @@ def _keep(value: Any, row: KeySet, warnings: _Warnings) -> Any:
                 continue
             if key in row.opened:
                 kept[key] = item
-            elif key in row.maps:
+                continue
+            if key in row.maps:
                 kept[key] = _keep_map(item, row.maps[key], row, warnings)
             elif key == "warnings" and isinstance(item, list):
                 kept[key] = warnings.filter(item)
             else:
                 kept[key] = _keep(item, row, warnings)
+            if _emptied(item, kept[key]):
+                warnings.collapsed += 1
         return kept
     if isinstance(value, list):
         return [_keep(item, row, warnings) for item in value]
     return value
+
+
+def _emptied(item: Any, kept: Any) -> bool:
+    """A non-empty row collection whose every row lost every field (HAMCP-410).
+
+    A collection is a list of objects or an object whose values are all
+    objects; it was emptied when some upstream row had a field and no kept row
+    has one (an unmapped map whose data keys were all withheld keeps ``{}``).
+    """
+
+    if isinstance(item, list):
+        rows, kept_rows = item, kept
+    elif isinstance(item, dict):
+        rows = list(item.values())
+        kept_rows = list(kept.values()) if isinstance(kept, dict) else []
+    else:
+        return False
+    if not rows or not all(isinstance(r, dict) for r in rows):
+        return False
+    return any(rows) and not any(kept_rows)
 
 
 def _keep_map(value: Any, levels: int, row: KeySet, warnings: _Warnings) -> Any:
@@ -412,6 +453,14 @@ def projection(tool: str, inner: Callable) -> Callable:
         projected["fields_withheld"] = min(withheld, COUNT_CAP)
         projected["fields_dropped_by_policy"] = min(dropped, COUNT_CAP)
         projected["upstream_warnings_replaced"] = min(warnings.replaced, COUNT_CAP)
+        if warnings.collapsed:
+            notes = projected.get(NOTES)
+            if notes is None:
+                notes = projected[NOTES] = []
+            if type(notes) is not list:
+                raise ValueError("invalid_response")
+            if COLLECTION_WITHHELD not in notes:
+                notes.append(COLLECTION_WITHHELD)
         return projected
 
     return project
@@ -427,6 +476,11 @@ def completeness(inner: Callable, texts: dict | None = None) -> Callable:
             partial = True
             if REPLACED_PARTIAL not in warnings:
                 warnings.append(REPLACED_PARTIAL)
+        notes = payload.get(NOTES) if isinstance(payload, dict) else None
+        if isinstance(notes, list) and COLLECTION_WITHHELD in notes:
+            partial = True
+            if COLLECTION_WITHHELD not in warnings:
+                warnings.append(COLLECTION_WITHHELD)
         return partial, warnings
 
     return rule
