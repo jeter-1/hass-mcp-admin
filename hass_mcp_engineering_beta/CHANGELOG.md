@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.4.2-beta.11 - 2.9.0 build, in progress (HAMCP-436 first)
+
+Builds on 2.4.2-beta.10 (HAMCP-401, #452). In progress: items land through
+reviewed pull requests into `release/2.9.0`, and the final release pull
+request completes this entry.
+
+- Version materialized at the base of `release/2.9.0` (`main` at
+  6449c7b3), so item pull requests carry no version change. The release
+  transition from 2.4.2-beta.10 is to 2.4.2-beta.11.
+- Landed: none yet. HAMCP-436 (the E022 lifecycle catalog: exact contracts
+  for the dispatched tools only, other descriptor drift recorded in
+  lifecycle health) is in progress on its own branch.
+- New in-progress `V2_4_2_BETA11` release notes and acceptance contract.
+- Rollback: pending; stated by the final release pull request.
+
 ## 2.4.2-beta.10 - 2.8.0 build, in progress (HAMCP-401)
 
 Builds on 2.4.2-beta.9 (HAMCP-371, #444). In progress: items land through

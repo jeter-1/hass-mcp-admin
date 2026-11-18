@@ -329,7 +329,7 @@ class PreviousReleaseCatalogOracleTests(_OracleAssertions, unittest.TestCase):
                 )
 
     def test_near_miss_versions_fail_closed(self):
-        for version in ("2.4.2-beta.7 ", "2.4.2-BETA.7", "2.4.2-beta.70", "2.4.2-beta.11"):
+        for version in ("2.4.2-beta.7 ", "2.4.2-BETA.7", "2.4.2-beta.70", "2.4.2-beta.12"):
             with self.subTest(version=version):
                 self.assert_refused(
                     catalog=PREVIOUS_RELEASE_CATALOG, health=_health(version),
