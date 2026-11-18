@@ -50,21 +50,131 @@ request binds their evidence.
 
 ## 1. Source and offline acceptance
 
-**Pending.** The final release pull request binds, for each landed item:
-- its owner decision and scope;
-- its item pull request, reviewed head and review record;
-- its required offline evidence, success and refusal paths, and negative
-  reachability tests;
-- a security section for each provider, write, workflow or persistence
-  change.
+Scope and authority for every item come from the 2.8.0 orchestrator task
+(architect, 2026-11-16 23:35 CST; Josh approved the scope) and the architect
+rulings cited in each pull request. Josh merged each pull request into
+`release/2.8.0` on 2026-11-17. The architect's reviews are the architect's
+record; the pull requests carry no GitHub review object. Each pull request's
+Security section covers its provider, write or persistence change, and its
+diff holds the success, refusal and negative-reachability tests. Times are
+CST.
 
-It also binds:
-- `2.4.2-beta.10` materialized, with exact document resolution;
-- the final head SHA, its `validate` run and the single Evidence tier log
-  named in the release pull request.
+**HAMCP-401 Phase 1, with HAMCP-400 (I1).**
+- **Pull request.** #445, `agent/HAMCP-401-lifecycle-9.2.0`. Reviewed head
+  ae9c637b8c3e2d9eef9c2c6c257b5293a79907dc, merged at 15:02 as
+  6587849da6b3accdce43a8e131cfc76e8520e8b5.
+- **Review record.**
+  - Cursor (hardened unit v2, `grok-4.7-xhigh`), round 1 at 44165c90:
+    CHANGES REQUESTED. F1 (High): with the filesystem tools on, the
+    lifecycle identity used the 77-tool stock fingerprint, so an ha-mcp
+    add-on restart stayed `pending`. F2 (Low): a readiness-map row. Both
+    were fixed in 3a918fa8.
+  - Cursor delta rereview at 3a918fa8, 02:01–02:12: **APPROVE**, with no
+    new findings; read-only, leak check clean. After 3a918fa8 the branch
+    holds only catch-up merges of `release/2.8.0` (3d6feb1b and ae9c637b).
+  - Architect: reviewed and accepted before the merge.
+- **Offline evidence.**
+  - `tests/test_hamcp401_lifecycle_9_2_0.py`.
+  - Evidence tier on ee876eca (2026-11-16 21:23): passed, 15,178 run, 32
+    skipped.
+  - 44165c90: 1,397 focused tests OK, and Fast passed.
+  - 3a918fa8: 2,572 focused tests OK, and CI 44040548391 succeeded.
+  - CI 44150737343 at ae9c637b: success.
+  - Refusal paths: held backup refused as `provider_held` with no
+    dispatch; a 9.2.0 restart reply with no observed outage is not
+    verified and is never redispatched.
 
-No item evidence is recorded here yet. The Evidence tier runs once, on the
-final release head.
+**HAMCP-410 (I2, E042).**
+- **Pull request.** #446, `agent/HAMCP-410-9-2-keyset-maps`. Reviewed head
+  fe93a18b7dbf0c5ee23ae28e55ca0b5b82eae8cc, merged at 12:30 as
+  bcf42e52f78c442b483ee9e6a73d9e0617540af6.
+- **Review record.** Architect: reviewed and accepted before the merge.
+- **Offline evidence.**
+  - `tests/test_hamcp410_keyset_maps.py`, plus the key-set, real-Core
+    replay and parity-entity suites: 119 tests OK.
+  - Fast passed.
+  - CI 44099047412 at fe93a18b: success.
+
+**HAMCP-411 bundle: HAMCP-408, 409, 411, 412, 413 and 414 (I3).**
+- **Pull request.** #447, `agent/HAMCP-411-truthfulness-bundle`. Reviewed
+  head d19aac9bb877d68641e6985be499cd5134c431ba, merged at 15:03 as
+  8f7e2a7028bdebffc04fcc8c7ca0e5d6e529db6e.
+- **Review record.** Architect: reviewed and accepted before the merge.
+- **Offline evidence.**
+  - `tests/test_hamcp411_truthfulness.py`.
+  - Fast passed (287 tests).
+  - CI 44155994263 at d19aac9b: success.
+  - Refusal paths: unreviewed names such as `ha_call_service` keep
+    `CoreRequirementUnmapped`, and the reviewed-name set holds no write
+    names.
+
+**HAMCP-415 / HAMCP-416 (I4, E043 and E044).**
+- **Pull request.** #448, `agent/HAMCP-415-governed-change-reliability`.
+  Reviewed head 5a39a919b1204b4934f3b124df5ba710536a3c62, merged at 07:37
+  as 7aa5e0cf2de1dd98aaeb46a9f0a0a6e037e117e7.
+- **Review record.**
+  - Cursor (`grok-4.7-xhigh`, read-only, leak check clean), round 1 at
+    42d0dbf8: CHANGES REQUESTED, with two Medium and two Low findings. All
+    four were corrected.
+  - Cursor round 2 at 6bbfad11: **APPROVE WITH NITS**. Its two Low
+    findings were corrected in 5a39a919.
+  - Architect: accepted at 5a39a919 (2026-11-17, about 07:36).
+- **Offline evidence.**
+  - `tests/test_hamcp415_core_plan_continuity.py` and
+    `tests/test_hamcp416_rollback_plan_resolution.py`.
+  - Fast passed (259 tests) on the 5a39a919 tree.
+  - CI 44082494419 at 5a39a919: success.
+  - Negative paths: an unsettled or manual-review task is never replanned
+    around, so dispatch stays at most once.
+
+**HAMCP-417 / HAMCP-419 (I5, E049 and E052).**
+- **Pull request.** #450, `agent/HAMCP-417-i5-optional`. Reviewed head
+  40b1b5efaaeb1b9dcfcb286f4a976630d10095a5, merged at 17:04 as
+  3fb1dd8330fed05b452d3971f22ef3abe0f15ff6.
+- **Review record.** Architect: reviewed and accepted before the merge.
+- **Offline evidence.**
+  - `tests/test_hamcp417_created_identity_surface.py` and
+    `tests/test_hamcp419_automation_initial_state.py`.
+  - Fast passed (209 tests), and the adjacent suites passed (441 tests).
+  - CI 44159714395 at 40b1b5ef: success.
+
+**HAMCP-418 (E048).**
+- **Pull request.** #451, `agent/HAMCP-418-list-first-page`. Reviewed head
+  20e69176644e838e9cba933c58257fecb28ac77a, merged at 17:04 as
+  fc552ab086e0b8dcdec6e466d092d4bdad33631b.
+- **Review record.** Architect: reviewed and accepted before the merge
+  (decision 2026-11-17, option (b)).
+- **Offline evidence.**
+  - `tests/test_hamcp418_list_first_page.py` (16 tests).
+  - Fast passed (214 tests), and the catch-up suites passed (59 tests).
+  - CI 44163461908 at 20e69176: success.
+  - Unchanged paths: failures, governed receipts and identities, and
+    `get_logbook` keep the existing projection.
+
+**Release head.**
+- `2.4.2-beta.10` is materialized at dfb67a0c, the base of
+  `release/2.8.0`, in `config.yaml` and `version.py`.
+  `scripts/codex-context.py` resolves this document as the active acceptance
+  document, with resolution `exact`.
+- **Fast on fc552ab0**, the release head after every item merge: passed,
+  718 tests OK, 1 skipped, in 2,063 s. Base main 02b8f013. Log on
+  scriptbox: `.claude/worktrees/hamcp-280-release/.artifacts/fast-release-r2.log`.
+- **Evidence tier, run once, on d167b9de9ce76b90bf59024897545e003eac5e44**
+  (base main 02b8f01330456573ca69814ad951d6fca7c4007d), 2026-11-17
+  18:14–19:16: **passed**. Every step passed. 15,287 tests ran, each
+  exactly once, and 32 were skipped. The working tree was clean.
+  - `validation.json` sha256:
+    `3e802bed7b5f9b4e3dd0ac4f14d2afb4929ade18ff8dc89e3ec1d4889d729107`.
+  - Log on scriptbox:
+    `.claude/worktrees/hamcp-280-release/.artifacts/evidence.log`, with
+    `.artifacts/validation.json` and `.artifacts/validation.md`.
+  - d167b9de contains fc552ab0, and
+    `git merge-tree --write-tree fc552ab0 d167b9de` equals d167b9de's tree
+    (31172512).
+- **The final head differs from the Evidence head only in these two
+  documents** (this file and the release notes). The Evidence tier was not
+  re-run for that docs-only change, the same as beta.9. The release pull
+  request names the final head SHA and its `validate` run.
 
 ## 2. Release CI
 
@@ -127,11 +237,20 @@ release. Every step is a read.
      if that fits too, record "not exercised" rather than PASS. Stop and
      record the response if a cut list returns zero rows, a row is cut, or
      the counts are missing or do not match the rows returned.
-3. **Tool catalog.** A fresh `tools/list` shows the counts the release notes
-   record under "Tool catalog". CI records the delegated read count on ha-mcp
-   9.2.0 (27, catalog fingerprint `0f1a2c75...`) but not the 9.2.0
-   Engineering count or connector total; record both here. Stop and record
-   the list if the delegated count differs from 27.
+3. **Tool catalog.** Take a fresh `tools/list` and `get_server_health`.
+   - **Expected live:** Engineering 86, delegated 28, total 114. This is the
+     beta.9 live baseline (architect `get_server_health`, 2026-11-16 22:1x
+     CST, with the house's filesystem flag on and `ha_config_get_yaml`
+     admitted). No landed item adds or removes a tool registration.
+   - Record the live advertised and reviewed upstream counts as observed.
+   - Stop and record `tools/list` if Engineering is not 86 or delegated is
+     not 28, unless the filesystem flag has changed since beta.9. In that
+     case, record which way it changed.
+   - **CI reference (flag-off):** delegated 27, catalog fingerprint
+     `0f1a2c75...`, from run 44196696582, as listed in the release notes
+     under "Tool catalog". It is not the live expectation. CI's
+     strict-admission case (82 advertised, 77 reviewed exact) records 28
+     dynamically exposed tools.
 
 PASS needs every check. If a step fails, record the response in the release
 task. Whether to roll back is Josh's decision.

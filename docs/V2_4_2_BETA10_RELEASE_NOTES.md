@@ -135,8 +135,15 @@ Every item has landed in `release/2.8.0` and is listed by its pull request.
 
 ## Evidence
 
-**Pending.** The final release pull request binds each landed item's
-evidence and the single Evidence tier log of the final release head.
+Each item's evidence and the single Evidence tier run are bound in the
+acceptance document, section 1:
+- Fast on fc552ab0: 718 tests OK, 1 skipped.
+- Evidence tier, run once on d167b9de (2026-11-17 18:14–19:16 CST): passed,
+  15,287 run, 32 skipped.
+
+The final head differs from d167b9de only in these two documents. Release
+CI on the final head is still pending; the release pull request reports
+it.
 
 ## Tool catalog
 
@@ -162,6 +169,11 @@ the release head's.
   without it.
 - **CI did not record the 9.2.0 Engineering count or connector total;
   installed acceptance section 4 step 3 records them.**
+- **Live expectation.** The 27 above is the CI reference, with the
+  filesystem flag off. The house runs with the flag on, so the live
+  expectation is the beta.9 live baseline: Engineering 86, delegated 28,
+  total 114, with `ha_config_get_yaml` admitted. CI's strict-admission case
+  records 28 dynamically exposed tools.
 
 Clients should refresh their tool list after deploying.
 
