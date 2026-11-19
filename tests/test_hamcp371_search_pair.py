@@ -374,6 +374,8 @@ class CallTests(unittest.TestCase):
                               {"query": "x", "config_time_budget": 301},
                               {"query": "x", "include_config": "false"},
                               {"query": "x", "search_types": 2},
+                              {"query": "x", "limit": 0},
+                              {"query": "x", "offset": -1},
                               {"query": "x", "unknown": True}):
                 with self.subTest(variant=name, arguments=arguments):
                     result, sent = self.call(name, arguments)

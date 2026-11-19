@@ -1080,7 +1080,8 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
                 result = await call(gateway, TOOL, {"yaml_path": path})
                 refused(self, result, dispatched=True)
                 self.assertEqual(transport.sent, [(TOOL, receipt_wire(case_id, "yaml-ordinary-user"))])
-                self.assertIn(result["error_code"], set(y.FAILURES))
+                self.assertEqual(result["error_code"], y.READ_FAILED)
+                self.assertEqual(result["message"], y.FAILURES[y.READ_FAILED][1])
                 text = json.dumps(result)
                 for upstream in ("admin-only", "get_caller_token", "AUTH_INSUFFICIENT_PERMISSIONS"):
                     self.assertNotIn(upstream, text)
