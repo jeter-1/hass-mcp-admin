@@ -304,13 +304,14 @@ class RefusalTests(TempRootFixture):
         self.assertRefuses("core_slots")
         self.mutate(lambda w: w["ha_mcp"].pop("candidate"))
         self.assertRefuses("ha_mcp_slots")
-        # Only candidates may be empty (explicit null); see EmptyCandidateTests.
-        for slot in ("current", "rollback"):
-            with self.subTest(slot=slot):
-                self.mutate(lambda w: w["core"].update({slot: None}))
-                self.assertRefuses("core_" + slot + "_keys")
-                self.mutate(lambda w: w["ha_mcp"].update({slot: None}))
-                self.assertRefuses("ha_mcp_" + slot + "_keys")
+        self.mutate(lambda w: w["ha_mcp"].pop("rollback"))
+        self.assertRefuses("ha_mcp_slots")
+        # Only current is never optional (explicit null); candidate and rollback
+        # may be empty, see EmptyCandidateTests and EmptyRollbackTests.
+        self.mutate(lambda w: w["core"].update(current=None))
+        self.assertRefuses("core_current_keys")
+        self.mutate(lambda w: w["ha_mcp"].update(current=None))
+        self.assertRefuses("ha_mcp_current_keys")
         self.mutate(lambda w: w["core"].pop("candidate"))
         self.assertRefuses("core_slots")
         for value in ({}, [], "", "null", False):
@@ -674,18 +675,20 @@ class EmptyCandidateTests(TempRootFixture):
             self.window, "pr", self.registry))
         self.assertEqual(self.sw.addon_matrix(window, "full"), self.sw.addon_matrix(self.window, "full"))
 
-    def test_only_candidates_may_be_empty(self):
-        # current and rollback are never optional, for either component, even
-        # when both candidates are empty.
+    def test_current_is_never_optional(self):
+        # current is never optional, for either component, even when every
+        # candidate and rollback is empty (HAMCP-406 made rollback optional).
+        empty = lambda w: [w[c].update(candidate=None, rollback=None) for c in ("core", "ha_mcp")]
         for component in ("core", "ha_mcp"):
-            for slot in ("current", "rollback"):
-                with self.subTest(component=component, slot=slot):
-                    self.mutate(lambda w: (w["core"].update(candidate=None), w["ha_mcp"].update(candidate=None),
-                                           w[component].update({slot: None})))
-                    self.assertRefuses(component + "_" + slot + "_keys")
-            with self.subTest(component=component, missing="candidate"):
-                self.mutate(lambda w: w[component].pop("candidate"))
-                self.assertRefuses(component + "_slots")
+            with self.subTest(component=component, slot="current"):
+                self.mutate(lambda w: (empty(w), w[component].update(current=None)))
+                self.assertRefuses(component + "_current_keys")
+            # An empty slot is an explicit null: a missing key still refuses.
+            for slot in ("candidate", "rollback"):
+                with self.subTest(component=component, missing=slot):
+                    self.mutate(lambda w: (empty(w), w[component].pop(slot)))
+                    self.assertRefuses(component + "_slots")
+            with self.subTest(component=component, extra="slot"):
                 self.mutate(lambda w: w[component].update(candidate=None, extra=None))
                 self.assertRefuses(component + "_slots")
 
@@ -773,6 +776,110 @@ class EmptyHaMcpCandidateTests(TempRootFixture):
         window = self.sw.load(self.root)
         self.assertEqual(self.sw.core_slots(window, self.sw.SLOTS), ("current", "rollback"))
         self.assertEqual(self.sw.ha_mcp_slots(window, self.sw.SLOTS), ("current", "rollback"))
+
+
+class EmptyRollbackTests(TempRootFixture):
+    """``rollback: null`` (Josh 2026-11-19, HAMCP-406, D1: restore-first
+    recovery, amending HAMCP-173) removes the rollback lanes of that component
+    and requires nothing for them; current is still required."""
+
+    def test_null_core_rollback_loads_and_drops_only_the_rollback_lane(self):
+        former = self.base["core"]["rollback"]
+        self.mutate(lambda w: w["core"].update(rollback=None))
+        # The rollback's provenance is no longer required either.
+        (self.root / "tests" / "fixtures" / core_lane_bindings.provenance_name(former["version"])).unlink()
+        window = self.sw.load(self.root)
+        self.assertIsNone(window["core"]["rollback"])
+        kept = tuple(slot for slot in ("current", "candidate") if self.base["core"][slot] is not None)
+        self.assertEqual(self.sw.core_slots(window, self.sw.SLOTS), kept)
+        for tier in ("pr", "full"):
+            rows = self.sw.real_ha_matrix(window, tier, self.root)["include"]
+            with self.subTest(tier=tier):
+                self.assertEqual([(r["support_slot"], r["ha_version"]) for r in rows],
+                                 [(slot, self.base["core"][slot]["version"]) for slot in kept])
+        self.assertEqual(self.sw.real_ha_matrix(window, "full", self.root),
+                         self.sw.real_ha_matrix(window, "pr", self.root))
+        with self.assertRaisesRegex(self.sw.Refusal, "^alarmo_core_not_in_window_slot$"):
+            self.sw.alarmo_slot(former["version"], self.root)
+        # ha-mcp slots, gateway rows and add-on rows are unaffected.
+        self.assertEqual(self.sw.gateway_matrix(window, "full", self.registry),
+                         self.sw.gateway_matrix(self.window, "full", self.registry))
+        self.assertEqual(self.sw.addon_matrix(window, "full"), self.sw.addon_matrix(self.window, "full"))
+
+    def test_null_ha_mcp_rollback_loads_and_creates_no_rollback_jobs(self):
+        former = self.base["ha_mcp"]["rollback"]["version"]
+        self.mutate(lambda w: w["ha_mcp"].update(rollback=None))
+        window = self.sw.load(self.root)
+        self.assertIsNone(window["ha_mcp"]["rollback"])
+        kept = tuple(slot for slot in ("current", "candidate") if self.base["ha_mcp"][slot] is not None)
+        self.assertEqual(self.sw.ha_mcp_slots(window, self.sw.SLOTS), kept)
+        # No registry row is required for the empty slot.
+        absent = {"include": [r for r in self.registry["include"] if r["upstream_version"] != former]}
+        for tier in ("pr", "full"):
+            gateway = self.sw.gateway_matrix(window, tier, absent)["include"]
+            addon = self.sw.addon_matrix(window, tier)["include"]
+            with self.subTest(tier=tier):
+                self.assertEqual([(r["support_slot"], r["upstream_version"]) for r in gateway],
+                                 [(slot, window["ha_mcp"][slot]["version"]) for slot in kept])
+                self.assertEqual({r["support_slot"] for r in addon}, set(kept))
+                self.assertNotIn(former, {r["upstream_version"] for r in gateway + addon})
+                # Real-HA lanes always pair with ha_mcp.current and are unaffected.
+                self.assertEqual(self.sw.real_ha_matrix(window, tier, self.root),
+                                 self.sw.real_ha_matrix(self.base, tier, self.root))
+
+    def test_full_tier_is_current_only_when_candidate_and_rollback_are_empty(self):
+        self.mutate(lambda w: [w[c].update(candidate=None, rollback=None) for c in ("core", "ha_mcp")])
+        window = self.sw.load(self.root)
+        for component in ("core", "ha_mcp"):
+            with self.subTest(component=component):
+                slots = (self.sw.core_slots if component == "core" else self.sw.ha_mcp_slots)(window, self.sw.SLOTS)
+                self.assertEqual(slots, ("current",))
+        for tier in ("pr", "full"):
+            with self.subTest(tier=tier):
+                real_ha = self.sw.real_ha_matrix(window, tier, self.root)["include"]
+                gateway = self.sw.gateway_matrix(window, tier, self.registry)["include"]
+                addon = self.sw.addon_matrix(window, tier)["include"]
+                self.assertEqual([(r["support_slot"], r["ha_version"]) for r in real_ha],
+                                 [("current", self.base["core"]["current"]["version"])])
+                self.assertEqual([(r["support_slot"], r["upstream_version"]) for r in gateway],
+                                 [("current", self.base["ha_mcp"]["current"]["version"])])
+                self.assertTrue(addon)
+                self.assertEqual({r["support_slot"] for r in addon}, {"current"})
+
+    def test_distinct_versions_still_apply_to_the_non_empty_slots(self):
+        for component in ("core", "ha_mcp"):
+            with self.subTest(component=component):
+                self.mutate(lambda w: w[component].update(
+                    rollback=None, candidate=copy.deepcopy(w[component]["current"])))
+                self.assertRefuses(component + "_slot_versions_not_distinct")
+
+    def test_rotation_fills_an_empty_rollback(self):
+        # Core: a later current arrives and the former current becomes rollback.
+        former = self.base["core"]["current"]
+        later = self.base["core"]["candidate"] or self.base["core"]["rollback"]
+        self.mutate(lambda w: w["core"].update(candidate=None, rollback=None))
+        self.assertEqual(self.sw.core_slots(self.sw.load(self.root), self.sw.SLOTS), ("current",))
+        self.mutate(lambda w: w["core"].update(current=reviewed_core(later["version"]), candidate=None,
+                                               rollback=reviewed_core(former["version"])))
+        window = self.sw.load(self.root)
+        self.assertEqual([(r["support_slot"], r["ha_version"])
+                          for r in self.sw.real_ha_matrix(window, "full", self.root)["include"]],
+                         [("current", later["version"]), ("rollback", former["version"])])
+        self.assertEqual(self.sw.alarmo_slot(former["version"], self.root)["slot"], "rollback")
+        # ha-mcp: an empty rollback is filled the same way by the former current.
+        current = copy.deepcopy(self.base["ha_mcp"]["current"])
+        self.mutate(lambda w: w["ha_mcp"].update(candidate=None, rollback=None))
+        self.assertEqual(self.sw.ha_mcp_slots(self.sw.load(self.root), self.sw.SLOTS), ("current",))
+        self.mutate(lambda w: w["ha_mcp"].update(candidate=None, rollback=current,
+                                                 current=self.base["ha_mcp"]["rollback"]
+                                                 | {"source_archive_sha256": self.base["ha_mcp"]["rollback"]
+                                                    .get("source_archive_sha256", "0" * 64)})
+                    or w.pop("admission", None))
+        window = self.sw.load(self.root)
+        self.assertEqual([(r["support_slot"], r["upstream_version"])
+                          for r in self.sw.gateway_matrix(window, "full", self.registry)["include"]],
+                         [("current", self.base["ha_mcp"]["rollback"]["version"]),
+                          ("rollback", current["version"])])
 
 
 class CommandLineTests(unittest.TestCase):

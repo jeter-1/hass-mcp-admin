@@ -27,13 +27,15 @@
 # slot without a reviewed binding (core_<slot>_binding_unreviewed) or whose digest
 # differs from it (core_<slot>_binding_mismatch) before any matrix is generated,
 # so no row advertises Alarmo or baseline coverage the executable path would not
-# run. All three slots are required and must be distinct; a missing, null or
-# repeated slot refuses, except that a candidate may be explicitly null (nothing
-# under evaluation). current and rollback are never optional, for either component.
-#   core.candidate: null   - no candidate Core lane, Alarmo job or lane provenance
-#                            is created or required.
-#   ha_mcp.candidate: null - no candidate exact-image gateway or add-on runtime
-#                            job is created or required (HAMCP-173).
+# run. All three slot keys are required and the non-empty slots must be distinct;
+# a missing or repeated slot refuses, and current is never optional, for either
+# component. candidate and rollback may be explicitly null: candidate when nothing
+# is under evaluation (HAMCP-173); rollback since Josh 2026-11-19, HAMCP-406 (D1:
+# restore-first recovery), which amends HAMCP-173.
+#   core.<candidate|rollback>: null   - no lane of that slot, Alarmo job or lane
+#                                       provenance is created or required.
+#   ha_mcp.<candidate|rollback>: null - no exact-image gateway or add-on runtime
+#                                       job, and no registry row, for that slot.
 # Every non-empty ha-mcp slot still declares at least one addon_runtime lane.
 # Every pin must be an immutable digest copied from reviewed evidence. A Core slot
 # also needs tests/fixtures/core_<version>_lane_provenance.json, and the contract

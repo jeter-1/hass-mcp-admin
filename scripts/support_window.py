@@ -14,10 +14,15 @@ not run (contract amendment, Josh 2026-10-11). The window never supplies a
 binding: rotating listed Cores edits only the window, and a brand-new Core is
 first added to that list as one deliberate review step.
 
-Only the candidate slot of either component may be empty (``candidate: null``);
-current and rollback are always required. An empty slot creates and requires
-nothing (no lane, job, provenance, registry cross-check or add-on row), and
-every non-empty ha-mcp slot still declares at least one add-on runtime lane.
+The candidate and rollback slots of either component may be empty
+(``candidate: null``, ``rollback: null``); current is always required. Josh
+2026-11-19, HAMCP-406 (D1: restore-first recovery), amends HAMCP-173, which
+allowed only an empty candidate: recovery restores the pre-update state rather
+than running a rollback lane. An empty slot creates and requires nothing (no
+lane, job, provenance, registry cross-check or add-on row), the distinct-version
+rule applies to the non-empty slots only, and every non-empty ha-mcp slot still
+declares at least one add-on runtime lane. An empty slot is an explicit
+``null``; a missing slot key still refuses.
 
 HAMCP-319 (design section 5.1; Josh 2026-11-07): the optional top-level
 ``admission`` key names an ha-mcp admission candidate that is deliberately NOT a
@@ -56,14 +61,15 @@ TIERS = {"pr": ("current", "candidate"), "full": SLOTS}
 # ``load`` has already refused any slot without a reviewed Core binding, so every
 # advertised slot reaches the real-HA child contract that runs Alarmo.
 ALARMO_SLOTS = SLOTS
-# Of the Core slots only the candidate may be explicitly empty (``candidate:
-# null``): no candidate Core lane, Alarmo job or provenance is then created or
-# required.
-OPTIONAL_CORE_SLOTS = frozenset({"candidate"})
-# Likewise only the ha-mcp candidate may be empty (owner decision, Josh
-# 2026-10-13, HAMCP-173): no candidate exact-image gateway or add-on runtime row
-# is then created or required. Current and rollback are never optional.
-OPTIONAL_HA_MCP_SLOTS = frozenset({"candidate"})
+# The Core candidate and rollback may each be explicitly empty (``null``): no
+# Core lane, Alarmo job or provenance is then created or required for that slot.
+# Josh 2026-11-19, HAMCP-406 (D1: restore-first recovery) added rollback.
+OPTIONAL_CORE_SLOTS = frozenset({"candidate", "rollback"})
+# Likewise the ha-mcp candidate (owner decision, Josh 2026-10-13, HAMCP-173) and
+# rollback (Josh 2026-11-19, HAMCP-406, D1: restore-first recovery, amending
+# HAMCP-173) may be empty: no exact-image gateway or add-on runtime row is then
+# created or required for that slot. Current is never optional.
+OPTIONAL_HA_MCP_SLOTS = frozenset({"candidate", "rollback"})
 OPTIONAL_SLOTS = {"core": OPTIONAL_CORE_SLOTS, "ha_mcp": OPTIONAL_HA_MCP_SLOTS}
 RUNNERS = {"amd64": "ubuntu-24.04", "arm64": "ubuntu-24.04-arm"}
 CORE_IMAGE = "ghcr.io/home-assistant/home-assistant"
