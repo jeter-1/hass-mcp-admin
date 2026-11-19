@@ -7,7 +7,9 @@ import unittest
 
 import yaml
 
-from tests.test_ci_provenance import fixture as ci_fixture, MOCK_API_SHELL, MOCK_INCLUDE_SHELL
+from tests.test_ci_provenance import (
+    fixture as ci_fixture, required_fixture, MOCK_API_SHELL, MOCK_INCLUDE_SHELL,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -172,7 +174,7 @@ class ReviewWorkflowTests(unittest.TestCase):
             step
             for step in job["steps"]
             if step.get("name")
-            == "Wait for the exact-head deterministic validate check"
+            == "Wait for every exact-head required check"
         )
         wait_script = str(wait_step["run"])
         self.assertIn("scripts/validate_ci_provenance.py", wait_script)
@@ -216,7 +218,7 @@ class ReviewWorkflowTests(unittest.TestCase):
                 step
                 for step in job["steps"]
                 if step.get("name")
-                == "Wait for the exact-head deterministic validate check"
+                == "Wait for every exact-head required check"
             )["run"]
         )
         authorized_base = "b" * 40
@@ -267,7 +269,8 @@ fi
             fake_gh.chmod(0o700)
 
             cases = (
-                (pr_payload(), check_payload(), 0, 7),
+                # One PR read, then six provenance reads per required check.
+                (pr_payload(), check_payload(), 0, 19),
                 (pr_payload(), {"total_count": 1, "check_runs": [
                     check_payload()["check_runs"][0] | {
                         "name": "validate", "app": {"id": 999, "slug": "other-app"}
@@ -292,7 +295,24 @@ fi
                 (pr_payload(), check_payload(number=999), 1, 2),
                 (pr_payload(), check_payload(head="a" * 40), 1, 2),
             )
-            for current_pr, checks_payload, returncode, call_count in cases:
+            # Every case gets all three producers; the policy cases follow.
+            cases = [case + (required_fixture(),) for case in cases]
+            policy_route = (
+                f"repos/jeter-1/hass-mcp-admin/commits/{authorized_head}/check-runs"
+                "?check_name=policy-secret-scan&filter=latest&per_page=100"
+            )
+            for state in ("failure", "pending", "missing"):
+                provenance = required_fixture()
+                if state == "failure":
+                    provenance[policy_route]["check_runs"][0]["conclusion"] = "failure"
+                elif state == "pending":
+                    provenance[policy_route]["check_runs"][0].update(
+                        status="in_progress", conclusion=None
+                    )
+                else:
+                    provenance[policy_route] = {"total_count": 0, "check_runs": []}
+                cases.append((pr_payload(), check_payload(), 1, None, provenance))
+            for current_pr, checks_payload, returncode, call_count, provenance in cases:
                 with self.subTest(
                     current_pr=current_pr, checks_payload=checks_payload
                 ):
@@ -305,7 +325,7 @@ fi
                             "AUTHORIZED_HEAD_SHA": authorized_head,
                             "GH_TOKEN": "test-token",
                             "MOCK_CHECKS_JSON": json.dumps(checks_payload),
-                            "MOCK_PROVENANCE_JSON": json.dumps(ci_fixture()),
+                            "MOCK_PROVENANCE_JSON": json.dumps(provenance),
                             "MOCK_PR_JSON": json.dumps(current_pr),
                             "MOCK_GH_LOG": str(gh_log),
                             "PATH": f"{root}:/usr/bin:/bin",
@@ -320,7 +340,12 @@ fi
                     )
                     self.assertEqual(result.returncode, returncode, result.stderr)
                     calls = gh_log.read_text(encoding="utf-8").splitlines()
-                    self.assertEqual(len(calls), call_count)
+                    if call_count is not None:
+                        self.assertEqual(len(calls), call_count)
+                    else:
+                        self.assertTrue(
+                            any("check_name=policy-secret-scan" in c for c in calls), calls
+                        )
                     self.assertFalse(
                         any("codex" in call.lower() for call in calls), calls
                     )
@@ -402,10 +427,10 @@ fi
                     False,
                 ),
             )
-            bound_cases = [(pr, code, merged, ci_fixture(base_sha, authorized_head))
+            bound_cases = [(pr, code, merged, required_fixture(base_sha, authorized_head))
                            for pr, code, merged in cases]
-            for failure in ("app", "workflow", "attempt", "pending"):
-                data = ci_fixture(base_sha, authorized_head)
+            for failure in ("app", "workflow", "attempt", "pending", "policy", "foreign"):
+                data = required_fixture(base_sha, authorized_head)
                 values = list(data.values())
                 if failure == "app":
                     values[0]["check_runs"][0]["app"]["id"] = 999
@@ -413,8 +438,16 @@ fi
                     values[2]["workflow_runs"][0]["path"] = ".github/workflows/other.yml"
                 elif failure == "attempt":
                     values[3]["jobs"][0]["run_attempt"] = 2
-                else:
+                elif failure == "pending":
                     values[0]["check_runs"][0].update(status="queued", conclusion=None)
+                else:
+                    # A failed policy check, or one produced by a non-policy workflow.
+                    route = next(r for r in data if "check_name=policy-workflow-lint" in r)
+                    check = data[route]["check_runs"][0]
+                    if failure == "policy":
+                        check["conclusion"] = "failure"
+                    else:
+                        check["check_suite"]["id"] = 777
                 bound_cases.append((eligible, 1, False, data))
             for pr_payload, expected_returncode, merge_expected, provenance in bound_cases:
                 with self.subTest(pr_payload=pr_payload):
@@ -445,7 +478,8 @@ fi
                     )
                     self.assertEqual(merge_was_reached, merge_expected)
                     if merge_expected:
-                        self.assertEqual(len(calls), 9)
+                        # Ready timeline, PR read, six reads per required check, merge.
+                        self.assertEqual(len(calls), 21)
                         self.assertIn("--match-head-commit", calls[-1])
                         self.assertNotIn("--auto", calls[-1])
 
