@@ -277,6 +277,46 @@ class RealHomeAssistantDev14GateTests(unittest.TestCase):
         )
         return matches[0]
 
+    def test_upstream_gateway_url_uses_engineering_strict_form(self):
+        from ha_mcp_engineering.clients import ha_mcp_endpoint
+
+        base = (
+            f"http://127.0.0.1:{self.contract.UPSTREAM_PORT}"
+            f"{self.contract.UPSTREAM_SECRET_PATH}"
+        )
+        strict = self.contract.upstream_gateway_url("9.2.0")
+        self.assertEqual(strict, base + "/catalog/full")
+        self.assertEqual(
+            ha_mcp_endpoint.classify_endpoint_form(strict),
+            ha_mcp_endpoint.STRICT_FULL,
+        )
+        legacy = self.contract.upstream_gateway_url("8.5.0")
+        self.assertEqual(legacy, base)
+        self.assertEqual(
+            ha_mcp_endpoint.classify_endpoint_form(legacy),
+            ha_mcp_endpoint.LEGACY,
+        )
+        # Engineering's own constants, not a local copy of the version set.
+        self.assertIs(
+            self.contract.STRICT_FULL_SELECTOR_RELEASES,
+            ha_mcp_endpoint.STRICT_FULL_SELECTOR_RELEASES,
+        )
+        for version in ha_mcp_endpoint.STRICT_FULL_SELECTOR_RELEASES:
+            self.assertTrue(self.contract.upstream_gateway_url(version).endswith(
+                ha_mcp_endpoint.EXPECTED_SELECTOR_SUFFIX
+            ))
+        for version, expected in (("9.2.0", strict), ("8.5.0", legacy)):
+            with patch.object(self.contract, "UPSTREAM_IMAGE", "image"), \
+                    patch.object(self.contract, "UPSTREAM_VERSION", version):
+                self.assertEqual(
+                    self.contract.settings("token").upstream_dashboard_mcp_url,
+                    expected,
+                )
+        with patch.object(self.contract, "UPSTREAM_IMAGE", ""):
+            self.assertEqual(
+                self.contract.settings("token").upstream_dashboard_mcp_url, ""
+            )
+
     def test_real_resource_gateway_is_wired_to_real_clients(self):
         assignments = assigned_constructor_names(self.tree)
         gateway_calls = calls_under(self.tree, "ConfigurationResourceGateway")

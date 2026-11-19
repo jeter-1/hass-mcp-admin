@@ -221,9 +221,9 @@ def prepare(directory, acceptance, requested):
     entries = [e.to_mapping() for e in signed.accepted.entries]
     (directory / "predecessor.json").write_bytes(raw)
     if acceptance:
-        target = next(e for e in entries if e["version"] == "2026.10.3")
+        target = next(e for e in entries if e["version"] == "2026.11.0")
         anchor, binding = bound_entry(target)
-        older = source("2026.10.1", directory); newer = source("2026.10.3", directory)
+        older = source("2026.10.3", directory); newer = source("2026.11.0", directory)
         proof = compare_sources(older, newer)
         if proof["inherited"]:
             raise ValueError("real negative unexpectedly inherited")
@@ -232,17 +232,17 @@ def prepare(directory, acceptance, requested):
         ctx = new_context(anchor, binding, target["version"], "main")
         write(directory / "coverage.json", ctx)
         # Synthetic predecessor source ONLY. The actual target, digest and version
-        # remain .3; no fictitious image or fabricated real-tag identity is claimed.
-        identical = {**newer, "version": "2026.10.2"}
+        # remain 2026.11.0; no fictitious image or fabricated real-tag identity is claimed.
+        identical = {**newer, "version": "2026.10.4"}
         fixture_proof = compare_sources(identical, newer)
-        synthetic = copy.deepcopy(binding); synthetic["provenance"]["version"] = "2026.10.2"
+        synthetic = copy.deepcopy(binding); synthetic["provenance"]["version"] = "2026.10.4"
         derived = derive_binding(synthetic, binding["provenance"], fixture_proof)
-        fixture_ctx = new_context(anchor, derived, "2026.10.2", "derived", fixture_proof, fixture=True)
+        fixture_ctx = new_context(anchor, derived, "2026.10.4", "derived", fixture_proof, fixture=True)
         write(directory / "fixture.json", fixture_ctx)
         write(directory / "baseline.json", target)
         write(directory / "state.json", {"registry_exists": False, "acceptance": True})
         rows = [matrix_row(ctx, "coverage"), matrix_row(fixture_ctx, "fixture")]
-        output(refused=False, run=True, release="2026.10.3", matrix=json.dumps({"include": rows}), registry_exists=False)
+        output(refused=False, run=True, release="2026.11.0", matrix=json.dumps({"include": rows}), registry_exists=False)
         return
     releases = discover_releases(entries, requested)
     newest = select_release(releases, {e["version"] for e in entries}, [], requested)

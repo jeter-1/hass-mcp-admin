@@ -35,6 +35,10 @@ from ha_mcp_engineering.clients import (  # noqa: E402
     HomeAssistantWebSocketClient,
 )
 from ha_mcp_engineering.clients.paths import rest_path  # noqa: E402
+from ha_mcp_engineering.clients.ha_mcp_endpoint import (  # noqa: E402
+    EXPECTED_SELECTOR_SUFFIX,
+    STRICT_FULL_SELECTOR_RELEASES,
+)
 if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
 from harness_routes import harness_request  # noqa: E402
@@ -887,11 +891,23 @@ def settings(token: str) -> Settings:
         destructive_services=frozenset(),
         ha_timeout_seconds=30,
         upstream_dashboard_mcp_url=(
-            f"http://127.0.0.1:{UPSTREAM_PORT}{UPSTREAM_SECRET_PATH}"
-            if UPSTREAM_IMAGE
-            else ""
+            upstream_gateway_url(UPSTREAM_VERSION) if UPSTREAM_IMAGE else ""
         ),
     )
+
+
+def upstream_gateway_url(version: str) -> str:
+    """Return the upstream URL form Engineering admits for this release.
+
+    Engineering refuses the short form for its strict-full releases before
+    tools/list (``require_selector_agreement``), so those get the full-catalog
+    selector. Both values come from Engineering, never a local copy.
+    """
+
+    base = f"http://127.0.0.1:{UPSTREAM_PORT}{UPSTREAM_SECRET_PATH}"
+    if version in STRICT_FULL_SELECTOR_RELEASES:
+        return base + EXPECTED_SELECTOR_SUFFIX
+    return base
 
 
 @lane_diagnostics.checked("core_boot", "runtime_ready")

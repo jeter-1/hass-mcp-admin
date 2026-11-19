@@ -82,9 +82,8 @@ class UnionComparison(unittest.TestCase):
 
     def test_derived_acceptance_preparation_uses_real_october_hashes(self):
         import core_evidence_workflow as workflow
-        old = evidence.read_json(ROOT / "docs/evidence/hamcp279/2026.10.1.json")
-        old["tag_commit"] = old["commit"]
-        new = source("2026.10.3")
+        # HAMCP-437: the acceptance anchor is 2026.11.0 (child_consumer 9.2.0).
+        old, new = source("2026.10.3"), source("2026.11.0")
         (ROOT / ".artifacts").mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory(dir=ROOT / ".artifacts") as tmp:
             root = Path(tmp)
