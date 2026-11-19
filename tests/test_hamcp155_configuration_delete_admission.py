@@ -191,13 +191,14 @@ class DormantProfileTests(unittest.TestCase):
             "sha256:d517fa73878f8dafea857b5306db750304d3c65522481898800cf86fb091f441",
         )
 
-    def test_signed_sequences_13_through_15_reference_it_exactly(self):
+    def test_signed_sequences_13_through_18_reference_it_exactly(self):
         # HAMCP-222: sequence 13 extends 2026.10.1, sequence 14 adds
         # 2026.10.3; sequence 15 retains both references unchanged.
+        # HAMCP-437: sequences 16-18 retain them and add 2026.11.0.
         registry = json.loads(
             (ROOT / "upstream-trust/ha-core-release-registry.json").read_text()
         )
-        self.assertEqual(registry["envelopes"][-1]["sequence"], 15)
+        self.assertEqual(registry["envelopes"][-1]["sequence"], 18)
         (profile,) = CORE_CONFIGURATION_DELETE_PROFILES
         carriers = set()
         for envelope in registry["envelopes"]:
@@ -211,6 +212,8 @@ class DormantProfileTests(unittest.TestCase):
         self.assertEqual(
             carriers, {(13, "2026.10.1"), (14, "2026.10.1"), (14, "2026.10.3"),
                        (15, "2026.10.1"), (15, "2026.10.3")}
+            | {(sequence, version) for sequence in (16, 17, 18)
+               for version in ("2026.10.1", "2026.10.3", "2026.11.0")}
         )
 
     def test_static_requirements_and_exact_target(self):

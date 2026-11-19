@@ -277,13 +277,14 @@ class DormantProfileTests(unittest.TestCase):
         )
         # HAMCP-182 sequence 12 selects the profile on exactly 2026.10.0 and
         # 2026.10.1, with the compiled contract; HAMCP-222 sequence 13 keeps
-        # both, and sequence 14 adds 2026.10.3 with it.  No other entry in any
+        # both, and sequence 14 adds 2026.10.3 with it.  Until sequence 16 no other entry in any
         # signed envelope has ever carried it. Sequence 15 retains these references.
+        # HAMCP-437: sequences 16-18 retain them and add 2026.11.0.
         (profile,) = CORE_ENTITY_METADATA_PROFILES
-        self.assertEqual(registry["envelopes"][-1]["sequence"], 15)
+        self.assertEqual(registry["envelopes"][-1]["sequence"], 18)
         self.assertEqual(
             sorted(e["version"] for e in entries),
-            ["2026.10.0", "2026.10.1", "2026.10.3"],
+            ["2026.10.0", "2026.10.1", "2026.10.3", "2026.11.0"],
         )
         for entry in entries:
             with self.subTest(version=entry["version"]):
@@ -319,6 +320,11 @@ class DormantProfileTests(unittest.TestCase):
                 (15, "2026.10.0"),
                 (15, "2026.10.1"),
                 (15, "2026.10.3"),
+                *(
+                    (sequence, version)
+                    for sequence in (16, 17, 18)
+                    for version in ("2026.10.0", "2026.10.1", "2026.10.3", "2026.11.0")
+                ),
             },
         )
 
