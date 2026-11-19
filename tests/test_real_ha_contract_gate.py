@@ -1496,7 +1496,7 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
             self.assertIn(f'"{tool_name}"', source)
         self.assertIn('"config/device_registry/update"', source)
         self.assertIn('"config/area_registry/delete"', source)
-        self.assertIn('len(tools) == 28', source)
+        self.assertIn('len(tools) == 27,', source)
         self.assertIn('"ha_get_operation_status" not in tools', source)
         self.assertIn('metadata.get("fallback") == "none"', source)
         self.assertIn('"lovelace/config/save"', source)
@@ -1577,6 +1577,9 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
             self.assertEqual(contract._core_binding(version).child_consumer, "8.4.3")
         for version in ("2026.9.3", "2026.9.4", "2026.10.0", "2026.10.1"):
             self.assertEqual(contract._core_binding(version).child_consumer, "8.5.0")
+        # HAMCP-437 (I2b ruling 2): 2026.11.0 consumes ha-mcp 9.2.0, and the
+        # script-dependency contract still runs on that consumer.
+        self.assertEqual(contract._core_binding("2026.11.0").child_consumer, "9.2.0")
         for version in ("2026.9.0", "2026.9.1"):
             self.assertIs(contract._core_test_authority(version), False)
         for version in ("2026.10.0", "2026.10.1"):
@@ -1595,6 +1598,8 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
         child_source = ast.get_source_segment(self.source, child) or ""
         self.assertIn("binding = _core_binding(EXPECTED_HA_VERSION)", child_source)
         self.assertIn("UPSTREAM_VERSION == binding.child_consumer", child_source)
+        self.assertIn('if binding.child_consumer in {"8.5.0", "9.2.0"}:\n'
+                      "            await _run_script_dependency_contract(", child_source)
         self.assertIn("schema=_expected_device_registry_schema()", child_source)
         # Alarmo and automation-baseline acceptance follow every support-window
         # Core slot (HAMCP-159); there is no literal Core version gate.

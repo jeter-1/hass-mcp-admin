@@ -98,7 +98,6 @@ from ha_mcp_engineering.request_context import (  # noqa: E402
 )
 from ha_mcp_engineering.trace_normalization import fetch_normalized_trace_list  # noqa: E402
 from ha_mcp_engineering.ha_core_readmission import CoreRuntime  # noqa: E402
-from ha_mcp_engineering.ha_core_readmission.routes import RETIRED_DELEGATED_READ_TOOLS  # noqa: E402
 from ha_mcp_engineering.ha_core_readmission.device_registry import (  # noqa: E402
     DeviceRegistrySchema,
     assess_device_registry,
@@ -3863,7 +3862,7 @@ async def _run_core_2026_9_child_contract(
         )
         server = FastMCP("rc2-core-2026-9-disposable")
         await read_gateway.reconcile_until_initialized(server)
-        if binding.child_consumer == "8.5.0":
+        if binding.child_consumer in {"8.5.0", "9.2.0"}:
             await _run_script_dependency_contract(configured, core_runtime, read_gateway)
         if _core_test_authority(EXPECTED_HA_VERSION):
             await _run_typed_fan_contract(configured, core_runtime, read_gateway)
@@ -3880,10 +3879,11 @@ async def _run_core_2026_9_child_contract(
             for item in core_assessment["authority_profiles"]
             if not str(item["disposition"]).startswith("admitted")
         ]
-        # HAMCP-290: the retired delegated ha_get_hacs_info is matched but
-        # never exposed (28 matched automatic reads expose 27).
+        # HAMCP-437: ha-mcp 9.2.0 exposes its 27 exact-matched automatic reads;
+        # the retired delegated ha_get_hacs_info (HAMCP-290) is unsupported on
+        # 9.2.0 and never matched.
         _assert_device_contract(
-            len(tools) == 28 - len(RETIRED_DELEGATED_READ_TOOLS),
+            len(tools) == 27,
             "child_consumer_catalog",
             missing_key="delegated_tool_count",
             diagnostic={
