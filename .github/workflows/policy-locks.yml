@@ -1,0 +1,83 @@
+name: Policy locks
+
+# CODEX-022. pull_request_target runs this file and its scripts from the base
+# branch, so a pull request cannot weaken the checks that judge it. The
+# pull-request head is checked out as data only: nothing from it is executed,
+# imported or installed, and no credential is persisted into either checkout.
+on:
+  pull_request_target:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - edited
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  policy-workflow-lint:
+    name: policy-workflow-lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the trusted base policy
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ github.sha }}
+          path: base
+          persist-credentials: false
+
+      - name: Check out the pull-request workflows as data
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: pr-head
+          persist-credentials: false
+          sparse-checkout: .github/workflows
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12.14"
+
+      - name: Install the base's pinned workflow parser
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip --isolated install --require-hashes --only-binary=:all: --no-deps \
+            --index-url https://pypi.org/simple -r base/scripts/policy_locks.requirements.txt
+
+      - name: Lint workflow permission and publication locks
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -I base/scripts/policy_locks.py lint --base base --head pr-head
+
+  policy-secret-scan:
+    name: policy-secret-scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the trusted base policy
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ github.sha }}
+          path: base
+          persist-credentials: false
+
+      - name: Check out the pull-request tree as data
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: pr-head
+          persist-credentials: false
+
+      - name: Scan the pull-request tree for credential patterns
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -I -S base/scripts/policy_locks.py scan --root pr-head

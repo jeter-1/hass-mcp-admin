@@ -49,6 +49,55 @@ def fixture(base="b" * 40, head="4deb1d30edc7ccb8ced7c8438930ca1310c3775b"):
     }
 
 
+POLICY_CHECKS = ("policy-workflow-lint", "policy-secret-scan")
+
+
+def policy_fixture(base="b" * 40, head="4deb1d30edc7ccb8ced7c8438930ca1310c3775b",
+                   suites=(501,)):
+    """policy-locks.yml runs: one suite and run per pull_request_target event."""
+
+    prefix = "repos/jeter-1/hass-mcp-admin"
+    repo = {"url": f"https://api.github.com/{prefix}"}
+    prs = [{"number": 164, "base": {"ref": "main", "sha": base, "repo": repo},
+            "head": {"sha": head, "repo": repo}}]
+    data = {f"{prefix}/actions/workflows/policy-locks.yml":
+            {"id": 456, "path": ".github/workflows/policy-locks.yml", "state": "active"}}
+    for offset, name in enumerate(POLICY_CHECKS):
+        checks = [{"id": suite * 10 + offset, "name": name, "head_sha": head,
+                   "app": {"id": 15368, "slug": "github-actions"},
+                   "check_suite": {"id": suite}, "pull_requests": deepcopy(prs),
+                   "status": "completed", "conclusion": "success"} for suite in suites]
+        data[f"{prefix}/commits/{head}/check-runs?check_name={name}&filter=latest"
+             "&per_page=100"] = {"total_count": len(checks), "check_runs": checks}
+    for suite in suites:
+        run = {"id": suite + 1000, "workflow_id": 456,
+               "path": ".github/workflows/policy-locks.yml", "run_attempt": 1,
+               "check_suite_id": suite, "head_sha": head, "pull_requests": deepcopy(prs),
+               "event": "pull_request_target",
+               "repository": {"full_name": "jeter-1/hass-mcp-admin"},
+               "head_repository": {"full_name": "jeter-1/hass-mcp-admin"},
+               "status": "completed", "conclusion": "success"}
+        data[f"{prefix}/actions/workflows/456/runs?check_suite_id={suite}&head_sha={head}"
+             "&event=pull_request_target&per_page=100"] = {
+                 "total_count": 1, "workflow_runs": [run]}
+        jobs = [{"id": suite * 10 + offset, "name": name, "run_id": suite + 1000,
+                 "run_attempt": 1, "head_sha": head, "status": "completed",
+                 "conclusion": "success",
+                 "check_run_url": f"https://api.github.com/{prefix}/check-runs/"
+                                  f"{suite * 10 + offset}"}
+                for offset, name in enumerate(POLICY_CHECKS)]
+        data[f"{prefix}/actions/runs/{suite + 1000}/attempts/1/jobs?per_page=100"] = {
+            "total_count": len(jobs), "jobs": jobs}
+        data[f"{prefix}/actions/runs/{suite + 1000}"] = deepcopy(run)
+    return data
+
+
+def required_fixture(base="b" * 40, head="4deb1d30edc7ccb8ced7c8438930ca1310c3775b"):
+    """Every required check (validate first, so its routes keep their indices)."""
+
+    return fixture(base, head) | policy_fixture(base, head)
+
+
 # Existing workflow-shell tests use the same API fixture through a fake gh.
 # The actual protected helper still runs; this substitutes only GitHub I/O,
 # answering ``gh api --include`` as gh does (status line, headers, body).
@@ -286,6 +335,110 @@ class CIProvenanceTests(unittest.TestCase):
         self.assertEqual(responses, [])
         self.assertEqual(sleep.call_count, 2)
         self.assertGreaterEqual(sleep.call_args_list[0].args[0], 3)
+
+
+class PolicyCheckProvenanceTests(unittest.TestCase):
+    """CODEX-022: policy checks bind to policy-locks.yml, every suite on the head."""
+
+    head = "4deb1d30edc7ccb8ced7c8438930ca1310c3775b"
+    prefix = "repos/jeter-1/hass-mcp-admin"
+
+    def setUp(self):
+        self.data = policy_fixture(suites=(501, 502))
+        self.calls = []
+
+    def api(self, route):
+        self.calls.append(route)
+        return deepcopy(self.data[route])
+
+    def checks(self, name="policy-workflow-lint"):
+        return self.data[f"{self.prefix}/commits/{self.head}/check-runs?check_name={name}"
+                         "&filter=latest&per_page=100"]
+
+    def verify(self, name="policy-workflow-lint"):
+        return validator.verify(164, "b" * 40, self.head, self.api, check_name=name)
+
+    def test_every_event_suite_from_policy_locks_succeeds(self):
+        for name in POLICY_CHECKS:
+            with self.subTest(name=name):
+                self.setUp()
+                result = self.verify(name)
+                self.assertEqual(result["status"], "success")
+                self.assertEqual(result["check_name"], name)
+                self.assertEqual([run["check_suite_id"] for run in result["runs"]],
+                                 [501, 502])
+                self.assertEqual(len(self.calls), 9)
+
+    def test_same_name_check_from_another_workflow_cannot_supply_it(self):
+        spoof = deepcopy(self.checks()["check_runs"][0])
+        spoof.update(id=999, check_suite={"id": 777})  # e.g. a ci.yml job copy
+        self.checks()["check_runs"].append(spoof)
+        self.checks()["total_count"] = 3
+        self.data[f"{self.prefix}/actions/workflows/456/runs?check_suite_id=777"
+                  f"&head_sha={self.head}&event=pull_request_target&per_page=100"] = {
+                      "total_count": 0, "workflow_runs": []}
+        with self.assertRaisesRegex(validator.Refusal, "missing_or_ambiguous_ci_run"):
+            self.verify()
+
+    def test_any_failed_suite_refuses_and_any_pending_suite_waits(self):
+        self.checks()["check_runs"][1]["conclusion"] = "failure"
+        with self.assertRaisesRegex(validator.Refusal, "unsuccessful_ci"):
+            self.verify()
+        self.setUp()
+        self.checks()["check_runs"][0].update(status="in_progress", conclusion=None)
+        self.assertEqual(self.verify(), {"status": "pending"})
+
+    def test_wrong_event_job_or_producer_refuses(self):
+        run_route = (f"{self.prefix}/actions/workflows/456/runs?check_suite_id=502"
+                     f"&head_sha={self.head}&event=pull_request_target&per_page=100")
+        jobs_route = f"{self.prefix}/actions/runs/1502/attempts/1/jobs?per_page=100"
+        for change in ("event", "path", "job", "app"):
+            with self.subTest(change=change):
+                self.setUp()
+                if change == "event":
+                    self.data[run_route]["workflow_runs"][0]["event"] = "pull_request"
+                elif change == "path":
+                    self.data[run_route]["workflow_runs"][0]["path"] = ".github/workflows/ci.yml"
+                elif change == "job":
+                    self.data[jobs_route]["jobs"] = [
+                        job for job in self.data[jobs_route]["jobs"]
+                        if job["name"] != "policy-workflow-lint"]
+                    self.data[jobs_route]["total_count"] = 1
+                else:
+                    self.checks()["check_runs"][1]["app"]["id"] = 1
+                with self.assertRaises(validator.Refusal):
+                    self.verify()
+
+    def test_replaced_policy_check_during_verification_refuses(self):
+        def api(route):
+            data = self.api(route)
+            if len(self.calls) == 9:
+                data["check_runs"][1]["conclusion"] = "failure"
+            return data
+        with self.assertRaisesRegex(validator.Refusal, "validate_check_changed"):
+            validator.verify(164, "b" * 40, self.head, api, check_name="policy-workflow-lint")
+
+    def test_unknown_check_name_refuses_before_network(self):
+        for name in ("Validate", "policy-workflow-lint ", "other"):
+            with self.assertRaisesRegex(validator.Refusal, "unknown_required_check"):
+                validator.verify(164, "b" * 40, self.head, self.api, check_name=name)
+        self.assertEqual(self.calls, [])
+
+    def test_validate_still_accepts_only_one_producer_check(self):
+        data = fixture()
+        route = next(iter(data))
+        data[route]["check_runs"].append(deepcopy(data[route]["check_runs"][0]))
+        data[route]["total_count"] = 2
+        with self.assertRaisesRegex(validator.Refusal, "ambiguous_validate_check"):
+            validator.verify(164, "b" * 40, self.head, lambda r: deepcopy(data[r]))
+
+    def test_producers_are_the_explicit_required_check_list(self):
+        self.assertEqual(validator.PRODUCERS, {
+            "validate": ("ci.yml", "pull_request"),
+            "policy-workflow-lint": ("policy-locks.yml", "pull_request_target"),
+            "policy-secret-scan": ("policy-locks.yml", "pull_request_target"),
+        })
+
 
 if __name__ == "__main__":
     unittest.main()
