@@ -1,9 +1,11 @@
 """HAMCP-319 exact-image admission lanes: case runners, manifest writer and gate.
 
-Design section 5.1 (``docs/HAMCP_319_PHASE2_DESIGN.md``) accepts three
-configurations separately (8.5-only, 9.1-only, side by side). Each needs an
-exact-image lane on amd64 and on arm64, and each lane writes an acceptance
-manifest: image, manifest and config digests, Engineering commit, endpoint
+Design section 5.1 (``docs/HAMCP_319_PHASE2_DESIGN.md``) accepted each ha-mcp
+configuration separately. HAMCP-437 (release 2.9.0, ha-mcp 9.2.0 only) keeps
+one: ``91_only``, the strict-selector peer alone; the 8.5-only and side-by-side
+configurations (with the beta.7 in-place rollback, HAMCP-405) are retired. It
+needs an exact-image lane on amd64 and on arm64, and each lane writes an
+acceptance manifest: image, manifest and config digests, Engineering commit, endpoint
 form, negotiated protocol, the case list, executed count and every skip with
 its reason. A missing lane, or a listed case that did not execute, leaves that
 configuration unaccepted and is a completion blocker [R5]; it is never
@@ -14,14 +16,12 @@ This module owns:
 * ``CASES``: the fixed case list of every configuration. The manifest writer and
   the gate both use it, so a lane cannot shorten its own list.
 * small case runners for the checks that are not already an existing acceptance
-  script (image identity, a raw no-redirect ``initialize``, Engineering failing
-  closed on a value the peer does not serve) and ``record`` to wrap the bounded
-  result of an existing acceptance script;
+  script (image identity and a raw no-redirect ``initialize``);
 * ``write-manifest``: one manifest per lane. A dormant lane (``support_window``
   admission state) writes ``NOT_EXECUTED`` with its reason and executes nothing.
   An active lane is ``PASS`` only when every listed case executed and passed;
   a case with no result is recorded as not executed and fails the lane;
-* ``gate``: verifies all six manifests together. A missing or duplicate lane, a
+* ``gate``: verifies both manifests together. A missing or duplicate lane, a
   listed-but-unexecuted or skipped case in an active lane, a dormant lane that
   reports a result, or a state that differs from the derived matrix fails.
 
@@ -34,7 +34,6 @@ classified form).
 from __future__ import annotations
 
 import argparse
-import asyncio
 from dataclasses import dataclass
 import json
 import os
@@ -42,17 +41,16 @@ from pathlib import Path
 import re
 import subprocess
 import sys
-import time
 from typing import Any, Callable
 from urllib.parse import urlsplit
 
 
 SCHEMA = "hamcp319-exact-image-acceptance-manifest/v1"
 EXPECTED_PROTOCOL = "2025-03-26"
-CONFIGURATIONS = ("85_only", "91_only", "side_by_side")
+CONFIGURATIONS = ("91_only",)
 ARCHITECTURES = ("amd64", "arm64")
 REQUIRED_LANES = frozenset((c, a) for c in CONFIGURATIONS for a in ARCHITECTURES)
-ROLES = {"85_only": ("baseline",), "91_only": ("candidate",), "side_by_side": ("baseline", "candidate")}
+ROLES = {"91_only": ("candidate",)}
 FORMS = ("legacy", "strict_full")
 STATES = ("active", "dormant")
 STATUSES = ("passed", "failed", "skipped", "not_executed")
@@ -75,14 +73,6 @@ class Case:
 
 # The section 5.1 case list per configuration. Order is the manifest order.
 CASES: dict[str, tuple[Case, ...]] = {
-    "85_only": (
-        Case("image_identity_baseline", None),
-        Case("85_legacy_direct_initialize_no_redirect", "legacy"),
-        Case("85_legacy_gateway_acceptance", "legacy"),
-        Case("85_legacy_exact_admission_health", "legacy"),
-        Case("85_strict_full_direct_initialize_refused", "strict_full"),
-        Case("85_strict_full_engineering_fails_closed", "strict_full"),
-    ),
     "91_only": (
         Case("image_identity_candidate", None),
         Case("91_strict_full_direct_initialize_no_redirect", "strict_full"),
@@ -93,25 +83,6 @@ CASES: dict[str, tuple[Case, ...]] = {
         Case("91_typed_public_verified_readback", "strict_full"),
         Case("91_legacy_form_refused_before_list", "legacy"),
         Case("91_filesystem_disabled_variant", "strict_full"),
-    ),
-    "side_by_side": (
-        Case("image_identity_baseline", None),
-        Case("image_identity_candidate", None),
-        Case("sbs_stage_a_85_legacy_useful", "legacy"),
-        Case("sbs_stage_b1_91_legacy_refused", "legacy"),
-        Case("sbs_stage_b2_91_strict_full_useful", "strict_full"),
-        Case("sbs_rollback_85_legacy_useful", "legacy"),
-        Case("sbs_stage_a_again_85_legacy_useful", "legacy"),
-        Case("sbs_engineering_rollback_91_refused", "strict_full"),
-        # HAMCP-319 #407 Part C: executed governed dashboard and public typed
-        # operations with readback on each 8.5 legacy stage (current build,
-        # previous-release rollback, current build again).
-        Case("sbs_governed_dashboard_stage_a_85_legacy", "legacy"),
-        Case("sbs_typed_public_stage_a_85_legacy", "legacy"),
-        Case("sbs_governed_dashboard_rollback_previous_release_85_legacy", "legacy"),
-        Case("sbs_typed_public_rollback_previous_release_85_legacy", "legacy"),
-        Case("sbs_governed_dashboard_stage_a_again_85_legacy", "legacy"),
-        Case("sbs_typed_public_stage_a_again_85_legacy", "legacy"),
     ),
 }
 MANIFEST_KEYS = frozenset({
@@ -322,330 +293,6 @@ def command_initialize(args: argparse.Namespace, post: Callable[[str], tuple[int
     except (LaneFailure, ValueError, OSError) as exc:
         category = str(exc) if isinstance(exc, LaneFailure) else type(exc).__name__
         result = case_result(args.case, "failed", form=form, reason=category)
-    write_json(Path(args.output), result)
-    return 0 if result["status"] == "passed" else 1
-
-
-# --------------------------------------------------------------------------
-# Engineering stays fail closed on a value its peer does not serve
-# --------------------------------------------------------------------------
-
-def http_get(url: str) -> tuple[int, str]:
-    """Return ``(status, body)``; ``(0, "")`` while nothing is listening yet."""
-
-    import httpx
-
-    try:
-        with httpx.Client(follow_redirects=False, timeout=5.0) as client:
-            response = client.get(url)
-            return response.status_code, response.text[:MAX_BODY]
-    except httpx.TransportError:
-        return 0, ""
-
-
-def http_post_initialize(url: str) -> tuple[int, str]:
-    status, _content_type, body = post_initialize(url)
-    return status, body
-
-
-# Bounds on the complete Engineering catalog read by the ready path. A catalog
-# that is still paginating at the page bound, or larger than the tool bound, is
-# incomplete and fails: an unread later page could hold a delegated read.
-MAX_CATALOG_PAGES = 32
-MAX_CATALOG_TOOLS = 4096
-# The rollback state (design section 4: an 8.5.0 app with the ``/catalog/full``
-# suffix left in place) keeps the delegated surface fail-closed, so the exact
-# expected delegated-read set is empty. Every name the Engineering catalog
-# lists outside the frozen static catalog (``ENGINEERING_STATIC_TOOL_NAMES``,
-# frozen in ``tools/registry.py`` "before any admitted upstream reads are
-# added") is a delegated upstream read.
-ROLLBACK_EXPECTED_DELEGATED_READS: frozenset[str] = frozenset()
-# ``upstream_read_gateway.admission_status`` values that the gateway sets only
-# together with zero exposed delegated reads (``providers/upstream_read_gateway.py``:
-# the initial state, the disable-delegation failure path and the reprobe reset).
-UNADMITTED_STATUSES = frozenset({"unavailable", "blocked_incompatible_upstream", "compatibility_reprobe_pending"})
-ADMITTED_STATUSES = frozenset({"admitted_exact", "partially_admitted"})
-
-
-def engineering_static_tool_names() -> frozenset[str]:
-    """Return the frozen static Engineering catalog of the checked-out source.
-
-    The lane builds the image under test from the same checkout, so this is the
-    image's own static catalog. Imported lazily: only the ready path needs it.
-    """
-
-    beta = str(Path(__file__).resolve().parents[1] / "hass_mcp_engineering_beta")
-    if beta not in sys.path:
-        sys.path.insert(0, beta)
-    from ha_mcp_engineering.tools import ENGINEERING_STATIC_TOOL_NAMES
-
-    return frozenset(ENGINEERING_STATIC_TOOL_NAMES)
-
-
-async def collect_catalog(session: Any) -> dict[str, Any]:
-    """Read every ``tools/list`` page, bounded; report whether the read completed."""
-
-    from mcp.types import PaginatedRequestParams
-
-    pages: list[list[str]] = []
-    cursor: str | None = None
-    seen: set[str] = set()
-    complete = False
-    for _ in range(MAX_CATALOG_PAGES):
-        listed = await (session.list_tools(params=PaginatedRequestParams(cursor=cursor))
-                        if cursor is not None else session.list_tools())
-        pages.append([tool.name for tool in listed.tools])
-        cursor = getattr(listed, "nextCursor", None)
-        if cursor is None:
-            complete = True
-            break
-        if cursor in seen:
-            break
-        seen.add(cursor)
-    return {"pages": pages, "catalog_complete": complete}
-
-
-async def engineering_catalog(url: str) -> dict[str, Any]:
-    """Read the complete Engineering catalog and the gateway admission through MCP."""
-
-    from mcp import ClientSession
-    from mcp.client.streamable_http import streamablehttp_client
-
-    async with streamablehttp_client(url) as (read, write, _session_id):
-        async with ClientSession(read, write) as session:
-            await session.initialize()
-            catalog = await collect_catalog(session)
-            try:
-                health = await session.call_tool("get_server_health", {"check_ha": False})
-            except Exception:  # bounded: an MCP error is health evidence that failed
-                return {**catalog, "health_is_error": True, "health_text": ""}
-            text = "".join(getattr(item, "text", "") or "" for item in getattr(health, "content", ()))
-            return {**catalog, "health_is_error": getattr(health, "isError", False) is not False,
-                    "health_text": text[:MAX_BODY]}
-
-
-def unadmitted_gateway(is_error: Any, text: Any) -> dict[str, Any]:
-    """Return the gateway block of a valid health result that is positively unadmitted.
-
-    Missing, errored or malformed health fails, and so does any admission state
-    other than an explicit unadmitted status with zero exposed delegated reads.
-    The absence of an admitted marker is never evidence.
-    """
-
-    require(is_error is False, "fail_closed_health_error")
-    require(isinstance(text, str) and text.strip() != "", "fail_closed_health_missing")
-    try:
-        envelope = json.loads(text)
-    except ValueError:
-        raise LaneFailure("fail_closed_health_malformed") from None
-    require(isinstance(envelope, dict), "fail_closed_health_malformed")
-    require(envelope.get("success") is True and "error_code" not in envelope, "fail_closed_health_error")
-    data = envelope.get("data")
-    gateway = data.get("upstream_read_gateway") if isinstance(data, dict) else None
-    require(envelope.get("operation") == "get_server_health" and isinstance(gateway, dict),
-            "fail_closed_health_malformed")
-    status = gateway.get("admission_status")
-    require(status not in ADMITTED_STATUSES, "fail_closed_gateway_admitted")
-    require(status in UNADMITTED_STATUSES, "fail_closed_gateway_unadmission_unproven")
-    exposed = (gateway.get("dynamically_exposed_count"), data.get("dynamic_upstream_tool_count"))
-    require(all(type(count) is int for count in exposed), "fail_closed_health_malformed")
-    require(exposed == (0, 0) and gateway.get("generic_delegation_available") is False,
-            "fail_closed_gateway_exposes_reads")
-    return gateway
-
-
-def delegated_reads(catalog: dict[str, Any], static_names: frozenset[str] | None) -> set[str]:
-    """Return the complete delegated-read set of a complete, bounded catalog."""
-
-    require(isinstance(static_names, frozenset) and bool(static_names), "fail_closed_static_catalog_unknown")
-    pages = catalog.get("pages")
-    require(isinstance(pages, list) and bool(pages) and all(isinstance(page, list) for page in pages),
-            "fail_closed_catalog_malformed")
-    require(catalog.get("catalog_complete") is True and len(pages) <= MAX_CATALOG_PAGES,
-            "fail_closed_catalog_incomplete")
-    names = [name for page in pages for name in page]
-    require(all(isinstance(name, str) for name in names), "fail_closed_catalog_malformed")
-    require(len(names) <= MAX_CATALOG_TOOLS, "fail_closed_catalog_incomplete")
-    require(len(names) == len(set(names)), "fail_closed_catalog_duplicate_name")
-    return set(names) - static_names
-
-
-def evaluate_fail_closed(samples: list[tuple[int, str]], mcp_attempt: tuple[int, str] | None,
-                         catalog: dict[str, Any] | None,
-                         static_names: frozenset[str] | None = None) -> dict[str, Any]:
-    """Accept only a delegated surface that never became usable.
-
-    Either readiness never reached 200 and the authenticated endpoint refused a
-    session (no ``tools/call`` is possible), or Engineering became ready and
-    positively shows the rollback state: the complete delegated-read set equals
-    the exact expected set (empty), and valid health reports the gateway
-    explicitly unadmitted with nothing exposed. HAMCP-350 adds a third path:
-    readiness stays strict (503 ``initial_reconciliation_pending``) while,
-    after the bounded startup wait, the readiness body itself reports
-    ``accepting_mcp_requests`` and the session is accepted; that path needs the
-    same positive rollback evidence as the ready path. A redirect category in
-    a readiness or session answer fails, and so does a redirect that health
-    reports (``redirect_reported_by_health``): the peer answers 404, not a 3xx.
-    """
-
-    require(samples, "fail_closed_no_samples")
-    texts = [body for _, body in samples] + ([mcp_attempt[1]] if mcp_attempt else [])
-    require(not any(REDIRECT_CATEGORY in text for text in texts), "fail_closed_redirect_category_present")
-    if isinstance(catalog, dict):
-        require(not redirect_reported_by_health(str(catalog.get("health_text") or "")),
-                "fail_closed_redirect_category_present")
-    ready = [status for status, _ in samples]
-    # Status 0 means nothing was listening yet. Engineering must have answered
-    # readiness at least once, so a container that never started cannot pass.
-    require(any(status != 0 for status in ready), "fail_closed_engineering_never_answered")
-    if all(status != 200 for status in ready):
-        require(mcp_attempt is not None, "fail_closed_session_not_refused")
-        if mcp_attempt[0] >= 400:
-            return {"path": "never_ready", "ready_statuses": sorted(set(ready)), "session_status": mcp_attempt[0]}
-        require(200 <= mcp_attempt[0] < 300, "fail_closed_session_not_refused")
-        require(pending_with_mcp_requests_accepted([body for status, body in samples if status != 0][-1]),
-                "fail_closed_session_accepted_without_pending_readiness")
-        require(isinstance(catalog, dict), "fail_closed_session_without_catalog")
-        return without_delegated_reads("pending_with_mcp_requests_accepted", ready, catalog, static_names)
-    require(isinstance(catalog, dict), "fail_closed_ready_without_catalog")
-    return without_delegated_reads("ready_without_delegated_reads", ready, catalog, static_names)
-
-
-def redirect_reported_by_health(text: str) -> bool:
-    """Whether health reports a refused redirect, not merely names the category.
-
-    The dashboard provider's health lists every failure category as a key with
-    its count (``providers/upstream_dashboard.py`` ``failure_counts``), so the
-    category name is present even when no redirect happened. A redirect is
-    reported by a non-zero count under that key, or by the category in any
-    value (for example ``last_failure_category``). Health that does not parse
-    falls back to the substring check, which fails closed.
-    """
-
-    try:
-        value = json.loads(text)
-    except ValueError:
-        return REDIRECT_CATEGORY in text
-    pending = [value]
-    while pending:
-        item = pending.pop()
-        if isinstance(item, dict):
-            for key, child in item.items():
-                if REDIRECT_CATEGORY in str(key) and not (key == REDIRECT_CATEGORY and type(child) is int
-                                                          and child == 0):
-                    return True
-                pending.append(child)
-        elif isinstance(item, list):
-            pending.extend(item)
-        elif isinstance(item, str) and REDIRECT_CATEGORY in item:
-            return True
-    return False
-
-
-def pending_with_mcp_requests_accepted(body: str) -> bool:
-    """Whether a strict 503 readiness body shows HAMCP-350 bounded-wait acceptance."""
-
-    try:
-        state = json.loads(body)
-    except ValueError:
-        return False
-    return (isinstance(state, dict) and state.get("ready") is False
-            and state.get("status") == "initial_reconciliation_pending"
-            and state.get("initial_reconciliation_complete") is False
-            and state.get("initial_reconciliation_deadline_elapsed") is True
-            and state.get("accepting_mcp_requests") is True)
-
-
-def without_delegated_reads(path: str, ready: list[int], catalog: dict[str, Any],
-                            static_names: frozenset[str] | None) -> dict[str, Any]:
-    delegated = delegated_reads(catalog, static_names)
-    require(not delegated - ROLLBACK_EXPECTED_DELEGATED_READS, "fail_closed_delegated_read_exposed")
-    require(not ROLLBACK_EXPECTED_DELEGATED_READS - delegated, "fail_closed_expected_delegated_read_missing")
-    gateway = unadmitted_gateway(catalog.get("health_is_error"), catalog.get("health_text"))
-    return {"path": path, "ready_statuses": sorted(set(ready)),
-            "engineering_tool_count": sum(len(page) for page in catalog["pages"]),
-            "catalog_pages": len(catalog["pages"]), "delegated_read_count": len(delegated),
-            "admission_status": gateway.get("admission_status")}
-
-
-def command_fail_closed(args: argparse.Namespace) -> int:
-    form = classify_form(args.configured_url)
-    try:
-        require(form == args.form, "endpoint_form_mismatch")
-        samples = []
-        deadline = time.monotonic() + args.observe_seconds
-        while True:
-            try:
-                samples.append(http_get(args.ready_url))
-            except OSError:
-                samples.append((0, ""))
-            if time.monotonic() >= deadline:
-                break
-            time.sleep(3)
-        catalog = None
-        mcp_attempt = None
-        static_names = None
-        if all(status != 200 for status, _ in samples):
-            mcp_attempt = http_post_initialize(args.engineering_endpoint)
-            if 200 <= mcp_attempt[0] < 300:
-                # HAMCP-350: accepted after the bounded wait while /ready stays
-                # strict; read the catalog and health for positive evidence.
-                catalog = asyncio.run(engineering_catalog(args.engineering_endpoint))
-                static_names = engineering_static_tool_names()
-        else:
-            catalog = asyncio.run(engineering_catalog(args.engineering_endpoint))
-            static_names = engineering_static_tool_names()
-        observed = {"classified_form": form, **evaluate_fail_closed(samples, mcp_attempt, catalog, static_names)}
-        result = case_result(args.case, "passed", form=form, observed=observed)
-    except (LaneFailure, ValueError, OSError) as exc:
-        category = str(exc) if isinstance(exc, LaneFailure) else type(exc).__name__
-        result = case_result(args.case, "failed", form=form, reason=category)
-    except Exception as exc:  # bounded: no exception text is retained
-        result = case_result(args.case, "failed", form=form, reason=type(exc).__name__)
-    write_json(Path(args.output), result)
-    return 0 if result["status"] == "passed" else 1
-
-
-# --------------------------------------------------------------------------
-# Wrap an existing acceptance script's bounded result
-# --------------------------------------------------------------------------
-
-def find_values(value: Any, key: str) -> list[Any]:
-    found: list[Any] = []
-    if isinstance(value, dict):
-        for name, item in value.items():
-            if name == key:
-                found.append(item)
-            found.extend(find_values(item, key))
-    elif isinstance(value, list):
-        for item in value:
-            found.extend(find_values(item, key))
-    return found
-
-
-def record_source(name: str, form: str | None, source: Path) -> dict[str, Any]:
-    if not source.is_file():
-        return case_result(name, "failed", form=form, reason="acceptance_result_missing")
-    try:
-        value = json.loads(source.read_text(encoding="utf-8"))
-    except (ValueError, OSError):
-        return case_result(name, "failed", form=form, reason="acceptance_result_unreadable")
-    if not isinstance(value, dict) or value.get("result") != "PASS":
-        reason = value.get("failure_type") if isinstance(value, dict) else None
-        return case_result(name, "failed", form=form, reason="acceptance_result_not_pass"
-                           + (": " + bounded(reason, 96) if isinstance(reason, str) else ""))
-    observed: dict[str, Any] = {}
-    protocols = {item for item in find_values(value, "observed_protocol_version") if isinstance(item, str)}
-    if len(protocols) == 1:
-        observed["negotiated_protocol"] = protocols.pop()
-    elif protocols:
-        return case_result(name, "failed", form=form, reason="acceptance_protocol_inconsistent")
-    return case_result(name, "passed", form=form, observed=observed)
-
-
-def command_record(args: argparse.Namespace) -> int:
-    require(args.configuration in CASES and args.case in case_names(args.configuration), "record_case_unlisted")
-    result = record_source(args.case, case_form(args.configuration, args.case), Path(args.source))
     write_json(Path(args.output), result)
     return 0 if result["status"] == "passed" else 1
 
@@ -926,19 +573,6 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--expect", choices=("served", "refused"), required=True)
     p.add_argument("--expected-version")
     p.add_argument("--output", required=True)
-    p = sub.add_parser("fail-closed")
-    p.add_argument("--case", required=True)
-    p.add_argument("--configured-url", required=True)
-    p.add_argument("--form", choices=FORMS, required=True)
-    p.add_argument("--ready-url", required=True)
-    p.add_argument("--engineering-endpoint", required=True)
-    p.add_argument("--observe-seconds", type=float, default=40.0)
-    p.add_argument("--output", required=True)
-    p = sub.add_parser("record")
-    p.add_argument("--configuration", choices=CONFIGURATIONS, required=True)
-    p.add_argument("--case", required=True)
-    p.add_argument("--source", required=True)
-    p.add_argument("--output", required=True)
     p = sub.add_parser("write-manifest")
     p.add_argument("--row", required=True)
     p.add_argument("--engineering-commit", required=True)
@@ -952,7 +586,6 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         return {"identity": command_identity, "initialize": command_initialize,
-                "fail-closed": command_fail_closed, "record": command_record,
                 "write-manifest": command_write_manifest, "gate": command_gate}[args.command](args)
     except LaneFailure as exc:
         print(f"exact-image admission lane refused: {exc}", file=sys.stderr)

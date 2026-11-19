@@ -1247,18 +1247,18 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
                 "ghcr.io/home-assistant/home-assistant:" + version + "@"
                 + core_lane_bindings.reviewed_lane_binding(version).image_index_digest,
             )
-        # Every Core slot is paired with ha_mcp.current only.
+        # Every Core slot is paired with ha_mcp.current only (9.2.0 since HAMCP-437).
         for row in matrix:
-            self.assertEqual(row["ha_mcp_version"], "8.5.0")
+            self.assertEqual(row["ha_mcp_version"], "9.2.0")
             self.assertEqual(
                 row["ha_mcp_image"],
-                "ghcr.io/homeassistant-ai/ha-mcp:8.5.0@"
-                "sha256:e1538bcdadb13a5467bbb8258fba3262a05518585e18115742da638adec7057c",
+                "ghcr.io/homeassistant-ai/ha-mcp:9.2.0@"
+                "sha256:9de5bf6c4216142fdffe862900abe72dac8dfe9621dd0b2b050d132372b676ba",
             )
-            self.assertEqual(row["ha_mcp_source_commit"], "311d6dc273fb4e9a5b8cde0de15f69472a64fe44")
+            self.assertEqual(row["ha_mcp_source_commit"], "51e3aac788482a081807591cd5d58d07dc4e540b")
             self.assertEqual(
                 row["ha_mcp_source_sha256"],
-                "02a0f9d8534d7265a21cf52daac193c405c703aac013be0c808ebd8fb9aa056e",
+                "82ce384c9cd09db2b6a81233f44dd61d6f07a80082bc1b8e34aed49ac3f53f6f",
             )
             self.assertEqual(row["lane"], "ha-" + row["ha_version"].replace(".", "-"))
         self.assertEqual(job["env"]["HA_CONTRACT_VERSION"], "${{ matrix.ha_version }}")
@@ -1635,7 +1635,9 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
         self.assertEqual(versions, [window["core"][slot]["version"]
                                     for slot in support_window.core_slots(window, support_window.SLOTS)])
         self.assertIn(window["core"]["current"]["version"], versions)
-        self.assertIn(window["core"]["rollback"]["version"], versions)
+        # HAMCP-406: the rollback may be empty; a non-empty one is an Alarmo slot.
+        if window["core"]["rollback"] is not None:
+            self.assertIn(window["core"]["rollback"]["version"], versions)
         with patch.object(sys, "path", list(sys.path)), patch.dict(sys.modules):
             for version in versions:
                 with self.subTest(version=version):

@@ -14,9 +14,12 @@
 #          release/publication gate): current + candidate + rollback
 #
 # Lane pairing varies one component at a time from the current deployment:
-#   real-HA contract  : each Core slot in the tier, paired with ha_mcp.current
-#   exact-image gateway: each ha-mcp slot in the tier (Core is synthetic there)
-#   add-on runtime    : each ha-mcp slot's addon_runtime lanes, on core.current
+#   real-HA contract   : each Core slot in the tier, paired with ha_mcp.current
+#   exact-image strict-full: ha_mcp.current on amd64 and arm64 (Core is synthetic
+#                        there); the read-gateway lane for the deployed ha-mcp
+#                        (HAMCP-437, I2b lane ruling A). The legacy-URL gateway
+#                        and add-on runtime lanes are retired; a slot that still
+#                        declares addon_runtime refuses.
 #
 # Rotation (contract amendment, Josh 2026-10-11): rotating Cores that are
 # already in the window (candidate -> current, current -> rollback, rollback
@@ -34,80 +37,42 @@
 # restore-first recovery), which amends HAMCP-173.
 #   core.<candidate|rollback>: null   - no lane of that slot, Alarmo job or lane
 #                                       provenance is created or required.
-#   ha_mcp.<candidate|rollback>: null - no exact-image gateway or add-on runtime
-#                                       job, and no registry row, for that slot.
-# Every non-empty ha-mcp slot still declares at least one addon_runtime lane.
+#   ha_mcp.<candidate|rollback>: null - no registry cross-check for that slot.
 # Every pin must be an immutable digest copied from reviewed evidence. A Core slot
-# also needs tests/fixtures/core_<version>_lane_provenance.json, and the contract
-# scripts must already support the new pairing: for example the add-on acceptance
-# script must accept each ha-mcp version with the new current Core, or the window
-# refuses (addon_<slot>_pair_unsupported). Alarmo acceptance and the automation
+# also needs tests/fixtures/core_<version>_lane_provenance.json, and every
+# non-empty ha-mcp slot must match its reviewed registry row (image digest and
+# source commit). Alarmo acceptance and the automation
 # baseline proof follow every non-empty Core slot in the tier (HAMCP-159), bound to
 # the slot's exact version, digest and lane provenance, so rotation needs no
 # Alarmo evidence edits; a Core outside the window refuses.
 # The 2026.7.2 migration-fixture writer image in ci.yml is a deliberate constant
 # (it writes the persisted fixture), not a window slot.
 #
-# Current slots (HAMCP-173, Josh 2026-10-13): Core 2026.10.1 is current, 2026.10.0
-# is rollback; 2026.9.4 left the window. HAMCP-222 (Josh 2026-10-24): Core 2026.10.3
-# is the candidate under evaluation for the seq-13/14 signing session.
-# The ha-mcp candidate is empty: 8.6.0 is on production HOLD (upstream defect
-# #2695) and will not be adopted. 8.6.0 is unchanged in the compiled registry and
-# the runtime; it only stops running CI candidate lanes.
+# Current slots (HAMCP-437, release 2.9.0): Core 2026.11.0 with ha-mcp 9.2.0, the
+# deployed pair. Core and ha-mcp candidate and rollback are empty (HAMCP-406). The
+# ha-mcp 9.2.0 source_archive_sha256 is the codeload legacy.tar.gz digest of the
+# registry source_commit, whose extracted content equals that commit's tree
+# (registry source_tree 377909bd).
 schema_version: 1
 
 core:
   current:
-    version: "2026.10.1"
-    image_index_digest: sha256:130241f28d01fa80dfa3b44f7d89781c188d8642ecab9024f079f19f9f82baa0
-  candidate:
-    version: "2026.10.3"
-    image_index_digest: sha256:407b89cd11a8cb67d388d21739a226c74acbbebe1ac59e3b83b11b43ce76b98f
-  rollback:
-    version: "2026.10.0"
-    image_index_digest: sha256:1b64d38f38d922bf9d59336451fd6453e1d614f934456af4ee3d2a51061be3a4
+    version: "2026.11.0"
+    image_index_digest: sha256:c6c1ca9931036bf3a2c4cc088d8db25dfea3b33935a5ecc83c40349462e2f69e
+  candidate: null
+  rollback: null
 
 ha_mcp:
   current:
-    version: "8.5.0"
-    image_index_digest: sha256:e1538bcdadb13a5467bbb8258fba3262a05518585e18115742da638adec7057c
-    source_commit: 311d6dc273fb4e9a5b8cde0de15f69472a64fe44
-    source_archive_sha256: 02a0f9d8534d7265a21cf52daac193c405c703aac013be0c808ebd8fb9aa056e
-    addon_runtime:
-      - kind: candidate_power
-        profile: legacy
-        architectures: [amd64, arm64]
+    version: "9.2.0"
+    image_index_digest: sha256:9de5bf6c4216142fdffe862900abe72dac8dfe9621dd0b2b050d132372b676ba
+    source_commit: 51e3aac788482a081807591cd5d58d07dc4e540b
+    source_archive_sha256: 82ce384c9cd09db2b6a81233f44dd61d6f07a80082bc1b8e34aed49ac3f53f6f
   candidate: null
-  rollback:
-    version: "8.4.3"
-    image_index_digest: sha256:d5cea47a0115e5d161c2b319ee637b1b0a5bcfafe1597cb490299bbbc6329456
-    source_commit: eac7a3aa7063432e9af17e7d7726040e909c7b8f
-    source_archive_sha256: 4504b0f086f20b21350269ed330886ed5398a96a671a30af97444ece412cf3cc
-    addon_runtime:
-      - kind: live_detail
-        addon_detail_profile: live-8.4.3
-        secret_path: /beta58-synthetic/mcp
-        addon_amd64_index_digest: sha256:366361a088089f3cb55b51318d86eeb968f3deb913a41397d741075da879c2fb
-        addon_amd64_manifest_digest: sha256:13ed061af93d539b0872564ea340e4e683b5d437e5a520a3ac5d4e9732442b32
-        addon_arm64_index_digest: sha256:90e850213882d6c83dd4b2076546d34873b90e83800eadaccd94558936dd74b3
-        addon_arm64_manifest_digest: sha256:a51107e1a1f1f9dec9c52b9a9e714362a3f2374e80613d8c4810e8f54e43c41e
+  rollback: null
 
-# HAMCP-319 exact-image admission lanes (design section 5.1; Josh 2026-11-07:
-# a separate workflow-only PR into release/2.5.0). The candidate is NOT a slot:
-# it derives no gateway, add-on or real-HA row, so the legacy-URL lanes above
-# never meet a strict-selector 9.1 peer. scripts/support_window.py
-# admission_matrix derives six lanes, 85_only / 91_only / side_by_side on amd64
-# and arm64 native runners. 85_only runs now against ha_mcp.current
-# (baseline_version must equal it). 91_only and side_by_side stay dormant, and
-# their manifests say "not executed", until the reviewed upstream registry
-# carries candidate_version. That registry entry is the build's admission
-# signal; the lanes then turn active with no workflow edit, and every pin comes
-# from that reviewed registry row, never from this file.
-# HAMCP-351 (Josh 2026-11-09): the candidate is ha-mcp 9.1.2; 9.1.0 stays
-# admitted in the registry but no longer runs these admission lanes.
-# HAMCP-371 (plan authorization item 5, owner acceptance): the candidate is
-# ha-mcp 9.2.0; 9.1.2 stays admitted in the registry but no longer runs these
-# admission lanes. The 8.5.0 baseline lanes keep running.
-admission:
-  baseline_version: "8.5.0"
-  candidate_version: "9.2.0"
+# The optional admission key (HAMCP-319 design section 5.1) names a future ha-mcp
+# candidate that is not a slot: its baseline_version must equal ha_mcp.current and
+# its candidate_version must not be a slot pin. It is absent while no candidate is
+# under evaluation; since HAMCP-437 no CI job consumes its rows, so a future
+# candidate needs its own reviewed lane (HAMCP-424).

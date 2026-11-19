@@ -21,7 +21,7 @@ import seq13_contract_acceptance as seq13  # noqa: E402
 import alarmo_inspection_contract_acceptance as alarmo  # noqa: E402
 import real_ha_contract_tests  # noqa: E402
 from entity_metadata_contract_acceptance import load_receipt, receipt_bytes  # noqa: E402
-from test_alarmo_interval_observer import CORE, NOT_SLOTS, NOT_STRINGS, OTHER_CORE, SLOT_VERSIONS  # noqa: E402
+from test_alarmo_interval_observer import CORE, NOT_SLOTS, NOT_STRINGS, OTHER_BINDING, OTHER_CORE, SLOT_VERSIONS  # noqa: E402
 
 CORE_SLOT = next(slot for slot, version in SLOT_VERSIONS.items() if version == CORE)
 REFUSED = (AssertionError, ValueError, KeyError, TypeError)
@@ -190,7 +190,7 @@ class ReceiptTests(unittest.TestCase):
                 seq13.verify_result(lane_key, copy.deepcopy(value))
 
     def test_refuses_wrong_image_fingerprint_source_authority_or_cleanup(self):
-        other = alarmo.slot_binding(OTHER_CORE)
+        other = OTHER_BINDING
         zero = "sha256:" + "0" * 64
         mutations = [
             lambda v: v.update(result="FAIL"),
@@ -497,10 +497,10 @@ class LaneGuardTests(unittest.IsolatedAsyncioTestCase):
         binding = alarmo.slot_binding(CORE)
         local = SimpleNamespace(ha_url="http://127.0.0.1:8123")
         cases = [
-            (local, binding["image"], OTHER_CORE, binding["lane"]),
-            (local, binding["image"], CORE, alarmo.slot_binding(OTHER_CORE)["lane"]),
+            # A Core outside the one-slot window (OTHER_CORE) is refused as unknown below.
+            (local, binding["image"], CORE, OTHER_BINDING["lane"]),
             (local, binding["image"], CORE, None),
-            (local, alarmo.slot_binding(OTHER_CORE)["image"], CORE, binding["lane"]),
+            (local, OTHER_BINDING["image"], CORE, binding["lane"]),
             (local, binding["image"].split("@")[0], CORE, binding["lane"]),
             (SimpleNamespace(ha_url="http://homeassistant.local:8123"), binding["image"], CORE, binding["lane"]),
         ]
@@ -528,7 +528,7 @@ class LaneGuardTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_lane_refuses_a_wrong_slot_image_receipt_before_any_client(self):
         binding = alarmo.slot_binding(CORE)
-        other = alarmo.slot_binding(OTHER_CORE)
+        other = OTHER_BINDING
         receipts = [
             {"result": "PASS", "index": other["image_index_digest"], "core_version": CORE, "support_slot": CORE_SLOT},
             {"result": "PASS", "index": binding["image_index_digest"], "core_version": OTHER_CORE,

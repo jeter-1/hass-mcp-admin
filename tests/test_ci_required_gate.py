@@ -20,8 +20,6 @@ REQUIRED_JOBS = (
     "validate_source",
     "real-ha-contract-tests",
     "prepare_exact_image_matrix",
-    "exact-image-read-gateway",
-    "exact-addon-runtime-acceptance",
     "exact-image-admission-lanes",
     "exact-image-admission-manifest-gate",
     "dashboard-disposable",
@@ -93,14 +91,35 @@ class RequiredCIGateTests(unittest.TestCase):
                     self.assertNotEqual(result.returncode, 0)
                     self.assertIn(name, result.stderr)
 
-    def test_failed_matrix_preparation_and_skipped_gateway_refuse(self):
+    def test_failed_matrix_preparation_and_skipped_strict_full_lane_refuse(self):
         results = self._results()
         results["prepare_exact_image_matrix"]["result"] = "failure"
-        results["exact-image-read-gateway"]["result"] = "skipped"
+        results["exact-image-admission-lanes"]["result"] = "skipped"
         result = self._run(results)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("prepare_exact_image_matrix", result.stderr)
-        self.assertIn("exact-image-read-gateway", result.stderr)
+        self.assertIn("exact-image-admission-lanes", result.stderr)
+
+    def test_strict_full_lane_failure_fails_validate(self):
+        # HAMCP-437 lane ruling A: the strict-full lane on ha_mcp.current stays
+        # in validate's needs and its failure (or its gate's) fails validate.
+        self.assertEqual(self.jobs["validate"]["name"], "validate")
+        for name in ("exact-image-admission-lanes", "exact-image-admission-manifest-gate"):
+            with self.subTest(job=name):
+                self.assertIn(name, self.jobs["validate"]["needs"])
+                results = self._results()
+                results[name]["result"] = "failure"
+                result = self._run(results)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("Required CI did not succeed: " + name, result.stderr)
+        self.assertEqual(self.jobs["exact-image-admission-lanes"]["strategy"]["matrix"],
+                         "${{ fromJSON(needs.prepare_exact_image_matrix.outputs.admission) }}")
+
+    def test_retired_legacy_lanes_are_absent(self):
+        for name in ("exact-image-read-gateway", "exact-addon-runtime-acceptance"):
+            with self.subTest(job=name):
+                self.assertNotIn(name, self.jobs)
+                self.assertNotIn(name, self._step()["run"])
 
     def test_failed_preflight_cannot_skip_source_and_packaging_into_success(self):
         results = self._results()
@@ -136,12 +155,11 @@ class RequiredCIGateTests(unittest.TestCase):
         # GitHub reports a failed matrix job family when any required child
         # fails. A successful preparation job does not supersede that result.
         results = self._results()
-        results["exact-image-read-gateway"]["result"] = "failure"
+        results["exact-image-admission-lanes"]["result"] = "failure"
         self.assertNotEqual(self._run(results).returncode, 0)
         for name in (
             "real-ha-contract-tests",
-            "exact-image-read-gateway",
-            "exact-addon-runtime-acceptance",
+            "exact-image-admission-lanes",
         ):
             self.assertFalse(self.jobs[name]["strategy"]["fail-fast"])
             self.assertFalse(self.jobs[name].get("continue-on-error", False))

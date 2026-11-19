@@ -933,15 +933,6 @@ class ExactImageOperationalAcceptanceTests(unittest.IsolatedAsyncioTestCase):
                 settings=lifecycle_settings(ENDPOINT),
             )
 
-    def test_addon_runtime_harness_expects_provider_held_on_its_held_path(self):
-        source = (ROOT / "scripts" / "exact_addon_runtime_acceptance.py").read_text(
-            encoding="utf-8"
-        )
-        self.assertEqual(
-            source.count('validator_refusal_category\n        == "provider_held"'), 2
-        )
-        self.assertNotIn('== "upstream_version_mismatch"', source)
-
 
 if __name__ == "__main__":
     unittest.main()

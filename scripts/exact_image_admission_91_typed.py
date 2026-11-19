@@ -172,8 +172,9 @@ def core_image(window_loader: Callable[[], dict] | None = None) -> dict[str, str
     binding = core_lane_bindings.reviewed_lane_binding(version)
     require(binding is not None and binding.image_index_digest == digest, "core_binding_unreviewed")
     require(binding.typed_operations is True, "core_typed_operations_unbound")
-    admission = window.get("admission") or {}
-    require(admission.get("candidate_version") == UPSTREAM_VERSION, "admission_candidate_not_9_2_0")
+    # HAMCP-437 lane ruling A: the strict-full lane runs on ha_mcp.current.
+    current_ha_mcp = (window.get("ha_mcp") or {}).get("current") or {}
+    require(current_ha_mcp.get("version") == UPSTREAM_VERSION, "ha_mcp_current_not_9_2_0")
     return {"image": f"{CORE_REPOSITORY}:{version}@{digest}", "version": version, "image_index_digest": digest}
 
 

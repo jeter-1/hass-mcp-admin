@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / 'scripts'), str(ROOT / 'hass_mcp_engineering_beta')]
 import automation_baseline_contract_acceptance as lane
 from test_automation_baseline_capture import Client, Core, fixture, export, make_store
-from test_alarmo_interval_observer import CORE, NOT_SLOTS, NOT_STRINGS, OTHER_CORE, SLOT_VERSIONS, cleanup_value, receipt
+from test_alarmo_interval_observer import CORE, NOT_SLOTS, NOT_STRINGS, OTHER_BINDING, OTHER_CORE, SLOT_VERSIONS, cleanup_value, receipt
 import alarmo_inspection_contract_acceptance as alarmo
 from ha_mcp_engineering.audit_baseline import capture_contracts as c, compare_baselines, load_baseline
 from ha_mcp_engineering.audit_baseline.capture_provider import BaselineCaptureProvider
@@ -406,10 +406,10 @@ class FailureDiagnosticTests(unittest.IsolatedAsyncioTestCase):
         binding = slot_binding(CORE)
         local = SimpleNamespace(ha_url='http://127.0.0.1:8123')
         cases = [
-            (local, binding['image'], OTHER_CORE, binding['lane']),
-            (local, binding['image'], CORE, slot_binding(OTHER_CORE)['lane']),
+            # A Core outside the one-slot window (OTHER_CORE) is refused as unknown below.
+            (local, binding['image'], CORE, OTHER_BINDING['lane']),
             (local, binding['image'], CORE, None),
-            (local, slot_binding(OTHER_CORE)['image'], CORE, binding['lane']),
+            (local, OTHER_BINDING['image'], CORE, binding['lane']),
             (local, binding['image'].split('@')[0], CORE, binding['lane']),
             (SimpleNamespace(ha_url='http://homeassistant.local:8123'), binding['image'], CORE, binding['lane']),
         ]

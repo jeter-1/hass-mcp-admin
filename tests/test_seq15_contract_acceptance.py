@@ -19,7 +19,40 @@ import seq15_contract_acceptance as seq15  # noqa: E402
 import alarmo_inspection_contract_acceptance as alarmo  # noqa: E402
 import real_ha_contract_tests  # noqa: E402
 from entity_metadata_contract_acceptance import RawRefusal, load_receipt, receipt_bytes  # noqa: E402
-from test_alarmo_interval_observer import NOT_SLOTS, NOT_STRINGS, SLOT_VERSIONS  # noqa: E402
+from test_alarmo_interval_observer import bound_window, edit_window, window_root  # noqa: E402
+
+# HAMCP-437: the seq-15 lanes prove the signed seq-14 -> seq-15 transition, which
+# exists only for the October releases; the one-slot window (Core 2026.11.0) holds
+# none of them. These offline checks therefore bind the historical seq-15 window
+# (the committed 2.9.0 base window's Core block and its retained provenance) in a
+# disposable root instead of the committed window.
+SEQ15_CORE_WINDOW = {
+    "current": {"version": "2026.10.1",
+                "image_index_digest": "sha256:130241f28d01fa80dfa3b44f7d89781c188d8642ecab9024f079f19f9f82baa0"},
+    "candidate": {"version": "2026.10.3",
+                  "image_index_digest": "sha256:407b89cd11a8cb67d388d21739a226c74acbbebe1ac59e3b83b11b43ce76b98f"},
+    "rollback": {"version": "2026.10.0",
+                 "image_index_digest": "sha256:1b64d38f38d922bf9d59336451fd6453e1d614f934456af4ee3d2a51061be3a4"},
+}
+SLOT_VERSIONS = {slot: core["version"] for slot, core in SEQ15_CORE_WINDOW.items()}
+# Near misses of the historical window (unchanged from the 2.9.0 base).
+NOT_SLOTS = ("2026.9.3", "2026.9.2", "2026.11.0", "2026.10", "2026.10.", "2026.10.*", "2026.9", "2026.9.*",
+             "", " 2026.10.0", "2026.10.0 ", "2026.10.0\n", "v2026.10.0", "2026.10.00")
+NOT_STRINGS = (None, 2026.9, 2026, b"2026.10.0", ["2026.10.0"], {"version": "2026.10.0"})
+_WINDOW = tempfile.TemporaryDirectory()
+_ROOT = window_root(_WINDOW.name)
+edit_window(_ROOT, lambda window: window["core"].update(copy.deepcopy(SEQ15_CORE_WINDOW)))
+_BOUND = bound_window(_ROOT)
+
+
+def setUpModule():
+    _BOUND.__enter__()
+
+
+def tearDownModule():
+    _BOUND.__exit__(None, None, None)
+    _WINDOW.cleanup()
+
 
 CORE = seq15.TARGET_CORE
 CORE_SLOT = next(slot for slot, version in SLOT_VERSIONS.items() if version == CORE)

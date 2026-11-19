@@ -78,9 +78,9 @@ def pin(version):
 # (a) Rotation among reviewed Cores: 2026.10.1 deployed, 2026.10.0 rolled back,
 # no candidate under evaluation. Only the window changes.
 ROTATED = {"current": pin("2026.10.1"), "candidate": None, "rollback": pin("2026.10.0")}
-# Finding 1: the committed window with no Core candidate.
-NULL_CANDIDATE = {"current": COMMITTED["core"]["current"], "candidate": None,
-                  "rollback": COMMITTED["core"]["rollback"]}
+# Finding 1: the committed current with no Core candidate. HAMCP-406 empties the
+# committed rollback, so this case pins a reviewed one to keep a two-slot window.
+NULL_CANDIDATE = {"current": COMMITTED["core"]["current"], "candidate": None, "rollback": pin("2026.10.3")}
 # (b)/(c): a brand-new Core as candidate.
 WITH_NEW = {"current": pin("2026.10.0"), "candidate": {"version": NEW_VERSION, "image_index_digest": NEW_DIGEST},
             "rollback": pin("2026.9.4")}
