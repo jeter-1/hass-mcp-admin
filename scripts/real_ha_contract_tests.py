@@ -3491,32 +3491,129 @@ async def _run_script_dependency_contract(configured, core_runtime, read_gateway
         service = runtime.require()
         service.index.provider.script_reader_factory = read_gateway.script_dependency_reader
         with patch.object(read_gateway._transport, "execute_read", capture.execute_read):
-            stage = "useful_script_analysis"
-            result = await service.analyze(entity_id=target, source_types=["automation", "blueprint", "script"], detail_level="evidence")
-            findings = result.data["findings"]
-            for key in keys:
-                path = "$.use_blueprint.input.target" if key == keys[3] else "$.sequence[0].entity_id"
-                assert any(item["source_id"] == key and item["source_entity_id"] == identities[key]
-                           and item["config_path"] == path for item in findings), key
-            assert not any(item["source_id"] == package_key for item in findings)
-            diagnostic = service.index.snapshot.script_diagnostics
-            assert any(item.source_id == keys[4] for item in diagnostic.dynamic_references)
-            coverage = script_coverage(result)
-            assert coverage["provider"] == "upstream_read_gateway"
-            assert coverage["completeness"] == "partial" and not coverage["fallback_occurred"]
-            assert coverage["failed_item_count"] >= 2  # package read gap + unexpanded blueprint
-            assert "script_blueprint_body_unresolved: 1" in coverage["warnings"]
-            assert next(row for row in result.data["source_coverage"] if row["source_type"] == "blueprint")["evidence_count"] == 0
-            assert ("upstream", "ha_config_get_script", identities[package_key]) in capture.calls
-            stage = "script_call_paths"
-            graph = await service.analyze(entity_id=target, source_types=["script"],
-                                          include_indirect=True, max_depth=3, detail_level="evidence")
-            assert any(item["source_id"] == keys[0] and item["depth"] == 2
-                       and not item["direct"] for item in graph.data["findings"])
-            assert any(item["source_id"] == keys[4] and item["depth"] == 3
-                       and len(item["evidence_path"]) == 3 for item in graph.data["findings"])
-            assert graph.partial and graph.data["index"]["cache_hit"]
-            assert graph.data["script_call_graph"]["fallback_occurred"] is False
+            # The failure reporter never prints assertion text, so a failing check
+            # below carries a bounded contract_diagnostic instead: its name plus
+            # counts, booleans, coverage identifiers and fixture keys only.
+            check, result, graph = "analyze", None, None
+            label = r"[a-z0-9_+.-]{1,96}"
+
+            def observed():
+                view = {"script_check": check}
+                try:
+                    view["violations"] = len(capture.violations)
+                    view["upstream_reads"] = sum(1 for call in capture.calls if call[0] == "upstream")
+                    view["package_read_call"] = (
+                        ("upstream", "ha_config_get_script", identities.get(package_key)) in capture.calls)
+                    if result is not None:
+                        rows = result.data.get("findings", [])
+                        view["findings_total"] = len(rows)
+                        # Per fixture key: [findings, identity matches, full matches].
+                        view["findings"] = {
+                            key.removeprefix(prefix): [
+                                sum(1 for item in rows if item.get("source_id") == key),
+                                sum(1 for item in rows if item.get("source_id") == key
+                                    and item.get("source_entity_id") == identities.get(key)),
+                                sum(1 for item in rows if item.get("source_id") == key
+                                    and item.get("source_entity_id") == identities.get(key)
+                                    and item.get("config_path") == ("$.use_blueprint.input.target"
+                                                                    if key == keys[3] else "$.sequence[0].entity_id")),
+                            ] for key in (*keys, package_key)}
+                        for row in result.data.get("source_coverage", []):
+                            if row.get("source_type") not in {"script", "blueprint"}:
+                                continue
+                            policy = row.get("policy") if isinstance(row.get("policy"), str) else ""
+                            counts = re.search(r"loaded=(\d{1,6}); stored=(\d{1,6})", policy)
+                            view["coverage_" + row["source_type"]] = {
+                                "provider": row.get("provider") if re.fullmatch(label, str(row.get("provider"))) else "other",
+                                "completeness": row.get("completeness") if re.fullmatch(label, str(row.get("completeness"))) else "other",
+                                "fallback_occurred": row.get("fallback_occurred") is True,
+                                "failed_item_count": int(row.get("failed_item_count", -1)),
+                                "evidence_count": int(row.get("evidence_count", -1)),
+                                "public_warnings": len(row.get("warnings", [])),
+                                **({"loaded": int(counts[1]), "stored": int(counts[2])} if counts else {}),
+                                "stored_fallback_reasons": dict(
+                                    (name, int(count)) for name, count in
+                                    re.findall(r"([a-z0-9_]{1,64})=(\d{1,6})", policy.partition("stored fallback reasons:")[2])[:8]),
+                            }
+                    scripts = service.index.snapshot.script_diagnostics if service.index.snapshot else None
+                    if scripts is not None:
+                        view["dynamic_template"] = any(item.source_id == keys[4] for item in scripts.dynamic_references)
+                        # Internal warnings, unbounded by the public 10-entry cut.
+                        view["warning_keys"] = dict(
+                            (match[1], int(match[2])) for match in (
+                                re.fullmatch(r"([a-z0-9_]{1,64}): (\d{1,9})", text) for text in scripts.coverage.warnings)
+                            if match)
+                        view["call_gap_keys"] = dict(
+                            (match[1], int(match[2])) for match in (
+                                re.fullmatch(r"([a-z0-9_]{1,64}): (\d{1,9})", text) for text in scripts.call_gaps)
+                            if match)
+                        view["source_providers"] = {
+                            key.removeprefix(prefix): provider if re.fullmatch(label, str(provider)) else "other"
+                            for key, provider in scripts.source_providers if key in all_keys}
+                    if graph is not None:
+                        rows = graph.data.get("findings", [])
+                        view["graph"] = {
+                            "partial": bool(graph.partial),
+                            "cache_hit": graph.data.get("index", {}).get("cache_hit") is True,
+                            "fallback_occurred": (lambda value: value if isinstance(value, bool) else "other")(
+                                graph.data.get("script_call_graph", {}).get("fallback_occurred")),
+                            # Per fixture key: up to four [depth, direct, evidence_path length].
+                            **{key.removeprefix(prefix): [
+                                [int(item.get("depth", -1)), item.get("direct") is True, len(item.get("evidence_path", []))]
+                                for item in rows if item.get("source_id") == key][:4] for key in keys},
+                        }
+                except Exception as error:
+                    view["observation_failure"] = type(error).__name__
+                for optional in ("call_gap_keys", "warning_keys", "graph", "findings"):
+                    if len(json.dumps(view, separators=(",", ":"))) <= 2000:
+                        break
+                    view.pop(optional, None)
+                return view
+
+            try:
+                stage = "useful_script_analysis"
+                result = await service.analyze(entity_id=target, source_types=["automation", "blueprint", "script"], detail_level="evidence")
+                findings = result.data["findings"]
+                for key in keys:
+                    check = "finding_" + key.removeprefix(prefix)
+                    path = "$.use_blueprint.input.target" if key == keys[3] else "$.sequence[0].entity_id"
+                    assert any(item["source_id"] == key and item["source_entity_id"] == identities[key]
+                               and item["config_path"] == path for item in findings), key
+                check = "package_not_found"
+                assert not any(item["source_id"] == package_key for item in findings)
+                diagnostic = service.index.snapshot.script_diagnostics
+                check = "dynamic_template_reference"
+                assert any(item.source_id == keys[4] for item in diagnostic.dynamic_references)
+                coverage = script_coverage(result)
+                check = "coverage_provider"
+                assert coverage["provider"] == "upstream_read_gateway"
+                check = "coverage_partial_no_fallback"
+                assert coverage["completeness"] == "partial" and not coverage["fallback_occurred"]
+                check = "coverage_failed_items"
+                assert coverage["failed_item_count"] >= 2  # package read gap + unexpanded blueprint
+                check = "blueprint_body_warning"
+                assert "script_blueprint_body_unresolved: 1" in coverage["warnings"]
+                check = "blueprint_evidence_zero"
+                assert next(row for row in result.data["source_coverage"] if row["source_type"] == "blueprint")["evidence_count"] == 0
+                check = "package_read_call"
+                assert ("upstream", "ha_config_get_script", identities[package_key]) in capture.calls
+                stage = "script_call_paths"
+                check = "graph_analyze"
+                graph = await service.analyze(entity_id=target, source_types=["script"],
+                                              include_indirect=True, max_depth=3, detail_level="evidence")
+                check = "graph_indirect_normal"
+                assert any(item["source_id"] == keys[0] and item["depth"] == 2
+                           and not item["direct"] for item in graph.data["findings"])
+                check = "graph_depth3_template"
+                assert any(item["source_id"] == keys[4] and item["depth"] == 3
+                           and len(item["evidence_path"]) == 3 for item in graph.data["findings"])
+                check = "graph_partial_cache_hit"
+                assert graph.partial and graph.data["index"]["cache_hit"]
+                check = "graph_no_fallback"
+                assert graph.data["script_call_graph"]["fallback_occurred"] is False
+            except AssertionError as error:
+                setattr(error, "contract_diagnostic", observed())
+                raise
             shared_findings = tuple(service.index.snapshot.findings)
             shared_obligations = tuple(service.index.snapshot.obligations)
 
