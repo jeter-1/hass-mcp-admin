@@ -140,7 +140,9 @@ guidance conflicts. Nonconflicting root instructions continue to apply.
   Who requests the review, reviewer choice and model family, recording the
   reviewer on the register row, and the request brief follow the "Independent
   review" section of the global policy (ai-prompts `global/AGENTS.md`); this
-  budget still applies.
+  budget still applies. The security section or an exceptional second
+  specialized reviewer does not add to or replace the reviewer recorded on the
+  register row.
 - A `Ready for review` action performed by Josh (`jeter-1`) on a same-repository
   pull request targeting `main` attests that the bounded independent review is
   complete and acceptable, and is explicit standing authorization for the
