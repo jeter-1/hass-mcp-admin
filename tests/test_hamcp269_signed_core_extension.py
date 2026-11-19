@@ -24,7 +24,10 @@ from ha_mcp_engineering.signed_registry import canonical_json
 
 EVIDENCE = ROOT / "docs/evidence/hamcp269"
 PUBLIC_KEY = ROOT / "docs/evidence/hamcp222/core-public-key.txt"
-SIGNED_SHA256 = "a4dfbb143ce6cd932b91bf49c4b3d0fe9b889f690a27188c547c4700e8b62dc4"
+# HAMCP-437: the committed journal is now the sequence-18 tip (registry@917bfa2a).
+# Sequence 15 is checked as the envelope it still carries, unchanged.
+SIGNED_SHA256 = "e792670dd22586cfa3d2fbbfaacf6165feb85bcb435e33f69bc712f7db27b092"
+SIGNED_SEQUENCE = 18
 ADDITIONS = (
     "core.config_entry_helper_options_operation",
     "core.typed_input_select_option_operation",
@@ -45,7 +48,9 @@ class SignedCoreSequence15Tests(unittest.TestCase):
         cls.previous = prepare.parse_journal(cls.previous_raw, cls.key)
         cls.candidate_raw = (EVIDENCE / "candidate-seq15-2026.10.3.json").read_bytes()
         cls.candidate = prepare.strict_json(cls.candidate_raw)
+        (cls.envelope,) = [e for e in cls.journal.envelopes if e.sequence == 15]
         # Historical signing-time checks must remain deterministic after expiry.
+        cls.signing_now = prepare.parse_utc_timestamp(cls.envelope.generated_at) + timedelta(seconds=1)
         cls.now = prepare.parse_utc_timestamp(cls.journal.accepted.generated_at) + timedelta(seconds=1)
 
     def test_signed_bytes_match_reviewed_candidate_and_verified_predecessor(self):
@@ -53,20 +58,21 @@ class SignedCoreSequence15Tests(unittest.TestCase):
         self.assertEqual(hashlib.sha256(self.candidate_raw).hexdigest(),
                          "224305a5cb41d53a58311246bcf5a31ee9e0e6678efbc310464f119014adb168")
         self.assertEqual(self.previous.accepted.sequence, 14)
-        self.assertEqual(self.journal.accepted.sequence, 15)
+        self.assertEqual(self.journal.accepted.sequence, SIGNED_SEQUENCE)
         self.assertEqual(self.candidate["previous_journal_sha256"], hashlib.sha256(self.previous_raw).hexdigest())
-        self.assertEqual(self.journal.accepted.previous_registry_sha256, self.previous.accepted.content_digest)
+        self.assertEqual(self.envelope.previous_registry_sha256, self.previous.accepted.content_digest)
         signed = json.loads(self.raw)
         previous = json.loads(self.previous_raw)
-        self.assertEqual(signed["envelopes"][:-1], previous["envelopes"])
+        self.assertEqual([e["sequence"] for e in signed["envelopes"]], list(range(1, SIGNED_SEQUENCE + 1)))
+        self.assertEqual(signed["envelopes"][:14], previous["envelopes"])
         self.assertEqual(signed["revocation_sources"], previous["revocation_sources"])
-        self.assertEqual({k: v for k, v in signed["envelopes"][-1].items() if k != "signature"},
+        self.assertEqual({k: v for k, v in signed["envelopes"][14].items() if k != "signature"},
                          self.candidate["envelope"])
-        prepare.validate_transition(self.candidate, self.previous, self.now)
+        prepare.validate_transition(self.candidate, self.previous, self.signing_now)
 
     def test_only_core_10_3_extends_the_unchanged_ordered_prefix(self):
         before = {e.version: e.to_mapping() for e in self.previous.accepted.entries}
-        after = {e.version: e.to_mapping() for e in self.journal.accepted.entries}
+        after = {e.version: e.to_mapping() for e in self.envelope.entries}
         self.assertEqual(list(before), list(after))
         self.assertEqual([v for v in before if before[v] != after[v]], ["2026.10.3"])
         self.assertEqual({v: len(e["capabilities"]) for v, e in after.items()},
@@ -79,7 +85,7 @@ class SignedCoreSequence15Tests(unittest.TestCase):
         profiles = {p.capability_id: p.to_mapping() for p in CORE_RUNTIME_CAPABILITY_PROFILES}
         for reference in added:
             self.assertEqual(reference, {k: profiles[reference["capability_id"]][k] for k in reference})
-        self.assertEqual(self.journal.accepted.revocations, self.previous.accepted.revocations)
+        self.assertEqual(self.envelope.revocations, self.previous.accepted.revocations)
 
     def test_canonical_evidence_binds_all_retained_review_artifacts(self):
         raw = (EVIDENCE / "evidence-extend-2026.10.3.json").read_bytes()

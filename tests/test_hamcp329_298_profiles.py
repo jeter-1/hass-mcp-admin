@@ -3,7 +3,10 @@
 ``core.scene_create_delete_operation`` and ``core.created_helper_delete_operation``
 are runtime-only, mutation-capable profiles.  They are dormant until the
 combined 2.6 signing (design PR #395, seq 18) references them in the
-2026.11.0 entry.  These tests prove the additive-profile claims of
+2026.11.0 entry.  HAMCP-437: that signing is intended (design §0 H1) and the
+committed trust root is now the sequence-18 journal, so test 1 treats the two
+new references like ADDED_AFTER_PIN.  These tests prove the additive-profile
+claims of
 ``docs/HAMCP_329_298_SCENE_CREATE_AND_CREATE_ROLLBACK_DESIGN.md`` §5:
 
 1. every existing runtime profile keeps its exact reference, compared with
@@ -142,13 +145,19 @@ class ProfileContractTests(unittest.TestCase):
         self.assertEqual(hashlib.sha256(canonical(existing)).hexdigest(), EXISTING_REFERENCES_SHA256)
         # Compared, never trusted: every retained owner-signed reference at
         # the registry tip equals its compiled profile, for every carried
-        # Core release, and none names a new profile.
-        compiled = {item["capability_id"]: item for item in existing}
+        # Core release.  HAMCP-437: the sequence-18 signing (design §0 H1)
+        # names the new profiles in the TARGET_CORE entry only; NEW and
+        # ADDED_AFTER_PIN are compared with their own compiled references.
+        compiled = {p.capability_id: reference(p) for p in CORE_RUNTIME_CAPABILITY_PROFILES}
+        versions = []
         for entry in signed_tip_entries():
+            versions.append(entry["version"])
             with self.subTest(version=entry["version"]):
                 for item in entry["capabilities"]:
                     self.assertEqual(item, compiled[item["capability_id"]])
-                self.assertFalse({item["capability_id"] for item in entry["capabilities"]} & set(NEW))
+                named = {item["capability_id"] for item in entry["capabilities"]} & set(NEW)
+                self.assertEqual(named, set(NEW) if entry["version"] == TARGET_CORE else set())
+        self.assertEqual(versions, [*OLDER_CORES, TARGET_CORE])
 
     def test_4_older_compiled_releases_never_carry_the_new_profiles(self):
         for version, _commit, _digest in core_profiles.SUPPORTED_CORE_RELEASES:

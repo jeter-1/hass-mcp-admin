@@ -110,12 +110,14 @@ class RefusalLifecycle(unittest.TestCase):
 
     def prepare_case(self, directory, *, missing=False, error=None, prior=None, event='schedule', requested=None):
         import core_evidence_workflow as w
-        before=e.read_json(ROOT/'docs/evidence/hamcp279/2026.10.3.json')
+        # HAMCP-437: the signed predecessor is the seq-18 tip 2026.11.0; the fake
+        # newer release sits above it.
+        before=e.read_json(ROOT/'docs/evidence/hamcp315/core-sources/2026.11.0.json')
         # Synthetic workflow fixture covers the current expanded inventory;
         # historical measurements below remain tied to their original 337 paths.
         before['hashes']={p:before['hashes'].get(p,'b'*64) for p in e.manifest()['paths']}
         before['tag_commit']=before['commit']
-        after=copy.deepcopy(before);after.update(version='2026.10.4',commit='f'*40,tag_commit='f'*40)
+        after=copy.deepcopy(before);after.update(version='2026.11.99',commit='f'*40,tag_commit='f'*40)
         path=next(iter(after['hashes']))
         if error != 'provenance':
             if missing:del after['hashes'][path]
@@ -124,14 +126,14 @@ class RefusalLifecycle(unittest.TestCase):
         history=[] if prior is None else [{'id':278,'created_at':'2026-11-02','status':'completed','conclusion':'failure'}]
         def api(endpoint, **kwargs):
             if error == 'api':raise ValueError('API unavailable')
-            if '/releases?' in endpoint:return [{'tag_name':'2026.10.4','published_at':'2026-11-01T00:00:00Z'}]
-            if endpoint.endswith('/releases/tags/2026.10.4'):return {'tag_name':'2026.10.4','published_at':'2026-11-01'}
+            if '/releases?' in endpoint:return [{'tag_name':'2026.11.99','published_at':'2026-11-01T00:00:00Z'}]
+            if endpoint.endswith('/releases/tags/2026.11.99'):return {'tag_name':'2026.11.99','published_at':'2026-11-01'}
             if '/git/ref/heads/' in endpoint:return None
             if '/workflows/' in endpoint:return {'workflow_runs':history}
             if '/artifacts?' in endpoint:return {'artifacts':[]}
             if '/jobs?' in endpoint:
                 self.assertIn('filter=all',endpoint)
-                return {'jobs':[{'name':'core-release-refused-2026.10.4','conclusion':prior}]}
+                return {'jobs':[{'name':'core-release-refused-2026.11.99','conclusion':prior}]}
             raise AssertionError(endpoint)
         env={**RUN,'GITHUB_REF':'refs/heads/main','GITHUB_REPOSITORY':w.REPOSITORY,
              'GITHUB_EVENT_NAME':event,'GITHUB_OUTPUT':str(directory/'outputs'),
@@ -151,7 +153,7 @@ class RefusalLifecycle(unittest.TestCase):
                 d=Path(tmp);path,_=self.prepare_case(d,missing=missing)
                 values=dict(line.split('=',1) for line in (d/'outputs').read_text().splitlines())
                 self.assertEqual(values['refused'],'true');self.assertEqual(values['run'],'false')
-                self.assertEqual(values['release'],'2026.10.4');self.assertFalse((d/'release.json').exists())
+                self.assertEqual(values['release'],'2026.11.99');self.assertFalse((d/'release.json').exists())
                 proof=e.read_json(d/'comparison.json')
                 result=subprocess.run([sys.executable,str(ROOT/'scripts/core_evidence_workflow.py'),'refuse','--directory',tmp],capture_output=True,text=True,timeout=10,
                                       env={**os.environ,'GITHUB_STEP_SUMMARY':str(d/'final-summary')})
@@ -161,13 +163,13 @@ class RefusalLifecycle(unittest.TestCase):
                     self.assertIn(expected,(d/'final-summary').read_text())
 
     def test_schedule_skips_but_explicit_dispatch_may_refuse_again(self):
-        for event,requested,retries in [('schedule',None,False),('workflow_dispatch',None,False),('workflow_dispatch','2026.10.4',True)]:
+        for event,requested,retries in [('schedule',None,False),('workflow_dispatch',None,False),('workflow_dispatch','2026.11.99',True)]:
             with self.subTest(event=event,requested=requested),tempfile.TemporaryDirectory(dir=ROOT/'.artifacts') as tmp:
                 d=Path(tmp);_,calls=self.prepare_case(d,prior='failure',event=event,requested=requested)
                 values=dict(line.split('=',1) for line in (d/'outputs').read_text().splitlines())
                 self.assertEqual(values['refused'],str(retries).lower())
                 self.assertEqual(calls,2 if retries else 0)
-                self.assertEqual(values['release'],'2026.10.4' if retries else 'none')
+                self.assertEqual(values['release'],'2026.11.99' if retries else 'none')
 
     def test_api_tag_and_provenance_errors_do_not_record_refusal(self):
         for error in ('api','tag','provenance'):
@@ -224,13 +226,13 @@ class ReleaseDiscovery(unittest.TestCase):
         signed, _ = w.journal((ROOT / 'upstream-trust/ha-core-release-registry.json').read_bytes())
         cls.entries = [x.to_mapping() for x in signed.accepted.entries]
         cls.published = {x['version'] for x in cls.entries}
-        assert max(cls.published, key=e.version_key) == '2026.10.3'
+        assert max(cls.published, key=e.version_key) == '2026.11.0'
 
     def large_history(self):
         # Prerelease and draft decoys first, then target, predecessor and >1,000 older releases.
-        head = [{'tag_name': '2026.11.0b1', 'prerelease': True}, {'tag_name': '2026.11.0', 'prerelease': True},
-                {'tag_name': '2026.12.0', 'draft': True}, {'tag_name': '2026.10.4'}, {'tag_name': '2026.10.3'}]
-        return head + [{'tag_name': v} for v in tags('2026.10.3', -1250)]
+        head = [{'tag_name': '2026.12.0b1', 'prerelease': True}, {'tag_name': '2026.12.0', 'prerelease': True},
+                {'tag_name': '2027.1.0', 'draft': True}, {'tag_name': '2026.11.99'}, {'tag_name': '2026.11.0'}]
+        return head + [{'tag_name': v} for v in tags('2026.11.0', -1250)]
 
     def api(self, history, calls, tag=None):
         def answer(endpoint, **kwargs):
@@ -265,8 +267,8 @@ class ReleaseDiscovery(unittest.TestCase):
 
     def prepare(self, directory, history, requested=None, tag=None):
         import core_evidence_workflow as w
-        before = e.read_json(ROOT / 'docs/evidence/hamcp279/2026.10.3.json'); before['tag_commit'] = before['commit']
-        after = copy.deepcopy(before); after.update(version='2026.10.4', commit='f' * 40, tag_commit='f' * 40)
+        before = e.read_json(ROOT / 'docs/evidence/hamcp315/core-sources/2026.11.0.json'); before['tag_commit'] = before['commit']
+        after = copy.deepcopy(before); after.update(version='2026.11.99', commit='f' * 40, tag_commit='f' * 40)
         after['hashes'][next(iter(after['hashes']))] = 'd' * 64
         calls = []; listing = self.api(history, calls, tag)
         def api(endpoint, **kwargs):
@@ -288,7 +290,7 @@ class ReleaseDiscovery(unittest.TestCase):
         releases, calls = self.discover(history)
         self.assertEqual([c[0] for c in calls], ['repos/home-assistant/core/releases?per_page=100&page=1'])
         self.assertEqual(len(releases), 100)
-        self.assertEqual(e.select_release(releases, self.published, []), '2026.10.4')
+        self.assertEqual(e.select_release(releases, self.published, []), '2026.11.99')
 
     def test_scheduled_prepare_over_1000_releases_reaches_o3(self):
         with tempfile.TemporaryDirectory(dir=ROOT / '.artifacts') as tmp:
@@ -297,113 +299,113 @@ class ReleaseDiscovery(unittest.TestCase):
                 calls, sources = self.prepare(d, self.large_history())
             except ValueError as error:
                 self.fail(f'prepare refused: {error}')
-            self.assertEqual(sources, ['2026.10.3', '2026.10.4'])
+            self.assertEqual(sources, ['2026.11.0', '2026.11.99'])
             self.assertEqual([c[0] for c in calls], ['repos/home-assistant/core/releases?per_page=100&page=1'])
             values = dict(line.split('=', 1) for line in (d / 'outputs').read_text().splitlines())
-            self.assertEqual((values['release'], values['refused']), ('2026.10.4', 'true'))
+            self.assertEqual((values['release'], values['refused']), ('2026.11.99', 'true'))
 
     def test_prereleases_and_drafts_never_end_discovery(self):
-        decoys = [{'tag_name': f'2026.11.0b{i}', 'prerelease': True} for i in range(97)]
-        decoys += [{'tag_name': '2026.10.3', 'prerelease': True}, {'tag_name': '2026.10.3', 'draft': True},
+        decoys = [{'tag_name': f'2026.12.0b{i}', 'prerelease': True} for i in range(97)]
+        decoys += [{'tag_name': '2026.11.0', 'prerelease': True}, {'tag_name': '2026.11.0', 'draft': True},
                    {'tag_name': 'not-a-version'}]
-        history = decoys + [{'tag_name': '2026.10.4'}, {'tag_name': '2026.10.3'}] + [{'tag_name': v} for v in tags('2026.10.3', -300)]
+        history = decoys + [{'tag_name': '2026.11.99'}, {'tag_name': '2026.11.0'}] + [{'tag_name': v} for v in tags('2026.11.0', -300)]
         releases, calls = self.discover(history)
         self.assertEqual(len(calls), 2)
-        self.assertEqual(e.select_release(releases, self.published, []), '2026.10.4')
+        self.assertEqual(e.select_release(releases, self.published, []), '2026.11.99')
 
     def test_predecessor_never_reached_within_bound_refused(self):
         import core_evidence_workflow as w
-        history = [{'tag_name': v} for v in tags('2026.10.3', 1100)]
+        history = [{'tag_name': v} for v in tags('2026.11.0', 1100)]
         calls = self.refused('did not reach the signed predecessor', history)
         self.assertEqual([c[0] for c in calls],
                          [f'repos/home-assistant/core/releases?per_page=100&page={n}' for n in range(1, w.RELEASE_PAGE_BOUND + 1)])
         self.assertEqual(w.RELEASE_PAGE_BOUND, 10)
 
     def test_lower_backport_before_higher_release_is_not_a_boundary(self):
-        # Codex M1 counterexample: page 1 ends nothing although 2026.9.9 <= 2026.10.3.
-        history = ([{'tag_name': '2026.9.9'}, {'tag_name': '2026.10.4'}]
-                   + [{'tag_name': f'2026.11.0b{i}', 'prerelease': True} for i in range(98)]
-                   + [{'tag_name': '2026.11.0'}, {'tag_name': '2026.10.3'}])
+        # Codex M1 counterexample: page 1 ends nothing although 2026.9.9 <= 2026.11.0.
+        history = ([{'tag_name': '2026.9.9'}, {'tag_name': '2026.11.99'}]
+                   + [{'tag_name': f'2026.12.0b{i}', 'prerelease': True} for i in range(98)]
+                   + [{'tag_name': '2026.12.0'}, {'tag_name': '2026.11.0'}])
         releases, calls = self.discover(history)
         self.assertEqual(len(calls), 2)
-        self.assertEqual(e.select_release(releases, self.published, []), '2026.11.0')
+        self.assertEqual(e.select_release(releases, self.published, []), '2026.12.0')
 
     def test_both_publication_orders_select_numeric_maximum(self):
-        betas = [{'tag_name': f'2026.11.0b{i}', 'prerelease': True} for i in range(99)]
-        for first, second in (('2026.10.4', '2026.11.0'), ('2026.11.0', '2026.10.4')):
+        betas = [{'tag_name': f'2026.12.0b{i}', 'prerelease': True} for i in range(99)]
+        for first, second in (('2026.11.99', '2026.12.0'), ('2026.12.0', '2026.11.99')):
             with self.subTest(first=first):
-                history = betas + [{'tag_name': first}, {'tag_name': second}, {'tag_name': '2026.10.3'}]
+                history = betas + [{'tag_name': first}, {'tag_name': second}, {'tag_name': '2026.11.0'}]
                 releases, calls = self.discover(history)
                 self.assertEqual(len(calls), 2)
-                self.assertEqual(e.select_release(releases, self.published, []), '2026.11.0')
+                self.assertEqual(e.select_release(releases, self.published, []), '2026.12.0')
 
     def test_records_below_predecessor_without_its_record_refused(self):
         import core_evidence_workflow as w
-        history = [{'tag_name': v} for v in tags('2026.10.3', -1101) if v != '2026.10.3']
-        self.assertEqual((len(history), any(r['tag_name'] == '2026.10.3' for r in history)), (1100, False))
+        history = [{'tag_name': v} for v in tags('2026.11.0', -1101) if v != '2026.11.0']
+        self.assertEqual((len(history), any(r['tag_name'] == '2026.11.0' for r in history)), (1100, False))
         calls = self.refused('did not reach the signed predecessor', history)
         self.assertEqual(len(calls), w.RELEASE_PAGE_BOUND)
 
     def test_listing_order_violation_refused(self):
         newer = '2026-11-05T00:00:00Z'
-        within = [{'tag_name': '2026.10.4'}, {'tag_name': '2026.11.0', 'created_at': newer}, {'tag_name': '2026.10.3'}]
-        # Part 3: the page-boundary inversion is between official stable records (2026.10.4 ends page 1).
-        across = ([{'tag_name': f'2026.11.0b{i}', 'prerelease': True} for i in range(99)] + [{'tag_name': '2026.10.4'}]
-                  + [{'tag_name': '2026.11.0', 'created_at': newer}, {'tag_name': '2026.10.3'}])
-        fallback = [{'tag_name': '2026.10.4', 'created_at': None, 'published_at': '2026-11-03T00:00:00Z'},
-                    {'tag_name': '2026.11.0', 'created_at': None, 'published_at': newer}, {'tag_name': '2026.10.3'}]
+        within = [{'tag_name': '2026.11.99'}, {'tag_name': '2026.12.0', 'created_at': newer}, {'tag_name': '2026.11.0'}]
+        # Part 3: the page-boundary inversion is between official stable records (2026.11.99 ends page 1).
+        across = ([{'tag_name': f'2026.12.0b{i}', 'prerelease': True} for i in range(99)] + [{'tag_name': '2026.11.99'}]
+                  + [{'tag_name': '2026.12.0', 'created_at': newer}, {'tag_name': '2026.11.0'}])
+        fallback = [{'tag_name': '2026.11.99', 'created_at': None, 'published_at': '2026-11-03T00:00:00Z'},
+                    {'tag_name': '2026.12.0', 'created_at': None, 'published_at': newer}, {'tag_name': '2026.11.0'}]
         for name, history in (('within', within), ('across', across), ('fallback', fallback)):
             with self.subTest(name=name):
                 self.refused('release listing is not newest-first', history)
 
     def test_published_at_used_only_without_created_at(self):
-        history = [{'tag_name': '2026.11.0', 'created_at': None, 'published_at': '2026-11-03T00:00:00Z'},
-                   {'tag_name': '2026.10.3', 'created_at': '2026-11-02T00:00:00Z', 'published_at': '2026-11-05T00:00:00Z'}]
+        history = [{'tag_name': '2026.12.0', 'created_at': None, 'published_at': '2026-11-03T00:00:00Z'},
+                   {'tag_name': '2026.11.0', 'created_at': '2026-11-02T00:00:00Z', 'published_at': '2026-11-05T00:00:00Z'}]
         releases, _ = self.discover(history)
-        self.assertEqual(e.select_release(releases, self.published, []), '2026.11.0')
+        self.assertEqual(e.select_release(releases, self.published, []), '2026.12.0')
 
     def test_unorderable_listing_refused(self):
         for record in ({'created_at': None, 'published_at': None}, {'created_at': 'yesterday'},
                        {'created_at': 7}, {'created_at': '2026-11-03'}):
             with self.subTest(record=record):
-                history = [{'tag_name': '2026.11.0'}, {'tag_name': '2026.10.4', **record}, {'tag_name': '2026.10.3'}]
+                history = [{'tag_name': '2026.12.0'}, {'tag_name': '2026.11.99', **record}, {'tag_name': '2026.11.0'}]
                 self.refused('release listing (order cannot be established|is not newest-first)', history)
 
     # Round 2 (Codex focused re-review): its eight failing probes, then the explicit contract cases.
     def test_naive_timestamps_alone_or_uniformly_naive_refused(self):
-        for history in ([{'tag_name': '2026.11.0', 'created_at': '2026-11-04T00:00:00'}],
-                        [{'tag_name': '2026.11.0', 'created_at': '2026-11-04'},
-                         {'tag_name': '2026.10.3', 'created_at': '2026-11-03'}],
-                        [{'tag_name': '2026.11.0', 'created_at': ABSENT, 'published_at': '2026-11-04T00:00:00'}]):
+        for history in ([{'tag_name': '2026.12.0', 'created_at': '2026-11-04T00:00:00'}],
+                        [{'tag_name': '2026.12.0', 'created_at': '2026-11-04'},
+                         {'tag_name': '2026.11.0', 'created_at': '2026-11-03'}],
+                        [{'tag_name': '2026.12.0', 'created_at': ABSENT, 'published_at': '2026-11-04T00:00:00'}]):
             with self.subTest(history=history):
                 self.refused('release listing order cannot be established', history)
 
     def test_present_invalid_created_at_never_falls_back(self):
         for bad in ('', 0, False, [], {}, 'yesterday', 7, '2026-11-04T00:00:00', '2026-11-04'):
             with self.subTest(created_at=bad):
-                history = [{'tag_name': '2026.11.0', 'created_at': bad, 'published_at': '2026-11-04T00:00:00Z'}]
+                history = [{'tag_name': '2026.12.0', 'created_at': bad, 'published_at': '2026-11-04T00:00:00Z'}]
                 self.refused('release listing order cannot be established', history)
 
     def test_invalid_published_at_fallback_refused(self):
         for absent in (None, ABSENT):
             for bad in ('2026-11-04T00:00:00', '2026-11-04', 'yesterday', '', 7, False, ABSENT, None):
                 with self.subTest(created_at=absent, published_at=bad):
-                    history = [{'tag_name': '2026.11.0', 'created_at': absent, 'published_at': bad}]
+                    history = [{'tag_name': '2026.12.0', 'created_at': absent, 'published_at': bad}]
                     self.refused('release listing order cannot be established', history)
 
     def test_absent_created_at_falls_back_to_valid_published_at(self):
         for absent in (None, ABSENT):
             with self.subTest(created_at=absent):
-                history = [{'tag_name': '2026.11.0', 'created_at': absent, 'published_at': '2026-11-04T06:00:00+06:00'},
-                           {'tag_name': '2026.10.3', 'created_at': '2026-11-04T00:00:00Z', 'published_at': ABSENT}]
+                history = [{'tag_name': '2026.12.0', 'created_at': absent, 'published_at': '2026-11-04T06:00:00+06:00'},
+                           {'tag_name': '2026.11.0', 'created_at': '2026-11-04T00:00:00Z', 'published_at': ABSENT}]
                 releases, calls = self.discover(history)
                 self.assertEqual(len(calls), 1)
-                self.assertEqual(e.select_release(releases, self.published, []), '2026.11.0')
+                self.assertEqual(e.select_release(releases, self.published, []), '2026.12.0')
 
     def test_one_parser_reads_both_fields(self):
         import core_evidence_workflow as w
-        history = [{'tag_name': '2026.11.0', 'created_at': None, 'published_at': '2026-11-03T00:00:00Z'},
-                   {'tag_name': '2026.10.3', 'created_at': '2026-11-02T00:00:00Z'}]
+        history = [{'tag_name': '2026.12.0', 'created_at': None, 'published_at': '2026-11-03T00:00:00Z'},
+                   {'tag_name': '2026.11.0', 'created_at': '2026-11-02T00:00:00Z'}]
         with patch.object(w, 'listing_timestamp', wraps=w.listing_timestamp) as parser:
             self.discover(history)
         self.assertEqual([c.args for c in parser.call_args_list], [('2026-11-03T00:00:00Z',), ('2026-11-02T00:00:00Z',)])
@@ -422,7 +424,8 @@ class ReleaseDiscovery(unittest.TestCase):
         # Records excluded from the order comparison are exactly those selection can never choose.
         for record in history + [{'tag_name': '2026.12.0b1'}, {'tag_name': '2026.12.0', 'draft': True}, {'tag_name': 'v2026.12.0'}]:
             self.assertEqual(bool(w.official(record)), e.select_release([record], set(), []) == record['tag_name'])
-        for predecessor, entries, expected in (('2026.10.3', None, '2026.11.0'), ('2026.11.0', [{'version': '2026.11.0'}], None)):
+        # HAMCP-437: the committed tip is now 2026.11.0; 2026.10.3 stays covered as an explicit predecessor.
+        for predecessor, entries, expected in (('2026.10.3', [{'version': '2026.10.3'}], '2026.11.0'), ('2026.11.0', None, None)):
             with self.subTest(predecessor=predecessor):
                 releases, calls = self.discover(history, entries=entries)
                 self.assertEqual([c[0] for c in calls], ['repos/home-assistant/core/releases?per_page=100&page=1'])
@@ -433,37 +436,37 @@ class ReleaseDiscovery(unittest.TestCase):
     def test_nonofficial_order_never_refuses(self):
         older, newer = '2026-01-01T00:00:00Z', '2026-11-06T00:00:00Z'
         pre = lambda tag, at=None: {'tag_name': tag, 'prerelease': True, **({'created_at': at} if at else {})}
-        tail = [{'tag_name': '2026.11.0'}, {'tag_name': '2026.10.3'}]
+        tail = [{'tag_name': '2026.12.0'}, {'tag_name': '2026.11.0'}]
         cases = {
-            'prerelease pair before the predecessor': [pre('2026.12.0b1', older), pre('2026.12.0b2', newer)] + tail,
-            'prerelease then newer stable': [pre('2026.12.0b1', older)] + tail,
-            'stable then newer prerelease': [tail[0], pre('2026.12.0b1', newer), tail[1]],
-            'draft': [{'tag_name': '2026.12.0', 'draft': True, 'created_at': older}] + tail,
-            'non-stable tag': [{'tag_name': '2026.12.0b1', 'created_at': older}] + tail,
+            'prerelease pair before the predecessor': [pre('2027.1.0b1', older), pre('2027.1.0b2', newer)] + tail,
+            'prerelease then newer stable': [pre('2027.1.0b1', older)] + tail,
+            'stable then newer prerelease': [tail[0], pre('2027.1.0b1', newer), tail[1]],
+            'draft': [{'tag_name': '2027.1.0', 'draft': True, 'created_at': older}] + tail,
+            'non-stable tag': [{'tag_name': '2027.1.0b1', 'created_at': older}] + tail,
             'prerelease pair below the predecessor': tail + [pre('2026.9.0b1', older), pre('2026.9.0b2', newer)],
-            'prerelease pair across pages': ([pre(f'2026.12.0b{i}') for i in range(99)] + [pre('2026.12.0b99', older)]
-                                             + [pre('2026.12.0b100', newer)] + tail),
+            'prerelease pair across pages': ([pre(f'2027.1.0b{i}') for i in range(99)] + [pre('2027.1.0b99', older)]
+                                             + [pre('2027.1.0b100', newer)] + tail),
         }
         for name, history in cases.items():
             with self.subTest(name=name):
                 releases, calls = self.discover(history)
                 self.assertEqual(len(calls), 1 + (len(history) > 100))
-                self.assertEqual(e.select_release(releases, self.published, []), '2026.11.0')
+                self.assertEqual(e.select_release(releases, self.published, []), '2026.12.0')
 
     def test_official_stable_inversion_refused(self):
         older, middle, newer = '2026-01-01T00:00:00Z', '2026-11-04T12:00:00Z', '2026-11-06T00:00:00Z'
         pre = lambda tag, at=None: {'tag_name': tag, 'prerelease': True, **({'created_at': at} if at else {})}
         cases = {
             # Compared with the previous official record, never with an intervening non-official one.
-            'stable pair around a newer prerelease': [{'tag_name': '2026.10.4'}, pre('2026.12.0b1', newer),
-                                                      {'tag_name': '2026.11.0', 'created_at': middle}, {'tag_name': '2026.10.3'}],
-            'stable pair around an older prerelease': [{'tag_name': '2026.10.4'}, pre('2026.12.0b1', older),
-                                                       {'tag_name': '2026.11.0', 'created_at': middle}, {'tag_name': '2026.10.3'}],
-            'stable pair across pages around prereleases': ([{'tag_name': '2026.10.4'}] + [pre(f'2026.12.0b{i}') for i in range(99)]
-                                                            + [{'tag_name': '2026.11.0', 'created_at': newer}, {'tag_name': '2026.10.3'}]),
-            'stable newer than the predecessor listed after it': [{'tag_name': '2026.11.0'}, {'tag_name': '2026.10.3'},
-                                                                 {'tag_name': '2026.10.4', 'created_at': newer}],
-            'stable pair below the predecessor': [{'tag_name': '2026.11.0'}, {'tag_name': '2026.10.3'},
+            'stable pair around a newer prerelease': [{'tag_name': '2026.11.99'}, pre('2027.1.0b1', newer),
+                                                      {'tag_name': '2026.12.0', 'created_at': middle}, {'tag_name': '2026.11.0'}],
+            'stable pair around an older prerelease': [{'tag_name': '2026.11.99'}, pre('2027.1.0b1', older),
+                                                       {'tag_name': '2026.12.0', 'created_at': middle}, {'tag_name': '2026.11.0'}],
+            'stable pair across pages around prereleases': ([{'tag_name': '2026.11.99'}] + [pre(f'2027.1.0b{i}') for i in range(99)]
+                                                            + [{'tag_name': '2026.12.0', 'created_at': newer}, {'tag_name': '2026.11.0'}]),
+            'stable newer than the predecessor listed after it': [{'tag_name': '2026.12.0'}, {'tag_name': '2026.11.0'},
+                                                                 {'tag_name': '2026.11.99', 'created_at': newer}],
+            'stable pair below the predecessor': [{'tag_name': '2026.12.0'}, {'tag_name': '2026.11.0'},
                                                   {'tag_name': '2026.9.0', 'created_at': older},
                                                   {'tag_name': '2026.9.1', 'created_at': '2026-02-01T00:00:00Z'}],
         }
@@ -476,42 +479,42 @@ class ReleaseDiscovery(unittest.TestCase):
             for record in ({'created_at': 'yesterday'}, {'created_at': '2026-11-04T00:00:00'}, {'created_at': ''},
                            {'created_at': None, 'published_at': None}, {'created_at': ABSENT, 'published_at': '2026-11-04'}):
                 with self.subTest(flags=flags, record=record):
-                    history = [{'tag_name': '2026.11.0'}, {'tag_name': '2026.12.0b1', **flags, **record}, {'tag_name': '2026.10.3'}]
+                    history = [{'tag_name': '2026.12.0'}, {'tag_name': '2027.1.0b1', **flags, **record}, {'tag_name': '2026.11.0'}]
                     self.refused('release listing order cannot be established', history)
 
     def test_complete_short_listing_is_unchanged(self):
-        releases, calls = self.discover([{'tag_name': '2026.10.4'}])
+        releases, calls = self.discover([{'tag_name': '2026.11.99'}])
         self.assertEqual(len(calls), 1)
-        self.assertEqual(e.select_release(releases, self.published, []), '2026.10.4')
+        self.assertEqual(e.select_release(releases, self.published, []), '2026.11.99')
 
     def test_no_signed_predecessor_refused_without_reads(self):
         self.assertEqual(self.refused('no signed predecessor', self.large_history(), entries=[]), [])
 
     def test_exact_tag_success_without_listing(self):
-        release = {'tag_name': '2026.10.4', 'published_at': '2026-11-01'}
-        releases, calls = self.discover(self.large_history(), '2026.10.4', release)
-        self.assertEqual(calls, [('repos/home-assistant/core/releases/tags/2026.10.4', {'optional': True})])
+        release = {'tag_name': '2026.11.99', 'published_at': '2026-11-01'}
+        releases, calls = self.discover(self.large_history(), '2026.11.99', release)
+        self.assertEqual(calls, [('repos/home-assistant/core/releases/tags/2026.11.99', {'optional': True})])
         self.assertEqual(releases, [release])
-        self.assertEqual(e.select_release(releases, self.published, [], '2026.10.4'), '2026.10.4')
+        self.assertEqual(e.select_release(releases, self.published, [], '2026.11.99'), '2026.11.99')
         with tempfile.TemporaryDirectory(dir=ROOT / '.artifacts') as tmp:
             try:
-                calls, sources = self.prepare(Path(tmp), self.large_history(), '2026.10.4', release)
+                calls, sources = self.prepare(Path(tmp), self.large_history(), '2026.11.99', release)
             except ValueError as error:
                 self.fail(f'prepare refused: {error}')
-            self.assertEqual(sources, ['2026.10.3', '2026.10.4'])
-            self.assertEqual([c[0] for c in calls], ['repos/home-assistant/core/releases/tags/2026.10.4'])
+            self.assertEqual(sources, ['2026.11.0', '2026.11.99'])
+            self.assertEqual([c[0] for c in calls], ['repos/home-assistant/core/releases/tags/2026.11.99'])
 
     def test_exact_tag_404_refused(self):
-        calls = self.refused('not an official stable release', self.large_history(), '2026.10.4', None)
-        self.assertEqual(calls, [('repos/home-assistant/core/releases/tags/2026.10.4', {'optional': True})])
+        calls = self.refused('not an official stable release', self.large_history(), '2026.11.99', None)
+        self.assertEqual(calls, [('repos/home-assistant/core/releases/tags/2026.11.99', {'optional': True})])
 
     def test_exact_tag_identity_and_shape_refused(self):
-        for tag in ({'tag_name': '2026.10.5'}, {'tag_name': '2026.10.4\n'}, [{'tag_name': '2026.10.4'}], {}):
+        for tag in ({'tag_name': '2026.11.100'}, {'tag_name': '2026.11.99\n'}, [{'tag_name': '2026.11.99'}], {}):
             with self.subTest(tag=tag):
-                self.refused('not an official stable release', [], '2026.10.4', tag)
+                self.refused('not an official stable release', [], '2026.11.99', tag)
 
     def test_malformed_request_refused_before_any_read(self):
-        for requested in ('2026.11.0b1', '2026.10.4/../../x', 'v2026.10.4', '2026.10.04', ''):
+        for requested in ('2026.12.0b1', '2026.11.99/../../x', 'v2026.11.99', '2026.11.099', ''):
             with self.subTest(requested=requested):
                 self.assertEqual(self.refused('not an official stable release', [], requested, {'tag_name': requested}), [])
 
@@ -519,7 +522,7 @@ class ReleaseDiscovery(unittest.TestCase):
         for flag in ('prerelease', 'draft'):
             with self.subTest(flag=flag), tempfile.TemporaryDirectory(dir=ROOT / '.artifacts') as tmp:
                 with self.assertRaisesRegex(ValueError, 'not an official stable release'):
-                    self.prepare(Path(tmp), [], '2026.10.4', {'tag_name': '2026.10.4', flag: True})
+                    self.prepare(Path(tmp), [], '2026.11.99', {'tag_name': '2026.11.99', flag: True})
                 self.assertFalse((Path(tmp) / 'outputs').exists())
 
 
