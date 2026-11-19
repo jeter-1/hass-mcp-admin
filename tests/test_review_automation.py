@@ -13,7 +13,7 @@ from tests.test_ci_provenance import (
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CODEX_RECEIPT_WORKFLOW = ROOT / ".github" / "workflows" / "codex-review-receipt.yml"
+RETIRED_RECEIPT_WORKFLOW = ROOT / ".github" / "workflows" / "codex-review-receipt.yml"
 LEGACY_CODEX_WORKFLOW = (
     ROOT / ".github" / "workflows" / "codex-independent-review.yml"
 )
@@ -21,7 +21,7 @@ AUTO_MERGE_WORKFLOW = ROOT / ".github" / "workflows" / "enable-auto-merge.yml"
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 WORKFLOW_GUIDE = ROOT / "docs" / "CODEX_WORKFLOW.md"
 ROOT_INSTRUCTIONS = ROOT / "AGENTS.md"
-RECEIPT_VALIDATOR = ROOT / "scripts" / "validate_native_codex_review.py"
+RETIRED_RECEIPT_VALIDATOR = ROOT / "scripts" / "validate_native_codex_review.py"
 READY_AUTH_VALIDATOR = ROOT / "scripts" / "validate_ready_authorization.py"
 
 
@@ -39,7 +39,6 @@ def workflow_events(workflow: dict) -> dict:
 class ReviewWorkflowTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.receipt = load_yaml(CODEX_RECEIPT_WORKFLOW)
         cls.auto_merge = load_yaml(AUTO_MERGE_WORKFLOW)
         cls.ci = load_yaml(CI_WORKFLOW)
 
@@ -52,11 +51,13 @@ class ReviewWorkflowTests(unittest.TestCase):
             (ROOT / ".github" / "codex" / "review-schema.json").exists()
         )
         self.assertFalse((ROOT / "scripts" / "validate_codex_review.py").exists())
+        # HAMCP-437 I2b: the optional native Codex receipt observer is retired.
+        self.assertFalse(RETIRED_RECEIPT_WORKFLOW.exists())
+        self.assertFalse(RETIRED_RECEIPT_VALIDATOR.exists())
 
         repository_text = "\n".join(
             path.read_text(encoding="utf-8")
             for path in (
-                CODEX_RECEIPT_WORKFLOW,
                 AUTO_MERGE_WORKFLOW,
                 WORKFLOW_GUIDE,
                 ROOT_INSTRUCTIONS,
@@ -64,63 +65,6 @@ class ReviewWorkflowTests(unittest.TestCase):
         )
         self.assertNotIn("OPENAI_API_KEY", repository_text)
         self.assertNotIn("openai/codex-action", repository_text)
-
-    def test_native_codex_receipt_runs_only_for_an_exact_owner_comment(self):
-        events = workflow_events(self.receipt)
-        self.assertEqual(events, {"issue_comment": {"types": ["created"]}})
-        self.assertNotIn("pull_request_target", events)
-        concurrency = self.receipt["concurrency"]
-        self.assertIn("github.event.issue.number", concurrency["group"])
-        self.assertIn("github.event.comment.id", concurrency["group"])
-        self.assertTrue(concurrency["cancel-in-progress"])
-
-        job = self.receipt["jobs"]["codex-review-receipt"]
-        condition = job["if"]
-        self.assertIn("github.actor == 'jeter-1'", condition)
-        self.assertIn("github.event.issue.pull_request != null", condition)
-        self.assertIn("github.event.comment.body == '@codex review'", condition)
-        self.assertNotIn("ready_for_review", condition)
-        self.assertNotIn("synchronize", condition)
-
-    def test_optional_receipt_is_read_only_and_uses_protected_base_policy(self):
-        job = self.receipt["jobs"]["codex-review-receipt"]
-        self.assertEqual(job["name"], "codex-review-receipt-observer")
-        self.assertEqual(self.receipt["permissions"], {})
-        self.assertEqual(
-            job["permissions"],
-            {
-                "contents": "read",
-                "issues": "read",
-                "pull-requests": "read",
-                "statuses": "write",
-            },
-        )
-
-        context = next(step for step in job["steps"] if step.get("id") == "context")
-        context_script = str(context["run"])
-        self.assertIn('.state == "open"', context_script)
-        self.assertIn(".draft == false", context_script)
-        self.assertIn(".base.ref == \"main\"", context_script)
-        self.assertIn(".head.repo.full_name == $repository", context_script)
-        self.assertEqual(context["env"]["PR_NUMBER"], "${{ github.event.issue.number }}")
-
-        checkout = next(
-            step
-            for step in job["steps"]
-            if str(step.get("uses", "")).startswith("actions/checkout@")
-        )
-        self.assertRegex(checkout["uses"], r"^actions/checkout@[0-9a-f]{40}$")
-        self.assertEqual(checkout["with"]["ref"], "${{ steps.context.outputs.base_sha }}")
-        self.assertFalse(checkout["with"]["persist-credentials"])
-
-        script = str(job["steps"][-1]["run"])
-        self.assertIn('git rev-parse HEAD)" != "$BASE_SHA"', script)
-        self.assertIn("EXPECTED_HEAD_SHA", script)
-        self.assertIn("scripts/validate_native_codex_review.py", script)
-        self.assertIn('context="codex-review-receipt"', script)
-        self.assertEqual(script.count("gh api --paginate"), 3)
-        self.assertNotIn("gh pr merge", script)
-        self.assertNotIn("--admin", script)
 
     def test_owner_ready_merges_exact_head_after_checks_without_model_polling(self):
         events = workflow_events(self.auto_merge)
@@ -566,7 +510,7 @@ fi
     def test_workflows_add_no_bypass_publication_or_deployment_authority(self):
         combined = "\n".join(
             path.read_text(encoding="utf-8")
-            for path in (CODEX_RECEIPT_WORKFLOW, AUTO_MERGE_WORKFLOW)
+            for path in (AUTO_MERGE_WORKFLOW,)
         )
         for forbidden in (
             "--admin",
@@ -599,7 +543,7 @@ fi
         self.assertIn("moving the implementer to another worktree is still self-review", flattened)
         self.assertIn("`@codex review` requests only the optional review", flattened)
         self.assertIn("`@merge` comment may retry", flattened)
-        self.assertIn("load only from the protected base commit", flattened)
+        self.assertIn("loads its scripts only from the protected base commit", flattened)
         self.assertIn("publication does not trigger another model review", flattened)
         self.assertIn("Ready does not start another CI run", flattened)
         self.assertIn("one final time", flattened)
@@ -607,203 +551,6 @@ fi
         self.assertIn("This is not a current rollout checklist", flattened)
         self.assertIn("attests that the bounded independent review", instructions)
         self.assertNotIn("native Codex review receipt gate", instructions)
-
-
-class NativeCodexReceiptValidationTests(unittest.TestCase):
-    HEAD = "4deb1d30edc7ccb8ced7c8438930ca1310c3775b"
-
-    def run_validator(
-        self,
-        *,
-        comments: list[dict],
-        reviews: list[dict],
-        review_comments: list[dict] | None = None,
-    ):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            comments_path = root / "comments.json"
-            reviews_path = root / "reviews.json"
-            review_comments_path = root / "review-comments.json"
-            output_path = root / "receipt.json"
-            comments_path.write_text(json.dumps(comments), encoding="utf-8")
-            reviews_path.write_text(json.dumps(reviews), encoding="utf-8")
-            review_comments_path.write_text(
-                json.dumps(review_comments or []), encoding="utf-8"
-            )
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    str(RECEIPT_VALIDATOR),
-                    "--head",
-                    self.HEAD,
-                    "--comments",
-                    str(comments_path),
-                    "--reviews",
-                    str(reviews_path),
-                    "--review-comments",
-                    str(review_comments_path),
-                    "--output",
-                    str(output_path),
-                ],
-                cwd=ROOT,
-                text=True,
-                capture_output=True,
-                check=False,
-            )
-            payload = (
-                json.loads(output_path.read_text(encoding="utf-8"))
-                if output_path.exists()
-                else None
-            )
-            return result, payload
-
-    def summary(self, *, status: str, commit_ref: str = "4deb1d3") -> dict:
-        return {
-            "user": {"login": "chatgpt-codex-connector[bot]"},
-            "body": (
-                "<!-- codex-pull-request-review-summary -->\n"
-                "| Review | Status | Commit | Review trigger |\n"
-                "| --- | --- | --- | --- |\n"
-                f"| 📝 **Code Review** | {status} | `{commit_ref}` | Manual request |"
-            ),
-        }
-
-    def test_exact_submitted_review_is_complete(self):
-        result, payload = self.run_validator(
-            comments=[],
-            reviews=[
-                {
-                    "id": 4242,
-                    "user": {"login": "chatgpt-codex-connector[bot]"},
-                    "commit_id": self.HEAD,
-                    "state": "COMMENTED",
-                }
-            ],
-        )
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(payload["evidence_kind"], "submitted_review")
-        self.assertTrue(payload["exact"])
-
-    def test_completed_summary_requires_server_side_commit_resolution(self):
-        result, payload = self.run_validator(
-            comments=[self.summary(status="✅ **Completed** 2 minutes ago")],
-            reviews=[],
-        )
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(payload["evidence_kind"], "completed_summary")
-        self.assertEqual(payload["commit_ref"], "4deb1d3")
-        self.assertFalse(payload["exact"])
-
-    def test_receipt_after_first_hundred_records_is_recognized(self):
-        filler = [{"user": {"login": "unrelated-bot"}, "body": "filler"}]
-        cases = (
-            {
-                "comments": filler * 100
-                + [self.summary(status="✅ **Completed** 2 minutes ago")],
-                "reviews": [],
-                "evidence_kind": "completed_summary",
-            },
-            {
-                "comments": [],
-                "reviews": filler * 100
-                + [
-                    {
-                        "id": 4242,
-                        "user": {"login": "chatgpt-codex-connector[bot]"},
-                        "commit_id": self.HEAD,
-                        "state": "COMMENTED",
-                    }
-                ],
-                "evidence_kind": "submitted_review",
-            },
-        )
-        for case in cases:
-            with self.subTest(evidence_kind=case["evidence_kind"]):
-                result, payload = self.run_validator(
-                    comments=case["comments"], reviews=case["reviews"]
-                )
-                self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(payload["evidence_kind"], case["evidence_kind"])
-
-    def test_running_missing_stale_or_untrusted_evidence_is_pending(self):
-        cases = (
-            [self.summary(status="🔄 **Running** since now")],
-            [self.summary(status="✅ **Completed** now", commit_ref="aaaaaaaa")],
-            [],
-            [
-                self.summary(status="✅ **Completed** now")
-                | {"user": {"login": "untrusted-contributor"}}
-            ],
-        )
-        for comments in cases:
-            with self.subTest(comments=comments):
-                result, payload = self.run_validator(comments=comments, reviews=[])
-                self.assertEqual(result.returncode, 75, result.stderr)
-                self.assertEqual(payload["status"], "pending")
-
-    def test_unknown_failed_or_operational_notice_evidence_fails_closed(self):
-        for status in ("❌ **Failed**", "✨ **Mystery**"):
-            with self.subTest(status=status):
-                result, payload = self.run_validator(
-                    comments=[self.summary(status=status)], reviews=[]
-                )
-                self.assertEqual(result.returncode, 1)
-                self.assertIsNone(payload)
-                self.assertIn("evidence is invalid", result.stderr)
-
-        result, payload = self.run_validator(
-            comments=[],
-            reviews=[
-                {
-                    "id": 5058935360,
-                    "user": {"login": "chatgpt-codex-connector[bot]"},
-                    "commit_id": self.HEAD,
-                    "state": "COMMENTED",
-                    "body": "",
-                }
-            ],
-            review_comments=[
-                {
-                    "pull_request_review_id": 5058935360,
-                    "commit_id": "0" * 40,
-                    "user": {"login": "chatgpt-codex-connector[bot]"},
-                    "body": (
-                        "To use Codex here, [create an environment for this repo]"
-                        "(https://chatgpt.com/codex/cloud/settings/environments)."
-                    ),
-                }
-            ],
-        )
-        self.assertEqual(result.returncode, 1)
-        self.assertIsNone(payload)
-        self.assertIn("operational notice instead of a code review", result.stderr)
-
-    def test_actionable_feedback_about_failure_paths_remains_review_evidence(self):
-        result, payload = self.run_validator(
-            comments=[],
-            reviews=[
-                {
-                    "id": 4242,
-                    "user": {"login": "chatgpt-codex-connector[bot]"},
-                    "commit_id": self.HEAD,
-                    "state": "COMMENTED",
-                }
-            ],
-            review_comments=[
-                {
-                    "pull_request_review_id": 4242,
-                    "commit_id": self.HEAD,
-                    "user": {"login": "chatgpt-codex-connector[bot]"},
-                    "body": (
-                        "The Codex review failed path and "
-                        "https://chatgpt.com/codex/cloud/settings/environments "
-                        "marker both need bounded handling."
-                    ),
-                }
-            ],
-        )
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(payload["evidence_kind"], "submitted_review")
 
 
 class ReadyAuthorizationValidationTests(unittest.TestCase):

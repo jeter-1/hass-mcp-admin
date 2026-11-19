@@ -666,11 +666,6 @@ current ha-mcp. A candidate Alarmo failure caused by a production-path differenc
 stays failing as a candidate-blocking compatibility finding; it is never fixed by
 adjusting fixtures.
 
-The separate non-required `latest-stable-early-warning.yml` resolves the newest
-stable (never prerelease) Core and ha-mcp nightly, runs the real-HA contracts
-against the newest Core pinned by the digest resolved in that run, and fails
-only itself when a release falls outside the window or a contract fails.
-
 Publication may reuse the successful sharded full discovery from its own
 completed reusable CI call. `scripts/publication_validation.py` binds the job
 output to the repository, run and attempt, caller workflow/ref/commit, event,
@@ -741,14 +736,11 @@ The budget does not make a newly discovered serious unresolved defect acceptable
 
 Native Codex and CodeRabbit remain available as optional manual escalation
 tools. Neither runs automatically and neither is a merge prerequisite. Josh may
-request native Codex by posting the exact comment `@codex review`; the optional
-`codex-review-receipt` observer then validates GitHub evidence for the exact
-current head. It does not run a model itself, authorize merge, replace Josh's
-Ready action, parse review prose as executable data, accept stale evidence, or
-count a setup notice as completed review. The observer and validator load only
-from the protected base commit, never candidate code. Each observer is isolated
-by the exact Josh-authored request comment, so the native Codex summary comment
-cannot cancel the observer that is waiting for it. CodeRabbit automatic and
+request native Codex by posting the exact comment `@codex review`. No repository
+workflow observes or validates that review (HAMCP-437 retired the optional
+receipt observer); it does not authorize merge or replace Josh's Ready action.
+The merge workflow loads its scripts only from the protected base commit,
+never candidate code. CodeRabbit automatic and
 incremental reviews are disabled; `@coderabbitai review` remains available for
 a manual review. CodeRabbit Autofix, CI fixing, merge-conflict resolution,
 branch-writing finishing touches, unsolicited chat, web search, knowledge
@@ -784,7 +776,7 @@ The corrected head must receive the bounded delta rereview before Josh marks it
 Ready again. An exact Josh-authored `@merge` comment may retry a transient merge
 workflow failure only when the latest applicable Ready action still authorizes
 the unchanged current head. It does not request or directly inspect model review
-evidence. `@codex review` requests only the optional review receipt and cannot
+evidence. `@codex review` requests only the optional review and cannot
 authorize merge.
 
 If the reviewed merge includes a final Engineering version transition, the
