@@ -3,6 +3,7 @@ import asyncio
 from copy import deepcopy
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -14,7 +15,7 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT/'hass_mcp_engineering_beta'), str(ROOT/'tests')]
-from ha_mcp_engineering.fan.contracts import FanRequest, FanRefusal, digest
+from ha_mcp_engineering.fan.contracts import FAN_CONTRACT, FanRequest, FanRefusal, digest
 from ha_mcp_engineering.fan.service import FanService, FAN_OPERATIONS
 from ha_mcp_engineering.fan.authority import FanCoreAuthority
 from ha_mcp_engineering.providers.upstream_fan import FanProvider
@@ -288,6 +289,27 @@ class FanTests(unittest.IsolatedAsyncioTestCase):
         self.clock.advance(500)
         result=await self.call(request)
         self.assertEqual(result['state'],'succeeded_verified');self.assertEqual(self.transport.writes,1)
+    async def test_provider_swap_between_prepare_and_dispatch_never_writes(self):
+        # HAMCP-437: retired 8.5 guard on 9.2.0; an unreviewed identity appears mid-flight.
+        async def change(tool):
+            if tool=='ha_get_state':self.transport.catalog=replace(self.transport.catalog,server_version='9.2.1')
+        self.transport.before=change
+        try:
+            await self.call(self.request(percentage=66))
+        except FanRefusal:
+            pass
+        self.assertEqual(self.transport.writes,0)
+    async def test_historical_writer_hash_is_preserved_and_never_relabels(self):
+        # HAMCP-437: retired 8.5 guard; the shipped beta1 receipt loads unchanged and never writes.
+        fixture=ROOT/'tests/fixtures/fan_beta1'
+        raw=(fixture/'receipt.json').read_bytes();proof=json.loads((fixture/'provenance.json').read_text())
+        self.assertEqual(hashlib.sha256(raw).hexdigest(),proof['receipt_sha256'])
+        target=self.service._path(proof['task_id']);target.write_bytes(raw)
+        prepared=self.service.load(proof['task_id'])
+        self.assertEqual(prepared.provider_contract,FAN_CONTRACT);self.assertEqual(target.read_bytes(),raw)
+        with self.assertRaises(FanRefusal):
+            await self.service.adapter.preflight(prepared,acquired_locks=())
+        self.assertEqual(self.transport.writes,0)
     async def test_changed_state_during_core_await_is_refused(self):
         async def change(tool):
             if tool=='ha_call_service':self.transport.state['last_updated']='external-change'

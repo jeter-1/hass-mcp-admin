@@ -5771,11 +5771,11 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sleeps, [])
 
 
-class Exact860TelemetryTests(unittest.IsolatedAsyncioTestCase):
+class Exact920TelemetryTests(unittest.IsolatedAsyncioTestCase):
     async def test_projection_refusal_success_and_provider_error_balance_attempts(self):
-        from tests.test_upstream_8_6_compatibility import ReadCompatibilityTests
-        helper = ReadCompatibilityTests()
-        gateway, transport = await helper.gateway()
+        # HAMCP-437: re-pinned from the retired 8.6.0 lane to the 9.2.0 receipts.
+        from support import ha_mcp_captures as helper
+        gateway, transport = await helper.gateway_920()
         refused, telemetry = await helper.call(gateway, 'ha_eval_template',
                                               {'template': 'x', 'timeout': 61})
         self.assertFalse(refused['success'])
@@ -5784,7 +5784,7 @@ class Exact860TelemetryTests(unittest.IsolatedAsyncioTestCase):
         for raw in [None, {'isError': True, 'content': [{'type': 'text', 'text': json.dumps(
                 {'success': False, 'error': {'code': 'ENTITY_NOT_FOUND', 'message': 'synthetic'}})}]}]:
             transport.override = raw
-            result, telemetry = await helper.call(gateway, 'ha_get_state', {'entity_id': 'light.fixture'})
+            result, telemetry = await helper.call(gateway, 'ha_get_state', helper.arguments_920('ha_get_state'))
             self.assertEqual(telemetry.upstream_request_count, 1)
             self.assertEqual(telemetry.upstream_active_requests, 0)
             self.assertGreater(telemetry.upstream_duration_ms, 0)

@@ -1405,11 +1405,18 @@ except ImportError:  # pragma: no cover - the module is in this repository
     yaml_admission = None
 
 
-class YamlConfigReaderTests(yaml_admission.Harness):
+from support import ha_mcp_920_yaml as yaml920  # noqa: E402  (HAMCP-437)
+
+# HAMCP-437: the reader binds the 9.2.0 filesystem-on capture; the stock
+# 9.2.0 catalog omits the YAML tool.
+READER_VERSIONS = (yaml920.VERSION,)
+
+
+class YamlConfigReaderTests(yaml920.Harness):
     """The gateway's fixed recorder-path YAML route (``yaml_config_reader``)."""
 
     async def test_admitted_reader_dispatches_only_contract_paths(self):
-        for version in yaml_admission.VERSIONS:
+        for version in READER_VERSIONS:
             with self.subTest(version=version):
                 gateway, transport = await self.gateway(version)
                 audit = Mock()
@@ -1463,14 +1470,14 @@ class YamlConfigReaderTests(yaml_admission.Harness):
 
     async def test_no_reader_route_supplies_no_reader(self):
         self.assertIsNone(UpstreamReadGateway().yaml_config_reader())
-        gateway, transport = await self.gateway(tools=yaml_admission.stock_catalog("8.5.0"))
+        gateway, transport = await self.gateway(tools=yaml920.stock_catalog())
         self.assertIsNone(gateway.yaml_config_reader())
         self.assertEqual(transport.sent, [])
 
     async def test_catalog_drift_retires_a_captured_reader(self):
         gateway, transport = await self.gateway()
         reader = gateway.yaml_config_reader()
-        transport.set_tools(yaml_admission.stock_catalog("8.5.0"))
+        transport.set_tools(yaml920.stock_catalog())
         await self.reinitialize(gateway, transport)
         self.assertFalse(reader.current())
         result = await reader.read("recorder")
@@ -1511,7 +1518,7 @@ class YamlConfigReaderTests(yaml_admission.Harness):
         self.assertEqual(report["packages"], "present")
         self.assertEqual(report["settings"]["auto_purge"]["reason"], "packages_present")
         self.assertEqual(source(report, "configuration_yaml:recorder")["status"], "complete")
-        self.assertIn("ha-mcp 8.5.0", report["coverage"]["yaml_reader"])
+        self.assertIn("ha-mcp 9.2.0", report["coverage"]["yaml_reader"])
         self.assertEqual([call[1]["yaml_path"] for call in transport.sent], ["recorder", "homeassistant.packages"])
 
 

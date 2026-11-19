@@ -31,7 +31,7 @@ from ha_mcp_engineering.providers.upstream_read_gateway import (
 )
 from ha_mcp_engineering.request_context import begin_request, end_request
 from test_ha_mcp_production_readmission import _GatewayTransport, _settings
-import test_upstream_8_5_compatibility as previous
+import support.ha_mcp_captures as previous  # HAMCP-437: helpers moved from the retired 8.5 module
 # Module imports, not ``from ... import``: a TestCase bound at module level is
 # discovered again under this module's id (duplicate_discovered_test_id).
 from ha_mcp_engineering.providers import upstream_blueprint as blueprint_adapter

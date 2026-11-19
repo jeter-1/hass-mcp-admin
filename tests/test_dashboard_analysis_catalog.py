@@ -35,6 +35,22 @@ import test_dashboard_analysis_transport as transport_cases
 from support import loop_gap
 from support.real_time import real_time_measurement
 
+# HAMCP-437: the analysis peer speaks the one reviewed ha-mcp release (9.2.0),
+# with its full reviewed runtime catalog and stored-config get replies.
+CURRENT = "9.2.0"
+
+
+def current_catalog():
+    folder = ROOT / "docs/evidence/upstream-read-compatibility"
+    raw = json.loads((folder / f"ha-mcp-{CURRENT}.json").read_text())
+    review = json.loads((folder / f"ha-mcp-{CURRENT}-contract-review.json").read_text())
+    by_name = {tool["name"]: tool for tool in raw["tools"]}
+    return [by_name[name] for name in review["runtime_catalog"]["runtime_tool_order"]]
+
+
+def current_dashboard_tool():
+    return next(x for x in current_catalog() if x["name"] == "ha_config_get_dashboard")
+
 
 # HAMCP-171 (2.4.1-beta.18) adds exactly one optional input to
 # get_server_health and two description lines documenting it. Every other part
@@ -153,14 +169,14 @@ class PublicBoundaryTests(unittest.IsolatedAsyncioTestCase):
         from ha_mcp_engineering.providers.upstream_read_gateway import UpstreamReadGateway
         from ha_mcp_engineering.upstream_tool_policy import load_reviewed_upstream_release_registry
         registry = load_reviewed_upstream_release_registry()
-        release = registry.by_version["8.4.3"]
+        release = registry.by_version[CURRENT]
         capture = json.loads((ROOT / release.capture_resource).read_text())
         evidence = json.loads((ROOT / release.artifact_evidence_resource).read_text())
         by_name = {x["name"]: x for x in capture["tools"]}
         ordered = [by_name[n] for n in evidence["runtime_catalog"]["runtime_tool_order"]]
         gateway, server = UpstreamReadGateway(), FastMCP("synthetic-descriptor-preservation")
         with patch("ha_mcp_engineering.providers.upstream_read_gateway.replace_dynamic_upstream_capabilities"):
-            gateway.configure(replace(_settings(""), ha_mcp_release_registry_enabled=False), transport=_GatewayTransport(ordered, version="8.4.3"),
+            gateway.configure(replace(_settings(""), ha_mcp_release_registry_enabled=False), transport=_GatewayTransport(ordered, version=CURRENT),
                               release_registry=registry, signed_release_registry=None)
             await gateway.initialize(server)
         descriptors = {x.name: x.model_dump(by_alias=True, exclude_none=True) for x in await server.list_tools()}
@@ -174,6 +190,14 @@ class PublicBoundaryTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(RETIRED_DELEGATED_READS & set(descriptors))
         self.assertEqual(len(descriptors), 28 - len(RETIRED_DELEGATED_READS))
         kept = {name: value for name, value in baseline["descriptors"].items() if name not in RETIRED_DELEGATED_READS}
+        # HAMCP-437: on 9.2.0 the R4 file-only skill guide publishes its
+        # reviewed 9.2.0 policy description; every other part of it, and
+        # every other descriptor, is still the c82 baseline.
+        policy = json.loads((ROOT / "hass_mcp_engineering_beta/ha_mcp_engineering" / release.policy_resource).read_text())
+        guide = next(x for x in policy["tools"] if x["exposed_name"] == "ha_get_skill_guide")
+        self.assertEqual(descriptors["ha_get_skill_guide"]["description"], guide["description"])
+        self.assertNotEqual(guide["description"], kept["ha_get_skill_guide"]["description"])
+        kept["ha_get_skill_guide"] = dict(kept["ha_get_skill_guide"], description=guide["description"])
         self.assertEqual({name: descriptors[name] for name in kept}, kept)
         self.assertEqual(set(descriptors) - set(baseline["descriptors"]),
                          {"ha_get_app", "ha_get_integration", "ha_get_system_health"})
@@ -242,12 +266,12 @@ class InnerPayloadTests(unittest.TestCase):
     def payload(self):
         config = {"views": [{"cards": [{"type": "button", "entity": "light.synthetic",
                     "name": "synthetic-private-value", "url": "https://synthetic.invalid"}]}]}
-        return {"success": True, "url_path": "synthetic", "config": config,
+        return {"success": True, "url_path": "synthetic", "stored_config": True, "config": config,
                 "config_hash": _upstream_config_hash(config)}
 
     def test_original_hashes_are_verified_before_projection(self):
         payload = self.payload()
-        result = _analysis_configuration(call_result(payload), "synthetic", upstream_version="8.5.0")
+        result = _analysis_configuration(call_result(payload), "synthetic", upstream_version=CURRENT)
         self.assertEqual(result["engineering_config_hash"], _engineering_config_hash(payload["config"]))
         self.assertEqual(result["config_hash"], payload["config_hash"])
         self.assertEqual(result["configuration"], payload["config"])
@@ -258,20 +282,20 @@ class InnerPayloadTests(unittest.TestCase):
                 payload = self.payload()
                 payload.update(config=config, config_hash=_upstream_config_hash(config))
                 with self.assertRaises(c.AnalysisError) as error:
-                    _analysis_configuration(call_result(payload), "synthetic", upstream_version="8.5.0")
+                    _analysis_configuration(call_result(payload), "synthetic", upstream_version=CURRENT)
                 self.assertEqual(error.exception.reason, "malformed_response")
                 self.assertFalse(error.exception.retryable)
                 self.assertNotIn("synthetic-private-value", str(error.exception))
         payload = self.payload()
         payload.update(config={"views": []}, config_hash=_upstream_config_hash({"views": []}))
-        self.assertEqual(_analysis_configuration(call_result(payload), "synthetic", upstream_version="8.5.0")["configuration"], {"views": []})
+        self.assertEqual(_analysis_configuration(call_result(payload), "synthetic", upstream_version=CURRENT)["configuration"], {"views": []})
 
     def test_unpaired_unicode_is_permanent_malformed_source(self):
         payload = self.payload()
         payload["config"]["name"] = chr(0xD800)
         payload["config_hash"] = _upstream_config_hash(payload["config"])
         with self.assertRaises(c.AnalysisError) as error:
-            _analysis_configuration(call_result(payload), "synthetic", upstream_version="8.5.0")
+            _analysis_configuration(call_result(payload), "synthetic", upstream_version=CURRENT)
         self.assertEqual(error.exception.reason, "malformed_response")
         self.assertFalse(error.exception.retryable)
 
@@ -290,7 +314,7 @@ class InnerPayloadTests(unittest.TestCase):
                       {"content": [{"type": "text", "text": '{"success":NaN}'}]}])
         for result in cases:
             with self.subTest(result=result), self.assertRaises(c.AnalysisError) as error:
-                _analysis_configuration(result, "synthetic", upstream_version="8.5.0")
+                _analysis_configuration(result, "synthetic", upstream_version=CURRENT)
             self.assertFalse(error.exception.retryable)
             self.assertNotIn("synthetic-private-value", str(error.exception))
 
@@ -306,7 +330,7 @@ class AssembledTests(unittest.IsolatedAsyncioTestCase):
     forbidden = transport_cases.NativeTransportTests.forbidden
 
     def add_routes(self, app):
-        app.router.add_route("*", "/mcp", self.mcp)
+        app.router.add_route("*", "/base/catalog/full", self.mcp)
 
     async def asyncSetUp(self):
         await transport_cases.NativeTransportTests.asyncSetUp(self)
@@ -325,18 +349,18 @@ class AssembledTests(unittest.IsolatedAsyncioTestCase):
              "name": "synthetic-private-value", "tap_action": {"action": "none"}}]}]}
         self.registry = [{"entity_id": "sensor.only", "disabled_by": None}]
         self.dashboard_payload = None
-        self.descriptor = dashboard_tool()
-        self.server_version = "7.13.0"
+        self.descriptor = current_dashboard_tool()
+        self.server_version = CURRENT
         self.retire_at = None
         self.mcp_calls = []
         self.settings = settings(response_size_limit=32768)
         port = self.site._server.sockets[0].getsockname()[1]
-        self.transport = McpDashboardTransport(f"http://127.0.0.1:{port}/mcp",
+        self.transport = McpDashboardTransport(f"http://127.0.0.1:{port}/base/catalog/full",
                                                 timeout_seconds=10, client_version="synthetic")
         self.upstream = UpstreamDashboardProvider()
         self.upstream.configure(self.settings, transport=self.transport)
         # Synthetic startup admission. Collection itself never refreshes it.
-        self.upstream._validate_handshake(handshake())
+        self.upstream._validate_handshake(handshake(tools=current_catalog(), version=CURRENT))
         self.provider = DashboardAnalysisProvider(self.client, self.core, self.upstream,
                                                    known_secrets=("synthetic-private-value",))
         self.service = DashboardAnalysisService(self.provider, response_limit=32768,
@@ -365,13 +389,14 @@ class AssembledTests(unittest.IsolatedAsyncioTestCase):
             result = {"protocolVersion": "2025-03-26", "capabilities": {"tools": {}},
                       "serverInfo": {"name": "ha-mcp", "version": self.server_version}}
         elif method == "tools/list":
-            result = {"tools": [self.descriptor]}
+            result = {"tools": [self.descriptor if x["name"] == self.descriptor["name"] else x
+                                for x in current_catalog()]}
         elif method == "tools/call":
             self.assertEqual(message["params"], {"name": "ha_config_get_dashboard",
                 "arguments": {"url_path": "synthetic", "force_reload": True,
                               "include_screenshot": False, "list_only": False}})
             payload = self.dashboard_payload or {"success": True, "url_path": "synthetic",
-                "config": self.configuration, "config_hash": _upstream_config_hash(self.configuration)}
+                "stored_config": True, "config": self.configuration, "config_hash": _upstream_config_hash(self.configuration)}
             result = call_result(payload)
         else:
             self.fail("Unexpected MCP command")
@@ -467,16 +492,16 @@ class AssembledTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(data["header"]["transport"]["native_auth_requests"], 1)
         self.assertEqual(data["header"]["transport"]["native_auth_frames"], 2)
 
-    async def test_reviewed_8_4_3_dashboard_descriptor_uses_existing_admission(self):
+    async def test_reviewed_current_dashboard_descriptor_uses_existing_admission(self):
         from ha_mcp_engineering.upstream_tool_policy import load_reviewed_upstream_release_registry
-        release = load_reviewed_upstream_release_registry().by_version["8.4.3"]
+        release = load_reviewed_upstream_release_registry().by_version[CURRENT]
         capture = json.loads((ROOT / release.capture_resource).read_text())
         self.descriptor = next(x for x in capture["tools"] if x["name"] == "ha_config_get_dashboard")
-        self.server_version = "8.4.3"
-        self.upstream._validate_handshake(handshake(tool=self.descriptor, version="8.4.3"))
+        self.server_version = CURRENT
+        self.upstream._validate_handshake(handshake(tools=current_catalog(), version=CURRENT))
         result = await self.invoke()
         self.assertTrue(result["success"], result)
-        self.assertEqual(result["data"]["header"]["authority"]["upstream_version"], "8.4.3")
+        self.assertEqual(result["data"]["header"]["authority"]["upstream_version"], CURRENT)
         self.assertEqual(self.mcp_calls.count("tools/call"), 1)
 
     async def test_failed_inventory_preserves_static_and_positive_evidence(self):
@@ -514,8 +539,8 @@ class AssembledTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_schema_and_identity_drift_never_dispatch_dashboard(self):
         for change in ("schema", "version"):
-            self.descriptor = dashboard_tool()
-            self.server_version = "7.13.0"
+            self.descriptor = current_dashboard_tool()
+            self.server_version = CURRENT
             if change == "schema":
                 self.descriptor["inputSchema"]["properties"]["force_reload"]["type"] = "string"
             else:
@@ -530,7 +555,7 @@ class AssembledTests(unittest.IsolatedAsyncioTestCase):
         for kind in ("access", "hash", "path"):
             self.status = 403 if kind == "access" else 200
             self.dashboard_payload = {"success": True, "url_path": "wrong" if kind == "path" else "synthetic",
-                "config": self.configuration, "config_hash": "0" * 16 if kind == "hash" else
+                "stored_config": True, "config": self.configuration, "config_hash": "0" * 16 if kind == "hash" else
                 _upstream_config_hash(self.configuration)}
             result = await self.invoke()
             self.assertFalse(result["success"])
@@ -587,8 +612,11 @@ class AssembledTests(unittest.IsolatedAsyncioTestCase):
                          loop_gap.child_failure("Assembled analyzer responsiveness child failed.", result))
 
     async def _full_assembled_path(self):
-        # Maximum native wire bytes and entry count; bounded dashboard just
-        # below its 2 MiB JSON envelope, with both admission/hash passes real.
+        # Maximum native wire bytes and entry count; the largest dashboard
+        # that still fits the shared 10 MiB collection budget beside the
+        # reviewed 9.2.0 catalog (about 290 KB of tools/list), with both
+        # admission/hash passes real. HAMCP-437: the 7.13.0 one-tool catalog
+        # left room for a dashboard just below its 2 MiB envelope.
         values = [{"entity_id": f"sensor.sample{i}", "state": "unknown"}
                   for i in range(c.INVENTORY_ENTRIES)]
         raw = c.canonical(values)
@@ -597,7 +625,7 @@ class AssembledTests(unittest.IsolatedAsyncioTestCase):
         self.registry_wire_bytes = c.INVENTORY_BYTES
         self.configuration = {"views": [{"cards": [{"type": "button", "entity": f"sensor.sample{i}"}
                                                    for i in range(300)]}],
-                              "opaque": "x" * 1_950_000}
+                              "opaque": "x" * 1_700_000}
         owner, original_gc = threading.get_ident(), (gc.isenabled(), gc.get_threshold())
         for contention in (False, True):
             self.service.snapshots.clear()

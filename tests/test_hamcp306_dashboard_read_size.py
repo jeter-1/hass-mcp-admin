@@ -42,10 +42,14 @@ from ha_mcp_engineering.request_context import (  # noqa: E402
 from ha_mcp_engineering.tool_framework import timing_since  # noqa: E402
 from ha_mcp_engineering.tools import dashboard as dashboard_tools  # noqa: E402
 
-from test_rc3a_dashboard_provider import FakeTransport, settings  # noqa: E402
+from test_hamcp319_dashboard import ENVELOPES, catalog, fill  # noqa: E402
+from test_rc3a_dashboard_provider import FakeTransport, handshake, settings  # noqa: E402
 
 
 LIMIT = 60_000
+# HAMCP-437: reads run against the reviewed ha-mcp 9.2.0 dashboard catalog
+# (the inherited fake defaults to the retired 7.13.0 handshake).
+DASHBOARD_VERSION = "9.2.0"
 FIXED_TIMESTAMP = "2026-11-04T18:00:00.123456Z"
 # The largest documented gap between the estimate and the real compact
 # response: four growing timing members, each at most 24 - 3 characters
@@ -144,12 +148,14 @@ def fixed_timing(value):
 
 
 def payload_for(config, url_path="home-admin-dashboard"):
-    return {
-        "success": True,
-        "action": "get",
-        "url_path": url_path,
-        "config": config,
-    }
+    # The 9.2.0 stored-config get envelope (tests/fixtures/ha_mcp_9_1_0/
+    # dashboard/envelopes.json; same source sha256 at v9.2.0, HAMCP-371 SB).
+    return fill(
+        ENVELOPES["get_stored_config"],
+        config=config,
+        config_hash=_upstream_config_hash(config),
+        config_size_bytes=len(json.dumps(config)),
+    ) | {"url_path": url_path}
 
 
 class DashboardReadSizeTests(unittest.IsolatedAsyncioTestCase):
@@ -172,7 +178,12 @@ class DashboardReadSizeTests(unittest.IsolatedAsyncioTestCase):
         still-growing timing members for a deterministic response size.
         """
 
-        transport = FakeTransport(payload=payload_for(config))
+        transport = FakeTransport(
+            handshake_value=handshake(
+                tools=catalog(DASHBOARD_VERSION), version=DASHBOARD_VERSION
+            ),
+            payload=payload_for(config),
+        )
         UPSTREAM_DASHBOARD.configure(
             settings(response_size_limit=limit), transport=transport
         )

@@ -71,13 +71,22 @@ SECRET_URL = (
 )
 ACCESS_SECRET = "synthetic-engineering-access-secret-value"
 HA_TOKEN = "synthetic-supervisor-token-value"
-REVIEWED_TOOL_FIXTURE = (
-    BETA
-    / "ha_mcp_engineering"
-    / "providers"
-    / "contracts"
-    / "ha_mcp_7_13_dashboard_read_v1.json"
-)
+# HAMCP-437: the reviewed peer is ha-mcp 9.2.0 (was the retired 7.13.0
+# builtin-attestation contract). Reads run against its exact runtime catalog.
+DASHBOARD_VERSION = "9.2.0"
+
+
+def reviewed_catalog():
+    from test_hamcp319_dashboard import catalog
+
+    return catalog(DASHBOARD_VERSION)
+
+
+def reviewed_dashboard_tool():
+    return next(
+        tool for tool in reviewed_catalog()
+        if tool["name"] == REQUIRED_DASHBOARD_TOOL
+    )
 
 
 def settings(
@@ -101,35 +110,33 @@ def settings(
 
 
 def dashboard_schema(**overrides):
-    properties = {
-        "url_path": {
-            "anyOf": [{"type": "string"}, {"type": "null"}],
-            "default": None,
-        },
-        "list_only": {"type": "boolean", "default": False},
-        "force_reload": {"type": "boolean", "default": False},
-        "include_screenshot": {"type": "boolean", "default": False},
-    }
-    properties.update(overrides.pop("properties", {}))
-    schema = {"type": "object", "properties": properties}
+    # HAMCP-437: start from the exact reviewed 9.2.0 input schema.
+    schema = copy.deepcopy(reviewed_dashboard_tool()["inputSchema"])
+    schema["properties"].update(overrides.pop("properties", {}))
     schema.update(overrides)
     return schema
 
 
 def dashboard_tool(schema=None, *, annotations=None):
-    reviewed = json.loads(REVIEWED_TOOL_FIXTURE.read_text(encoding="utf-8"))
-    if schema is None and annotations is None:
-        return copy.deepcopy(reviewed)
-    return {
-        "name": REQUIRED_DASHBOARD_TOOL,
-        "description": "Read dashboard metadata or configuration.",
-        "inputSchema": schema or dashboard_schema(),
-        "annotations": annotations or copy.deepcopy(reviewed["annotations"]),
-    }
+    # HAMCP-437: mutations change only the named member of the reviewed
+    # 9.2.0 descriptor, so each case isolates the guard it names.
+    tool = copy.deepcopy(reviewed_dashboard_tool())
+    if schema is not None:
+        tool["inputSchema"] = schema
+    if annotations is not None:
+        tool["annotations"] = annotations
+    return tool
 
 
-def handshake(tool=None, *, tools=None, name="ha-mcp", version="7.13.0"):
-    catalog = list(tools) if tools is not None else [tool or dashboard_tool()]
+def handshake(tool=None, *, tools=None, name="ha-mcp", version=DASHBOARD_VERSION):
+    if tools is not None:
+        catalog = list(tools)
+    else:
+        # The exact 9.2.0 catalog, with ``tool`` in the reviewed tool's slot.
+        catalog = [
+            (tool or item) if item["name"] == REQUIRED_DASHBOARD_TOOL else item
+            for item in reviewed_catalog()
+        ]
     return McpDashboardHandshake(
         protocol_version="2025-03-26",
         server_name=name,
@@ -226,6 +233,7 @@ class FakeTransport:
         payload=None,
         error_category=None,
         auto_config_hash=True,
+        auto_stored_config=True,
     ):
         self.handshake = handshake_value or handshake()
         self.payload = dict(payload) if payload is not None else {
@@ -234,6 +242,19 @@ class FakeTransport:
             "dashboards": [],
             "count": 0,
         }
+        if (
+            auto_stored_config
+            and self.payload.get("action") == "get"
+            and isinstance(self.payload.get("config"), dict)
+            and "stored_config" not in self.payload
+        ):
+            # HAMCP-437: the 9.2.0 get mode always reports a saved config
+            # (envelopes.json get_stored_config); the getter requires it.
+            self.payload.update(
+                config_size_bytes=len(json.dumps(self.payload["config"])),
+                render_paths=[],
+                stored_config=True,
+            )
         if (
             auto_config_hash
             and isinstance(self.payload.get("config"), dict)
@@ -800,8 +821,8 @@ class CapabilityAndAllowlistTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(health["required_schema_compatible"])
         self.assertEqual(health["capability_status"], "available")
         self.assertEqual(health["trust_mode"], "reviewed_argument_constrained")
-        self.assertEqual(health["trust_profile"], "ha_mcp_dashboard_read_v2")
-        self.assertEqual(health["upstream_server_version"], "7.13.0")
+        self.assertEqual(health["trust_profile"], "ha_mcp_dashboard_read_v3")
+        self.assertEqual(health["upstream_server_version"], DASHBOARD_VERSION)
         self.assertRegex(health["required_schema_fingerprint"], r"^[0-9a-f]{64}$")
         self.assertRegex(health["catalog_fingerprint"], r"^[0-9a-f]{64}$")
         self.assertIsNotNone(health["last_successful_handshake_timestamp"])
@@ -886,10 +907,7 @@ class CapabilityAndAllowlistTests(unittest.IsolatedAsyncioTestCase):
             "annotations": {"destructiveHint": True},
         }
         transport = FakeTransport(
-            handshake_value=handshake(
-                tools=[dashboard_tool(), unrelated],
-                version="7.13.0",
-            )
+            handshake_value=handshake(tools=[*reviewed_catalog(), unrelated])
         )
         provider = UpstreamDashboardProvider()
         provider.configure(settings(), transport=transport)
@@ -897,7 +915,9 @@ class CapabilityAndAllowlistTests(unittest.IsolatedAsyncioTestCase):
         health = provider.health_snapshot()
         self.assertEqual(health["admission_status"], "admitted_builtin_attestation")
         self.assertEqual(health["capability_status"], "available")
-        self.assertEqual(health["upstream_tool_count"], 2)
+        self.assertEqual(
+            health["upstream_tool_count"], len(reviewed_catalog()) + 1
+        )
         self.assertIsNone(health["catalog_fingerprint"])
         self.assertTrue(health["required_schema_compatible"])
 
@@ -1087,14 +1107,21 @@ class PublicDashboardToolTests(unittest.IsolatedAsyncioTestCase):
             {"list_only": True, "include_screenshot": False},
         )
 
-    async def test_no_dashboards_is_complete(self):
+    async def test_no_dashboards_is_not_proof_of_absence(self):
+        # HAMCP-437: on 9.2.0 an empty list cannot prove absence (a failed
+        # registry read also returns ``[]``), so it is partial with a warning.
+        # The retired 7.13.0 case reported it complete.
         UPSTREAM_DASHBOARD.configure(settings(), transport=FakeTransport())
         result = json.loads(await dashboard_tools.list_dashboards())
         self.assertEqual(
             result["data"],
             {"count": 0, "dashboards": [], "truncated": False},
         )
-        self.assertEqual(result["metadata"]["completeness"], "complete")
+        self.assertEqual(result["metadata"]["completeness"], "partial")
+        self.assertTrue(
+            any("dashboard absence is unavailable" in warning
+                for warning in result["warnings"])
+        )
 
     async def test_limit_validation_precedes_dispatch(self):
         transport = FakeTransport()

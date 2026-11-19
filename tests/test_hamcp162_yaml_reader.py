@@ -59,11 +59,35 @@ from test_hamcp129_platform_reads import call, ok, refused  # noqa: E402
 from test_hamcp129_platform_reads import Transport  # noqa: E402
 from test_ha_mcp_production_readmission import _settings  # noqa: E402
 import hamcp162_synthetic as syn  # noqa: E402
+from support import ha_mcp_920_receipts as receipts  # noqa: E402  (HAMCP-437)
 from test_readonly_upstream_gateway import SECRET as ACCESS_SECRET  # noqa: E402
 from test_readonly_upstream_gateway import settings as access_settings  # noqa: E402
 
 EVIDENCE = ROOT / "docs/evidence/hamcp162"
-VERSIONS = ("8.4.3", "8.5.0")
+VERSIONS = ("9.2.0",)
+# HAMCP-437: 9.x admits only the strict /catalog/full endpoint form; the
+# synthetic peer replaces the client, so the URL is never resolved.
+STRICT_URL = "http://synthetic.invalid/base/catalog/full"
+# HAMCP-437: the D1 corpus was captured from 8.4.3 and 8.5.0 only. The parsed
+# values still drive the version-independent projection (direct
+# project_success, no release entry); the 9.2.0 binding is exercised through
+# the committed HAMCP-371 receipts (RECEIPT_SET) instead.
+CORPUS_VERSIONS = ("8.4.3", "8.5.0")
+RECEIPT_SET = "B/9.2.0"
+
+
+def receipt_result(call_id, sub="calls"):
+    return receipts.receipt(call_id, RECEIPT_SET, sub)[1]
+
+
+def receipt_wire(call_id, sub="calls"):
+    return receipts.record(call_id, RECEIPT_SET, sub)["wire_arguments"]
+
+
+def sent_arguments(path):
+    """The arguments the 9.2.0 binding sends (include_content per its contract)."""
+
+    return {**y.upstream_arguments(path), "include_content": y.YAML_READ_CONTRACTS["9.2.0"].include_content}
 TOOL = y.TOOL_NAME
 SYN = "SYNTHETIC_VALUE_162"
 # Fragments: synthetic secrets are assembled at runtime (hamcp162_synthetic).
@@ -133,7 +157,10 @@ def pipeline(value, path=("sensor", "value")):
 
 
 def catalog(version):
-    return json.loads((EVIDENCE / f"captures/catalog-{version}-A.json").read_text())["tools"]
+    # HAMCP-437: the exact filesystem-on capture the 9.2.0 YAML reader binds
+    # (upstream_yaml_reader._CAPTURES); the stock catalog omits the tool.
+    _commit, resource, _digest = y._CAPTURES[version]
+    return json.loads((ROOT / resource).read_text())["tools"]
 
 
 def d1_cases(version):
@@ -209,7 +236,7 @@ def rule_a_mutation(name):
 # Gateway harnesses.
 
 
-async def yaml_gateway(version="8.5.0", tools=None, *, response_size_limit=None, core_runtime=None):
+async def yaml_gateway(version="9.2.0", tools=None, *, response_size_limit=None, core_runtime=None):
     transport = Transport(catalog(version) if tools is None else tools, version)
     transport.respond = lambda tool, args: ok(payload({"purge_keep_days": 10}, args["yaml_path"]))
     configured = replace(
@@ -256,8 +283,8 @@ class YamlPeer:
                     types.JSONRPCResponse(jsonrpc="2.0", id=request.id, result=result))))
 
     @asynccontextmanager
-    async def connect(self, unused, **kwargs):
-        assert unused == ""
+    async def connect(self, url, **kwargs):
+        assert url == STRICT_URL
         session = "synthetic-session-" + uuid.uuid4().hex
         send_to_client, read = anyio.create_memory_object_stream(10)
         write, read_from_client = anyio.create_memory_object_stream(10)
@@ -652,7 +679,7 @@ class ReferenceMarkerTests(unittest.TestCase):
     def test_quoted_literal_residual_is_pinned_as_a_marker(self):
         # Upstream renders password: "!secret abc" exactly like the tag (D1
         # main:refs.quoted); the disclosed residual is a marker, never a value.
-        for version in VERSIONS:
+        for version in CORPUS_VERSIONS:
             with self.subTest(version=version):
                 envelope = y.project_success(d1_result(version, "main:refs.quoted"), "refs.quoted").envelope
                 text = json.dumps(envelope["value"])
@@ -984,22 +1011,24 @@ class OtherSecretTests(unittest.TestCase):
         self.assertTrue(hidden(result.envelope, s))
 
     def test_no_content_field_ever(self):
+        # HAMCP-437: 9.2.0 sends include_content=true; the raw text is scanned
+        # and deleted before projection, so it never reaches the caller. (The
+        # 8.x refusal of a content field retired with the 8.x contract.)
         async def scenario():
-            for version in VERSIONS:
-                gateway, transport = await yaml_gateway(version)
-                for case_id in ("content+parsed:refs", "content+parsed:anchors"):
-                    result_value = d1_result(version, case_id)
-                    transport.respond = lambda tool, args, r=result_value: deepcopy(r)
-                    path = "refs" if case_id.endswith("refs") else "anchors"
-                    result = await call(gateway, TOOL, {"yaml_path": path})
-                    refused(self, result, dispatched=True, category="invalid_response")
-                    self.assertEqual(result["error_code"], y.IDENTITY_INVALID)
-                    self.assertNotIn("content", json.dumps(result.get("data", {})))
-                recorder = d1_result(version, "main:recorder")
-                transport.respond = lambda tool, args, r=recorder: deepcopy(r)
-                good = await call(gateway, TOOL, {"yaml_path": "recorder"})
-                self.assertEqual(set(good["data"]), {"file", "yaml_path", "source", "found", "value",
-                                                     "completeness", "limitations", "redaction"})
+            gateway, transport = await yaml_gateway("9.2.0")
+            reply = receipt_result("y-group")
+            raw = reply["structuredContent"]["matches"][0]["content"]
+            transport.respond = lambda tool, args, r=reply: deepcopy(r)
+            good = await call(gateway, TOOL, {"yaml_path": "group"})
+            self.assertTrue(good["success"], good)
+            # The 9.x tag scan adds its three envelope fields; nothing else.
+            self.assertEqual(set(good["data"]), {"file", "yaml_path", "source", "found", "value",
+                                                 "completeness", "limitations", "redaction",
+                                                 "tag_completeness", "tag_lossy", "lossy_tags"})
+            self.assertNotIn("content", set(good["data"]))
+            for line in raw.splitlines():
+                if line.strip():
+                    self.assertNotIn(line, json.dumps(good, ensure_ascii=False))
 
         asyncio.run(scenario())
 
@@ -1010,36 +1039,54 @@ class OtherSecretTests(unittest.TestCase):
 
 class GatewayTests(unittest.IsolatedAsyncioTestCase):
     async def test_useful_success_at_both_versions(self):
-        for version in VERSIONS:
-            with self.subTest(version=version):
-                gateway, transport = await yaml_gateway(version)
-                for case_id, path in (("main:recorder", "recorder"), ("main:homeassistant.customize",
-                                      "homeassistant.customize"), ("main:template", "template"),
-                                      ("main:recorder.missing", "recorder.missing")):
-                    reply = d1_result(version, case_id)
-                    transport.respond = lambda tool, args, r=reply: deepcopy(r)
-                    transport.sent.clear()
-                    result = await call(gateway, TOOL, {"yaml_path": path})
-                    self.assertTrue(result["success"], result)
-                    self.assertEqual(transport.sent, [(TOOL, y.upstream_arguments(path))])
-                    data = result["data"]
-                    self.assertEqual((data["file"], data["yaml_path"], data["source"]),
-                                     ("configuration.yaml", path, "disk"))
-                    self.assertEqual(data["found"], case_id != "main:recorder.missing")
-                    self.assertEqual(data["limitations"][-3:], list(y.DISCLOSURE_LIMITATIONS))
-                    self.assertEqual(result["warnings"], [y.K7_WARNING])
-                    self.assertIsNone(__import__("re").search(D1_SECRET, json.dumps(result)))
-                    self.assertEqual(result["metadata"]["upstream_tool"], TOOL)
-                    self.assertEqual(result["metadata"]["upstream_version"], version)
-                recorder = await self._read(gateway, transport, version, "main:recorder", "recorder")
-                self.assertIn("purge_keep_days", recorder["data"]["value"])
-                # The explicit constant file argument is accepted and identical.
+        # HAMCP-437: replays the committed 9.2.0 receipts (HAMCP-371 profile B).
+        version = "9.2.0"
+        gateway, transport = await yaml_gateway(version)
+        for case_id, path, found in (("y-group", "group", True),
+                                     ("y-absent-key", "hamcp371_absent_object", False)):
+            with self.subTest(version=version, case=case_id):
+                reply = receipt_result(case_id)
+                transport.respond = lambda tool, args, r=reply: deepcopy(r)
                 transport.sent.clear()
-                await call(gateway, TOOL, {"yaml_path": "recorder", "file": "configuration.yaml"})
-                self.assertEqual(transport.sent, [(TOOL, y.upstream_arguments("recorder"))])
+                result = await call(gateway, TOOL, {"yaml_path": path})
+                self.assertTrue(result["success"], result)
+                self.assertEqual(transport.sent, [(TOOL, receipt_wire(case_id))])
+                self.assertEqual(receipt_wire(case_id), sent_arguments(path))
+                data = result["data"]
+                self.assertEqual((data["file"], data["yaml_path"], data["source"]),
+                                 ("configuration.yaml", path, "disk"))
+                self.assertEqual(data["found"], found)
+                self.assertEqual(data["limitations"][-3:], list(y.DISCLOSURE_LIMITATIONS))
+                self.assertEqual(result["warnings"], [y.K7_WARNING])
+                self.assertEqual(result["metadata"]["upstream_tool"], TOOL)
+                self.assertEqual(result["metadata"]["upstream_version"], version)
+        group = await self._read(gateway, transport, "y-group", "group")
+        self.assertEqual(group["data"]["value"]["hamcp371_group"]["name"], "HAMCP371 groupe éü 雪")
+        self.assertEqual(group["data"]["value"]["hamcp371_group"]["entities"], ["sun.sun"])
+        # The explicit constant file argument is accepted and identical.
+        transport.sent.clear()
+        await call(gateway, TOOL, {"yaml_path": "group", "file": "configuration.yaml"})
+        self.assertEqual(transport.sent, [(TOOL, sent_arguments("group"))])
 
-    async def _read(self, gateway, transport, version, case_id, path):
-        reply = d1_result(version, case_id)
+    async def test_ordinary_user_denials_are_fixed_codes(self):
+        # HAMCP-437: 9.2.0 receipts for a non-admin token (K1). The upstream
+        # text names the admin-only bootstrap; Engineering returns a fixed code.
+        gateway, transport = await yaml_gateway("9.2.0")
+        for case_id, path in (("y-group", "group"), ("y-absent-key", "hamcp371_absent_object")):
+            with self.subTest(case=case_id):
+                reply = receipt_result(case_id, "yaml-ordinary-user")
+                transport.respond = lambda tool, args, r=reply: deepcopy(r)
+                transport.sent.clear()
+                result = await call(gateway, TOOL, {"yaml_path": path})
+                refused(self, result, dispatched=True)
+                self.assertEqual(transport.sent, [(TOOL, receipt_wire(case_id, "yaml-ordinary-user"))])
+                self.assertIn(result["error_code"], set(y.FAILURES))
+                text = json.dumps(result)
+                for upstream in ("admin-only", "get_caller_token", "AUTH_INSUFFICIENT_PERMISSIONS"):
+                    self.assertNotIn(upstream, text)
+
+    async def _read(self, gateway, transport, case_id, path):
+        reply = receipt_result(case_id)
         transport.respond = lambda tool, args: deepcopy(reply)
         return await call(gateway, TOOL, {"yaml_path": path})
 
@@ -1140,7 +1187,8 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
             "unreadable": lambda p: p.update(files_unreadable=1),
             "warnings": lambda p: p.update(warnings=["synthetic upstream warning q7"]),
             "extra_top": lambda p: p.update(extra=1),
-            "extra_match": lambda p: p["matches"][0].update(content="raw text q7"),
+            # HAMCP-437: content is a 9.x match key; an unknown key is still refused.
+            "extra_match": lambda p: p["matches"][0].update(raw="raw text q7"),
             "missing_match_key": lambda p: p["matches"][0].pop("parsed"),
             "success_false": lambda p: p.update(success=False),
             "success_str": lambda p: p.update(success="true"),
@@ -1167,6 +1215,13 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
             "nan": {"isError": False, "content": [{"type": "text", "text": json.dumps(good).replace(
                 '"a": 1', '"a": NaN')}]},
             "not_json": {"isError": False, "content": [{"type": "text", "text": "plain q7"}]},
+            # HAMCP-437: the 9.x content key must agree across both channels.
+            "content_differs": {
+                "isError": False,
+                "structuredContent": payload({"a": 1}, "recorder", matches=[
+                    {**good["matches"][0], "content": "a: 1 q7\n"}]),
+                "content": [{"type": "text", "text": json.dumps(payload({"a": 1}, "recorder", matches=[
+                    {**good["matches"][0], "content": "a: 2 q7\n"}]))}]},
             "image": {"isError": False, "content": [{"type": "image", "data": "", "mimeType": "image/png"}]},
         }.items():
             with self.subTest(name=name):
@@ -1213,30 +1268,6 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
         # K2: never a definite "component unavailable" claim.
         self.assertEqual(y.FAILURES[y.VALIDATION_OR_UNAVAILABLE][1],
                          "upstream validation failed or component unavailable")
-
-    async def test_d1_errors_replayed(self):
-        expected = {
-            "variant:parse_error:recorder": y.PARSE_ERROR, "variant:duplicate_keys:recorder": y.PARSE_ERROR,
-            "variant:binary:recorder": y.READ_FAILED, "variant:latin1_text:recorder": y.READ_FAILED,
-            "yaml11key:bigint": y.READ_FAILED, "main:yaml11": y.READ_FAILED,
-            "variant:missing_config:recorder": y.FILE_NOT_FOUND,
-            "unavailable:entry_removed": y.VALIDATION_OR_UNAVAILABLE,
-            "supp:config_symlink_escape:x": y.FILE_NOT_ALLOWED_UPSTREAM,
-        }
-        for version in VERSIONS:
-            gateway, transport = await yaml_gateway(version)
-            cases = {case["id"]: case for _label, case in d1_cases(version)}
-            for case_id, code in expected.items():
-                with self.subTest(version=version, case=case_id):
-                    case = cases[case_id]
-                    reply = case["response"]["message"]["result"]
-                    transport.respond = lambda tool, args, r=reply: deepcopy(r)
-                    result = await call(gateway, TOOL, {"yaml_path": case["arguments"]["yaml_path"]})
-                    refused(self, result, dispatched=True)
-                    self.assertEqual(result["error_code"], code)
-                    upstream_text = reply["content"][0]["text"]
-                    self.assertNotIn(upstream_text[:40], json.dumps(result))
-                    self.assertIsNone(__import__("re").search(D1_SECRET, json.dumps(result)))
 
     async def test_bounds(self):
         gateway, transport = await yaml_gateway()
@@ -1364,7 +1395,11 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
 
 
 class CorpusTests(unittest.TestCase):
-    """The D1 corpus (409 values) through the projection, per group, at both versions."""
+    """The D1 corpus (409 values) through the projection, per group.
+
+    HAMCP-437: the corpus was captured from 8.4.3 and 8.5.0; the projection
+    it drives is version independent (no release entry).
+    """
 
     RAW = {"c3_noncatch", "d12_residual", "r11_sqlite_visible", "unicode_controls", "useful_visible"}
     REDACTED = {"a_nonconverging", "c2_pwd_variants", "c3_delimited", "c3_query", "over_redaction",
@@ -1378,7 +1413,7 @@ class CorpusTests(unittest.TestCase):
         self.assertEqual(len(corpus), 409)
         self.assertEqual(set(fixtures["corpus_groups"]),
                          self.RAW | self.REDACTED | {"other_secrets", "r9_bounds", "r11_sqlite_variants"})
-        for version in VERSIONS:
+        for version in CORPUS_VERSIONS:
             reply = d1_result(version, "main:corpus")
             parsed = json.loads(reply["content"][0]["text"])["matches"][0]["parsed"]
             self.assertEqual(parsed, {key: entry["value"] for key, entry in corpus.items()})
@@ -1408,7 +1443,7 @@ class CorpusTests(unittest.TestCase):
                     self.assertEqual(out(entry["value"], "recorder.db_url"), "sqlite://[REDACTED:connection_uri]")
 
     def test_key_variants_mapping(self):
-        for version in VERSIONS:
+        for version in CORPUS_VERSIONS:
             envelope = y.project_success(d1_result(version, "main:keys"), "keys").envelope
             # One key is encoded past the bound: the whole mapping is withheld.
             self.assertEqual(envelope["value"], ENC)
@@ -1416,90 +1451,36 @@ class CorpusTests(unittest.TestCase):
 
 
 class D1ReplayTests(unittest.IsolatedAsyncioTestCase):
-    """Every captured ha_config_get_yaml case, replayed at both versions."""
+    """Every captured ha_config_get_yaml argument set, against the 9.2.0 binding.
+
+    HAMCP-437: the captured arguments (8.4.3 and 8.5.0) are caller inputs, so
+    the pre-dispatch refusals still apply to 9.2.0. The dispatched 8.x replies
+    and the 8.x proxy-log component-call count retired with that capture
+    shape; the 9.2.0 receipts are replayed in GatewayTests.
+    """
 
     async def test_replay(self):
-        import re
-        replayed = refused_pre = 0
-        for version in VERSIONS:
-            gateway, transport = await yaml_gateway(version)
+        refused_pre = 0
+        gateway, transport = await yaml_gateway("9.2.0")
+        for version in CORPUS_VERSIONS:
             for _label, case in d1_cases(version):
                 arguments = case["arguments"]
-                message = (case.get("response") or {}).get("message") or {}
-                reply = message.get("result")
                 public = {"yaml_path": arguments.get("yaml_path")}
                 if "file" in arguments and arguments["file"] != "configuration.yaml":
                     public["file"] = arguments["file"]
+                try:
+                    y.validate_arguments(public)
+                    continue
+                except y.YamlReadRefusal as refusal:
+                    pre = refusal.code
                 with self.subTest(version=version, case=case["id"]):
-                    try:
-                        y.validate_arguments(public)
-                        pre = None
-                    except y.YamlReadRefusal as refusal:
-                        pre = refusal.code
                     transport.sent.clear()
-                    transport.respond = lambda tool, args, r=reply: deepcopy(r)
-                    if pre is not None:
-                        result = await call(gateway, TOOL, public)
-                        refused(self, result, dispatched=False)
-                        self.assertEqual(result["error_code"], pre)
-                        self.assertEqual(transport.sent, [])
-                        refused_pre += 1
-                        continue
-                    if reply is None or arguments != y.upstream_arguments(public["yaml_path"]):
-                        continue  # never sent by Engineering, or no result captured
                     result = await call(gateway, TOOL, public)
-                    replayed += 1
-                    self.assertEqual(transport.sent, [(TOOL, y.upstream_arguments(public["yaml_path"]))])
-                    leaks = set(re.findall(D1_SECRET, json.dumps(result)))
-                    if case["id"] == "main:corpus":
-                        fixtures = syn.evidence_json("fixtures/cases.json")
-                        allowed = {m for e in fixtures["corpus"].values()
-                                   if e["group"] in {"d12_residual", "other_secrets"}
-                                   for m in re.findall(D1_SECRET, e["value"])}
-                        self.assertLessEqual(leaks, allowed)
-                    else:
-                        self.assertEqual(leaks, set(), case["id"])
-                    if result["success"]:
-                        self.assertEqual(result["warnings"], [y.K7_WARNING])
-                        self.assertEqual(result["data"]["limitations"][-3:], list(y.DISCLOSURE_LIMITATIONS))
-        self.assertGreater(replayed, 150)
+                    refused(self, result, dispatched=False)
+                    self.assertEqual(result["error_code"], pre)
+                    self.assertEqual(transport.sent, [])
+                    refused_pre += 1
         self.assertGreater(refused_pre, 100)
-
-    def test_component_calls_per_read(self):
-        """D1 proxy log: one component read_file per read, never list_files.
-
-        The first call per process also fetches the caller token (K1).
-        """
-
-        rows = [json.loads(line) for line in
-                syn.evidence_text("captures/proxy-structure.jsonl").splitlines()]
-        windows, current = {}, None
-        for row in rows:
-            if row["kind"] == "marker":
-                label = row["label"]
-                current = label[: -len(":begin")] if label.endswith(":begin") else None
-                if current is not None:
-                    windows[current] = []
-            elif current is not None:
-                windows[current].append(row)
-        checked = 0
-        for version in VERSIONS:
-            for label, case in d1_cases(version):
-                arguments = case["arguments"]
-                yaml_path = arguments.get("yaml_path")
-                if not isinstance(yaml_path, str) or arguments != y.upstream_arguments(yaml_path):
-                    continue
-                window = windows.get(f"{label}:{case['id']}")
-                if window is None:
-                    continue
-                paths = [row.get("path") for row in window if row["kind"] == "http"]
-                with self.subTest(version=version, case=case["id"]):
-                    self.assertEqual(paths.count("/api/services/ha_mcp_tools/read_file"), 1, paths)
-                    self.assertEqual(paths.count("/api/services/ha_mcp_tools/list_files"), 0)
-                    self.assertLessEqual(set(paths), {"/api/services/ha_mcp_tools/read_file", "/api/services",
-                                                      "/api/services/ha_mcp_tools/get_caller_token"})
-                    checked += 1
-        self.assertGreater(checked, 100)
 
 
 class SdkSessionTests(unittest.IsolatedAsyncioTestCase):
@@ -1509,13 +1490,15 @@ class SdkSessionTests(unittest.IsolatedAsyncioTestCase):
         for version in VERSIONS:
             with self.subTest(version=version):
                 peer = YamlPeer(catalog(version), version)
-                replies = {"recorder": d1_result(version, "main:recorder"),
-                           "mqtt": d1_result(version, "main:mqtt")}
+                # HAMCP-437: the 9.2.0 receipt, and a synthetic credential-bearing
+                # read for the redaction count (no 9.2.0 mqtt capture exists).
+                replies = {"group": receipt_result("y-group"),
+                           "mqtt": ok(payload({"broker": "core-mosquitto", "password": SYN}, "mqtt"))}
                 peer.reply = lambda args: replies[args["yaml_path"]]
                 gateway = UpstreamReadGateway()
                 gateway.configure(
                     replace(_settings("synthetic-no-key"), ha_mcp_release_registry_enabled=False),
-                    transport=upstream_read.McpReadGatewayTransport("", timeout_seconds=3,
+                    transport=upstream_read.McpReadGatewayTransport(STRICT_URL, timeout_seconds=3,
                                                                     client_version="synthetic"),
                 )
                 with patch.object(upstream_read, "streamablehttp_client", peer.connect):
@@ -1536,17 +1519,17 @@ class SdkSessionTests(unittest.IsolatedAsyncioTestCase):
                     for name in y.SIBLING_TOOLS:
                         self.assertNotIn(name, gateway._registered_tool_registry.snapshot())
                     peer.calls.clear()
-                    recorder = await call(gateway, TOOL, {"yaml_path": "recorder"})
+                    recorder = await call(gateway, TOOL, {"yaml_path": "group"})
                     mqtt = await call(gateway, TOOL, {"yaml_path": "mqtt"})
                     refusal = await call(gateway, TOOL, {"yaml_path": "x", "file": "secrets.yaml"})
                 self.assertTrue(recorder["success"], recorder)
                 self.assertTrue(mqtt["success"], mqtt)
-                self.assertEqual(peer.calls, [(TOOL, y.upstream_arguments("recorder")),
-                                              (TOOL, y.upstream_arguments("mqtt"))])
+                self.assertEqual(peer.calls, [(TOOL, receipt_wire("y-group")),
+                                              (TOOL, sent_arguments("mqtt"))])
                 refused(self, refusal, dispatched=False)
                 self.assertEqual(refusal["error_code"], y.FILE_NOT_ALLOWED)
                 self.assertGreater(mqtt["data"]["redaction"]["redacted_field_count"], 0)
-                self.assertIsNone(__import__("re").search(D1_SECRET, json.dumps([recorder, mqtt])))
+                assert_absent(self, json.dumps([recorder, mqtt]), SYN)
                 self.assertEqual(mqtt["warnings"], [y.K7_WARNING])
 
 
@@ -1804,7 +1787,7 @@ class EnvelopeSealTests(unittest.IsolatedAsyncioTestCase):
                     else:
                         self.assertEqual(result["data"]["yaml_path"], "sensor.*")
                         self.assertEqual(result["data"]["value"], "ordinary")
-                        self.assertEqual(transport.sent[-1][1], y.upstream_arguments(path))
+                        self.assertEqual(transport.sent[-1][1], sent_arguments(path))
 
     async def test_codex_h1_and_h2_reproductions_over_a_real_session(self):
         for version in VERSIONS:
@@ -1814,7 +1797,7 @@ class EnvelopeSealTests(unittest.IsolatedAsyncioTestCase):
                 gateway.configure(
                     replace(_settings("synthetic-no-key"), ha_mcp_release_registry_enabled=False,
                             **{setting: known}),
-                    transport=upstream_read.McpReadGatewayTransport("", timeout_seconds=5,
+                    transport=upstream_read.McpReadGatewayTransport(STRICT_URL, timeout_seconds=5,
                                                                     client_version="synthetic"),
                 )
                 with patch.object(upstream_read, "streamablehttp_client", peer.connect):
@@ -1880,7 +1863,7 @@ class EnvelopeSealTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(transport.sent, [])
 
     async def test_known_secret_never_reaches_the_audit_record(self):
-        gateway, transport = await known_gateway("8.5.0", ha_token=KNOWN)
+        gateway, transport = await known_gateway("9.2.0", ha_token=KNOWN)
         for case, path, value in h1_channels(KNOWN):
             with self.subTest(case=case):
                 transport.respond = lambda tool, args, v=value: ok(payload(v, args["yaml_path"]))
@@ -2041,7 +2024,7 @@ class RedactionMarkerIdentityTests(unittest.IsolatedAsyncioTestCase):
                 gateway.configure(
                     replace(_settings("synthetic-no-key"), ha_mcp_release_registry_enabled=False,
                             **{setting: known}),
-                    transport=upstream_read.McpReadGatewayTransport("", timeout_seconds=5,
+                    transport=upstream_read.McpReadGatewayTransport(STRICT_URL, timeout_seconds=5,
                                                                     client_version="synthetic"),
                 )
                 with patch.object(upstream_read, "streamablehttp_client", peer.connect):

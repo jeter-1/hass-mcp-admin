@@ -122,7 +122,7 @@ class DashboardPlanningTests(unittest.IsolatedAsyncioTestCase):
         for configuration, operation, expected_count in cases:
             with self.subTest(operation=operation["operation_id"]):
                 metrics = DashboardWriteObservability()
-                reader = FakeExactReader(make_preread(configuration, version="8.5.0"))
+                reader = FakeExactReader(make_preread(configuration, version="9.2.0"))
                 with self.assertRaises(PatchCompilationError):
                     await create_dashboard_update_plan(
                         reader=reader, url_path="synthetic-dashboard",
@@ -186,7 +186,7 @@ class DashboardPlanningTests(unittest.IsolatedAsyncioTestCase):
             description="No raw data.",
             expiration_minutes=30,
             requested_by="test.operator",
-            provider_evidence=EXACT_CONTRACTS["8.1.1"],
+            provider_evidence=EXACT_CONTRACTS["9.2.0"],
             authoritative_provider_slug="ha_mcp",
             now=datetime(2026, 8, 4, 12, 5, tzinfo=timezone.utc),
             plan_id="plan000000000002",
@@ -251,7 +251,7 @@ class DashboardPlanningTests(unittest.IsolatedAsyncioTestCase):
                     description="Synthetic",
                     expiration_minutes=30,
                     requested_by="test.operator",
-                    provider_evidence=EXACT_CONTRACTS["8.1.1"],
+                    provider_evidence=EXACT_CONTRACTS["9.2.0"],
                     authoritative_provider_slug="ha_mcp",
                     plan_id=f"plan00000000{index + 10:04d}",
                 )
@@ -268,7 +268,7 @@ class DashboardPlanningTests(unittest.IsolatedAsyncioTestCase):
                 description="Synthetic",
                 expiration_minutes=30,
                 requested_by="test.operator",
-                provider_evidence=EXACT_CONTRACTS["8.1.1"],
+                provider_evidence=EXACT_CONTRACTS["9.2.0"],
                 authoritative_provider_slug="ha_mcp",
             )
         self.assertEqual(reader.preread_count, 0)
@@ -292,7 +292,7 @@ class DashboardPlanningTests(unittest.IsolatedAsyncioTestCase):
             description="Synthetic",
             expiration_minutes=30,
             requested_by="test.operator",
-            provider_evidence=EXACT_CONTRACTS["8.1.1"],
+            provider_evidence=EXACT_CONTRACTS["9.2.0"],
             authoritative_provider_slug="ha_mcp",
             observability=metrics,
             now=datetime(2026, 8, 4, 12, 5, tzinfo=timezone.utc),

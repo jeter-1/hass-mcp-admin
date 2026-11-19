@@ -43,7 +43,7 @@ from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
     load_reviewed_upstream_release_registry,
 )
 from test_ha_mcp_production_readmission import _GatewayTransport, _settings  # noqa: E402
-from test_upstream_8_5_compatibility import capture  # noqa: E402
+from support.ha_mcp_captures import capture  # noqa: E402  (HAMCP-437)
 
 FIXTURE_DIR = ROOT / "tests/fixtures/ha_mcp_9_1_0/device"
 FIXTURE = json.loads((FIXTURE_DIR / "device-results.json").read_text(encoding="utf-8"))

@@ -206,7 +206,8 @@ class GraphAnalysisTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.data["assessment"]["rename_or_removal_status"], "references_found")
         self.assertFalse(index.snapshot.findings)
         self.assertEqual(result.data["script_call_graph"]["configuration_providers"], ["direct_ha_api", "upstream_read_gateway"])
-        self.assertIn("8.5.0", result.data["script_call_graph"]["script_provider_policy"])
+        # HAMCP-437: the shared reader provenance is re-pinned from 8.5.0.
+        self.assertIn("9.2.0", result.data["script_call_graph"]["script_provider_policy"])
 
     async def test_direct_calls_and_old_entity_references_do_not_duplicate(self):
         service, index, diagnostic = await graph(automation=(("caller", "automation.caller", {"action": [{"action": "script.turn_on", "target": {"entity_id": "script.renamed"}}]}),))

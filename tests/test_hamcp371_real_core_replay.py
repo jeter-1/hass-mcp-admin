@@ -39,7 +39,7 @@ from ha_mcp_engineering.providers.upstream_reads_9_2_entities import (
 from ha_mcp_engineering.providers import upstream_reads_9_2_blueprint as blueprint_9_2
 from ha_mcp_engineering.request_context import begin_request, end_request
 from test_ha_mcp_production_readmission import _GatewayTransport, _settings
-import test_upstream_8_5_compatibility as previous
+import support.ha_mcp_captures as previous  # HAMCP-437: helpers moved from the retired 8.5 module
 
 FIXTURES = ROOT / 'tests/fixtures/ha_mcp_9_2_0'
 CONTRACT = json.loads((FIXTURES / 'output-key-contract.json').read_text(encoding='utf-8'))

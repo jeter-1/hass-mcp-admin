@@ -1451,67 +1451,89 @@ class GatewayRetirementTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIsNotNone(registered_tools(server).get("ha_get_state"))
                 self.assertEqual(transport.calls, [])
 
-    async def test_retired_read_is_withheld_on_the_exact_reviewed_captures(self):
-        from test_readonly_upstream_gateway import registered_tools
-        import test_hamcp162_yaml_admission as yaml_admission
+    def assert_blocked_920(self, gateway, server):
+        """HAMCP-437: the reviewed 9.2.0 policy blocks the retired read as
+        unsupported, so it is never matched, withheld, aliased or exposed."""
 
-        harness = yaml_admission.AdmissionTests()
+        from test_readonly_upstream_gateway import registered_tools
+
+        names = set(registered_tools(server))
+        self.assertNotIn(RETIRED, names)
+        self.assertFalse({name for name in names if name.endswith(RETIRED)})
+        health = gateway.health_snapshot()
+        blocked = {item["upstream_name"]: item["classification"] for item in health["blocked_tools"]}
+        self.assertEqual(blocked.get(RETIRED), "unsupported")
+        self.assertNotIn(RETIRED, {item["tool"] for item in health["core_withheld_tools"]})
+        self.assertNotIn(RETIRED, {item["upstream_name"] for item in health["collision_mappings"]})
+        self.assertNotIn(RETIRED, health["exposed_tools"])
+        return health
+
+    async def test_retired_read_is_withheld_on_the_exact_reviewed_captures(self):
+        # HAMCP-437: re-pinned from the 8.4.3 and 8.5.0 component captures to
+        # the 9.2.0 filesystem-on ("A") and stock ("OFF") captures.
+        from test_readonly_upstream_gateway import registered_tools
+        from support import ha_mcp_920_receipts as receipts_920
+        from support import ha_mcp_920_yaml as yaml920
+
+        harness = yaml920.Harness()
         harness.setUp()
         self.addCleanup(harness.temporary.cleanup)
-        for version in ("8.4.3", "8.5.0"):
-            for label in ("A", "OFF"):
-                for native in (False, True):
-                    with self.subTest(version=version, label=label, native=native):
-                        tools = yaml_admission.captured(version, label)
-                        self.assertIn(RETIRED, {tool["name"] for tool in tools})
-                        gateway, transport = await harness.gateway(version, tools)
-                        server = gateway.synthetic_server
-                        if native:
-                            server = _native_server(f"hamcp290-{version}-{label}")
-                            gateway, transport = await _gateway_on(server, version, tools)
-                        health = self.assert_retired(gateway, server)
-                        # Mode A also exposes the optional YAML reader, which is
-                        # not an automatic read; OFF does not.
-                        optional = 1 if label == "A" else 0
-                        self.assertEqual(health["dynamically_exposed_count"],
-                                         health["exact_matched_automatic_read_count"]
-                                         - health["core_withheld_read_count"] + optional)
-                        self.assertEqual(health["core_withheld_read_count"], 1)
-                        if native:
-                            self.assertIsNotNone(registered_tools(server).get(TOOL))
-                        self.assertEqual(transport.sent, [])
+        version = yaml920.VERSION
+        for label, tools in (("A", receipts_920.yaml_catalog(version)), ("OFF", yaml920.stock_catalog())):
+            for native in (False, True):
+                with self.subTest(version=version, label=label, native=native):
+                    self.assertIn(RETIRED, {tool["name"] for tool in tools})
+                    gateway, transport = await harness.gateway(version, tools)
+                    server = gateway.synthetic_server
+                    if native:
+                        server = _native_server(f"hamcp290-{version}-{label}")
+                        gateway, transport = await _gateway_on(server, version, tools)
+                    health = self.assert_blocked_920(gateway, server)
+                    # Mode A also exposes the optional YAML reader, which is
+                    # not an automatic read; OFF does not.
+                    optional = 1 if label == "A" else 0
+                    self.assertEqual(health["dynamically_exposed_count"],
+                                     health["exact_matched_automatic_read_count"]
+                                     - health["core_withheld_read_count"] + optional)
+                    self.assertEqual(health["core_withheld_read_count"], 0)
+                    if native:
+                        self.assertIsNotNone(registered_tools(server).get(TOOL))
+                    self.assertEqual(transport.sent, [])
 
     async def test_held_read_canary_never_dispatches_the_retired_read(self):
         """The evidence-only canary path does not pass the dispatch guard, so
-        prove it refuses the retired read on the exact reviewed captures."""
+        prove it refuses the retired read on the exact reviewed captures
+        (HAMCP-437: the 9.2.0 stock capture; 8.4.3 and 8.5.0 before)."""
 
-        import test_hamcp162_yaml_admission as yaml_admission
+        from support import ha_mcp_920_yaml as yaml920
 
-        harness = yaml_admission.AdmissionTests()
+        harness = yaml920.Harness()
         harness.setUp()
         self.addCleanup(harness.temporary.cleanup)
-        for version in ("8.4.3", "8.5.0"):
-            with self.subTest(version=version):
-                gateway, transport = await harness.gateway(version, yaml_admission.captured(version, "OFF"))
-                health = gateway.health_snapshot()
-                self.assertEqual(health["admission_status"], "admitted_exact")
-                value = json.loads(await gateway.run_held_read_canary(
-                    upstream_tool_name=RETIRED,
-                    expected_compatibility_entry_id=health["selected_compatibility_entry_id"],
-                    arguments={},
-                ))
-                self.assertFalse(value["success"])
-                self.assertEqual(value["details"]["reason"], "tool_not_held_for_canary")
-                self.assertFalse(value["details"]["canary_evidence"]["dispatch_occurred"])
-                self.assertEqual(transport.sent, [])
-                self.assertNotIn(RETIRED, gateway.health_snapshot()["held_tools"])
+        version = yaml920.VERSION
+        with self.subTest(version=version):
+            gateway, transport = await harness.gateway(version, yaml920.stock_catalog())
+            health = gateway.health_snapshot()
+            self.assertEqual(health["admission_status"], "admitted_exact")
+            value = json.loads(await gateway.run_held_read_canary(
+                upstream_tool_name=RETIRED,
+                expected_compatibility_entry_id=health["selected_compatibility_entry_id"],
+                arguments={},
+            ))
+            self.assertFalse(value["success"])
+            self.assertEqual(value["details"]["reason"], "tool_not_held_for_canary")
+            self.assertFalse(value["details"]["canary_evidence"]["dispatch_occurred"])
+            self.assertEqual(transport.sent, [])
+            self.assertNotIn(RETIRED, gateway.health_snapshot()["held_tools"])
 
-    async def test_retired_read_is_withheld_on_the_9_1_0_capture(self):
+    async def test_retired_read_is_withheld_on_the_9_2_0_capture(self):
+        # HAMCP-437: re-pinned from the 9.1.0 catalog evidence to the exact
+        # 9.2.0 stock capture; 9.2.0 also uses per-used-tool admission.
         from test_readonly_upstream_gateway import initialize, policy_entry, registered_tools
         from ha_mcp_engineering.providers import upstream_read_gateway as gw
+        from support.ha_mcp_captures import capture
 
-        capture = json.loads((ROOT / "docs/evidence/hamcp319/phase1/catalogs/full-1.json").read_text())
-        tools = capture["tools"]
+        tools = capture("9.2.0")["tools"]
         by_name = {tool["name"]: tool for tool in tools}
         names = (RETIRED, "ha_get_state")
 
@@ -1521,12 +1543,12 @@ class GatewayRetirementTests(unittest.IsolatedAsyncioTestCase):
                     for name in names]
 
         reviewed = {
-            "version": "9.1.0", "reviewed_version": "9.1.0",
+            "version": "9.2.0", "reviewed_version": "9.2.0",
             "reviewed_descriptions": {name: by_name[name]["description"] for name in names},
             "reviewed_runtime_annotations": {name: by_name[name]["annotations"] for name in names},
             "reviewed_output_schemas": {name: by_name[name]["outputSchema"] for name in names},
         }
-        # HAMCP-319 (Codex F1 on PR #406): 9.1.0 runtime admission binds each
+        # HAMCP-319 (Codex F1 on PR #406): used-tool runtime admission binds each
         # used tool, not the catalog order, so this synthetic two-entry subset
         # policy reaches the retirement decision with no test-scoped lift. Its
         # observed order differs from the full-catalog evidence fingerprint,
@@ -1536,12 +1558,12 @@ class GatewayRetirementTests(unittest.IsolatedAsyncioTestCase):
         subset_order = [tool["name"] for tool in tools if tool["name"] in names]
         self.assertNotEqual(
             schema_fingerprint(subset_order),
-            gw.EXACT_RUNTIME_TOOL_ORDER_FINGERPRINTS["9.1.0"],
+            gw.EXACT_RUNTIME_TOOL_ORDER_FINGERPRINTS["9.2.0"],
         )
-        self.assertIn("9.1.0", gw.USED_TOOL_ADMISSION_RELEASES)
+        self.assertIn("9.2.0", gw.USED_TOOL_ADMISSION_RELEASES)
         for native in (False, True):
             with self.subTest(native=native):
-                server = _native_server("hamcp290-9.1.0") if native else None
+                server = _native_server("hamcp290-9.2.0") if native else None
                 gateway, server, transport = await initialize(entries(), tools, server=server, **reviewed)
                 self.assertEqual(gateway.health_snapshot()["quarantine_reason_counts"], {})
                 self.assert_retired(gateway, server, matched=2)

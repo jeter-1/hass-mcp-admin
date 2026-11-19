@@ -16,9 +16,17 @@ import tempfile
 import unittest
 from unittest.mock import AsyncMock, patch
 
+import importlib.util
+
 import yaml
-from tests.test_ha_mcp_850_candidate_lane import lane, ROOT
 from tests.support.support_window_matrix import rows as support_rows, tier_for, window_power_lanes
+
+# HAMCP-437: loaded here directly; the 8.5.0 candidate-lane module that
+# exported it is retired.
+ROOT = Path(__file__).resolve().parents[1]
+_spec = importlib.util.spec_from_file_location("assessment850", ROOT / "scripts/ha_mcp_850_container_acceptance.py")
+lane = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(lane)
 
 
 class PublicationCIContextTests(unittest.TestCase):

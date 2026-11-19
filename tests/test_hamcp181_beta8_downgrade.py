@@ -500,7 +500,7 @@ class CandidateCurrentReaderTests(unittest.IsolatedAsyncioTestCase):
 
         builders = {
             "fan_sent_verified": lambda root, transport: FanService(
-                root, FanProvider(transport, lambda: transport.authority),
+                root, FanProvider(transport, lambda *_: transport.authority),
                 FanCoreAuthority(typed_fan.Core()), now=typed_fan.Clock()),
             "power_sent_verified": lambda root, transport: PowerService(
                 root, PowerProvider(transport, lambda *args: transport.authority),
