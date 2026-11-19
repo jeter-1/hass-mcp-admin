@@ -732,7 +732,8 @@ allows them instead. Use this bounded default sequence:
    scope.
 4. Provider, write, workflow, cryptographic, persistence, and release-authority
    changes include a security section in that independent review. A second
-   specialized reviewer is exceptional rather than the default.
+   specialized reviewer is exceptional rather than the default, and does not
+   add to or replace the reviewer recorded on the register row.
 
 The implementer must not serve as its own independent reviewer. The
 default review budget is one full independent review and at most one delta
