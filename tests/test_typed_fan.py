@@ -27,8 +27,8 @@ from ha_mcp_engineering.tools.governance import get_execution_task
 
 
 def catalog():
-    raw = json.loads((ROOT/'docs/evidence/upstream-read-compatibility/ha-mcp-8.4.3.json').read_text())
-    review = json.loads((ROOT/"docs/evidence/upstream-read-compatibility/ha-mcp-8.4.3-contract-review.json").read_text())
+    raw = json.loads((ROOT/'docs/evidence/upstream-read-compatibility/ha-mcp-9.2.0.json').read_text())
+    review = json.loads((ROOT/"docs/evidence/upstream-read-compatibility/ha-mcp-9.2.0-contract-review.json").read_text())
     by_name = {item["name"]:item for item in raw["tools"]}
     raw["tools"] = tuple(by_name[name] for name in review["runtime_catalog"]["runtime_tool_order"])
     return raw
@@ -83,7 +83,7 @@ class Transport:
     def __init__(self):
         raw = catalog()
         self.catalog = McpReadCatalog(
-            protocol_version='2025-03-26', server_name='ha-mcp', server_version='8.4.3',
+            protocol_version='2025-03-26', server_name='ha-mcp', server_version='9.2.0',
             tools=raw['tools'], connection_latency_ms=0,
         )
         self.state = {'entity_id':'fan.synthetic', 'state':'off',
@@ -128,7 +128,7 @@ class FanTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
         self.clock=Clock();self.core=Core();self.transport=Transport()
-        self.provider=FanProvider(self.transport, lambda:self.transport.authority)
+        self.provider=FanProvider(self.transport, lambda *_:self.transport.authority)
         self.service=FanService(self.tmp.name,self.provider,FanCoreAuthority(self.core),now=self.clock, sleep=self.clock.sleep)
         self.addAsyncCleanup(self.service.close)
         self.telemetry,self.token=begin_request('synthetic-request')
@@ -442,15 +442,15 @@ class ProviderBoundaryTests(unittest.TestCase):
         from ha_mcp_engineering.providers.upstream_read_gateway import UpstreamReadGateway
         from tests.test_readonly_upstream_gateway import settings
         gateway=UpstreamReadGateway();gateway.configure(settings())
-        token=gateway.fan_provider_authority_token()
+        token=gateway.fan_provider_authority_token('9.2.0')
         self.assertEqual(len(token),64)
         gateway._readmission_selector=SimpleNamespace(select=lambda **kw:SimpleNamespace(
             authority=SimpleNamespace(decisions=[SimpleNamespace(status=SimpleNamespace(value='deny_only'))])))
-        with self.assertRaisesRegex(FanRefusal,'denied'):gateway.fan_provider_authority_token()
+        with self.assertRaisesRegex(FanRefusal,'denied'):gateway.fan_provider_authority_token('9.2.0')
     def test_identity_protocol_and_response_refusals(self):
-        provider=FanProvider(None,lambda:'test-authority')
+        provider=FanProvider(None,lambda *_:'test-authority')
         baseline=Transport().catalog
-        for changes in [{'server_name':'other'},{'server_version':'8.4.4'},
+        for changes in [{'server_name':'other'},{'server_version':'9.2.1'},
                         {'protocol_version':'2025-11-25'},{'catalog_complete':False}]:
             with self.subTest(changes=changes),self.assertRaises(FanRefusal):
                 provider.validate_catalog(replace(baseline,**changes))
