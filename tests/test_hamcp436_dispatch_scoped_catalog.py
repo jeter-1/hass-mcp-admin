@@ -264,7 +264,9 @@ class AdmissionHelperTests(unittest.TestCase):
         )
 
     def test_exact_catalog_keeps_the_previous_normalized_fingerprint(self):
-        for catalog in (catalog_920(), exact_catalog(BACKUP_VERSION), exact_catalog("8.0.0")):
+        # HAMCP-437: the 7.14.2 and 8.0.0 subcases (admission of retired
+        # releases) are retired; the exact 9.2.0 catalog carries the guard.
+        for catalog in (catalog_920(),):
             with self.subTest(version=catalog.server_version):
                 validation = self._validation(catalog)
                 self.assertTrue(validation.valid)

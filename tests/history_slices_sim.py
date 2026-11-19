@@ -22,6 +22,13 @@ timestamps with ``datetime.fromtimestamp(value, tz=UTC).isoformat()``
 (``_convert_timestamp``, 8.6.0 ``tools_history.py`` L54-69), i.e. UTC with a
 ``+00:00`` offset. The gateway wraps the upstream result in its success
 envelope. Synthetic data only.
+
+HAMCP-437: the reader's default release is ha-mcp 9.2.0, the one reviewed
+release. Its slice parser row (``_parse_9_2_0``, the 9.1 row) admits the same
+``{state, last_changed, last_updated}`` rows with any offset-aware time, so the
+UTC rendering above is kept: it is the 9.x rendering when Home Assistant's
+time zone is unavailable. The gateway tests drive the 9.x upstream shape
+(``test_hamcp319_history.upstream_9_1``), which localizes the times.
 """
 
 from __future__ import annotations
@@ -76,7 +83,8 @@ class Recorder:
                 collapsed.append(row)
         return collapsed
 
-    def upstream(self, entity_id: str, start_time: str, end_time: str, offset: int, limit: int) -> dict:
+    def upstream(self, entity_id: str, start_time: str, end_time: str, offset: int, limit: int,
+                 *, version: str = "9.2.0") -> dict:
         """The ha-mcp result inside the gateway success envelope."""
 
         self.calls.append({"entity_id": entity_id, "start_time": start_time, "end_time": end_time,
@@ -85,10 +93,10 @@ class Recorder:
         end_us = (datetime.fromisoformat(end_time) - EPOCH) // timedelta(microseconds=1)
         rows = self.query(start_us, end_us) if entity_id == self.entity_id else []
         page = rows[offset:offset + limit]
-        return history_result(entity_id, page, total=len(rows), offset=offset, limit=limit)
+        return history_result(entity_id, page, total=len(rows), offset=offset, limit=limit, version=version)
 
 
-def history_result(entity_id: str, page, *, total: int, offset: int, limit: int) -> dict:
+def history_result(entity_id: str, page, *, total: int, offset: int, limit: int, version: str = "9.2.0") -> dict:
     states = [{"state": state, "last_changed": render(ts), "last_updated": render(ts)} for ts, state in page]
     upstream = {
         "data": {
@@ -104,14 +112,14 @@ def history_result(entity_id: str, page, *, total: int, offset: int, limit: int)
     }
     return {"operation": "ha_get_history", "summary": "synthetic", "data": upstream, "warnings": [],
             "metadata": {"provider": "upstream_read_gateway", "upstream_tool": "ha_get_history",
-                         "upstream_version": "8.6.0", "completeness": "complete"},
+                         "upstream_version": version, "completeness": "complete"},
             "success": True}
 
 
 class FakeReader:
     """The ``HistoryReader`` interface over a synthetic recorder."""
 
-    def __init__(self, recorder: Recorder, *, version: str = "8.6.0", contract: str = "synthetic-contract"):
+    def __init__(self, recorder: Recorder, *, version: str = "9.2.0", contract: str = "synthetic-contract"):
         self.recorder = recorder
         self.version = version
         self.contract = contract
@@ -132,5 +140,5 @@ class FakeReader:
             self.recorder.calls.append({"failed": True})
             return {"success": False, "error_code": "PROVIDER_UNAVAILABLE",
                     "details": {"failure_category": "transport_timeout"}}
-        result = self.recorder.upstream(entity_id, start_time, end_time, offset, limit)
+        result = self.recorder.upstream(entity_id, start_time, end_time, offset, limit, version=self.version)
         return self.transform(result) if self.transform else result

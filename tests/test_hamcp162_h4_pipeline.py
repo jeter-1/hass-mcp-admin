@@ -1,7 +1,7 @@
 """HAMCP-162 H4: one screen for every string the reader can emit.
 
-- Codex's ten H4 reproductions (five key shapes at both supported ha-mcp
-  versions, through the real pinned MCP ClientSession), the 199/200/201
+- Codex's H4 reproductions (five key shapes at each supported ha-mcp
+  version, 9.2.0 since HAMCP-437, through the real pinned MCP ClientSession), the 199/200/201
   opaque-key boundary, nested/list and unlisted-marker-wrapped keys,
   lowercase PEM keys, and the encoded, uppercase and value controls.
 - A1 (architect review): header-less base64 bodies wrapped by newlines or
@@ -12,9 +12,10 @@
   path, with the shared sanitizer expanded into its segment and serialized
   rules and its known-secret rule) in every output position
   (``OUTPUT_POSITIONS``). Each case runs through ``screen`` directly and
-  end to end through the gateway: at 8.5.0 over a real MCP client session
-  to the Engineering server and a real ClientSession to a synthetic ha-mcp
-  peer, and at 8.4.3 through the in-memory transport. The needle never
+  end to end through the gateway at 9.2.0 (HAMCP-437; was 8.5.0 and
+  8.4.3): over a real MCP client session to the Engineering server and a
+  real ClientSession to a synthetic ha-mcp peer, and through the in-memory
+  transport. The needle never
   appears in the serialized response.
 - The coverage test (M1): every registered rule x every position is a
   matrix cell and every matrix cell names a registered rule; proof tests
@@ -419,7 +420,7 @@ async def sdk_gateway(version: str, settings=None):
     gateway = T.UpstreamReadGateway()
     gateway.configure(
         settings or known_settings(),
-        transport=T.upstream_read.McpReadGatewayTransport("", timeout_seconds=5,
+        transport=T.upstream_read.McpReadGatewayTransport(T.STRICT_URL, timeout_seconds=5,
                                                           client_version="synthetic"),
     )
     with patch.object(T.upstream_read, "streamablehttp_client", peer.connect):
@@ -498,7 +499,9 @@ class CodexReproductionTests(unittest.IsolatedAsyncioTestCase):
                         self.assertNotIn(needle, serialized(result))
                         self.assertTrue(absent(needle, serialized(result)))
                         count += 1
-        self.assertEqual(count, 10)
+        # HAMCP-437: five shapes per supported release; 9.2.0 is the only one
+        # (Codex's ten were the five shapes at 8.4.3 and 8.5.0).
+        self.assertEqual(count, 5 * len(T.VERSIONS))
 
     async def test_boundary_nested_unlisted_pem_and_controls(self):
         for version in T.VERSIONS:
@@ -753,15 +756,18 @@ class MatrixTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(cases, len(RULES) * len(y.OUTPUT_POSITIONS))
         return outcomes
 
-    async def test_matrix_over_real_mcp_sessions_8_5_0(self):
-        async with sdk_gateway("8.5.0") as (peer, run):
+    async def test_matrix_over_real_mcp_sessions_9_2_0(self):
+        # HAMCP-437: re-pinned from 8.5.0; the screen and the gateway path
+        # ship unchanged on 9.2.0.
+        async with sdk_gateway("9.2.0") as (peer, run):
             def set_reply(function):
                 peer.reply = function
             outcomes = await self._matrix(run, set_reply)
         self.assert_useful(outcomes)
 
-    async def test_matrix_through_the_gateway_8_4_3(self):
-        gateway, transport = await memory_gateway("8.4.3")
+    async def test_matrix_through_the_gateway_9_2_0(self):
+        # HAMCP-437: re-pinned from 8.4.3 (the in-memory transport path).
+        gateway, transport = await memory_gateway("9.2.0")
 
         async def run(arguments):
             return await T.call(gateway, TOOL, arguments)
@@ -957,7 +963,7 @@ def walk_strings(value, field, out):
 
 class UniformEntryTests(unittest.IsolatedAsyncioTestCase):
     async def test_every_emitted_string_is_a_screen_output(self):
-        gateway, transport = await memory_gateway("8.5.0")
+        gateway, transport = await memory_gateway("9.2.0")
         upstreams = [
             ("success", "sensor.value", {"a": 1, "name": "kitchen", "password": "!secret db_pass",
                                          "inc": "!include extra.yaml", "items": ["x", {"k": "y"}],

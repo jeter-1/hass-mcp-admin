@@ -77,7 +77,7 @@ class Peer920(h175.MemoryPeer):
     @asynccontextmanager
     async def connect(self, url, **kwargs):
         assert url == self.url, url
-        async with h175.MemoryPeer.connect(self, "", **kwargs) as streams:
+        async with h175.MemoryPeer.connect(self, url, **kwargs) as streams:
             yield streams
 
 

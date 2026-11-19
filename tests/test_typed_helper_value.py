@@ -230,7 +230,7 @@ UNAVAILABLE = {'available': False, 'failure_category': 'DependencyIndexUnavailab
 
 
 class HelperTests(unittest.IsolatedAsyncioTestCase):
-    version = '8.5.0'
+    version = '9.2.0'
 
     async def asyncSetUp(self):
         self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
@@ -933,14 +933,6 @@ class HelperTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.transport.writes, 0)
 
 
-class Helper843Tests(HelperTests):
-    version = '8.4.3'
-
-
-class Helper860Tests(HelperTests):
-    version = '8.6.0'
-
-
 class HelperBoundaryTests(unittest.TestCase):
     valid = dict(entity_id='input_boolean.synthetic', action='turn_on', operation_id='1789552800-' + 'a' * 32)
 
@@ -1058,15 +1050,15 @@ class HelperBoundaryTests(unittest.TestCase):
         from ha_mcp_engineering.providers.upstream_read_gateway import UpstreamReadGateway
         from tests.test_readonly_upstream_gateway import settings
         gateway = UpstreamReadGateway(); gateway.configure(settings())
-        for version in ['8.4.3', '8.5.0']:
+        for version in ['9.2.0']:
             self.assertNotEqual(gateway.helper_value_provider_authority_token(version),
                                 gateway.power_provider_authority_token(version))
         gateway._readmission_selector = SimpleNamespace(select=lambda **kw: SimpleNamespace(
             authority=SimpleNamespace(decisions=[SimpleNamespace(status=SimpleNamespace(value='deny_only'))])))
         with self.assertRaisesRegex(HelperRefusal, 'denied'):
-            gateway.helper_value_provider_authority_token('8.5.0')
+            gateway.helper_value_provider_authority_token('9.2.0')
         with self.assertRaises(HelperRefusal):
-            gateway.helper_value_provider_authority_token('8.5.1')
+            gateway.helper_value_provider_authority_token('9.2.1')
 
     def test_descriptor_routing_and_metadata_agree(self):
         from ha_mcp_engineering.tools.registry import get_registered_server
@@ -1147,7 +1139,7 @@ class HelperGatewayTests(unittest.TestCase):
         from ha_mcp_engineering.audit import AuditLogger
         with tempfile.TemporaryDirectory() as directory:
             settings = settings_for(directory); clock, core = Clock(), SignedCore()
-            transport = HelperTransport('8.5.0'); audit = AuditLogger(settings.audit_path, 'synthetic-audit-secret')
+            transport = HelperTransport('9.2.0'); audit = AuditLogger(settings.audit_path, 'synthetic-audit-secret')
             evidence = {'input_boolean.guest_mode': GUEST_MODE}
             async def reader(entity_id):
                 return deepcopy(evidence.get(entity_id, OPAQUE_ONLY))

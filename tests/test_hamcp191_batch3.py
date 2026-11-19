@@ -685,7 +685,8 @@ class DashboardArtifactOrderTests(unittest.IsolatedAsyncioTestCase):
         self.temp = tempfile.TemporaryDirectory()
         root = Path(self.temp.name)
         self.access = syn.needle("hamcp191 m2 access")
-        self.dashboard = dashboard_fixture._DashboardGateway()
+        # HAMCP-437: the reviewed ha-mcp 9.2.0 dashboard profile.
+        self.dashboard = dashboard_fixture._DashboardGateway(version="9.2.0")
         self.repository = ChangePlanRepository(root / "plans")
         self.service = ChangeGovernanceService(
             self.repository,

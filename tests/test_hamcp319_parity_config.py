@@ -33,7 +33,7 @@ from ha_mcp_engineering.providers.upstream_read_gateway import UpstreamReadGatew
 from ha_mcp_engineering.request_context import begin_request, end_request  # noqa: E402
 from ha_mcp_engineering.upstream_tool_policy import load_reviewed_upstream_release_registry  # noqa: E402
 from test_ha_mcp_production_readmission import _GatewayTransport, _settings  # noqa: E402
-from test_upstream_8_5_compatibility import capture  # noqa: E402
+from support.ha_mcp_captures import capture  # noqa: E402  (HAMCP-437)
 
 FIXTURES_91 = json.loads(
     (ROOT / "tests/fixtures/ha_mcp_9_1_0/config/responses.json").read_text("utf-8")

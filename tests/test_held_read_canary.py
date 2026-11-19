@@ -75,6 +75,10 @@ ENTRY_IDS = {
     "8.4.1": "ha-mcp-v8.4.1-7823b365",
 }
 ENTRY_ID = ENTRY_IDS["8.1.1"]
+# HAMCP-437: the current reviewed release, which survives the registry
+# reduction to 9.2.0 alone.
+CURRENT_VERSION = "9.2.0"
+CURRENT_ENTRY_ID = "ha-mcp-v9.2.0-9de5bf6c"
 CURRENT_TAXONOMY_FIXTURE = json.loads(
     TAXONOMY_FIXTURE_PATH.read_text(encoding="utf-8")
 )
@@ -87,9 +91,9 @@ RETIRED_COUNT = len(RETIRED_DELEGATED_READS)
 def captured_tools(version: str = "8.1.1") -> list[dict]:
     capture = CAPTURE_ROOT / f"ha-mcp-{version}.json"
     tools = deepcopy(json.loads(capture.read_text(encoding="utf-8"))["tools"])
-    if version == "8.4.1":
+    if version in {"8.4.1", CURRENT_VERSION}:
         review = json.loads(
-            (CAPTURE_ROOT / "ha-mcp-8.4.1-contract-review.json").read_text(
+            (CAPTURE_ROOT / f"ha-mcp-{version}-contract-review.json").read_text(
                 encoding="utf-8"
             )
         )
@@ -1095,8 +1099,9 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
 class _HeldCanaryNetwork:
     """Synthetic network boundary; gateway and transport remain production code."""
 
-    def __init__(self):
-        self.tools = captured_tools()
+    def __init__(self, version: str = "8.1.1"):
+        self.version = version
+        self.tools = captured_tools(version)
         self.catalog_entered = asyncio.Event()
         self.catalog_gate = asyncio.Event()
         self.catalog_gate.set()
@@ -1127,7 +1132,7 @@ class _HeldCanaryNetwork:
         return types.InitializeResult(
             protocolVersion="2025-03-26",
             capabilities=types.ServerCapabilities(),
-            serverInfo=types.Implementation(name="ha-mcp", version="8.1.1"),
+            serverInfo=types.Implementation(name="ha-mcp", version=self.version),
         )
 
     async def list_tools(self, _cursor=None):
@@ -1188,13 +1193,19 @@ class GatedSubmitWait:
 
 
 class HeldReadCanaryAuthorityTests(unittest.IsolatedAsyncioTestCase):
+    # HAMCP-437: the peer release the authority harness serves; a subclass
+    # re-pins both (test_rc6_held_canary_timing runs on 9.2.0).
+    canary_version = "8.1.1"
+    canary_entry_id = ENTRY_ID
+    canary_url = "http://upstream.invalid/synthetic-canary/mcp"
+
     async def harness(self, *, retained=False):
         runtime = CoreRuntime()
         runtime.configure(object(), source=_MutableSource(_core_2026_9_snapshot()))
         await runtime.reconcile_once("startup")
-        network = _HeldCanaryNetwork()
+        network = _HeldCanaryNetwork(self.canary_version)
         transport = McpReadGatewayTransport(
-            "http://upstream.invalid/synthetic-canary/mcp",
+            self.canary_url,
             timeout_seconds=3,
             client_version="synthetic-test",
             retain_session=retained,
@@ -1245,13 +1256,13 @@ class HeldReadCanaryAuthorityTests(unittest.IsolatedAsyncioTestCase):
         return SimpleNamespace(
             runtime=runtime, network=network, transport=transport, gateway=gateway,
             methods=methods, callbacks=callbacks, submitted=submitted,
-            catalog=FakeTransport(network.tools, version="8.1.1").catalog,
+            catalog=FakeTransport(network.tools, version=self.canary_version).catalog,
         )
 
     async def canary(self, harness):
         return decoded(await harness.gateway.run_held_read_canary(
             upstream_tool_name="ha_get_operation_status",
-            expected_compatibility_entry_id=ENTRY_ID,
+            expected_compatibility_entry_id=self.canary_entry_id,
             arguments={"operation_id": "synthetic-operation"},
         ))
 

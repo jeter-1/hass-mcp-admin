@@ -1,9 +1,10 @@
 """HAMCP-175: dependency-scoped power/fan admission and truthful outcomes.
 
 Converted from the PR #249 characterization. The 77 descriptors come from
-committed exact-8.5.0 evidence in runtime order; the three additional ones carry
-the reported live names with deliberately synthetic contracts. No endpoint,
-household target or filesystem path is supplied: the real pinned MCP
+committed exact-9.2.0 evidence in runtime order (HAMCP-437 re-pinned them from
+8.5.0; 9.2.0 also lists 77 tools); the three additional ones carry
+the reported live names with deliberately synthetic contracts. No real
+endpoint, household target or filesystem path is supplied: the real pinned MCP
 ClientSession runs over in-memory streams against a synthetic peer.
 """
 import asyncio
@@ -55,6 +56,9 @@ from ha_mcp_engineering.upstream_tool_policy import (
 )
 
 EXTRAS = ('ha_config_get_yaml', 'ha_list_files', 'ha_read_file')
+# HAMCP-437: 9.2.0 admits only the strict ``/catalog/full`` endpoint form; the
+# reserved .invalid host is never contacted (the external transport is replaced).
+URL = 'http://synthetic.invalid/base/catalog/full'
 SECRET = 'synthetic-private-exception-text'
 KINDS = {
     'power': (PowerProvider, PowerRefusal, PowerService, PowerCoreAuthority, POWER_OPERATIONS,
@@ -68,10 +72,10 @@ from ha_mcp_engineering.ha_core_readmission.routes import RETIRED_DELEGATED_READ
 RETIRED_COUNT = len(RETIRED_DELEGATED_READS)
 
 
-def catalog(extra_names=(), *, version='8.5.0', protocol='2025-03-26'):
+def catalog(extra_names=(), *, version='9.2.0', protocol='2025-03-26'):
     folder = ROOT / 'docs/evidence/upstream-read-compatibility'
-    raw = json.loads((folder / 'ha-mcp-8.5.0.json').read_text())
-    review = json.loads((folder / 'ha-mcp-8.5.0-contract-review.json').read_text())
+    raw = json.loads((folder / 'ha-mcp-9.2.0.json').read_text())
+    review = json.loads((folder / 'ha-mcp-9.2.0-contract-review.json').read_text())
     by_name = {tool['name']: tool for tool in raw['tools']}
     tools = [by_name[name] for name in review['runtime_catalog']['runtime_tool_order']]
     tools.extend({'name': name, 'description': 'Synthetic unreviewed tool; never called.',
@@ -113,7 +117,9 @@ class Transport(upstream_read.McpReadGatewayTransport):
 
 class MemoryPeer:
     """Synthetic MCP peer; actual ClientSession framing and task-group teardown."""
-    def __init__(self, tools, entity_id, *, version='8.5.0', protocol='2025-03-26'):
+    url = URL  # the endpoint the transport must present (subclasses may rebind)
+
+    def __init__(self, tools, entity_id, *, version='9.2.0', protocol='2025-03-26'):
         self.tools, self.entity_id = tools, entity_id
         self.version, self.protocol = version, protocol
         self.events, self.calls = [], []
@@ -181,7 +187,7 @@ class MemoryPeer:
 
     @asynccontextmanager
     async def connect(self, unused, **kwargs):
-        assert unused == ''  # no endpoint supplied; external transport is replaced
+        assert unused == self.url  # synthetic only; the external transport is replaced
         connection = {'id': 'synthetic-session-' + uuid.uuid4().hex}
         self.connections.append(connection)
         send_to_client, read = anyio.create_memory_object_stream(10)
@@ -221,7 +227,7 @@ class Harness(unittest.IsolatedAsyncioTestCase):
     def operation(self, kind='power', extra_names=(), *, action='turn_off', tools=None):
         provider_type, _, service_type, core_type, _, _, entity, binding, _ = KINDS[kind]
         peer = MemoryPeer(tools if tools is not None else catalog(extra_names).tools, entity)
-        transport = Transport('', timeout_seconds=3, client_version='synthetic')
+        transport = Transport(URL, timeout_seconds=3, client_version='synthetic')
         provider = provider_type(transport, lambda *args: self.authority)
         service = service_type(self.root / uuid.uuid4().hex, provider, core_type(self.core),
                                now=lambda: self.clock)
@@ -338,7 +344,7 @@ class DependencyScopedAdmission(Harness):
         for kind in KINDS:
             provider_type, refusal = KINDS[kind][:2]
             peer = MemoryPeer(catalog(EXTRAS).tools, KINDS[kind][6])
-            provider = provider_type(Transport('', timeout_seconds=3, client_version='synthetic'),
+            provider = provider_type(Transport(URL, timeout_seconds=3, client_version='synthetic'),
                                      lambda *args: self.authority)
             before = self.telemetry.upstream_request_count
             for name in EXTRAS:
@@ -354,23 +360,23 @@ class DependencyScopedAdmission(Harness):
         from ha_mcp_engineering import capabilities
         from ha_mcp_engineering.providers.upstream_read_gateway import UpstreamReadGateway
         from test_ha_mcp_production_readmission import _settings
-        from test_upstream_8_5_compatibility import GatewayTransport
+        from support.ha_mcp_captures import ReceiptTransport920  # HAMCP-437
         for name in ('_DYNAMIC_UPSTREAM_CAPABILITIES', '_UPSTREAM_READ_GATEWAY_SUMMARY'):
             self.enterContext(patch.object(capabilities, name, deepcopy(getattr(capabilities, name))))
         gateway = UpstreamReadGateway()
         gateway.configure(replace(_settings('synthetic-no-key'), ha_mcp_release_registry_enabled=False),
-                          transport=GatewayTransport(catalog(EXTRAS).tools))
+                          transport=ReceiptTransport920(catalog(EXTRAS).tools))
         await gateway.initialize(FastMCP('synthetic-investigation'))
         tools = gateway._registered_tool_registry.snapshot()
-        # 25 base reads plus the three exact-bound 8.5.0 platform reads (HAMCP-129).
+        # 25 base reads plus the three exact-bound platform reads (HAMCP-129).
         self.assertEqual(len(tools), 28 - RETIRED_COUNT)  # HAMCP-290
         self.assertLessEqual({'ha_get_system_health', 'ha_get_app', 'ha_get_integration'}, set(tools))
         self.assertFalse(set(EXTRAS).intersection(tools))
         self.assertNotIn('ha_call_service', tools)
-        self.assertIsInstance(gateway.power_provider_authority_token('8.5.0'), str)
+        self.assertIsInstance(gateway.power_provider_authority_token('9.2.0'), str)
 
     async def test_whole_catalog_validator_is_unchanged_and_no_longer_gates_power_or_fan(self):
-        release = load_reviewed_upstream_release_registry().by_version['8.5.0']
+        release = load_reviewed_upstream_release_registry().by_version['9.2.0']
         for extras in ((), EXTRAS, (EXTRAS[0],)):
             c = catalog(extras)
             result = validate_reviewed_release_catalog(release,
@@ -380,8 +386,8 @@ class DependencyScopedAdmission(Harness):
             self.assertEqual(result.additional_tool_count, len(extras))
             for provider_type, _ in (KINDS['power'][:2], KINDS['fan'][:2]):
                 version, contract, authority = provider_type(None, lambda *a: 'a').validate_catalog(c)
-                self.assertEqual((version, authority), ('8.5.0', 'a'))
-                self.assertIn(contract, provider_type.releases['8.5.0'])
+                self.assertEqual((version, authority), ('9.2.0', 'a'))
+                self.assertIn(contract, provider_type.releases['9.2.0'])
 
 
 class AdmissionRefusals(Harness):
@@ -431,7 +437,7 @@ class AdmissionRefusals(Harness):
 
     def test_version_protocol_hold_and_revocation_refuse(self):
         registry = load_reviewed_upstream_release_registry()
-        release = registry.by_version['8.5.0']
+        release = registry.by_version['9.2.0']
         held = replace(registry, releases=tuple(
             replace(item, provider_dispositions=(('read_gateway', 'held'),)) if item is release else item
             for item in registry.releases))
@@ -441,8 +447,13 @@ class AdmissionRefusals(Harness):
             provider_type, refusal = KINDS[kind][:2]
             with self.subTest(kind=kind, change='unreviewed version'):
                 self.assert_refuses(provider_type, refusal, catalog(version='8.9.9'), 'provider_identity_unavailable')
-            with self.subTest(kind=kind, change='other reviewed version'):
-                self.assert_refuses(provider_type, refusal, catalog(version='8.4.3'), 'provider_contract_mismatch')
+            with self.subTest(kind=kind, change='other version'):
+                # HAMCP-437: while the 9.1.2 row is reviewed, the 9.2.0 catalog
+                # does not match its contract; once I2a-D removes the row, the
+                # version is unreviewed. Both refuse before any dispatch.
+                other = ('provider_contract_mismatch' if '9.1.2' in registry.by_version
+                         else 'provider_identity_unavailable')
+                self.assert_refuses(provider_type, refusal, catalog(version='9.1.2'), other)
             with self.subTest(kind=kind, change='protocol'):
                 self.assert_refuses(provider_type, refusal, catalog(protocol='2024-11-05'), 'provider_identity_unavailable')
             with self.subTest(kind=kind, change='incomplete catalog'):
@@ -457,9 +468,9 @@ class AdmissionRefusals(Harness):
                     self.assert_refuses(provider_type, refusal, catalog(EXTRAS), 'provider_identity_unavailable')
 
     def test_dependency_helper_preserves_release_identity_and_contract_components(self):
-        release = load_reviewed_upstream_release_registry().by_version['8.5.0']
+        release = load_reviewed_upstream_release_registry().by_version['9.2.0']
         c = catalog(EXTRAS)
-        def check(rel=release, *, name='ha-mcp', version='8.5.0', protocol='2025-03-26',
+        def check(rel=release, *, name='ha-mcp', version='9.2.0', protocol='2025-03-26',
                   tools=c.tools, required=REQUIRED_TOOLS):
             return validate_reviewed_release_dependencies(rel, observed_server_name=name,
                 observed_upstream_version=version, observed_protocol_version=protocol,
@@ -467,7 +478,7 @@ class AdmissionRefusals(Harness):
         self.assertTrue(check())
         self.assertFalse(check(replace(release, revoked=True)))
         self.assertFalse(check(name='other'))
-        self.assertFalse(check(version='8.4.3'))
+        self.assertFalse(check(version='9.1.2'))
         self.assertFalse(check(protocol='2024-11-05'))
         self.assertFalse(check(required=()))
         self.assertFalse(check(required=('ha_get_state', 'ha_get_state')))
@@ -544,7 +555,7 @@ class AdmissionRefusals(Harness):
     async def test_session_change_after_discovery_keeps_transport_semantics(self):
         peer = MemoryPeer(catalog(EXTRAS).tools, 'switch.synthetic')
         peer.rotate_on_list = True
-        provider = PowerProvider(Transport('', timeout_seconds=3, client_version='synthetic'),
+        provider = PowerProvider(Transport(URL, timeout_seconds=3, client_version='synthetic'),
                                  lambda *a: self.authority)
         with patch.object(upstream_read, 'streamablehttp_client', peer.connect):
             with self.assertRaises(DashboardTransportError) as caught:
@@ -556,7 +567,7 @@ class AdmissionRefusals(Harness):
 
 class TruthfulRefusal(Harness):
     def provider(self, kind, peer):
-        return KINDS[kind][0](Transport('', timeout_seconds=3, client_version='synthetic'),
+        return KINDS[kind][0](Transport(URL, timeout_seconds=3, client_version='synthetic'),
                               lambda *a: self.authority)
 
     async def test_grouped_validator_refusal_keeps_its_bounded_category(self):
@@ -782,7 +793,7 @@ class TruthfulRefusal(Harness):
 class ExchangeTelemetry(Harness):
     async def test_refused_discovery_counts_one_finished_exchange(self):
         peer = MemoryPeer(drifted(catalog().tools, 'ha_call_service', 'description'), 'switch.synthetic')
-        provider = PowerProvider(Transport('', timeout_seconds=3, client_version='synthetic'), lambda *a: 'a')
+        provider = PowerProvider(Transport(URL, timeout_seconds=3, client_version='synthetic'), lambda *a: 'a')
         with patch.object(upstream_read, 'streamablehttp_client', peer.connect):
             with self.assertRaises(PowerRefusal):
                 await provider.state('switch.synthetic', lambda: None)
@@ -793,7 +804,7 @@ class ExchangeTelemetry(Harness):
 
     async def test_positive_read_counts_one_exchange_and_one_action_fact(self):
         peer = MemoryPeer(catalog(EXTRAS).tools, 'switch.synthetic')
-        provider = PowerProvider(Transport('', timeout_seconds=3, client_version='synthetic'), lambda *a: 'a')
+        provider = PowerProvider(Transport(URL, timeout_seconds=3, client_version='synthetic'), lambda *a: 'a')
         with patch.object(upstream_read, 'streamablehttp_client', peer.connect):
             state = await provider.state('switch.synthetic', lambda: None)
         self.assertEqual(state['state'], 'on')
@@ -805,7 +816,7 @@ class ExchangeTelemetry(Harness):
     async def test_timeout_finishes_the_exchange(self):
         peer = MemoryPeer(catalog(EXTRAS).tools, 'switch.synthetic')
         peer.hang.add('ha_get_state')
-        transport = Transport('', timeout_seconds=3, client_version='synthetic')
+        transport = Transport(URL, timeout_seconds=3, client_version='synthetic')
         transport.budget = 1
         provider = PowerProvider(transport, lambda *a: 'a')
         started = time.perf_counter()

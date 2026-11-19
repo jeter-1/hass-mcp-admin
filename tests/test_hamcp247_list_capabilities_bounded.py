@@ -9,14 +9,14 @@ section by a filter, and returns one full section on request.
 
 The committed catalog fixture is a 113-tool synthetic, live-shaped catalog:
 the real UpstreamReadGateway is driven offline with the captured stock
-ha-mcp 8.6.0 descriptors and the signed release registry disabled (86 native
+ha-mcp 9.2.0 descriptors (8.6.0 before HAMCP-437) and the signed release registry disabled (86 native
 + 27 dynamic = 113 registered; live had 106 before HAMCP-253 added one native
 read, HAMCP-311 added control_helper and HAMCP-229 added one read; HAMCP-290
 added the native get_marketplace_inventory and retired the delegated
 ha_get_hacs_info; HAMCP-134 added the native get_security_metadata; HAMCP-297 added
 control_device_configuration; HAMCP-231 added the native get_thread_matter_topology).  The
-"108-tool" cases (now 114) use the exact ha-mcp 8.5.0
-component capture with the optional ``ha_config_get_yaml`` admitted (86 + 28 =
+"108-tool" cases (now 114) use the exact ha-mcp 9.2.0
+filesystem-on capture (the 8.5.0 component capture before HAMCP-437) with the optional ``ha_config_get_yaml`` admitted (86 + 28 =
 114 since HAMCP-229, HAMCP-290, HAMCP-134, HAMCP-297 and HAMCP-231), as the round-1 review did; neither is a claim about
 the household's current provider version.  Every call shape is rendered by
 the real tool and envelope, at that size and with every section grown by
@@ -60,8 +60,8 @@ from ha_mcp_engineering.providers.upstream_read_gateway import (  # noqa: E402
 )
 from ha_mcp_engineering.tools import compatibility  # noqa: E402
 from test_ha_mcp_production_readmission import _GatewayTransport, _settings  # noqa: E402
-from test_hamcp162_yaml_admission import captured  # noqa: E402
-from test_upstream_8_5_compatibility import capture  # noqa: E402
+from support.ha_mcp_920_receipts import yaml_catalog  # noqa: E402  (HAMCP-437)
+from support.ha_mcp_captures import capture  # noqa: E402  (HAMCP-437)
 
 LIMIT = compatibility.SETTINGS.response_size_limit
 STATUSES = ("native", "transitional", "delegated", "deprecated", "beta_native")
@@ -149,10 +149,10 @@ def _call_at(limit, **arguments):
 
 
 class _LiveShapedCatalog(unittest.TestCase):
-    # The 113-tool synthetic fixture (112 before HAMCP-231) (stock ha-mcp 8.6.0 descriptors).
+    # The 113-tool synthetic fixture (112 before HAMCP-231) (stock ha-mcp 9.2.0 descriptors; 8.6.0 before HAMCP-437).
     @staticmethod
     def upstream_capture():
-        return capture("8.6.0")["tools"], "8.6.0"
+        return capture("9.2.0")["tools"], "9.2.0"
 
     @classmethod
     def setUpClass(cls):
@@ -1051,11 +1051,11 @@ class SizeGuardTests(_LiveShapedCatalog):
 
 
 class _Catalog108(_LiveShapedCatalog):
-    """The exact ha-mcp 8.5.0 component capture: 86 native + 28 upstream (114; 113 before HAMCP-231, 108 before HAMCP-253, 109 before HAMCP-311, 110 before HAMCP-229; HAMCP-290 adds the native get_marketplace_inventory and retires the delegated ha_get_hacs_info; HAMCP-134 adds the native get_security_metadata; HAMCP-297 adds control_device_configuration)."""
+    """The exact ha-mcp 9.2.0 filesystem-on capture (8.5.0 component capture before HAMCP-437): 86 native + 28 upstream (114; 113 before HAMCP-231, 108 before HAMCP-253, 109 before HAMCP-311, 110 before HAMCP-229; HAMCP-290 adds the native get_marketplace_inventory and retires the delegated ha_get_hacs_info; HAMCP-134 adds the native get_security_metadata; HAMCP-297 adds control_device_configuration)."""
 
     @staticmethod
     def upstream_capture():
-        return captured("8.5.0"), "8.5.0"
+        return yaml_catalog("9.2.0"), "9.2.0"
 
 
 M1_ARGUMENTS = {"detail_section": "dynamic_upstream", "status": "delegated",
@@ -1069,7 +1069,8 @@ class ReviewReproductionTests(_Catalog108, _Crawler):
         catalog = build_capability_catalog()
         self.assertEqual(catalog["registered_count"], 114)  # HAMCP-229 + HAMCP-290 + HAMCP-134 + HAMCP-297 + HAMCP-231: 86 + 28
         self.assertEqual(catalog["dynamic_upstream_count"], 28)  # HAMCP-290: the delegated ha_get_hacs_info is retired
-        self.assertEqual(len(catalog["upstream_read_gateway"]["blocked_tools"]), 49)
+        # HAMCP-437: 50 on 9.2.0, whose policy blocks the retired ha_get_hacs_info as unsupported.
+        self.assertEqual(len(catalog["upstream_read_gateway"]["blocked_tools"]), 50)
 
     def test_r1_m1_a_terminal_class_is_crawled_to_completion(self):
         source = build_capability_catalog(
@@ -1091,11 +1092,11 @@ class ReviewReproductionTests(_Catalog108, _Crawler):
         source = build_capability_catalog()["upstream_read_gateway"]
         responses = self.crawl({"detail_section": "upstream_read_gateway"}, 16_000)
         first = responses[0][1]["upstream_read_gateway"]
-        self.assertEqual(first["detail_omitted_fields"], {"blocked_tools": 49})
+        self.assertEqual(first["detail_omitted_fields"], {"blocked_tools": 50})  # HAMCP-437
         for _arguments, data in responses[1:]:
             self.assertEqual(data["upstream_read_gateway"]["field"], "blocked_tools")
         rebuilt = self.gateway_rows(responses)
-        self.assertEqual(len(rebuilt["blocked_tools"]), 49)
+        self.assertEqual(len(rebuilt["blocked_tools"]), 50)  # HAMCP-437
         self.assert_same(rebuilt["blocked_tools"], source["blocked_tools"])
         for row in rebuilt["blocked_tools"]:
             self.assertIn("classification", row)

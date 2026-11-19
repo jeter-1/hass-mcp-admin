@@ -9,22 +9,23 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "hass_mcp_engineering_beta"))
 from ha_mcp_engineering.request_context import begin_request, end_request, current_telemetry
 from tests import test_held_read_canary as held
+from tests.support.ha_mcp_920_receipts import STRICT_CANARY_URL
 
 
 class ReviewedPairingTimingTests(unittest.IsolatedAsyncioTestCase):
-    async def test_missing_operation_counts_one_attempt_for_exact_843(self):
-        tools = held.captured_tools("8.4.3")
-        review = json.loads((held.CAPTURE_ROOT / "ha-mcp-8.4.3-contract-review.json").read_text())
-        by_name = {item["name"]: item for item in tools}
-        tools = [by_name[name] for name in review["runtime_catalog"]["runtime_tool_order"]]
+    # HAMCP-437: re-pinned from the retired 8.4.3 pairing to the reviewed 9.2.0
+    # release, where ha_get_operation_status is still held for canary.
+    async def test_missing_operation_counts_one_attempt_for_exact_920(self):
+        # captured_tools orders the 9.2.0 capture by its reviewed runtime order.
+        tools = held.captured_tools(held.CURRENT_VERSION)
         gateway, transport, _ = await held.HeldReadCanaryTests.gateway(
-            self, version="8.4.3", tools=tools, result=held.error_result()
+            self, version=held.CURRENT_VERSION, tools=tools, result=held.error_result()
         )
-        telemetry, token = begin_request("synthetic-canary-timing-843")
+        telemetry, token = begin_request("synthetic-canary-timing-920")
         try:
             response = json.loads(await gateway.run_held_read_canary(
                 upstream_tool_name="ha_get_operation_status",
-                expected_compatibility_entry_id="ha-mcp-v8.4.3-d5cea47a",
+                expected_compatibility_entry_id=held.CURRENT_ENTRY_ID,
                 arguments={"operation_id": "synthetic-missing"},
             ))
             self.assertEqual(response["error_code"], "resource_not_found")
@@ -38,6 +39,12 @@ class ReviewedPairingTimingTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ProductionTransportTimingTests(unittest.IsolatedAsyncioTestCase):
+    # HAMCP-437: the production-transport harness serves the reviewed 9.2.0
+    # peer instead of the retired 8.1.1 default.
+    canary_version = held.CURRENT_VERSION
+    canary_entry_id = held.CURRENT_ENTRY_ID
+    # 9.2.0 is admitted only through the strict full-catalog endpoint form.
+    canary_url = STRICT_CANARY_URL
     harness = held.HeldReadCanaryAuthorityTests.harness
     canary = held.HeldReadCanaryAuthorityTests.canary
     cancel = held.HeldReadCanaryAuthorityTests.cancel

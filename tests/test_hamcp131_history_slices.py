@@ -1,8 +1,13 @@
 """HAMCP-131 continuable history over the sanitized delegated route. Offline.
 
 ``history_slices_sim`` follows the pinned Home Assistant 2026.10.1 recorder
-and ha-mcp 8.5.0/8.6.0 ``ha_get_history`` semantics (see its docstring and
+and ha-mcp ``ha_get_history`` semantics (see its docstring and
 ``docs/HAMCP_131_INCIDENT_LOGS.md``). Synthetic data and credentials only.
+
+HAMCP-437: the reader and the gateway run ha-mcp 9.2.0, the one reviewed
+release. The gateway tests use the committed 9.2.0 catalog capture and the
+9.x history shape from ``test_hamcp319_history``; the 8.5.0/8.6.0 admission
+subcases are retired with those releases.
 """
 
 from __future__ import annotations
@@ -176,8 +181,8 @@ class HistorySliceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_fixture_matches_pinned_start_state_and_utc_rendering(self):
         # Review L2: HA 2026.10.1 reports the start state at the requested
-        # start (models/state.py L56, L157) and ha-mcp 8.6.0 renders the
-        # epoch timestamps in UTC (tools_history.py L54-69).
+        # start (models/state.py L56, L157); the reader renders the epoch
+        # timestamps in UTC (see ``history_slices_sim``).
         self.recorder.add(S0 - 2 * 3600 * 10**6, "heat")
         result = self.recorder.upstream(ENTITY, "2026-10-18T23:59:59.999000+00:00",
                                          "2026-10-19T06:00:00+00:00", 0, 10)
@@ -917,17 +922,20 @@ class HistorySliceToolTests(unittest.IsolatedAsyncioTestCase):
 
 try:
     import test_hamcp162_yaml_admission as yaml_admission  # noqa: E402
-    import test_upstream_8_6_compatibility as compatibility_860  # noqa: E402
+    import test_hamcp319_history as h319  # noqa: E402  (HAMCP-437)
+    from support.ha_mcp_captures import capture  # noqa: E402  (HAMCP-437)
 except ImportError:  # pragma: no cover - the modules are in this repository
-    yaml_admission = compatibility_860 = None
+    yaml_admission = h319 = capture = None
+
+# HAMCP-437: the one reviewed release the gateway tests admit.
+CURRENT = "9.2.0"
 
 
 class HistoryReaderGatewayTests(yaml_admission.Harness):
     """The gateway's fixed ``ha_get_history`` route (``history_reader``)."""
 
     async def history_gateway(self, version, recorder):
-        tools = yaml_admission.captured("8.5.0") if version == "8.5.0" else compatibility_860.capture()["tools"]
-        gateway, transport = await self.gateway(version, tools=tools)
+        gateway, transport = await self.gateway(version, tools=capture(version)["tools"])
         transport.history = recorder
         original = transport.execute_read
 
@@ -941,19 +949,18 @@ class HistoryReaderGatewayTests(yaml_admission.Harness):
                 if inspect.isawaitable(result):
                     await result
             transport.sent.append((tool_name, dict(arguments)))
-            upstream = recorder.upstream(arguments["entity_ids"], arguments["start_time"],
-                                         arguments["end_time"], arguments["offset"], arguments["limit"])
+            upstream = h319.upstream_9_1(recorder, arguments)
             return yaml_admission.McpReadResult(
                 protocol_version=transport.catalog.protocol_version,
                 server_name=transport.catalog.server_name, server_version=transport.catalog.server_version,
-                call_result=yaml_admission.ok(upstream["data"]),
+                call_result=yaml_admission.ok(upstream),
                 connection_latency_ms=1.0, tool_call_latency_ms=1.0,
             )
         transport.execute_read = execute_read
         return gateway, transport
 
     async def test_admitted_reader_sends_only_the_fixed_argument_shape(self):
-        for version in ("8.5.0", "8.6.0"):
+        for version in (CURRENT,):
             with self.subTest(version=version):
                 recorder = Recorder()
                 recorder.add(S0 - 5, "heat")
@@ -985,7 +992,8 @@ class HistoryReaderGatewayTests(yaml_admission.Harness):
                 for arguments in sent:
                     self.assertEqual(set(arguments), {"entity_ids", "start_time", "end_time", "limit", "offset",
                                                       "order", "source", "minimal_response",
-                                                      "significant_changes_only"})
+                                                      "significant_changes_only"} | set(h319.PINS))
+                    self.assertEqual({k: arguments[k] for k in h319.PINS}, h319.PINS)
                     self.assertEqual((arguments["entity_ids"], arguments["order"], arguments["source"],
                                       arguments["minimal_response"]), (ENTITY, "asc", "history", True))
                 events = [call.args[0] for call in audit.write.call_args_list]
@@ -1007,7 +1015,7 @@ class HistoryReaderGatewayTests(yaml_admission.Harness):
     async def continuity_case(self, recorder, change, *, limit):
         """Read one page, apply ``change`` to the recorder, continue once."""
 
-        gateway, transport = await self.history_gateway("8.6.0", recorder)
+        gateway, transport = await self.history_gateway(CURRENT, recorder)
         service = HistorySliceService(lambda: gateway.history_reader(audit=Mock()), known_secrets=(HA_TOKEN,))
         first = await self.gateway_read(service, limit=limit)
         self.assertTrue(first["has_more"])
@@ -1067,7 +1075,7 @@ class HistoryReaderGatewayTests(yaml_admission.Harness):
         self.five_states(recorder)
         recorder.add(at("07:00:00"), "heat")
         recorder.add(at("08:00:00"), "idle")
-        gateway, _ = await self.history_gateway("8.6.0", recorder)
+        gateway, _ = await self.history_gateway(CURRENT, recorder)
         service = HistorySliceService(lambda: gateway.history_reader(audit=Mock()), known_secrets=(HA_TOKEN,))
         pages = [await self.gateway_read(service, limit=2)]
         while pages[-1]["next_cursor"]:
@@ -1080,7 +1088,7 @@ class HistoryReaderGatewayTests(yaml_admission.Harness):
         # 01:00 and 02:00; after two more pages 01:00 changes in place.
         recorder = Recorder()
         self.five_states(recorder)
-        gateway, transport = await self.history_gateway("8.6.0", recorder)
+        gateway, transport = await self.history_gateway(CURRENT, recorder)
         service = HistorySliceService(lambda: gateway.history_reader(audit=Mock()), known_secrets=(HA_TOKEN,))
         pages = [await self.gateway_read(service, limit=2)]
         for _ in range(2):
@@ -1097,7 +1105,7 @@ class HistoryReaderGatewayTests(yaml_admission.Harness):
         self.assertEqual([(a["offset"], a["limit"]) for a in verify], [(0, 5)])
 
     async def test_reader_refuses_unvalidated_arguments_with_zero_dispatch(self):
-        gateway, transport = await self.history_gateway("8.5.0", Recorder())
+        gateway, transport = await self.history_gateway(CURRENT, Recorder())
         reader = gateway.history_reader()
         good = c.format_us(S0)
         for arguments in (("../x", good, good, 0, 1), (ENTITY, "24h", good, 0, 1),
@@ -1110,7 +1118,7 @@ class HistoryReaderGatewayTests(yaml_admission.Harness):
         self.assertEqual([name for name, _ in transport.sent if name == "ha_get_history"], [])
 
     async def test_parent_authority_refusal_dispatches_nothing(self):
-        gateway, transport = await self.history_gateway("8.5.0", Recorder())
+        gateway, transport = await self.history_gateway(CURRENT, Recorder())
         reader = gateway.history_reader()
         telemetry, token = begin_request()
         telemetry.core_dispatch_authorizer = lambda: False
@@ -1124,10 +1132,10 @@ class HistoryReaderGatewayTests(yaml_admission.Harness):
     async def test_no_route_or_drift_supplies_no_reader(self):
         from ha_mcp_engineering.providers.upstream_read_gateway import UpstreamReadGateway
         self.assertIsNone(UpstreamReadGateway().history_reader())
-        tools = [tool for tool in yaml_admission.captured("8.5.0") if tool["name"] != "ha_get_history"]
-        gateway, transport = await self.gateway("8.5.0", tools=tools)
+        tools = [tool for tool in capture(CURRENT)["tools"] if tool["name"] != "ha_get_history"]
+        gateway, transport = await self.gateway(CURRENT, tools=tools)
         self.assertIsNone(gateway.history_reader())
-        gateway, transport = await self.history_gateway("8.5.0", Recorder())
+        gateway, transport = await self.history_gateway(CURRENT, Recorder())
         reader = gateway.history_reader()
         transport.set_tools(tools)
         from mcp.server.fastmcp import FastMCP
@@ -1141,7 +1149,7 @@ class HistoryReaderGatewayTests(yaml_admission.Harness):
         recorder = Recorder()
         recorder.add(S0 - 5, "heat")
         recorder.add(at("01:00:00"), "token=" + HA_TOKEN)
-        gateway, transport = await self.history_gateway("8.5.0", recorder)
+        gateway, transport = await self.history_gateway(CURRENT, recorder)
         service = HistorySliceService(lambda: gateway.history_reader(), known_secrets=(HA_TOKEN, ACCESS_SECRET))
         telemetry, token = begin_request()
         telemetry.caller_id = "synthetic_authenticated_caller"

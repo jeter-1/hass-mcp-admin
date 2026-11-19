@@ -84,7 +84,9 @@ class _ReadbackGateway(dashboard_suite._DashboardGateway):
     """Dashboard fake whose post-write readbacks can be unavailable."""
 
     def __init__(self) -> None:
-        super().__init__()
+        # HAMCP-437: readback recovery is exercised on the reviewed 9.2.0
+        # dashboard release (the inherited fake defaults to retired 8.4.1).
+        super().__init__(version="9.2.0")
         self.fail_reads_after_write = 0
         self.post_write_reads = 0
 

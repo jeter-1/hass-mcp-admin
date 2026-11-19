@@ -23,7 +23,11 @@ from ha_mcp_engineering.signed_registry import canonical_json, RegistryValidatio
 from ha_mcp_engineering.signed_registry.canonical import sha256_digest
 from core_registry_fixtures import CoreSigner, ProjectedCoreSource, core_entry, core_revocation, NOW
 from support import core_bindings
+from support import ha_mcp_920_receipts
 from support.core_gate import reconcile_through_gate
+
+STATE_RECEIPT = "r19-state"
+STATE_ARGUMENTS = ha_mcp_920_receipts.receipt(STATE_RECEIPT)[0]
 
 
 class CoreContinuityTests(unittest.IsolatedAsyncioTestCase):
@@ -329,9 +333,9 @@ class CoreContinuityTests(unittest.IsolatedAsyncioTestCase):
     async def test_future_device_routes_keep_exact_corrected_upstream_adapter(self):
         runtime, _ = await self.runtime()
         requirement = ("core.delegated_device_effective_area",)
-        self.assertFalse(runtime.delegated_tool_available("ha_get_device", requirement, adapter_version="8.4.1"))
-        self.assertIsNone(runtime.acquire(requirement, delegated_tool="ha_get_entity", delegated_adapter_version="8.4.1"))
-        lease = runtime.acquire(requirement, delegated_tool="ha_get_device", delegated_adapter_version="8.4.3")
+        self.assertFalse(runtime.delegated_tool_available("ha_get_device", requirement, adapter_version="9.2.1"))
+        self.assertIsNone(runtime.acquire(requirement, delegated_tool="ha_get_entity", delegated_adapter_version="9.2.1"))
+        lease = runtime.acquire(requirement, delegated_tool="ha_get_device", delegated_adapter_version="9.2.0")
         self.assertIsNotNone(lease)
         commits = runtime.consume(lease)
         self.assertTrue(runtime.revalidate(lease, commits))
@@ -535,11 +539,14 @@ class CoreContinuityTests(unittest.IsolatedAsyncioTestCase):
         from tests.test_ha_core_2026_9_integration import FakeTransport, settings, _capture_for_release
 
         releases = load_reviewed_upstream_release_registry()
-        release = releases.by_version["8.4.3"]
+        release = releases.by_version["9.2.0"]
         capture = _capture_for_release(release)
         review = json.loads((ROOT / release.artifact_evidence_resource).read_text())
         descriptors = {item["name"]: item for item in capture["tools"]}
-        transport = FakeTransport([descriptors[name] for name in review["runtime_catalog"]["runtime_tool_order"]], version="8.4.3")
+        # 9.2.0 rebuilds reads from its reviewed output-key contract, so the
+        # read result is the committed HAMCP-371 ha_get_state receipt.
+        transport = FakeTransport([descriptors[name] for name in review["runtime_catalog"]["runtime_tool_order"]], version="9.2.0",
+                                  result=ha_mcp_920_receipts.result(STATE_RECEIPT))
         gateway = UpstreamReadGateway()
         gateway.configure(settings(), transport=transport, release_registry=releases, core_runtime=runtime)
         server = FastMCP("synthetic-core-continuity")
@@ -557,7 +564,7 @@ class CoreContinuityTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("ha_get_hacs_info", tools)
         self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(tools), 113)  # HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
         self.assertNotIn("ha_get_operation_status", tools)
-        result = json.loads(await tools["ha_get_state"].run({"entity_id": "sensor.synthetic"}))
+        result = json.loads(await tools["ha_get_state"].run(dict(STATE_ARGUMENTS)))
         self.assertTrue(result["success"])
         self.assertEqual(len(transport.calls), 1)
         self.clock += timedelta(days=2)
@@ -585,7 +592,7 @@ class CoreContinuityTests(unittest.IsolatedAsyncioTestCase):
 
         with patch.object(transport, "execute_read", side_effect=cross_publication):
             result = json.loads(await registered_tools(server)["ha_get_state"].run(
-                {"entity_id": "sensor.synthetic"}
+                dict(STATE_ARGUMENTS)
             ))
         self.assertFalse(result["success"])
         self.assertEqual(len(transport.attempts), 1)

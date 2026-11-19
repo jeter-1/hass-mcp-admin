@@ -58,7 +58,7 @@ def make_preread(
     configuration: dict[str, Any] | None = None,
     *,
     url_path: str = "synthetic-dashboard",
-    version: str = "8.1.1",
+    version: str = "9.2.0",
     mode: str = "storage",
     completeness: str = "complete",
     configuration_returned: bool = True,
@@ -80,6 +80,7 @@ def make_preread(
         "8.4.1": "ha-mcp-v8.4.1-7823b365",
         "8.4.3": "ha-mcp-v8.4.3-d5cea47a",
         "8.5.0": "ha-mcp-v8.5.0-e1538bcd",
+        "9.2.0": "ha-mcp-v9.2.0-9de5bf6c",
     }[version]
     release = load_reviewed_upstream_release_registry().by_version[version]
     getter = release.tool_contracts_by_name["ha_config_get_dashboard"]

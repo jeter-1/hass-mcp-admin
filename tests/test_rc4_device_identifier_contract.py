@@ -20,6 +20,7 @@ from unittest.mock import patch
 from tests import test_ha_core_2026_9_integration as core_tests
 from tests import test_rc3_postcore_regressions as postcore
 from tests import test_dependency_build_authority as dependency_tests
+from tests.support import ha_mcp_920_receipts
 from tests.support.core_gate import reconcile_through_gate
 from ha_mcp_engineering.ha_core_readmission.device_registry import (
     MAX_DEVICE_ID_CHARS, MAX_DEVICE_RECORD_BYTES, MAX_DEVICE_RECORDS,
@@ -216,13 +217,13 @@ class IdentifierAuthorityTests(unittest.IsolatedAsyncioTestCase):
     async def test_useful_delegated_reads_and_exact_catalog_recover(self):
         await reconcile_through_gate(self.core)
         reviewed = core_tests.load_reviewed_upstream_release_registry()
-        release = reviewed.by_version["8.4.3"]
+        release = reviewed.by_version["9.2.0"]
         capture = core_tests._capture_for_release(release)
         review = core_tests._fixture(core_tests.ROOT / release.artifact_evidence_resource)
         by_name = {item["name"]: item for item in capture["tools"]}
         transport = core_tests.FakeTransport(
             [by_name[name] for name in review["runtime_catalog"]["runtime_tool_order"]],
-            version="8.4.3")
+            version="9.2.0")
         gateway = core_tests.UpstreamReadGateway()
         gateway.configure(self.settings, transport=transport,
                           release_registry=reviewed, core_runtime=self.core)
@@ -235,19 +236,16 @@ class IdentifierAuthorityTests(unittest.IsolatedAsyncioTestCase):
                     for tool in await server.list_tools()}
         self.assertEqual(len(baseline), 113)  # HAMCP-134: +1 security metadata read; HAMCP-253: +1 inspect_governance_record; HAMCP-165 + HAMCP-155: +2 inactive planners; HAMCP-225: +4 trace snapshot tools; HAMCP-228: +1 baseline compare tool; HAMCP-232/145: +2 script trace reads, +2 inactive option planners; HAMCP-106: +1 inactive dashboard metadata planner; HAMCP-071: +1 inactive scene configuration planner; HAMCP-311: +1 control_helper; HAMCP-229: +1 reliability batch read; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
         self.assertNotIn("ha_get_operation_status", baseline)
-        cases = {"ha_get_device": {"device_id": "parent-garage"},
-                 "ha_get_entity": {"entity_id": "cover.synthetic_garage_door"},
-                 "ha_get_entity_exposure": {"entity_id": "cover.synthetic_garage_door"},
-                 "ha_get_overview": {}, "ha_search": {"query": "synthetic"}}
+        # 9.2.0 reads answer with their committed HAMCP-371 receipts; the
+        # device and entity receipts carry the child-door projection.
+        cases = postcore.DEVICE_READ_CASES
         with patch.object(self.core, "finish", wraps=self.core.finish) as finish:
-            for name, args in cases.items():
-                transport.result = {"content": [{"type": "text", "text": json.dumps(
-                    {"success": True, "entity_id": "cover.synthetic_garage_door",
-                     "device_id": "child-door", "parent_device_id": "parent-garage",
-                     "area_id": "garage"})}], "isError": False}
-                result = json.loads(await postcore.registered_tools(server)[name].run(args))
+            for name, (args, _receipt, _change) in cases.items():
+                transport.result = postcore.device_read_result(name)
+                result = json.loads(await postcore.registered_tools(server)[name].run(dict(args)))
                 self.assertTrue(result["success"], result)
-                self.assertTrue(core_tests._contains_projection(result["data"], "child-door"))
+                if name in postcore.DEVICE_PROJECTION_TOOLS:
+                    self.assertTrue(core_tests._contains_projection(result["data"], "child-door"))
                 self.assertEqual(transport.calls[-1][0], name)
                 self.assert_settled()
             self.assertEqual(finish.call_count, len(cases))
@@ -257,9 +255,10 @@ class IdentifierAuthorityTests(unittest.IsolatedAsyncioTestCase):
         await gateway.initialize(server)
         self.assertEqual(len(postcore.registered_tools(server)), 108)  # HAMCP-134: +1; HAMCP-253: +1; HAMCP-165 + HAMCP-155: +2 static; HAMCP-225: +4; HAMCP-228: +1 baseline compare tool; HAMCP-232/145: +4; HAMCP-106: +1; HAMCP-071: +1; HAMCP-311: +1; HAMCP-229: +1; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
         self.assertEqual(len(transport.calls), calls)
+        transport.result = ha_mcp_920_receipts.result(postcore.STATE_RECEIPT)
         result = json.loads(await postcore.registered_tools(server)["ha_get_state"].run(
-            {"entity_id": "sensor.synthetic"}))
-        self.assertTrue(result["success"])
+            dict(postcore.STATE_ARGUMENTS)))
+        self.assertTrue(result["success"], result)
         self.network.records[2]["identifiers"] = [["test", "I" * 149]]
         await reconcile_through_gate(self.core)
         await gateway.initialize(server)

@@ -179,7 +179,7 @@ class Process:
         self._upstream(transport)
         self.core = CountingCore(fan_fixtures.Core())
         self.service = fan_fixtures.FanService(
-            root, fan_fixtures.FanProvider(transport, lambda: transport.authority),
+            root, fan_fixtures.FanProvider(transport, lambda *_: transport.authority),
             fan_fixtures.FanCoreAuthority(self.core), now=self.now, sleep=asyncio.sleep)
         self.binding = "ordinary_fan_binding"
         self.entity = "fan.synthetic"
@@ -188,7 +188,7 @@ class Process:
         self.digest = fan_fixtures.digest
 
     def _build_power(self, root, applied):
-        transport = power_fixtures.PowerTransport("8.5.0")
+        transport = power_fixtures.PowerTransport("9.2.0")
         if applied:
             transport.states["light.synthetic"].update(state="on", last_updated="synthetic-revision-2")
         self._upstream(transport)
@@ -203,7 +203,7 @@ class Process:
         self.digest = power_fixtures.digest
 
     def _build_helper_value(self, root, applied):
-        transport = helper_fixtures.HelperTransport("8.5.0")
+        transport = helper_fixtures.HelperTransport("9.2.0")
         if applied:
             transport.states["input_boolean.synthetic"].update(state="on", last_updated="synthetic-revision-2")
         self._upstream(transport)

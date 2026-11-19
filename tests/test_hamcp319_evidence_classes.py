@@ -300,7 +300,7 @@ class EightFiveEvidenceClassMutantTests(unittest.TestCase):
                 del mutant[index]
                 self.assertTrue(coverage_violations(mutant, scanned))
         mutant = self._copy()
-        del mutant[0]["loaded_by"]["tests/test_hamcp319_side_by_side.py"]
+        del mutant[0]["loaded_by"]["tests/test_hamcp319_parity_config.py"]  # HAMCP-437: side_by_side retired
         self.assertTrue(coverage_violations(mutant, scanned))
 
     def test_unloaded_declared_loader_is_rejected(self):
@@ -318,7 +318,7 @@ class EightFiveEvidenceClassMutantTests(unittest.TestCase):
 
     def test_missing_label_is_rejected(self):
         mutant = self._copy()
-        mutant[0]["loaded_by"]["tests/test_hamcp319_side_by_side.py"] = ["S (8.6 replay), absent label"]
+        mutant[0]["loaded_by"]["tests/test_hamcp319_parity_config.py"] = ["S (8.6 replay), absent label"]
         self.assertTrue(label_violations(mutant))
 
     def test_eight_five_side_fixture_labelled_c_is_rejected(self):

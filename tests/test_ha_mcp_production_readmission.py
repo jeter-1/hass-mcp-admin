@@ -4451,5 +4451,65 @@ class SignedGatewayReadmissionTests(
         )
 
 
+
+class HaMcp920SignedReuseTests(unittest.IsolatedAsyncioTestCase):
+    """HAMCP-437: 9.2.0 binds mixed read routes, so a signed entry never reuses
+    its policy for another version; the compiled 9.2.0 exact route still admits."""
+
+    _raw = SignedGatewayReadmissionTests._raw
+    _registry = SignedGatewayReadmissionTests._registry
+    _initialize = SignedGatewayReadmissionTests._initialize
+
+    def setUp(self):
+        self.compiled = load_reviewed_upstream_release_registry()
+        self.release = self.compiled.by_version["9.2.0"]
+        self.capture = _capture_for_release(self.release)
+        self.signer = RegistrySigner(key_id=TRUST_ANCHOR_KEY_ID)
+        self.now = datetime(2026, 11, 19, 12, tzinfo=timezone.utc)
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.automatic = sum(
+            1
+            for item in self.release.policy.tools
+            if item.classification == "automatic_read" or item.is_read_route
+        )
+
+    def test_release_binds_mixed_read_routes(self):
+        self.assertTrue(
+            any(
+                item.is_read_route
+                and item.classification != "automatic_read"
+                for item in self.release.policy.tools
+            )
+        )
+
+    async def test_compiled_exact_release_admits_its_reads(self):
+        entry = _signed_entry_for(self.release, version="9.2.1")
+        gateway, _transport, snapshot = await self._initialize(
+            raw=self._raw(entry=entry), version="9.2.0"
+        )
+        self.assertEqual(snapshot["admission_status"], "admitted_exact")
+        self.assertEqual(
+            snapshot["readmission_authority_source"], "compiled_exact"
+        )
+        self.assertGreater(self.automatic, 0)
+        self.assertEqual(snapshot["dynamically_exposed_count"], self.automatic)
+        self.assertTrue(gateway._exposed)
+
+    async def test_signed_entry_for_other_version_fails_closed(self):
+        entry = _signed_entry_for(self.release, version="9.2.1")
+        gateway, transport, snapshot = await self._initialize(
+            raw=self._raw(entry=entry), version="9.2.1"
+        )
+        self.assertEqual(
+            snapshot["admission_status"], "blocked_incompatible_upstream"
+        )
+        self.assertEqual(snapshot["version_status"], "rejected_unreviewed")
+        self.assertEqual(snapshot["dynamically_exposed_count"], 0)
+        self.assertFalse(snapshot["admission_complete"])
+        self.assertEqual(gateway._exposed, {})
+        self.assertEqual(transport.calls, 0)
+
+
 if __name__ == "__main__":
     unittest.main()

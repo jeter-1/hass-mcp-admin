@@ -20,6 +20,7 @@ from mcp.server.fastmcp import FastMCP
 
 from tests import test_ha_core_2026_9_integration as core_tests
 from tests import test_dependency_build_authority as dependency_tests
+from tests.support import ha_mcp_920_receipts
 from tests.support.core_gate import reconcile_through_gate
 from ha_mcp_engineering.capabilities import replace_dynamic_upstream_capabilities
 from ha_mcp_engineering.clients.rest import HomeAssistantRestClient
@@ -46,6 +47,51 @@ DEVICE_CAPABILITIES = {
     "core.delegated_device_effective_area",
     "core.dependency_helper_planning",
 }
+
+# ha-mcp 9.2.0 rebuilds reads from its reviewed output-key contract, so each
+# delegated read answers with its committed HAMCP-371 receipt (HAMCP-437). The
+# device and entity receipts carry the synthetic garage-door identifiers.
+STATE_RECEIPT = "r19-state"
+STATE_ARGUMENTS = ha_mcp_920_receipts.receipt(STATE_RECEIPT)[0]
+
+
+def _device_receipt(content):
+    content["devices"] = [dict(content["devices"][0], device_id="child-door",
+                               via_device_id="parent-garage", area_id="garage")]
+    content["count"] = 1
+
+
+def _entity_receipt(content):
+    content["entity_id"] = "cover.synthetic_garage_door"
+    content["entity_entry"].update(entity_id="cover.synthetic_garage_door",
+                                   device_id="child-door", area_id="garage")
+
+
+def _exposure_receipt(content):
+    content["entity_id"] = "cover.synthetic_garage_door"
+
+
+DEVICE_READ_CASES = {
+    "ha_get_device": ({"device_id": "parent-garage"}, "r13-devices", _device_receipt),
+    "ha_get_entity": ({"entity_id": "cover.synthetic_garage_door"}, "r14-entity", _entity_receipt),
+    "ha_get_entity_exposure": ({"entity_id": "cover.synthetic_garage_door"},
+                               "r15-entity-exposure", _exposure_receipt),
+    "ha_get_overview": ({}, "r17-overview", None),
+    "ha_search": ({"query": "synthetic"}, "r25-search", None),
+}
+DEVICE_PROJECTION_TOOLS = {"ha_get_device", "ha_get_entity"}
+
+
+def device_read_result(name):
+    """The 9.2.0 receipt result for one delegated device-dependent read."""
+
+    _args, receipt_id, change = DEVICE_READ_CASES[name]
+    result = ha_mcp_920_receipts.result(receipt_id)
+    if change is None:
+        return result
+    content = result["structuredContent"]
+    change(content)
+    return ha_mcp_920_receipts.with_content(result, content)
 
 
 class _CoreNetwork:
@@ -467,13 +513,13 @@ class PostCoreRegressions(unittest.IsolatedAsyncioTestCase):
     async def test_real_catalog_withdrawal_and_restoration_keep_exact_descriptors(self):
         await self.core.reconcile_once("startup")
         registry = core_tests.load_reviewed_upstream_release_registry()
-        release = registry.by_version["8.4.3"]
+        release = registry.by_version["9.2.0"]
         capture = core_tests._capture_for_release(release)
         review = core_tests._fixture(core_tests.ROOT / release.artifact_evidence_resource)
         by_name = {item["name"]: item for item in capture["tools"]}
         transport = core_tests.FakeTransport(
             [by_name[name] for name in review["runtime_catalog"]["runtime_tool_order"]],
-            version="8.4.3",
+            version="9.2.0",
         )
         gateway = core_tests.UpstreamReadGateway()
         gateway.configure(self.settings, transport=transport,
@@ -491,13 +537,16 @@ class PostCoreRegressions(unittest.IsolatedAsyncioTestCase):
         await reconcile_through_gate(self.core)
         await gateway.initialize(server)
         self.assertEqual(len(registered_tools(server)), 108)  # HAMCP-134: +1; HAMCP-253: +1; HAMCP-165 + HAMCP-155: +2 static; HAMCP-225: +4; HAMCP-228: +1 baseline compare tool; HAMCP-232/145: +4; HAMCP-106: +1; HAMCP-071: +1; HAMCP-311: +1; HAMCP-229: +1; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
-        # HAMCP-290: the retired delegated ha_get_hacs_info is withheld
-        # throughout beside the device-dependent reads (86 + 28 - 6 = 108; HAMCP-297, HAMCP-231).
+        # HAMCP-290: ha_get_hacs_info stays retired; the 9.2.0 policy marks it
+        # unsupported, so it is never exposed and only the device-dependent
+        # reads are Core-withheld (86 + 28 - 6 = 108; HAMCP-297, HAMCP-231).
         self.assertEqual({x["tool"] for x in gateway.health_snapshot()["core_withheld_tools"]},
-                         set(core_tests.DEVICE_DEPENDENT_DELEGATED_TOOLS) | {"ha_get_hacs_info"})
+                         set(core_tests.DEVICE_DEPENDENT_DELEGATED_TOOLS))
+        self.assertNotIn("ha_get_hacs_info", registered_tools(server))
+        transport.result = ha_mcp_920_receipts.result(STATE_RECEIPT)
         result = json.loads(await registered_tools(server)["ha_get_state"].run(
-            {"entity_id": "sensor.synthetic"}))
-        self.assertTrue(result["success"])
+            dict(STATE_ARGUMENTS)))
+        self.assertTrue(result["success"], result)
 
         self.network.records[0]["name"] = ""
         self.network.records[1]["name_by_user"] = "N" * 129
@@ -506,15 +555,9 @@ class PostCoreRegressions(unittest.IsolatedAsyncioTestCase):
         restored = {tool.name: tool.model_dump(mode="json") for tool in await server.list_tools()}
         self.assertEqual(restored, baseline)
         self.assertNotIn("ha_get_operation_status", restored)
-        arguments = {
-            "ha_get_device": {"device_id": "parent-garage"},
-            "ha_get_entity": {"entity_id": "cover.synthetic_garage_door"},
-            "ha_get_entity_exposure": {"entity_id": "cover.synthetic_garage_door"},
-            "ha_get_overview": {},
-            "ha_search": {"query": "synthetic"},
-        }
-        for name, args in arguments.items():
-            result = json.loads(await registered_tools(server)[name].run(args))
+        for name, (args, _receipt, _change) in DEVICE_READ_CASES.items():
+            transport.result = device_read_result(name)
+            result = json.loads(await registered_tools(server)[name].run(dict(args)))
             self.assertTrue(result["success"], result)
             self.assertEqual(transport.calls[-1][0], name)
         self.assertEqual(gateway.health_snapshot()["fallback_count"], 0)
