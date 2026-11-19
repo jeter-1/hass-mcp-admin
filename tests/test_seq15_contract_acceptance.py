@@ -39,19 +39,29 @@ SLOT_VERSIONS = {slot: core["version"] for slot, core in SEQ15_CORE_WINDOW.items
 NOT_SLOTS = ("2026.9.3", "2026.9.2", "2026.11.0", "2026.10", "2026.10.", "2026.10.*", "2026.9", "2026.9.*",
              "", " 2026.10.0", "2026.10.0 ", "2026.10.0\n", "v2026.10.0", "2026.10.00")
 NOT_STRINGS = (None, 2026.9, 2026, b"2026.10.0", ["2026.10.0"], {"version": "2026.10.0"})
-_WINDOW = tempfile.TemporaryDirectory()
-_ROOT = window_root(_WINDOW.name)
-edit_window(_ROOT, lambda window: window["core"].update(copy.deepcopy(SEQ15_CORE_WINDOW)))
-_BOUND = bound_window(_ROOT)
+# Built in setUpModule, never at import: sharded discovery imports this module in
+# every shard, but tearDownModule runs only in the shard that runs its tests.
+_STATE = {}
 
 
 def setUpModule():
-    _BOUND.__enter__()
+    window = tempfile.TemporaryDirectory()
+    try:
+        root = window_root(window.name)
+        edit_window(root, lambda value: value["core"].update(copy.deepcopy(SEQ15_CORE_WINDOW)))
+        bound = bound_window(root)
+        bound.__enter__()
+    except BaseException:
+        window.cleanup()
+        raise
+    _STATE.update(window=window, bound=bound)
 
 
 def tearDownModule():
-    _BOUND.__exit__(None, None, None)
-    _WINDOW.cleanup()
+    try:
+        _STATE.pop("bound").__exit__(None, None, None)
+    finally:
+        _STATE.pop("window").cleanup()
 
 
 CORE = seq15.TARGET_CORE
