@@ -17,8 +17,15 @@ import time
 
 
 REPOSITORY = "jeter-1/hass-mcp-admin"
-WORKFLOW_PATH = ".github/workflows/ci.yml"
 APP_ID = 15368
+# Each required PR check and the only workflow allowed to produce it
+# (CODEX-022). Binding every same-name check run on the head to its producer
+# means a job copied into another workflow cannot supply the check.
+PRODUCERS = {
+    "validate": ("ci.yml", "pull_request"),
+    "policy-workflow-lint": ("policy-locks.yml", "pull_request_target"),
+    "policy-secret-scan": ("policy-locks.yml", "pull_request_target"),
+}
 MAX_RESPONSE_BYTES = 4_000_000
 PENDING = {"queued", "in_progress", "requested", "waiting", "pending"}
 
@@ -277,45 +284,78 @@ def successful(value):
     return False
 
 
-def verify(pr_number, base, head, api=github_get):
+def verify(pr_number, base, head, api=github_get, check_name="validate"):
     positive_id(pr_number)
     require(all(isinstance(sha, str) and re.fullmatch(r"[0-9a-f]{40}", sha)
                 for sha in (base, head)), "invalid_commit")
+    require(check_name in PRODUCERS, "unknown_required_check")
+    workflow_file, event = PRODUCERS[check_name]
+    workflow_path = f".github/workflows/{workflow_file}"
     prefix = f"repos/{REPOSITORY}"
     checks_route = (f"{prefix}/commits/{head}/check-runs"
-                    "?check_name=validate&filter=latest&per_page=100")
+                    f"?check_name={check_name}&filter=latest&per_page=100")
     checks = collection(api(checks_route), "check_runs")
     if not checks:
         return {"status": "pending"}
-    require(len(checks) == 1, "ambiguous_validate_check")
-    check = checks[0]
-    require(check.get("name") == "validate" and check.get("head_sha") == head,
-            "wrong_validate_check")
-    require(check.get("app", {}).get("id") == APP_ID
-            and check.get("app", {}).get("slug") == "github-actions",
-            "wrong_check_producer")
-    pr_binding(check, pr_number, base, head)
-    check_id = positive_id(check.get("id"))
-    suite_id = positive_id(check.get("check_suite", {}).get("id"))
-    if not successful(check):
+    # ci.yml produces one validate check per head. pull_request_target starts
+    # one policy-locks suite per event (opened, edited, ...); every same-name
+    # check on the head must come from that workflow and pass.
+    require(len(checks) == 1 or event == "pull_request_target", "ambiguous_validate_check")
+    identities = []
+    for check in checks:
+        require(check.get("name") == check_name and check.get("head_sha") == head,
+                "wrong_validate_check")
+        require(check.get("app", {}).get("id") == APP_ID
+                and check.get("app", {}).get("slug") == "github-actions",
+                "wrong_check_producer")
+        pr_binding(check, pr_number, base, head)
+        identities.append((positive_id(check.get("id")),
+                           positive_id(check.get("check_suite", {}).get("id"))))
+    if not all([successful(check) for check in checks]):
         return {"status": "pending"}
 
-    workflow = api(f"{prefix}/actions/workflows/ci.yml")
+    workflow = api(f"{prefix}/actions/workflows/{workflow_file}")
     workflow_id = positive_id(workflow.get("id"))
-    require(workflow.get("path") == WORKFLOW_PATH
+    require(workflow.get("path") == workflow_path
             and workflow.get("state") == "active", "wrong_ci_workflow")
+    runs = [producer_run(api, prefix, workflow_id, workflow_path, event, check_name,
+                         check_id, suite_id, pr_number, base, head)
+            for check_id, suite_id in identities]
+    latest = collection(api(checks_route), "check_runs")
+    current = {check.get("id"): check for check in latest}
+    require(len(latest) == len(checks) == len(current) and all(
+        current.get(check["id"], {}).get(key) == check.get(key)
+        for check in checks for key in (
+            "id", "name", "head_sha", "app", "check_suite", "pull_requests",
+            "status", "conclusion",
+        )), "validate_check_changed")
+    result = {
+        "status": "success" if all(success for success, _ in runs) else "pending",
+        "check_name": check_name, "app_id": APP_ID, "workflow_id": workflow_id,
+        "pr_number": pr_number, "base_sha": base, "head_sha": head,
+    }
+    receipts = [receipt for _, receipt in runs]
+    if len(receipts) == 1:
+        result.update(receipts[0])
+    else:
+        result["runs"] = receipts
+    return result
+
+
+def producer_run(api, prefix, workflow_id, workflow_path, event, check_name,
+                 check_id, suite_id, pr_number, base, head):
     runs = collection(api(
         f"{prefix}/actions/workflows/{workflow_id}/runs"
-        f"?check_suite_id={suite_id}&head_sha={head}&event=pull_request&per_page=100"
+        f"?check_suite_id={suite_id}&head_sha={head}&event={event}&per_page=100"
     ), "workflow_runs")
     require(len(runs) == 1, "missing_or_ambiguous_ci_run")
     run = runs[0]
     run_id = positive_id(run.get("id"))
     attempt = positive_id(run.get("run_attempt"))
     require(run.get("workflow_id") == workflow_id
-            and run.get("path") == WORKFLOW_PATH
+            and run.get("path") == workflow_path
             and run.get("check_suite_id") == suite_id
-            and run.get("event") == "pull_request"
+            and run.get("event") == event
             and run.get("head_sha") == head, "wrong_ci_run")
     require(all(run.get(key, {}).get("full_name") == REPOSITORY
                 for key in ("repository", "head_repository")), "foreign_ci_run")
@@ -324,7 +364,7 @@ def verify(pr_number, base, head, api=github_get):
     jobs = collection(api(
         f"{prefix}/actions/runs/{run_id}/attempts/{attempt}/jobs?per_page=100"
     ), "jobs")
-    matches = [job for job in jobs if job.get("name") == "validate"]
+    matches = [job for job in jobs if job.get("name") == check_name]
     require(len(matches) == 1, "missing_or_ambiguous_ci_job")
     job = matches[0]
     job_id = positive_id(job.get("id"))
@@ -341,17 +381,9 @@ def verify(pr_number, base, head, api=github_get):
         "run_attempt", "pull_requests", "repository", "head_repository",
     )), "ci_run_changed")
     current_success = successful(current)
-    latest = collection(api(checks_route), "check_runs")
-    require(len(latest) == 1 and all(latest[0].get(key) == check.get(key) for key in (
-        "id", "name", "head_sha", "app", "check_suite", "pull_requests",
-        "status", "conclusion",
-    )), "validate_check_changed")
-    return {
-        "status": "success" if run_success and job_success and current_success else "pending",
-        "app_id": APP_ID, "workflow_id": workflow_id,
+    return run_success and job_success and current_success, {
         "run_id": run_id, "run_attempt": attempt, "job_id": job_id,
         "check_run_id": check_id, "check_suite_id": suite_id,
-        "pr_number": pr_number, "base_sha": base, "head_sha": head,
     }
 
 
@@ -361,11 +393,13 @@ def main():
     parser.add_argument("--pr-number", required=True, type=int)
     parser.add_argument("--base-sha", required=True)
     parser.add_argument("--head-sha", required=True)
+    parser.add_argument("--check-name", default="validate")
     parser.add_argument("--require-success", action="store_true")
     args = parser.parse_args()
     try:
         require(args.repository == REPOSITORY, "wrong_repository")
-        result = verify(args.pr_number, args.base_sha, args.head_sha)
+        result = verify(args.pr_number, args.base_sha, args.head_sha,
+                        check_name=args.check_name)
         require(not args.require_success or result["status"] == "success", "ci_not_complete")
     except (Refusal, KeyError, TypeError, AttributeError) as exc:
         category = str(exc) if isinstance(exc, Refusal) else "malformed_evidence"
