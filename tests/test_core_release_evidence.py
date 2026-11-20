@@ -549,7 +549,7 @@ class O3(unittest.TestCase):
         a,b=sources(); p=next(iter(a['hashes'])); a['hashes'][p]=b['hashes'][p]='bad'
         self.assertFalse(e.compare_sources(a,b)['inherited'])
     def test_derived_swaps_only_provenance_and_index(self):
-        a,b=sources(); old={'binding':asdict(REVIEWED_CORE_BINDINGS['2026.10.1']),'provenance':provenance()}
+        a,b=sources(); old={'binding':asdict(REVIEWED_CORE_BINDINGS['2026.10.3']),'provenance':provenance()}
         old['provenance'].update(version=a['version'],source_commit=a['commit'])
         original=copy.deepcopy(old); new=e.derive_binding(old,provenance(),e.compare_sources(a,b))
         self.assertEqual(old,original)
