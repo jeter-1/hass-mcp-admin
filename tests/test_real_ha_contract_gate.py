@@ -1462,7 +1462,6 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
         source = ast.get_source_segment(self.source, runner) or ""
         for contract in (
             "config/device_registry/list",
-            "config/device_registry/list_composite_splits",
             "config/entity_registry/list",
             "ha_mcp_tools/device_get",
             '"service": "turn_on"',
@@ -1470,13 +1469,17 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
             # HAMCP-200: the direct-target readback binds the entity through the path guard.
             'rest_path("/states/{}", entity_id, kinds=("entity_id",))',
             "primary_config_entry_id",
-            "primary_id",
             "device_id",
             "composite_device_id",
             "direct_automation_reference",
             "device_registry_relationship",
         ):
             self.assertIn(contract, source)
+        # HAMCP-437 (I2b): the retired 2026.8.x split-projection arm is gone, and
+        # an unbound Core other than 2026.7.2 is refused at split_projection.
+        self.assertNotIn("list_composite_splits", source)
+        self.assertNotIn('"2026.8.', source)
+        self.assertIn('_assert_device_contract(False, "split_projection")', source)
         self.assertIn("_assert_device_contract", call_names)
         self.assertIn("authorize_core_read", source)
         self.assertIn("composite_core_authority", source)
@@ -1613,19 +1616,20 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
 
         # Historical semantics of named Cores (stay explicit; unaffected by a
         # new reviewed binding).
-        for version in ("2026.9.0", "2026.9.1", "2026.9.2"):
-            self.assertEqual(contract._core_binding(version).child_consumer, "8.4.3")
-        for version in ("2026.9.3", "2026.9.4", "2026.10.0", "2026.10.1"):
+        for version in ("2026.9.4", "2026.10.0", "2026.10.1", "2026.10.3"):
             self.assertEqual(contract._core_binding(version).child_consumer, "8.5.0")
         # HAMCP-437 (I2b ruling 2): 2026.11.0 consumes ha-mcp 9.2.0, and the
         # script-dependency contract still runs on that consumer.
         self.assertEqual(contract._core_binding("2026.11.0").child_consumer, "9.2.0")
-        for version in ("2026.9.0", "2026.9.1"):
-            self.assertIs(contract._core_test_authority(version), False)
-        for version in ("2026.10.0", "2026.10.1"):
+        for version in ("2026.10.0", "2026.10.1", "2026.10.3", "2026.11.0"):
             self.assertIs(expected(version), schema.CHILD_DEVICE_NAME_PARTS)
-        for version in ("2026.9.2", "2026.9.3", "2026.9.4"):
-            self.assertIs(expected(version), schema.CHILD_DEVICES)
+        self.assertIs(expected("2026.9.4"), schema.CHILD_DEVICES)
+        # HAMCP-437 (I2b): the 2026.9.0-2026.9.3 bindings are retired, so those
+        # Cores take the migration route like any unreviewed version.
+        for version in ("2026.9.0", "2026.9.1", "2026.9.2", "2026.9.3"):
+            with self.subTest(retired=version):
+                self.assertIsNone(contract._core_binding(version))
+                self.assertIs(contract._core_test_authority(version), False)
 
         runner = self.functions["run_contracts"]
         runner_source = ast.get_source_segment(self.source, runner) or ""

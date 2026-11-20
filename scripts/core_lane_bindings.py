@@ -20,7 +20,7 @@ import os
 CHILD_DEVICES = "child_devices"
 CHILD_DEVICE_NAME_PARTS = "child_device_name_parts"
 DEVICE_REGISTRIES = frozenset({CHILD_DEVICES, CHILD_DEVICE_NAME_PARTS})
-CHILD_CONSUMERS = frozenset({"8.4.3", "8.5.0", "9.2.0"})
+CHILD_CONSUMERS = frozenset({"8.5.0", "9.2.0"})
 
 
 @dataclass(frozen=True)
@@ -42,14 +42,14 @@ class CoreBinding:
 
 
 REVIEWED_CORE_BINDINGS = {
-    "2026.9.0": CoreBinding(None, CHILD_DEVICES, False, "8.4.3"),
-    "2026.9.1": CoreBinding(None, CHILD_DEVICES, False, "8.4.3"),
-    "2026.9.2": CoreBinding("sha256:a1bc133af84ee6505fe2c266d9805b7c75b780dfdc188edfee3b11e8f3cd8efe",
-                            CHILD_DEVICES, False, "8.4.3"),
-    "2026.9.3": CoreBinding("sha256:d8922685169707fd91e8b9729902d975f06157d005e422874d201e0261dda196",
-                            CHILD_DEVICES, True, "8.5.0"),
+    # HAMCP-437 (I2b): kept only for the dashboard lane until the 20261028.4 rule
+    # profile lands (HAMCP-444); D4 deviation approved by Josh 2026-11-20.
+    # Test-only: no support-window slot uses it.
     "2026.9.4": CoreBinding("sha256:3e6710a7ab2a61311d9d899b719f6c3657791c63e8f4942cec4ebc42401d6b76",
                             CHILD_DEVICES, True, "8.5.0"),
+    # HAMCP-437 (I2b): 2026.10.0 and 2026.10.1 are kept only for the seq-15 offline
+    # acceptance test until HAMCP-367 reworks the seq-15 window; D4 deviation
+    # approved by Josh 2026-11-20. Test-only: no support-window slot uses them.
     "2026.10.0": CoreBinding("sha256:1b64d38f38d922bf9d59336451fd6453e1d614f934456af4ee3d2a51061be3a4",
                              CHILD_DEVICE_NAME_PARTS, True, "8.5.0"),
     "2026.10.1": CoreBinding("sha256:130241f28d01fa80dfa3b44f7d89781c188d8642ecab9024f079f19f9f82baa0",

@@ -408,12 +408,14 @@ class RefusalTests(TempRootFixture):
         binding = core_lane_bindings.CoreBinding(digest, core_lane_bindings.CHILD_DEVICE_NAME_PARTS, True, "9.2.0")
         with patch.dict(core_lane_bindings.REVIEWED_CORE_BINDINGS, {unreviewed: binding}):
             self.assertRefuses("core_current_lane_provenance_missing")
-        # A binding without a disposable lane can never occupy a window slot.
-        for version in ("2026.9.0", "2026.9.1"):
-            with self.subTest(version=version):
-                self.mutate(lambda w: w["core"]["current"].update(version=version))
-                self.assertIsNotNone(core_lane_bindings.reviewed_core_binding(version))
-                self.assertRefuses("core_current_binding_unreviewed")
+        # A binding without a disposable lane can never occupy a window slot. No
+        # reviewed binding is lane-less since HAMCP-437 (I2b), so the guard is
+        # held with a synthetic one.
+        laneless = core_lane_bindings.CoreBinding(None, core_lane_bindings.CHILD_DEVICE_NAME_PARTS, True, "9.2.0")
+        with patch.dict(core_lane_bindings.REVIEWED_CORE_BINDINGS, {unreviewed: laneless}):
+            self.assertIsNotNone(core_lane_bindings.reviewed_core_binding(unreviewed))
+            self.assertIsNone(core_lane_bindings.reviewed_lane_binding(unreviewed))
+            self.assertRefuses("core_current_binding_unreviewed")
 
     def test_registry_cross_check_refuses(self):
         window = self.window
@@ -496,10 +498,10 @@ class RotationTests(TempRootFixture):
 
     def setUp(self):
         super().setUp()
-        # The synthetic brand-new Core is 2026.10.2 while that release has no
+        # The synthetic brand-new Core is 2026.11.1 while that release has no
         # reviewed binding, otherwise the next patch without one, computed per
         # test so a later real binding never collides with it (HAMCP-159 R2).
-        self.new_version = core_bindings.unreviewed_version("2026.10.2")
+        self.new_version = core_bindings.unreviewed_version("2026.11.1")
         self.NEW = {"version": self.new_version, "image_index_digest": "sha256:" + "c" * 64}
         self.NEW_PROVENANCE = {"version": self.new_version, "image_index_digest": "sha256:" + "c" * 64,
                                "source_commit": "d" * 40, "source_archive_sha256": "e" * 64,
@@ -509,18 +511,18 @@ class RotationTests(TempRootFixture):
     def rotate_existing(self):
         # (a) candidate -> current, current -> rollback, rollback dropped, no new candidate.
         return self.mutate(lambda w: w["core"].update(
-            current=reviewed_core("2026.10.1"), rollback=reviewed_core("2026.10.0"), candidate=None))
+            current=reviewed_core("2026.11.0"), rollback=reviewed_core("2026.10.3"), candidate=None))
 
     def add_new_candidate(self):
         window = self.mutate(lambda w: w["core"].update(
-            current=reviewed_core("2026.10.0"), candidate=dict(self.NEW), rollback=reviewed_core("2026.9.4")))
+            current=reviewed_core("2026.11.0"), candidate=dict(self.NEW), rollback=reviewed_core("2026.10.3")))
         self.new_fixture.write_text(json.dumps(self.NEW_PROVENANCE), encoding="utf-8")
         return window
 
     def test_a_rotation_among_reviewed_cores_needs_only_the_window(self):
         self.rotate_existing()
         window = self.sw.load(self.root)
-        expected = {"current": "2026.10.1", "rollback": "2026.10.0"}
+        expected = {"current": "2026.11.0", "rollback": "2026.10.3"}
         self.assertIsNone(window["core"]["candidate"])
         for tier, slots in (("pr", ("current",)), ("full", ("current", "rollback"))):
             rows = self.sw.real_ha_matrix(window, tier, self.root)["include"]
@@ -534,9 +536,11 @@ class RotationTests(TempRootFixture):
                 self.assertEqual((binding["slot"], binding["version"]), (slot, version))
                 self.assertEqual(binding["image_index_digest"],
                                  core_lane_bindings.reviewed_lane_binding(version).image_index_digest)
-        # The dropped rollback Core has left the window, so Alarmo refuses it.
-        with self.assertRaisesRegex(self.sw.Refusal, "^alarmo_core_not_in_window_slot$"):
-            self.sw.alarmo_slot("2026.9.4", self.root)
+        # A reviewed Core outside the window (here a synthetic one, as a dropped
+        # rollback would be) is refused by Alarmo.
+        with patch.dict(core_lane_bindings.REVIEWED_CORE_BINDINGS, {self.new_version: self.NEW_BINDING}), \
+                self.assertRaisesRegex(self.sw.Refusal, "^alarmo_core_not_in_window_slot$"):
+            self.sw.alarmo_slot(self.new_version, self.root)
         # Real-HA lanes still pair every Core slot with ha_mcp.current.
         self.assertEqual({r["ha_mcp_version"] for r in self.sw.real_ha_matrix(window, "full", self.root)["include"]},
                          {window["ha_mcp"]["current"]["version"]})
@@ -546,7 +550,7 @@ class RotationTests(TempRootFixture):
         self.assertIsNone(core_lane_bindings.reviewed_core_binding(self.new_version))
         # A committed provenance fixture does not vouch for an unreviewed Core.
         self.assertRefuses("core_candidate_binding_unreviewed")
-        for version in (self.new_version, "2026.10.0", "2026.9.4"):
+        for version in (self.new_version, "2026.11.0", "2026.10.3"):
             with self.subTest(version=version), self.assertRaisesRegex(
                     self.sw.Refusal, "^core_candidate_binding_unreviewed$"):
                 self.sw.alarmo_slot(version, self.root)
@@ -572,7 +576,7 @@ class RotationTests(TempRootFixture):
         self.add_new_candidate()
         with patch.dict(core_lane_bindings.REVIEWED_CORE_BINDINGS, {self.new_version: self.NEW_BINDING}):
             window = self.sw.load(self.root)
-            expected = {"current": "2026.10.0", "candidate": self.new_version, "rollback": "2026.9.4"}
+            expected = {"current": "2026.11.0", "candidate": self.new_version, "rollback": "2026.10.3"}
             for tier, slots in (("pr", ("current", "candidate")), ("full", self.sw.SLOTS)):
                 rows = self.sw.real_ha_matrix(window, tier, self.root)["include"]
                 with self.subTest(tier=tier):
@@ -602,7 +606,7 @@ class RotationTests(TempRootFixture):
             path.unlink()
             self.assertRefuses("core_candidate_lane_provenance_missing")
             with self.assertRaisesRegex(self.sw.Refusal, "^core_candidate_lane_provenance_missing$"):
-                self.sw.alarmo_slot("2026.10.0", self.root)
+                self.sw.alarmo_slot("2026.11.0", self.root)
 
 
 class EmptyCandidateTests(TempRootFixture):

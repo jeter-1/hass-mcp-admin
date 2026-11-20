@@ -135,21 +135,27 @@ class CoreContinuityTests(unittest.IsolatedAsyncioTestCase):
         sys.path.insert(0, str(ROOT / "scripts"))
         from core_registry_contract_lane import configure_with_test_authority
         from tests.test_ha_core_2026_9_integration import settings
+        # HAMCP-437 (I2b): the only untyped lane binding (2026.9.2) is retired, so
+        # the harness runs on the reviewed 2026.10.3 lane and its typed profiles.
+        version = "2026.10.3"
+        records = json.loads((ROOT / "tests/fixtures/core_2026_10_device_registry/records.json").read_text())
         runtime = CoreRuntime()
         configure = runtime.configure
 
         def synthetic_transport(configured, *, release_registry):
-            configure(configured, release_registry=release_registry,
-                      source=ProjectedCoreSource(release_registry))
+            source = ProjectedCoreSource(release_registry, version, typed_operations=True)
+            source.fixture = deepcopy(records)
+            configure(configured, release_registry=release_registry, source=source)
 
-        image = "ghcr.io/home-assistant/home-assistant:2026.9.2@sha256:a1bc133af84ee6505fe2c266d9805b7c75b780dfdc188edfee3b11e8f3cd8efe"
+        image = ("ghcr.io/home-assistant/home-assistant:2026.10.3@"
+                 "sha256:407b89cd11a8cb67d388d21739a226c74acbbebe1ac59e3b83b11b43ce76b98f")
         with patch.object(runtime, "configure", side_effect=synthetic_transport):
             await configure_with_test_authority(runtime, settings(), cache_path=self.cache,
-                                                expected_image=image)
-        self.assert_admitted(runtime)
+                                                expected_image=image, core_version=version)
+        self.assert_admitted(runtime, 20)
         with self.assertRaises(AssertionError):
             await configure_with_test_authority(runtime, settings(), cache_path=self.cache,
-                                                expected_image="unbound")
+                                                expected_image="unbound", core_version=version)
 
     async def test_unknown_release_stays_withheld_without_signed_authority(self):
         runtime, _ = await self.runtime("2026.9.3")
@@ -163,7 +169,8 @@ class CoreContinuityTests(unittest.IsolatedAsyncioTestCase):
         sys.path.insert(0, str(ROOT / "scripts"))
         from core_registry_contract_lane import configure_with_test_authority, lane_entry
         from tests.test_ha_core_2026_9_integration import settings
-        for version in ("2026.9.3", "2026.9.4"):
+        # HAMCP-437 (I2b): 2026.9.3 is retired; 2026.9.4 stays test-only (HAMCP-444).
+        for version in ("2026.9.4",):
             with self.subTest(version=version):
                 runtime = CoreRuntime()
                 configure = runtime.configure
@@ -191,8 +198,8 @@ class CoreContinuityTests(unittest.IsolatedAsyncioTestCase):
         from tests.test_ha_core_2026_9_integration import settings
         records = json.loads((ROOT / "tests/fixtures/core_2026_10_device_registry/records.json").read_text())
         expected_digests = {
-            "2026.10.0": "sha256:1b64d38f38d922bf9d59336451fd6453e1d614f934456af4ee3d2a51061be3a4",
-            "2026.10.1": "sha256:130241f28d01fa80dfa3b44f7d89781c188d8642ecab9024f079f19f9f82baa0",
+            "2026.10.3": "sha256:407b89cd11a8cb67d388d21739a226c74acbbebe1ac59e3b83b11b43ce76b98f",
+            "2026.11.0": "sha256:c6c1ca9931036bf3a2c4cc088d8db25dfea3b33935a5ecc83c40349462e2f69e",
         }
         for version, digest in expected_digests.items():
             with self.subTest(version=version):

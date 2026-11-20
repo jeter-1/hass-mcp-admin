@@ -2556,9 +2556,11 @@ async def _assert_http_configuration_contract() -> None:
         assert stored.get("has_pending") is False
         assert stored.get("has_stable") is False
         return
-    assert EXPECTED_HA_VERSION in {"2026.8.0", "2026.8.1"} or _core_binding(EXPECTED_HA_VERSION) is not None
+    # HAMCP-437 (I2b): every Core other than the 2026.7.2 fixture writer needs a
+    # reviewed binding; the retired 2026.8.x storage arm is gone.
     binding = _core_binding(EXPECTED_HA_VERSION)
-    expected_storage_version = binding.http_storage_version if binding is not None else 2
+    assert binding is not None
+    expected_storage_version = binding.http_storage_version
     assert stored.get("version") == expected_storage_version
     assert stored.get("has_yaml_migration_done") is True
     assert stored.get("yaml_migration_done") is True
@@ -2995,66 +2997,10 @@ async def _run_device_migration_contract(
             "registry_shape",
         )
     else:
-        _assert_device_contract(
-            EXPECTED_HA_VERSION in {"2026.8.0", "2026.8.1"},
-            "split_projection",
-        )
-        _assert_device_contract(
-            not any(
-                isinstance(item, dict) and item.get("id") == old_device_id
-                for item in devices
-            ),
-            "split_projection",
-        )
-        composite_splits = await websocket.command(
-            {"type": "config/device_registry/list_composite_splits"}
-        )
-        split_contract = composite_splits.get(old_device_id)
-        _assert_device_contract(
-            isinstance(split_contract, dict), "split_projection"
-        )
-        expected_device_ids = {
-            str(item) for item in split_contract.get("split_ids", ())
-        }
-        _assert_device_contract(
-            len(expected_device_ids) == 2, "split_projection"
-        )
-        splits = [
-            item
-            for item in devices
-            if isinstance(item, dict)
-            and item.get("id") in expected_device_ids
-        ]
-        _assert_device_contract(len(splits) == 2, "split_projection")
-        _assert_device_contract(
-            {str(item.get("config_entry_id")) for item in splits}
-            == config_entry_ids,
-            "split_projection",
-        )
-        _assert_device_contract(
-            all(
-                set(item.get("config_entries", ()))
-                == {item.get("config_entry_id")}
-                for item in splits
-            ),
-            "split_projection",
-        )
-        _assert_device_contract(
-            {str(item["id"]) for item in splits} == expected_device_ids,
-            "split_projection",
-        )
-        expected_primary_id = next(
-            (
-                item["id"]
-                for item in splits
-                if item.get("config_entry_id") == primary_config_entry_id
-            ),
-            None,
-        )
-        _assert_device_contract(
-            split_contract.get("primary_id") == expected_primary_id,
-            "split_projection",
-        )
+        # HAMCP-437 (I2b): the 2026.8.x split-projection arm is retired. The
+        # migration contract has no reviewed shape for any other Core without a
+        # binding, so it refuses here.
+        _assert_device_contract(False, "split_projection")
     _assert_device_contract(
         {str(item.get("device_id")) for item in fixture_entities}
         == expected_device_ids,
