@@ -310,17 +310,19 @@ ROWS: dict = {
         # helpers/service.py:996,1004.
         types={'collapsed': bool, 'integration': str},
     ),
-    # Row 25.
+    # Row 25.  HAMCP-441: result_fields enrichment and membership keys on entity
+    # records (tools/search/entities.py:59,62,306-314,182-223 at 51e3aac7).
     'ha_search': KeySet(
         admitted=frozenset({
-            'automations', 'config_has_more', 'config_next_offset',
+            'aliases', 'area', 'automations', 'config_has_more', 'config_next_offset',
             'config_total_matches', 'count', 'dashboards', 'domain', 'domain_filter',
             'entities', 'entity_has_more', 'entity_id', 'entity_next_offset',
-            'entity_total_matches', 'errors', 'friendly_name', 'has_more',
-            'helper_type', 'helpers', 'limit', 'match_in_config', 'match_in_name',
-            'match_in_references', 'match_type', 'name', 'next_offset', 'offset',
-            'partial', 'query', 'scene_id', 'scenes', 'score', 'script_id', 'scripts',
-            'search_type', 'search_types', 'state', 'success', 'warnings'
+            'entity_total_matches', 'errors', 'floor', 'friendly_name', 'has_more',
+            'helper_type', 'helpers', 'is_group', 'labels', 'limit', 'match_in_config',
+            'match_in_name', 'match_in_references', 'match_type', 'member_entity_ids',
+            'name', 'next_offset', 'offset', 'partial', 'query', 'scene_id', 'scenes',
+            'score', 'script_id', 'scripts', 'search_type', 'search_types', 'state',
+            'success', 'warnings'
         }),
     ),
 }
