@@ -1987,7 +1987,8 @@ class Core20269SourceTests(unittest.IsolatedAsyncioTestCase):
         window_module = loaded_support_window()
         window = window_module.load(ROOT)
         filled = window_module.core_slots(window, window_module.SLOTS)
-        self.assertTrue({"current", "rollback"}.issubset(filled))
+        # HAMCP-406: current is required; the rollback may be empty.
+        self.assertEqual(filled[0], "current")
         self.assertEqual([row["support_slot"] for row in matrix], list(filled))
         self.assertEqual([row["support_slot"] for row in pr], [s for s in filled if s != "rollback"])
         self.assertEqual(len({row["ha_version"] for row in matrix}), len(matrix))
@@ -2004,7 +2005,7 @@ class Core20269SourceTests(unittest.IsolatedAsyncioTestCase):
                                      + provenance["image_index_digest"])
                     self.assertEqual(lane["core_source_commit"], provenance["source_commit"])
                     self.assertEqual(lane["core_source_sha256"], provenance["source_archive_sha256"])
-                    self.assertEqual(lane["ha_mcp_version"], "8.5.0")
+                    self.assertEqual(lane["ha_mcp_version"], "9.2.0")  # HAMCP-437: ha_mcp.current
                     self.assertEqual(lane_entry(version), provenance)
         self.assertEqual(job["timeout-minutes"], 50)
         steps = job["steps"]

@@ -138,27 +138,13 @@ def records(case: str, specs: dict[str, dict[str, Any]] | None = None,
             for op, spec in specs.items()]
 
 
-def rollback_identity(architecture: str = ARCHITECTURE) -> dict[str, Any]:
-    """The rollback-identity file the digest verification step writes when it passes."""
-
-    return {"status": "passed", "image": runners.ROLLBACK_ENGINEERING_IMAGE,
-            "image_digest": runners.ROLLBACK_ENGINEERING_INDEX_DIGEST,
-            "version": runners.ROLLBACK_ENGINEERING_VERSION, "revision": runners.ROLLBACK_ENGINEERING_REVISION,
-            "architecture": architecture,
-            "manifest_digest": runners.ROLLBACK_ENGINEERING_PLATFORM_DIGESTS[architecture]}
-
-
 def identity_for(stage, architecture: str = ARCHITECTURE,
                  engineering_version: str = ENGINEERING_VERSION) -> dict[str, Any]:
     """The stage identity ``run_stage`` records for a correct deployment."""
 
     ident = {"key": stage.key, "upstream_version": stage.upstream_version, "endpoint_path": stage.endpoint_path,
              "architecture": architecture, "engineering_image_id": "sha256:" + "9" * 64}
-    if stage.rollback:
-        ident.update(engineering_image=governed.ROLLBACK_IMAGE, engineering_version=governed.ROLLBACK_VERSION,
-                     rollback_identity=rollback_identity(architecture))
-    else:
-        ident.update(engineering_image=governed.LANE_IMAGE, engineering_version=engineering_version)
+    ident.update(engineering_image=governed.LANE_IMAGE, engineering_version=engineering_version)
     return ident
 
 

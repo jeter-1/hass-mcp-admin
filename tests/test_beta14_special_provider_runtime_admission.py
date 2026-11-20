@@ -8,8 +8,6 @@ from pathlib import Path
 import sys
 import unittest
 
-import yaml
-
 
 ROOT = Path(__file__).resolve().parents[1]
 BETA = ROOT / "hass_mcp_engineering_beta"
@@ -17,7 +15,6 @@ EVIDENCE = ROOT / "docs/evidence/upstream-read-compatibility"
 sys.path.insert(0, str(BETA))
 if str(ROOT / "tests") not in sys.path:
     sys.path.append(str(ROOT / "tests"))
-from support.support_window_matrix import rows as support_rows  # noqa: E402
 
 from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
     REVIEWED_NORMALIZED_CATALOG_FINGERPRINT_MODEL_V1,
@@ -915,83 +912,6 @@ if actual_raw == selected_release.catalog_fingerprint:
         self.assertNotIn('"deployment": "standalone"', dashboard)
         self.assertIn("_classified_transport_error", client)
         self.assertIn("grouped_categories", client)
-
-    def test_distinct_immutable_addon_runtime_job_is_complete(self):
-        workflow = (ROOT / ".github/workflows/ci.yml").read_text(
-            encoding="utf-8"
-        )
-        acceptance = (
-            ROOT / "scripts/exact_addon_runtime_acceptance.py"
-        ).read_text(encoding="utf-8")
-        fixture = (
-            ROOT / "scripts/fake_ha_read_gateway_contract_server.py"
-        ).read_text(encoding="utf-8")
-        self.assertIn("exact-addon-runtime-acceptance:", workflow)
-        self.assertIn(
-            "Exact ha-mcp ${{ matrix.upstream_version }} add-on runtime acceptance",
-            workflow,
-        )
-        # The add-on matrix now derives from ci/support-window.yaml. The
-        # retired 8.0.0/8.1.0 live-detail digests must not return to CI; the
-        # in-window live-detail lane is the rollback 8.4.3 release profile.
-        job = yaml.safe_load(workflow)["jobs"]["exact-addon-runtime-acceptance"]
-        self.assertEqual(job["needs"], "prepare_exact_image_matrix")
-        self.assertEqual(
-            job["strategy"]["matrix"],
-            "${{ fromJSON(needs.prepare_exact_image_matrix.outputs.addon) }}",
-        )
-        self.assertIs(job["strategy"]["fail-fast"], False)
-        self.assertEqual(job["timeout-minutes"], 20)
-        for retired in (
-            "sha256:693ecd5c68f98e64111fbf58e02547a51b2168a942056684dbe262c550aff9cd",
-            "sha256:65856752c37e4c1f9093060fbbc4a1a826cac1cbd6a76e856af5f5672a96c404",
-            "sha256:150ee09078919a47db19639deaa8c27ec064390054e27b4e618f82eea9cf7f50",
-            "sha256:2744a11c90f7a66e61fabe8166d058191d236094393c50d976978407c039d45d",
-            "sha256:f415b72351d79414a3133c227622633d9c190a3f4f6b849eed93ac524ac1c2d5",
-            "sha256:71bd08ac7ab4272bc226b91d299929949fa24b674e164121566bc1d84666e273",
-            "sha256:2dad5c7f8afcfb8c5624d82a7d9c322fc70351d32d9697e07a162ec7015250b0",
-        ):
-            self.assertNotIn(retired, workflow)
-        live = [row for row in support_rows("addon", "full")
-                if "addon_detail_profile" in row]
-        self.assertEqual([(row["upstream_version"], row["addon_detail_profile"],
-                           row["support_slot"]) for row in live],
-                         [("8.4.3", "live-8.4.3", "rollback")])
-        self.assertEqual(
-            live[0]["addon_amd64_index_digest"],
-            "sha256:366361a088089f3cb55b51318d86eeb968f3deb913a41397d741075da879c2fb",
-        )
-        self.assertIn('"8.4.3": {', acceptance)
-        self.assertIn(
-            "actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
-            workflow,
-        )
-        self.assertIn(
-            "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1",
-            workflow,
-        )
-        self.assertIn(
-            "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f",
-            workflow,
-        )
-        self.assertIn(
-            "scripts/exact_addon_runtime_acceptance.py",
-            workflow,
-        )
-        for operation in (
-            "create_backup_plan",
-            "create_reload_plan",
-            "create_addon_restart_plan",
-            "create_home_assistant_restart_plan",
-        ):
-            self.assertIn(operation, acceptance)
-        self.assertNotIn("apply_change_plan", acceptance)
-        self.assertIn("EXPECTED_RAW_CATALOG_FINGERPRINT", acceptance)
-        self.assertIn("backup_dispatch_count == 0", acceptance)
-        self.assertIn("sum(lifecycle_dispatch_counts.values()) == 0", acceptance)
-        self.assertIn('"8.0.0": {', acceptance)
-        self.assertIn('"8.1.0": {', acceptance)
-        self.assertIn('"lovelace/config"', fixture)
 
 
 if __name__ == "__main__":

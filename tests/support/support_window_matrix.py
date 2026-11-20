@@ -1,8 +1,9 @@
 """Derive the CI lane matrices exactly as ``prepare_exact_image_matrix`` does.
 
-CI computes the real-HA, exact-image gateway and add-on runtime matrices from
-``ci/support-window.yaml`` with ``scripts/support_window.py`` (gateway rows are
-cross-checked against ``review_upstream_read_release.py ci-matrix``). Tests use
+CI computes the real-HA, strict-full and admission matrices from
+``ci/support-window.yaml`` with ``scripts/support_window.py`` (strict-full and
+admission rows are cross-checked against ``review_upstream_read_release.py
+ci-matrix``; HAMCP-437 retired the gateway and add-on runtime lanes). Tests use
 these helpers instead of hard-coding rows in ``.github/workflows/ci.yml``.
 Offline only: the reviewed registry is read from committed source.
 """
@@ -48,17 +49,17 @@ def registry_matrix():
 
 
 def matrices(tier):
-    """Return {'real_ha', 'addon', 'gateway', 'admission'} matrices for ``tier``.
+    """Return {'real_ha', 'strict_full', 'admission'} matrices for ``tier``.
 
-    ``admission`` (HAMCP-319 section 5.1 lanes) does not depend on the tier.
+    ``admission`` (HAMCP-319 section 5.1 lanes) does not depend on the tier and
+    is empty unless the window declares the optional ``admission`` key.
     """
 
     module = support_window()
     window = module.load(ROOT)
     return {
         "real_ha": module.real_ha_matrix(window, tier),
-        "addon": module.addon_matrix(window, tier),
-        "gateway": module.gateway_matrix(window, tier, registry_matrix()),
+        "strict_full": module.strict_full_matrix(window, tier, registry_matrix()),
         "admission": module.admission_matrix(window, registry_matrix()),
     }
 
@@ -69,21 +70,3 @@ def rows(kind, tier):
 
 def tier_for(event):
     return support_window().tier_for(event)
-
-
-def window_power_lanes(tier):
-    """Each add-on candidate_power lane the window declares for ``tier``.
-
-    Read straight from the window's non-empty ha-mcp slots (an empty candidate
-    declares none), as (upstream_version, support_slot, architecture,
-    core.current version, profile, source_commit) tuples in matrix order.
-    """
-
-    module = support_window()
-    window = module.load(ROOT)
-    core = window["core"]["current"]["version"]
-    return [(pin["version"], slot, architecture, core, lane["profile"], pin["source_commit"])
-            for slot in module.ha_mcp_slots(window, module.TIERS[tier])
-            for pin in (window["ha_mcp"][slot],)
-            for lane in pin["addon_runtime"] if lane["kind"] == "candidate_power"
-            for architecture in lane["architectures"]]

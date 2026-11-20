@@ -10,15 +10,19 @@ BETA_DIR = ROOT / "hass_mcp_engineering_beta"
 
 class Beta31ExactImageIdentityTests(unittest.TestCase):
     def test_baked_runtime_exercises_large_self_info_notification(self):
-        workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
+        # HAMCP-437: the strict-full runner now starts Engineering with the
+        # notification service and Supervisor token the retired lanes set.
+        runners = (
+            ROOT / "scripts" / "exact_image_admission_91_runners.py"
+        ).read_text()
         exact_acceptance = (
             ROOT / "scripts" / "exact_image_read_gateway_acceptance.py"
         ).read_text()
         fixture = (
             ROOT / "scripts" / "fake_ha_read_gateway_contract_server.py"
         ).read_text()
-        self.assertIn("approval_notification_service", workflow)
-        self.assertIn("SUPERVISOR_TOKEN", workflow)
+        self.assertIn("approval_notification_service", runners)
+        self.assertIn("SUPERVISOR_TOKEN", runners)
         self.assertIn("inspect_approval_notification", exact_acceptance)
         self.assertIn("supervisor_self_info_payload_bytes", exact_acceptance)
         self.assertIn("SELF_ADDON_INFO_BODY", fixture)

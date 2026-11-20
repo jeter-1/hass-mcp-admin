@@ -225,13 +225,14 @@ ROWS: dict = {
         # (tools_voice_assistant.py:146-193 at 51e3aac7).
         maps={'exposed_entities': 2, 'exposed_to': 1},
     ),
-    # Row 17.
+    # Row 17.  HAMCP-439: full-detail entity rows carry entity_id
+    # (tools/smart_search/_overview.py:285-286,364-365,445 at 51e3aac7).
     'ha_get_overview': KeySet(
         admitted=frozenset({
             'ai_insights', 'area_analysis', 'automation_ready', 'base_url',
             'breaks_in_ha_version', 'controllable_devices', 'count', 'created',
             'current', 'dismissed_version', 'domain', 'domain_stats', 'domains',
-            'entities', 'entities_returned', 'filtered_domains', 'friendly_name',
+            'entities', 'entities_returned', 'entity_id', 'filtered_domains', 'friendly_name',
             'ha_mcp_update', 'has_more', 'ignored', 'is_fixable', 'issue_domain',
             'issue_id', 'language', 'latest', 'limit', 'location_name',
             'monitoring_sensors', 'most_common_domains', 'name',
@@ -309,17 +310,19 @@ ROWS: dict = {
         # helpers/service.py:996,1004.
         types={'collapsed': bool, 'integration': str},
     ),
-    # Row 25.
+    # Row 25.  HAMCP-441: result_fields enrichment and membership keys on entity
+    # records (tools/search/entities.py:59,62,306-314,182-223 at 51e3aac7).
     'ha_search': KeySet(
         admitted=frozenset({
-            'automations', 'config_has_more', 'config_next_offset',
+            'aliases', 'area', 'automations', 'config_has_more', 'config_next_offset',
             'config_total_matches', 'count', 'dashboards', 'domain', 'domain_filter',
             'entities', 'entity_has_more', 'entity_id', 'entity_next_offset',
-            'entity_total_matches', 'errors', 'friendly_name', 'has_more',
-            'helper_type', 'helpers', 'limit', 'match_in_config', 'match_in_name',
-            'match_in_references', 'match_type', 'name', 'next_offset', 'offset',
-            'partial', 'query', 'scene_id', 'scenes', 'score', 'script_id', 'scripts',
-            'search_type', 'search_types', 'state', 'success', 'warnings'
+            'entity_total_matches', 'errors', 'floor', 'friendly_name', 'has_more',
+            'helper_type', 'helpers', 'is_group', 'labels', 'limit', 'match_in_config',
+            'match_in_name', 'match_in_references', 'match_type', 'member_entity_ids',
+            'name', 'next_offset', 'offset', 'partial', 'query', 'scene_id', 'scenes',
+            'score', 'script_id', 'scripts', 'search_type', 'search_types', 'state',
+            'success', 'warnings'
         }),
     ),
 }

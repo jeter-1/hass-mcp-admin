@@ -1941,6 +1941,7 @@
         "domains": "receipt 9.1.2 profile A+B",
         "entities": "receipt 9.1.2 profile A+B",
         "entities_returned": "receipt 9.1.2 profile A+B",
+        "entity_id": "9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/smart_search/_overview.py:285-286, :364-365, :445 (detail_level=full domain_stats.<d>.entities[].entity_id)",
         "filtered_domains": "receipt 9.1.2 profile A+B",
         "friendly_name": "receipt 9.1.2 profile A+B",
         "ha_mcp_update": "research G ruling 2d; 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/update_check.py:386-390, tools/tools_search.py:741-745; not reachable in the lane (no Supervisor, no PyPI)",
@@ -2009,6 +2010,12 @@
           "observed_9_1_2_profiles": [],
           "observed_9_2_0_profiles": [],
           "source": "research G ruling 2d; 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/update_check.py:386-390, tools/tools_search.py:741-745; not reachable in the lane (no Supervisor, no PyPI)",
+          "status": "admitted"
+        },
+        "entity_id": {
+          "observed_9_1_2_profiles": [],
+          "observed_9_2_0_profiles": [],
+          "source": "9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/smart_search/_overview.py:285-286, :364-365, :445 (detail_level=full domain_stats.<d>.entities[].entity_id)",
           "status": "admitted"
         },
         "ha_mcp_update": {
@@ -3158,6 +3165,8 @@
     },
     "ha_search": {
       "admitted": {
+        "aliases": "9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/search/entities.py:59, :131-136, :306-314, :735-770; search/component.py:588-601; custom_components/ha_mcp_tools/websocket_api/search.py:520-523, :600-603 (result_fields entities[] area and floor names, label names, string aliases)",
+        "area": "9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/search/entities.py:59, :131-136, :306-314, :735-770; search/component.py:588-601; custom_components/ha_mcp_tools/websocket_api/search.py:520-523, :600-603 (result_fields entities[] area and floor names, label names, string aliases)",
         "automations": "receipt 9.1.2 profile A+B",
         "config_has_more": "receipt 9.1.2 profile A+B",
         "config_next_offset": "receipt 9.1.2 profile A+B",
@@ -3172,15 +3181,19 @@
         "entity_next_offset": "receipt 9.1.2 profile A+B",
         "entity_total_matches": "receipt 9.1.2 profile A+B",
         "errors": "receipt 9.1.2 profile A+B",
+        "floor": "9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/search/entities.py:59, :131-136, :306-314, :735-770; search/component.py:588-601; custom_components/ha_mcp_tools/websocket_api/search.py:520-523, :600-603 (result_fields entities[] area and floor names, label names, string aliases)",
         "friendly_name": "receipt 9.1.2 profile A+B",
         "has_more": "receipt 9.1.2 profile A+B",
         "helper_type": "receipt 9.1.2 profile A+B",
         "helpers": "receipt 9.1.2 profile A+B",
+        "is_group": "9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/search/entities.py:62, :131-136, :182-223; search/response.py:570-577; custom_components/ha_mcp_tools/websocket_api/search.py:578-579, :606-614 (result_fields entities[] is_group: bool, member entity ids)",
+        "labels": "9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/search/entities.py:59, :131-136, :306-314, :735-770; search/component.py:588-601; custom_components/ha_mcp_tools/websocket_api/search.py:520-523, :600-603 (result_fields entities[] area and floor names, label names, string aliases)",
         "limit": "receipt 9.1.2 profile A+B",
         "match_in_config": "receipt 9.1.2 profile A+B",
         "match_in_name": "receipt 9.1.2 profile A+B",
         "match_in_references": "receipt 9.1.2 profile A+B",
         "match_type": "receipt 9.1.2 profile A+B",
+        "member_entity_ids": "9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/search/entities.py:62, :131-136, :182-223; search/response.py:570-577; custom_components/ha_mcp_tools/websocket_api/search.py:578-579, :606-614 (result_fields entities[] is_group: bool, member entity ids)",
         "name": "research G ruling 2c",
         "next_offset": "receipt 9.1.2 profile A+B",
         "offset": "receipt 9.1.2 profile A+B",
@@ -3218,6 +3231,42 @@
       "consumed_structure": [],
       "map_containers": {},
       "new_in_9_2_0": {
+        "aliases": {
+          "observed_9_1_2_profiles": [],
+          "observed_9_2_0_profiles": [],
+          "source": "9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/search/entities.py:59, :131-136, :306-314, :735-770; search/component.py:588-601; custom_components/ha_mcp_tools/websocket_api/search.py:520-523, :600-603 (result_fields entities[] area and floor names, label names, string aliases)",
+          "status": "admitted"
+        },
+        "area": {
+          "observed_9_1_2_profiles": [],
+          "observed_9_2_0_profiles": [],
+          "source": "9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/search/entities.py:59, :131-136, :306-314, :735-770; search/component.py:588-601; custom_components/ha_mcp_tools/websocket_api/search.py:520-523, :600-603 (result_fields entities[] area and floor names, label names, string aliases)",
+          "status": "admitted"
+        },
+        "floor": {
+          "observed_9_1_2_profiles": [],
+          "observed_9_2_0_profiles": [],
+          "source": "9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/search/entities.py:59, :131-136, :306-314, :735-770; search/component.py:588-601; custom_components/ha_mcp_tools/websocket_api/search.py:520-523, :600-603 (result_fields entities[] area and floor names, label names, string aliases)",
+          "status": "admitted"
+        },
+        "is_group": {
+          "observed_9_1_2_profiles": [],
+          "observed_9_2_0_profiles": [],
+          "source": "9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/search/entities.py:62, :131-136, :182-223; search/response.py:570-577; custom_components/ha_mcp_tools/websocket_api/search.py:578-579, :606-614 (result_fields entities[] is_group: bool, member entity ids)",
+          "status": "admitted"
+        },
+        "labels": {
+          "observed_9_1_2_profiles": [],
+          "observed_9_2_0_profiles": [],
+          "source": "9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/search/entities.py:59, :131-136, :306-314, :735-770; search/component.py:588-601; custom_components/ha_mcp_tools/websocket_api/search.py:520-523, :600-603 (result_fields entities[] area and floor names, label names, string aliases)",
+          "status": "admitted"
+        },
+        "member_entity_ids": {
+          "observed_9_1_2_profiles": [],
+          "observed_9_2_0_profiles": [],
+          "source": "9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/search/entities.py:62, :131-136, :182-223; search/response.py:570-577; custom_components/ha_mcp_tools/websocket_api/search.py:578-579, :606-614 (result_fields entities[] is_group: bool, member entity ids)",
+          "status": "admitted"
+        },
         "name": {
           "observed_9_1_2_profiles": [
             "A",
@@ -3231,7 +3280,9 @@
           "status": "admitted"
         }
       },
-      "notes": [],
+      "notes": [
+        "result_fields enrichment and membership keys are admitted by source review (HAMCP-441); no receipt passed result_fields"
+      ],
       "number": 25,
       "observed": {
         "9.1.2": [
