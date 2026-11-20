@@ -1934,24 +1934,35 @@ class PolicyInventoryTests(unittest.TestCase):
             "len(base_names) == EXPECTED_ENGINEERING_BASELINE_COUNT",
             acceptance,
         )
-        self.assertIn("exact-image-read-gateway:", workflow)
+        # HAMCP-437: the exact-image-read-gateway job is retired; the gateway
+        # acceptance now runs in the strict-full lane on ha_mcp.current.
+        self.assertNotIn("exact-image-read-gateway:", workflow)
+        job = workflow.split("\n  exact-image-admission-lanes:\n", 1)[1].split(
+            "\n  exact-image-admission-manifest-gate:\n", 1
+        )[0]
+        lanes = (ROOT / "scripts" / "exact_image_admission_lanes.py").read_text(
+            encoding="utf-8"
+        )
+        runners = (
+            ROOT / "scripts" / "exact_image_admission_91_runners.py"
+        ).read_text(encoding="utf-8")
         self.assertIn(
             "review_upstream_read_release.py ci-matrix",
             workflow,
         )
         self.assertIn(
-            "fromJSON(needs.prepare_exact_image_matrix.outputs.matrix)",
-            workflow,
+            "fromJSON(needs.prepare_exact_image_matrix.outputs.admission)",
+            job,
         )
-        self.assertIn("EXPECTED_IMAGE_INDEX_DIGEST", workflow)
-        self.assertIn("EXPECTED_IMAGE_REVISION", workflow)
+        self.assertIn("exact_image_admission_lanes.py identity", job)
+        self.assertIn('"identity_index_digest_mismatch"', lanes)
         self.assertIn(
-            "EXPECTED_ARCHITECTURE_IMAGE_DIGESTS", workflow
+            'labels.get("org.opencontainers.image.revision") == row.get("image_revision")',
+            lanes,
         )
-        self.assertIn("org.opencontainers.image.revision", workflow)
         self.assertIn(
-            "docs/evidence/upstream-read-compatibility/ha-mcp-${UPSTREAM_VERSION}.json",
-            workflow,
+            '"upstream-read-compatibility" / f"ha-mcp-{CANDIDATE_VERSION}.json"',
+            runners,
         )
         self.assertNotIn(
             "68f386d9becfcc58476f1881a0025f4c6a3ae5874c15cdd61097b14156886292",
@@ -1961,19 +1972,19 @@ class PolicyInventoryTests(unittest.TestCase):
             "7917b2d385e16e43f45f92fc72a757e5c0aec8d88b3cd69fe64f3b5106cbfe36",
             workflow,
         )
-        self.assertIn("fake_ha_read_gateway_contract_server.py", workflow)
-        self.assertIn("exact_image_read_gateway_acceptance.py", workflow)
-        self.assertIn("--engineering-endpoint", workflow)
+        self.assertIn("fake_ha_read_gateway_contract_server.py", job)
+        self.assertIn("exact_image_read_gateway_acceptance.py", job)
+        self.assertIn("--engineering-endpoint", job)
         self.assertIn(
-            '--upstream-version "$UPSTREAM_VERSION"', workflow
+            '--upstream-version "$CANDIDATE_VERSION"', job
+        )
+        self.assertIn('"--add-host", "abcdef12-ha-mcp:127.0.0.1"', runners)
+        self.assertIn(
+            '--configured-upstream-endpoint "$STRICT_FULL_UPSTREAM_URL"', job
         )
         self.assertIn(
-            "--add-host abcdef12-ha-mcp:127.0.0.1", workflow
-        )
-        self.assertIn(
-            "--configured-upstream-endpoint "
-            "http://abcdef12-ha-mcp:18086/",
-            workflow,
+            "STRICT_FULL_UPSTREAM_URL: http://abcdef12-ha-mcp:18086/",
+            job,
         )
         self.assertIn(
             "inspect_operational_lifecycle", acceptance
@@ -2075,9 +2086,8 @@ class PolicyInventoryTests(unittest.TestCase):
             'INSTALLED_ADDONS[0]["version"] = args.upstream_version',
             fixture,
         )
-        self.assertIn("exact_image_readmission_acceptance.py", workflow)
-        self.assertIn("docker stop --time 10 exact-read-gateway-upstream", workflow)
-        self.assertIn("docker start exact-read-gateway-upstream", workflow)
+        # HAMCP-437: the disconnect and readmission lane retired with the job.
+        self.assertNotIn("exact_image_readmission_acceptance.py", workflow)
 
     def test_application_keeps_dashboard_and_generic_admission_independent(self):
         application = (

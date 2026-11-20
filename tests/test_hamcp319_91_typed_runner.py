@@ -229,7 +229,8 @@ class ProtocolTests(RunnerHarness):
         controls = {name: verified(name) for name in typed.CONTROLS}
         self.run_main(runner_with(controls, [PROTOCOL] * 2))
         loaded = lanes.load_case_results(self.cases)
-        self.assertEqual(lanes.find_values(loaded, "negotiated_protocol"), [PROTOCOL])
+        # The manifest writer reads each case's observed.negotiated_protocol.
+        self.assertEqual([value["observed"].get("negotiated_protocol") for value in loaded.values()], [PROTOCOL])
         self.assertIn("91_typed_controls_verified_readback", lanes.case_names("91_only"))
         self.assertEqual(lanes.case_form("91_only", "91_typed_controls_verified_readback"), "strict_full")
 
@@ -361,12 +362,18 @@ class CoreImageAndGateTests(RunnerHarness):
                 self.assert_failed(code, result, category)
                 self.assertEqual(called, [])
 
-    def test_admission_candidate_must_be_9_2_0(self):
+    def test_ha_mcp_current_must_be_9_2_0(self):
         import support_window
-        changed = copy.deepcopy(support_window.load())
-        changed["admission"] = {**changed.get("admission", {}), "candidate_version": "8.5.0"}
-        code, result = self.run_main(runner_with({}, []), window_loader=lambda: changed)
-        self.assert_failed(code, result, "admission_candidate_not_9_2_0")
+        window = support_window.load()
+        self.assertEqual(window["ha_mcp"]["current"]["version"], "9.2.0")
+        for current in ({**window["ha_mcp"]["current"], "version": "9.1.2"}, None):
+            with self.subTest(current=current):
+                changed = copy.deepcopy(window)
+                changed["ha_mcp"]["current"] = current
+                called = []
+                code, result = self.run_main(runner_with({}, [], seen=called), window_loader=lambda: changed)
+                self.assert_failed(code, result, "ha_mcp_current_not_9_2_0")
+                self.assertEqual(called, [])
 
     def test_ci_job_gate(self):
         controls = {name: verified(name) for name in typed.CONTROLS}

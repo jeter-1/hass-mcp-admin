@@ -20,7 +20,7 @@ import os
 CHILD_DEVICES = "child_devices"
 CHILD_DEVICE_NAME_PARTS = "child_device_name_parts"
 DEVICE_REGISTRIES = frozenset({CHILD_DEVICES, CHILD_DEVICE_NAME_PARTS})
-CHILD_CONSUMERS = frozenset({"8.4.3", "8.5.0"})
+CHILD_CONSUMERS = frozenset({"8.4.3", "8.5.0", "9.2.0"})
 
 
 @dataclass(frozen=True)
@@ -59,8 +59,10 @@ REVIEWED_CORE_BINDINGS = {
     "2026.10.3": CoreBinding("sha256:407b89cd11a8cb67d388d21739a226c74acbbebe1ac59e3b83b11b43ce76b98f",
                              CHILD_DEVICE_NAME_PARTS, True, "8.5.0"),
     # HAMCP-280: exact stable target; applicability evidence is reviewed separately.
+    # HAMCP-437 (I2b ruling 2): the child consumer is ha-mcp 9.2.0; every 9.2.0
+    # file on the child-consumer paths was reviewed against 8.5.0 (exact source).
     "2026.11.0": CoreBinding("sha256:c6c1ca9931036bf3a2c4cc088d8db25dfea3b33935a5ecc83c40349462e2f69e",
-                             CHILD_DEVICE_NAME_PARTS, True, "8.5.0", http_storage_version=3),
+                             CHILD_DEVICE_NAME_PARTS, True, "9.2.0", http_storage_version=3),
 }
 
 

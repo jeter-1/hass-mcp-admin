@@ -54,28 +54,28 @@ class StableResolutionTests(unittest.TestCase):
             with self.subTest(slot=slot):
                 version = self.window["core"][slot]["version"]
                 self.assertEqual(latest.classify(version, self.window["core"]), slot)
-        self.assertEqual(latest.classify("2026.11.0", self.window["core"]), "newer_than_window")
-        self.assertEqual(latest.classify("2026.10.10", self.window["core"]), "newer_than_window")
+        # HAMCP-437: the window is Core 2026.11.0 with ha-mcp 9.2.0.
+        self.assertEqual(latest.classify("2026.12.0", self.window["core"]), "newer_than_window")
+        self.assertEqual(latest.classify("2026.11.10", self.window["core"]), "newer_than_window")
+        self.assertEqual(latest.classify("2026.10.10", self.window["core"]), "older_than_window")
         self.assertEqual(latest.classify("2026.9.3", self.window["core"]), "older_than_window")
-        self.assertEqual(latest.classify("8.7.0", self.window["ha_mcp"]), "newer_than_window")
+        self.assertEqual(latest.classify("9.3.0", self.window["ha_mcp"]), "newer_than_window")
+        self.assertEqual(latest.classify("9.1.2", self.window["ha_mcp"]), "older_than_window")
 
     def test_summary_pins_newest_core_with_current_reviewed_ha_mcp(self):
-        result = latest.summary(self.window, "2026.11.0", "8.6.0", DIGEST, DIGEST)
+        result = latest.summary(self.window, "2026.12.0", "9.3.0", DIGEST, DIGEST)
         self.assertFalse(result["inside_window"])
-        # 8.6.0 holds a window slot only while one declares it; with an empty
-        # ha-mcp candidate (HOLD #2695, HAMCP-173) it is newer than the window.
-        held = [slot for slot in support_window.ha_mcp_slots(self.window, support_window.SLOTS)
-                if self.window["ha_mcp"][slot]["version"] == "8.6.0"]
-        self.assertEqual(result["ha_mcp"]["window_slot"], held[0] if held else "newer_than_window")
+        self.assertEqual(result["core"]["window_slot"], "newer_than_window")
+        self.assertEqual(result["ha_mcp"]["window_slot"], "newer_than_window")
         [row] = result["real_ha"]["include"]
         current = self.window["ha_mcp"]["current"]
-        self.assertEqual(row["ha_image"], "ghcr.io/home-assistant/home-assistant:2026.11.0@" + DIGEST)
+        self.assertEqual(row["ha_image"], "ghcr.io/home-assistant/home-assistant:2026.12.0@" + DIGEST)
         self.assertEqual(row["ha_mcp_version"], current["version"])
         self.assertEqual(row["ha_mcp_source_commit"], current["source_commit"])
         self.assertEqual(row["ha_mcp_source_sha256"], current["source_archive_sha256"])
         newest = max((self.window["core"][slot]["version"]
                       for slot in support_window.core_slots(self.window, support_window.SLOTS)), key=latest.key)
-        self.assertTrue(latest.summary(self.window, newest, "8.5.0", DIGEST, DIGEST)["inside_window"])
+        self.assertTrue(latest.summary(self.window, newest, current["version"], DIGEST, DIGEST)["inside_window"])
 
     def test_unpinned_core_image_is_refused(self):
         for digest in (None, "", "sha256:abc", "latest"):

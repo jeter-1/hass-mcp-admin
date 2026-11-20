@@ -20,7 +20,7 @@ sys.path[:0] = [str(ROOT / "scripts"), str(ROOT / "hass_mcp_engineering_beta")]
 import entity_metadata_contract_acceptance as lane  # noqa: E402
 import alarmo_inspection_contract_acceptance as alarmo  # noqa: E402
 from entity_metadata_receipts import synthetic_receipt  # noqa: E402
-from test_alarmo_interval_observer import (CORE, NOT_SLOTS, NOT_STRINGS, OTHER_CORE,  # noqa: E402
+from test_alarmo_interval_observer import (CORE, NOT_SLOTS, NOT_STRINGS, OTHER_BINDING, OTHER_CORE,  # noqa: E402
                                            SLOT_VERSIONS, cleanup_value)
 
 CORE_SLOT = next(slot for slot, version in SLOT_VERSIONS.items() if version == CORE)
@@ -96,7 +96,7 @@ class ReceiptTests(unittest.TestCase):
             lane.verify_result(copy.deepcopy(self.value), core_version=CORE)
 
     def test_refuses_wrong_image_digest_fingerprint_source_or_authority(self):
-        other = alarmo.slot_binding(OTHER_CORE)
+        other = OTHER_BINDING
         fingerprint = "sha256:" + "0" * 64
 
         def wrong_fingerprint(value):
@@ -287,7 +287,7 @@ class VerifierMutationTests(unittest.TestCase):
         if name == "core":
             value["core"] = OTHER_CORE
         elif name == "support_slot":
-            value["support_slot"] = next(slot for slot in SLOT_VERSIONS if slot != CORE_SLOT)
+            value["support_slot"] = OTHER_BINDING["slot"]
         elif name == "image_index_digest":
             value["image_index_digest"] = "sha256:" + "0" * 64
         elif name == "contract_fingerprint":
@@ -396,7 +396,10 @@ class RetainedReceiptTests(unittest.TestCase):
             with self.subTest(standalone=len(standalone)), self.assertRaisesRegex(ValueError, "differs"):
                 self.cleanup(value, CORE, standalone)
         for mutate in (lambda v: v.pop("entity_metadata"),
-                       lambda v: v.update(entity_metadata=synthetic_receipt(OTHER_CORE)),
+                       # A receipt bound whole to a Core outside the one-slot window.
+                       lambda v: v["entity_metadata"].update(
+                           core=OTHER_CORE, support_slot=OTHER_BINDING["slot"], core_image=OTHER_BINDING["image"],
+                           image_index_digest=OTHER_BINDING["image_index_digest"]),
                        lambda v: v["entity_metadata"].update(result="FAIL"),
                        lambda v: v["entity_metadata"].update(image_index_digest="sha256:" + "0" * 64)):
             changed = copy.deepcopy(value)
@@ -520,10 +523,10 @@ class LaneGuardTests(unittest.IsolatedAsyncioTestCase):
         binding = alarmo.slot_binding(CORE)
         local = SimpleNamespace(ha_url="http://127.0.0.1:8123")
         cases = [
-            (local, binding["image"], OTHER_CORE, binding["lane"]),
-            (local, binding["image"], CORE, alarmo.slot_binding(OTHER_CORE)["lane"]),
+            # A Core outside the one-slot window (OTHER_CORE) is refused as unknown below.
+            (local, binding["image"], CORE, OTHER_BINDING["lane"]),
             (local, binding["image"], CORE, None),
-            (local, alarmo.slot_binding(OTHER_CORE)["image"], CORE, binding["lane"]),
+            (local, OTHER_BINDING["image"], CORE, binding["lane"]),
             (local, binding["image"].split("@")[0], CORE, binding["lane"]),
             (SimpleNamespace(ha_url="http://homeassistant.local:8123"), binding["image"], CORE, binding["lane"]),
         ]
@@ -548,7 +551,7 @@ class LaneGuardTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_lane_refuses_a_wrong_slot_image_receipt_before_any_client(self):
         binding = alarmo.slot_binding(CORE)
-        other = alarmo.slot_binding(OTHER_CORE)
+        other = OTHER_BINDING
         receipts = [
             {"result": "PASS", "index": other["image_index_digest"], "core_version": CORE, "support_slot": CORE_SLOT},
             {"result": "PASS", "index": binding["image_index_digest"], "core_version": OTHER_CORE,

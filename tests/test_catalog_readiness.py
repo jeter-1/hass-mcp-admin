@@ -312,38 +312,43 @@ class ExactImageDiagnosticTests(unittest.TestCase):
         self.assertNotIn("must-not-be-exported", json.dumps(result))
 
     def test_ci_waits_for_ready_200_and_always_uploads_result(self):
-        workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
+        # HAMCP-437 retired the exact-image read-gateway job; the strict-full
+        # admission job now starts Engineering and carries the read gateway case.
+        import ast
+        import yaml
+
+        workflow = yaml.safe_load(
+            (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+        )
+        steps = {
+            step["name"]: step
+            for step in workflow["jobs"]["exact-image-admission-lanes"]["steps"]
+            if "name" in step
+        }
+        engineering_start = steps["Case strict-full exact admission"]["run"]
+        self.assertIn("exact_image_admission_91_runners.py start-engineering", engineering_start)
+        self.assertIn("--mcp-port 18100", engineering_start)
+        # start-engineering accepts only /ready 200 before any case runs.
+        runners = (ROOT / "scripts" / "exact_image_admission_91_runners.py").read_text(
             encoding="utf-8"
         )
-        engineering_start = workflow.split(
-            "- name: Build and start Engineering through its production discovery path",
-            1,
-        )[1].split(
-            "- name: Run exact-image authenticated gateway acceptance",
-            1,
-        )[0]
-        acceptance_step = workflow.split(
-            "- name: Run exact-image authenticated gateway acceptance",
-            1,
-        )[1].split(
-            "- name: Upload bounded exact-image result",
-            1,
-        )[0]
-        upload_step = workflow.split(
-            "- name: Upload bounded exact-image result",
-            1,
-        )[1].split(
-            "- name: Remove disposable exact-image environment",
-            1,
-        )[0]
-
-        self.assertIn("--write-out '%{http_code}'", engineering_start)
-        self.assertIn("http://127.0.0.1:18100/ready", engineering_start)
-        self.assertIn('test "$status" = "200"', engineering_start)
-        self.assertNotIn('test "$status" != "000"', engineering_start)
-        self.assertIn("if: always()", acceptance_step)
-        self.assertIn("if: always()", upload_step)
-        self.assertIn("if-no-files-found: error", upload_step)
+        tree = ast.parse(runners)
+        (start,) = [
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == "command_start_engineering"
+        ]
+        start_source = ast.get_source_segment(runners, start)
+        self.assertIn('/ready", lambda status: status == 200, 120)', start_source)
+        self.assertIn('"engineering_not_ready"', start_source)
+        self.assertNotIn("!= 000", start_source)
+        manifest = steps["Write section 5.1 acceptance manifest"]
+        manifest_upload = steps["Upload section 5.1 acceptance manifest"]
+        self.assertEqual(manifest["if"], "always()")
+        self.assertEqual(manifest_upload["if"], "always()")
+        self.assertEqual(manifest_upload["with"]["if-no-files-found"], "error")
+        self.assertTrue(
+            steps["Upload bounded admission case results"]["if"].startswith("always()")
+        )
 
 
 class ExactImageAuthorityFixtureTests(unittest.IsolatedAsyncioTestCase):

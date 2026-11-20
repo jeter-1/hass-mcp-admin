@@ -11,10 +11,12 @@ import tomllib
 import types
 
 
+# HAMCP-437: exact source 51e3aac7 (ha-mcp 9.2.0) vendors websockets 17.4
+# (src/ha_mcp/_vendor/websockets/version.py, released; _vendor/requirements.txt).
+# The 9.2.0 ha_mcp_tools component runs an embedded server inside Home Assistant
+# on this vendored copy, so the isolation check still guards shipped behaviour.
 REVIEWED_VENDOR_VERSIONS = {
-    "8.2.0": "17.0.1",
-    "8.4.3": "17.0.1",
-    "8.5.0": "17.1",
+    "9.2.0": "17.4",
 }
 
 
