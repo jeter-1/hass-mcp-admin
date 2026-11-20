@@ -104,6 +104,14 @@ UPDATE_SOURCE = ('research G ruling 2d; 9.2.0 source review, ha-mcp 51e3aac7 src
 # HAMCP-439 (round-6 ruling 2026-11-19): no receipt made a full-detail call.
 OVERVIEW_ENTITY_ID_SOURCE = ('9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/smart_search/_overview.py:285-286, '
                              ':364-365, :445 (detail_level=full domain_stats.<d>.entities[].entity_id)')
+# HAMCP-441 (round-7 ruling 2026-11-20): the r25 receipts never passed result_fields.
+SEARCH_ENRICHMENT_SOURCE = ('9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/search/entities.py:59, :131-136, '
+                            ':306-314, :735-770; search/component.py:588-601; custom_components/ha_mcp_tools/'
+                            'websocket_api/search.py:520-523, :600-603 (result_fields entities[] area and floor '
+                            'names, label names, string aliases)')
+SEARCH_MEMBERSHIP_SOURCE = ('9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/search/entities.py:62, :131-136, '
+                            ':182-223; search/response.py:570-577; custom_components/ha_mcp_tools/websocket_api/'
+                            'search.py:578-579, :606-614 (result_fields entities[] is_group: bool, member entity ids)')
 
 # Per read: number, upstream tool, projection kind, the reviewed specification.
 # "named": keys the shipped 9.1 projection requires or type-checks (file:line).
@@ -203,7 +211,10 @@ READS = {
                'integration (target.entity[] filters) and collapsed (field sections) are Core keys copied unchanged (S10-2 ruling); a value of another type is withheld and counted; filter stays withheld',)),
     'ha_search': dict(n=25, upstream='ha_search', named=(f'{E}:49-51,282-290', (
         'partial', 'errors', 'warnings', 'entities', 'automations', 'scripts', 'scenes', 'helpers', 'dashboards')),
-        ruled={'name': 'research G ruling 2c'}),
+        ruled={'name': 'research G ruling 2c',
+               **dict.fromkeys(('area', 'floor', 'labels', 'aliases'), SEARCH_ENRICHMENT_SOURCE),
+               **dict.fromkeys(('is_group', 'member_entity_ids'), SEARCH_MEMBERSHIP_SOURCE)},
+        notes=('result_fields enrichment and membership keys are admitted by source review (HAMCP-441); no receipt passed result_fields',)),
     'ha_get_integration': dict(n=26, upstream='ha_get_integration', kind='rebuild', rebuild=(f'{PL}:674-744', (
         '_ENTRY',)), closed_rebuild=True, extra_consumed=('success', 'entries', 'has_more', 'warnings'),
         recomputed=('total_count', 'offset', 'limit', 'count', 'next_offset', 'state_summary', 'query'),

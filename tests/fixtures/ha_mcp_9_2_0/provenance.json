@@ -1482,7 +1482,7 @@
   "generation": "docs/evidence/hamcp371/s7/generate_output_key_contract.py over the committed S6 receipts; receipts are never edited",
   "provenance_model": "hamcp371-fixture-provenance-v1",
   "source_files": {
-    "docs/evidence/hamcp371/s7/generate_output_key_contract.py": "809b49a7cfbb24de2ff157aa628bcfc1d464d2294ca5b95c956c7475a9b03869",
+    "docs/evidence/hamcp371/s7/generate_output_key_contract.py": "e73e424b0bdc24fa9efc98918d3da529e3eb01150e11c723357be9e2f632d17a",
     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_blueprint.py": "1f392b09ce868ff1281672e87fb741e5d9d65b6d048023bbb4f73e7d02688d83",
     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py": "0663f89c33c95e3d9185be2c68a33dcc6f77a2cd7672b24645623a636897e68a",
     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_history_9_1.py": "8b6263cefc05c05fe497ce980860d8270c43bc4a424493e0606798d809a1309f",
