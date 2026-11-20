@@ -225,13 +225,14 @@ ROWS: dict = {
         # (tools_voice_assistant.py:146-193 at 51e3aac7).
         maps={'exposed_entities': 2, 'exposed_to': 1},
     ),
-    # Row 17.
+    # Row 17.  HAMCP-439: full-detail entity rows carry entity_id
+    # (tools/smart_search/_overview.py:285-286,364-365,445 at 51e3aac7).
     'ha_get_overview': KeySet(
         admitted=frozenset({
             'ai_insights', 'area_analysis', 'automation_ready', 'base_url',
             'breaks_in_ha_version', 'controllable_devices', 'count', 'created',
             'current', 'dismissed_version', 'domain', 'domain_stats', 'domains',
-            'entities', 'entities_returned', 'filtered_domains', 'friendly_name',
+            'entities', 'entities_returned', 'entity_id', 'filtered_domains', 'friendly_name',
             'ha_mcp_update', 'has_more', 'ignored', 'is_fixable', 'issue_domain',
             'issue_id', 'language', 'latest', 'limit', 'location_name',
             'monitoring_sensors', 'most_common_domains', 'name',
