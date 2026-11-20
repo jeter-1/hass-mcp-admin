@@ -190,11 +190,14 @@ class ConsolidatedListTests(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertIsNone(core_lane_bindings.reviewed_core_binding(value))
                 self.assertIsNone(core_lane_bindings.reviewed_lane_binding(value))
+        # HAMCP-437 (I2b): the child consumers are exactly ha-mcp 8.5.0 and 9.2.0. 8.4.3
+        # was retired with the 2026.9.0-9.2 bindings and must stay refused.
+        self.assertEqual(core_lane_bindings.CHILD_CONSUMERS, frozenset({"8.5.0", "9.2.0"}))
         for field, value in (("device_registry", "child_devices_v3"), ("child_consumer", "8.6.0"),
-                             ("typed_operations", 1)):
+                             ("child_consumer", "8.4.3"), ("typed_operations", 1)):
             malformed = dataclasses.replace(NEW_BINDING, **{field: value})
-            with self.subTest(field=field), patch.dict(core_lane_bindings.REVIEWED_CORE_BINDINGS,
-                                                       {NEW_VERSION: malformed}):
+            with self.subTest(field=field, value=value), patch.dict(core_lane_bindings.REVIEWED_CORE_BINDINGS,
+                                                                    {NEW_VERSION: malformed}):
                 with self.assertRaisesRegex(ValueError, "^malformed reviewed Core binding$"):
                     core_lane_bindings.reviewed_core_binding(NEW_VERSION)
                 with self.assertRaisesRegex(ValueError, "^malformed reviewed Core binding$"):
