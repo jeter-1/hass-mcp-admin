@@ -341,7 +341,7 @@ def assemble(directory, receipts, case):
                 "withheld": [p["capability_id"] for p in baseline["capabilities"] if p not in refs]}
     state = read_json(directory / "state.json")
     if state["acceptance"] and refs != baseline["capabilities"]:
-        raise ValueError("acceptance requires all 31 exact signed profile references")
+        raise ValueError("acceptance requires every exact signed profile reference in the predecessor entry")
     if not refs:
         raise ValueError("no passing profiles; no candidate")
     entry = {**baseline, **ctx["provenance"], "capabilities": refs,
