@@ -4084,6 +4084,7 @@ async def _run_core_2026_9_child_contract(
             )
             assert isinstance(data, dict)
             results[name] = data
+        projects_child_entity: dict[str, bool] = {}
         for name, result in results.items():
             consumer_scenario = f"child_consumer_{name}"
             _assert_device_contract(
@@ -4096,10 +4097,40 @@ async def _run_core_2026_9_child_contract(
                 consumer_scenario,
                 missing_key="zero_fallback",
             )
-            _assert_device_contract(
-                _contains_exact_projection(result, child_entity_id),
-                "child_entity",
+            projects_child_entity[name] = _contains_exact_projection(
+                result, child_entity_id
             )
+        # One assertion over every consumer, so a single run names each one
+        # that omits the child entity.  Tool and key names and booleans only.
+        child_entity_diagnostic: dict[str, object] = {
+            "missing_consumers": [
+                name for name, found in projects_child_entity.items() if not found
+            ],
+            "result_top_level_keys": {
+                name: sorted(
+                    token
+                    for key in result
+                    if key not in (child_id, child_entity_id, parent_id)
+                    and (
+                        token := _bounded_diagnostic_token(
+                            key, maximum=64, punctuation="_"
+                        )
+                    )
+                )[:20]
+                for name, result in results.items()
+            },
+            "contains_child_device_id": {
+                name: _contains_exact_projection(result, child_id)
+                for name, result in results.items()
+            },
+        }
+        if len(json.dumps(child_entity_diagnostic, separators=(",", ":"))) > 2000:
+            child_entity_diagnostic.pop("result_top_level_keys")
+        _assert_device_contract(
+            all(projects_child_entity.values()),
+            "child_entity",
+            diagnostic=child_entity_diagnostic,
+        )
         device_result = results["ha_get_device"]
         _assert_device_contract(
             _contains_exact_projection(device_result, child_id),
