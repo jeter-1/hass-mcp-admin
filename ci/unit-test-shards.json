@@ -223,7 +223,6 @@
   "test_rc2dev5_live_acceptance": 2,
   "test_rc2dev6_auth_audit": 1,
   "test_rc2dev7_exact_audit_filtering": 1,
-  "test_rc2dev8_exact_image_bake": 1,
   "test_rc2dev8_prevalidation_enforcement": 2,
   "test_rc2dev9_attestation_workflow": 1,
   "test_rc2dev9_upstream_admission": 2,

@@ -249,7 +249,6 @@ Supplementary records for a specific release, listed with their headings.
 - [`BETA35_MOBILE_APPROVAL_NAVIGATION.md`](BETA35_MOBILE_APPROVAL_NAVIGATION.md): “Beta 35 mobile approval navigation”
 - [`V2_2_0_BETA12_CANARY_FAILURE.md`](V2_2_0_BETA12_CANARY_FAILURE.md): “Beta 12 ha-mcp 8.0.0 canary-failure record”
 - [`RESTART_RECONCILIATION_BETA11.md`](RESTART_RECONCILIATION_BETA11.md): “Beta 11 restart-reconciliation defect evidence”
-- [`RC2DEV8_EXACT_IMAGE_BAKE.md`](RC2DEV8_EXACT_IMAGE_BAKE.md): “RC2dev8 exact-image dependency-index bake”
 - [`HA_CORE_2026_9_COMPATIBILITY.md`](HA_CORE_2026_9_COMPATIBILITY.md): “Home Assistant Core 2026.9 compatibility assessment”
 
 ## Feature acceptance contracts
