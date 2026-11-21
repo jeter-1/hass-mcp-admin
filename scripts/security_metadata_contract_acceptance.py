@@ -145,8 +145,13 @@ def digest(value):
 
 
 @diagnostics.checked("helper_setup", "helper_contract")
-async def run(configured, entry, directory):
+async def run(configured, entry, directory, *, mode):
     """Run only security_metadata; caller owns startup, identity and teardown proof."""
+    # The caller names the mode; nothing here reads the environment to choose one.
+    if mode == "ci":
+        raise NotImplementedError("ci mode lands in 443-B")
+    if mode != "local":
+        raise ValueError("lane_mode_unknown")
     key = Ed25519PrivateKey.generate()
     now = datetime.now(timezone.utc)
     evidence = b"Disposable security-metadata test authority; not registry publication authority"

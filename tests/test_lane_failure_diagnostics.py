@@ -280,7 +280,7 @@ class StartupChecks(unittest.IsolatedAsyncioTestCase):
         import helper_value_contract_acceptance as acceptance
         with diagnostics.lane('helper_value'):
             with self.assertRaises(AssertionError) as caught:
-                await acceptance.run(None, {'capabilities': []}, Path('.'))
+                await acceptance.run(None, {'capabilities': []}, Path('.'), mode='local')
         self.assertEqual(caught.exception._local_lane_check, ('helper_setup', 'helper_contract'))
 
     async def test_instrumentation_inert_outside_local_scope(self):

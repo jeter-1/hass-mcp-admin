@@ -299,8 +299,19 @@ class Step0CorpusTests(unittest.TestCase):
                     self.assertTrue(value.endswith("/catalog/full") or "?" in value)
         self.assertGreater(accepted, 50)
 
+    # HAMCP-443 D7: the device lane's child is ha-mcp 9.2.0, a STRICT_FULL_SELECTOR_RELEASES
+    # member (ha_mcp_endpoint.py), so the strict form is required there. Each admission is one
+    # exact (file, value) pair, never a wildcard.
+    STRICT_ADMITTED = {
+        (
+            "test_core_device_configuration_local.py",
+            "http://127.0.0.1:18298/beta23-real-ha-mcp/catalog/full",
+        ),
+    }
+
     def test_step0_corpus_has_no_strict_value_outside_hamcp319_tests(self):
         strict = []
+        admitted = set()
         for path in sorted((ROOT / "tests").rglob("*.py")):
             if path.name.startswith("test_hamcp319_") or path.parent.name == "support":
                 continue
@@ -317,9 +328,14 @@ class Step0CorpusTests(unittest.TestCase):
                     except ValueError:
                         continue
                     if classify_endpoint_form(node.value.strip()) == STRICT_FULL:
+                        if (path.name, node.value) in self.STRICT_ADMITTED:
+                            admitted.add((path.name, node.value))
+                            continue
                         strict.append(f"{path.name}:{node.lineno}")
         # No existing test configuration changes form (design section 3.2).
         self.assertEqual(strict, [])
+        # An admission that no longer matches a literal is stale, not a pass.
+        self.assertEqual(admitted, self.STRICT_ADMITTED)
 
 
 class Step1GrammarTests(unittest.TestCase):

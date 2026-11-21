@@ -268,7 +268,7 @@ async def disposable_authority(configured, entry, refs, path):
 
 
 @diagnostics.checked("helper_setup", "helper_contract")
-async def run(configured, entry, directory, *, expectations, read_stub_record, read_devices,
+async def run(configured, entry, directory, *, mode, expectations, read_stub_record, read_devices,
               stub_control, stub_state, reload_matter):
     """Run the A2 success and fault checks; the caller owns startup, identity and teardown proof.
 
@@ -278,6 +278,11 @@ async def run(configured, entry, directory, *, expectations, read_stub_record, r
     ``stub_state()`` reads the stub's control view; ``reload_matter()`` reloads
     the disposable Core's Matter entry so it reconnects to the stub.
     """
+    # The caller names the mode; nothing here reads the environment to choose one.
+    if mode == "ci":
+        raise NotImplementedError("ci mode lands in 443-B")
+    if mode != "local":
+        raise ValueError("lane_mode_unknown")
     old = entry["capabilities"]
     assert len(old) == 32 and CAPABILITY not in {p["capability_id"] for p in old}
     canaries = (*expectations["canaries"], configured.ha_token, configured.access_secret)

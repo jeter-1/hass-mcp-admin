@@ -16,13 +16,11 @@ incomplete until it runs.
 import argparse
 import asyncio
 from dataclasses import replace
-from datetime import datetime, timezone
 import hashlib
 import json
 import os
 from pathlib import Path
 import signal
-import socket
 import subprocess
 import sys
 import tarfile
@@ -31,11 +29,13 @@ from uuid import uuid4
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import core_evidence_host as host
+import core_lane_host
 import core_local_resources as resources
 import lane_failure_diagnostics as diagnostics
-from core_lane_bindings import REVIEWED_CORE_BINDINGS
-from core_release_evidence import canonical, read_json
+from core_release_evidence import read_json
 
+# signal, subprocess and resources stay reachable here: the lane's tests patch them through it,
+# and the A2 runner imports its shared names from here.
 VERSION = "2026.11.0"
 JOURNAL_SHA256 = "3f79fce76484ff9f9a9c070defe4d1d13865ccbfd24fda0ab8724515c8cc6a5d"
 CAPABILITY = "core.thread_matter_topology_read"
@@ -53,43 +53,21 @@ PORT = 18124  # distinct from the HAMCP-290 lane so both can be admitted
 PORTS = (PORT,)
 CORE_MEMORY = "2g"
 RECEIPT = "thread_matter_topology.json"
-CONFIG = """default_config:
-homeassistant:
-  name: HAMCP disposable thread matter evidence
-  time_zone: UTC
-http:
-  server_port: 8123
-automation: []
-script: {}
-input_boolean: {}
-input_number: {}
-thread:
-"""
+CONFIG = core_lane_host.CONFIGS["thread_matter_topology"]
 
 
 class Refusal(Exception):
     pass
 
 
-def utc():
-    return datetime.now(timezone.utc).isoformat()
-
-
-def command(*args, check=True):
-    host.require_memory(args)
-    result = subprocess.run(args, cwd=ROOT, capture_output=True, timeout=120)
-    if check and result.returncode:
-        # Never include Docker output, synthetic credentials or arbitrary upstream text.
-        raise Refusal("host_command_failed")
-    return result
-
-
-def sha256(path):
-    value = hashlib.sha256()
-    with Path(path).open("rb") as source:
-        for block in iter(lambda: source.read(1024 * 1024), b""):
-            value.update(block)
-    return value.hexdigest()
+LANE_HOST = core_lane_host.Lane(sys.modules[__name__])
+utc = core_lane_host.utc
+sha256 = core_lane_host.sha256
+command = LANE_HOST.command
+cached_image = LANE_HOST.cached_image
+require_free_ports = LANE_HOST.require_free_ports
+inspect_owned = LANE_HOST.inspect_owned
+verify_port_mapping = LANE_HOST.verify_port_mapping
 
 
 def compiled_reference():
@@ -127,7 +105,7 @@ def source_manifest(archive_path, provenance):
 def inputs(journal_path, archive_path):
     from core_registry_one_tap import load_public_key
     from prepare_core_release_registry import parse_journal, require_known_contracts
-    provenance = read_json(ROOT / "tests/fixtures/core_2026_11_0_lane_provenance.json")
+    provenance = read_json(core_lane_host.LANE_PROVENANCE)
     if (sha256(journal_path) != JOURNAL_SHA256
             or sha256(archive_path) != provenance["source_archive_sha256"]):
         raise Refusal("input_hash_mismatch")
@@ -155,53 +133,7 @@ def inputs(journal_path, archive_path):
 
 
 def images():
-    binding = REVIEWED_CORE_BINDINGS[VERSION]
-    return (f"ghcr.io/home-assistant/home-assistant:{VERSION}@{binding.image_index_digest}",
-            host.FIXTURE_IMAGE)
-
-
-@diagnostics.checked("image_verify", "cached_image_digest")
-def cached_image(image):
-    result = command("docker", "image", "inspect", image)
-    value, = json.loads(result.stdout)
-    if image.rsplit("@", 1)[1] not in {d.rsplit("@", 1)[1] for d in value.get("RepoDigests", [])}:
-        raise Refusal("cached_image_digest_mismatch")
-    return value["Id"]
-
-
-def require_free_ports():
-    for port in PORTS:
-        with socket.socket() as sock:
-            sock.bind(("127.0.0.1", port))
-
-
-def inspect_owned(kind, name, run_id):
-    value = command("docker", kind, "inspect", name, check=False)
-    if value.returncode:
-        # A daemon error is not proof of absence. Enumerate and require success.
-        listed = command("docker", kind, "ls", *( ["-a"] if kind == "container" else []),
-                         "--format", "{{.Names}}" if kind == "container" else "{{.Name}}")
-        if name in listed.stdout.decode().splitlines():
-            raise Refusal("owned_resource_inspection_failed")
-        return None
-    data, = json.loads(value.stdout)
-    labels = data.get("Config", {}).get("Labels") if kind == "container" else data.get("Labels")
-    if (labels or {}).get(LABEL) != run_id:
-        raise Refusal("resource_ownership_mismatch")
-    return data
-
-
-@diagnostics.checked("container_start", "port_mapping")
-def verify_port_mapping(name, container_port, host_port, run_id):
-    """Require actual Docker bindings, not merely requested HostConfig bindings."""
-    data = inspect_owned("container", name, run_id)
-    settings = (data or {}).get("NetworkSettings", {})
-    ports = settings.get("Ports") or {}
-    expected = [{"HostIp": "127.0.0.1", "HostPort": str(host_port)}]
-    if (set(settings.get("Networks") or {}) != {NETWORK}
-            or ports.get(f"{container_port}/tcp") != expected
-            or any(bindings for port, bindings in ports.items() if port != f"{container_port}/tcp")):
-        raise Refusal("Local container loopback port mapping is missing or unsafe")
+    return LANE_HOST.images(upstream=False)
 
 
 @diagnostics.checked("helper_setup", "helper_contract")
@@ -230,7 +162,7 @@ async def exercise(run_dir, entry, core_image, run_id, core_memory):
             raise Refusal("running_container_memory_mismatch")
         identities = {CORE: {"image": core_image, "config_digest": data["Image"],
                              "memory_bytes": data["HostConfig"]["Memory"]}}
-    return {**await run(configured, entry, run_dir), "images": identities}
+    return {**await run(configured, entry, run_dir, mode="local"), "images": identities}
 
 
 @diagnostics.checked("admission", "preflight")
@@ -251,48 +183,18 @@ def _main(argv=None):
         host.memory_bytes(memory)
     if os.environ.get("GITHUB_ACTIONS") == "true" or os.environ.get("CORE_EVIDENCE_CONTEXT"):
         raise Refusal("local_only_closed_lane")
-    # No ignored inputs may supply code/config; only committed files plus hash-bound inputs.
-    if command("git", "status", "--porcelain", "--untracked-files=normal").stdout.strip():
-        raise Refusal("clean_committed_checkout_required")
-    revision = command("git", "rev-parse", "HEAD").stdout.decode().strip()
+    revision = LANE_HOST.clean_revision()
     entry, reference, sources = inputs(args.journal, args.source_archive)
     core_image, fixture_image = images()
     for image in (core_image, fixture_image):
         cached_image(image)
-    # Refuse names or occupied ports before claiming anything; never remove prior runs.
-    for kind, names in (("container", (CORE,)), ("network", (NETWORK,))):
-        for name in names:
-            if command("docker", kind, "inspect", name, check=False).returncode == 0:
-                raise Refusal("disposable_name_already_exists")
-    require_free_ports()
-    run_dir = args.run_dir.absolute()
-    if run_dir.resolve() != run_dir or ROOT / ".artifacts" not in run_dir.parents:
-        raise Refusal("new_task_artifact_directory_required")
-    run_dir.mkdir(mode=0o700)  # Exclusive: never overwrite evidence or reuse a prior fixture.
-    try:
-        with diagnostics.check("admission", "host_resources"):
-            admission = resources.wait_for_admission(run_dir / "resource-admission.json")
-    except resources.Refusal as exc:
-        result = {"result": "WITHHELD", "reason": str(exc), "source_commit": revision,
-                  "network_posture": NETWORK_POSTURE,
-                  "execution_started": False, "cleanup": {"clean": True, "resources_created": False},
-                  "failure": diagnostics.failure(exc)}
-        (run_dir / RECEIPT).write_bytes(canonical(result))
-        print(json.dumps(result))
+    LANE_HOST.require_unclaimed((CORE,), NETWORK)
+    run_dir = LANE_HOST.claim(args.run_dir)
+    admission = LANE_HOST.admit(run_dir, RECEIPT, revision, (CORE,), NETWORK)
+    if admission is None:
         return 1
-    # Recheck identity/names/ports after a potentially hour-long wait.
-    if command("git", "rev-parse", "HEAD").stdout.decode().strip() != revision or command(
-            "git", "status", "--porcelain", "--untracked-files=normal").stdout.strip():
-        raise Refusal("checkout_changed_during_admission")
-    for kind, names in (("container", (CORE,)), ("network", (NETWORK,))):
-        for name in names:
-            if command("docker", kind, "inspect", name, check=False).returncode == 0:
-                raise Refusal("disposable_name_already_exists")
-    require_free_ports()
     run_id = uuid4().hex
-    owned = run_dir / CORE
-    owned.mkdir(mode=0o700)
-    (owned / "configuration.yaml").write_text(CONFIG)
+    owned = LANE_HOST.configuration(run_dir, CORE, CONFIG)
     os.environ.update(CORE_EVIDENCE_HOST_MODE="local", RUNNER_TEMP=str(run_dir),
         HA_CONTRACT_LANE=LANE, HA_FIXTURE_WRITER_IMAGE=fixture_image,
         HA_CONTRACT_CONTAINER=CORE, HA_CONTRACT_NETWORK=NETWORK,
@@ -306,20 +208,10 @@ def _main(argv=None):
               "profile_reference": reference, "contract_fingerprint": reference["contract_fingerprint"],
               **sources, "host_admission": admission, "container_memory": limits,
               "network_posture": NETWORK_POSTURE, "mode": "local", "pull": "never", "cleanup": {"clean": False}}
-    def interrupted(_signum, _frame):
-        raise Refusal("lane_interrupted")
-    previous_handler = signal.signal(signal.SIGTERM, interrupted)
-    try:
-        with diagnostics.check("container_start", "network_create"):
-            command("docker", "network", "create", "--driver", "bridge", "--label", LABEL + "=" + run_id, NETWORK)
-            network = inspect_owned("network", NETWORK, run_id)
-            if network is None or network.get("Driver") != "bridge" or network.get("Internal") is not False:
-                raise Refusal("Local lane requires a dedicated non-internal bridge")
-        with diagnostics.check("container_start", "core_start"):
-            command("docker", "run", "--detach", "--pull", "never", "--name", CORE,
-                    "--label", LABEL + "=" + run_id, "--network", NETWORK, "--memory", args.core_memory,
-                    "--publish", f"127.0.0.1:{PORT}:8123", "--security-opt", "no-new-privileges",
-                    "--mount", f"type=bind,source={owned},target=/config", core_image)
+    def body():
+        LANE_HOST.create_bridge(NETWORK, run_id)
+        LANE_HOST.start_core(CORE, NETWORK, run_id, args.core_memory, owned, core_image,
+                             "--publish", f"127.0.0.1:{PORT}:8123")
         verify_port_mapping(CORE, 8123, PORT, run_id)
         async def bounded():
             async with asyncio.timeout(1800):
@@ -327,47 +219,8 @@ def _main(argv=None):
         result.update(asyncio.run(bounded()))
         if result.get("profile") != reference:
             raise Refusal("receipt_profile_mismatch")
-    except BaseException as exc:
-        result.update(result="WITHHELD", failure_type=type(exc).__name__,
-                      failure=diagnostics.failure(exc, extra=lambda stream: local_failure_logs(stream, run_id)))
-    finally:
-        try:
-            with diagnostics.check("cleanup", "container_remove"):
-                if inspect_owned("container", CORE, run_id) is not None:
-                    command("docker", "rm", "-f", CORE)
-            with diagnostics.check("cleanup", "network_remove"):
-                if inspect_owned("network", NETWORK, run_id) is not None:
-                    command("docker", "network", "rm", NETWORK)
-            with diagnostics.check("cleanup", "configuration_remove"):
-                host.local_remove(argparse.Namespace(directory=str(owned), memory=args.fixture_memory, owner=run_id), os.environ, subprocess.run)
-            with diagnostics.check("cleanup", "cleanup_absence"):
-                assert not owned.exists()
-                assert inspect_owned("container", CORE, run_id) is None
-                assert inspect_owned("network", NETWORK, run_id) is None
-            result["cleanup"] = {"clean": True, "containers_absent": True, "network_absent": True,
-                                 "configuration_absent": True}
-        except BaseException as exc:
-            cleanup_failure = diagnostics.failure(exc)
-            result.setdefault("failure", cleanup_failure)
-            result.update(result="WITHHELD", cleanup={"clean": False, "failure_type": type(exc).__name__,
-                                                    "failure": cleanup_failure})
-        result["ended_utc"] = utc()
-        (run_dir / RECEIPT).write_bytes(canonical(result))
-        signal.signal(signal.SIGTERM, previous_handler)
-    print(json.dumps({key: result[key] for key in ("result", "started_utc", "ended_utc", "cleanup")}))
-    return 0 if result["result"] == "PASS" and result["cleanup"]["clean"] else 1
-
-
-def local_failure_logs(stream, run_id):
-    """Only owned disposable logs; never stdout, receipts or upload artifacts."""
-    data = inspect_owned("container", CORE, run_id)
-    if data is not None:
-        stream.write("\nOwned container " + CORE + "\n")
-        stream.write(json.dumps({key: data.get("State", {}).get(key)
-                                for key in ("Status", "ExitCode", "OOMKilled")}))
-        output = subprocess.run(["docker", "logs", "--tail", "200", CORE],
-                                capture_output=True, timeout=10)
-        stream.write("\n" + (output.stdout + output.stderr)[-262144:].decode("utf-8", errors="replace"))
+    return LANE_HOST.execute(result, RECEIPT, body, run_dir=run_dir, run_id=run_id, owned=owned, network=NETWORK,
+                             remove=(CORE,), containers=(CORE,), fixture_memory=args.fixture_memory)
 
 
 def main(argv=None):
