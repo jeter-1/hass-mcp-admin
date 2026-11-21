@@ -8,7 +8,8 @@
  "notes": [
   "Deployed Home Assistant Core and ha-mcp versions cannot be determined from source. Every admission statement here is conditional on the observed versions (ADR-021).",
   "The signed Core registry is disabled by default (ha_core_release_registry_enabled: false in hass_mcp_engineering_beta/config.yaml). Runtime-only Core profiles admit nothing until it is enabled and a signed envelope covers the observed Core release; the deployed option value is unknown from source.",
-  "Signed registry sequence 15 (the journal tip in upstream-trust/ha-core-release-registry.json) carries three exact Core releases. 2026.10.0: 22 profiles, including core.entity_registry_metadata_operation. 2026.10.1: 26, adding core.configuration_delete_operation, core.entity_registry_availability_operation, core.entity_assistant_exposure_operation and core.label_registry_operation (first signed for 2026.10.1 in sequence 13; sequences 14 and 15 carry them, and add 2026.10.3). 2026.10.3: all 31, adding core.config_entry_helper_options_operation, core.typed_input_select_option_operation, core.script_trace_read, core.dashboard_metadata_operation and core.scene_configuration_operation (sequence 15). Runtime enablement and current Core authority still apply to every one. Each exact Core release, including each patch release, needs its own signed entry; Core 2026.11 needs sequence 16 to carry the 31 existing profiles forward (readiness map, Signing). Per-source version-coverage gaps are not repeated.",
+  "Signed registry sequence 15 carries three exact Core releases, and sequences 16 to 18 carry them unchanged. 2026.10.0: 22 profiles, including core.entity_registry_metadata_operation. 2026.10.1: 26, adding core.configuration_delete_operation, core.entity_registry_availability_operation, core.entity_assistant_exposure_operation and core.label_registry_operation (first signed for 2026.10.1 in sequence 13; sequences 14 and 15 carry them, and add 2026.10.3). 2026.10.3: all 31, adding core.config_entry_helper_options_operation, core.typed_input_select_option_operation, core.script_trace_read, core.dashboard_metadata_operation and core.scene_configuration_operation (sequence 15). Runtime enablement and current Core authority still apply to every one. Each exact Core release, including each patch release, needs its own signed entry. A row that cites sequence 15 describes these 2026.10.x entries, and its 'only' ranges over them; sequence 16 also signs the same 31 profiles for Core 2026.11.0 (next note). Per-source version-coverage gaps are not repeated.",
+  "Sequence 18 (sha256 e792670dd22586cfa3d2fbbfaacf6165feb85bcb435e33f69bc712f7db27b092, generated 2026-11-14) is the journal tip in upstream-trust/ha-core-release-registry.json. It signs Core 2026.11.0 with 38 profiles: sequence 16 signed the same 31 as 2026.10.3, sequence 17 added core.typed_helper_value_operation, and sequence 18 added core.marketplace_read, core.security_metadata_read, core.device_configuration_entity_operation, core.scene_create_delete_operation, core.created_helper_delete_operation and core.thread_matter_topology_read. Tests and the pull-request acceptance path read this in-repo journal; the runtime fetches the registry from the registry branch (CORE_REGISTRY_URL in ha_core_readmission/registry.py), so the deployed registry state is unknown from source.",
   "core.scene_configuration_operation is already in sequence 15 for Core 2026.10.3. Text that says it awaits sequence 16 (for example the comment in governance/scene_configuration.py) is stale.",
   "Backup creation, add-on restart, Home Assistant restart and reload are admitted for ha-mcp 7.14.1 to 8.1.1 and held at 8.2.0 to 9.1.2; on 9.2.0 the three lifecycle operations are admitted and backup stays held (HAMCP-401, HAMCP-381); ha-mcp 8.6.0 itself is on HOLD (HAMCP-156).",
   "ha-mcp tools classified mixed_or_requires_wrapper without an adapter (ha_get_logs, ha_manage_backup, ha_manage_energy_prefs, ha_manage_updates) are unreachable and appear only in gaps.",
@@ -39,7 +40,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 642,
+       "line": 697,
        "anchor": "async def list_automations"
       },
       {
@@ -64,7 +65,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 672,
+       "line": 727,
        "anchor": "async def get_automation_config"
       },
       {
@@ -173,7 +174,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
-       "line": 5418,
+       "line": 5430,
        "anchor": "def create_plan"
       },
       {
@@ -291,7 +292,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 737,
+       "line": 792,
        "anchor": "async def upsert_automation"
       }
      ]
@@ -312,7 +313,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 754,
+       "line": 809,
        "anchor": "async def delete_automation"
       }
      ]
@@ -335,7 +336,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 3932,
+       "line": 3976,
        "anchor": "def yaml_config_reader(self, *, audit=None"
       }
      ]
@@ -414,7 +415,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 3905,
+       "line": 3949,
        "anchor": "require_unmodified_script"
       }
      ]
@@ -429,7 +430,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 820,
+       "line": 838,
        "anchor": "\"dependency_index\": (DEPENDENCY_YAML_PATHS"
       },
       {
@@ -581,7 +582,7 @@
    "name": "Scenes",
    "group": "Automations, scripts, scenes, groups and blueprints",
    "completeness": "partial",
-   "completeness_reason": "Single-scene delegated read plus loaded-membership references; no list of stored scene configs. Write edits existing UI scenes; scene create and the delete of a created scene are implemented under a dormant profile no signed registry admits (HAMCP-329).",
+   "completeness_reason": "Single-scene delegated read plus loaded-membership references; no list of stored scene configs. Write edits existing UI scenes; scene create and the delete of a created scene are implemented under a runtime-only profile that registry sequence 18 signs for Core 2026.11.0 only (HAMCP-329; deployed registry state unknown).",
    "read_paths": [
     {
      "tool": "ha_config_get_scene",
@@ -642,8 +643,8 @@
       "create"
      ],
      "policy": "OPERATIONAL_ADMINISTRATION; action update (default): exactly one existing UI-managed scene by exact config id; action create: one new UI scene under a config id no scene uses; saving never activates the scene",
-     "admission": "update: signed:core.scene_configuration_operation (state: compiled-runtime-only; signed in registry seq 15 for Core 2026.10.3 only; dormant on 2026.10.0/.1; docs still say planned seq 16 - stale vs registry data; deployment unknown). create: core.scene_create_delete_operation (runtime-only, compiled for Core 2026.11.0, signed in no registry: refuses with pending_signed_registry_admission)",
-     "detail": "Update edits name/icon/entities of one existing UI scene. Create (HAMCP-329) requires name and entities, refuses entity_id and null values, rechecks absence at preflight and awaits registration by a bounded poll; Home Assistant assigns the entity_id. The scene services scene.create, scene.apply, scene.delete, scene.reload and scene.turn_on are never sent. DELETE config is never sent by an update or a create; the only DELETE is the separately approved rollback_change of a verified create, under the same dormant profile. YAML/integration/disabled scenes refused. Verification scope is stored_configuration_and_registry_identity; loaded state not verified.",
+     "admission": "update: signed:core.scene_configuration_operation (state: compiled-runtime-only; signed in registry seq 15 for Core 2026.10.3 only; dormant on 2026.10.0/.1; docs still say planned seq 16 - stale vs registry data; deployment unknown). create: core.scene_create_delete_operation (runtime-only, compiled for Core 2026.11.0; signed in registry seq 18 for Core 2026.11.0 only; elsewhere refuses with pending_signed_registry_admission; deployment unknown)",
+     "detail": "Update edits name/icon/entities of one existing UI scene. Create (HAMCP-329) requires name and entities, refuses entity_id and null values, rechecks absence at preflight and awaits registration by a bounded poll; Home Assistant assigns the entity_id. The scene services scene.create, scene.apply, scene.delete, scene.reload and scene.turn_on are never sent. DELETE config is never sent by an update or a create; the only DELETE is the separately approved rollback_change of a verified create, under the same runtime-only profile. YAML/integration/disabled scenes refused. Verification scope is stored_configuration_and_registry_identity; loaded state not verified.",
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
@@ -709,9 +710,9 @@
    "gaps": [
     {
      "id": "RCG-004",
-     "missing": "Scene create (new scene) is implemented but dormant: no signed registry admits core.scene_create_delete_operation",
+     "missing": "Scene create (new scene): registry sequence 18 signs core.scene_create_delete_operation for Core 2026.11.0 only; it stays refused on Core 2026.10.x (deployed registry state unknown)",
      "requirement_type": "new_signed_profile",
-     "requirement": "HAMCP-329 (HAMCP-071 Part 3): create_scene_configuration_plan action=create (new config id, absence check, exact readback, never activated) runs only once a signed Core registry entry for Core 2026.11.0 admits core.scene_create_delete_operation; until then it refuses with pending_signed_registry_admission. scene.create is never sent and the update profile still covers update only.",
+     "requirement": "HAMCP-329 (HAMCP-071 Part 3): create_scene_configuration_plan action=create (new config id, absence check, exact readback, never activated) runs only once a signed Core registry entry for Core 2026.11.0 admits core.scene_create_delete_operation (registry sequence 18 carries that entry; deployed registry state unknown); until then it refuses with pending_signed_registry_admission. scene.create is never sent and the update profile still covers update only.",
      "register": [
       "HAMCP-071",
       "HAMCP-329"
@@ -731,9 +732,9 @@
     },
     {
      "id": "RCG-005",
-     "missing": "Scene delete: only the rollback of a governed scene create, and that is dormant",
+     "missing": "Scene delete: only the rollback of a governed scene create, signed in registry sequence 18 for Core 2026.11.0 only",
      "requirement_type": "new_signed_profile",
-     "requirement": "HAMCP-329/298: the only scene DELETE is the separately approved rollback_change of a scene Engineering created, under core.scene_create_delete_operation, which no signed registry admits yet. create_configuration_delete_plan and core.configuration_delete_operation still cover automation and script only; a delete plan for a scene Engineering did not create needs its own scope decision and signed profile.",
+     "requirement": "HAMCP-329/298: the only scene DELETE is the separately approved rollback_change of a scene Engineering created, under core.scene_create_delete_operation, which registry sequence 18 signs for Core 2026.11.0 only. create_configuration_delete_plan and core.configuration_delete_operation still cover automation and script only; a delete plan for a scene Engineering did not create needs its own scope decision and signed profile.",
      "register": [
       "HAMCP-071",
       "HAMCP-329",
@@ -848,7 +849,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 817,
+       "line": 835,
        "anchor": "YAML_READER_PURPOSES = MappingProxyType"
       },
       {
@@ -981,7 +982,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 3932,
+       "line": 3976,
        "anchor": "def yaml_config_reader(self, *, audit=None"
       }
      ]
@@ -1024,7 +1025,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 707,
+       "line": 762,
        "anchor": "async def get_blueprint"
       },
       {
@@ -1034,7 +1035,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 732,
+       "line": 787,
        "anchor": "text = text[:MAX_CHARS] + \"\\n... [truncated]\""
       }
      ]
@@ -1054,7 +1055,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 696,
+       "line": 751,
        "anchor": "async def list_blueprints"
       },
       {
@@ -1129,7 +1130,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 763,
+       "line": 818,
        "anchor": "async def check_config"
       },
       {
@@ -1188,7 +1189,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 817,
+       "line": 835,
        "anchor": "YAML_READER_PURPOSES = MappingProxyType"
       },
       {
@@ -1258,7 +1259,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 820,
+       "line": 838,
        "anchor": "\"dependency_index\": (DEPENDENCY_YAML_PATHS"
       },
       {
@@ -1330,7 +1331,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 3932,
+       "line": 3976,
        "anchor": "def yaml_config_reader(self, *, audit=None"
       }
      ]
@@ -1403,7 +1404,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 817,
+       "line": 835,
        "anchor": "YAML_READER_PURPOSES = MappingProxyType"
       },
       {
@@ -1423,12 +1424,12 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 818,
+       "line": 836,
        "anchor": "\"recorder_settings\": (YAML_CONFIG_PATHS"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 825,
+       "line": 843,
        "anchor": "class YamlConfigReader"
       }
      ]
@@ -1452,7 +1453,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 3932,
+       "line": 3976,
        "anchor": "def yaml_config_reader(self, *, audit=None"
       }
      ]
@@ -1541,7 +1542,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 817,
+       "line": 835,
        "anchor": "YAML_READER_PURPOSES = MappingProxyType"
       },
       {
@@ -1605,7 +1606,7 @@
    "name": "input_boolean and input_number helpers",
    "group": "UI helpers",
    "completeness": "partial",
-   "completeness_reason": "Storage definitions readable through the delegated helper list and the governed plan baseline; YAML-defined definitions only through the held YAML reader. Governed create and update exist; the only delete is the dormant rollback of a governed create (HAMCP-298).",
+   "completeness_reason": "Storage definitions readable through the delegated helper list and the governed plan baseline; YAML-defined definitions only through the held YAML reader. Governed create and update exist; the only delete is the rollback of a governed create, under a runtime-only profile that registry sequence 18 signs for Core 2026.11.0 only (HAMCP-298).",
    "read_paths": [
     {
      "tool": "ha_config_list_helpers",
@@ -1712,7 +1713,7 @@
      ],
      "policy": "governed_configuration_operation: immutable plan, exact-hash external approval, ordered governed apply, exact read-back; create preceded by name-subset check, GET /states absence check, generated-id identity match",
      "admission": "signed:core.governed_configuration_operation (compiled profile)",
-     "detail": "operations[].resource_type=helper, helper_type=input_boolean; actions limited to create/update (SUPPORTED_ACTIONS). Rollback of a verified create is the separately approved delete of exactly that helper through rollback_change, under dormant core.created_helper_delete_operation (HAMCP-298); no delete plan tool accepts a helper. (Researched for: input_boolean, input_number.)",
+     "detail": "operations[].resource_type=helper, helper_type=input_boolean; actions limited to create/update (SUPPORTED_ACTIONS). Rollback of a verified create is the separately approved delete of exactly that helper through rollback_change, under runtime-only core.created_helper_delete_operation (signed in registry seq 18 for Core 2026.11.0 only; HAMCP-298); no delete plan tool accepts a helper. (Researched for: input_boolean, input_number.)",
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
@@ -1795,7 +1796,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 803,
+       "line": 821,
        "anchor": "DEFINITION_YAML_PATHS = frozenset"
       },
       {
@@ -1828,9 +1829,9 @@
     },
     {
      "id": "RCG-023",
-     "missing": "No governed delete plan for input_boolean and input_number definitions: create_configuration_delete_plan accepts automation and script only. The only helper delete is the rollback of a governed create, and its profile is dormant.",
+     "missing": "No governed delete plan for input_boolean and input_number definitions: create_configuration_delete_plan accepts automation and script only. The only helper delete is the rollback of a governed create, and its profile is signed in registry sequence 18 for Core 2026.11.0 only.",
      "requirement_type": "new_signed_profile",
-     "requirement": "HAMCP-298: rollback_change of a verified governed helper create plans a separately approved delete of exactly that helper under core.created_helper_delete_operation, which no signed registry admits yet (pending_signed_registry_admission). A delete plan for a helper Engineering did not create still needs an owner scope decision and its own signed profile with pre-image capture, consumer disclosure, recreate rollback and negative tests.",
+     "requirement": "HAMCP-298: rollback_change of a verified governed helper create plans a separately approved delete of exactly that helper under core.created_helper_delete_operation, which registry sequence 18 signs for Core 2026.11.0 only (elsewhere pending_signed_registry_admission). A delete plan for a helper Engineering did not create still needs an owner scope decision and its own signed profile with pre-image capture, consumer disclosure, recreate rollback and negative tests.",
      "register": [
       "HAMCP-155"
      ],
@@ -2039,7 +2040,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 803,
+       "line": 821,
        "anchor": "DEFINITION_YAML_PATHS = frozenset"
       },
       {
@@ -2220,7 +2221,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 803,
+       "line": 821,
        "anchor": "DEFINITION_YAML_PATHS = frozenset"
       },
       {
@@ -2311,7 +2312,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 803,
+       "line": 821,
        "anchor": "DEFINITION_YAML_PATHS = frozenset"
       },
       {
@@ -2562,7 +2563,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 267,
+       "line": 285,
        "anchor": "_UPSTREAM_CAPABILITY_CODES = frozenset"
       },
       {
@@ -2611,7 +2612,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 803,
+       "line": 821,
        "anchor": "DEFINITION_YAML_PATHS = frozenset"
       },
       {
@@ -3310,7 +3311,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 796,
+       "line": 814,
        "anchor": "YAML_CONFIG_PATHS"
       }
      ]
@@ -3372,7 +3373,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 826,
+       "line": 881,
        "anchor": "async def list_entity_registry"
       },
       {
@@ -3507,7 +3508,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 826,
+       "line": 881,
        "anchor": "async def list_entity_registry"
       }
      ]
@@ -3550,7 +3551,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 797,
+       "line": 852,
        "anchor": "async def list_devices"
       },
       {
@@ -3626,7 +3627,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 797,
+       "line": 852,
        "anchor": "async def list_devices"
       }
      ]
@@ -3655,7 +3656,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 791,
+       "line": 846,
        "anchor": "async def list_areas"
       },
       {
@@ -4029,7 +4030,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 803,
+       "line": 821,
        "anchor": "DEFINITION_YAML_PATHS"
       }
      ]
@@ -4063,7 +4064,7 @@
      "tool": "get_marketplace_inventory",
      "provider": "direct_ha_api",
      "purpose_binding": "marketplace_inventory_read_v1",
-     "admission": "signed:core.marketplace_read (state: dormant-until-signed)",
+     "admission": "signed:core.marketplace_read (state: dormant-until-signed; signed in registry seq 18 for Core 2026.11.0 only; deployed registry state unknown)",
      "completeness": "partial",
      "detail": "Installed-only Marketplace (HACS) inventory and search via WS marketplace/repositories/list; hacs/repositories/list on the same connection only when Core answers exactly unknown_command. Paginated, sanitized, backend-attributed; never lists uninstalled catalog repositories and reaches no management command. The delegated ha-mcp ha_get_hacs_info read is retired: never exposed or dispatched on any reviewed release, with no alias and no fallback.",
      "refs": [
@@ -4083,7 +4084,7 @@
      "tool": "get_thread_matter_topology",
      "provider": "direct_ha_api",
      "purpose_binding": "thread_matter_topology_read_v1",
-     "admission": "signed:core.thread_matter_topology_read (state: dormant-until-signed)",
+     "admission": "signed:core.thread_matter_topology_read (state: dormant-until-signed; signed in registry seq 18 for Core 2026.11.0 only; deployed registry state unknown)",
      "completeness": "partial",
      "detail": "Thread datasets via WS thread/list_datasets and the Matter network topology via WS matter/network_topology with refresh always the literal false (cached graph only, no diagnostic re-read). Bounded, sanitized; PAN identifiers, channel, network name and RLOC16 kept raw by design, every other identifier opaque, and a whole section is refused if a TLV, network key or PSKc key appears. Reaches no Thread or Matter write, commissioning or refresh command.",
      "refs": [
@@ -4269,7 +4270,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 580,
+       "line": 635,
        "anchor": "async def render_template"
       },
       {
@@ -4369,7 +4370,7 @@
       "state: one Matter device-configuration entity (select option, switch on/off, number value) matched to a signed (domain, platform, translation_key) triple"
      ],
      "policy": "authenticated_exact_device_configuration_operation",
-     "admission": "Core profile core.device_configuration_entity_operation (signed only, dormant until a signed sequence names it; no legacy Core path)",
+     "admission": "Core profile core.device_configuration_entity_operation (signed only; registry seq 18 names it for Core 2026.11.0 only; deployed registry state unknown; no legacy Core path)",
      "detail": "One exact config-category entity change with a composite registry/device/state check before dispatch; exact reported-state readback only, physical feedback not verified.",
      "refs": [
       {
@@ -4430,12 +4431,12 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 903,
+       "line": 958,
        "anchor": "async def list_services"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 910,
+       "line": 965,
        "anchor": "maximum_services = 50"
       },
       {
@@ -4460,7 +4461,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 854,
+       "line": 909,
        "anchor": "async def search_services"
       },
       {
@@ -4502,7 +4503,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 910,
+       "line": 965,
        "anchor": "maximum_services = 50"
       }
      ]
@@ -4627,7 +4628,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 455,
+       "line": 510,
        "anchor": "async def get_error_log"
       }
      ]
@@ -4952,7 +4953,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 587,
+       "line": 642,
        "anchor": "async def list_automation_traces"
       }
      ]
@@ -4972,7 +4973,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 601,
+       "line": 656,
        "anchor": "async def get_automation_trace"
       }
      ]
@@ -5216,7 +5217,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4006,
+       "line": 4050,
        "anchor": "def history_reader"
       }
      ]
@@ -5352,7 +5353,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 818,
+       "line": 836,
        "anchor": "\"recorder_settings\": (YAML_CONFIG_PATHS"
       },
       {
@@ -5520,12 +5521,12 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/operational_lifecycle.py",
-       "line": 53,
+       "line": 56,
        "anchor": "ADDON_ACTION_TOOL"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/operational_lifecycle.py",
-       "line": 111,
+       "line": 112,
        "anchor": "self_addon_identity_resolver"
       }
      ]
@@ -5553,7 +5554,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/operational_lifecycle.py",
-       "line": 59,
+       "line": 62,
        "anchor": "APP_ACTION_TOOL = \"ha_manage_app\""
       }
      ]
@@ -5627,12 +5628,12 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/operational_backup.py",
-       "line": 34,
+       "line": 35,
        "anchor": "REQUIRED_TOOL"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/operational_backup.py",
-       "line": 371,
+       "line": 389,
        "anchor": "restore_allowed"
       }
      ]
@@ -5667,7 +5668,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/operational_backup.py",
-       "line": 372,
+       "line": 390,
        "anchor": "delete_allowed"
       }
      ]
@@ -5761,7 +5762,7 @@
      "tool": "get_security_metadata",
      "provider": "direct_ha_api",
      "purpose_binding": "security_metadata_read_v1",
-     "admission": "signed:core.security_metadata_read (state: dormant-until-signed)",
+     "admission": "signed:core.security_metadata_read (state: dormant-until-signed; signed in registry seq 18 for Core 2026.11.0 only; deployed registry state unknown)",
      "completeness": "partial",
      "detail": "Ten fixed read-only WebSocket commands on Core 2026.11.0 (auth/current_user, config/auth/list, http/config, get_config, homeassistant/expose_new_entities/get x3, assist_pipeline/pipeline/list, conversation/agent/list, get_panels); constant payloads, no token, session or MFA mutation command is ever sent. Fields the source does not provide are not_provided, never inferred. Sanitized, bounded, section-attributed.",
      "refs": [
@@ -5915,7 +5916,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 763,
+       "line": 818,
        "anchor": "async def check_config"
       }
      ]
@@ -5938,7 +5939,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/operational_lifecycle.py",
-       "line": 55,
+       "line": 58,
        "anchor": "HA_RESTART_TOOL"
       }
      ]
@@ -5959,7 +5960,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/operational_lifecycle.py",
-       "line": 56,
+       "line": 65,
        "anchor": "RELOAD_TARGETS"
       }
      ]
@@ -5989,7 +5990,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/operational_lifecycle.py",
-       "line": 56,
+       "line": 65,
        "anchor": "RELOAD_TARGETS"
       }
      ]
@@ -6500,7 +6501,7 @@
    "refs": [
     {
      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-     "line": 957,
+     "line": 1012,
      "anchor": "async def get_audit_log"
     }
    ]
@@ -6769,7 +6770,7 @@
     },
     {
      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-     "line": 1584,
+     "line": 1608,
      "anchor": "\"disposition\": \"retired_delegated_read\""
     }
    ]
@@ -6966,14 +6967,14 @@
    "used_by": [
     "entity_states"
    ],
-   "note": "Runtime-only and signed-only: needs signed Core registry admission for the observed Core release; no sequence names it yet and no legacy Core path exists."
+   "note": "Runtime-only and signed-only: needs signed Core registry admission for the observed Core release; registry sequence 17 names it for Core 2026.11.0 only, and no legacy Core path exists."
   },
   "core.device_configuration_entity_operation": {
    "probe_profile": false,
    "used_by": [
     "entity_states"
    ],
-   "note": "Runtime-only and signed-only: needs signed Core registry admission for Core 2026.11.0; no sequence names it yet and no legacy Core path exists."
+   "note": "Runtime-only and signed-only: needs signed Core registry admission for Core 2026.11.0, which registry sequence 18 signs; no legacy Core path exists."
   },
   "core.integration_inspection_metadata_read": {
    "probe_profile": false,
@@ -7057,7 +7058,7 @@
    "used_by": [
     "config_entries_and_integrations"
    ],
-   "note": "Runtime-only: needs signed Core registry admission for the observed Core release."
+   "note": "Runtime-only: needs signed Core registry admission for the observed Core release; registry sequence 18 signs it for Core 2026.11.0 only."
   },
   "core.dashboard_metadata_operation": {
    "probe_profile": false,
@@ -7080,21 +7081,21 @@
    "used_by": [
     "security_metadata"
    ],
-   "note": "Runtime-only and signed-only (HAMCP-134 security metadata read): needs signed Core registry admission for 2026.11.0."
+   "note": "Runtime-only and signed-only (HAMCP-134 security metadata read): needs signed Core registry admission for 2026.11.0, which registry sequence 18 signs."
   },
   "core.scene_create_delete_operation": {
    "probe_profile": false,
    "used_by": [
     "scenes"
    ],
-   "note": "Runtime-only and dormant (HAMCP-329): scene create and the scene DELETE of a governed scene-create rollback; needs a signed Core registry entry for Core 2026.11.0 and is signed in none."
+   "note": "Runtime-only (HAMCP-329): scene create and the scene DELETE of a governed scene-create rollback; signed in registry sequence 18 for Core 2026.11.0 only."
   },
   "core.created_helper_delete_operation": {
    "probe_profile": false,
    "used_by": [
     "helpers_input_boolean_number"
    ],
-   "note": "Runtime-only and dormant (HAMCP-298): delete of an Engineering-created input_boolean/input_number helper as the rollback of its governed create; needs a signed Core registry entry for Core 2026.11.0 and is signed in none."
+   "note": "Runtime-only (HAMCP-298): delete of an Engineering-created input_boolean/input_number helper as the rollback of its governed create; signed in registry sequence 18 for Core 2026.11.0 only."
   },
   "core.thread_matter_topology_read": {
    "probe_profile": false,
@@ -7102,7 +7103,7 @@
     "config_entries_and_integrations",
     "device_registry"
    ],
-   "note": "Runtime-only: needs signed Core registry admission for the observed Core release. HAMCP-231 dormant Thread dataset and Matter topology read, served by the static get_thread_matter_topology route."
+   "note": "Runtime-only: needs signed Core registry admission for the observed Core release; registry sequence 18 signs it for Core 2026.11.0 only. HAMCP-231 Thread dataset and Matter topology read, served by the static get_thread_matter_topology route."
   }
  },
  "reader_purpose_index": {

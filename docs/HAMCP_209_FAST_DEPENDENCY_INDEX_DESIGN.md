@@ -1,7 +1,7 @@
 # HAMCP-209 Fast Dependency Index: Design Note
 
 Register: HAMCP-209 (break-fix, next beta). Parent investigation: HAMCP-171,
-[`HAMCP_171_HEALTH_PERFORMANCE_INVESTIGATION.md`](HAMCP_171_HEALTH_PERFORMANCE_INVESTIGATION.md)
+`HAMCP_171_HEALTH_PERFORMANCE_INVESTIGATION.md` (deleted by HAMCP-437)
 section 5 and owner decisions D3 (prefer Home Assistant's API for the loaded
 configuration, one request or a small bounded number) and D4 (no direct read of
 `automations.yaml` or any configuration file).
@@ -522,7 +522,7 @@ call site. It gains one row for the new `redact_data` call in
 replaced `_display_safe_effect_tokens`). The focused rerun found the
 missing row (`test_every_sanitizer_call_site_is_in_the_committed_table`).
 
-Mutations (`docs/evidence/hamcp209-mutations/run_mutations.py`,
+Mutations (`docs/evidence/hamcp209-mutations/run_mutations.py`, deleted by HAMCP-437 with
 `results.json`): 48 of 48 are killed and none survive.
 
 | ID | Mutation (design item) | First failing test (recorded) |

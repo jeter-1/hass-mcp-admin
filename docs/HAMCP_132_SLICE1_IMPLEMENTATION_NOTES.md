@@ -212,7 +212,7 @@ with the committed file.
 
 ## Mutations
 
-`docs/evidence/hamcp132-mutations/run_mutations.py` applies each mutation to
+`docs/evidence/hamcp132-mutations/run_mutations.py` (deleted by HAMCP-437) applies each mutation to
 a disposable copy outside the repository and runs both suites. The results
 are in `results.json` beside it; every row of design section 7 has at least
 one mutation, and the totals are in the acceptance document.

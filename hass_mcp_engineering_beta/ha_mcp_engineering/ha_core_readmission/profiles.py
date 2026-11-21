@@ -993,8 +993,8 @@ CORE_THREAD_MATTER_TOPOLOGY_PROFILES = (
 # categories, no paging) and returns installed and uninstalled repositories.
 # The one reviewed fallback is ``hacs/repositories/list`` on the same
 # connection, and only on an exact ``unknown_command`` error code (HAMCP-319
-# Option B).  Runtime-only and dormant until the owner-signed registry admits
-# it; nothing here is signed.
+# Option B).  Runtime-only: signed in owner-signed registry sequence 18 for
+# Core 2026.11.0 only; the signature lives in the registry, not here.
 CORE_MARKETPLACE_PROFILES = (
     _contract(
         "core.marketplace_read",
@@ -1132,8 +1132,8 @@ CORE_SECURITY_METADATA_PROFILES = (
     ),
 )
 # HAMCP-297: one exact configuration-category device entity per call through
-# the direct Home Assistant API. Signed-only: dormant until an owner-signed
-# registry sequence names this profile for Core 2026.11.0.
+# the direct Home Assistant API. Signed-only: owner-signed registry sequence
+# 18 signs this profile for Core 2026.11.0 only.
 from ..device_configuration import contracts as _device_configuration
 
 CORE_DEVICE_CONFIGURATION_PROFILES = (

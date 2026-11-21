@@ -649,8 +649,8 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
         "sanitized": "shared_untrusted_data_sanitizer",
     },
     {
-        # HAMCP-290: installed-only Marketplace inventory; dormant until the
-        # owner-signed registry admits core.marketplace_read.
+        # HAMCP-290: installed-only Marketplace inventory; owner-signed registry
+        # sequence 18 signs core.marketplace_read for Core 2026.11.0 only.
         "tool": "get_marketplace_inventory",
         "category": "evidence",
         "status": "beta_native",

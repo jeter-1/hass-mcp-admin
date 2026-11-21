@@ -310,7 +310,7 @@ If a family count is not 0:
     the rollback section below. They are reasons, not a recovery procedure.
   - Seq 18 signing is outside the Home Assistant backup. After a restore,
     2.4.2-beta.7 runs against seq 18 (decision 3b; 7.1-7.4).
-  - FACT: `docs/BETA_DEPLOYMENT.md:370-373` documents roll-forward only ("a
+  - FACT: `docs/BETA_DEPLOYMENT.md:370-373` (deleted by HAMCP-437) documents roll-forward only ("a
     new beta release … newer than the failed release"); `:392-393` says
     "Do not downgrade metadata in place".
   - Architect ruling A: Supervisor reinstalls the backed-up add-on version
@@ -907,7 +907,7 @@ are the reasons. They are not a recovery procedure (Josh's decision 3a).
    record blocks governed writes on other entities too (23:11 ruling A3;
    HAMCP-377 12b receipt).
 
-FACT: `docs/BETA_DEPLOYMENT.md:392-393` says "Do not downgrade metadata in
+FACT: `docs/BETA_DEPLOYMENT.md:392-393` (deleted by HAMCP-437) says "Do not downgrade metadata in
 place".
 
 **RB-pre: before either restore**

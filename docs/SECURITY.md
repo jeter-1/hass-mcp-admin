@@ -1451,7 +1451,7 @@ uses only the aiohttp client; its MCP and Ingress servers run on uvicorn and
 Starlette, so the server-timeout advisory does not apply. Its client
 transports refuse redirects, disable automatic decompression and bound bytes,
 frames and time. Inherited behaviour changes are listed in the
-[release notes](V2_4_1_BETA22_RELEASE_NOTES.md) and pinned by
+release notes (`V2_4_1_BETA22_RELEASE_NOTES.md`, deleted by HAMCP-437) and pinned by
 `tests/test_hamcp211_aiohttp_3144_contract.py`. Stable v1.1.2 still pins
 `aiohttp==3.9.5` and is unchanged.
 

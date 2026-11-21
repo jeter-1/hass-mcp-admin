@@ -241,7 +241,7 @@ def create_application(
     )
     # HAMCP-232/145 §4b: dormant until a signed registry admits the profile.
     SCRIPT_TRACES.configure(HomeAssistantWebSocketClient(settings), CORE_READMISSION, settings)
-    # HAMCP-290: dormant until a signed registry admits core.marketplace_read.
+    # HAMCP-290: core.marketplace_read is signed in sequence 18 for 2026.11.0.
     MARKETPLACE_INVENTORY.configure(MarketplaceReader(settings), CORE_READMISSION, settings)
     # HAMCP-134: dormant until a signed registry admits core.security_metadata_read.
     SECURITY_METADATA.configure(SecurityMetadataReader(settings), CORE_READMISSION, settings)

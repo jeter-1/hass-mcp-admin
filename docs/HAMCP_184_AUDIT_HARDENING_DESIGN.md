@@ -55,7 +55,7 @@ there are no signed-registry, HOLD, support-window, stable-v1,
 - Instructions: `.github/workflows/AGENTS.md` (runner rule wording).
 - Docs: this note, `docs/EXTERNAL_APPROVAL.md`, `docs/SECURITY.md`,
   `docs/architecture/ADR-007-COMPATIBILITY-FAMILY-ADMISSION.md` (amendment),
-  `docs/V2_4_1_BETA12_RELEASE_NOTES.md`, `docs/V2_4_1_BETA12_ACCEPTANCE.md`,
+  `docs/V2_4_1_BETA12_RELEASE_NOTES.md`, `docs/V2_4_1_BETA12_ACCEPTANCE.md` (both deleted by HAMCP-437),
   `README.md`, `hass_mcp_engineering_beta/CHANGELOG.md`.
 
 ## 2. F-05 — provider dispositions fail closed

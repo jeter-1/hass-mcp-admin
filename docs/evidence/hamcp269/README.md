@@ -39,7 +39,7 @@ public signatures and copied the returned signed bytes.
 
 | Material | SHA256 |
 |---|---|
-| Published-path signed journal (`upstream-trust/ha-core-release-registry.json`) | a4dfbb143ce6cd932b91bf49c4b3d0fe9b889f690a27188c547c4700e8b62dc4 |
+| Published-path signed journal at signing, sequence 15 (`upstream-trust/ha-core-release-registry.json`; historical, see below) | a4dfbb143ce6cd932b91bf49c4b3d0fe9b889f690a27188c547c4700e8b62dc4 |
 | Approved unsigned candidate (`candidate-seq15-2026.10.3.json`) | 224305a5cb41d53a58311246bcf5a31ee9e0e6678efbc310464f119014adb168 |
 | Canonical evidence (`evidence-extend-2026.10.3.json`) | eb68cf9285c2f5e8db355eef21a2da822a091834f55030c169a3519154bcb1af |
 | Exact predecessor journal (`previous-seq14-journal.json`) | 80d91919ebbd57e4ca1b7a49bc2bb6a9b2996b3b14bef3070916263e82c53817 |
@@ -52,6 +52,15 @@ Predecessor content digest:
 `sha256:734210cf33344c62886377e6abea5d4df776585d5ba687f22087778fa3e93199`.
 These unsigned-envelope content digests differ from the full journal byte hashes.
 Generated `2026-11-01T02:25:50Z`; expires `2027-01-30T02:25:50Z`.
+
+The published path no longer holds this journal. It now holds owner-signed
+sequence 18 (SHA256 `e792670dd22586cfa3d2fbbfaacf6165feb85bcb435e33f69bc712f7db27b092`,
+generated 2026-11-14), which carries these 2026.10.0, 2026.10.1 and
+2026.10.3 entries unchanged and signs Core 2026.11.0 with 38 profiles, six
+of them new in sequence 18. The journal hash above identifies sequence 15
+only; it is not the current trust root. The runtime fetches the registry
+from the `registry` branch; tests and the pull-request acceptance path read
+the in-repo copy.
 
 The previous journal is an exact byte-copy of
 `upstream-trust/ha-core-release-registry.json` at the merged e09ce94 commit,

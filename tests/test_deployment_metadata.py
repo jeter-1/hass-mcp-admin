@@ -843,14 +843,6 @@ class CIWorkflowTests(unittest.TestCase):
         self.assertNotIn("push: true", self.workflow)
 
     def test_engineering_discovery_excludes_retired_stable_behavior(self):
-        historical = (
-            ROOT / "tests" / "historical_stable_v1_gateway.py",
-            ROOT / "tests" / "historical_stable_v1_metadata.py",
-        )
-        for path in historical:
-            with self.subTest(path=path.name):
-                self.assertTrue(path.is_file())
-                self.assertFalse(path.name.startswith("test"))
         # Engineering discovery now runs as shards proven complete by the
         # aggregate; retired stable-v1 dependencies and image build stay out.
         self.assertIn("Run Engineering unit test shard", self.workflow)

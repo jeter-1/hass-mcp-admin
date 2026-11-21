@@ -1283,8 +1283,8 @@ and one power record with prepared request declarations.
 the shard balancer requires them.
 
 **Release (protected).** `.release/next-version` (created, then consumed by
-`--apply`), `docs/V2_4_1_BETA9_RELEASE_NOTES.md` (new),
-`docs/V2_4_1_BETA9_ACCEPTANCE.md` (new), `README.md`,
+`--apply`), `docs/V2_4_1_BETA9_RELEASE_NOTES.md` (new; deleted by HAMCP-437),
+`docs/V2_4_1_BETA9_ACCEPTANCE.md` (new; deleted by HAMCP-437), `README.md`,
 `hass_mcp_engineering_beta/CHANGELOG.md`,
 `hass_mcp_engineering_beta/config.yaml`, `R/version.py`,
 `scripts/validate_addon_metadata.py`.
@@ -1384,7 +1384,7 @@ the hashes before use.
 required.
 
 **Release (protected).** As PR1, for beta.10:
-`docs/V2_4_1_BETA10_RELEASE_NOTES.md` and `docs/V2_4_1_BETA10_ACCEPTANCE.md`
+`docs/V2_4_1_BETA10_RELEASE_NOTES.md` and `docs/V2_4_1_BETA10_ACCEPTANCE.md` (both deleted by HAMCP-437)
 (new; the acceptance document carries the §4.3 downgrade rule), plus the same
 six existing files.
 

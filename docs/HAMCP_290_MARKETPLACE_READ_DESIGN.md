@@ -415,7 +415,7 @@ and never contains raw upstream text.
   - the service asks for exactly `core.marketplace_read`;
   - a reader that dispatches outside the two constants, or a third command,
     is refused with `provider_error`.
-- **Mutation evidence**: `docs/evidence/hamcp290-mutations/` uses the
+- **Mutation evidence**: `docs/evidence/hamcp290-mutations/` (deleted by HAMCP-437) uses the
   HAMCP-253 runner machinery, with mutants for the fallback predicate, the
   installed filter, bounds, the projection, the admission checks, the command
   constants and attribution, plus the retirement condition in the exposure

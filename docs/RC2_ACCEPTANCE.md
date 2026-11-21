@@ -97,4 +97,4 @@ Call `get_server_health` again and reconcile the exact delta:
 Review the bounded audit records. They may record search intent and outcome but
 must not contain full entity attributes, access secrets, Supervisor tokens, or
 registry credentials. Continue the unchanged RC acceptance and soak checks from
-[`RC1_ACCEPTANCE.md`](RC1_ACCEPTANCE.md) only after these RC2-specific gates pass.
+`RC1_ACCEPTANCE.md` (deleted by HAMCP-437) only after these RC2-specific gates pass.

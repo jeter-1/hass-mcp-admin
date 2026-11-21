@@ -1475,9 +1475,7 @@ class GatewayRetirementTests(unittest.IsolatedAsyncioTestCase):
         from support import ha_mcp_920_receipts as receipts_920
         from support import ha_mcp_920_yaml as yaml920
 
-        harness = yaml920.Harness()
-        harness.setUp()
-        self.addCleanup(harness.temporary.cleanup)
+        harness = _yaml_920_harness(self)
         version = yaml920.VERSION
         for label, tools in (("A", receipts_920.yaml_catalog(version)), ("OFF", yaml920.stock_catalog())):
             for native in (False, True):
@@ -1507,9 +1505,7 @@ class GatewayRetirementTests(unittest.IsolatedAsyncioTestCase):
 
         from support import ha_mcp_920_yaml as yaml920
 
-        harness = yaml920.Harness()
-        harness.setUp()
-        self.addCleanup(harness.temporary.cleanup)
+        harness = _yaml_920_harness(self)
         version = yaml920.VERSION
         with self.subTest(version=version):
             gateway, transport = await harness.gateway(version, yaml920.stock_catalog())
@@ -1625,6 +1621,42 @@ class GatewayRetirementTests(unittest.IsolatedAsyncioTestCase):
         health = gateway.health_snapshot()
         self.assertEqual(health["fallback_count"], 0)
         self.assertEqual(health["dynamically_exposed_count"], 0)
+
+
+class YamlHarnessCleanupTests(unittest.TestCase):
+    """The 9.2.0 YAML harness that two retirement tests build ends with them."""
+
+    def test_the_9_2_0_reply_patch_ends_with_the_test(self):
+        # HAMCP-437: the patch outlived these tests and failed
+        # test_hamcp319_yaml's 8.5.0 positives when a unit shard ran this
+        # module first.
+        import test_hamcp162_yaml_admission as yaml_admission
+        from support import ha_mcp_920_yaml as yaml920
+
+        before = yaml_admission.yaml_response
+        self.assertIsNot(before, yaml920.yaml_response)
+        names = ("test_retired_read_is_withheld_on_the_exact_reviewed_captures",
+                 "test_held_read_canary_never_dispatches_the_retired_read")
+        result = unittest.TestResult()
+        unittest.TestSuite(GatewayRetirementTests(name) for name in names).run(result)
+        self.assertEqual(result.testsRun, 2)
+        self.assertTrue(result.wasSuccessful(), result.errors + result.failures)
+        self.assertIs(yaml_admission.yaml_response, before)
+
+
+def _yaml_920_harness(case):
+    """``ha_mcp_920_yaml.Harness``, set up with its cleanups registered on ``case``.
+
+    The harness never runs as a test, so cleanups left on it never run: its
+    9.2.0 YAML reply patch then outlived ``case`` and gave later 8.x YAML tests
+    in the same process 9.2.0-shaped replies.
+    """
+    from support import ha_mcp_920_yaml as yaml920
+
+    harness = yaml920.Harness()
+    harness.addCleanup = case.addCleanup
+    harness.setUp()
+    return harness
 
 
 async def _gateway_on(server, version, tools):

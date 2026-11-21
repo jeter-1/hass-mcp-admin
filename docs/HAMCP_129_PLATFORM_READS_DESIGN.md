@@ -527,7 +527,7 @@ precedent reads use it.
   currently say `ha_get_integration` "remains unexposed" because it can
   initialize an options flow. Part 2 amends both: the **wrapper** is exposed in
   list-only form; the upstream tool, `domain` and detail mode remain unexposed.
-  `docs/2_1_ROADMAP.md:74-77` (HAMCP-129 entry) is marked as delivered by the
+  `docs/2_1_ROADMAP.md:74-77` (HAMCP-129 entry; deleted by HAMCP-437) is marked as delivered by the
   wrappers.
 
 ## 7. Tests and mutation check plan
@@ -651,7 +651,7 @@ and need Josh's explicit authorization for Part 2 (owner decision **O6**).
 | `tests/test_hamcp129_platform_reads.py` (new) | §7.1 | 700–900 |
 | `tests/fixtures/hamcp129/` (new) | generator, provenance, results for 3 tools × 3 versions | 200 + data |
 | count-asserting tests and fixtures (§6) | 84 → 87, 25 → 28, 27 → 30 | ~12 files, 1–5 lines each |
-| `TOOL_AUDIT.md`, ADR-024, `docs/2_1_ROADMAP.md`, `docs/HA_MCP_8_*_COMPATIBILITY.md` | §6 amendments | 30–60 |
+| `TOOL_AUDIT.md`, ADR-024, `docs/2_1_ROADMAP.md` (deleted by HAMCP-437), `docs/HA_MCP_8_*_COMPATIBILITY.md` | §6 amendments | 30–60 |
 | `scripts/codex-context.py`, `tests/test_codex_workflow.py` | only if counts are carried | 0–30 |
 | release metadata (`config.yaml`, `.release/`, changelog) | next beta after beta.5 | see below |
 
