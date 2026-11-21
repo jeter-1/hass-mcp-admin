@@ -374,7 +374,7 @@ The time fields are additive. The schema id stays `incident-logs-v1`, but
   in America/Chicago (`IncidentLogLocalRenderTests`). It also checks:
   - the zone reader is wired in;
   - a refused Core lease reads no zone and no journal.
-- `docs/evidence/hamcp220-mutations/` holds the mutation evidence:
+- `docs/evidence/hamcp220-mutations/` (deleted by HAMCP-437) holds the mutation evidence:
   - text parsed as UTC;
   - an ambiguous or nonexistent time resolved silently;
   - zone fallback to UTC;

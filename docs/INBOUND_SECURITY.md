@@ -3,7 +3,7 @@
 Engineering 2.2.3 adds received-header enforcement after the published 2.2.2
 baseline. A source version does not establish publication or installed acceptance.
 Existing 2.2.2 image/catalog and topology evidence retain their original source
-and time. Use the [2.2.3 acceptance contract](V2_2_3_ACCEPTANCE.md) for the new
+and time. Use the 2.2.3 acceptance contract (`V2_2_3_ACCEPTANCE.md`, deleted by HAMCP-437) for the new
 artifact and separately authorized installed-path checks.
 
 ## Scope and defaults

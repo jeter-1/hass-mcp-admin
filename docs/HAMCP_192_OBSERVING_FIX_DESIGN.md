@@ -1,7 +1,7 @@
 # HAMCP-192 — Observing-task fix: design note
 
 Scope: Josh's 2026-10-17 decisions (1)–(6) on register row HAMCP-192, applied
-to the defects in `docs/HAMCP_192_OBSERVING_INVESTIGATION.md` (PR #270).
+to the defects in `docs/HAMCP_192_OBSERVING_INVESTIGATION.md` (PR #270; deleted by HAMCP-437).
 Base: `main` at `e4ac184` (2.4.1-beta.15).
 
 `R/` means `hass_mcp_engineering_beta/ha_mcp_engineering/`. Line numbers refer
@@ -531,8 +531,8 @@ Each mutation must make at least one test fail:
 - `origin/main` at `51d63fc` (HAMCP-171 beta.18) was merged with a merge
   commit (`1d22d87`). Four documentation conflicts, all resolved to main's
   content: `README.md`, `hass_mcp_engineering_beta/CHANGELOG.md`, and the
-  add/add conflicts `docs/V2_4_1_BETA18_RELEASE_NOTES.md` and
-  `docs/V2_4_1_BETA18_ACCEPTANCE.md`. beta.18 belongs to HAMCP-171, so this
+  add/add conflicts `docs/V2_4_1_BETA18_RELEASE_NOTES.md` (deleted by HAMCP-437) and
+  `docs/V2_4_1_BETA18_ACCEPTANCE.md` (deleted by HAMCP-437). beta.18 belongs to HAMCP-171, so this
   PR's release text moved to beta.19.
 - `origin/main` at `8a55103` (HAMCP-202 #275: workflows, scripts and tests
   only, no version change) was merged with a merge commit (`ae7caf7`). No

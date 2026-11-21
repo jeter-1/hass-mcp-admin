@@ -101,7 +101,7 @@ PR #132's dashboard planner/approval work is outside this correction. Stable-v1,
 schemas, workflows, trust registry and controlled build inputs remain unchanged.
 Josh subsequently authorized RC2 release preparation around this correction.
 The version declarations and current release documentation advance in the same
-PR; see [RC2 acceptance](V2_3_0_RC2_ACCEPTANCE.md). This source preparation does
+PR; see RC2 acceptance (`V2_3_0_RC2_ACCEPTANCE.md`, deleted by HAMCP-437). This source preparation does
 not authorize deployment or establish installed readback.
 
 After a separately authorized deployment, read the same three retained plans once

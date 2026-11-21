@@ -3,7 +3,7 @@
 This is a feature contract, not an advertised release or permission to access HA.
 Beta.14 is the materialized candidate; obtain independent review, complete exact-
 head gates and prepare signed applicability separately. Preserve completed beta.13
-acceptance. See [release acceptance](V2_4_0_BETA14_ACCEPTANCE.md).
+acceptance. See release acceptance (`V2_4_0_BETA14_ACCEPTANCE.md`, deleted by HAMCP-437).
 
 ## Source and disposable prerequisites
 
@@ -84,7 +84,7 @@ retry, restart, configuration write, forced refresh or manufactured event.
 The sections above are the beta.14 contract and stay unchanged. The HAMCP-228
 store, `resume_capture_id`, the `timed_out` status and
 `compare_automation_baselines` are accepted under the version acceptance
-document that releases them ([2.4.1-beta.40](V2_4_1_BETA40_ACCEPTANCE.md)). That installed capture also proves one stored baseline under
+document that releases them (2.4.1-beta.40, `V2_4_1_BETA40_ACCEPTANCE.md`, deleted by HAMCP-437). That installed capture also proves one stored baseline under
 `<governance_path>/audit-baselines-v1/` (modes, index entry, no configuration
 body), one `compare_automation_baselines` call comparing it with
 `recorded_fingerprints` taken from its own exported digests (full and 16-character

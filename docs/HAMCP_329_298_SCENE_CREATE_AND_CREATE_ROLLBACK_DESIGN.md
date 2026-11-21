@@ -890,6 +890,25 @@ acknowledgement.
 
 ## 5. Signing impact
 
+**Status (HAMCP-437, 2026-11-20):** both new profiles are now signed.
+Owner-signed registry sequence 18
+(`upstream-trust/ha-core-release-registry.json`, SHA256
+`e792670dd22586cfa3d2fbbfaacf6165feb85bcb435e33f69bc712f7db27b092`,
+generated 2026-11-14) appends them to the Core 2026.11.0 entry only, with
+four other new profiles (32 to 38 references), and carries the 2026.10.0,
+2026.10.1 and 2026.10.3 entries unchanged. The signed references match the
+compiled profiles: `core_scene_create_delete_operation_v1` version 1,
+`compiled-core-scene-create-delete-operation-v1`,
+`sha256:93378ae0385528f16deb977a985b778ba2dd2d39be6f5cb397ef74f2060a400d`;
+and `core_created_helper_delete_operation_v1` version 1,
+`compiled-core-created-helper-delete-operation-v1`,
+`sha256:3f2e681310a009a4fc853af6fa24f8eca1c671c7dd75bddbbc8b403fec9cdbf4`.
+The proving tests below live in `tests/test_hamcp329_298_profiles.py`;
+its test 3 uses an entry without the two new references. The runtime fetches
+the registry from the `registry` branch, so this records the in-repo
+journal, not deployed admission. The table and plan below are the design
+as proposed.
+
 | Profile | New or changed | Core commands / contract | Why | Fingerprint impact | Batch |
 | --- | --- | --- | --- | --- | --- |
 | `core.configuration_delete_operation` | **Unchanged** (`core_configuration_delete_operation_v1`, `compiled-core-configuration-delete-operation-v1`, `sha256:5688af5d…887d`) | None. Also serves automation/script created-object rollback and their creation identity capture (reads already in the contract) | §3.1 | None | Not applicable |

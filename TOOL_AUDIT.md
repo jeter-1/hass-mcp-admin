@@ -598,7 +598,7 @@ Engineering writes, service calls or physical execution. The one accepted
 dependency (K1) is that the first call may make the ha-mcp component call
 `POST ha_mcp_tools/get_caller_token` and persist the admin caller token. See the
 [design](docs/HAMCP_162_YAML_READER_DESIGN.md) and the
-[beta.16 notes](docs/V2_4_1_BETA16_RELEASE_NOTES.md).
+beta.16 notes (`V2_4_1_BETA16_RELEASE_NOTES.md`, deleted by HAMCP-437).
 
 ## Source-only Alarmo inspector addition (2026-09-27)
 

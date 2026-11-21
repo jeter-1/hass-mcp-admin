@@ -226,4 +226,4 @@ Local beta.3 version materialization is part of the approved release preparation
 No push, PR, CI trigger, publication, signing, household access, installed change,
 merge or deployment is included. With October already installed, beta.1 alone is
 not a compatible recovery target; retain the working beta.2/8.5 pair and exact
-journals/ownership. See the [beta.3 acceptance contract](V2_4_1_BETA3_ACCEPTANCE.md).
+journals/ownership. See the beta.3 acceptance contract (`V2_4_1_BETA3_ACCEPTANCE.md`, deleted by HAMCP-437).

@@ -454,7 +454,7 @@ they are withheld.
 - `tests/test_hamcp191_shared_sanitizer.py`: the two new `SANITIZER_SITES`.
 - Count and catalog assertions in existing suites: 59 → 60, 87 → 88 and
   88 → 89.
-- Mutations (`docs/evidence/hamcp130-mutations/`): **53 of 53 killed**, none
+- Mutations (`docs/evidence/hamcp130-mutations/`, deleted by HAMCP-437): **53 of 53 killed**, none
   by an import or syntax error, against an 87-test baseline (`results.json`).
   - F1 to F7: a failed read reported as complete.
   - N1 to N6: newest-full picks a partial.
