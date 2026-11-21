@@ -623,6 +623,18 @@ of these hold:
 - the checkout is clean, and the run is a completed, successful `ci.yml` run of
   this repository, not a fork, for exactly the Evidence head, with every shard
   job and `validate_source` successful in its latest attempt;
+- for a pull-request run, none of the files that make, read and judge the
+  reused result differs between the head and the pull request's base commit
+  that GitHub records for the run, which must be present locally (fetch the
+  base branch first): `.github/workflows/ci.yml`, `ci/unit-test-shards.json`,
+  `scripts/check.ps1`, `scripts/pr-evidence.py`,
+  `scripts/reuse_ci_unit_shards.py`, `scripts/unit_test_shards.py`, and the
+  helper's imports `scripts/github_retry.py` and
+  `scripts/local_unit_test_shards.py`. Otherwise the proof would be made and
+  accepted by the code under review, so reuse refuses with
+  `ci_machinery_changed` and Evidence for such a change runs the suite locally.
+  Schedule and `workflow_dispatch` runs test a branch head with that branch's
+  own machinery and are not compared;
 - each shard's artifact from that attempt is present and unexpired, matches the
   digest and size GitHub records for it, and holds exactly one manifest;
 - `unit_test_shards.py aggregate --binding tree`, CI's own completeness proof,

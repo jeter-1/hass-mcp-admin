@@ -5,6 +5,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -74,6 +75,32 @@ class ReuseFixture(fixtures.ShardFixture):
         (cls.root / ".git" / "info").mkdir(exist_ok=True)
         (cls.root / ".git" / "info" / "exclude").write_text("__pycache__/\n.artifacts/\n")
         cls.tree = cls.git("rev-parse", "HEAD^{tree}")
+        # The pull request's base differs from HEAD only outside the reuse machinery.
+        cls.base = cls.variant({"tests/test_alpha.py": ("100644", "# the base's own version\n")})
+
+    @classmethod
+    def objects(cls, *args, body=None, env=None):
+        return subprocess.run(["git", "-C", str(cls.root), *args], input=body, env=env, capture_output=True,
+                              text=True, check=True).stdout.strip()
+
+    @classmethod
+    def variant(cls, changes):
+        """A commit of HEAD's tree with ``changes`` ({path: (mode, text), or None to remove}), made in a
+        private index so the checkout stays clean; it stands in for a pull request's base."""
+
+        env = {**os.environ, "GIT_INDEX_FILE": str(Path(tempfile.mkdtemp(dir=cls.temp.name)) / "index")}
+        cls.objects("read-tree", "HEAD", env=env)
+        for path, change in changes.items():
+            if change is None:
+                cls.objects("update-index", "--force-remove", path, env=env)
+            else:
+                blob = cls.objects("hash-object", "-w", "--stdin", body=change[1])
+                cls.objects("update-index", "--add", "--cacheinfo", f"{change[0]},{blob},{path}", env=env)
+        tree = cls.objects("write-tree", env=env)
+        return cls.objects("commit-tree", tree, "-m", "Synthetic base")
+
+    def pull_request(self, base, head=None):
+        return {"number": 7, "head": {"ref": "feature", "sha": head or self.head}, "base": {"ref": "main", "sha": base}}
 
     def output(self):
         return Path(tempfile.mkdtemp(dir=self.temp.name)) / "receipt"
@@ -105,11 +132,12 @@ class ReuseFixture(fixtures.ShardFixture):
         commits = {self.head: {"sha": self.head, "tree": {"sha": self.tree}, "parents": [{"sha": BASE}]}}
         if source:
             commits[source] = {"sha": source, "tree": {"sha": self.tree},
-                               "parents": [{"sha": BASE}, {"sha": self.head}]}
+                               "parents": [{"sha": self.base}, {"sha": self.head}]}
         return {
             "run": {"id": RUN, "run_attempt": attempt, "status": "completed", "conclusion": "success",
                     "head_sha": self.head, "path": ".github/workflows/ci.yml", "event": "pull_request",
-                    "repository": {"full_name": REPO}, "head_repository": {"full_name": REPO}},
+                    "repository": {"full_name": REPO}, "head_repository": {"full_name": REPO},
+                    "pull_requests": [self.pull_request(self.base)]},
             "jobs": jobs, "artifacts": artifacts, "archives": archives, "commits": commits,
         }
 
@@ -198,6 +226,34 @@ class ReuseAcceptanceTests(ReuseFixture):
         s["run"]["repository"]["full_name"] = REPO.upper()
         self.assertEqual(self.reuse(s)[0]["result"], "passed")
 
+    def test_a_pull_request_that_changes_only_other_files_is_reused(self):
+        # Only the exact machinery paths count: neighbours, near-miss names and the tests may differ from the base.
+        base = self.variant({
+            ".github/workflows/ci.yaml": ("100644", "name: another workflow\n"),
+            "ci/unit-test-shards.json.orig": ("100644", "{}\n"),
+            "scripts/check.ps1.bak": ("100644", "# an old copy\n"),
+            "scripts/unit_test_shards_extra.py": ("100644", "# a neighbour\n"),
+            "tests/test_beta.py": None,
+        })
+        s = self.scenario(source=MERGE)
+        s["run"]["pull_requests"] = [self.pull_request(base)]
+        summary, _, _ = self.reuse(s)
+        self.assertEqual((summary["result"], summary["problems"]), ("passed", []))
+
+    def test_schedule_and_dispatch_runs_are_not_compared_with_a_base(self):
+        # A branch head's run uses that branch's own machinery, even when GitHub lists a pull request for it.
+        changed = self.variant({"ci/unit-test-shards.json": None})
+        for event, pulls in (("schedule", []), ("workflow_dispatch", [self.pull_request(changed)])):
+            with self.subTest(event=event):
+                s = self.scenario()
+                s["run"].update(event=event, pull_requests=pulls)
+                summary, _, _ = self.reuse(s)
+                self.assertEqual((summary["result"], summary["problems"], summary["event"]), ("passed", [], event))
+        s = self.scenario()
+        s["run"]["event"] = "schedule"
+        del s["run"]["pull_requests"]
+        self.assertEqual(self.reuse(s)[0]["result"], "passed")
+
 
 class ReuseRefusalTests(ReuseFixture):
 
@@ -221,6 +277,78 @@ class ReuseRefusalTests(ReuseFixture):
                 s["run"][key] = value
                 summary = self.assertProblem(s, problem)
                 self.assertEqual(summary["artifacts"], [])
+
+    def test_a_pull_request_that_changes_the_reuse_machinery_is_refused_before_any_artifact_is_read(self):
+        machinery = (".github/workflows/ci.yml", "ci/unit-test-shards.json", "scripts/check.ps1",
+                     "scripts/pr-evidence.py", "scripts/reuse_ci_unit_shards.py", "scripts/unit_test_shards.py",
+                     "scripts/github_retry.py", "scripts/local_unit_test_shards.py")
+        self.assertEqual(sorted(reuse.MACHINERY), sorted(machinery))
+        plan = (self.root / "ci/unit-test-shards.json").read_text()
+        self.assertIn('"general_shards": 2', plan)
+        bases = {
+            "plan edited": {"ci/unit-test-shards.json": ("100644", plan.replace('"general_shards": 2',
+                                                                                 '"general_shards": 3'))},
+            "plan added": {"ci/unit-test-shards.json": None},
+            "plan mode": {"ci/unit-test-shards.json": ("100755", plan)},
+            "plan was a symbolic link": {"ci/unit-test-shards.json": ("120000", "elsewhere.json")},
+            "plan was a directory": {"ci/unit-test-shards.json": None,
+                                     "ci/unit-test-shards.json/plan": ("100644", plan)},
+        }
+        # The synthetic HEAD has none of the other files, so a base that has one is a pull request removing it.
+        bases.update({f"{path} removed": {path: ("100644", "# the base's version\n")}
+                      for path in machinery if path != "ci/unit-test-shards.json"})
+        for name, changes in bases.items():
+            with self.subTest(base=name):
+                s = self.scenario(source=MERGE)
+                s["run"]["pull_requests"] = [self.pull_request(self.variant(changes))]
+                summary, github, _ = self.reuse(s)
+                self.assertEqual((summary["result"], summary["problems"]), ("failed", ["ci_machinery_changed"]))
+                self.assertEqual((summary["event"], summary["artifacts"]), ("pull_request", []))
+                self.assertEqual(github.calls, [f"{ACTIONS}/runs/{RUN}"])
+
+    def test_a_pull_request_run_must_name_one_base_for_head(self):
+        good = self.pull_request(self.base)
+        missing = object()
+        cases = {
+            "absent": missing, "null": None, "an object": {}, "empty": [],
+            "another head only": [self.pull_request(self.base, head="d" * 40)],
+            "two for head": [good, self.pull_request(self.variant({}))],
+            "an entry that is not an object": [good, "feature"],
+            "a head that is not an object": [good, {**good, "head": self.head}],
+            "no base": [{key: value for key, value in good.items() if key != "base"}],
+            "a base that is not an object": [{**good, "base": self.base}],
+            **{f"base sha {sha!r}": [{**good, "base": {"ref": "main", "sha": sha}}]
+               for sha in (None, self.base.upper(), self.base[:39], 7)},
+        }
+        for name, pulls in cases.items():
+            with self.subTest(case=name):
+                s = self.scenario()
+                if pulls is missing:
+                    del s["run"]["pull_requests"]
+                else:
+                    s["run"]["pull_requests"] = pulls
+                summary = self.assertProblem(s, "ci_run_base_unknown")
+                self.assertEqual(summary["artifacts"], [])
+
+    def test_the_base_must_be_a_commit_in_this_checkout(self):
+        tag = self.objects("mktag", body=f"object {self.base}\ntype commit\ntag synthetic-base\n"
+                                         "tagger Synthetic test <synthetic@example.invalid> 0 +0000\n\nSynthetic\n")
+        blob = self.git("rev-parse", "HEAD:ci/unit-test-shards.json")
+        for name, sha in (("unknown", BASE), ("a tree", self.tree), ("a blob", blob), ("an annotated tag", tag)):
+            with self.subTest(base=name):
+                s = self.scenario()
+                s["run"]["pull_requests"] = [self.pull_request(sha)]
+                summary = self.assertProblem(s, "ci_run_base_not_local")
+                self.assertEqual(summary["artifacts"], [])
+
+    def test_a_git_failure_during_the_comparison_is_refused(self):
+        found = subprocess.CompletedProcess([], 0, stdout=self.base + "\n")
+        for name, effect in (("no git", OSError("no git")), ("timeout", subprocess.TimeoutExpired("git", 120)),
+                             ("diff failed", [found, subprocess.CalledProcessError(128, "git")])):
+            with self.subTest(failure=name):
+                with mock.patch.object(reuse.subprocess, "run", side_effect=effect):
+                    with self.assertRaisesRegex(reuse.Refusal, "^git_diff_unavailable$"):
+                        reuse.check_machinery(self.root, self.base, self.head)
 
     def test_every_shard_job_and_validate_source_must_have_succeeded_in_that_attempt(self):
         def edit(change):
@@ -348,6 +476,7 @@ class ReuseRefusalTests(ReuseFixture):
         head = subprocess.check_output(["git", "-C", str(clone), "rev-parse", "HEAD"], text=True).strip()
         s = self.scenario()
         s["run"]["head_sha"] = head
+        s["run"]["pull_requests"] = [self.pull_request(self.base, head=head)]
         for job in s["jobs"]:
             job["head_sha"] = head
         for artifact in s["artifacts"]:

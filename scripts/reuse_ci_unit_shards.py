@@ -8,6 +8,12 @@ hold, and otherwise refuses with a fixed category:
   ``.github/workflows/ci.yml`` run of this repository (not a fork) for this
   exact HEAD commit, with every shard job and ``validate_source`` successful in
   the run's latest attempt;
+- for a pull-request run, no ``MACHINERY`` file (the files that make, read and
+  judge the shard results) differs between HEAD and the pull request's base
+  commit that GitHub records for the run, which must be present locally.
+  Otherwise the proof would be made and accepted by the code under review.
+  Schedule and ``workflow_dispatch`` runs test a branch head with that branch's
+  own machinery and are not compared;
 - each shard's artifact from that attempt is present and unexpired, matches the
   digest and size GitHub records for it, and holds exactly one manifest;
 - CI's own completeness proof (``unit_test_shards.py aggregate --binding
@@ -58,6 +64,13 @@ SUMMARY_SCHEMA_VERSION = 1
 WORKFLOW_PATH = ".github/workflows/ci.yml"
 EVENTS = frozenset({"pull_request", "schedule", "workflow_dispatch"})
 RUN_FIELDS = ("id", "run_attempt", "status", "conclusion", "head_sha", "path", "event")
+# HAMCP-365 M1: the workflow and plan that make the shard results, the scripts
+# that make, read and judge them, and this module's own imports.
+MACHINERY = (
+    WORKFLOW_PATH, unit_test_shards.PLAN_FILE, "scripts/check.ps1", "scripts/pr-evidence.py",
+    "scripts/reuse_ci_unit_shards.py", "scripts/unit_test_shards.py",
+    "scripts/github_retry.py", "scripts/local_unit_test_shards.py",
+)
 PAGE = 100
 PROOF_TIMEOUT = 1800
 REPOSITORY = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9_.-]{1,100}")
@@ -135,6 +148,35 @@ def check_run(run, run_id, repository, head):
     attempt = run.get("run_attempt")
     require(type(attempt) is int and attempt >= 1, "ci_run_mismatch")
     return attempt
+
+
+def pull_request_base(run, head):
+    """The base commit of the one pull request GitHub lists for this run with HEAD as its head."""
+
+    entries = run.get("pull_requests")
+    require(isinstance(entries, list) and all(isinstance(entry, dict) and isinstance(entry.get("head"), dict)
+                                              for entry in entries), "ci_run_base_unknown")
+    bases = [entry.get("base") for entry in entries if entry["head"].get("sha") == head]
+    require(len(bases) == 1 and isinstance(bases[0], dict) and isinstance(bases[0].get("sha"), str)
+            and SHA.fullmatch(bases[0]["sha"]), "ci_run_base_unknown")
+    return bases[0]["sha"]
+
+
+def check_machinery(root, base, head):
+    """Refuse a pull request whose HEAD adds, removes or changes any ``MACHINERY`` file
+    relative to its base: reuse must not vouch for a change to itself (HAMCP-365 M1)."""
+
+    def git(*args, **options):
+        try:
+            return subprocess.run(["git", "-C", str(root), *args], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                  stderr=subprocess.DEVNULL, timeout=120, **options)
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise Refusal("git_diff_unavailable") from exc
+
+    found = git("rev-parse", "--verify", "--quiet", f"{base}^{{commit}}", text=True)
+    require(found.returncode == 0 and found.stdout.strip() == base, "ci_run_base_not_local")
+    changed = git("diff-tree", "-r", "-z", "--no-renames", "--name-only", base, head, "--", *MACHINERY, check=True)
+    require(not changed.stdout, "ci_machinery_changed")
 
 
 def check_jobs(listing, run_id, attempt, head, shard_count):
@@ -281,6 +323,8 @@ def prove(root, repository, run_id, head, local_tree, layout, summary, read):
     attempt = check_run(run, run_id, repository, head)
     summary.update(run_attempt=attempt, event=run["event"],
                    run_url=f"https://github.com/{repository}/actions/runs/{run_id}/attempts/{attempt}")
+    if run["event"] == "pull_request":
+        check_machinery(root, pull_request_base(run, head), head)
     jobs = strict_json(fetch(read, f"{actions}/runs/{run_id}/attempts/{attempt}/jobs?per_page={PAGE}"),
                        "ci_jobs_malformed")
     check_jobs(jobs, run_id, attempt, head, shard_count)
