@@ -16,6 +16,8 @@ review finding F7: byte-identical receipts are unattainable).
 | `lane/device_configuration_entity.json` | The device lane's receipt on ha-mcp 9.2.0 (D7), copied byte for byte. |
 | `lane/device_configuration_entity.comparison.json` | `compare_core_receipts.py` report for that receipt against hamcp366: equal. |
 | `lane/helper_value.json` | The helper_value lane's first committed receipt, on ha-mcp 9.2.0 (D7), copied byte for byte. |
+| `host/<lane>.json` | Each lane's receipt from the shared lane host (D2/D5), copied byte for byte. |
+| `host/<lane>.comparison.json` | `compare_core_receipts.py` report for that receipt against the lane's committed receipt. |
 
 New receipts and comparison reports are added here as the lanes run. Only
 receipt JSON and comparison reports are committed. Run directories, container
@@ -38,6 +40,10 @@ scriptbox (amd64), as `systemd-run --user` units with `MemoryMax=3G`,
 
 Both journals came from the registry branch's history and match the harness
 pins: seq 16 from registry commit `cf415e29`, seq 17 from `e486028e`.
+
+The D7 report's `declaration_sha256` (`af4be4ce…`) names the declaration as
+committed in `c94d66ce`, which held only the device lane. Step 3 added the
+other lanes afterwards, so the current file hashes differently.
 
 Device comparison: `equal: true`. Both D7 changes were applied. No leaf
 outside the declaration differed. Of the 189 excluded leaves, these differed:
@@ -106,9 +112,50 @@ Expected changes (D7): the upstream image and its `config_digest` move from
 ha-mcp 8.5.0 to the 9.2.0 child that `REVIEWED_CORE_BINDINGS["2026.11.0"]`
 names since HAMCP-437 I2b (`ci/support-window.yaml`).
 
-## Other lanes
+## Shared lane host lanes (step 3)
 
-`helper_value` has no committed receipt, so its first 9.2.0 receipt is
-committed here as new evidence rather than compared. Marketplace (hamcp290),
-security metadata (hamcp134), scene and created-helper delete (hamcp364) and
-thread A1/A2 (hamcp231) are added to `receipt-exclusions.json` before their own runs.
+Each lane is re-run once on the shared lane host and compared with its
+committed receipt. Every lane excludes `run_identity` (`source_commit`,
+`started_utc`, `ended_utc`) and `host_admission` (the five admission
+readings). Anything a lane adds is listed below; every other leaf is
+compared, including all results, refusal codes, counts, send and dispatch
+counts, image digests, profile fingerprints and the journal, manifest and
+source-hash SHA-256s.
+
+| Lane | Committed receipt (SHA-256) | Leaves | Excluded | Extra classes | Expected changes |
+|---|---|---|---|---|---|
+| `helper_value` | `hamcp443/lane/helper_value.json` (`ce3a227c…d814`), the D7 9.2.0 run on `c94d66ce` | 123 | 8 | none | none |
+| `marketplace_read` | `hamcp290/lane/marketplace_read.json` (`a61da63c…1037`) | 100 | 10 | `public_store_snapshot` 2 | none |
+| `security_metadata` | `hamcp134/lane/security_metadata.json` (`5e9e0439…706a`) | 104 | 8 | none | none |
+| `scene_create_delete` | `hamcp364/lane/scene_create_delete.json` (`03fef43d…7b8e`) | 134 | 21 | `run_identity` +1, `lane_suffix` 8, `derived_from_run_values` 4 | `engineering_source.runtime_tree` |
+| `created_helper_delete` | `hamcp364/lane/created_helper_delete.json` (`c54b261f…e1bd`) | 181 | 27 | `run_identity` +1, `lane_suffix` 12, `derived_from_run_values` 6 | `engineering_source.runtime_tree` |
+| `thread_matter_topology` (A1) | `hamcp231/lane/thread_matter_topology.json` (`6cfb5217…7393`) | 74 | 8 | none | none |
+| `thread_matter_topology_a2` | `hamcp231/lane/thread_matter_topology_a2.json` (`f36d8c1a…f798`) | 111 | 10 | `docker_assigned` 2 | none |
+| `device_configuration_entity` | `hamcp366/device_configuration_entity.json` (`710a6aa1…f5dc`) | 933 | 189 | as above | the two D7 changes |
+
+- `public_store_snapshot` (marketplace): `store_records` and `store_sha256`.
+  The disposable Core fetches the live public HACS store, so both move when
+  the public store changes. The installed theme's `install_fixture`,
+  `installed_record`, `raw_installed` and `inventory.inventory_fingerprint`
+  stay compared; a difference there means the public theme record changed
+  and is a STOP. This class goes beyond the brief's three examples; the PR
+  reports both values.
+- `run_identity` +1 (created object): `engineering_source.commit` is the same
+  commit as `source_commit`.
+- `lane_suffix` (created object): `scenarios.*.readback.entity_id` and
+  `registry_entity_id`. Created object ids end in a per-run
+  `secrets.token_hex(4)` so a rerun cannot collide with an earlier object.
+  The suffix appears in no other leaf.
+- `derived_from_run_values` (created object): `scenarios.*.readback_fingerprint`,
+  a SHA-256 over the read-back, which holds the suffixed ids.
+- `engineering_source.runtime_tree` (created object, expected change): the
+  committed receipts ran on `d84d8d9e` (tree `19d9d13f…`). `release/2.9.0`
+  at `9af0d7dc` carries later runtime changes (tree `a2c1f448…`). 443-A
+  changes no runtime file, so the branch's tree equals the base's.
+- `docker_assigned` (A2): `lane_network.subnet` and `target_address`, the
+  internal network's subnet and the Core's address in it. `lane_network.name`,
+  `egress_probe.outcome` and every stub and topology count stay compared.
+
+A self-check of each declaration against its own committed receipt passes:
+no pattern is unused, and the only differences are the expected-change paths,
+whose observed values a committed receipt cannot hold.

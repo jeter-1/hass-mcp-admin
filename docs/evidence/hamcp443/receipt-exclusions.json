@@ -212,6 +212,343 @@
           "reason": "D7: REVIEWED_CORE_BINDINGS['2026.11.0'].child_consumer names ha-mcp 9.2.0 since HAMCP-437 I2b, so the lane now runs the 9.2.0 child pinned in ci/support-window.yaml; the committed receipt ran 8.5.0. The cached 9.2.0 image Id is its index digest (docker image inspect)."
         }
       ]
+    },
+    "helper_value": {
+      "harness": "scripts/core_helper_value_local.py",
+      "committed_receipt": "docs/evidence/hamcp443/lane/helper_value.json",
+      "committed_receipt_sha256": "ce3a227cf42d66f3843615df9993a77e57aab4f53af859cb0cc79b374adcd814",
+      "excluded": [
+        {
+          "class": "run_identity",
+          "reason": "The commit the lane ran from and the run's own start and end times.",
+          "paths": [
+            [
+              "source_commit"
+            ],
+            [
+              "started_utc"
+            ],
+            [
+              "ended_utc"
+            ]
+          ]
+        },
+        {
+          "class": "host_admission",
+          "reason": "The host's load, free memory, container and heavy-job counts and time when the lane was admitted.",
+          "paths": [
+            [
+              "host_admission",
+              "**"
+            ]
+          ]
+        }
+      ],
+      "expected_changes": []
+    },
+    "marketplace_read": {
+      "harness": "scripts/core_marketplace_read_local.py",
+      "committed_receipt": "docs/evidence/hamcp290/lane/marketplace_read.json",
+      "committed_receipt_sha256": "a61da63ccedc9989a8c1a02c3cf4880f3323b3a539898c9aca080b937a781037",
+      "excluded": [
+        {
+          "class": "run_identity",
+          "reason": "The commit the lane ran from and the run's own start and end times.",
+          "paths": [
+            [
+              "source_commit"
+            ],
+            [
+              "started_utc"
+            ],
+            [
+              "ended_utc"
+            ]
+          ]
+        },
+        {
+          "class": "host_admission",
+          "reason": "The host's load, free memory, container and heavy-job counts and time when the lane was admitted.",
+          "paths": [
+            [
+              "host_admission",
+              "**"
+            ]
+          ]
+        },
+        {
+          "class": "public_store_snapshot",
+          "reason": "The disposable Core fetches the live public HACS store, so the store's record count and the SHA-256 of its sorted records move whenever the public store changes. The installed theme's records and inventory fingerprint stay compared. Beyond the brief's three examples; reported in the PR with both values.",
+          "paths": [
+            [
+              "store_records"
+            ],
+            [
+              "store_sha256"
+            ]
+          ]
+        }
+      ],
+      "expected_changes": []
+    },
+    "security_metadata": {
+      "harness": "scripts/core_security_metadata_local.py",
+      "committed_receipt": "docs/evidence/hamcp134/lane/security_metadata.json",
+      "committed_receipt_sha256": "5e9e0439a40699d5d5e7a52368cf82790cde56dd0787b298b3dfde1810cb706a",
+      "excluded": [
+        {
+          "class": "run_identity",
+          "reason": "The commit the lane ran from and the run's own start and end times.",
+          "paths": [
+            [
+              "source_commit"
+            ],
+            [
+              "started_utc"
+            ],
+            [
+              "ended_utc"
+            ]
+          ]
+        },
+        {
+          "class": "host_admission",
+          "reason": "The host's load, free memory, container and heavy-job counts and time when the lane was admitted.",
+          "paths": [
+            [
+              "host_admission",
+              "**"
+            ]
+          ]
+        }
+      ],
+      "expected_changes": []
+    },
+    "scene_create_delete": {
+      "harness": "scripts/core_created_object_local.py",
+      "committed_receipt": "docs/evidence/hamcp364/lane/scene_create_delete.json",
+      "committed_receipt_sha256": "03fef43d9c787762def3786955733b801a5eadf5e428a8bfaab25e52c89b7b8e",
+      "excluded": [
+        {
+          "class": "run_identity",
+          "reason": "The commit the lane ran from, as the top-level source_commit and the engineering_source commit, and the run's own start and end times.",
+          "paths": [
+            [
+              "source_commit"
+            ],
+            [
+              "engineering_source",
+              "commit"
+            ],
+            [
+              "started_utc"
+            ],
+            [
+              "ended_utc"
+            ]
+          ]
+        },
+        {
+          "class": "host_admission",
+          "reason": "The host's load, free memory, container and heavy-job counts and time when the lane was admitted.",
+          "paths": [
+            [
+              "host_admission",
+              "**"
+            ]
+          ]
+        },
+        {
+          "class": "lane_suffix",
+          "reason": "Created object ids end in a per-run suffix, secrets.token_hex(4), so a rerun cannot collide with a prior object.",
+          "paths": [
+            [
+              "scenarios",
+              "*",
+              "readback",
+              [
+                "entity_id",
+                "registry_entity_id"
+              ]
+            ]
+          ]
+        },
+        {
+          "class": "derived_from_run_values",
+          "reason": "SHA-256 digests over the read-back, which contains the suffixed object ids above.",
+          "paths": [
+            [
+              "scenarios",
+              "*",
+              "readback_fingerprint"
+            ]
+          ]
+        }
+      ],
+      "expected_changes": [
+        {
+          "path": [
+            "engineering_source",
+            "runtime_tree"
+          ],
+          "committed": "19d9d13f07f67d7dedc6868e86d02bfd3120f2a3",
+          "observed": "a2c1f448fff6e34cbb5c7fbcf9b3a323d39d6eb2",
+          "reason": "The committed receipt ran on d84d8d9e; release/2.9.0 at 9af0d7dc carries later runtime changes (hass_mcp_engineering_beta/ tree a2c1f448). 443-A changes no runtime file, so the branch tree equals the base's."
+        }
+      ]
+    },
+    "created_helper_delete": {
+      "harness": "scripts/core_created_object_local.py",
+      "committed_receipt": "docs/evidence/hamcp364/lane/created_helper_delete.json",
+      "committed_receipt_sha256": "c54b261f7dd46baa80ee7805c9ec6983e22d5c5ee9202c5a7befc8577cade1bd",
+      "excluded": [
+        {
+          "class": "run_identity",
+          "reason": "The commit the lane ran from, as the top-level source_commit and the engineering_source commit, and the run's own start and end times.",
+          "paths": [
+            [
+              "source_commit"
+            ],
+            [
+              "engineering_source",
+              "commit"
+            ],
+            [
+              "started_utc"
+            ],
+            [
+              "ended_utc"
+            ]
+          ]
+        },
+        {
+          "class": "host_admission",
+          "reason": "The host's load, free memory, container and heavy-job counts and time when the lane was admitted.",
+          "paths": [
+            [
+              "host_admission",
+              "**"
+            ]
+          ]
+        },
+        {
+          "class": "lane_suffix",
+          "reason": "Created object ids end in a per-run suffix, secrets.token_hex(4), so a rerun cannot collide with a prior object.",
+          "paths": [
+            [
+              "scenarios",
+              "*",
+              "readback",
+              [
+                "entity_id",
+                "registry_entity_id"
+              ]
+            ]
+          ]
+        },
+        {
+          "class": "derived_from_run_values",
+          "reason": "SHA-256 digests over the read-back, which contains the suffixed object ids above.",
+          "paths": [
+            [
+              "scenarios",
+              "*",
+              "readback_fingerprint"
+            ]
+          ]
+        }
+      ],
+      "expected_changes": [
+        {
+          "path": [
+            "engineering_source",
+            "runtime_tree"
+          ],
+          "committed": "19d9d13f07f67d7dedc6868e86d02bfd3120f2a3",
+          "observed": "a2c1f448fff6e34cbb5c7fbcf9b3a323d39d6eb2",
+          "reason": "The committed receipt ran on d84d8d9e; release/2.9.0 at 9af0d7dc carries later runtime changes (hass_mcp_engineering_beta/ tree a2c1f448). 443-A changes no runtime file, so the branch tree equals the base's."
+        }
+      ]
+    },
+    "thread_matter_topology": {
+      "harness": "scripts/core_thread_matter_topology_local.py",
+      "committed_receipt": "docs/evidence/hamcp231/lane/thread_matter_topology.json",
+      "committed_receipt_sha256": "6cfb52178627332beab4dc07a9ab34a641d12e93aec523a27fadb055cc2b7393",
+      "excluded": [
+        {
+          "class": "run_identity",
+          "reason": "The commit the lane ran from and the run's own start and end times.",
+          "paths": [
+            [
+              "source_commit"
+            ],
+            [
+              "started_utc"
+            ],
+            [
+              "ended_utc"
+            ]
+          ]
+        },
+        {
+          "class": "host_admission",
+          "reason": "The host's load, free memory, container and heavy-job counts and time when the lane was admitted.",
+          "paths": [
+            [
+              "host_admission",
+              "**"
+            ]
+          ]
+        }
+      ],
+      "expected_changes": []
+    },
+    "thread_matter_topology_a2": {
+      "harness": "scripts/core_thread_matter_topology_a2_local.py",
+      "committed_receipt": "docs/evidence/hamcp231/lane/thread_matter_topology_a2.json",
+      "committed_receipt_sha256": "f36d8c1a82e657de1dd82373eace0372f3ae31c2a1ee7e6fc50330f92913f798",
+      "excluded": [
+        {
+          "class": "run_identity",
+          "reason": "The commit the lane ran from and the run's own start and end times.",
+          "paths": [
+            [
+              "source_commit"
+            ],
+            [
+              "started_utc"
+            ],
+            [
+              "ended_utc"
+            ]
+          ]
+        },
+        {
+          "class": "host_admission",
+          "reason": "The host's load, free memory, container and heavy-job counts and time when the lane was admitted.",
+          "paths": [
+            [
+              "host_admission",
+              "**"
+            ]
+          ]
+        },
+        {
+          "class": "docker_assigned",
+          "reason": "Docker picks the internal lane network's subnet from the host's free ranges and assigns the disposable Core's address in it; the harness hands the Core over only as a bare address inside that subnet. lane_network.name stays compared.",
+          "paths": [
+            [
+              "lane_network",
+              "subnet"
+            ],
+            [
+              "lane_network",
+              "target_address"
+            ]
+          ]
+        }
+      ],
+      "expected_changes": []
     }
   }
 }
