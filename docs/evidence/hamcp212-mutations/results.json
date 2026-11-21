@@ -1,0 +1,281 @@
+{
+  "baseline": {
+    "log": "baseline.log",
+    "modules": [
+      "tests.test_hamcp212_loaded_script_config"
+    ],
+    "returncode": 0,
+    "seconds": 3.0,
+    "summary": "OK"
+  },
+  "mutation_count": 12,
+  "killed": 12,
+  "survived": [],
+  "python": "3.12.14",
+  "results": [
+    {
+      "id": "S1-per-script-delegated-loop-restored",
+      "design_item": "brief (a): every script read through the delegated stored route (request-count test must fail)",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/script_sources.py",
+      "replacements": [
+        [
+          "            if reason is None and not (tracked or journal_overflow):\n",
+          "            if False:\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp212_loaded_script_config"
+      ],
+      "log": "S1-per-script-delegated-loop-restored.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_113_automations_and_5_scripts_use_one_connection_and_no_delegated_read (tests.test_hamcp212_loaded_script_config.ScriptBoundedRequestTests.test_113_automations_and_5_scripts_use_one_connection_and_no_delegated_read)"
+      ],
+      "seconds": 1.9
+    },
+    {
+      "id": "S2a-failed-loaded-read-reported-complete",
+      "design_item": "brief (b): a failed loaded read with a readable stored config reported as complete",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/script_sources.py",
+      "replacements": [
+        [
+          "                errors[LOADED_CONFIG_UNAVAILABLE] += 1\n",
+          ""
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp212_loaded_script_config"
+      ],
+      "log": "S2a-failed-loaded-read-reported-complete.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_each_per_script_reason_is_reported (tests.test_hamcp212_loaded_script_config.ScriptFallbackAccountingTests.test_each_per_script_reason_is_reported)"
+      ],
+      "seconds": 1.9
+    },
+    {
+      "id": "S2b-batch-failure-reported-unsupported",
+      "design_item": "brief (b): a failed batch reported as the non-partial unsupported route",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
+      "replacements": [
+        [
+          "                loaded_source_failure = \"loaded_source_unavailable\"\n",
+          "                loaded_source_failure = \"loaded_source_unsupported\"\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp212_loaded_script_config"
+      ],
+      "log": "S2b-batch-failure-reported-unsupported.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_analysis_discloses_loaded_failure (tests.test_hamcp212_loaded_script_config.ScriptPartialOnFailureTests.test_analysis_discloses_loaded_failure)"
+      ],
+      "seconds": 2.9
+    },
+    {
+      "id": "S3-silent-fallback",
+      "design_item": "brief: the stored fallback is counted with its reason, never silent",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/script_sources.py",
+      "replacements": [
+        [
+          "            fallback_reasons[reason] += 1\n",
+          ""
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp212_loaded_script_config"
+      ],
+      "log": "S3-silent-fallback.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_each_per_script_reason_is_reported (tests.test_hamcp212_loaded_script_config.ScriptFallbackAccountingTests.test_each_per_script_reason_is_reported)"
+      ],
+      "seconds": 1.9
+    },
+    {
+      "id": "S4-journal-ignored",
+      "design_item": "design: a pending governed write is read from stale loaded config",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/script_sources.py",
+      "replacements": [
+        [
+          "            tracked = key in pending\n",
+          "            tracked = False\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp212_loaded_script_config"
+      ],
+      "log": "S4-journal-ignored.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_stored_read_failure_for_pending_write_is_not_cleared (tests.test_hamcp212_loaded_script_config.ScriptPendingWriteJournalTests.test_stored_read_failure_for_pending_write_is_not_cleared)"
+      ],
+      "seconds": 3.1
+    },
+    {
+      "id": "S5-blueprint-search-ignored",
+      "design_item": "parity: a blueprint script is analyzed from its substituted loaded body",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/script_sources.py",
+      "replacements": [
+        [
+          "    if blueprints:\n",
+          "    if False:\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp212_loaded_script_config"
+      ],
+      "log": "S5-blueprint-search-ignored.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_path_evidence_names_the_configuration_source (tests.test_hamcp212_loaded_script_config.ScriptAttributionTests.test_path_evidence_names_the_configuration_source)"
+      ],
+      "seconds": 1.5
+    },
+    {
+      "id": "S6-unreconciled-write-hidden",
+      "design_item": "design: a written script that is not loaded is reported as complete",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/script_sources.py",
+      "replacements": [
+        [
+          "        errors[PENDING_WRITE_UNRECONCILED] += unreconciled + int(journal_overflow)\n",
+          "        pass\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp212_loaded_script_config"
+      ],
+      "log": "S6-unreconciled-write-hidden.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_journal_overflow_is_sticky_and_always_partial (tests.test_hamcp212_loaded_script_config.ScriptPendingWriteJournalTests.test_journal_overflow_is_sticky_and_always_partial)"
+      ],
+      "seconds": 2.9
+    },
+    {
+      "id": "S7-script-allowlist-open",
+      "design_item": "security: the batch admits any script/config identity",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/clients/websocket.py",
+      "replacements": [
+        [
+          "_SCRIPT_ENTITY = re.compile(r\"script\\.[a-z0-9_]{1,121}\\Z\", re.ASCII)\n",
+          "_SCRIPT_ENTITY = re.compile(r\".*\", re.DOTALL)\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp212_loaded_script_config"
+      ],
+      "log": "S7-script-allowlist-open.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_only_fixed_script_read_shapes_are_admitted (tests.test_hamcp212_loaded_script_config.ScriptBatchAllowlistTests.test_only_fixed_script_read_shapes_are_admitted)"
+      ],
+      "seconds": 1.4
+    },
+    {
+      "id": "S8-unavailable-script-batched",
+      "design_item": "Core: an UnavailableScriptEntity's raw config is commanded and trusted",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
+      "replacements": [
+        [
+          "                        and state.get(\"state\") != \"unavailable\"\n                        and batch_command_allowed({\"type\": \"script/config\", \"entity_id\": entity_id})\n",
+          "                        and batch_command_allowed({\"type\": \"script/config\", \"entity_id\": entity_id})\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp212_loaded_script_config"
+      ],
+      "log": "S8-unavailable-script-batched.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_script_payloads_are_fixed_read_shapes_for_available_candidates (tests.test_hamcp212_loaded_script_config.ScriptBoundedRequestTests.test_script_payloads_are_fixed_read_shapes_for_available_candidates)"
+      ],
+      "seconds": 1.8
+    },
+    {
+      "id": "S9-resource-script-hook-removed",
+      "design_item": "design: a governed script write is not journaled before dispatch",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/resources.py",
+      "replacements": [
+        [
+          "                DEPENDENCY_ANALYSIS.note_script_write(resource_id)\n",
+          "                pass\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp212_loaded_script_config"
+      ],
+      "log": "S9-resource-script-hook-removed.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_resource_gateway_journals_scripts_before_dispatch (tests.test_hamcp212_loaded_script_config.GovernedScriptWriteHookTests.test_resource_gateway_journals_scripts_before_dispatch)"
+      ],
+      "seconds": 1.3
+    },
+    {
+      "id": "S10-settle-ignores-rewrite-sequence",
+      "design_item": "design: a rewrite during the build is cleared by the earlier verification",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
+      "replacements": [
+        [
+          "            if key in snapshot and self._pending_script_writes.get(key) == snapshot[key]:\n",
+          "            if key in self._pending_script_writes:\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp212_loaded_script_config"
+      ],
+      "log": "S10-settle-ignores-rewrite-sequence.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_rewrite_during_build_is_retained (tests.test_hamcp212_loaded_script_config.ScriptPendingWriteJournalTests.test_rewrite_during_build_is_retained)"
+      ],
+      "seconds": 2.8
+    },
+    {
+      "id": "S11-provider-attribution-forced",
+      "design_item": "truthfulness: loaded script evidence attributed to the delegated provider",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/script_sources.py",
+      "replacements": [
+        [
+          "        document_providers[key] = provider\n",
+          "        document_providers[key] = STORED_SCRIPT_PROVIDER\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp212_loaded_script_config"
+      ],
+      "log": "S11-provider-attribution-forced.log",
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_loaded_only_build_names_no_delegated_provider (tests.test_hamcp212_loaded_script_config.ScriptAttributionTests.test_loaded_only_build_names_no_delegated_provider)"
+      ],
+      "seconds": 1.3
+    }
+  ]
+}

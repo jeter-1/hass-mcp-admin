@@ -1,0 +1,92 @@
+{
+ "baseline": {
+  "modules": [
+   "test_hamcp253_record_acknowledgement.py",
+   "test_hamcp253_record_acknowledgement_web.py"
+  ],
+  "returncode": 0,
+  "tests": 73,
+  "seconds": 25.3
+ },
+ "mutation_count": 3,
+ "killed": 3,
+ "not_killed": [],
+ "equivalent": {},
+ "unexpected_survivors": [],
+ "kill_rule": "at least one FAIL (assertion) line; ERROR-only and timeouts are not kills",
+ "python": "3.12.14",
+ "results": [
+  {
+   "id": "Q3-plan-inspection-uses-get",
+   "class": "inspection read has side effects or misreports",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "                plan = self.repository.read_for_inspection(record_id)",
+     "                plan = self.repository.get(record_id)"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_repeated_inspection_never_moves_a_corrupt_record (test_hamcp253_record_acknowledgement.InspectionTests.test_repeated_inspection_never_moves_a_corrupt_record)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/Q3-plan-inspection-uses-get.log",
+   "seconds": 25.1
+  },
+  {
+   "id": "Q4-task-inspection-uses-get",
+   "class": "inspection read has side effects or misreports",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "            task = self.task_repository.read_for_inspection(record_id)",
+     "            task = self.task_repository.get(record_id)"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_repeated_inspection_never_moves_a_corrupt_task (test_hamcp253_record_acknowledgement.ManualReviewTaskTests.test_repeated_inspection_never_moves_a_corrupt_task)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/Q4-task-inspection-uses-get.log",
+   "seconds": 24.3
+  },
+  {
+   "id": "Q5-tasks-inspection-read-quarantines",
+   "class": "inspection read has side effects or misreports",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/task_storage.py",
+     "                else self._path(task_id),\n                quarantine_corrupt=False,\n",
+     "                else self._path(task_id),\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_repeated_inspection_never_moves_a_corrupt_task (test_hamcp253_record_acknowledgement.ManualReviewTaskTests.test_repeated_inspection_never_moves_a_corrupt_task)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/Q5-tasks-inspection-read-quarantines.log",
+   "seconds": 24.8
+  }
+ ]
+}

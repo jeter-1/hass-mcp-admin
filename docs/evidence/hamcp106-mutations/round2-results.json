@@ -1,0 +1,36 @@
+[
+  {
+    "name": "P2_multi_operation_not_prohibited",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 83.7,
+    "tests": [
+      "250"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_multi_operation_dashboard_metadata_plan_is_prohibited"
+    ],
+    "killed": true
+  },
+  {
+    "name": "H2_profiles_unsorted",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 83.4,
+    "tests": [
+      "250"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_grouping_does_not_depend_on_decision_order"
+    ],
+    "killed": true
+  }
+]

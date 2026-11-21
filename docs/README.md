@@ -128,6 +128,7 @@ the time; current behavior is in source and the reference documents above.
 - [HAMCP-191 implementation notes](HAMCP_191_IMPLEMENTATION_NOTES.md)
 - [HAMCP-191: Identity-Only Redaction Markers for Every Tool (Design Sweep)](HAMCP_191_SHARED_SANITIZER_DESIGN.md)
 - [HAMCP-192 — Observing-task fix: design note](HAMCP_192_OBSERVING_FIX_DESIGN.md)
+- [HAMCP-195 risk-gated fast toggles for input_boolean helpers — design](HAMCP_195_GATED_HELPER_TOGGLE_DESIGN.md)
 - [HAMCP-196: Engineering add-on permissions review (read-only)](HAMCP_196_ADDON_PERMISSIONS_REVIEW.md)
 - [HAMCP-205: shared administrator verification for Ingress approval pages](HAMCP_205_ADMIN_VERIFICATION_DESIGN.md)
 - [HAMCP-209 Fast Dependency Index: Design Note](HAMCP_209_FAST_DEPENDENCY_INDEX_DESIGN.md)

@@ -1,0 +1,1183 @@
+{
+ "control_baseline": {
+  "rc": 0,
+  "s": 2.5,
+  "tail": [
+   "OK"
+  ]
+ },
+ "isolated_controls": {
+  "BoundTableTests.test_bound_table_names_the_partition_limits": "pass",
+  "ConsumerTests.test_dependency_analysis_shows_scene_group_and_dashboard_only_references": "pass",
+  "ConsumerTests.test_impact_analysis_shows_scene_group_and_dashboard_only_references": "pass",
+  "ConsumerTests.test_impact_keeps_an_unavailable_dashboard_row_unavailable": "pass",
+  "ConsumerTests.test_impact_reports_deferred_template_coverage": "pass",
+  "DashboardBudgetTests.test_budget_overrun_mid_list_leaves_the_rest_unread": "pass",
+  "DashboardBudgetTests.test_list_that_consumes_the_budget_starts_no_read": "pass",
+  "DashboardBudgetTests.test_list_that_never_returns_is_unavailable_and_reads_nothing": "pass",
+  "DashboardBudgetTests.test_oversize_document_is_partial_with_a_document_terminal": "pass",
+  "DashboardBudgetTests.test_reads_in_flight_at_the_deadline_are_cancelled_and_counted": "pass",
+  "DashboardBudgetTests.test_session_that_consumes_the_budget_lists_nothing": "pass",
+  "DashboardDependencyReaderTests.test_failed_revalidation_stops_reads": "pass",
+  "DashboardDependencyReaderTests.test_invalid_and_secret_shaped_paths_are_screened": "pass",
+  "DashboardDependencyReaderTests.test_one_list_and_one_read_per_dashboard_with_attributed_audit": "pass",
+  "DashboardDependencyReaderTests.test_parent_without_a_dispatch_authorizer_acquires_nothing": "pass",
+  "DashboardDependencyReaderTests.test_refused_parent_authorizer_dispatches_nothing": "pass",
+  "DashboardDependencyReaderTests.test_upstream_authority_drift_refuses_the_read_before_dispatch": "pass",
+  "DashboardWalkTests.test_custom_card_is_partial_and_keeps_the_other_references": "pass",
+  "DashboardWalkTests.test_dashboard_strategy_is_partial": "pass",
+  "DashboardWalkTests.test_finding_limit_is_partial_with_a_terminal": "pass",
+  "DashboardWalkTests.test_inventory_limit_is_partial_with_a_terminal": "pass",
+  "DashboardWalkTests.test_list_failure_is_unavailable_with_the_reason": "pass",
+  "DashboardWalkTests.test_missing_default_dashboard_is_partial": "pass",
+  "DashboardWalkTests.test_nested_conditional_stack_and_grid_cards_have_exact_paths": "pass",
+  "DashboardWalkTests.test_projection_truncation_is_partial_with_a_terminal": "pass",
+  "DashboardWalkTests.test_read_failure_is_isolated_to_its_dashboard": "pass",
+  "DashboardWalkTests.test_reads_are_bounded_by_the_concurrency_limit": "pass",
+  "DashboardWalkTests.test_retired_authority_after_the_list_stops_further_reads": "pass",
+  "DashboardWalkTests.test_retired_authority_withholds_cached_dashboard_evidence": "pass",
+  "DashboardWalkTests.test_truncated_or_partial_list_is_partial": "pass",
+  "DashboardWalkTests.test_untrusted_title_and_segments_are_bounded": "pass",
+  "DependencyBuildTests.test_dashboards_cost_one_list_and_one_read_each": "pass",
+  "DependencyBuildTests.test_incomplete_build_registry_marks_scenes_and_groups_partial": "pass",
+  "DependencyBuildTests.test_index_truncation_marks_every_dropped_source_partial": "pass",
+  "ImpactPaginationBindingTests.test_diagnostic_change_before_commit_refuses_the_cursor": "pass",
+  "ImpactPaginationBindingTests.test_failing_identity_is_not_read_as_an_absent_partition": "pass",
+  "ImpactPaginationBindingTests.test_retired_dashboard_authority_makes_the_cursor_stale": "pass",
+  "ImpactPaginationBindingTests.test_unchanged_partition_pages_are_consistent_and_read_nothing": "pass",
+  "MembershipSourceTests.test_exactly_the_member_limit_is_complete": "pass",
+  "MembershipSourceTests.test_finding_limit_is_partial_with_a_terminal": "pass",
+  "MembershipSourceTests.test_incomplete_registry_is_partial": "pass",
+  "MembershipSourceTests.test_invalid_or_secret_shaped_members_and_identities_are_withheld": "pass",
+  "MembershipSourceTests.test_inventory_limit_is_partial_with_a_terminal": "pass",
+  "MembershipSourceTests.test_member_limit_is_partial_with_a_terminal": "pass",
+  "MembershipSourceTests.test_scene_or_group_without_a_member_list_is_partial": "pass",
+  "MembershipSourceTests.test_stateless_group_helper_is_partial": "pass",
+  "MembershipSourceTests.test_template_platform_count_is_reported": "pass"
+ },
+ "M01": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.9,
+  "tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_exactly_the_member_limit_is_complete (tests.test_hamcp227_global_sources.MembershipSourceTests.test_exactly_the_member_limit_is_complete)"
+  ],
+  "isolated_target": "MembershipSourceTests.test_exactly_the_member_limit_is_complete",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_exactly_the_member_limit_is_complete (tests.test_hamcp227_global_sources.MembershipSourceTests.test_exactly_the_member_limit_is_complete)"
+  ]
+ },
+ "M02": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 3.0,
+  "tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_member_limit_is_partial_with_a_terminal (tests.test_hamcp227_global_sources.MembershipSourceTests.test_member_limit_is_partial_with_a_terminal)"
+  ],
+  "isolated_target": "MembershipSourceTests.test_member_limit_is_partial_with_a_terminal",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_member_limit_is_partial_with_a_terminal (tests.test_hamcp227_global_sources.MembershipSourceTests.test_member_limit_is_partial_with_a_terminal)"
+  ]
+ },
+ "M03": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 3.0,
+  "tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_finding_limit_is_partial_with_a_terminal (tests.test_hamcp227_global_sources.MembershipSourceTests.test_finding_limit_is_partial_with_a_terminal)"
+  ],
+  "isolated_target": "MembershipSourceTests.test_finding_limit_is_partial_with_a_terminal",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_finding_limit_is_partial_with_a_terminal (tests.test_hamcp227_global_sources.MembershipSourceTests.test_finding_limit_is_partial_with_a_terminal)"
+  ]
+ },
+ "M04": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.6,
+  "tail": [
+   "FAILED (failures=9)",
+   "FAIL: test_incomplete_build_registry_marks_scenes_and_groups_partial (tests.test_hamcp227_global_sources.DependencyBuildTests.test_incomplete_build_registry_marks_scenes_and_groups_partial)",
+   "FAIL: test_finding_limit_is_partial_with_a_terminal (tests.test_hamcp227_global_sources.MembershipSourceTests.test_finding_limit_is_partial_with_a_terminal)",
+   "FAIL: test_incomplete_registry_is_partial (tests.test_hamcp227_global_sources.MembershipSourceTests.test_incomplete_registry_is_partial)"
+  ],
+  "isolated_target": "MembershipSourceTests.test_scene_or_group_without_a_member_list_is_partial",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_scene_or_group_without_a_member_list_is_partial (tests.test_hamcp227_global_sources.MembershipSourceTests.test_scene_or_group_without_a_member_list_is_partial)"
+  ]
+ },
+ "M05": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 3.1,
+  "tail": [
+   "FAILED (failures=2)",
+   "FAIL: test_incomplete_build_registry_marks_scenes_and_groups_partial (tests.test_hamcp227_global_sources.DependencyBuildTests.test_incomplete_build_registry_marks_scenes_and_groups_partial)",
+   "FAIL: test_incomplete_registry_is_partial (tests.test_hamcp227_global_sources.MembershipSourceTests.test_incomplete_registry_is_partial)"
+  ],
+  "isolated_target": "MembershipSourceTests.test_incomplete_registry_is_partial",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_incomplete_registry_is_partial (tests.test_hamcp227_global_sources.MembershipSourceTests.test_incomplete_registry_is_partial)"
+  ]
+ },
+ "M06": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.8,
+  "tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_scene_or_group_without_a_member_list_is_partial (tests.test_hamcp227_global_sources.MembershipSourceTests.test_scene_or_group_without_a_member_list_is_partial)"
+  ],
+  "isolated_target": "MembershipSourceTests.test_scene_or_group_without_a_member_list_is_partial",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_scene_or_group_without_a_member_list_is_partial (tests.test_hamcp227_global_sources.MembershipSourceTests.test_scene_or_group_without_a_member_list_is_partial)"
+  ]
+ },
+ "M07": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.8,
+  "tail": [
+   "FAILED (failures=2)",
+   "FAIL: test_registry_only_scene_is_partial (tests.test_hamcp227_global_sources.MembershipSourceTests.test_registry_only_scene_is_partial)",
+   "FAIL: test_stateless_group_helper_is_partial (tests.test_hamcp227_global_sources.MembershipSourceTests.test_stateless_group_helper_is_partial)"
+  ],
+  "isolated_target": "MembershipSourceTests.test_stateless_group_helper_is_partial",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_stateless_group_helper_is_partial (tests.test_hamcp227_global_sources.MembershipSourceTests.test_stateless_group_helper_is_partial)"
+  ]
+ },
+ "M08": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.9,
+  "tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_inventory_limit_is_partial_with_a_terminal (tests.test_hamcp227_global_sources.MembershipSourceTests.test_inventory_limit_is_partial_with_a_terminal)"
+  ],
+  "isolated_target": "MembershipSourceTests.test_inventory_limit_is_partial_with_a_terminal",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_inventory_limit_is_partial_with_a_terminal (tests.test_hamcp227_global_sources.MembershipSourceTests.test_inventory_limit_is_partial_with_a_terminal)"
+  ]
+ },
+ "M09": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.8,
+  "tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_stateless_group_helper_is_partial (tests.test_hamcp227_global_sources.MembershipSourceTests.test_stateless_group_helper_is_partial)"
+  ],
+  "isolated_target": "MembershipSourceTests.test_stateless_group_helper_is_partial",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_stateless_group_helper_is_partial (tests.test_hamcp227_global_sources.MembershipSourceTests.test_stateless_group_helper_is_partial)"
+  ]
+ },
+ "M10": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.6,
+  "tail": [
+   "FAILED (failures=2)",
+   "FAIL: test_partition_rows_and_template_count (tests.test_hamcp227_global_sources.DependencyBuildTests.test_partition_rows_and_template_count)",
+   "FAIL: test_template_platform_count_is_reported (tests.test_hamcp227_global_sources.MembershipSourceTests.test_template_platform_count_is_reported)"
+  ],
+  "isolated_target": "MembershipSourceTests.test_template_platform_count_is_reported",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_template_platform_count_is_reported (tests.test_hamcp227_global_sources.MembershipSourceTests.test_template_platform_count_is_reported)"
+  ]
+ },
+ "M11": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.7,
+  "tail": [
+   "FAILED (failures=2)",
+   "FAIL: test_invalid_and_secret_shaped_paths_are_screened (tests.test_hamcp227_global_sources.DashboardDependencyReaderTests.test_invalid_and_secret_shaped_paths_are_screened)",
+   "FAIL: test_truncated_or_partial_list_is_partial (tests.test_hamcp227_global_sources.DashboardWalkTests.test_truncated_or_partial_list_is_partial)"
+  ],
+  "isolated_target": "DashboardWalkTests.test_truncated_or_partial_list_is_partial",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_truncated_or_partial_list_is_partial (tests.test_hamcp227_global_sources.DashboardWalkTests.test_truncated_or_partial_list_is_partial)"
+  ]
+ },
+ "M12": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.9,
+  "tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_missing_default_dashboard_is_partial (tests.test_hamcp227_global_sources.DashboardWalkTests.test_missing_default_dashboard_is_partial)"
+  ],
+  "isolated_target": "DashboardWalkTests.test_missing_default_dashboard_is_partial",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_missing_default_dashboard_is_partial (tests.test_hamcp227_global_sources.DashboardWalkTests.test_missing_default_dashboard_is_partial)"
+  ]
+ },
+ "M13": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.7,
+  "tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_truncated_or_partial_list_is_partial (tests.test_hamcp227_global_sources.DashboardWalkTests.test_truncated_or_partial_list_is_partial)"
+  ],
+  "isolated_target": "DashboardWalkTests.test_truncated_or_partial_list_is_partial",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_truncated_or_partial_list_is_partial (tests.test_hamcp227_global_sources.DashboardWalkTests.test_truncated_or_partial_list_is_partial)"
+  ]
+ },
+ "M14": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.7,
+  "tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_inventory_limit_is_partial_with_a_terminal (tests.test_hamcp227_global_sources.DashboardWalkTests.test_inventory_limit_is_partial_with_a_terminal)"
+  ],
+  "isolated_target": "DashboardWalkTests.test_inventory_limit_is_partial_with_a_terminal",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_inventory_limit_is_partial_with_a_terminal (tests.test_hamcp227_global_sources.DashboardWalkTests.test_inventory_limit_is_partial_with_a_terminal)"
+  ]
+ },
+ "M15": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.7,
+  "tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_inventory_limit_is_partial_with_a_terminal (tests.test_hamcp227_global_sources.DashboardWalkTests.test_inventory_limit_is_partial_with_a_terminal)"
+  ],
+  "isolated_target": "DashboardWalkTests.test_inventory_limit_is_partial_with_a_terminal",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_inventory_limit_is_partial_with_a_terminal (tests.test_hamcp227_global_sources.DashboardWalkTests.test_inventory_limit_is_partial_with_a_terminal)"
+  ]
+ },
+ "M16": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.8,
+  "tail": [
+   "FAILED (failures=4)",
+   "FAIL: test_custom_card_is_partial_and_keeps_the_other_references (tests.test_hamcp227_global_sources.DashboardWalkTests.test_custom_card_is_partial_and_keeps_the_other_references)",
+   "FAIL: test_dashboard_strategy_is_partial (tests.test_hamcp227_global_sources.DashboardWalkTests.test_dashboard_strategy_is_partial)",
+   "FAIL: test_view_strategy_is_partial (tests.test_hamcp227_global_sources.DashboardWalkTests.test_view_strategy_is_partial)"
+  ],
+  "isolated_target": "DashboardWalkTests.test_custom_card_is_partial_and_keeps_the_other_references",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_custom_card_is_partial_and_keeps_the_other_references (tests.test_hamcp227_global_sources.DashboardWalkTests.test_custom_card_is_partial_and_keeps_the_other_references)"
+  ]
+ },
+ "M17": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.7,
+  "tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_projection_truncation_is_partial_with_a_terminal (tests.test_hamcp227_global_sources.DashboardWalkTests.test_projection_truncation_is_partial_with_a_terminal)"
+  ],
+  "isolated_target": "DashboardWalkTests.test_projection_truncation_is_partial_with_a_terminal",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_projection_truncation_is_partial_with_a_terminal (tests.test_hamcp227_global_sources.DashboardWalkTests.test_projection_truncation_is_partial_with_a_terminal)"
+  ]
+ },
+ "M18": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 3.0,
+  "tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_finding_limit_is_partial_with_a_terminal (tests.test_hamcp227_global_sources.DashboardWalkTests.test_finding_limit_is_partial_with_a_terminal)"
+  ],
+  "isolated_target": "DashboardWalkTests.test_finding_limit_is_partial_with_a_terminal",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_finding_limit_is_partial_with_a_terminal (tests.test_hamcp227_global_sources.DashboardWalkTests.test_finding_limit_is_partial_with_a_terminal)"
+  ]
+ },
+ "M19": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.8,
+  "tail": [
+   "FAILED (failures=6)",
+   "FAIL: test_budget_overrun_mid_list_leaves_the_rest_unread (tests.test_hamcp227_global_sources.DashboardBudgetTests.test_budget_overrun_mid_list_leaves_the_rest_unread)",
+   "FAIL: test_list_that_consumes_the_budget_starts_no_read (tests.test_hamcp227_global_sources.DashboardBudgetTests.test_list_that_consumes_the_budget_starts_no_read)",
+   "FAIL: test_list_that_never_returns_is_unavailable_and_reads_nothing (tests.test_hamcp227_global_sources.DashboardBudgetTests.test_list_that_never_returns_is_unavailable_and_reads_nothing)"
+  ],
+  "isolated_target": "DashboardBudgetTests.test_list_that_never_returns_is_unavailable_and_reads_nothing",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_list_that_never_returns_is_unavailable_and_reads_nothing (tests.test_hamcp227_global_sources.DashboardBudgetTests.test_list_that_never_returns_is_unavailable_and_reads_nothing)"
+  ]
+ },
+ "M20": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.8,
+  "tail": [
+   "FAILED (failures=4)",
+   "FAIL: test_budget_overrun_mid_list_leaves_the_rest_unread (tests.test_hamcp227_global_sources.DashboardBudgetTests.test_budget_overrun_mid_list_leaves_the_rest_unread)",
+   "FAIL: test_list_that_consumes_the_budget_starts_no_read (tests.test_hamcp227_global_sources.DashboardBudgetTests.test_list_that_consumes_the_budget_starts_no_read)",
+   "FAIL: test_reads_in_flight_at_the_deadline_are_cancelled_and_counted (tests.test_hamcp227_global_sources.DashboardBudgetTests.test_reads_in_flight_at_the_deadline_are_cancelled_and_counted)"
+  ],
+  "isolated_target": "DashboardBudgetTests.test_budget_overrun_mid_list_leaves_the_rest_unread",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_budget_overrun_mid_list_leaves_the_rest_unread (tests.test_hamcp227_global_sources.DashboardBudgetTests.test_budget_overrun_mid_list_leaves_the_rest_unread)"
+  ],
+  "reanchored": true
+ },
+ "M21": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.8,
+  "tail": [
+   "FAILED (failures=2)",
+   "FAIL: test_reads_in_flight_at_the_deadline_are_cancelled_and_counted (tests.test_hamcp227_global_sources.DashboardBudgetTests.test_reads_in_flight_at_the_deadline_are_cancelled_and_counted)",
+   "FAIL: test_reads_are_bounded_by_the_concurrency_limit (tests.test_hamcp227_global_sources.DashboardWalkTests.test_reads_are_bounded_by_the_concurrency_limit)"
+  ],
+  "isolated_target": "DashboardWalkTests.test_reads_are_bounded_by_the_concurrency_limit",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_reads_are_bounded_by_the_concurrency_limit (tests.test_hamcp227_global_sources.DashboardWalkTests.test_reads_are_bounded_by_the_concurrency_limit)"
+  ]
+ },
+ "M22": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.7,
+  "tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_retired_authority_after_the_list_stops_further_reads (tests.test_hamcp227_global_sources.DashboardWalkTests.test_retired_authority_after_the_list_stops_further_reads)"
+  ],
+  "isolated_target": "DashboardWalkTests.test_retired_authority_after_the_list_stops_further_reads",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_retired_authority_after_the_list_stops_further_reads (tests.test_hamcp227_global_sources.DashboardWalkTests.test_retired_authority_after_the_list_stops_further_reads)"
+  ],
+  "reanchored": true
+ },
+ "M23": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.8,
+  "tail": [
+   "FAILED (failures=2)",
+   "FAIL: test_retired_authority_withholds_cached_dashboard_evidence (tests.test_hamcp227_global_sources.DashboardWalkTests.test_retired_authority_withholds_cached_dashboard_evidence)",
+   "FAIL: test_retired_dashboard_authority_makes_the_cursor_stale (tests.test_hamcp227_global_sources.ImpactPaginationBindingTests.test_retired_dashboard_authority_makes_the_cursor_stale)"
+  ],
+  "isolated_target": "DashboardWalkTests.test_retired_authority_withholds_cached_dashboard_evidence",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_retired_authority_withholds_cached_dashboard_evidence (tests.test_hamcp227_global_sources.DashboardWalkTests.test_retired_authority_withholds_cached_dashboard_evidence)"
+  ]
+ },
+ "M24": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.7,
+  "tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_untrusted_title_and_segments_are_bounded (tests.test_hamcp227_global_sources.DashboardWalkTests.test_untrusted_title_and_segments_are_bounded)"
+  ],
+  "isolated_target": "DashboardWalkTests.test_untrusted_title_and_segments_are_bounded",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_untrusted_title_and_segments_are_bounded (tests.test_hamcp227_global_sources.DashboardWalkTests.test_untrusted_title_and_segments_are_bounded)"
+  ]
+ },
+ "M25": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.8,
+  "tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_untrusted_title_and_segments_are_bounded (tests.test_hamcp227_global_sources.DashboardWalkTests.test_untrusted_title_and_segments_are_bounded)"
+  ],
+  "isolated_target": "DashboardWalkTests.test_untrusted_title_and_segments_are_bounded",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_untrusted_title_and_segments_are_bounded (tests.test_hamcp227_global_sources.DashboardWalkTests.test_untrusted_title_and_segments_are_bounded)"
+  ]
+ },
+ "M26": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.7,
+  "tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_untrusted_title_and_segments_are_bounded (tests.test_hamcp227_global_sources.DashboardWalkTests.test_untrusted_title_and_segments_are_bounded)"
+  ],
+  "isolated_target": "DashboardWalkTests.test_untrusted_title_and_segments_are_bounded",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_untrusted_title_and_segments_are_bounded (tests.test_hamcp227_global_sources.DashboardWalkTests.test_untrusted_title_and_segments_are_bounded)"
+  ]
+ },
+ "M27": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.7,
+  "tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_nested_conditional_stack_and_grid_cards_have_exact_paths (tests.test_hamcp227_global_sources.DashboardWalkTests.test_nested_conditional_stack_and_grid_cards_have_exact_paths)"
+  ],
+  "isolated_target": "DashboardWalkTests.test_nested_conditional_stack_and_grid_cards_have_exact_paths",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_nested_conditional_stack_and_grid_cards_have_exact_paths (tests.test_hamcp227_global_sources.DashboardWalkTests.test_nested_conditional_stack_and_grid_cards_have_exact_paths)"
+  ]
+ },
+ "M28": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.8,
+  "tail": [
+   "FAILED (failures=3)",
+   "FAIL: test_list_that_consumes_the_budget_starts_no_read (tests.test_hamcp227_global_sources.DashboardBudgetTests.test_list_that_consumes_the_budget_starts_no_read)",
+   "FAIL: test_reads_in_flight_at_the_deadline_are_cancelled_and_counted (tests.test_hamcp227_global_sources.DashboardBudgetTests.test_reads_in_flight_at_the_deadline_are_cancelled_and_counted)",
+   "FAIL: test_retired_authority_after_the_list_stops_further_reads (tests.test_hamcp227_global_sources.DashboardWalkTests.test_retired_authority_after_the_list_stops_further_reads)"
+  ],
+  "isolated_target": "DashboardBudgetTests.test_list_that_consumes_the_budget_starts_no_read",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_list_that_consumes_the_budget_starts_no_read (tests.test_hamcp227_global_sources.DashboardBudgetTests.test_list_that_consumes_the_budget_starts_no_read)"
+  ]
+ },
+ "M29": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.7,
+  "tail": [
+   "FAILED (failures=2)",
+   "FAIL: test_no_parent_authority_dispatches_nothing (tests.test_hamcp227_global_sources.DashboardDependencyReaderTests.test_no_parent_authority_dispatches_nothing)",
+   "FAIL: test_list_failure_is_unavailable_with_the_reason (tests.test_hamcp227_global_sources.DashboardWalkTests.test_list_failure_is_unavailable_with_the_reason)"
+  ],
+  "isolated_target": "DashboardWalkTests.test_list_failure_is_unavailable_with_the_reason",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_list_failure_is_unavailable_with_the_reason (tests.test_hamcp227_global_sources.DashboardWalkTests.test_list_failure_is_unavailable_with_the_reason)"
+  ]
+ },
+ "M30": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.8,
+  "tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_invalid_or_secret_shaped_members_and_identities_are_withheld (tests.test_hamcp227_global_sources.MembershipSourceTests.test_invalid_or_secret_shaped_members_and_identities_are_withheld)"
+  ],
+  "isolated_target": "MembershipSourceTests.test_invalid_or_secret_shaped_members_and_identities_are_withheld",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_invalid_or_secret_shaped_members_and_identities_are_withheld (tests.test_hamcp227_global_sources.MembershipSourceTests.test_invalid_or_secret_shaped_members_and_identities_are_withheld)"
+  ]
+ },
+ "M31": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.9,
+  "tail": [
+   "FAILED (failures=2)",
+   "FAIL: test_retired_authority_withholds_cached_dashboard_evidence (tests.test_hamcp227_global_sources.DashboardWalkTests.test_retired_authority_withholds_cached_dashboard_evidence)",
+   "FAIL: test_retired_dashboard_authority_makes_the_cursor_stale (tests.test_hamcp227_global_sources.ImpactPaginationBindingTests.test_retired_dashboard_authority_makes_the_cursor_stale)"
+  ],
+  "isolated_target": "DashboardWalkTests.test_retired_authority_withholds_cached_dashboard_evidence",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_retired_authority_withholds_cached_dashboard_evidence (tests.test_hamcp227_global_sources.DashboardWalkTests.test_retired_authority_withholds_cached_dashboard_evidence)"
+  ]
+ },
+ "M32": {
+  "file": "dependency_reader.py",
+  "status": "killed",
+  "s": 2.8,
+  "tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_parent_without_a_dispatch_authorizer_acquires_nothing (tests.test_hamcp227_global_sources.DashboardDependencyReaderTests.test_parent_without_a_dispatch_authorizer_acquires_nothing)"
+  ],
+  "isolated_target": "DashboardDependencyReaderTests.test_parent_without_a_dispatch_authorizer_acquires_nothing",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_parent_without_a_dispatch_authorizer_acquires_nothing (tests.test_hamcp227_global_sources.DashboardDependencyReaderTests.test_parent_without_a_dispatch_authorizer_acquires_nothing)"
+  ]
+ },
+ "M33": {
+  "file": "dependency_reader.py",
+  "status": "killed",
+  "s": 2.6,
+  "tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_refused_parent_authorizer_dispatches_nothing (tests.test_hamcp227_global_sources.DashboardDependencyReaderTests.test_refused_parent_authorizer_dispatches_nothing)"
+  ],
+  "isolated_target": "DashboardDependencyReaderTests.test_refused_parent_authorizer_dispatches_nothing",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_refused_parent_authorizer_dispatches_nothing (tests.test_hamcp227_global_sources.DashboardDependencyReaderTests.test_refused_parent_authorizer_dispatches_nothing)"
+  ]
+ },
+ "M34": {
+  "file": "dependency_reader.py",
+  "status": "killed",
+  "s": 2.7,
+  "tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_failed_revalidation_stops_reads (tests.test_hamcp227_global_sources.DashboardDependencyReaderTests.test_failed_revalidation_stops_reads)"
+  ],
+  "isolated_target": "DashboardDependencyReaderTests.test_failed_revalidation_stops_reads",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_failed_revalidation_stops_reads (tests.test_hamcp227_global_sources.DashboardDependencyReaderTests.test_failed_revalidation_stops_reads)"
+  ]
+ },
+ "M35": {
+  "file": "dependency_reader.py",
+  "status": "killed",
+  "s": 2.9,
+  "tail": [
+   "FAILED (failures=3)",
+   "FAIL: test_failed_revalidation_stops_reads (tests.test_hamcp227_global_sources.DashboardDependencyReaderTests.test_failed_revalidation_stops_reads)",
+   "FAIL: test_one_list_and_one_read_per_dashboard_with_attributed_audit (tests.test_hamcp227_global_sources.DashboardDependencyReaderTests.test_one_list_and_one_read_per_dashboard_with_attributed_audit)",
+   "FAIL: test_oversize_document_is_refused_by_the_reviewed_size_cap (tests.test_hamcp227_global_sources.DashboardDependencyReaderTests.test_oversize_document_is_refused_by_the_reviewed_size_cap)"
+  ],
+  "isolated_target": "DashboardDependencyReaderTests.test_one_list_and_one_read_per_dashboard_with_attributed_audit",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_one_list_and_one_read_per_dashboard_with_attributed_audit (tests.test_hamcp227_global_sources.DashboardDependencyReaderTests.test_one_list_and_one_read_per_dashboard_with_attributed_audit)"
+  ]
+ },
+ "M36": {
+  "file": "dependency_reader.py",
+  "status": "killed",
+  "s": 2.8,
+  "tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_refused_parent_authorizer_dispatches_nothing (tests.test_hamcp227_global_sources.DashboardDependencyReaderTests.test_refused_parent_authorizer_dispatches_nothing)"
+  ],
+  "isolated_target": "DashboardDependencyReaderTests.test_refused_parent_authorizer_dispatches_nothing",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_refused_parent_authorizer_dispatches_nothing (tests.test_hamcp227_global_sources.DashboardDependencyReaderTests.test_refused_parent_authorizer_dispatches_nothing)"
+  ]
+ },
+ "M37": {
+  "file": "dependency_reader.py",
+  "status": "killed",
+  "s": 2.8,
+  "tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_one_list_and_one_read_per_dashboard_with_attributed_audit (tests.test_hamcp227_global_sources.DashboardDependencyReaderTests.test_one_list_and_one_read_per_dashboard_with_attributed_audit)"
+  ],
+  "isolated_target": "DashboardDependencyReaderTests.test_one_list_and_one_read_per_dashboard_with_attributed_audit",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_one_list_and_one_read_per_dashboard_with_attributed_audit (tests.test_hamcp227_global_sources.DashboardDependencyReaderTests.test_one_list_and_one_read_per_dashboard_with_attributed_audit)"
+  ]
+ },
+ "M38": {
+  "file": "dependency_reader.py",
+  "status": "killed",
+  "s": 2.9,
+  "tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_invalid_and_secret_shaped_paths_are_screened (tests.test_hamcp227_global_sources.DashboardDependencyReaderTests.test_invalid_and_secret_shaped_paths_are_screened)"
+  ],
+  "isolated_target": "DashboardDependencyReaderTests.test_invalid_and_secret_shaped_paths_are_screened",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_invalid_and_secret_shaped_paths_are_screened (tests.test_hamcp227_global_sources.DashboardDependencyReaderTests.test_invalid_and_secret_shaped_paths_are_screened)"
+  ]
+ },
+ "M39": {
+  "file": "dependency_reader.py",
+  "status": "killed",
+  "s": 2.8,
+  "tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_invalid_and_secret_shaped_paths_are_screened (tests.test_hamcp227_global_sources.DashboardDependencyReaderTests.test_invalid_and_secret_shaped_paths_are_screened)"
+  ],
+  "isolated_target": "DashboardDependencyReaderTests.test_invalid_and_secret_shaped_paths_are_screened",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_invalid_and_secret_shaped_paths_are_screened (tests.test_hamcp227_global_sources.DashboardDependencyReaderTests.test_invalid_and_secret_shaped_paths_are_screened)"
+  ]
+ },
+ "M40": {
+  "file": "dependency_reader.py",
+  "status": "killed",
+  "s": 2.8,
+  "tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_upstream_authority_drift_refuses_the_read_before_dispatch (tests.test_hamcp227_global_sources.DashboardDependencyReaderTests.test_upstream_authority_drift_refuses_the_read_before_dispatch)"
+  ],
+  "isolated_target": "DashboardDependencyReaderTests.test_upstream_authority_drift_refuses_the_read_before_dispatch",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_upstream_authority_drift_refuses_the_read_before_dispatch (tests.test_hamcp227_global_sources.DashboardDependencyReaderTests.test_upstream_authority_drift_refuses_the_read_before_dispatch)"
+  ]
+ },
+ "M41": {
+  "file": "dependency_reader.py",
+  "status": "killed",
+  "s": 2.9,
+  "tail": [
+   "FAILED (errors=1)",
+   "ERROR: test_invalid_and_secret_shaped_paths_are_screened (tests.test_hamcp227_global_sources.DashboardDependencyReaderTests.test_invalid_and_secret_shaped_paths_are_screened)"
+  ],
+  "isolated_target": "DashboardDependencyReaderTests.test_invalid_and_secret_shaped_paths_are_screened",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (errors=1)",
+   "ERROR: test_invalid_and_secret_shaped_paths_are_screened (tests.test_hamcp227_global_sources.DashboardDependencyReaderTests.test_invalid_and_secret_shaped_paths_are_screened)"
+  ]
+ },
+ "M42": {
+  "file": "dependency_reader.py",
+  "status": "killed",
+  "s": 2.8,
+  "tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_dashboard_strategy_is_partial (tests.test_hamcp227_global_sources.DashboardWalkTests.test_dashboard_strategy_is_partial)"
+  ],
+  "isolated_target": "DashboardWalkTests.test_dashboard_strategy_is_partial",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_dashboard_strategy_is_partial (tests.test_hamcp227_global_sources.DashboardWalkTests.test_dashboard_strategy_is_partial)"
+  ]
+ },
+ "M43": {
+  "file": "dependency_reader.py",
+  "status": "killed",
+  "s": 2.8,
+  "tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_projection_truncation_is_partial_with_a_terminal (tests.test_hamcp227_global_sources.DashboardWalkTests.test_projection_truncation_is_partial_with_a_terminal)"
+  ],
+  "isolated_target": "DashboardWalkTests.test_projection_truncation_is_partial_with_a_terminal",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_projection_truncation_is_partial_with_a_terminal (tests.test_hamcp227_global_sources.DashboardWalkTests.test_projection_truncation_is_partial_with_a_terminal)"
+  ]
+ },
+ "M44": {
+  "file": "dependency_reader.py",
+  "status": "killed",
+  "s": 3.1,
+  "tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_nested_conditional_stack_and_grid_cards_have_exact_paths (tests.test_hamcp227_global_sources.DashboardWalkTests.test_nested_conditional_stack_and_grid_cards_have_exact_paths)"
+  ],
+  "isolated_target": "DashboardWalkTests.test_nested_conditional_stack_and_grid_cards_have_exact_paths",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_nested_conditional_stack_and_grid_cards_have_exact_paths (tests.test_hamcp227_global_sources.DashboardWalkTests.test_nested_conditional_stack_and_grid_cards_have_exact_paths)"
+  ]
+ },
+ "M45": {
+  "file": "dependency_reader.py",
+  "status": "killed",
+  "s": 3.0,
+  "tail": [
+   "FAILED (failures=2)",
+   "FAIL: test_failed_revalidation_stops_reads (tests.test_hamcp227_global_sources.DashboardDependencyReaderTests.test_failed_revalidation_stops_reads)",
+   "FAIL: test_refused_parent_authorizer_dispatches_nothing (tests.test_hamcp227_global_sources.DashboardDependencyReaderTests.test_refused_parent_authorizer_dispatches_nothing)"
+  ],
+  "isolated_target": "DashboardDependencyReaderTests.test_refused_parent_authorizer_dispatches_nothing",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_refused_parent_authorizer_dispatches_nothing (tests.test_hamcp227_global_sources.DashboardDependencyReaderTests.test_refused_parent_authorizer_dispatches_nothing)"
+  ]
+ },
+ "M46": {
+  "file": "dependency_reader.py",
+  "status": "killed",
+  "s": 3.1,
+  "tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_one_list_and_one_read_per_dashboard_with_attributed_audit (tests.test_hamcp227_global_sources.DashboardDependencyReaderTests.test_one_list_and_one_read_per_dashboard_with_attributed_audit)"
+  ],
+  "isolated_target": "DashboardDependencyReaderTests.test_one_list_and_one_read_per_dashboard_with_attributed_audit",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_one_list_and_one_read_per_dashboard_with_attributed_audit (tests.test_hamcp227_global_sources.DashboardDependencyReaderTests.test_one_list_and_one_read_per_dashboard_with_attributed_audit)"
+  ]
+ },
+ "M47": {
+  "file": "provider.py",
+  "status": "killed",
+  "s": 3.0,
+  "tail": [
+   "FAILED (failures=2)",
+   "FAIL: test_impact_keeps_an_unavailable_dashboard_row_unavailable (tests.test_hamcp227_global_sources.ConsumerTests.test_impact_keeps_an_unavailable_dashboard_row_unavailable)",
+   "FAIL: test_retired_dashboard_authority_makes_the_cursor_stale (tests.test_hamcp227_global_sources.ImpactPaginationBindingTests.test_retired_dashboard_authority_makes_the_cursor_stale)"
+  ],
+  "isolated_target": "ConsumerTests.test_impact_keeps_an_unavailable_dashboard_row_unavailable",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_impact_keeps_an_unavailable_dashboard_row_unavailable (tests.test_hamcp227_global_sources.ConsumerTests.test_impact_keeps_an_unavailable_dashboard_row_unavailable)"
+  ]
+ },
+ "M48": {
+  "file": "provider.py",
+  "status": "killed",
+  "s": 2.9,
+  "tail": [
+   "FAILED (failures=4)",
+   "FAIL: test_impact_analysis_shows_scene_group_and_dashboard_only_references (tests.test_hamcp227_global_sources.ConsumerTests.test_impact_analysis_shows_scene_group_and_dashboard_only_references) (object_type='scene')",
+   "FAIL: test_impact_analysis_shows_scene_group_and_dashboard_only_references (tests.test_hamcp227_global_sources.ConsumerTests.test_impact_analysis_shows_scene_group_and_dashboard_only_references) (object_type='group')",
+   "FAIL: test_impact_analysis_shows_scene_group_and_dashboard_only_references (tests.test_hamcp227_global_sources.ConsumerTests.test_impact_analysis_shows_scene_group_and_dashboard_only_references) (object_type='dashboard')"
+  ],
+  "isolated_target": "ConsumerTests.test_impact_analysis_shows_scene_group_and_dashboard_only_references",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=3)",
+   "FAIL: test_impact_analysis_shows_scene_group_and_dashboard_only_references (tests.test_hamcp227_global_sources.ConsumerTests.test_impact_analysis_shows_scene_group_and_dashboard_only_references) (object_type='scene')",
+   "FAIL: test_impact_analysis_shows_scene_group_and_dashboard_only_references (tests.test_hamcp227_global_sources.ConsumerTests.test_impact_analysis_shows_scene_group_and_dashboard_only_references) (object_type='group')",
+   "FAIL: test_impact_analysis_shows_scene_group_and_dashboard_only_references (tests.test_hamcp227_global_sources.ConsumerTests.test_impact_analysis_shows_scene_group_and_dashboard_only_references) (object_type='dashboard')"
+  ]
+ },
+ "M49": {
+  "file": "service.py",
+  "status": "killed",
+  "s": 3.2,
+  "tail": [
+   "FAILED (failures=10)",
+   "FAIL: test_dependency_analysis_shows_scene_group_and_dashboard_only_references (tests.test_hamcp227_global_sources.ConsumerTests.test_dependency_analysis_shows_scene_group_and_dashboard_only_references) (source_type='scene')",
+   "FAIL: test_dependency_analysis_shows_scene_group_and_dashboard_only_references (tests.test_hamcp227_global_sources.ConsumerTests.test_dependency_analysis_shows_scene_group_and_dashboard_only_references) (source_type='group')",
+   "FAIL: test_dependency_analysis_shows_scene_group_and_dashboard_only_references (tests.test_hamcp227_global_sources.ConsumerTests.test_dependency_analysis_shows_scene_group_and_dashboard_only_references) (source_type='dashboard')"
+  ],
+  "isolated_target": "ConsumerTests.test_dependency_analysis_shows_scene_group_and_dashboard_only_references",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=3)",
+   "FAIL: test_dependency_analysis_shows_scene_group_and_dashboard_only_references (tests.test_hamcp227_global_sources.ConsumerTests.test_dependency_analysis_shows_scene_group_and_dashboard_only_references) (source_type='scene')",
+   "FAIL: test_dependency_analysis_shows_scene_group_and_dashboard_only_references (tests.test_hamcp227_global_sources.ConsumerTests.test_dependency_analysis_shows_scene_group_and_dashboard_only_references) (source_type='group')",
+   "FAIL: test_dependency_analysis_shows_scene_group_and_dashboard_only_references (tests.test_hamcp227_global_sources.ConsumerTests.test_dependency_analysis_shows_scene_group_and_dashboard_only_references) (source_type='dashboard')"
+  ]
+ },
+ "M50": {
+  "file": "service.py",
+  "status": "killed",
+  "s": 3.0,
+  "tail": [
+   "FAILED (failures=4)",
+   "FAIL: test_dependency_analysis_shows_scene_group_and_dashboard_only_references (tests.test_hamcp227_global_sources.ConsumerTests.test_dependency_analysis_shows_scene_group_and_dashboard_only_references) (source_type='scene')",
+   "FAIL: test_dependency_analysis_shows_scene_group_and_dashboard_only_references (tests.test_hamcp227_global_sources.ConsumerTests.test_dependency_analysis_shows_scene_group_and_dashboard_only_references) (source_type='group')",
+   "FAIL: test_dependency_analysis_shows_scene_group_and_dashboard_only_references (tests.test_hamcp227_global_sources.ConsumerTests.test_dependency_analysis_shows_scene_group_and_dashboard_only_references) (source_type='dashboard')"
+  ],
+  "isolated_target": "ConsumerTests.test_dependency_analysis_shows_scene_group_and_dashboard_only_references",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=3)",
+   "FAIL: test_dependency_analysis_shows_scene_group_and_dashboard_only_references (tests.test_hamcp227_global_sources.ConsumerTests.test_dependency_analysis_shows_scene_group_and_dashboard_only_references) (source_type='scene')",
+   "FAIL: test_dependency_analysis_shows_scene_group_and_dashboard_only_references (tests.test_hamcp227_global_sources.ConsumerTests.test_dependency_analysis_shows_scene_group_and_dashboard_only_references) (source_type='group')",
+   "FAIL: test_dependency_analysis_shows_scene_group_and_dashboard_only_references (tests.test_hamcp227_global_sources.ConsumerTests.test_dependency_analysis_shows_scene_group_and_dashboard_only_references) (source_type='dashboard')"
+  ]
+ },
+ "M51": {
+  "file": "index.py",
+  "status": "killed",
+  "s": 3.1,
+  "tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_index_truncation_marks_every_dropped_source_partial (tests.test_hamcp227_global_sources.DependencyBuildTests.test_index_truncation_marks_every_dropped_source_partial)"
+  ],
+  "isolated_target": "DependencyBuildTests.test_index_truncation_marks_every_dropped_source_partial",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_index_truncation_marks_every_dropped_source_partial (tests.test_hamcp227_global_sources.DependencyBuildTests.test_index_truncation_marks_every_dropped_source_partial)"
+  ]
+ },
+ "M52": {
+  "file": "provider.py",
+  "status": "killed",
+  "s": 3.1,
+  "tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_incomplete_build_registry_marks_scenes_and_groups_partial (tests.test_hamcp227_global_sources.DependencyBuildTests.test_incomplete_build_registry_marks_scenes_and_groups_partial)"
+  ],
+  "isolated_target": "DependencyBuildTests.test_incomplete_build_registry_marks_scenes_and_groups_partial",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_incomplete_build_registry_marks_scenes_and_groups_partial (tests.test_hamcp227_global_sources.DependencyBuildTests.test_incomplete_build_registry_marks_scenes_and_groups_partial)"
+  ]
+ },
+ "M53": {
+  "file": "provider.py",
+  "status": "killed",
+  "s": 3.0,
+  "tail": [
+   "FAILED (errors=1)",
+   "ERROR: test_dashboards_cost_one_list_and_one_read_each (tests.test_hamcp227_global_sources.DependencyBuildTests.test_dashboards_cost_one_list_and_one_read_each)"
+  ],
+  "isolated_target": "DependencyBuildTests.test_dashboards_cost_one_list_and_one_read_each",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (errors=1)",
+   "ERROR: test_dashboards_cost_one_list_and_one_read_each (tests.test_hamcp227_global_sources.DependencyBuildTests.test_dashboards_cost_one_list_and_one_read_each)"
+  ]
+ },
+ "M54": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 3.1,
+  "tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_read_failure_is_isolated_to_its_dashboard (tests.test_hamcp227_global_sources.DashboardWalkTests.test_read_failure_is_isolated_to_its_dashboard)"
+  ],
+  "isolated_target": "DashboardWalkTests.test_read_failure_is_isolated_to_its_dashboard",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_read_failure_is_isolated_to_its_dashboard (tests.test_hamcp227_global_sources.DashboardWalkTests.test_read_failure_is_isolated_to_its_dashboard)"
+  ],
+  "reanchored": true
+ },
+ "M55": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 3.1,
+  "tail": [
+   "FAILED (failures=3)",
+   "FAIL: test_oversize_document_is_partial_with_a_document_terminal (tests.test_hamcp227_global_sources.DashboardBudgetTests.test_oversize_document_is_partial_with_a_document_terminal)",
+   "FAIL: test_oversize_document_is_refused_by_the_reviewed_size_cap (tests.test_hamcp227_global_sources.DashboardDependencyReaderTests.test_oversize_document_is_refused_by_the_reviewed_size_cap)",
+   "FAIL: test_read_failure_is_isolated_to_its_dashboard (tests.test_hamcp227_global_sources.DashboardWalkTests.test_read_failure_is_isolated_to_its_dashboard)"
+  ],
+  "isolated_target": "DashboardWalkTests.test_read_failure_is_isolated_to_its_dashboard",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_read_failure_is_isolated_to_its_dashboard (tests.test_hamcp227_global_sources.DashboardWalkTests.test_read_failure_is_isolated_to_its_dashboard)"
+  ]
+ },
+ "M56": {
+  "file": "provider.py",
+  "status": "killed",
+  "s": 3.1,
+  "tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_impact_reports_deferred_template_coverage (tests.test_hamcp227_global_sources.ConsumerTests.test_impact_reports_deferred_template_coverage)"
+  ],
+  "isolated_target": "ConsumerTests.test_impact_reports_deferred_template_coverage",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_impact_reports_deferred_template_coverage (tests.test_hamcp227_global_sources.ConsumerTests.test_impact_reports_deferred_template_coverage)"
+  ]
+ },
+ "M57": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 3.1,
+  "tail": [
+   "FAILED (failures=2)",
+   "FAIL: test_budget_overrun_mid_list_leaves_the_rest_unread (tests.test_hamcp227_global_sources.DashboardBudgetTests.test_budget_overrun_mid_list_leaves_the_rest_unread)",
+   "FAIL: test_list_that_consumes_the_budget_starts_no_read (tests.test_hamcp227_global_sources.DashboardBudgetTests.test_list_that_consumes_the_budget_starts_no_read)"
+  ],
+  "isolated_target": "DashboardBudgetTests.test_budget_overrun_mid_list_leaves_the_rest_unread",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_budget_overrun_mid_list_leaves_the_rest_unread (tests.test_hamcp227_global_sources.DashboardBudgetTests.test_budget_overrun_mid_list_leaves_the_rest_unread)"
+  ]
+ },
+ "M58": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 3.1,
+  "tail": [
+   "FAILED (failures=2)",
+   "FAIL: test_session_that_consumes_the_budget_lists_nothing (tests.test_hamcp227_global_sources.DashboardBudgetTests.test_session_that_consumes_the_budget_lists_nothing)",
+   "FAIL: test_exhausted_dashboard_budget_preserves_the_other_sources (tests.test_hamcp227_global_sources.DependencyBuildTests.test_exhausted_dashboard_budget_preserves_the_other_sources)"
+  ],
+  "isolated_target": "DashboardBudgetTests.test_session_that_consumes_the_budget_lists_nothing",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_session_that_consumes_the_budget_lists_nothing (tests.test_hamcp227_global_sources.DashboardBudgetTests.test_session_that_consumes_the_budget_lists_nothing)"
+  ]
+ },
+ "M59": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 63.0,
+  "tail": [
+   "FAILED (errors=2)",
+   "ERROR: test_list_that_never_returns_is_unavailable_and_reads_nothing (tests.test_hamcp227_global_sources.DashboardBudgetTests.test_list_that_never_returns_is_unavailable_and_reads_nothing)",
+   "ERROR: test_reads_in_flight_at_the_deadline_are_cancelled_and_counted (tests.test_hamcp227_global_sources.DashboardBudgetTests.test_reads_in_flight_at_the_deadline_are_cancelled_and_counted)"
+  ],
+  "isolated_target": "DashboardBudgetTests.test_list_that_never_returns_is_unavailable_and_reads_nothing",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (errors=1)",
+   "ERROR: test_list_that_never_returns_is_unavailable_and_reads_nothing (tests.test_hamcp227_global_sources.DashboardBudgetTests.test_list_that_never_returns_is_unavailable_and_reads_nothing)"
+  ]
+ },
+ "M60": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 63.1,
+  "tail": [
+   "FAILED (errors=2)",
+   "ERROR: test_list_that_never_returns_is_unavailable_and_reads_nothing (tests.test_hamcp227_global_sources.DashboardBudgetTests.test_list_that_never_returns_is_unavailable_and_reads_nothing)",
+   "ERROR: test_reads_in_flight_at_the_deadline_are_cancelled_and_counted (tests.test_hamcp227_global_sources.DashboardBudgetTests.test_reads_in_flight_at_the_deadline_are_cancelled_and_counted)"
+  ],
+  "isolated_target": "DashboardBudgetTests.test_reads_in_flight_at_the_deadline_are_cancelled_and_counted",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (errors=1)",
+   "ERROR: test_reads_in_flight_at_the_deadline_are_cancelled_and_counted (tests.test_hamcp227_global_sources.DashboardBudgetTests.test_reads_in_flight_at_the_deadline_are_cancelled_and_counted)"
+  ]
+ },
+ "M61": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 3.3,
+  "tail": [
+   "FAILED (failures=2)",
+   "FAIL: test_list_that_never_returns_is_unavailable_and_reads_nothing (tests.test_hamcp227_global_sources.DashboardBudgetTests.test_list_that_never_returns_is_unavailable_and_reads_nothing)",
+   "FAIL: test_reads_in_flight_at_the_deadline_are_cancelled_and_counted (tests.test_hamcp227_global_sources.DashboardBudgetTests.test_reads_in_flight_at_the_deadline_are_cancelled_and_counted)"
+  ],
+  "isolated_target": "DashboardBudgetTests.test_list_that_never_returns_is_unavailable_and_reads_nothing",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_list_that_never_returns_is_unavailable_and_reads_nothing (tests.test_hamcp227_global_sources.DashboardBudgetTests.test_list_that_never_returns_is_unavailable_and_reads_nothing)"
+  ]
+ },
+ "M62": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 3.4,
+  "tail": [
+   "FAILED (failures=2)",
+   "FAIL: test_budget_overrun_mid_list_leaves_the_rest_unread (tests.test_hamcp227_global_sources.DashboardBudgetTests.test_budget_overrun_mid_list_leaves_the_rest_unread)",
+   "FAIL: test_list_that_never_returns_is_unavailable_and_reads_nothing (tests.test_hamcp227_global_sources.DashboardBudgetTests.test_list_that_never_returns_is_unavailable_and_reads_nothing)"
+  ],
+  "isolated_target": "DashboardBudgetTests.test_budget_overrun_mid_list_leaves_the_rest_unread",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_budget_overrun_mid_list_leaves_the_rest_unread (tests.test_hamcp227_global_sources.DashboardBudgetTests.test_budget_overrun_mid_list_leaves_the_rest_unread)"
+  ]
+ },
+ "M63": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 3.1,
+  "tail": [
+   "FAILED (failures=2)",
+   "FAIL: test_oversize_document_is_partial_with_a_document_terminal (tests.test_hamcp227_global_sources.DashboardBudgetTests.test_oversize_document_is_partial_with_a_document_terminal)",
+   "FAIL: test_oversize_document_is_refused_by_the_reviewed_size_cap (tests.test_hamcp227_global_sources.DashboardDependencyReaderTests.test_oversize_document_is_refused_by_the_reviewed_size_cap)"
+  ],
+  "isolated_target": "DashboardBudgetTests.test_oversize_document_is_partial_with_a_document_terminal",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_oversize_document_is_partial_with_a_document_terminal (tests.test_hamcp227_global_sources.DashboardBudgetTests.test_oversize_document_is_partial_with_a_document_terminal)"
+  ]
+ },
+ "M64": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 3.1,
+  "tail": [
+   "FAILED (failures=4)",
+   "FAIL: test_budget_overrun_mid_list_leaves_the_rest_unread (tests.test_hamcp227_global_sources.DashboardBudgetTests.test_budget_overrun_mid_list_leaves_the_rest_unread)",
+   "FAIL: test_list_that_consumes_the_budget_starts_no_read (tests.test_hamcp227_global_sources.DashboardBudgetTests.test_list_that_consumes_the_budget_starts_no_read)",
+   "FAIL: test_reads_in_flight_at_the_deadline_are_cancelled_and_counted (tests.test_hamcp227_global_sources.DashboardBudgetTests.test_reads_in_flight_at_the_deadline_are_cancelled_and_counted)"
+  ],
+  "isolated_target": "DashboardBudgetTests.test_list_that_consumes_the_budget_starts_no_read",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_list_that_consumes_the_budget_starts_no_read (tests.test_hamcp227_global_sources.DashboardBudgetTests.test_list_that_consumes_the_budget_starts_no_read)"
+  ]
+ },
+ "M65": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.8,
+  "tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_list_that_never_returns_is_unavailable_and_reads_nothing (tests.test_hamcp227_global_sources.DashboardBudgetTests.test_list_that_never_returns_is_unavailable_and_reads_nothing)"
+  ],
+  "isolated_target": "DashboardBudgetTests.test_list_that_never_returns_is_unavailable_and_reads_nothing",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_list_that_never_returns_is_unavailable_and_reads_nothing (tests.test_hamcp227_global_sources.DashboardBudgetTests.test_list_that_never_returns_is_unavailable_and_reads_nothing)"
+  ]
+ },
+ "M66": {
+  "file": "service.py",
+  "status": "killed",
+  "s": 2.8,
+  "tail": [
+   "FAILED (failures=4)",
+   "FAIL: test_failing_diagnostic_identity_fails_closed (tests.test_hamcp227_global_sources.ImpactPaginationBindingTests.test_failing_diagnostic_identity_fails_closed)",
+   "FAIL: test_failing_identity_is_not_read_as_an_absent_partition (tests.test_hamcp227_global_sources.ImpactPaginationBindingTests.test_failing_identity_is_not_read_as_an_absent_partition)",
+   "FAIL: test_replaced_partition_without_an_index_rebuild_makes_the_cursor_stale (tests.test_hamcp227_global_sources.ImpactPaginationBindingTests.test_replaced_partition_without_an_index_rebuild_makes_the_cursor_stale)"
+  ],
+  "isolated_target": "ImpactPaginationBindingTests.test_retired_dashboard_authority_makes_the_cursor_stale",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_retired_dashboard_authority_makes_the_cursor_stale (tests.test_hamcp227_global_sources.ImpactPaginationBindingTests.test_retired_dashboard_authority_makes_the_cursor_stale)"
+  ]
+ },
+ "M67": {
+  "file": "service.py",
+  "status": "killed",
+  "s": 2.8,
+  "tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_diagnostic_change_before_commit_refuses_the_cursor (tests.test_hamcp227_global_sources.ImpactPaginationBindingTests.test_diagnostic_change_before_commit_refuses_the_cursor)"
+  ],
+  "isolated_target": "ImpactPaginationBindingTests.test_diagnostic_change_before_commit_refuses_the_cursor",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_diagnostic_change_before_commit_refuses_the_cursor (tests.test_hamcp227_global_sources.ImpactPaginationBindingTests.test_diagnostic_change_before_commit_refuses_the_cursor)"
+  ]
+ },
+ "M68": {
+  "file": "service.py",
+  "status": "killed",
+  "s": 3.0,
+  "tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_failing_identity_is_not_read_as_an_absent_partition (tests.test_hamcp227_global_sources.ImpactPaginationBindingTests.test_failing_identity_is_not_read_as_an_absent_partition)"
+  ],
+  "isolated_target": "ImpactPaginationBindingTests.test_failing_identity_is_not_read_as_an_absent_partition",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_failing_identity_is_not_read_as_an_absent_partition (tests.test_hamcp227_global_sources.ImpactPaginationBindingTests.test_failing_identity_is_not_read_as_an_absent_partition)"
+  ]
+ },
+ "M69": {
+  "file": "provider.py",
+  "status": "killed",
+  "s": 3.0,
+  "tail": [
+   "FAILED (errors=5)",
+   "ERROR: test_failing_diagnostic_identity_fails_closed (tests.test_hamcp227_global_sources.ImpactPaginationBindingTests.test_failing_diagnostic_identity_fails_closed)",
+   "ERROR: test_index_refresh_makes_the_cursor_stale (tests.test_hamcp227_global_sources.ImpactPaginationBindingTests.test_index_refresh_makes_the_cursor_stale)",
+   "ERROR: test_replaced_partition_without_an_index_rebuild_makes_the_cursor_stale (tests.test_hamcp227_global_sources.ImpactPaginationBindingTests.test_replaced_partition_without_an_index_rebuild_makes_the_cursor_stale)"
+  ],
+  "isolated_target": "ImpactPaginationBindingTests.test_unchanged_partition_pages_are_consistent_and_read_nothing",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (errors=1)",
+   "ERROR: test_unchanged_partition_pages_are_consistent_and_read_nothing (tests.test_hamcp227_global_sources.ImpactPaginationBindingTests.test_unchanged_partition_pages_are_consistent_and_read_nothing)"
+  ]
+ },
+ "M70": {
+  "file": "bounded_sources.py",
+  "status": "killed",
+  "s": 2.9,
+  "tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_bound_table_names_the_partition_limits (tests.test_hamcp227_global_sources.BoundTableTests.test_bound_table_names_the_partition_limits)"
+  ],
+  "isolated_target": "BoundTableTests.test_bound_table_names_the_partition_limits",
+  "isolated": "killed",
+  "isolated_tail": [
+   "FAILED (failures=1)",
+   "FAIL: test_bound_table_names_the_partition_limits (tests.test_hamcp227_global_sources.BoundTableTests.test_bound_table_names_the_partition_limits)"
+  ]
+ },
+ "control_final": {
+  "rc": 0,
+  "s": 3.0,
+  "tail": [
+   "OK"
+  ]
+ },
+ "descriptions": {
+  "M57": "worker reads past the deadline (no expired() gate)",
+  "M58": "lists after the session consumed the budget",
+  "M59": "ignores the watchdog",
+  "M60": "never cancels in-flight work at the deadline",
+  "M61": "watchdog expiry does not mark the budget exhausted",
+  "M62": "no budget terminal in bounded_sources",
+  "M63": "no document-limit terminal for an oversize document",
+  "M64": "unread dashboards are not counted",
+  "M65": "watchdog not bound to the deadline",
+  "M66": "continuation ignores the diagnostic partition",
+  "M67": "commit ignores a diagnostic change before commit",
+  "M68": "a failing diagnostic identity reads as no partition",
+  "M69": "the bundle omits the partition it was built from",
+  "M70": "bounded_sources does not name the budget bound"
+ }
+}

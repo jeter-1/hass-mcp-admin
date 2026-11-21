@@ -1,0 +1,13 @@
+{
+ "M56": {
+  "file": "provider.py",
+  "mutant": "an unread partition row (provider none) is attributed to direct_ha_api",
+  "status": "killed",
+  "failed_tests": [
+   "FAIL: test_impact_reports_deferred_template_coverage (tests.test_hamcp227_global_sources.ConsumerTests.test_impact_reports_deferred_template_coverage)"
+  ],
+  "tail": [
+   "FAILED (failures=1)"
+  ]
+ }
+}

@@ -1,0 +1,315 @@
+{
+ "tests": [
+  "tests.test_hamcp277_dashboard_scan_budget",
+  "tests.test_hamcp227_global_sources"
+ ],
+ "head": "34722f248890fcb28b3066a6c672a34f0c9084b3",
+ "control_baseline": {
+  "rc": 0,
+  "s": 37.4,
+  "ran": 100,
+  "tail": [
+   "OK"
+  ],
+  "failures": 0,
+  "errors": 0
+ },
+ "R01": {
+  "rc": 1,
+  "s": 37.5,
+  "ran": 100,
+  "tail": [
+   "FAILED (failures=6)"
+  ],
+  "failures": 6,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "R02": {
+  "rc": 1,
+  "s": 37.5,
+  "ran": 100,
+  "tail": [
+   "FAILED (failures=3)"
+  ],
+  "failures": 3,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "R03": {
+  "rc": 1,
+  "s": 37.6,
+  "ran": 100,
+  "tail": [
+   "FAILED (failures=6)"
+  ],
+  "failures": 6,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "R04": {
+  "rc": 1,
+  "s": 41.1,
+  "ran": 100,
+  "tail": [
+   "FAILED (failures=2)"
+  ],
+  "failures": 2,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "R05": {
+  "rc": 1,
+  "s": 37.5,
+  "ran": 100,
+  "tail": [
+   "FAILED (failures=1)"
+  ],
+  "failures": 1,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "R06": {
+  "rc": 1,
+  "s": 37.3,
+  "ran": 100,
+  "tail": [
+   "FAILED (failures=6)"
+  ],
+  "failures": 6,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "R07": {
+  "rc": "timeout",
+  "s": 300,
+  "status": "timeout (not a kill)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "R08": {
+  "rc": 1,
+  "s": 36.5,
+  "ran": 100,
+  "tail": [
+   "FAILED (failures=2)"
+  ],
+  "failures": 2,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "R09": {
+  "rc": 1,
+  "s": 41.0,
+  "ran": 100,
+  "tail": [
+   "FAILED (failures=3)"
+  ],
+  "failures": 3,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "R10": {
+  "rc": 1,
+  "s": 36.6,
+  "ran": 100,
+  "tail": [
+   "FAILED (failures=2)"
+  ],
+  "failures": 2,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "R11": {
+  "rc": 0,
+  "s": 37.3,
+  "ran": 100,
+  "tail": [
+   "OK"
+  ],
+  "failures": 0,
+  "errors": 0,
+  "status": "SURVIVED",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "R12": {
+  "rc": 1,
+  "s": 37.3,
+  "ran": 100,
+  "tail": [
+   "FAILED (failures=5)"
+  ],
+  "failures": 5,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "R13": {
+  "rc": 1,
+  "s": 37.3,
+  "ran": 100,
+  "tail": [
+   "FAILED (failures=5)"
+  ],
+  "failures": 5,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "R14": {
+  "rc": 1,
+  "s": 37.5,
+  "ran": 100,
+  "tail": [
+   "FAILED (failures=3, errors=2)"
+  ],
+  "failures": 3,
+  "errors": 2,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "R15": {
+  "rc": 1,
+  "s": 37.4,
+  "ran": 100,
+  "tail": [
+   "FAILED (failures=3)"
+  ],
+  "failures": 3,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "R16": {
+  "rc": 1,
+  "s": 37.2,
+  "ran": 100,
+  "tail": [
+   "FAILED (failures=1)"
+  ],
+  "failures": 1,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "R17": {
+  "rc": 1,
+  "s": 37.3,
+  "ran": 100,
+  "tail": [
+   "FAILED (failures=2)"
+  ],
+  "failures": 2,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "R18": {
+  "rc": 1,
+  "s": 37.8,
+  "ran": 100,
+  "tail": [
+   "FAILED (failures=4)"
+  ],
+  "failures": 4,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "R19": {
+  "rc": 1,
+  "s": 37.3,
+  "ran": 100,
+  "tail": [
+   "FAILED (failures=4)"
+  ],
+  "failures": 4,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "R20": {
+  "rc": 1,
+  "s": 37.2,
+  "ran": 100,
+  "tail": [
+   "FAILED (failures=3)"
+  ],
+  "failures": 3,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "R21": {
+  "rc": 1,
+  "s": 37.3,
+  "ran": 100,
+  "tail": [
+   "FAILED (failures=4)"
+  ],
+  "failures": 4,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "control_final": {
+  "rc": 0,
+  "s": 37.3,
+  "ran": 100,
+  "tail": [
+   "OK"
+  ],
+  "failures": 0,
+  "errors": 0
+ }
+}

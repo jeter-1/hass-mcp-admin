@@ -1,0 +1,162 @@
+{
+  "base": "f69bf8cca4e4d6a1af9c4fdfd95476f62d7c601b (2.4.1-beta.24)",
+  "concurrent": {
+    "after": {
+      "automations": 113,
+      "build_wall_ms": 488.5,
+      "delegated_reads_serialized": false,
+      "delegated_script_reads": 0,
+      "delegated_seconds_per_read": 1.86,
+      "label": "head-concurrent",
+      "loaded_script_command_count": 10,
+      "request_count": 5,
+      "request_count_by_operation": {
+        "delegated_script_configuration": 0,
+        "effect_display_service_registry": 1,
+        "entity_registry_inventory": 1,
+        "home_assistant_config": 1,
+        "loaded_config_batch": 1,
+        "states_inventory": 1
+      },
+      "request_time_ms_by_operation": null,
+      "scan_wall_ms": 399.09,
+      "script_config_source": "loaded_websocket",
+      "script_config_source_counts": {
+        "loaded_websocket": 5,
+        "stored_delegated": 0
+      },
+      "script_coverage": {
+        "completeness": "partial",
+        "evidence_count": 5,
+        "failed_item_count": 0,
+        "provider": "direct_ha_api"
+      },
+      "script_stored_config_fallback_reasons": {},
+      "scripts": 5,
+      "synthetic": true,
+      "websocket_batch_commands": 236,
+      "websocket_batch_connections": 1,
+      "websocket_seconds_per_command": 0.0005
+    },
+    "before": {
+      "automations": 113,
+      "build_wall_ms": 2348.7,
+      "delegated_reads_serialized": false,
+      "delegated_script_reads": 5,
+      "delegated_seconds_per_read": 1.86,
+      "label": "base-concurrent",
+      "loaded_script_command_count": 0,
+      "request_count": 10,
+      "request_count_by_operation": {
+        "delegated_script_configuration": 5,
+        "effect_display_service_registry": 1,
+        "entity_registry_inventory": 1,
+        "home_assistant_config": 1,
+        "loaded_automation_config_batch": 1,
+        "states_inventory": 1
+      },
+      "request_time_ms_by_operation": null,
+      "scan_wall_ms": 2258.344,
+      "script_config_source": "stored_delegated (pre-HAMCP-212)",
+      "script_config_source_counts": null,
+      "script_coverage": {
+        "completeness": "partial",
+        "evidence_count": 5,
+        "failed_item_count": 0,
+        "provider": "upstream_read_gateway"
+      },
+      "script_stored_config_fallback_reasons": null,
+      "scripts": 5,
+      "synthetic": true,
+      "websocket_batch_commands": 226,
+      "websocket_batch_connections": 1,
+      "websocket_seconds_per_command": 0.0005
+    }
+  },
+  "fixture": "tests/hamcp209_fixtures.py generated_automations(113) + tests/hamcp212_fixtures.py generated_scripts(5); docs/evidence/hamcp212/measure.py",
+  "live_reference_beta23": {
+    "automation_seconds": 1.19,
+    "build_seconds": 8.8,
+    "delegated_script_reads": 5,
+    "delegated_script_seconds_cumulative": 9.3
+  },
+  "model": {
+    "delegated_seconds_per_read": 1.86,
+    "rationale": "beta.23 live: delegated_script_configuration 5 requests, 9.3 s cumulative; index build 8.8 s with automations 1.19 s. The serialized model reproduces the live wall time; the concurrent model (base's 8 workers fully parallel) is the optimistic bound.",
+    "websocket_seconds_per_command": 0.0005
+  },
+  "serialized": {
+    "after": {
+      "automations": 113,
+      "build_wall_ms": 505.5,
+      "delegated_reads_serialized": true,
+      "delegated_script_reads": 0,
+      "delegated_seconds_per_read": 1.86,
+      "label": "head-serialized",
+      "loaded_script_command_count": 10,
+      "request_count": 5,
+      "request_count_by_operation": {
+        "delegated_script_configuration": 0,
+        "effect_display_service_registry": 1,
+        "entity_registry_inventory": 1,
+        "home_assistant_config": 1,
+        "loaded_config_batch": 1,
+        "states_inventory": 1
+      },
+      "request_time_ms_by_operation": null,
+      "scan_wall_ms": 411.838,
+      "script_config_source": "loaded_websocket",
+      "script_config_source_counts": {
+        "loaded_websocket": 5,
+        "stored_delegated": 0
+      },
+      "script_coverage": {
+        "completeness": "partial",
+        "evidence_count": 5,
+        "failed_item_count": 0,
+        "provider": "direct_ha_api"
+      },
+      "script_stored_config_fallback_reasons": {},
+      "scripts": 5,
+      "synthetic": true,
+      "websocket_batch_commands": 236,
+      "websocket_batch_connections": 1,
+      "websocket_seconds_per_command": 0.0005
+    },
+    "before": {
+      "automations": 113,
+      "build_wall_ms": 9800.2,
+      "delegated_reads_serialized": true,
+      "delegated_script_reads": 5,
+      "delegated_seconds_per_read": 1.86,
+      "label": "base-serialized",
+      "loaded_script_command_count": 0,
+      "request_count": 10,
+      "request_count_by_operation": {
+        "delegated_script_configuration": 5,
+        "effect_display_service_registry": 1,
+        "entity_registry_inventory": 1,
+        "home_assistant_config": 1,
+        "loaded_automation_config_batch": 1,
+        "states_inventory": 1
+      },
+      "request_time_ms_by_operation": null,
+      "scan_wall_ms": 9709.085,
+      "script_config_source": "stored_delegated (pre-HAMCP-212)",
+      "script_config_source_counts": null,
+      "script_coverage": {
+        "completeness": "partial",
+        "evidence_count": 5,
+        "failed_item_count": 0,
+        "provider": "upstream_read_gateway"
+      },
+      "script_stored_config_fallback_reasons": null,
+      "scripts": 5,
+      "synthetic": true,
+      "websocket_batch_commands": 226,
+      "websocket_batch_connections": 1,
+      "websocket_seconds_per_command": 0.0005
+    }
+  },
+  "synthetic": true
+}

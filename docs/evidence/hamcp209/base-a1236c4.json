@@ -1,0 +1,33 @@
+{
+  "automation_config_rest_reads": 113,
+  "automation_config_source": "stored_rest (pre-HAMCP-209)",
+  "automation_coverage": {
+    "completeness": "complete",
+    "failed_item_count": 0
+  },
+  "automations": 113,
+  "average_request_queue_wait_ms": 15064.184,
+  "build_running_when_write_issued": true,
+  "build_wall_ms": 34590.4,
+  "concurrent_write_ms": 2705.7,
+  "core_lock_wait_max_ms": 2405.1,
+  "cumulative_queue_wait_ms": 1702252.81,
+  "idle_write_ms": 300.6,
+  "index_waiter_ms": 34484.3,
+  "label": "base-a1236c4",
+  "maximum_single_request_queue_wait_ms": 31868.484,
+  "modelled_seconds_per_serialized_read": 0.2994,
+  "parse_seconds_per_automation": 0.00265,
+  "request_count": 116,
+  "request_count_by_operation": {
+    "automation_config": 113,
+    "entity_registry_inventory": 1,
+    "home_assistant_config": 1,
+    "states_inventory": 1
+  },
+  "scan_wall_ms": 34497.501,
+  "synthetic": true,
+  "websocket_batch_commands": 0,
+  "websocket_batch_connections": 0,
+  "websocket_seconds_per_command": 0.0005
+}

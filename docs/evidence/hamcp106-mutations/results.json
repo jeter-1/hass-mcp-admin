@@ -1,0 +1,1446 @@
+[
+  {
+    "name": "baseline",
+    "exit": 0,
+    "timed_out": false,
+    "seconds": 104.3,
+    "tests": [
+      "295"
+    ],
+    "result": [
+      "OK"
+    ],
+    "import_error": false,
+    "failing": [],
+    "killed": null,
+    "baseline_ok": true
+  },
+  {
+    "name": "A1_gate_check_removed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 122.5,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=7)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_final_persistence_check_refuses_without_the_lease_check",
+      "test_generic_builder_refuses_a_raw_operation_first",
+      "test_unadmitted_planning_reads_nothing_and_stores_nothing"
+    ],
+    "killed": true
+  },
+  {
+    "name": "A2_gate_after_validation",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 122.2,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=3)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_unadmitted_planning_reads_nothing_and_stores_nothing"
+    ],
+    "killed": true
+  },
+  {
+    "name": "A3_persist_entry_recheck_removed",
+    "exit": 0,
+    "timed_out": false,
+    "seconds": 116.7,
+    "tests": [
+      "295"
+    ],
+    "result": [
+      "OK"
+    ],
+    "import_error": false,
+    "failing": [],
+    "killed": false
+  },
+  {
+    "name": "A4_final_persist_recheck_removed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 124.2,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=4)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_final_persistence_check_refuses_without_the_lease_check",
+      "test_lowest_builder_rechecks_admission_at_its_own_persist_boundary"
+    ],
+    "killed": true
+  },
+  {
+    "name": "A5_lowest_builder_gate_removed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 124.8,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=2)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_final_persistence_check_refuses_without_the_lease_check",
+      "test_generic_builder_refuses_a_raw_operation_first"
+    ],
+    "killed": true
+  },
+  {
+    "name": "T1_lovelace_input_refusal_removed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 124.5,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_default_lovelace_is_refused_before_any_read"
+    ],
+    "killed": true
+  },
+  {
+    "name": "T2_lovelace_refusal_removed_everywhere",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 118.7,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_default_lovelace_is_refused_before_any_read"
+    ],
+    "killed": true
+  },
+  {
+    "name": "T3_yaml_refusal_removed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 118.4,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_yaml_dashboard"
+    ],
+    "killed": true
+  },
+  {
+    "name": "T4_unknown_target_refusal_removed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 120.0,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (errors=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_unknown_url_path"
+    ],
+    "killed": true
+  },
+  {
+    "name": "T5_ambiguous_url_path_accepted",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 119.7,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_ambiguous_url_path"
+    ],
+    "killed": true
+  },
+  {
+    "name": "T6_ambiguous_dashboard_id_accepted",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 122.9,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_duplicate_dashboard_id_is_ambiguous"
+    ],
+    "killed": true
+  },
+  {
+    "name": "V1_title_trimmed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 123.5,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=6)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_no_op_is_truthful_and_creates_no_plan",
+      "test_title_is_stored_exactly"
+    ],
+    "killed": true
+  },
+  {
+    "name": "V2_empty_title_allowed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 135.0,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=27)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_empty_prior_title_is_refused",
+      "test_every_unrestorable_changed_field_is_named",
+      "test_title_and_icon_bounds",
+      "test_unchanged_out_of_subset_field_keeps_its_existing_refusal",
+      "test_values_core_would_reject_are_refused_before_any_read",
+      "test_whitespace_prior_title_is_refused"
+    ],
+    "killed": true
+  },
+  {
+    "name": "V3_whitespace_title_allowed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 134.8,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=4)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_title_and_icon_bounds",
+      "test_whitespace_prior_title_is_refused"
+    ],
+    "killed": true
+  },
+  {
+    "name": "V4_title_bound_loosened",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 140.9,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=2)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_values_core_would_reject_are_refused_before_any_read"
+    ],
+    "killed": true
+  },
+  {
+    "name": "V5_title_bound_tightened",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 138.2,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (errors=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_title_and_icon_bounds"
+    ],
+    "killed": true
+  },
+  {
+    "name": "V6_icon_pattern_colon_optional",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 135.6,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=2)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_values_core_would_reject_are_refused_before_any_read"
+    ],
+    "killed": true
+  },
+  {
+    "name": "V7_icon_pattern_case_insensitive",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 137.0,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=14)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_values_core_would_reject_are_refused_before_any_read"
+    ],
+    "killed": true
+  },
+  {
+    "name": "V8_icon_length_bound_removed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 140.2,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_title_and_icon_bounds"
+    ],
+    "killed": true
+  },
+  {
+    "name": "V9_icon_null_clear_refused",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 129.9,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=2, errors=9)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_all_six_live_fixtures_remain_changeable",
+      "test_core_valid_long_prior_icon_is_refused",
+      "test_every_unrestorable_changed_field_is_named",
+      "test_icon_null_clears_the_icon",
+      "test_ordinary_baseline_is_planned_and_restored_exactly",
+      "test_rollback_restores_a_cleared_icon"
+    ],
+    "killed": true
+  },
+  {
+    "name": "V10_icon_null_never_sent",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 138.3,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=2, errors=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_icon_null_clears_the_icon",
+      "test_ordinary_baseline_is_planned_and_restored_exactly",
+      "test_rollback_restores_a_cleared_icon"
+    ],
+    "killed": true
+  },
+  {
+    "name": "W1_all_four_fields_sent",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 141.6,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=10)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_each_field_alone_is_sent_alone_and_verified",
+      "test_icon_null_clears_the_icon",
+      "test_rollback_restores_exactly_the_changed_fields",
+      "test_unrequested_field_drift_is_a_verification_failure"
+    ],
+    "killed": true
+  },
+  {
+    "name": "W2_command_type_check_removed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 140.7,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=2)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_command_shape_is_closed_at_the_provider_boundary"
+    ],
+    "killed": true
+  },
+  {
+    "name": "W3_unreviewed_command_field_accepted",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 140.0,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=3)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_command_shape_is_closed_at_the_provider_boundary"
+    ],
+    "killed": true
+  },
+  {
+    "name": "W4_vocabulary_widened",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 140.2,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_gateway_never_sends_outside_the_vocabulary"
+    ],
+    "killed": true
+  },
+  {
+    "name": "W5_write_identity_check_removed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 139.2,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=2)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_wrong_response_identity_is_indeterminate_until_readback",
+      "test_wrong_response_identity_with_unchanged_row_fails"
+    ],
+    "killed": true
+  },
+  {
+    "name": "W6_not_found_mapped_indeterminate",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 139.5,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_core_not_found_rejection_is_confirmed_not_dispatched"
+    ],
+    "killed": true
+  },
+  {
+    "name": "W7_unauthorized_mapped_indeterminate",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 139.6,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=2)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_authorization_rejection_is_confirmed_not_dispatched",
+      "test_unauthorized_write_reports_permission_denied"
+    ],
+    "killed": true
+  },
+  {
+    "name": "W8_permission_denied_code_dropped",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 135.7,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_unauthorized_write_reports_permission_denied"
+    ],
+    "killed": true
+  },
+  {
+    "name": "N1_noop_creates_plan",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 138.5,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=4)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_no_op_is_truthful_and_creates_no_plan"
+    ],
+    "killed": true
+  },
+  {
+    "name": "D1_before_after_swapped",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 138.6,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=2)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_before_after_for_each_field",
+      "test_trimmed_title_is_a_change_not_a_no_op"
+    ],
+    "killed": true
+  },
+  {
+    "name": "D2_require_admin_statements_swapped",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 138.7,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=2)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_before_after_for_each_field",
+      "test_require_admin_disclosures_are_generic_and_exact"
+    ],
+    "killed": true
+  },
+  {
+    "name": "D3_sidebar_statements_swapped",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 133.5,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_sidebar_hidden_disclosure"
+    ],
+    "killed": true
+  },
+  {
+    "name": "D4_require_admin_false_text_weakened",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 132.5,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_require_admin_disclosures_are_generic_and_exact"
+    ],
+    "killed": true
+  },
+  {
+    "name": "D5_changed_flag_is_requested",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 129.3,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_requested_unchanged_and_unrequested_fields_are_distinguished"
+    ],
+    "killed": true
+  },
+  {
+    "name": "D6_requested_flag_always_true",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 127.7,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_requested_unchanged_and_unrequested_fields_are_distinguished"
+    ],
+    "killed": true
+  },
+  {
+    "name": "D7_content_disclosure_dropped",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 122.4,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_requested_unchanged_and_unrequested_fields_are_distinguished"
+    ],
+    "killed": true
+  },
+  {
+    "name": "P1_policy_elevated_admin",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 134.3,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=5)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_multi_operation_dashboard_metadata_plan_is_prohibited",
+      "test_policy_is_standard_admin_and_needs_external_approval"
+    ],
+    "killed": true
+  },
+  {
+    "name": "P2_multi_operation_not_prohibited",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 120.6,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_multi_operation_dashboard_metadata_plan_is_prohibited"
+    ],
+    "killed": true
+  },
+  {
+    "name": "P3_generic_builder_accepts_type",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 120.9,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_generic_builder_refuses_a_complete_valid_admitted_operation"
+    ],
+    "killed": true
+  },
+  {
+    "name": "B1_projection_drops_content_fingerprint",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 120.5,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=9)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_content_change_at_readback_is_a_verification_failure",
+      "test_content_change_before_dispatch_is_stale",
+      "test_error_result_after_send_is_indeterminate",
+      "test_gateway_preflight_holds_only_for_the_bound_state",
+      "test_requested_field_readback_mismatch",
+      "test_unrequested_field_drift_is_a_verification_failure"
+    ],
+    "killed": true
+  },
+  {
+    "name": "B2_bound_fingerprint_constant",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 121.5,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=4)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_content_change_at_readback_is_a_verification_failure",
+      "test_content_change_before_dispatch_is_stale",
+      "test_gateway_preflight_holds_only_for_the_bound_state",
+      "test_planning_binds_metadata_and_content_and_sends_nothing"
+    ],
+    "killed": true
+  },
+  {
+    "name": "B3_projection_drops_non_title_fields",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 121.7,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=13)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_content_change_at_readback_is_a_verification_failure",
+      "test_error_result_after_send_is_indeterminate",
+      "test_gateway_preflight_holds_only_for_the_bound_state",
+      "test_icon_cleared_elsewhere_is_stale",
+      "test_requested_field_readback_mismatch",
+      "test_rollback_refused_after_drift",
+      "test_stale_state_for_each_field_is_refused_before_dispatch",
+      "test_unrequested_field_drift_is_a_verification_failure"
+    ],
+    "killed": true
+  },
+  {
+    "name": "B4_read_unstable_check_removed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 119.1,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_metadata_edit_during_planning_read_is_refused"
+    ],
+    "killed": true
+  },
+  {
+    "name": "B5_second_list_read_removed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 120.1,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_metadata_edit_during_planning_read_is_refused"
+    ],
+    "killed": true
+  },
+  {
+    "name": "B6_strategy_preflight_skipped",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 122.6,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=4)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_strategy_passes_the_gateway_verdict_through"
+    ],
+    "killed": true
+  },
+  {
+    "name": "B7_preflight_comparison_removed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 118.9,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=3)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_gateway_preflight_holds_only_for_the_bound_state"
+    ],
+    "killed": true
+  },
+  {
+    "name": "B8_preflight_ignores_content",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 117.9,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_gateway_preflight_holds_only_for_the_bound_state"
+    ],
+    "killed": true
+  },
+  {
+    "name": "B9_preflight_missing_row_passes",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 111.8,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_gateway_preflight_holds_only_for_the_bound_state"
+    ],
+    "killed": true
+  },
+  {
+    "name": "B10_readback_skipped",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 112.7,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=9)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_content_change_at_readback_is_a_verification_failure",
+      "test_error_result_after_send_is_indeterminate",
+      "test_lost_response_is_indeterminate_and_never_redispatched",
+      "test_requested_field_readback_mismatch",
+      "test_unrequested_field_drift_is_a_verification_failure",
+      "test_wrong_response_identity_with_unchanged_row_fails"
+    ],
+    "killed": true
+  },
+  {
+    "name": "R1_rollback_restores_forward_values",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 106.7,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (errors=3)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_ordinary_baseline_is_planned_and_restored_exactly",
+      "test_rollback_restores_a_cleared_icon",
+      "test_rollback_restores_exactly_the_changed_fields"
+    ],
+    "killed": true
+  },
+  {
+    "name": "R2_rollback_restores_first_field_only",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 111.4,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=2)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_ordinary_baseline_is_planned_and_restored_exactly",
+      "test_rollback_restores_exactly_the_changed_fields"
+    ],
+    "killed": true
+  },
+  {
+    "name": "R3_rollback_baseline_drift_check_removed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 110.8,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_rollback_refused_after_drift"
+    ],
+    "killed": true
+  },
+  {
+    "name": "R4_rollback_task_state_check_removed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 111.0,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_verified_child_under_an_unverified_task_creates_no_restore"
+    ],
+    "killed": true
+  },
+  {
+    "name": "R5_rollback_unverified_forward_allowed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 109.9,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=3)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_rollback_of_a_forward_that_found_the_target_reached",
+      "test_rollback_refused_when_forward_was_not_verified",
+      "test_verified_child_under_an_unverified_task_creates_no_restore"
+    ],
+    "killed": true
+  },
+  {
+    "name": "S1_requested_title_screening_removed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 111.8,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_credential_shaped_titles_are_withheld"
+    ],
+    "killed": true
+  },
+  {
+    "name": "S2_current_title_screening_removed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 111.2,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_credential_shaped_titles_are_withheld"
+    ],
+    "killed": true
+  },
+  {
+    "name": "F1_unsigned_profile_requirement_dropped",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 110.8,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=2)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_both_resource_types_are_gated",
+      "test_dispatch_admission_covers_label_and_both_069b_types"
+    ],
+    "killed": true
+  },
+  {
+    "name": "F2_f3_entry_admission_dropped",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 111.1,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_rollback_of_a_forward_that_found_the_target_reached"
+    ],
+    "killed": true
+  },
+  {
+    "name": "F3_pending_admission_tool_dropped",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 111.5,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (errors=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_tool_and_dispatch_require_the_unsigned_profile_and_content_read"
+    ],
+    "killed": true
+  },
+  {
+    "name": "F4_f3_content_read_profile_dropped",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 110.7,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_tool_and_dispatch_require_the_unsigned_profile_and_content_read"
+    ],
+    "killed": true
+  },
+  {
+    "name": "F5_static_tool_content_read_dropped",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 110.9,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_every_runtime_profile_maps_exactly"
+    ],
+    "killed": true
+  },
+  {
+    "name": "F6_content_reader_target_unchecked",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 110.4,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=2)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_content_reader_binds_the_answer_to_the_target"
+    ],
+    "killed": true
+  },
+  {
+    "name": "H1_reason_index_collapsed",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 111.2,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=24)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_encoding_does_not_depend_on_decision_order",
+      "test_encoding_is_deterministic_and_canonical",
+      "test_every_profile_disposition_and_reason_is_reconstructable",
+      "test_twice_today_profile_count_fits_with_headroom",
+      "test_twice_today_with_every_profile_in_its_own_group_fits"
+    ],
+    "killed": true
+  },
+  {
+    "name": "H2_profiles_unsorted",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 112.3,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=4)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_encoding_does_not_depend_on_decision_order"
+    ],
+    "killed": true
+  },
+  {
+    "name": "H3_vocabularies_unsorted",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 120.5,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=5)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_encoding_does_not_depend_on_decision_order",
+      "test_encoding_is_deterministic_and_canonical"
+    ],
+    "killed": true
+  },
+  {
+    "name": "H4_last_profile_dropped",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 120.4,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=6, errors=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_encoding_does_not_depend_on_decision_order",
+      "test_every_profile_disposition_and_reason_is_reconstructable",
+      "test_twice_today_all_admitted_fits_with_headroom",
+      "test_twice_today_profile_count_fits_with_headroom",
+      "test_twice_today_with_every_profile_in_its_own_group_fits",
+      "test_unconventional_profile_id_is_carried_explicitly"
+    ],
+    "killed": true
+  },
+  {
+    "name": "H5_withheld_profiles_dropped",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 113.2,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=8, errors=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_encoding_does_not_depend_on_decision_order",
+      "test_encoding_is_deterministic_and_canonical",
+      "test_every_profile_disposition_and_reason_is_reconstructable",
+      "test_twice_today_profile_count_fits_with_headroom",
+      "test_twice_today_with_every_profile_in_its_own_group_fits",
+      "test_unconventional_profile_id_is_carried_explicitly"
+    ],
+    "killed": true
+  },
+  {
+    "name": "H6_adapter_ids_readded",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 110.2,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=3)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_twice_today_all_admitted_fits_with_headroom",
+      "test_twice_today_profile_count_fits_with_headroom",
+      "test_twice_today_with_every_profile_in_its_own_group_fits"
+    ],
+    "killed": true
+  },
+  {
+    "name": "H7_unconventional_profile_id_dropped",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 111.9,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_unconventional_profile_id_is_carried_explicitly"
+    ],
+    "killed": true
+  },
+  {
+    "name": "H8_every_profile_id_written",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 111.1,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=4)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_encoding_is_deterministic_and_canonical",
+      "test_twice_today_all_admitted_fits_with_headroom",
+      "test_twice_today_profile_count_fits_with_headroom",
+      "test_twice_today_with_every_profile_in_its_own_group_fits"
+    ],
+    "killed": true
+  },
+  {
+    "name": "G1_write_refusal_not_enforced",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 112.3,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=5, errors=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_admitted_request_without_dispatch_authorizer_refuses",
+      "test_admitted_with_a_refusing_dispatch_window_refuses",
+      "test_admitted_without_f3_context_refuses",
+      "test_no_core_runtime_refuses_pending_admission",
+      "test_refused_even_inside_an_authorizing_call_window",
+      "test_valid_complete_command_refuses_pending_admission"
+    ],
+    "killed": true
+  },
+  {
+    "name": "G2_write_f3_context_unchecked",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 110.6,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=2, errors=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_admitted_request_without_dispatch_authorizer_refuses",
+      "test_admitted_with_a_refusing_dispatch_window_refuses",
+      "test_admitted_without_f3_context_refuses"
+    ],
+    "killed": true
+  },
+  {
+    "name": "G3_write_admission_unchecked",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 111.9,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=3)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_no_core_runtime_refuses_pending_admission",
+      "test_refused_even_inside_an_authorizing_call_window",
+      "test_valid_complete_command_refuses_pending_admission"
+    ],
+    "killed": true
+  },
+  {
+    "name": "G4_write_authorizer_presence_unchecked",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 111.2,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=2)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_admitted_request_without_dispatch_authorizer_refuses",
+      "test_admitted_without_f3_context_refuses"
+    ],
+    "killed": true
+  },
+  {
+    "name": "G5_no_f3_inventory_entry_dropped",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 111.4,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=2)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_metadata_is_in_the_no_f3_refusal_inventory",
+      "test_retained_approved_plan_without_f3_refuses_before_any_read"
+    ],
+    "killed": true
+  },
+  {
+    "name": "G6_runtime_core_wiring_dropped",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 116.6,
+    "tests": [
+      "295"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_configured_write_boundary_consults_the_given_core_runtime"
+    ],
+    "killed": true
+  },
+  {
+    "name": "M1_unrestorable_baseline_planned",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 111.7,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=5)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_core_valid_long_prior_icon_is_refused",
+      "test_core_valid_off_pattern_prior_icon_is_refused",
+      "test_empty_prior_title_is_refused",
+      "test_every_unrestorable_changed_field_is_named",
+      "test_whitespace_prior_title_is_refused"
+    ],
+    "killed": true
+  },
+  {
+    "name": "M2_unchanged_fields_checked_too",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 103.9,
+    "tests": [
+      "294"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_unchanged_out_of_subset_field_keeps_its_existing_refusal"
+    ],
+    "killed": true
+  }
+]

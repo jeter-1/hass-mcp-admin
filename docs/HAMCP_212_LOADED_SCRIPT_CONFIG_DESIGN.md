@@ -266,12 +266,12 @@ Not changed:
   Core implements it: no cycle guard (a cycle is a per-command
   `unknown_error`), and an unavailable or unloaded nested script references
   nothing.
-- Cross-tree parity (`docs/evidence/hamcp212/`, deleted by HAMCP-437): base `f69bf8c` (every script
+- Cross-tree parity (`docs/evidence/hamcp212/`): base `f69bf8c` (every script
   read delegated) and head are **IDENTICAL** for the representative and
   113 + 5 fixtures, covering the analysis, automation index, script view and
   snapshot fingerprint. The script fingerprint and query fingerprint change by
   design (they fold in per-document provider attribution).
-- Mutations (`docs/evidence/hamcp212-mutations/`, deleted by HAMCP-437): 12 of 12 killed.
+- Mutations (`docs/evidence/hamcp212-mutations/`): 12 of 12 killed.
 
   | Mutation | Killed by |
   | --- | --- |
@@ -294,7 +294,7 @@ Not changed:
 
 ## 6. Measurements
 
-Synthetic (`docs/evidence/hamcp212/measurement.json`, deleted by HAMCP-437). Each delegated stored
+Synthetic (`docs/evidence/hamcp212/measurement.json`). Each delegated stored
 read costs 1.86 s (the beta.23 live average); each WebSocket command costs
 0.5 ms.
 

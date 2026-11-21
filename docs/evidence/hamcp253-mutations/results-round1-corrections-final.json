@@ -1,0 +1,1571 @@
+{
+ "baseline": {
+  "modules": [
+   "test_hamcp253_record_acknowledgement.py",
+   "test_hamcp253_record_acknowledgement_web.py",
+   "test_hamcp253_round1_corrections.py"
+  ],
+  "returncode": 0,
+  "tests": 107,
+  "seconds": 38.5
+ },
+ "mutation_count": 62,
+ "killed": 58,
+ "not_killed": [
+  "R1A8-decision-audit-skips-enabled-check",
+  "R1A16-start-reconciles-without-audit",
+  "P-A21-health-memo-not-cleared-after-write",
+  "R1L3-no-room-reserved-for-completion"
+ ],
+ "equivalent": {
+  "R1A8-decision-audit-skips-enabled-check": "every call of the decision-audit writer follows an enabled check in the same call (acknowledge refuses audit_unavailable before the ledger opens; start reconciliation returns before its transaction), and GovernanceService.audit and AuditLogger.enabled/path are assigned only at construction, so the writer never sees a disabled logger; R1A17 shows the pair of checks is covered",
+  "R1A16-start-reconciles-without-audit": "with a disabled logger the writer's own enabled check returns False, start reconciliation raises acknowledgement_audit_pending and catches it, so nothing is written (the ledger and audit bytes are asserted unchanged); R1A17 removes both checks and is killed",
+  "P-A21-health-memo-not-cleared-after-write": "as in the original round: the memo key includes the ledger token (inode, size, mtime_ns) and every append replaces the file, so the memo misses after any write; the clear is defence in depth",
+  "R1L3-no-room-reserved-for-completion": "completions each name a distinct earlier decision, so a ledger with no pending decision has an even length; MAX_EVENTS is 2048, and for an even length len+1 > 2048 and len+2 > 2048 agree; an odd length means a pending decision, which append refuses first"
+ },
+ "unexpected_survivors": [],
+ "kill_rule": "at least one FAIL (assertion) line; ERROR-only and timeouts are not kills",
+ "python": "3.12.14",
+ "results": [
+  {
+   "id": "R1Q1-plan-quarantined-id-reads-as-missing",
+   "class": "inspection or the stuck list mutates storage (R1-M1)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/storage.py",
+     "                    raise ChangePlanStorageError(\n                        \"Governance record identifier is quarantined\"\n                    )\n",
+     "                    return None\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_already_quarantined_record_is_refused_not_missing (test_hamcp253_round1_corrections.PlanInspectionNeverMutatesStorageTests.test_already_quarantined_record_is_refused_not_missing)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1Q1-plan-quarantined-id-reads-as-missing.log",
+   "seconds": 37.4
+  },
+  {
+   "id": "R1Q2-plan-read-all-quarantines",
+   "class": "inspection or the stuck list mutates storage (R1-M1)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/storage.py",
+     "                    plan = self._load(path, quarantine_corrupt=False)\n",
+     "                    plan = self._load(path, quarantine_corrupt=True)\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_cold_index_with_an_unrelated_corrupt_record (test_hamcp253_round1_corrections.PlanInspectionNeverMutatesStorageTests.test_cold_index_with_an_unrelated_corrupt_record)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1Q2-plan-read-all-quarantines.log",
+   "seconds": 37.1
+  },
+  {
+   "id": "R1Q3-plan-read-all-rebuilds-index",
+   "class": "inspection or the stuck list mutates storage (R1-M1)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/storage.py",
+     "        with self._lock:\n            plans: list[ChangePlan] = []\n",
+     "        with self._lock:\n            self.rebuild_navigation_index()\n            plans: list[ChangePlan] = []\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 1,
+   "first_assertion_failures": [
+    "FAIL test_cold_index_with_an_unrelated_corrupt_record (test_hamcp253_round1_corrections.PlanInspectionNeverMutatesStorageTests.test_cold_index_with_an_unrelated_corrupt_record)"
+   ],
+   "first_errors": [
+    "ERROR test_secret_stored_plan_identifier (test_hamcp253_round1_corrections.StoredMetadataIsNeverEchoedTests.test_secret_stored_plan_identifier)"
+   ],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1Q3-plan-read-all-rebuilds-index.log",
+   "seconds": 37.1
+  },
+  {
+   "id": "R1Q4-tasks-manual-review-ids-quarantine",
+   "class": "inspection or the stuck list mutates storage (R1-M1)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/task_storage.py",
+     "                    task = self._load(path, quarantine_corrupt=False)\n",
+     "                    task = self._load(path, quarantine_corrupt=True)\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 2,
+   "errors": 1,
+   "first_assertion_failures": [
+    "FAIL test_cold_task_index_with_an_unrelated_corrupt_task (test_hamcp253_round1_corrections.TaskInspectionNeverMutatesStorageTests.test_cold_task_index_with_an_unrelated_corrupt_task)",
+    "FAIL test_invalidated_task_index_with_an_unrelated_corrupt_task (test_hamcp253_round1_corrections.TaskInspectionNeverMutatesStorageTests.test_invalidated_task_index_with_an_unrelated_corrupt_task)"
+   ],
+   "first_errors": [
+    "ERROR test_secret_stored_task_and_plan_identifiers (test_hamcp253_round1_corrections.StoredTaskMetadataIsNeverEchoedTests.test_secret_stored_task_and_plan_identifiers)"
+   ],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1Q4-tasks-manual-review-ids-quarantine.log",
+   "seconds": 37.3
+  },
+  {
+   "id": "R1Q5-tasks-manual-review-ids-rebuild",
+   "class": "inspection or the stuck list mutates storage (R1-M1)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/task_storage.py",
+     "            if not self._navigation_index_stale():\n",
+     "            self._ensure_navigation_index()\n            if True:\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 2,
+   "errors": 1,
+   "first_assertion_failures": [
+    "FAIL test_cold_task_index_with_an_unrelated_corrupt_task (test_hamcp253_round1_corrections.TaskInspectionNeverMutatesStorageTests.test_cold_task_index_with_an_unrelated_corrupt_task)",
+    "FAIL test_invalidated_task_index_with_an_unrelated_corrupt_task (test_hamcp253_round1_corrections.TaskInspectionNeverMutatesStorageTests.test_invalidated_task_index_with_an_unrelated_corrupt_task)"
+   ],
+   "first_errors": [
+    "ERROR test_secret_stored_task_and_plan_identifiers (test_hamcp253_round1_corrections.StoredTaskMetadataIsNeverEchoedTests.test_secret_stored_task_and_plan_identifiers)"
+   ],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1Q5-tasks-manual-review-ids-rebuild.log",
+   "seconds": 37.0
+  },
+  {
+   "id": "R1Q6-tasks-inspection-read-rebuilds-index",
+   "class": "inspection or the stuck list mutates storage (R1-M1)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/task_storage.py",
+     "            task = self._load(self._path(task_id), quarantine_corrupt=False)\n",
+     "            self._ensure_navigation_index()\n            task = self._load(self._path(task_id), quarantine_corrupt=False)\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 3,
+   "errors": 1,
+   "first_assertion_failures": [
+    "FAIL test_task_file_under_another_identifier_reports_the_requested_one (test_hamcp253_round1_corrections.StoredTaskMetadataIsNeverEchoedTests.test_task_file_under_another_identifier_reports_the_requested_one)",
+    "FAIL test_cold_task_index_with_an_unrelated_corrupt_task (test_hamcp253_round1_corrections.TaskInspectionNeverMutatesStorageTests.test_cold_task_index_with_an_unrelated_corrupt_task)",
+    "FAIL test_invalidated_task_index_with_an_unrelated_corrupt_task (test_hamcp253_round1_corrections.TaskInspectionNeverMutatesStorageTests.test_invalidated_task_index_with_an_unrelated_corrupt_task)"
+   ],
+   "first_errors": [
+    "ERROR test_secret_stored_task_and_plan_identifiers (test_hamcp253_round1_corrections.StoredTaskMetadataIsNeverEchoedTests.test_secret_stored_task_and_plan_identifiers)"
+   ],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1Q6-tasks-inspection-read-rebuilds-index.log",
+   "seconds": 37.3
+  },
+  {
+   "id": "R1Q7-tasks-inspection-read-quarantines",
+   "class": "inspection or the stuck list mutates storage (R1-M1)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/task_storage.py",
+     "            task = self._load(self._path(task_id), quarantine_corrupt=False)\n",
+     "            task = self._load(self._path(task_id), quarantine_corrupt=True)\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 3,
+   "errors": 1,
+   "first_assertion_failures": [
+    "FAIL test_repeated_inspection_never_moves_a_corrupt_task (test_hamcp253_record_acknowledgement.ManualReviewTaskTests.test_repeated_inspection_never_moves_a_corrupt_task)",
+    "FAIL test_cold_task_index_with_an_unrelated_corrupt_task (test_hamcp253_round1_corrections.TaskInspectionNeverMutatesStorageTests.test_cold_task_index_with_an_unrelated_corrupt_task)",
+    "FAIL test_invalidated_task_index_with_an_unrelated_corrupt_task (test_hamcp253_round1_corrections.TaskInspectionNeverMutatesStorageTests.test_invalidated_task_index_with_an_unrelated_corrupt_task)"
+   ],
+   "first_errors": [
+    "ERROR test_secret_stored_task_and_plan_identifiers (test_hamcp253_round1_corrections.StoredTaskMetadataIsNeverEchoedTests.test_secret_stored_task_and_plan_identifiers)"
+   ],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1Q7-tasks-inspection-read-quarantines.log",
+   "seconds": 37.4
+  },
+  {
+   "id": "R1Q8-stuck-list-refreshes-index",
+   "class": "inspection or the stuck list mutates storage (R1-M1)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "        return self._acknowledgement_health(storage_read_only=True)\n",
+     "        return self._acknowledgement_health(storage_read_only=False)\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 1,
+   "first_assertion_failures": [
+    "FAIL test_cold_index_with_an_unrelated_corrupt_record (test_hamcp253_round1_corrections.PlanInspectionNeverMutatesStorageTests.test_cold_index_with_an_unrelated_corrupt_record)"
+   ],
+   "first_errors": [
+    "ERROR test_secret_stored_plan_identifier (test_hamcp253_round1_corrections.StoredMetadataIsNeverEchoedTests.test_secret_stored_plan_identifier)"
+   ],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1Q8-stuck-list-refreshes-index.log",
+   "seconds": 37.6
+  },
+  {
+   "id": "R1Q9-stuck-list-trusts-stale-index",
+   "class": "inspection or the stuck list mutates storage (R1-M1)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "            self._observed_plan_index_rebuild_count\n            == self.repository.index_rebuild_count\n",
+     "            True\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 2,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_health_refreshes_a_stale_projection_index (test_hamcp253_record_acknowledgement.AcknowledgementLifecycleTests.test_health_refreshes_a_stale_projection_index)",
+    "FAIL test_secret_stored_plan_identifier (test_hamcp253_round1_corrections.StoredMetadataIsNeverEchoedTests.test_secret_stored_plan_identifier)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1Q9-stuck-list-trusts-stale-index.log",
+   "seconds": 37.3
+  },
+  {
+   "id": "R1S1-plan-stored-identity-always-matches",
+   "class": "stored metadata echoed or not screened (R1-M2)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/record_inspection.py",
+     "STORED_IDENTITY_MATCH if plan.plan_id == record_id\n",
+     "STORED_IDENTITY_MATCH if True\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_secret_stored_plan_identifier (test_hamcp253_round1_corrections.StoredMetadataIsNeverEchoedTests.test_secret_stored_plan_identifier)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1S1-plan-stored-identity-always-matches.log",
+   "seconds": 37.3
+  },
+  {
+   "id": "R1S2-tasks-stored-identity-always-matches",
+   "class": "stored metadata echoed or not screened (R1-M2)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/record_inspection.py",
+     "STORED_IDENTITY_MATCH if task.task_id == record_id\n",
+     "STORED_IDENTITY_MATCH if True\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 2,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_task_file_under_another_identifier_reports_the_requested_one (test_hamcp253_round1_corrections.StoredTaskMetadataIsNeverEchoedTests.test_task_file_under_another_identifier_reports_the_requested_one)",
+    "FAIL test_task_view_reports_a_stored_identifier_mismatch_as_a_code (test_hamcp253_round1_corrections.StoredTaskMetadataIsNeverEchoedTests.test_task_view_reports_a_stored_identifier_mismatch_as_a_code)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1S2-tasks-stored-identity-always-matches.log",
+   "seconds": 37.6
+  },
+  {
+   "id": "R1S3-plan-view-echoes-stored-id",
+   "class": "stored metadata echoed or not screened (R1-M2)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "            return record_inspection.plan_view(self, plan, record_id)\n",
+     "            return record_inspection.plan_view(self, plan, plan.plan_id)\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_secret_stored_plan_identifier (test_hamcp253_round1_corrections.StoredMetadataIsNeverEchoedTests.test_secret_stored_plan_identifier)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1S3-plan-view-echoes-stored-id.log",
+   "seconds": 37.5
+  },
+  {
+   "id": "R1S4-tasks-view-echoes-stored-id",
+   "class": "stored metadata echoed or not screened (R1-M2)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "            task, record_id, sensitive_values=self.sensitive_values\n",
+     "            task, task.task_id, sensitive_values=self.sensitive_values\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_task_file_under_another_identifier_reports_the_requested_one (test_hamcp253_round1_corrections.StoredTaskMetadataIsNeverEchoedTests.test_task_file_under_another_identifier_reports_the_requested_one)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1S4-tasks-view-echoes-stored-id.log",
+   "seconds": 37.5
+  },
+  {
+   "id": "R1S5-open-screen-ignores-sanitizer",
+   "class": "stored metadata echoed or not screened (R1-M2)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/record_inspection.py",
+     "        if result.failed_closed or result.redaction_applied or result.value != text:\n",
+     "        if False:\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 4,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_secret_event_names_on_a_policy_snapshot_mismatch_record (test_hamcp253_round1_corrections.StoredMetadataIsNeverEchoedTests.test_secret_event_names_on_a_policy_snapshot_mismatch_record)",
+    "FAIL test_configured_value_in_a_stored_reason_code_is_screened (test_hamcp253_round1_corrections.StoredTaskMetadataIsNeverEchoedTests.test_configured_value_in_a_stored_reason_code_is_screened)",
+    "FAIL test_identifier_shaped_configured_value_is_never_listed (test_hamcp253_round1_corrections.StoredTaskMetadataIsNeverEchoedTests.test_identifier_shaped_configured_value_is_never_listed)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1S5-open-screen-ignores-sanitizer.log",
+   "seconds": 37.1
+  },
+  {
+   "id": "R1S6-open-screen-ignores-configured-values",
+   "class": "stored metadata echoed or not screened (R1-M2)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/record_inspection.py",
+     "        result = sanitize_untrusted_data(text, known_secrets=self.sensitive_values)\n",
+     "        result = sanitize_untrusted_data(text, known_secrets=())\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 4,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_secret_event_names_on_a_policy_snapshot_mismatch_record (test_hamcp253_round1_corrections.StoredMetadataIsNeverEchoedTests.test_secret_event_names_on_a_policy_snapshot_mismatch_record)",
+    "FAIL test_configured_value_in_a_stored_reason_code_is_screened (test_hamcp253_round1_corrections.StoredTaskMetadataIsNeverEchoedTests.test_configured_value_in_a_stored_reason_code_is_screened)",
+    "FAIL test_identifier_shaped_configured_value_is_never_listed (test_hamcp253_round1_corrections.StoredTaskMetadataIsNeverEchoedTests.test_identifier_shaped_configured_value_is_never_listed)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1S6-open-screen-ignores-configured-values.log",
+   "seconds": 37.3
+  },
+  {
+   "id": "R1S7-tasks-view-ignores-configured-values",
+   "class": "stored metadata echoed or not screened (R1-M2)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "            task, record_id, sensitive_values=self.sensitive_values\n",
+     "            task, record_id, sensitive_values=()\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_configured_value_in_a_stored_reason_code_is_screened (test_hamcp253_round1_corrections.StoredTaskMetadataIsNeverEchoedTests.test_configured_value_in_a_stored_reason_code_is_screened)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1S7-tasks-view-ignores-configured-values.log",
+   "seconds": 37.3
+  },
+  {
+   "id": "R1S8-closed-screen-accepts-any-string",
+   "class": "stored metadata echoed or not screened (R1-M2)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/record_inspection.py",
+     "        return text if isinstance(text, str) and text in vocabulary else UNRECOGNIZED\n",
+     "        return text if isinstance(text, str) else UNRECOGNIZED\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_closed_fields_show_only_their_vocabulary (test_hamcp253_round1_corrections.StoredTaskMetadataIsNeverEchoedTests.test_closed_fields_show_only_their_vocabulary)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1S8-closed-screen-accepts-any-string.log",
+   "seconds": 37.3
+  },
+  {
+   "id": "R1S9-tasks-plan-id-echoed",
+   "class": "stored metadata echoed or not screened (R1-M2)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/record_inspection.py",
+     "        \"plan_id\": screen.record_id(task.plan_id) or UNRECOGNIZED,\n",
+     "        \"plan_id\": task.plan_id,\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_task_view_reports_a_stored_identifier_mismatch_as_a_code (test_hamcp253_round1_corrections.StoredTaskMetadataIsNeverEchoedTests.test_task_view_reports_a_stored_identifier_mismatch_as_a_code)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1S9-tasks-plan-id-echoed.log",
+   "seconds": 37.2
+  },
+  {
+   "id": "R1S10-plan-mismatch-acknowledgeable",
+   "class": "stored metadata echoed or not screened (R1-M2)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/record_inspection.py",
+     "    acknowledgeable = identity == STORED_IDENTITY_MATCH and (\n",
+     "    acknowledgeable = (\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_secret_stored_plan_identifier (test_hamcp253_round1_corrections.StoredMetadataIsNeverEchoedTests.test_secret_stored_plan_identifier)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1S10-plan-mismatch-acknowledgeable.log",
+   "seconds": 37.2
+  },
+  {
+   "id": "R1S11-tasks-mismatch-acknowledgeable",
+   "class": "stored metadata echoed or not screened (R1-M2)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/record_inspection.py",
+     "            manual_review and identity == STORED_IDENTITY_MATCH\n",
+     "            manual_review\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 2,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_task_file_under_another_identifier_reports_the_requested_one (test_hamcp253_round1_corrections.StoredTaskMetadataIsNeverEchoedTests.test_task_file_under_another_identifier_reports_the_requested_one)",
+    "FAIL test_task_view_reports_a_stored_identifier_mismatch_as_a_code (test_hamcp253_round1_corrections.StoredTaskMetadataIsNeverEchoedTests.test_task_view_reports_a_stored_identifier_mismatch_as_a_code)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1S11-tasks-mismatch-acknowledgeable.log",
+   "seconds": 37.5
+  },
+  {
+   "id": "R1S12-health-lists-unscreened-ids",
+   "class": "stored metadata echoed or not screened (R1-M2)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "                if record_inspection.screened_record_id(\n                    record_id, self.sensitive_values\n                ) is None:\n",
+     "                if False:\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_secret_stored_plan_identifier (test_hamcp253_round1_corrections.StoredMetadataIsNeverEchoedTests.test_secret_stored_plan_identifier)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1S12-health-lists-unscreened-ids.log",
+   "seconds": 37.5
+  },
+  {
+   "id": "R1S13-projection-row-echoes-stored-plan-id",
+   "class": "stored metadata echoed or not screened (R1-M2)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/projection_diagnostics.py",
+     "                and _RECORD_ID.fullmatch(plan.plan_id)\n",
+     "                or True\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_health_identification_never_lists_a_stored_secret (test_hamcp253_round1_corrections.StoredMetadataIsNeverEchoedTests.test_health_identification_never_lists_a_stored_secret)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1S13-projection-row-echoes-stored-plan-id.log",
+   "seconds": 37.6
+  },
+  {
+   "id": "R1S14-record-id-screen-ignores-configured-values",
+   "class": "stored metadata echoed or not screened (R1-M2)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/record_inspection.py",
+     "    shown = _Screen(sensitive_values).record_id(value)\n",
+     "    shown = _Screen(()).record_id(value)\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_identifier_shaped_configured_value_is_never_listed (test_hamcp253_round1_corrections.StoredTaskMetadataIsNeverEchoedTests.test_identifier_shaped_configured_value_is_never_listed)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1S14-record-id-screen-ignores-configured-values.log",
+   "seconds": 37.1
+  },
+  {
+   "id": "R1S15-ingress-drops-stored-identity-row",
+   "class": "stored metadata echoed or not screened (R1-M2)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/approval_web.py",
+     "        (\"Stored identifier\", view.get(\"stored_identity\")),\n",
+     ""
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_form_is_offered_only_for_acknowledgeable_records (test_hamcp253_record_acknowledgement_web.IngressReviewPageTests.test_form_is_offered_only_for_acknowledgeable_records)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1S15-ingress-drops-stored-identity-row.log",
+   "seconds": 37.3
+  },
+  {
+   "id": "R1A1-audit-unavailable-not-refused",
+   "class": "acknowledgement audit coordination weakened (R1-M3)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "            refusal = \"audit_unavailable\"\n",
+     "            pass\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 4,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_disabled_audit_refuses_before_the_ledger_changes (test_hamcp253_round1_corrections.AuditCoordinationTests.test_disabled_audit_refuses_before_the_ledger_changes)",
+    "FAIL test_disabled_audit_refuses_revoke_and_reclassify (test_hamcp253_round1_corrections.AuditCoordinationTests.test_disabled_audit_refuses_revoke_and_reclassify)",
+    "FAIL test_disabled_audit_refuses_revoke_and_reclassify (test_hamcp253_round1_corrections.AuditCoordinationTests.test_disabled_audit_refuses_revoke_and_reclassify)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1A1-audit-unavailable-not-refused.log",
+   "seconds": 37.4
+  },
+  {
+   "id": "R1A2-disabled-audit-treated-as-enabled",
+   "class": "acknowledgement audit coordination weakened (R1-M3)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "            and getattr(self.audit, \"enabled\", False) is True\n",
+     ""
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 5,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_disabled_audit_refuses_before_the_ledger_changes (test_hamcp253_round1_corrections.AuditCoordinationTests.test_disabled_audit_refuses_before_the_ledger_changes)",
+    "FAIL test_disabled_audit_refuses_revoke_and_reclassify (test_hamcp253_round1_corrections.AuditCoordinationTests.test_disabled_audit_refuses_revoke_and_reclassify)",
+    "FAIL test_disabled_audit_refuses_revoke_and_reclassify (test_hamcp253_round1_corrections.AuditCoordinationTests.test_disabled_audit_refuses_revoke_and_reclassify)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1A2-disabled-audit-treated-as-enabled.log",
+   "seconds": 37.4
+  },
+  {
+   "id": "R1A3-pathless-audit-treated-as-enabled",
+   "class": "acknowledgement audit coordination weakened (R1-M3)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "            and bool(getattr(self.audit, \"path\", None))\n",
+     ""
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_unconfigured_audit_path_is_unavailable (test_hamcp253_round1_corrections.AuditCoordinationTests.test_unconfigured_audit_path_is_unavailable)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1A3-pathless-audit-treated-as-enabled.log",
+   "seconds": 37.3
+  },
+  {
+   "id": "R1A4-failed-audit-completes-as-recorded",
+   "class": "acknowledgement audit coordination weakened (R1-M3)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "                        \"recorded\" if decision_audited else \"abandoned\",\n",
+     "                        \"recorded\",\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 4,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_sink_reporting_failure_abandons_the_decision (test_hamcp253_round1_corrections.AuditCoordinationTests.test_sink_reporting_failure_abandons_the_decision)",
+    "FAIL test_sink_reporting_failure_abandons_the_decision (test_hamcp253_round1_corrections.AuditCoordinationTests.test_sink_reporting_failure_abandons_the_decision)",
+    "FAIL test_sink_reporting_failure_abandons_the_decision (test_hamcp253_round1_corrections.AuditCoordinationTests.test_sink_reporting_failure_abandons_the_decision)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1A4-failed-audit-completes-as-recorded.log",
+   "seconds": 37.3
+  },
+  {
+   "id": "R1A5-failed-audit-not-refused",
+   "class": "acknowledgement audit coordination weakened (R1-M3)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "                        status, refusal = \"refused\", \"audit_write_failed\"\n",
+     "                        pass\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 3,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_sink_reporting_failure_abandons_the_decision (test_hamcp253_round1_corrections.AuditCoordinationTests.test_sink_reporting_failure_abandons_the_decision)",
+    "FAIL test_sink_reporting_failure_abandons_the_decision (test_hamcp253_round1_corrections.AuditCoordinationTests.test_sink_reporting_failure_abandons_the_decision)",
+    "FAIL test_transient_sink_failure_still_audits_the_refusal (test_hamcp253_round1_corrections.AuditCoordinationTests.test_transient_sink_failure_still_audits_the_refusal)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1A5-failed-audit-not-refused.log",
+   "seconds": 37.5
+  },
+  {
+   "id": "R1A6-audit-batch-count-ignored",
+   "class": "acknowledgement audit coordination weakened (R1-M3)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "            return self.audit.write_batch((record,)) == 1\n",
+     "            return self.audit.write_batch((record,)) is not None\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 5,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_sink_reporting_failure_abandons_the_decision (test_hamcp253_round1_corrections.AuditCoordinationTests.test_sink_reporting_failure_abandons_the_decision)",
+    "FAIL test_sink_reporting_failure_abandons_the_decision (test_hamcp253_round1_corrections.AuditCoordinationTests.test_sink_reporting_failure_abandons_the_decision)",
+    "FAIL test_sink_reporting_failure_abandons_the_decision (test_hamcp253_round1_corrections.AuditCoordinationTests.test_sink_reporting_failure_abandons_the_decision)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1A6-audit-batch-count-ignored.log",
+   "seconds": 37.1
+  },
+  {
+   "id": "R1A7-audit-exception-treated-as-written",
+   "class": "acknowledgement audit coordination weakened (R1-M3)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "        except Exception:\n            return False\n\n    def _reconcile_acknowledgement_audits(",
+     "        except Exception:\n            return True\n\n    def _reconcile_acknowledgement_audits("
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 2,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_sink_reporting_failure_abandons_the_decision (test_hamcp253_round1_corrections.AuditCoordinationTests.test_sink_reporting_failure_abandons_the_decision)",
+    "FAIL test_sink_reporting_failure_abandons_the_decision (test_hamcp253_round1_corrections.AuditCoordinationTests.test_sink_reporting_failure_abandons_the_decision)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1A7-audit-exception-treated-as-written.log",
+   "seconds": 37.4
+  },
+  {
+   "id": "R1A8-decision-audit-skips-enabled-check",
+   "class": "acknowledgement audit coordination weakened (R1-M3)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "        if not self._acknowledgement_audit_enabled():\n            return False\n        try:\n            return self.audit.write_batch",
+     "        try:\n            return self.audit.write_batch"
+    ]
+   ],
+   "verdict": "survived",
+   "killed": false,
+   "returncode": 0,
+   "assertion_failures": 0,
+   "errors": 0,
+   "first_assertion_failures": [],
+   "first_errors": [],
+   "expected_equivalent": true,
+   "equivalence_reason": "every call of the decision-audit writer follows an enabled check in the same call (acknowledge refuses audit_unavailable before the ledger opens; start reconciliation returns before its transaction), and GovernanceService.audit and AuditLogger.enabled/path are assigned only at construction, so the writer never sees a disabled logger; R1A17 shows the pair of checks is covered",
+   "log_path": "mutation-logs/R1A8-decision-audit-skips-enabled-check.log",
+   "seconds": 37.6
+  },
+  {
+   "id": "R1A9-writer-does-not-reconcile",
+   "class": "acknowledgement audit coordination weakened (R1-M3)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "                self._reconcile_acknowledgement_audits(transaction)\n                status, refusal = self._acknowledgement_decision_status(\n",
+     "                status, refusal = self._acknowledgement_decision_status(\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 2,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_crash_before_the_audit_write_is_reconciled_by_the_next_writer (test_hamcp253_round1_corrections.AuditCoordinationTests.test_crash_before_the_audit_write_is_reconciled_by_the_next_writer)",
+    "FAIL test_unreconcilable_pending_decision_blocks_new_decisions (test_hamcp253_round1_corrections.AuditCoordinationTests.test_unreconcilable_pending_decision_blocks_new_decisions)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1A9-writer-does-not-reconcile.log",
+   "seconds": 37.2
+  },
+  {
+   "id": "R1A10-unreconcilable-decision-skipped",
+   "class": "acknowledgement audit coordination weakened (R1-M3)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "                raise AcknowledgementStorageError(\"acknowledgement_audit_pending\")\n            transaction.complete(decision, \"recorded\", self._timestamp())\n",
+     "                continue\n            transaction.complete(decision, \"recorded\", self._timestamp())\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_unreconcilable_pending_decision_blocks_new_decisions (test_hamcp253_round1_corrections.AuditCoordinationTests.test_unreconcilable_pending_decision_blocks_new_decisions)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1A10-unreconcilable-decision-skipped.log",
+   "seconds": 37.4
+  },
+  {
+   "id": "R1A11-start-does-not-reconcile",
+   "class": "acknowledgement audit coordination weakened (R1-M3)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "        self._reconcile_acknowledgement_audits_at_start()\n",
+     ""
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_crash_before_completion_is_pending_then_reconciled_at_start (test_hamcp253_round1_corrections.AuditCoordinationTests.test_crash_before_completion_is_pending_then_reconciled_at_start)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1A11-start-does-not-reconcile.log",
+   "seconds": 37.4
+  },
+  {
+   "id": "R1A12-interrupted-decision-reported-refused",
+   "class": "acknowledgement audit coordination weakened (R1-M3)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "                status = \"pending\"\n                refusal = \"acknowledgement_audit_reconciliation_pending\"\n",
+     "                refusal = \"acknowledgement_audit_reconciliation_pending\"\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_crash_before_completion_is_pending_then_reconciled_at_start (test_hamcp253_round1_corrections.AuditCoordinationTests.test_crash_before_completion_is_pending_then_reconciled_at_start)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1A12-interrupted-decision-reported-refused.log",
+   "seconds": 37.1
+  },
+  {
+   "id": "R1A13-disabled-logger-reports-recorded",
+   "class": "acknowledgement audit coordination weakened (R1-M3)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "        elif not self._acknowledgement_audit_enabled():\n            # A disabled logger reports success without writing.\n            audited = False\n",
+     "        elif False:\n            audited = False\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 3,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_disabled_audit_refuses_before_the_ledger_changes (test_hamcp253_round1_corrections.AuditCoordinationTests.test_disabled_audit_refuses_before_the_ledger_changes)",
+    "FAIL test_disabled_audit_refuses_revoke_and_reclassify (test_hamcp253_round1_corrections.AuditCoordinationTests.test_disabled_audit_refuses_revoke_and_reclassify)",
+    "FAIL test_disabled_audit_refuses_revoke_and_reclassify (test_hamcp253_round1_corrections.AuditCoordinationTests.test_disabled_audit_refuses_revoke_and_reclassify)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1A13-disabled-logger-reports-recorded.log",
+   "seconds": 37.6
+  },
+  {
+   "id": "R1A14-outcome-audit-result-ignored",
+   "class": "acknowledgement audit coordination weakened (R1-M3)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "                ) is True\n            except Exception:\n                audited = False\n",
+     "                ) or True\n            except Exception:\n                audited = False\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 3,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_audit_failure_on_a_refusal_reports_audit_recorded_false (test_hamcp253_round1_corrections.AuditCoordinationTests.test_audit_failure_on_a_refusal_reports_audit_recorded_false)",
+    "FAIL test_sink_reporting_failure_abandons_the_decision (test_hamcp253_round1_corrections.AuditCoordinationTests.test_sink_reporting_failure_abandons_the_decision)",
+    "FAIL test_unreconcilable_pending_decision_blocks_new_decisions (test_hamcp253_round1_corrections.AuditCoordinationTests.test_unreconcilable_pending_decision_blocks_new_decisions)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1A14-outcome-audit-result-ignored.log",
+   "seconds": 37.4
+  },
+  {
+   "id": "R1A15-abandoned-decision-skips-refusal-audit",
+   "class": "acknowledgement audit coordination weakened (R1-M3)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "                if decision is not None and (decision_audited or not completed)\n",
+     "                if decision is not None\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_transient_sink_failure_still_audits_the_refusal (test_hamcp253_round1_corrections.AuditCoordinationTests.test_transient_sink_failure_still_audits_the_refusal)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1A15-abandoned-decision-skips-refusal-audit.log",
+   "seconds": 37.4
+  },
+  {
+   "id": "R1A16-start-reconciles-without-audit",
+   "class": "acknowledgement audit coordination weakened (R1-M3)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "            if not self._acknowledgement_audit_enabled():\n                return\n            with self.acknowledgements.transaction() as transaction:\n",
+     "            with self.acknowledgements.transaction() as transaction:\n"
+    ]
+   ],
+   "verdict": "survived",
+   "killed": false,
+   "returncode": 0,
+   "assertion_failures": 0,
+   "errors": 0,
+   "first_assertion_failures": [],
+   "first_errors": [],
+   "expected_equivalent": true,
+   "equivalence_reason": "with a disabled logger the writer's own enabled check returns False, start reconciliation raises acknowledgement_audit_pending and catches it, so nothing is written (the ledger and audit bytes are asserted unchanged); R1A17 removes both checks and is killed",
+   "log_path": "mutation-logs/R1A16-start-reconciles-without-audit.log",
+   "seconds": 37.0
+  },
+  {
+   "id": "R1A17-no-enabled-check-before-any-reconcile-write",
+   "class": "acknowledgement audit coordination weakened (R1-M3)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "        if not self._acknowledgement_audit_enabled():\n            return False\n        try:\n            return self.audit.write_batch",
+     "        try:\n            return self.audit.write_batch"
+    ],
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "            if not self._acknowledgement_audit_enabled():\n                return\n            with self.acknowledgements.transaction() as transaction:\n",
+     "            with self.acknowledgements.transaction() as transaction:\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_unreconcilable_pending_decision_blocks_new_decisions (test_hamcp253_round1_corrections.AuditCoordinationTests.test_unreconcilable_pending_decision_blocks_new_decisions)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1A17-no-enabled-check-before-any-reconcile-write.log",
+   "seconds": 37.4
+  },
+  {
+   "id": "P-A14-identical-repeat-appended",
+   "class": "acknowledgement audit coordination weakened (R1-M3)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "            return \"no_op\", None\n        return (\"reclassified\"",
+     "            return \"acknowledged\", None\n        return (\"reclassified\""
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 2,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_reclassify_revoke_and_repeat (test_hamcp253_record_acknowledgement.AcknowledgementLifecycleTests.test_reclassify_revoke_and_repeat)",
+    "FAIL test_crash_before_the_audit_write_is_reconciled_by_the_next_writer (test_hamcp253_round1_corrections.AuditCoordinationTests.test_crash_before_the_audit_write_is_reconciled_by_the_next_writer)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/P-A14-identical-repeat-appended.log",
+   "seconds": 37.1
+  },
+  {
+   "id": "P-A15-reason-ignored-in-repeat-comparison",
+   "class": "acknowledgement audit coordination weakened (R1-M3)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "            and latest[\"reason\"] == body[\"reason\"]\n",
+     ""
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_non_ascii_500_character_reasons_are_accepted (test_hamcp253_record_acknowledgement.AcknowledgementLifecycleTests.test_non_ascii_500_character_reasons_are_accepted)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/P-A15-reason-ignored-in-repeat-comparison.log",
+   "seconds": 37.3
+  },
+  {
+   "id": "P-A16-revoke-without-acknowledgement-appended",
+   "class": "acknowledgement audit coordination weakened (R1-M3)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "                return \"refused\", \"record_not_acknowledged\"\n",
+     "                return \"revoked\", None\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 3,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_record_not_acknowledged (test_hamcp253_record_acknowledgement.AcknowledgementRefusalTests.test_record_not_acknowledged)",
+    "FAIL test_service_refusal_is_409_and_records_nothing (test_hamcp253_record_acknowledgement_web.IngressDecisionTests.test_service_refusal_is_409_and_records_nothing)",
+    "FAIL test_service_refusal_is_409_and_records_nothing (test_hamcp253_record_acknowledgement_web.IngressDecisionTests.test_service_refusal_is_409_and_records_nothing)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/P-A16-revoke-without-acknowledgement-appended.log",
+   "seconds": 37.3
+  },
+  {
+   "id": "P-A17-revoke-after-revoke-appended",
+   "class": "acknowledgement audit coordination weakened (R1-M3)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "(\"no_op\" if latest[\"action\"] == \"revoke\" else \"revoked\")",
+     "\"revoked\""
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_reclassify_revoke_and_repeat (test_hamcp253_record_acknowledgement.AcknowledgementLifecycleTests.test_reclassify_revoke_and_repeat)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/P-A17-revoke-after-revoke-appended.log",
+   "seconds": 37.0
+  },
+  {
+   "id": "P-A20-reason-text-written-to-audit",
+   "class": "acknowledgement audit coordination weakened (R1-M3)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "                    len(reason) if isinstance(reason, str) else None\n",
+     "                    reason if isinstance(reason, str) else None\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 2,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_reclassify_revoke_and_repeat (test_hamcp253_record_acknowledgement.AcknowledgementLifecycleTests.test_reclassify_revoke_and_repeat)",
+    "FAIL test_sensitive_or_token_shaped_reason_is_refused (test_hamcp253_record_acknowledgement.RedactionTests.test_sensitive_or_token_shaped_reason_is_refused)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/P-A20-reason-text-written-to-audit.log",
+   "seconds": 36.9
+  },
+  {
+   "id": "P-A21-health-memo-not-cleared-after-write",
+   "class": "acknowledgement audit coordination weakened (R1-M3)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+     "        finally:\n            self._acknowledgement_health_memo = None\n        return self._acknowledgement_outcome(",
+     "        finally:\n            pass\n        return self._acknowledgement_outcome("
+    ]
+   ],
+   "verdict": "survived",
+   "killed": false,
+   "returncode": 0,
+   "assertion_failures": 0,
+   "errors": 0,
+   "first_assertion_failures": [],
+   "first_errors": [],
+   "expected_equivalent": true,
+   "equivalence_reason": "as in the original round: the memo key includes the ledger token (inode, size, mtime_ns) and every append replaces the file, so the memo misses after any write; the clear is defence in depth",
+   "log_path": "mutation-logs/P-A21-health-memo-not-cleared-after-write.log",
+   "seconds": 38.0
+  },
+  {
+   "id": "P-I6-failed-or-rejected-plan-not-acknowledgeable",
+   "class": "acknowledgeability or token screening weakened (ported)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/record_inspection.py",
+     "        error is not None or plan.status in ACKNOWLEDGEABLE_PLAN_STATUSES or (\n",
+     "        error is not None or (\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 14,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_acknowledged_failed_plan_stays_refused (test_hamcp253_record_acknowledgement.AcknowledgementLifecycleTests.test_acknowledged_failed_plan_stays_refused)",
+    "FAIL test_acknowledged_rejected_plan_stays_refused (test_hamcp253_record_acknowledgement.AcknowledgementLifecycleTests.test_acknowledged_rejected_plan_stays_refused)",
+    "FAIL test_non_ascii_500_character_reasons_are_accepted (test_hamcp253_record_acknowledgement.AcknowledgementLifecycleTests.test_non_ascii_500_character_reasons_are_accepted)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/P-I6-failed-or-rejected-plan-not-acknowledgeable.log",
+   "seconds": 38.0
+  },
+  {
+   "id": "P-I8-any-task-acknowledgeable",
+   "class": "acknowledgeability or token screening weakened (ported)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/record_inspection.py",
+     "            manual_review and identity == STORED_IDENTITY_MATCH\n",
+     "            True\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 3,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_task_outside_manual_review_is_not_acknowledgeable (test_hamcp253_record_acknowledgement.ManualReviewTaskTests.test_task_outside_manual_review_is_not_acknowledgeable)",
+    "FAIL test_task_file_under_another_identifier_reports_the_requested_one (test_hamcp253_round1_corrections.StoredTaskMetadataIsNeverEchoedTests.test_task_file_under_another_identifier_reports_the_requested_one)",
+    "FAIL test_task_view_reports_a_stored_identifier_mismatch_as_a_code (test_hamcp253_round1_corrections.StoredTaskMetadataIsNeverEchoedTests.test_task_view_reports_a_stored_identifier_mismatch_as_a_code)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/P-I8-any-task-acknowledgeable.log",
+   "seconds": 37.7
+  },
+  {
+   "id": "P-I9-token-pattern-not-applied",
+   "class": "acknowledgeability or token screening weakened (ported)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/record_inspection.py",
+     "        if not isinstance(text, str) or not pattern.fullmatch(text):\n",
+     "        if not isinstance(text, str):\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_free_text_event_values_are_reported_as_unrecognized (test_hamcp253_record_acknowledgement.InspectionTests.test_free_text_event_values_are_reported_as_unrecognized)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/P-I9-token-pattern-not-applied.log",
+   "seconds": 37.7
+  },
+  {
+   "id": "R1L1-unaudited-decision-effective",
+   "class": "ledger decision or completion validation weakened (R1-M3)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/record_acknowledgement.py",
+     "        if body[\"entry_type\"] != DECISION or done.get(event[\"sequence\"]) != \"recorded\":\n",
+     "        if body[\"entry_type\"] != DECISION:\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 5,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_crash_before_completion_is_pending_then_reconciled_at_start (test_hamcp253_round1_corrections.AuditCoordinationTests.test_crash_before_completion_is_pending_then_reconciled_at_start)",
+    "FAIL test_crash_before_the_audit_write_is_reconciled_by_the_next_writer (test_hamcp253_round1_corrections.AuditCoordinationTests.test_crash_before_the_audit_write_is_reconciled_by_the_next_writer)",
+    "FAIL test_sink_reporting_failure_abandons_the_decision (test_hamcp253_round1_corrections.AuditCoordinationTests.test_sink_reporting_failure_abandons_the_decision)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1L1-unaudited-decision-effective.log",
+   "seconds": 37.6
+  },
+  {
+   "id": "R1L2-append-over-pending-decision",
+   "class": "ledger decision or completion validation weakened (R1-M3)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/record_acknowledgement.py",
+     "        if pending_decisions(self.events):\n",
+     "        if False:\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_unreconcilable_pending_decision_blocks_new_decisions (test_hamcp253_round1_corrections.AuditCoordinationTests.test_unreconcilable_pending_decision_blocks_new_decisions)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1L2-append-over-pending-decision.log",
+   "seconds": 37.3
+  },
+  {
+   "id": "R1L3-no-room-reserved-for-completion",
+   "class": "ledger decision or completion validation weakened (R1-M3)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/record_acknowledgement.py",
+     "        if len(self.events) + 2 > MAX_EVENTS:\n",
+     "        if len(self.events) + 1 > MAX_EVENTS:\n"
+    ]
+   ],
+   "verdict": "survived",
+   "killed": false,
+   "returncode": 0,
+   "assertion_failures": 0,
+   "errors": 0,
+   "first_assertion_failures": [],
+   "first_errors": [],
+   "expected_equivalent": true,
+   "equivalence_reason": "completions each name a distinct earlier decision, so a ledger with no pending decision has an even length; MAX_EVENTS is 2048, and for an even length len+1 > 2048 and len+2 > 2048 agree; an odd length means a pending decision, which append refuses first",
+   "log_path": "mutation-logs/R1L3-no-room-reserved-for-completion.log",
+   "seconds": 37.3
+  },
+  {
+   "id": "R1L4-double-completion-accepted",
+   "class": "ledger decision or completion validation weakened (R1-M3)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/record_acknowledgement.py",
+     "                    if (not 1 <= target < index or target in completed\n",
+     "                    if (not 1 <= target < index\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_completion_of_the_wrong_decision (test_hamcp253_round1_corrections.CompletionValidationTests.test_completion_of_the_wrong_decision)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1L4-double-completion-accepted.log",
+   "seconds": 37.2
+  },
+  {
+   "id": "R1L5-completion-audit-id-unchecked",
+   "class": "ledger decision or completion validation weakened (R1-M3)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/record_acknowledgement.py",
+     "                            != audit_event_id(value[\"events\"][target - 1])):\n",
+     "                            != body[\"audit_event_id\"]):\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_completion_with_a_wrong_audit_identifier (test_hamcp253_round1_corrections.CompletionValidationTests.test_completion_with_a_wrong_audit_identifier)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1L5-completion-audit-id-unchecked.log",
+   "seconds": 37.2
+  },
+  {
+   "id": "R1L6-completion-of-non-decision-accepted",
+   "class": "ledger decision or completion validation weakened (R1-M3)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/record_acknowledgement.py",
+     "                            or value[\"events\"][target - 1][\"body\"][\"entry_type\"] != DECISION\n",
+     ""
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_completion_naming_a_completion (test_hamcp253_round1_corrections.CompletionValidationTests.test_completion_naming_a_completion)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1L6-completion-of-non-decision-accepted.log",
+   "seconds": 37.0
+  },
+  {
+   "id": "R1L7-forward-completion-accepted",
+   "class": "ledger decision or completion validation weakened (R1-M3)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/record_acknowledgement.py",
+     "                    if (not 1 <= target < index or target in completed\n",
+     "                    if (not 1 <= target or target in completed\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_completion_naming_a_later_or_its_own_entry (test_hamcp253_round1_corrections.CompletionValidationTests.test_completion_naming_a_later_or_its_own_entry)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1L7-forward-completion-accepted.log",
+   "seconds": 37.2
+  },
+  {
+   "id": "R1L8-complete-accepts-settled-decision",
+   "class": "ledger decision or completion validation weakened (R1-M3)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/record_acknowledgement.py",
+     "        if (decision not in pending_decisions(self.events)\n                or outcome not in COMPLETION_OUTCOMES):\n",
+     "        if (outcome not in COMPLETION_OUTCOMES):\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_a_settled_decision_is_never_completed_again (test_hamcp253_round1_corrections.CompletionValidationTests.test_a_settled_decision_is_never_completed_again)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1L8-complete-accepts-settled-decision.log",
+   "seconds": 37.3
+  },
+  {
+   "id": "R1L9-decision-entry-type-unchecked",
+   "class": "ledger decision or completion validation weakened (R1-M3)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/record_acknowledgement.py",
+     "                or body[\"entry_type\"] != DECISION):\n",
+     "                ):\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 3,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_decision_with_an_unknown_entry_type_is_invalid (test_hamcp253_round1_corrections.CompletionValidationTests.test_decision_with_an_unknown_entry_type_is_invalid)",
+    "FAIL test_decision_with_an_unknown_entry_type_is_invalid (test_hamcp253_round1_corrections.CompletionValidationTests.test_decision_with_an_unknown_entry_type_is_invalid)",
+    "FAIL test_decision_with_an_unknown_entry_type_is_invalid (test_hamcp253_round1_corrections.CompletionValidationTests.test_decision_with_an_unknown_entry_type_is_invalid)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1L9-decision-entry-type-unchecked.log",
+   "seconds": 37.3
+  },
+  {
+   "id": "R1L10-completion-outcome-unchecked",
+   "class": "ledger decision or completion validation weakened (R1-M3)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/record_acknowledgement.py",
+     "                or body[\"outcome\"] not in COMPLETION_OUTCOMES):\n",
+     "                ):\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_malformed_completion_body (test_hamcp253_round1_corrections.CompletionValidationTests.test_malformed_completion_body)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1L10-completion-outcome-unchecked.log",
+   "seconds": 37.4
+  },
+  {
+   "id": "R1L11-no-decision-ever-pending",
+   "class": "ledger decision or completion validation weakened (R1-M3)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/record_acknowledgement.py",
+     "        and event[\"sequence\"] not in done\n",
+     "        and False\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 40,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_acknowledged_failed_plan_stays_refused (test_hamcp253_record_acknowledgement.AcknowledgementLifecycleTests.test_acknowledged_failed_plan_stays_refused)",
+    "FAIL test_acknowledged_prohibited_plan_stays_refused (test_hamcp253_record_acknowledgement.AcknowledgementLifecycleTests.test_acknowledged_prohibited_plan_stays_refused)",
+    "FAIL test_acknowledged_rejected_plan_stays_refused (test_hamcp253_record_acknowledgement.AcknowledgementLifecycleTests.test_acknowledged_rejected_plan_stays_refused)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1L11-no-decision-ever-pending.log",
+   "seconds": 36.2
+  },
+  {
+   "id": "R1L12-abandoned-count-wrong",
+   "class": "ledger decision or completion validation weakened (R1-M3)",
+   "replacements": [
+    [
+     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/record_acknowledgement.py",
+     "            outcome == \"abandoned\" for outcome in done.values()\n",
+     "            outcome == \"recorded\" for outcome in done.values()\n"
+    ]
+   ],
+   "verdict": "killed",
+   "killed": true,
+   "returncode": 1,
+   "assertion_failures": 1,
+   "errors": 0,
+   "first_assertion_failures": [
+    "FAIL test_sink_reporting_failure_abandons_the_decision (test_hamcp253_round1_corrections.AuditCoordinationTests.test_sink_reporting_failure_abandons_the_decision)"
+   ],
+   "first_errors": [],
+   "expected_equivalent": false,
+   "equivalence_reason": null,
+   "log_path": "mutation-logs/R1L12-abandoned-count-wrong.log",
+   "seconds": 37.9
+  }
+ ]
+}

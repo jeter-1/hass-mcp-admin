@@ -1,0 +1,545 @@
+{
+ "tests": [
+  "tests.test_hamcp277_dashboard_scan_budget",
+  "tests.test_hamcp227_global_sources"
+ ],
+ "head": "1e41293e686d40c75989b7d31f3140c50c106777",
+ "control_baseline": {
+  "rc": 0,
+  "s": 37.3,
+  "ran": 89,
+  "tail": [
+   "OK"
+  ],
+  "failures": 0,
+  "errors": 0
+ },
+ "N01": {
+  "rc": 1,
+  "s": 36.5,
+  "ran": 89,
+  "tail": [
+   "FAILED (failures=1)"
+  ],
+  "failures": 1,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "provider.py"
+  ]
+ },
+ "N02": {
+  "rc": 1,
+  "s": 40.9,
+  "ran": 89,
+  "tail": [
+   "FAILED (failures=3)"
+  ],
+  "failures": 3,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "N03": {
+  "rc": 1,
+  "s": 37.4,
+  "ran": 89,
+  "tail": [
+   "FAILED (failures=1)"
+  ],
+  "failures": 1,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "N04": {
+  "rc": 1,
+  "s": 40.9,
+  "ran": 89,
+  "tail": [
+   "FAILED (failures=1)"
+  ],
+  "failures": 1,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "N05": {
+  "rc": 1,
+  "s": 36.6,
+  "ran": 89,
+  "tail": [
+   "FAILED (failures=2)"
+  ],
+  "failures": 2,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "N06": {
+  "rc": 1,
+  "s": 41.0,
+  "ran": 89,
+  "tail": [
+   "FAILED (failures=2)"
+  ],
+  "failures": 2,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "N07": {
+  "rc": 0,
+  "s": 37.3,
+  "ran": 89,
+  "tail": [
+   "OK"
+  ],
+  "failures": 0,
+  "errors": 0,
+  "status": "SURVIVED",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "N08": {
+  "rc": 1,
+  "s": 37.1,
+  "ran": 89,
+  "tail": [
+   "FAILED (failures=1)"
+  ],
+  "failures": 1,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "N09": {
+  "rc": 1,
+  "s": 37.2,
+  "ran": 89,
+  "tail": [
+   "FAILED (failures=1)"
+  ],
+  "failures": 1,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "N10": {
+  "rc": 1,
+  "s": 36.3,
+  "ran": 89,
+  "tail": [
+   "FAILED (failures=1)"
+  ],
+  "failures": 1,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "N11": {
+  "rc": 0,
+  "s": 37.3,
+  "ran": 89,
+  "tail": [
+   "OK"
+  ],
+  "failures": 0,
+  "errors": 0,
+  "status": "SURVIVED",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "N12": {
+  "rc": 1,
+  "s": 37.3,
+  "ran": 89,
+  "tail": [
+   "FAILED (failures=7)"
+  ],
+  "failures": 7,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "N13": {
+  "rc": 1,
+  "s": 37.2,
+  "ran": 89,
+  "tail": [
+   "FAILED (failures=3)"
+  ],
+  "failures": 3,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "N14": {
+  "rc": 1,
+  "s": 37.1,
+  "ran": 89,
+  "tail": [
+   "FAILED (failures=2, errors=1)"
+  ],
+  "failures": 2,
+  "errors": 1,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "N15": {
+  "rc": 1,
+  "s": 30.3,
+  "ran": 89,
+  "tail": [
+   "FAILED (failures=27)"
+  ],
+  "failures": 27,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "N16": {
+  "rc": 1,
+  "s": 37.2,
+  "ran": 89,
+  "tail": [
+   "FAILED (failures=2)"
+  ],
+  "failures": 2,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "N17": {
+  "rc": 1,
+  "s": 37.3,
+  "ran": 89,
+  "tail": [
+   "FAILED (failures=2)"
+  ],
+  "failures": 2,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "N18": {
+  "rc": 1,
+  "s": 37.3,
+  "ran": 89,
+  "tail": [
+   "FAILED (failures=2)"
+  ],
+  "failures": 2,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "N19": {
+  "rc": 1,
+  "s": 37.2,
+  "ran": 89,
+  "tail": [
+   "FAILED (failures=2)"
+  ],
+  "failures": 2,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "N20": {
+  "rc": 1,
+  "s": 37.5,
+  "ran": 89,
+  "tail": [
+   "FAILED (failures=2)"
+  ],
+  "failures": 2,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "N21": {
+  "rc": 1,
+  "s": 37.4,
+  "ran": 89,
+  "tail": [
+   "FAILED (failures=1)"
+  ],
+  "failures": 1,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "N22": {
+  "rc": 1,
+  "s": 37.3,
+  "ran": 89,
+  "tail": [
+   "FAILED (failures=1)"
+  ],
+  "failures": 1,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "N23": {
+  "rc": 1,
+  "s": 37.2,
+  "ran": 89,
+  "tail": [
+   "FAILED (failures=7)"
+  ],
+  "failures": 7,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "N24": {
+  "rc": 1,
+  "s": 37.4,
+  "ran": 89,
+  "tail": [
+   "FAILED (failures=8)"
+  ],
+  "failures": 8,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "N25": {
+  "rc": 1,
+  "s": 37.2,
+  "ran": 89,
+  "tail": [
+   "FAILED (failures=21)"
+  ],
+  "failures": 21,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "N26": {
+  "rc": 1,
+  "s": 37.2,
+  "ran": 89,
+  "tail": [
+   "FAILED (failures=21)"
+  ],
+  "failures": 21,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "N27": {
+  "rc": 1,
+  "s": 37.3,
+  "ran": 89,
+  "tail": [
+   "FAILED (failures=20)"
+  ],
+  "failures": 20,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "N28": {
+  "rc": 1,
+  "s": 37.1,
+  "ran": 89,
+  "tail": [
+   "FAILED (failures=7)"
+  ],
+  "failures": 7,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "N29": {
+  "rc": 1,
+  "s": 37.3,
+  "ran": 89,
+  "tail": [
+   "FAILED (failures=1)"
+  ],
+  "failures": 1,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "N30": {
+  "rc": 1,
+  "s": 37.2,
+  "ran": 89,
+  "tail": [
+   "FAILED (failures=2)"
+  ],
+  "failures": 2,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "N31": {
+  "rc": 1,
+  "s": 37.2,
+  "ran": 89,
+  "tail": [
+   "FAILED (failures=2)"
+  ],
+  "failures": 2,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "N32": {
+  "rc": 1,
+  "s": 37.2,
+  "ran": 89,
+  "tail": [
+   "FAILED (failures=1)"
+  ],
+  "failures": 1,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "N33": {
+  "rc": 1,
+  "s": 37.2,
+  "ran": 89,
+  "tail": [
+   "FAILED (failures=1)"
+  ],
+  "failures": 1,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "N34": {
+  "rc": 1,
+  "s": 37.3,
+  "ran": 89,
+  "tail": [
+   "FAILED (failures=2)"
+  ],
+  "failures": 2,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "N35": {
+  "rc": 1,
+  "s": 37.3,
+  "ran": 89,
+  "tail": [
+   "FAILED (failures=3)"
+  ],
+  "failures": 3,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "N36": {
+  "rc": 1,
+  "s": 37.3,
+  "ran": 89,
+  "tail": [
+   "FAILED (failures=11)"
+  ],
+  "failures": 11,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "N37": {
+  "rc": 1,
+  "s": 37.1,
+  "ran": 89,
+  "tail": [
+   "FAILED (failures=19)"
+  ],
+  "failures": 19,
+  "errors": 0,
+  "status": "killed(assertion)",
+  "files": [
+   "global_sources.py"
+  ]
+ },
+ "control_final": {
+  "rc": 0,
+  "s": 37.2,
+  "ran": 89,
+  "tail": [
+   "OK"
+  ],
+  "failures": 0,
+  "errors": 0
+ }
+}

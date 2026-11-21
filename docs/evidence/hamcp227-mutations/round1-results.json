@@ -1,0 +1,456 @@
+{
+ "control_baseline": {
+  "rc": 0,
+  "s": 2.6,
+  "tail": [
+   "OK"
+  ]
+ },
+ "M01": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.6,
+  "tail": [
+   "FAILED (failures=1)"
+  ]
+ },
+ "M02": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.7,
+  "tail": [
+   "FAILED (failures=1)"
+  ]
+ },
+ "M03": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.6,
+  "tail": [
+   "FAILED (failures=1)"
+  ]
+ },
+ "M04": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.6,
+  "tail": [
+   "FAILED (failures=8)"
+  ]
+ },
+ "M05": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.6,
+  "tail": [
+   "FAILED (failures=1)"
+  ]
+ },
+ "M06": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.7,
+  "tail": [
+   "FAILED (failures=1)"
+  ]
+ },
+ "M07": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.6,
+  "tail": [
+   "FAILED (failures=2)"
+  ]
+ },
+ "M08": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.5,
+  "tail": [
+   "FAILED (failures=1)"
+  ]
+ },
+ "M09": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.4,
+  "tail": [
+   "FAILED (failures=1)"
+  ]
+ },
+ "M10": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.5,
+  "tail": [
+   "FAILED (failures=2)"
+  ]
+ },
+ "M11": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.4,
+  "tail": [
+   "FAILED (failures=2)"
+  ]
+ },
+ "M12": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.4,
+  "tail": [
+   "FAILED (failures=1)"
+  ]
+ },
+ "M13": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.4,
+  "tail": [
+   "FAILED (failures=1)"
+  ]
+ },
+ "M14": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.5,
+  "tail": [
+   "FAILED (failures=1)"
+  ]
+ },
+ "M15": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.6,
+  "tail": [
+   "FAILED (failures=1)"
+  ]
+ },
+ "M16": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.5,
+  "tail": [
+   "FAILED (failures=4)"
+  ]
+ },
+ "M17": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.6,
+  "tail": [
+   "FAILED (failures=1)"
+  ]
+ },
+ "M18": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.6,
+  "tail": [
+   "FAILED (failures=1)"
+  ]
+ },
+ "M19": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.5,
+  "tail": [
+   "FAILED (errors=1)"
+  ]
+ },
+ "M20": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.5,
+  "tail": [
+   "FAILED (errors=1)"
+  ]
+ },
+ "M21": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.7,
+  "tail": [
+   "FAILED (failures=2)"
+  ]
+ },
+ "M22": {
+  "file": "global_sources.py",
+  "status": "SURVIVED",
+  "s": 2.7,
+  "tail": [
+   "OK"
+  ]
+ },
+ "M23": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.6,
+  "tail": [
+   "FAILED (failures=1)"
+  ]
+ },
+ "M24": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.5,
+  "tail": [
+   "FAILED (failures=1)"
+  ]
+ },
+ "M25": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.5,
+  "tail": [
+   "FAILED (failures=1)"
+  ]
+ },
+ "M26": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.6,
+  "tail": [
+   "FAILED (failures=1)"
+  ]
+ },
+ "M27": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.6,
+  "tail": [
+   "FAILED (failures=1)"
+  ]
+ },
+ "M28": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.6,
+  "tail": [
+   "FAILED (failures=1)"
+  ]
+ },
+ "M29": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.5,
+  "tail": [
+   "FAILED (failures=2)"
+  ]
+ },
+ "M30": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.5,
+  "tail": [
+   "FAILED (failures=1)"
+  ]
+ },
+ "M31": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.6,
+  "tail": [
+   "FAILED (failures=1)"
+  ]
+ },
+ "M32": {
+  "file": "dependency_reader.py",
+  "status": "SURVIVED",
+  "s": 2.6,
+  "tail": [
+   "OK"
+  ]
+ },
+ "M33": {
+  "file": "dependency_reader.py",
+  "status": "killed",
+  "s": 2.7,
+  "tail": [
+   "FAILED (failures=1)"
+  ]
+ },
+ "M34": {
+  "file": "dependency_reader.py",
+  "status": "killed",
+  "s": 2.6,
+  "tail": [
+   "FAILED (failures=1)"
+  ]
+ },
+ "M35": {
+  "file": "dependency_reader.py",
+  "status": "killed",
+  "s": 2.5,
+  "tail": [
+   "FAILED (failures=2)"
+  ]
+ },
+ "M36": {
+  "file": "dependency_reader.py",
+  "status": "killed",
+  "s": 2.6,
+  "tail": [
+   "FAILED (failures=1)"
+  ]
+ },
+ "M37": {
+  "file": "dependency_reader.py",
+  "status": "killed",
+  "s": 2.6,
+  "tail": [
+   "FAILED (failures=1)"
+  ]
+ },
+ "M38": {
+  "file": "dependency_reader.py",
+  "status": "killed",
+  "s": 2.7,
+  "tail": [
+   "FAILED (failures=1)"
+  ]
+ },
+ "M39": {
+  "file": "dependency_reader.py",
+  "status": "killed",
+  "s": 2.6,
+  "tail": [
+   "FAILED (failures=1)"
+  ]
+ },
+ "M40": {
+  "file": "dependency_reader.py",
+  "status": "SURVIVED",
+  "s": 2.5,
+  "tail": [
+   "OK"
+  ]
+ },
+ "M41": {
+  "file": "dependency_reader.py",
+  "status": "killed",
+  "s": 2.5,
+  "tail": [
+   "FAILED (errors=1)"
+  ]
+ },
+ "M42": {
+  "file": "dependency_reader.py",
+  "status": "killed",
+  "s": 2.5,
+  "tail": [
+   "FAILED (failures=1)"
+  ]
+ },
+ "M43": {
+  "file": "dependency_reader.py",
+  "status": "SURVIVED",
+  "s": 2.6,
+  "tail": [
+   "OK"
+  ]
+ },
+ "M44": {
+  "file": "dependency_reader.py",
+  "status": "killed",
+  "s": 2.6,
+  "tail": [
+   "FAILED (failures=1)"
+  ]
+ },
+ "M45": {
+  "file": "dependency_reader.py",
+  "status": "killed",
+  "s": 2.6,
+  "tail": [
+   "FAILED (failures=2)"
+  ]
+ },
+ "M46": {
+  "file": "dependency_reader.py",
+  "status": "SURVIVED",
+  "s": 2.6,
+  "tail": [
+   "OK"
+  ]
+ },
+ "M47": {
+  "file": "provider.py",
+  "status": "SURVIVED",
+  "s": 2.6,
+  "tail": [
+   "OK"
+  ]
+ },
+ "M48": {
+  "file": "provider.py",
+  "status": "killed",
+  "s": 2.6,
+  "tail": [
+   "FAILED (failures=3)"
+  ]
+ },
+ "M49": {
+  "file": "service.py",
+  "status": "killed",
+  "s": 2.5,
+  "tail": [
+   "FAILED (failures=8)"
+  ]
+ },
+ "M50": {
+  "file": "service.py",
+  "status": "killed",
+  "s": 2.6,
+  "tail": [
+   "FAILED (failures=4)"
+  ]
+ },
+ "M51": {
+  "file": "index.py",
+  "status": "killed",
+  "s": 2.5,
+  "tail": [
+   "FAILED (failures=1)"
+  ]
+ },
+ "M52": {
+  "file": "provider.py",
+  "status": "SURVIVED",
+  "s": 2.6,
+  "tail": [
+   "OK"
+  ]
+ },
+ "M53": {
+  "file": "provider.py",
+  "status": "killed",
+  "s": 2.6,
+  "tail": [
+   "FAILED (errors=1)"
+  ]
+ },
+ "M54": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.6,
+  "tail": [
+   "FAILED (failures=1)"
+  ]
+ },
+ "M55": {
+  "file": "global_sources.py",
+  "status": "killed",
+  "s": 2.7,
+  "tail": [
+   "FAILED (failures=1)"
+  ]
+ },
+ "control_final": {
+  "rc": 0,
+  "s": 2.8,
+  "tail": [
+   "OK"
+  ]
+ }
+}

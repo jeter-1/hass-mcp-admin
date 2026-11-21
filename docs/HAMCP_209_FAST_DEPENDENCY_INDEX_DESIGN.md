@@ -403,7 +403,7 @@ WebSocket peer):
   blueprint-based, unavailable missing-blueprint and id-less automations. The
   generated set has 113 automations. The blueprint instance is read stored even
   when the loaded form hides `use_blueprint`.
-- **Cross-tree parity** (`docs/evidence/hamcp209/parity.py`, deleted by HAMCP-437 with
+- **Cross-tree parity** (`docs/evidence/hamcp209/parity.py`,
   `parity.json`): the base commit's REST-only provider and this tree give
   identical index views and fingerprints on both fixture sets: 21 findings,
   26 obligations and 7 dynamic references; 339 findings and 452 obligations.
@@ -582,7 +582,7 @@ with the realistic regression above.
 
 ## 6. Measurements
 
-Synthetic model (`docs/evidence/hamcp209/measure.py`, `measurement.json`, both deleted by HAMCP-437;
+Synthetic model (`docs/evidence/hamcp209/measure.py`, `measurement.json`;
 same host, back to back, re-run after correction batch 2; the head's fifth
 request is the display-only `effect_display_service_registry` read). Core's
 stored route is modelled as one lock plus a whole-file parse at 2.65 ms per automation, about 0.30 s per read at N=113.

@@ -1,0 +1,50 @@
+[
+  {
+    "name": "baseline",
+    "exit": 0,
+    "timed_out": false,
+    "seconds": 104.3,
+    "tests": [
+      "295"
+    ],
+    "result": [
+      "OK"
+    ],
+    "import_error": false,
+    "failing": [],
+    "killed": null,
+    "baseline_ok": true
+  },
+  {
+    "name": "A3_persist_entry_recheck_removed",
+    "exit": 0,
+    "timed_out": false,
+    "seconds": 116.7,
+    "tests": [
+      "295"
+    ],
+    "result": [
+      "OK"
+    ],
+    "import_error": false,
+    "failing": [],
+    "killed": false
+  },
+  {
+    "name": "G6_runtime_core_wiring_dropped",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 116.6,
+    "tests": [
+      "295"
+    ],
+    "result": [
+      "FAILED (failures=1)"
+    ],
+    "import_error": false,
+    "failing": [
+      "test_configured_write_boundary_consults_the_given_core_runtime"
+    ],
+    "killed": true
+  }
+]
