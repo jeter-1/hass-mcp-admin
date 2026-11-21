@@ -1,0 +1,217 @@
+{
+  "model": "hamcp443-receipt-comparison-v1",
+  "lanes": {
+    "device_configuration_entity": {
+      "harness": "scripts/core_device_configuration_local.py",
+      "committed_receipt": "docs/evidence/hamcp366/device_configuration_entity.json",
+      "committed_receipt_sha256": "710a6aa172ded0dd168eef8b9784456081db0f3f888985ba17a742bc1071f5dc",
+      "excluded": [
+        {
+          "class": "run_identity",
+          "reason": "The commit the lane ran from and the run's own start and end times.",
+          "paths": [
+            [
+              "source_commit"
+            ],
+            [
+              "started_utc"
+            ],
+            [
+              "ended_utc"
+            ]
+          ]
+        },
+        {
+          "class": "host_admission",
+          "reason": "The host's load, free memory, container and heavy-job counts and time when the lane was admitted.",
+          "paths": [
+            [
+              "host_admission",
+              "**"
+            ]
+          ]
+        },
+        {
+          "class": "docker_assigned",
+          "reason": "Docker picks the lane network's subnet from the host's free ranges; the harness checks the stub address lies in it.",
+          "paths": [
+            [
+              "stub_host_entry",
+              "address"
+            ]
+          ]
+        },
+        {
+          "class": "core_run_ids",
+          "reason": "Random ids the disposable Core mints per run: state context ids (ULID), config entry ids (ULID), device and entity registry ids (uuid hex).",
+          "paths": [
+            [
+              "**",
+              "fields",
+              [
+                "context_id",
+                "device.id",
+                "device.primary_config_entry",
+                "registry.config_entry_id",
+                "registry.device_id",
+                "registry.id"
+              ],
+              [
+                "before",
+                "after"
+              ]
+            ],
+            [
+              "**",
+              "registry_level",
+              [
+                "config_entry_id",
+                "device_id",
+                "id"
+              ],
+              [
+                "before",
+                "after"
+              ]
+            ]
+          ]
+        },
+        {
+          "class": "engineering_task_ids",
+          "reason": "Random task ids Engineering mints per run, and undo_of, which names the forward operation's task id.",
+          "paths": [
+            [
+              "operations",
+              "*",
+              "task_id"
+            ],
+            [
+              "operations",
+              "*",
+              "undo_of"
+            ],
+            [
+              "operations",
+              "*",
+              "final",
+              "task_id"
+            ]
+          ]
+        },
+        {
+          "class": "core_timestamps",
+          "reason": "Wall-clock times the disposable Core records: registry created_at/modified_at (epoch) and state last_changed/last_updated (ISO).",
+          "paths": [
+            [
+              "**",
+              "fields",
+              [
+                "device.created_at",
+                "registry.created_at",
+                "registry.modified_at",
+                "last_changed",
+                "last_updated"
+              ],
+              [
+                "before",
+                "after"
+              ]
+            ],
+            [
+              "**",
+              "registry_level",
+              [
+                "created_at",
+                "modified_at"
+              ],
+              [
+                "before",
+                "after"
+              ]
+            ]
+          ]
+        },
+        {
+          "class": "derived_from_run_values",
+          "reason": "SHA-256 digests over observations that contain the run ids and timestamps above (context_id, last_changed, registry ids).",
+          "paths": [
+            [
+              "observations",
+              "reregistration_fingerprint",
+              "*",
+              "targets",
+              "*",
+              [
+                "fingerprint_before",
+                "fingerprint_after"
+              ]
+            ],
+            [
+              "operations",
+              "*",
+              "verification",
+              [
+                "evidence_hash",
+                "resulting_state_fingerprint"
+              ]
+            ],
+            [
+              "operations",
+              "*",
+              "final",
+              "verification",
+              [
+                "evidence_hash",
+                "resulting_state_fingerprint"
+              ]
+            ]
+          ]
+        },
+        {
+          "class": "timing",
+          "reason": "Elapsed seconds (round(elapsed, 1)) and the poll counts that depend on them: state reads after the send, and the observation attempts a held task makes before its evidence deadline. Beyond the brief's three examples; reported in the PR with every value.",
+          "paths": [
+            [
+              "operations",
+              "*",
+              "seconds"
+            ],
+            [
+              "operations",
+              "*",
+              "state_reads_after_send"
+            ],
+            [
+              "operations",
+              "*",
+              "final",
+              "observation_attempts"
+            ]
+          ]
+        }
+      ],
+      "expected_changes": [
+        {
+          "path": [
+            "images",
+            "beta25-real-ha-upstream-ha-2026-11-0-device-configuration",
+            "image"
+          ],
+          "committed": "ghcr.io/homeassistant-ai/ha-mcp:8.5.0@sha256:e1538bcdadb13a5467bbb8258fba3262a05518585e18115742da638adec7057c",
+          "observed": "ghcr.io/homeassistant-ai/ha-mcp:9.2.0@sha256:9de5bf6c4216142fdffe862900abe72dac8dfe9621dd0b2b050d132372b676ba",
+          "reason": "D7: REVIEWED_CORE_BINDINGS['2026.11.0'].child_consumer names ha-mcp 9.2.0 since HAMCP-437 I2b, so the lane now runs the 9.2.0 child pinned in ci/support-window.yaml; the committed receipt ran 8.5.0."
+        },
+        {
+          "path": [
+            "images",
+            "beta25-real-ha-upstream-ha-2026-11-0-device-configuration",
+            "config_digest"
+          ],
+          "committed": "sha256:e1538bcdadb13a5467bbb8258fba3262a05518585e18115742da638adec7057c",
+          "observed": "sha256:9de5bf6c4216142fdffe862900abe72dac8dfe9621dd0b2b050d132372b676ba",
+          "reason": "D7: REVIEWED_CORE_BINDINGS['2026.11.0'].child_consumer names ha-mcp 9.2.0 since HAMCP-437 I2b, so the lane now runs the 9.2.0 child pinned in ci/support-window.yaml; the committed receipt ran 8.5.0. The cached 9.2.0 image Id is its index digest (docker image inspect)."
+        }
+      ]
+    }
+  }
+}
