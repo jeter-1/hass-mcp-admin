@@ -46,6 +46,7 @@ from ha_mcp_engineering.thread_matter_topology import (
 from ha_mcp_engineering.request_context import begin_request, end_request
 from ha_mcp_engineering.signed_registry import canonical_json
 
+from core_lane_proof import transition
 import lane_failure_diagnostics as diagnostics
 
 CAPABILITY = "core.thread_matter_topology_read"
@@ -167,15 +168,17 @@ class RawCore:
 async def run(configured, entry, directory, *, mode):
     """Run only thread_matter_topology; caller owns startup, identity and teardown proof."""
     # The caller names the mode; nothing here reads the environment to choose one.
-    if mode == "ci":
-        raise NotImplementedError("ci mode lands in 443-B")
-    if mode != "local":
+    if mode not in ("local", "ci"):
         raise ValueError("lane_mode_unknown")
     key = Ed25519PrivateKey.generate()
     now = datetime.now(timezone.utc)
     evidence = b"Disposable thread-matter-topology test authority; not registry publication authority"
-    old = entry["capabilities"]
-    assert len(old) == 32 and CAPABILITY not in {p["capability_id"] for p in old}
+    if mode == "ci":
+        # D3 rules 1-3: the authenticated baseline minus exactly this group, then its compiled profile.
+        old, _ = transition(entry, "thread_matter_topology", [reference()])
+    else:
+        old = entry["capabilities"]
+        assert len(old) == 32 and CAPABILITY not in {p["capability_id"] for p in old}
     runtimes = []
     raw = RawCore(configured)
     clean = synthetic_dataset("HAMCP-231-A", 15)
@@ -384,7 +387,7 @@ async def run(configured, entry, directory, *, mode):
             assert len(reader.sent) == sent
             assert after.health_snapshot()["fallback_count"] == 0
         return {"result": "PASS", "group": "thread_matter_topology", "profile": reference(),
-                "authority_transition": [32, 33], "predecessor_reads": 0,
+                "authority_transition": [len(old), len(old) + 1], "predecessor_reads": 0,
                 "scope": {"a1_list_datasets": "success", "a2_network_topology": "matter_not_loaded_only",
                           "a2_success_lane": "not_run_pending_matter_server_stub"},
                 "seeded_datasets": len(baseline),

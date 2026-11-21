@@ -31,6 +31,7 @@ from ha_mcp_engineering.security_metadata import (
     read_plan, validate_arguments)
 from ha_mcp_engineering.signed_registry import canonical_json
 
+from core_lane_proof import transition
 import lane_failure_diagnostics as diagnostics
 from lane_session import lane_session
 
@@ -148,15 +149,17 @@ def digest(value):
 async def run(configured, entry, directory, *, mode):
     """Run only security_metadata; caller owns startup, identity and teardown proof."""
     # The caller names the mode; nothing here reads the environment to choose one.
-    if mode == "ci":
-        raise NotImplementedError("ci mode lands in 443-B")
-    if mode != "local":
+    if mode not in ("local", "ci"):
         raise ValueError("lane_mode_unknown")
     key = Ed25519PrivateKey.generate()
     now = datetime.now(timezone.utc)
     evidence = b"Disposable security-metadata test authority; not registry publication authority"
-    old = entry["capabilities"]
-    assert len(old) == 32 and CAPABILITY not in {p["capability_id"] for p in old}
+    if mode == "ci":
+        # D3 rules 1-3: the authenticated baseline minus exactly this group, then its compiled profile.
+        old, _ = transition(entry, "security_metadata", [reference()])
+    else:
+        old = entry["capabilities"]
+        assert len(old) == 32 and CAPABILITY not in {p["capability_id"] for p in old}
     runtimes = []
     raw = RawCore(configured)
 
@@ -367,7 +370,7 @@ async def run(configured, entry, directory, *, mode):
             unchanged = await snapshot() == before
             assert unchanged
         return {"result": "PASS", "group": GROUP, "profile": reference(),
-                "authority_transition": [32, 33], "predecessor_reads": 0,
+                "authority_transition": [len(old), len(old) + 1], "predecessor_reads": 0,
                 "commands_sent": list(reader.sent), "full_ledger": list(FULL_LEDGER),
                 "connection_identity": report["connection_identity"],
                 "completeness": report["completeness"],

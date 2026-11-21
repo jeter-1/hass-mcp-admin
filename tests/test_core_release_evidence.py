@@ -645,6 +645,12 @@ class Withholding(unittest.TestCase):
     def test_unmapped_or_duplicate_refuses(self):
         for values in (refs()+[refs()[0]],refs()+[{'capability_id':'unknown'}]):
             with self.assertRaises(ValueError):e.passing_subset(values,{})
+    def test_groups_file_must_carry_every_lane_group(self):
+        value=e.read_json(e.ROOT/'ci/core-evidence-groups.json')
+        for name in e.LANE_GROUPS:
+            changed={k:v for k,v in value.items() if k!=name}
+            with self.subTest(name),patch.object(e,'read_json',return_value=changed),\
+                    self.assertRaisesRegex(ValueError,'invalid evidence groups'):e.groups()
 
 
 class Handoff(unittest.TestCase):
@@ -734,23 +740,43 @@ class OCIProvenance(unittest.TestCase):
             get.assert_not_called()
 
 
+def owned(name):
+    return {'containers': ['hamcp-lane-' + name + '-core'], 'networks': ['hamcp-lane-' + name]}
+
+
+def assembly_inputs(base, value, case, baseline='2026.10.3', state=None):
+    """Prepared inputs plus D8's producer layout: seven lane-groups artifacts, twelve top-level receipts."""
+    import core_evidence_workflow as w
+    prepared = base / 'prepared'; receipts = base / 'receipts'; prepared.mkdir(); receipts.mkdir()
+    raw = (ROOT / 'upstream-trust/ha-core-release-registry.json').read_bytes()
+    signed, _ = w.journal(raw)
+    entry = next(x.to_mapping() for x in signed.accepted.entries if x.version == baseline)
+    (prepared / 'predecessor.json').write_bytes(raw)
+    w.write(prepared / 'baseline.json', entry)
+    w.write(prepared / 'state.json', state or {'acceptance': True, 'registry_exists': False, 'withhold': []})
+    context_path = base / 'context.json'; context_path.write_bytes(e.canonical(value)); sha = e.digest(context_path.read_bytes())
+    w.write(receipts / 'cleanup.json', {'clean': True, 'run': RUN, 'context_sha256': sha})
+    for name, ids in e.groups().items():
+        receipt = {'model': 'core-evidence-group-v1', 'group': name, 'passed': True, 'run': RUN,
+                   'release': value['provenance']['version'], 'context_sha256': sha, 'profiles': ids}
+        if name in e.LANE_GROUPS:
+            folder = receipts / w.producer_name(case, name); folder.mkdir()
+            w.write(folder / (name + '.json'), receipt)
+            w.write(folder / ('cleanup-' + name + '.json'), {'clean': True, 'run': RUN, 'context_sha256': sha,
+                                                              'group': name, 'owned': owned(name)})
+        else:
+            w.write(receipts / (name + '.json'), receipt)
+    env = {**RUN, e.CONTEXT_ENV: str(context_path), 'CORE_EVIDENCE_CONTEXT_SHA256': sha, 'GITHUB_OUTPUT': str(base / 'out')}
+    return prepared, receipts, env, sha
+
+
 class UnsignedAssembly(unittest.TestCase):
     def test_real_31_and_fixture_use_unchanged_add(self):
         import core_evidence_workflow as w
         for mode,case in [('main','coverage'),('derived','fixture')]:
             value=ctx(mode);value['fixture']=case=='fixture'
             with tempfile.TemporaryDirectory() as tmp:
-                base=Path(tmp); prepared=base/'prepared'; receipts=base/'receipts';prepared.mkdir();receipts.mkdir()
-                raw=(ROOT/'upstream-trust/ha-core-release-registry.json').read_bytes()
-                signed,_=w.journal(raw)
-                entry=next(e.to_mapping() for e in signed.accepted.entries if e.version=='2026.10.3')
-                (prepared/'predecessor.json').write_bytes(raw)
-                w.write(prepared/'baseline.json',entry);w.write(prepared/'state.json',{'acceptance':True,'registry_exists':False})
-                context_path=base/'context.json';context_path.write_bytes(e.canonical(value));sha=e.digest(context_path.read_bytes())
-                w.write(receipts/'cleanup.json',{'clean':True,'run':RUN,'context_sha256':sha})
-                for name,ids in e.groups().items():
-                    w.write(receipts/(name+'.json'),{'model':'core-evidence-group-v1','group':name,'passed':True,'run':RUN,'release':'2026.10.3','context_sha256':sha,'profiles':ids})
-                env={**RUN,e.CONTEXT_ENV:str(context_path),'CORE_EVIDENCE_CONTEXT_SHA256':sha,'GITHUB_OUTPUT':str(base/'out')}
+                prepared,receipts,env,_=assembly_inputs(Path(tmp),value,case)
                 with patch.dict(os.environ,env,clear=True):w.assemble(prepared,receipts,case)
                 candidate=e.read_json(receipts/'candidate/core-candidate.json')
                 self.assertEqual(candidate['operation'],'add')
@@ -759,6 +785,319 @@ class UnsignedAssembly(unittest.TestCase):
                 self.assertEqual(target['capabilities'],refs())
                 review=(receipts/'candidate/core-review-evidence.json').read_bytes()
                 self.assertEqual(target['evidence_sha256'],e.digest(review))
+                evidence=json.loads(review)
+                self.assertEqual(evidence['owner_withheld'],[])
+                for name in e.LANE_GROUPS:
+                    folder=receipts/w.producer_name(case,name)
+                    self.assertEqual(evidence['receipt_sha256'][name],e.digest((folder/(name+'.json')).read_bytes()))
+
+
+class AssemblyProducerMap(unittest.TestCase):
+    """HAMCP-443 D8: the fixed group-to-producer map and per-group cleanup, both exact."""
+
+    def refuse(self, pattern, change, case='coverage'):
+        import core_evidence_workflow as w
+        with tempfile.TemporaryDirectory() as tmp:
+            prepared, receipts, env, sha = assembly_inputs(Path(tmp), ctx('main'), case)
+            change(receipts, sha)
+            planted = (receipts / 'candidate').exists()
+            with patch.dict(os.environ, env, clear=True), self.assertRaisesRegex(ValueError, pattern):
+                w.assemble(prepared, receipts, case)
+            if planted:
+                self.assertEqual(list((receipts / 'candidate').iterdir()), [])
+            else:
+                self.assertFalse((receipts / 'candidate').exists())
+
+    def lane(self, receipts, name='helper_value', case='coverage'):
+        import core_evidence_workflow as w
+        return receipts / w.producer_name(case, name)
+
+    def test_lane_group_from_the_lanes_run_is_a_wrong_producer(self):
+        import shutil
+        def duplicate(receipts, sha):
+            shutil.copy(self.lane(receipts) / 'helper_value.json', receipts / 'helper_value.json')
+        def moved(receipts, sha):
+            (self.lane(receipts) / 'helper_value.json').rename(receipts / 'helper_value.json')
+        for change in (duplicate, moved):
+            with self.subTest(change.__name__):
+                self.refuse('unmapped producer: helper_value.json', change)
+
+    def test_lanes_run_group_inside_a_lane_artifact_is_a_wrong_producer(self):
+        import shutil
+        def misplaced(receipts, sha):
+            (receipts / 'general.json').rename(self.lane(receipts) / 'general.json')
+        def copied(receipts, sha):
+            shutil.copy(receipts / 'general.json', self.lane(receipts) / 'general.json')
+        for change in (misplaced, copied):
+            with self.subTest(change.__name__):
+                self.refuse('lane-groups artifact contents mismatch: helper_value', change)
+
+    def test_other_case_stray_and_preexisting_candidate_refuse(self):
+        import shutil
+        changes = {
+            'core-evidence-group-fixture-helper_value': lambda r, s: shutil.copytree(self.lane(r), r / 'core-evidence-group-fixture-helper_value'),
+            'notes.txt': lambda r, s: (r / 'notes.txt').write_text('x'),
+            'candidate': lambda r, s: (r / 'candidate').mkdir(),
+            'core-evidence-group-coverage-general': lambda r, s: (r / 'core-evidence-group-coverage-general').mkdir()}
+        for name, change in changes.items():
+            with self.subTest(name):
+                self.refuse('unmapped producer: ' + name, change)
+
+    def test_missing_lane_artifact_refuses_but_missing_run_receipt_is_false(self):
+        import core_evidence_workflow as w
+        import shutil
+        for name in e.LANE_GROUPS:
+            with self.subTest(name):
+                self.refuse('lane-groups artifact missing: core-evidence-group-coverage-' + name,
+                            lambda r, s, name=name: shutil.rmtree(self.lane(r, name)))
+        with tempfile.TemporaryDirectory() as tmp:
+            prepared, receipts, env, _ = assembly_inputs(Path(tmp), ctx('main'), 'coverage')
+            (receipts / 'general.json').unlink()
+            with patch.dict(os.environ, env, clear=True), self.assertRaisesRegex(ValueError, 'acceptance requires'):
+                w.assemble(prepared, receipts, 'coverage')
+
+    def test_lane_artifact_must_hold_exactly_its_receipt_and_cleanup(self):
+        import shutil
+        changes = [lambda r, s: (self.lane(r) / 'extra.json').write_text('{}'),
+                   lambda r, s: (self.lane(r) / 'helper_value.json').unlink(),
+                   lambda r, s: (self.lane(r) / 'cleanup-helper_value.json').unlink(),
+                   lambda r, s: (self.lane(r) / 'cleanup-helper_value.json').rename(self.lane(r) / 'cleanup.json'),
+                   lambda r, s: (shutil.rmtree(self.lane(r)), self.lane(r).write_text('{}'))]
+        for change in changes:
+            with self.subTest():
+                self.refuse('lane-groups artifact contents mismatch: helper_value', change)
+
+    def test_symlinked_receipt_or_artifact_refuses(self):
+        def receipt(receipts, sha):
+            path = self.lane(receipts) / 'helper_value.json'
+            target = receipts.parent / 'elsewhere.json'; path.rename(target); path.symlink_to(target)
+        def folder(receipts, sha):
+            target = receipts.parent / 'elsewhere'; self.lane(receipts).rename(target); self.lane(receipts).symlink_to(target)
+        self.refuse('not a regular file', receipt)
+        self.refuse('lane-groups artifact contents mismatch', folder)
+
+    def test_receipt_in_another_groups_artifact_refuses(self):
+        import shutil
+        def swapped(receipts, sha):
+            body = (self.lane(receipts, 'marketplace_read') / 'marketplace_read.json').read_bytes()
+            (self.lane(receipts) / 'helper_value.json').write_bytes(body)
+        self.refuse('lane receipt binding mismatch', swapped)
+
+    def test_receipt_model_and_group_are_bound(self):
+        import core_evidence_workflow as w
+        for key, value in (('group', 'marketplace_read'), ('model', 'core-evidence-group-v0')):
+            def changed(receipts, sha, key=key, value=value):
+                path = self.lane(receipts) / 'helper_value.json'
+                receipt = json.loads(path.read_bytes())
+                receipt[key] = value
+                w.write(path, receipt)
+            with self.subTest(key):
+                self.refuse('lane receipt binding mismatch', changed)
+
+    def test_per_group_cleanup_is_exact(self):
+        import core_evidence_workflow as w
+        def proof(sha, **changes):
+            value = {'clean': True, 'run': RUN, 'context_sha256': sha, 'group': 'helper_value', 'owned': owned('helper_value')}
+            value.update(changes)
+            return {k: v for k, v in value.items() if v is not Ellipsis}
+        variants = [dict(clean=False), dict(clean=1), dict(run={**RUN, 'GITHUB_RUN_ATTEMPT': '2'}),
+                    dict(context_sha256='0' * 64), dict(group='marketplace_read'), dict(group=...),
+                    dict(owned=...), dict(extra=True), dict(owned={'containers': ['a']}),
+                    dict(owned={'containers': ['a'], 'networks': ['b'], 'volumes': []}),
+                    dict(owned={'containers': [], 'networks': ['b']}),
+                    dict(owned={'containers': ['b', 'a'], 'networks': ['n']}),
+                    dict(owned={'containers': ['a', 'a'], 'networks': ['n']}),
+                    dict(owned={'containers': [''], 'networks': ['n']}),
+                    dict(owned={'containers': [1], 'networks': ['n']}),
+                    dict(owned={'containers': 'a', 'networks': ['n']}), dict(owned=[])]
+        for changes in variants:
+            with self.subTest(changes=changes):
+                self.refuse('lane-group cleanup proof mismatch: helper_value',
+                            lambda r, s, c=changes: w.write(self.lane(r) / 'cleanup-helper_value.json', proof(s, **c)))
+
+    def test_run_cleanup_stays_exact(self):
+        import core_evidence_workflow as w
+        for extra in ({'group': 'general'}, {'owned': owned('general')}, {'clean': False}):
+            with self.subTest(extra=extra):
+                self.refuse('cleanup proof mismatch',
+                            lambda r, s, x=extra: w.write(r / 'cleanup.json', {'clean': True, 'run': RUN, 'context_sha256': s, **x}))
+
+
+def lane_context():
+    """A production-shaped context whose baseline (2026.11.0) holds every lane-group profile."""
+    value = ctx('main')
+    value.update(anchor='2026.11.0', binding=asdict(REVIEWED_CORE_BINDINGS['2026.11.0']),
+                 provenance=e.read_json(ROOT / 'tests/fixtures/core_2026_11_0_lane_provenance.json'), predecessor='2026.10.3')
+    return value
+
+
+class AssemblyOwnerOverrideAndRetry(unittest.TestCase):
+    """HAMCP-443 D6: external_dependency_unavailable fails the run; the owner withhold is explicit."""
+
+    def run_assemble(self, state, change=lambda r, s: None):
+        import core_evidence_workflow as w
+        self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
+        prepared, receipts, env, sha = assembly_inputs(Path(self.tmp.name), lane_context(), 'release', '2026.11.0', state)
+        change(receipts, sha)
+        messages = []
+        def add(*args, **kwargs):
+            Path(args[0][args[0].index('--output') + 1]).write_bytes(b'{}')
+        with patch.dict(os.environ, env, clear=True), patch.object(w, 'summary', side_effect=messages.append), \
+                patch.object(w.subprocess, 'run', side_effect=add) as run:
+            w.assemble(prepared, receipts, 'release')
+        return receipts, messages, run
+
+    def unavailable(self, name='marketplace_read'):
+        import core_evidence_workflow as w
+        def change(receipts, sha):
+            path = receipts / w.producer_name('release', name) / (name + '.json')
+            value = e.read_json(path); value.update(passed=False, receipt={'failure_type': e.EXTERNAL_DEPENDENCY})
+            w.write(path, value)
+        return change
+
+    def production(self, withhold=()):
+        return {'acceptance': False, 'registry_exists': True, 'withhold': list(withhold)}
+
+    def test_external_dependency_unavailable_fails_before_any_candidate(self):
+        for name in ('marketplace_read', 'thread_matter_topology', 'general'):
+            with self.subTest(name), self.assertRaisesRegex(ValueError, 'external dependency unavailable: ' + name):
+                if name == 'general':
+                    import core_evidence_workflow as w
+                    def change(receipts, sha):
+                        value = e.read_json(receipts / 'general.json')
+                        value.update(passed=False, receipt={'failure_type': e.EXTERNAL_DEPENDENCY})
+                        w.write(receipts / 'general.json', value)
+                    self.run_assemble(self.production(), change)
+                else:
+                    self.run_assemble(self.production(), self.unavailable(name))
+            self.assertFalse((Path(self.tmp.name) / 'receipts/candidate').exists())
+
+    def test_other_failure_types_still_assemble_without_the_group(self):
+        import core_evidence_workflow as w
+        def change(receipts, sha):
+            path = receipts / w.producer_name('release', 'marketplace_read') / 'marketplace_read.json'
+            value = e.read_json(path); value.update(passed=False, receipt={'failure_type': 'ValueError'}); w.write(path, value)
+        receipts, messages, run = self.run_assemble(self.production(), change)
+        evidence = e.read_json(receipts / 'candidate/core-review-evidence.json')
+        self.assertEqual(evidence['withheld'], ['core.marketplace_read']); self.assertEqual(evidence['owner_withheld'], [])
+        self.assertFalse(any('OWNER OVERRIDE' in m for m in messages)); run.assert_called_once()
+
+    def test_failed_attempt_is_reselected_on_the_next_schedule(self):
+        import core_evidence_workflow as w
+        jobs = [{'name': 'prepare', 'conclusion': 'success'}, {'name': 'core-release-attempt-2026.12.0', 'conclusion': 'success'},
+                {'name': 'Core evidence release 2026.12.0', 'conclusion': 'failure'}]
+        runs = w.observed_attempts({'status': 'completed', 'conclusion': 'failure'}, [], jobs)
+        self.assertEqual(runs, [{'release': '2026.12.0', 'status': 'completed', 'conclusion': 'failure', 'outcome': 'attempt'}])
+        releases = [{'tag_name': '2026.12.0'}]
+        self.assertEqual(e.select_release(releases, {'2026.11.0'}, runs), '2026.12.0')
+        refused = jobs + [{'name': 'core-release-refused-2026.12.0', 'conclusion': 'failure'}]
+        self.assertIsNone(e.select_release(releases, {'2026.11.0'}, w.observed_attempts(
+            {'status': 'completed', 'conclusion': 'failure'}, [], refused)))
+
+    def test_owner_withhold_removes_marketplace_and_states_the_consequence(self):
+        receipts, messages, run = self.run_assemble(self.production(['marketplace_read']))
+        evidence = e.read_json(receipts / 'candidate/core-review-evidence.json')
+        entry = e.read_json(receipts / 'candidate/entry.json')
+        self.assertEqual(evidence['owner_withheld'], ['marketplace_read'])
+        self.assertIs(evidence['lane_groups']['marketplace_read'], False)
+        self.assertEqual(evidence['withheld'], ['core.marketplace_read'])
+        self.assertEqual(len(entry['capabilities']), 37)
+        self.assertNotIn('core.marketplace_read', [r['capability_id'] for r in entry['capabilities']])
+        self.assertIn(('OWNER OVERRIDE: withheld marketplace_read. The signed release will lack core.marketplace_read, '
+                       'and every later automated candidate will lack it too, because automated evidence never adds a '
+                       'profile back. Only a manual signing restores it.'), messages)
+
+    def test_owner_withhold_absorbs_only_its_own_unavailable_group(self):
+        receipts, messages, _ = self.run_assemble(self.production(['marketplace_read']), self.unavailable())
+        self.assertEqual(e.read_json(receipts / 'candidate/core-review-evidence.json')['withheld'], ['core.marketplace_read'])
+        with self.assertRaisesRegex(ValueError, 'external dependency unavailable: thread_matter_topology'):
+            self.run_assemble(self.production(['marketplace_read']), self.unavailable('thread_matter_topology'))
+
+    def test_withheld_group_artifact_is_still_required(self):
+        import shutil
+        import core_evidence_workflow as w
+        with self.assertRaisesRegex(ValueError, 'lane-groups artifact missing'):
+            self.run_assemble(self.production(['marketplace_read']),
+                              lambda r, s: shutil.rmtree(r / w.producer_name('release', 'marketplace_read')))
+
+    def test_invalid_state_or_withhold_refuses(self):
+        states = [{'acceptance': False, 'registry_exists': True},
+                  {**self.production(), 'extra': 1},
+                  self.production(['helper_value']), self.production(['marketplace_read', 'marketplace_read']),
+                  {**self.production(), 'withhold': 'marketplace_read'},
+                  {'acceptance': True, 'registry_exists': False, 'withhold': ['marketplace_read']}]
+        for state in states:
+            with self.subTest(state=state), self.assertRaisesRegex(ValueError, 'preparation state mismatch|invalid owner withhold'):
+                self.run_assemble(state)
+            self.assertFalse((Path(self.tmp.name) / 'receipts/candidate').exists())
+
+
+class PrepareWithhold(unittest.TestCase):
+    def test_withhold_admission(self):
+        import core_evidence_workflow as w
+        with patch.dict(os.environ, {'GITHUB_EVENT_NAME': 'workflow_dispatch'}, clear=True):
+            self.assertEqual(w.admit_withhold([], False, None), [])
+            self.assertEqual(w.admit_withhold(['marketplace_read'], False, '2026.12.0'), ['marketplace_read'])
+            for withhold, acceptance, requested in [(['marketplace_read'], True, '2026.12.0'), (['marketplace_read'], False, None),
+                                                    (['helper_value'], False, '2026.12.0'),
+                                                    (['marketplace_read', 'marketplace_read'], False, '2026.12.0')]:
+                with self.subTest(withhold=withhold, acceptance=acceptance, requested=requested), self.assertRaises(ValueError):
+                    w.admit_withhold(withhold, acceptance, requested)
+        for event in ('schedule', 'pull_request', ''):
+            with patch.dict(os.environ, {'GITHUB_EVENT_NAME': event}, clear=True), self.assertRaises(ValueError):
+                w.admit_withhold(['marketplace_read'], False, '2026.12.0')
+
+    def test_prepare_refuses_a_bad_withhold_before_any_input(self):
+        import core_evidence_workflow as w
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {**RUN, 'GITHUB_EVENT_NAME': 'schedule'}, clear=True), \
+                patch.object(w, 'registry_input') as registry, patch.object(w, 'github') as api:
+            directory = Path(tmp) / 'prepared'
+            with self.assertRaisesRegex(ValueError, 'manual dispatch'):
+                w.prepare(directory, False, '2026.12.0', ['marketplace_read'])
+            registry.assert_not_called(); api.assert_not_called(); self.assertFalse(directory.exists())
+
+    def test_dispatch_withhold_reaches_state_and_summary(self):
+        import core_evidence_workflow as w
+        before = e.read_json(ROOT / 'docs/evidence/hamcp315/core-sources/2026.11.0.json')
+        before['hashes'] = {p: before['hashes'].get(p, 'b' * 64) for p in e.manifest()['paths']}
+        before['tag_commit'] = before['commit']
+        after = copy.deepcopy(before); after.update(version='2026.11.99', commit='f' * 40, tag_commit='f' * 40)
+        def api(endpoint, **kwargs):
+            if '/releases?' in endpoint:return [{'tag_name': '2026.11.99', 'published_at': '2026-11-01T00:00:00Z'}]
+            if endpoint.endswith('/releases/tags/2026.11.99'):return {'tag_name': '2026.11.99', 'published_at': '2026-11-01'}
+            if '/git/ref/heads/' in endpoint:return None
+            if '/workflows/' in endpoint:return {'workflow_runs': []}
+            raise AssertionError(endpoint)
+        image = ('sha256:' + 'e' * 64, {'linux/amd64': 'sha256:' + '1' * 64, 'linux/arm64': 'sha256:' + '2' * 64}, {})
+        raw = (ROOT / 'upstream-trust/ha-core-release-registry.json').read_bytes()
+        for withhold in ([], ['marketplace_read']):
+            with self.subTest(withhold=withhold), tempfile.TemporaryDirectory(dir=ROOT / '.artifacts') as tmp:
+                directory = Path(tmp)
+                env = {**RUN, 'GITHUB_REF': 'refs/heads/main', 'GITHUB_REPOSITORY': w.REPOSITORY, 'GITHUB_EVENT_NAME': 'workflow_dispatch',
+                       'GITHUB_OUTPUT': str(directory / 'outputs'), 'GITHUB_STEP_SUMMARY': str(directory / 'summary')}
+                with patch.dict(os.environ, env, clear=True), patch.object(w, 'registry_input', return_value=(raw, True)), \
+                        patch.object(w, 'github', side_effect=api), patch.object(w, 'source', side_effect=[before, after]), \
+                        patch.object(w, 'image_provenance', return_value=image), \
+                        patch.object(w, 'select_release', wraps=e.select_release) as select:
+                    w.prepare(directory, False, '2026.11.99', withhold)
+                self.assertEqual(e.read_json(directory / 'state.json'),
+                                 {'registry_exists': True, 'acceptance': False, 'withhold': withhold})
+                self.assertEqual(select.call_args_list[-1].kwargs['withhold'], withhold)
+                self.assertEqual('OWNER OVERRIDE: withheld marketplace_read' in (directory / 'summary').read_text(), bool(withhold))
+
+    def test_select_release_withhold_never_changes_selection(self):
+        releases = [{'tag_name': '2026.12.0'}, {'tag_name': '2026.12.1'}]
+        self.assertEqual(e.select_release(releases, {'2026.11.0'}, [], '2026.12.0', withhold=['marketplace_read']),
+                         e.select_release(releases, {'2026.11.0'}, [], '2026.12.0'))
+        for requested, withhold in [(None, ['marketplace_read']), ('2026.12.0', ['helper_value']),
+                                    ('2026.12.0', ['marketplace_read', 'marketplace_read'])]:
+            with self.subTest(requested=requested, withhold=withhold), self.assertRaises(ValueError):
+                e.select_release(releases, {'2026.11.0'}, [], requested, withhold=withhold)
+
+    def test_cli_withhold_is_a_prepare_input_only(self):
+        result = subprocess.run([sys.executable, str(ROOT / 'scripts/core_evidence_workflow.py'), 'assemble', '--directory', '.',
+                                 '--withhold', 'marketplace_read'], capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 2); self.assertIn('--withhold is a prepare input', result.stderr)
 
 
 class ManifestAndWorkflow(unittest.TestCase):

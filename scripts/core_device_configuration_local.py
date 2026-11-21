@@ -93,8 +93,9 @@ verify_port_mapping = LANE_HOST.verify_port_mapping
 
 
 @diagnostics.checked("image_verify", "journal_inputs")
-def source_manifest(archive_path, provenance):
-    """Bind the manifest profile, committed source hashes and exact archive."""
+def source_manifest(archive_path, provenance, *, release_commit=None):
+    """Bind the manifest profile, committed source hashes and exact archive. CI mode reads the release's
+    archive (``release_commit``) against the anchor's committed hashes, so any drift refuses."""
     profile = read_json(MANIFEST).get("profiles", {}).get(CAPABILITY)
     if not profile or not SOURCE_HASHES.is_file():
         raise Refusal("device_configuration_manifest_missing")
@@ -105,7 +106,8 @@ def source_manifest(archive_path, provenance):
         raise Refusal("device_configuration_source_provenance_mismatch")
     if [row["path"] for row in record["files"]] != profile or len(rows) != len(profile):
         raise Refusal("device_configuration_manifest_mismatch")
-    prefix, observed = "core-" + provenance["source_commit"] + "/", {}
+    commit = provenance["source_commit"] if release_commit is None else release_commit
+    prefix, observed = "core-" + commit + "/", {}
     with tarfile.open(archive_path, "r:gz") as tar:
         for member in tar:
             name = member.name[len(prefix):] if member.name.startswith(prefix) else None
@@ -160,11 +162,13 @@ def loaded_profile():
 
 
 @diagnostics.checked("image_verify", "journal_inputs")
-def stub_assets(archive_path):
+def stub_assets(archive_path, *, release_commit=None):
     """Hash-bind the stub, its lane entry, the refusal fixture and the three node dumps.
 
     The stub files must equal their committed provenance, and each dump must
     equal the member of the hash-pinned Core source archive it was copied from.
+    The dumps are version-specific, so keyed to the anchor (HAMCP-443 D5): CI mode
+    reads them from the release's archive (``release_commit``) and refuses any drift.
     """
     provenance = read_json(STUB_ASSET / "provenance.json")
     files = provenance["files"]
@@ -178,7 +182,8 @@ def stub_assets(archive_path):
     if (len(dumps) != 3 or set(dumps) != set(provenance["node_dumps"]["node_ids"])
             or provenance["node_dumps"]["source_commit"] != source["source_commit"]):
         raise Refusal("stub_dump_source_mismatch")
-    prefix = "core-" + source["source_commit"] + "/" + DUMP_DIRECTORY
+    commit = source["source_commit"] if release_commit is None else release_commit
+    prefix = "core-" + commit + "/" + DUMP_DIRECTORY
     found = {}
     with tarfile.open(archive_path, "r:gz") as archive:
         for member in archive:
@@ -239,12 +244,22 @@ def stub_address(run_id, network):
     return value
 
 
+@diagnostics.checked("image_verify", "journal_inputs")
+def ci_inputs(ctx, archive_path):
+    """CI mode's inputs: the release's signed entry and exact archive, the anchor's source hashes and dumps (D5)."""
+    commit = ctx["provenance"]["source_commit"]
+    entry = LANE_HOST.ci_entry(ctx, archive_path)
+    sources = source_manifest(archive_path, read_json(CORE_PROVENANCE), release_commit=commit)
+    return entry, sources, stub_assets(archive_path, release_commit=commit)
+
+
 def images():
     return LANE_HOST.images(upstream=True)
 
 
 @diagnostics.checked("helper_setup", "helper_contract")
-async def exercise(run_dir, entry, core_image, upstream_image, run_id, memory, stub_hashes):
+async def exercise(run_dir, entry, core_image, upstream_image, run_id, memory, stub_hashes, *, version=VERSION,
+                   mode="local"):
     # Import only after the closed disposable endpoints have been set.
     import real_ha_contract_tests as harness
     import device_configuration_contract_acceptance as acceptance
@@ -256,7 +271,7 @@ async def exercise(run_dir, entry, core_image, upstream_image, run_id, memory, s
         observed = await harness.wait_for_runtime_ready(
             HomeAssistantRestClient(acceptance.pinned(configured)))
     with diagnostics.check("image_verify", "running_identity"):
-        if observed.get("version") != VERSION:
+        if observed.get("version") != version:
             raise Refusal("running_core_version_mismatch")
     with diagnostics.check("container_start", "upstream_start"):
         await harness._start_exact_upstream(
@@ -278,7 +293,7 @@ async def exercise(run_dir, entry, core_image, upstream_image, run_id, memory, s
     control = f"http://127.0.0.1:{STUB_PORT}/_lane/control"
     with diagnostics.check("container_start", "upstream_start"):
         await acceptance.stub_ready(control)
-    result = await acceptance.run(configured, entry, run_dir, mode="local", stub_url=control, stub_hashes={
+    result = await acceptance.run(configured, entry, run_dir, mode=mode, stub_url=control, stub_hashes={
         key: stub_hashes[key] for key in ("stub_sha256", "entry_sha256", "dump_hashes")},
         upstream_version=REVIEWED_CORE_BINDINGS[VERSION].child_consumer)
     return {**result, "images": identities}
@@ -289,9 +304,9 @@ def _main(argv=None):
     if not __debug__:
         raise Refusal("assertions_required")
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=("local",), required=True)
-    parser.add_argument("--pull", choices=("never",), required=True)
-    parser.add_argument("--journal", type=Path, required=True)
+    parser.add_argument("--mode", choices=("local", "ci"), required=True)
+    parser.add_argument("--pull", choices=("never", "digest"), required=True)
+    parser.add_argument("--journal", type=Path, help="local mode only")
     parser.add_argument("--source-archive", type=Path, required=True)
     parser.add_argument("--run-dir", type=Path, required=True)
     parser.add_argument("--core-memory", default=CORE_MEMORY, help="Core Docker limit (default: 2g)")
@@ -299,35 +314,45 @@ def _main(argv=None):
     parser.add_argument("--stub-memory", default=STUB_MEMORY, help="Matter stub Docker limit (default: 256m)")
     parser.add_argument("--fixture-memory", default=host.FIXTURE_MEMORY, help="cleanup Docker limit (default: 128m)")
     args = parser.parse_args(argv)
+    core_lane_host.require_mode_arguments(parser, args)
     limits = {"core": args.core_memory, "upstream": args.upstream_memory, "stub": args.stub_memory,
               "fixture": args.fixture_memory}
     for memory in limits.values():
         host.memory_bytes(memory)
-    if os.environ.get("GITHUB_ACTIONS") == "true" or os.environ.get("CORE_EVIDENCE_CONTEXT"):
-        raise Refusal("local_only_closed_lane")
-    revision = LANE_HOST.clean_revision()
-    # The signed build only: checked before the journal, any image or any container.
-    profile = loaded_profile()
-    entry, sources = inputs(args.journal, args.source_archive)
-    stub_hashes = stub_assets(args.source_archive)
-    core_image, upstream_image, fixture_image = images()
-    for image in (core_image, upstream_image, fixture_image):
-        cached_image(image)
-    LANE_HOST.require_unclaimed((CORE, UPSTREAM, STUB), NETWORK)
-    run_dir = LANE_HOST.claim(args.run_dir)
-    admission = LANE_HOST.admit(run_dir, RECEIPT, revision, (CORE, UPSTREAM, STUB), NETWORK)
-    if admission is None:
-        return 1
+    if args.mode == "ci":
+        # The signed build only: checked before any input, image or container.
+        ctx, revision, (profile, (entry, sources, stub_hashes)), pulled, run_dir = LANE_HOST.ci_admission(
+            args.run_dir, lambda ctx: (loaded_profile(), ci_inputs(ctx, args.source_archive)),
+            upstream=True, containers=(CORE, UPSTREAM, STUB), network=NETWORK)
+        core_image, upstream_image, fixture_image = pulled
+        admission, version = None, ctx["provenance"]["version"]
+    else:
+        if os.environ.get("GITHUB_ACTIONS") == "true" or os.environ.get("CORE_EVIDENCE_CONTEXT"):
+            raise Refusal("local_only_closed_lane")
+        revision = LANE_HOST.clean_revision()
+        # The signed build only: checked before the journal, any image or any container.
+        profile = loaded_profile()
+        entry, sources = inputs(args.journal, args.source_archive)
+        stub_hashes = stub_assets(args.source_archive)
+        core_image, upstream_image, fixture_image = images()
+        for image in (core_image, upstream_image, fixture_image):
+            cached_image(image)
+        LANE_HOST.require_unclaimed((CORE, UPSTREAM, STUB), NETWORK)
+        run_dir = LANE_HOST.claim(args.run_dir)
+        admission = LANE_HOST.admit(run_dir, RECEIPT, revision, (CORE, UPSTREAM, STUB), NETWORK)
+        if admission is None:
+            return 1
+        version = VERSION
     run_id = uuid4().hex
     # Refusal fixture (test-only custom integration); committed, hashed above.
     owned = LANE_HOST.configuration(run_dir, CORE, CONFIG,
                                     components=(LANE_ASSET / "custom_components" / FIXTURE_COMPONENT,))
     stub_output = run_dir / "matter-stub"
     stub_output.mkdir(mode=0o700)
-    os.environ.update(CORE_EVIDENCE_HOST_MODE="local", RUNNER_TEMP=str(run_dir),
+    os.environ.update(CORE_EVIDENCE_HOST_MODE="actions" if args.mode == "ci" else "local", RUNNER_TEMP=str(run_dir),
         HA_CONTRACT_LANE=LANE, HA_FIXTURE_WRITER_IMAGE=fixture_image,
         HA_CONTRACT_CONTAINER=CORE, HA_CONTRACT_NETWORK=NETWORK,
-        REAL_HA_URL=f"http://127.0.0.1:{CORE_PORT}", REAL_HA_EXPECTED_VERSION=VERSION,
+        REAL_HA_URL=f"http://127.0.0.1:{CORE_PORT}", REAL_HA_EXPECTED_VERSION=version,
         REAL_HA_UPSTREAM_IMAGE=upstream_image, REAL_HA_UPSTREAM_VERSION=REVIEWED_CORE_BINDINGS[VERSION].child_consumer,
         REAL_HA_UPSTREAM_CONTAINER=UPSTREAM, REAL_HA_UPSTREAM_PORT=str(UPSTREAM_PORT))
     result = {"model": "core-device-configuration-local-evidence-v1", "group": GROUP,
@@ -336,6 +361,8 @@ def _main(argv=None):
               "journal_sha256": JOURNAL_SHA256, **sources,
               "host_admission": admission, "container_memory": limits, "network_posture": NETWORK_POSTURE,
               "mode": "local", "pull": "never", "cleanup": {"clean": False}}
+    if args.mode == "ci":
+        result.update(LANE_HOST.ci_fields(ctx))
     def body():
         network = LANE_HOST.create_bridge(NETWORK, run_id)
         # The stub starts first: Core is given the stub's lane address as a hosts entry.
@@ -350,7 +377,7 @@ def _main(argv=None):
         async def bounded():
             async with asyncio.timeout(1800):
                 return await exercise(run_dir, entry, core_image, upstream_image, run_id, limits,
-                                      stub_hashes)
+                                      stub_hashes, version=version, mode=args.mode)
         outcome = asyncio.run(bounded())
         # A receipt for any other profile, or for other stub bytes, is not this lane's receipt.
         if outcome.get("profile") != profile or outcome.get("stub") != {
