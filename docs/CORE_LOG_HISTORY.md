@@ -8,7 +8,7 @@ that an absent event never occurred.
 This source increment adds one static tool: **54 static + 25 admitted delegated
 reads = 79** with the healthy reviewed upstream pairing. Published
 `2.4.0-beta.1` retains its original **53 + 25 = 78** contract. Josh authorized
-[2.4.0-beta.2 materialization](V2_4_0_BETA2_ACCEPTANCE.md) and draft-PR delivery;
+2.4.0-beta.2 materialization (`V2_4_0_BETA2_ACCEPTANCE.md`, deleted by HAMCP-437) and draft-PR delivery;
 the three advertised authorities now agree and the staging declaration is
 consumed. Source versioning establishes neither publication nor installed acceptance.
 
@@ -107,8 +107,8 @@ and deployment evidence; source fragments alone do not close those gates.
 ## Release and installed acceptance
 
 The candidate is materialized as 2.4.0-beta.2 with its exact
-[acceptance contract](V2_4_0_BETA2_ACCEPTANCE.md) and
-[release notes](V2_4_0_BETA2_RELEASE_NOTES.md). Publication requires Josh's
+acceptance contract (`V2_4_0_BETA2_ACCEPTANCE.md`, deleted by HAMCP-437) and
+release notes (`V2_4_0_BETA2_RELEASE_NOTES.md`, deleted by HAMCP-437). Publication requires Josh's
 applicable Ready decision after final review and required CI. Preserve existing
 signed authority, upstream admission and no-fallback controls. Retain exact
 Supervisor assembled integration evidence, independent review and candidate CI.

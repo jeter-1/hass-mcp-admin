@@ -1,7 +1,7 @@
 # HAMCP-209 Fast Dependency Index: Design Note
 
 Register: HAMCP-209 (break-fix, next beta). Parent investigation: HAMCP-171,
-[`HAMCP_171_HEALTH_PERFORMANCE_INVESTIGATION.md`](HAMCP_171_HEALTH_PERFORMANCE_INVESTIGATION.md)
+`HAMCP_171_HEALTH_PERFORMANCE_INVESTIGATION.md` (deleted by HAMCP-437)
 section 5 and owner decisions D3 (prefer Home Assistant's API for the loaded
 configuration, one request or a small bounded number) and D4 (no direct read of
 `automations.yaml` or any configuration file).
@@ -403,7 +403,7 @@ WebSocket peer):
   blueprint-based, unavailable missing-blueprint and id-less automations. The
   generated set has 113 automations. The blueprint instance is read stored even
   when the loaded form hides `use_blueprint`.
-- **Cross-tree parity** (`docs/evidence/hamcp209/parity.py`,
+- **Cross-tree parity** (`docs/evidence/hamcp209/parity.py`, deleted by HAMCP-437 with
   `parity.json`): the base commit's REST-only provider and this tree give
   identical index views and fingerprints on both fixture sets: 21 findings,
   26 obligations and 7 dynamic references; 339 findings and 452 obligations.
@@ -522,7 +522,7 @@ call site. It gains one row for the new `redact_data` call in
 replaced `_display_safe_effect_tokens`). The focused rerun found the
 missing row (`test_every_sanitizer_call_site_is_in_the_committed_table`).
 
-Mutations (`docs/evidence/hamcp209-mutations/run_mutations.py`,
+Mutations (`docs/evidence/hamcp209-mutations/run_mutations.py`, deleted by HAMCP-437 with
 `results.json`): 48 of 48 are killed and none survive.
 
 | ID | Mutation (design item) | First failing test (recorded) |
@@ -582,7 +582,7 @@ with the realistic regression above.
 
 ## 6. Measurements
 
-Synthetic model (`docs/evidence/hamcp209/measure.py`, `measurement.json`;
+Synthetic model (`docs/evidence/hamcp209/measure.py`, `measurement.json`, both deleted by HAMCP-437;
 same host, back to back, re-run after correction batch 2; the head's fifth
 request is the display-only `effect_display_service_registry` read). Core's
 stored route is modelled as one lock plus a whole-file parse at 2.65 ms per automation, about 0.30 s per read at N=113.

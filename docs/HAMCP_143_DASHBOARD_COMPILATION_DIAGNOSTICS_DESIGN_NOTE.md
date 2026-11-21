@@ -50,7 +50,7 @@ the task prompt describe a 16-leaf capacity and say the four-operation fixture
 differs. On 2026-09-25 Josh chose **256 leaves plus diagnostics**. That decision
 is recorded in
 [F3_DASHBOARD_WRITE_CONTRACT.md](F3_DASHBOARD_WRITE_CONTRACT.md#semantic-capacity-and-safe-diagnostics)
-and [2_1_ROADMAP.md](2_1_ROADMAP.md), and was implemented in `d861d9f9`
+and `2_1_ROADMAP.md` (deleted by HAMCP-437), and was implemented in `d861d9f9`
 (PR #213, merged 2026-09-25):
 - `MAX_SEMANTIC_LEAF_CHANGES = 256` (`f3_dashboard/constants.py:56`).
 - The 54-leaf fixture now compiles and applies (`tests/test_f3_dashboard_patch.py:389-403`,

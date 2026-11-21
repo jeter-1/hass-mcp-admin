@@ -47,8 +47,8 @@ are not changed. The public tool schemas, tool registration and tool count
 ### Non-protected files
 
 - Tests: `tests/test_hamcp164_core_gate_fail_closed.py` (new).
-- Docs: this note, `docs/V2_4_1_BETA13_RELEASE_NOTES.md`,
-  `docs/V2_4_1_BETA13_ACCEPTANCE.md`, `hass_mcp_engineering_beta/CHANGELOG.md`,
+- Docs: this note, `docs/V2_4_1_BETA13_RELEASE_NOTES.md` (deleted by HAMCP-437),
+  `docs/V2_4_1_BETA13_ACCEPTANCE.md` (deleted by HAMCP-437), `hass_mcp_engineering_beta/CHANGELOG.md`,
   `README.md`.
 
 ## 2. Inventory
@@ -402,6 +402,6 @@ call with `unsupported_operation`.
   "pinned MCP SDK (1.30.0)".
 - `tests/test_hamcp188_mcp_sdk_session_contract.py` docstring: the expected
   failure count on mcp 1.28.1 is 4.
-- `docs/V2_4_1_BETA11_RELEASE_NOTES.md`, `docs/V2_4_1_BETA11_ACCEPTANCE.md`
+- `docs/V2_4_1_BETA11_RELEASE_NOTES.md`, `docs/V2_4_1_BETA11_ACCEPTANCE.md` (both deleted by HAMCP-437)
   and the CHANGELOG beta.11 entry: a same-host default-port HTTP→HTTPS upgrade
   is permitted (HAMCP-188 wording Low).

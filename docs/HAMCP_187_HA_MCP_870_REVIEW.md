@@ -364,7 +364,7 @@ Required bindings:
 - Engineering has **no runtime binding** for these three tools today.
 - The whole-catalog validator refuses an 80-tool catalog, while
   dependency-scoped paths work (`docs/V2_4_1_BETA6_ACCEPTANCE.md:56,90`;
-  `docs/V2_4_1_BETA8_ACCEPTANCE.md:64-68`).
+  `docs/V2_4_1_BETA8_ACCEPTANCE.md:64-68`; both deleted by HAMCP-437).
 - An 8.7.0 admission does not change that unless HAMCP-162 classifies them.
 
 ## 4. New and removed tools; catalog count
@@ -399,7 +399,7 @@ Required bindings:
     could not be reproduced. The owner has since reported that production
     shows 80, so the question is settled (item C3 in section 9).
   - Engineering must still expose its own count (87: 59 native, 28
-    delegated; `docs/V2_4_1_BETA9_ACCEPTANCE.md:78`), with no filesystem tool.
+    delegated; `docs/V2_4_1_BETA9_ACCEPTANCE.md:78`, deleted by HAMCP-437), with no filesystem tool.
 
 ## 5. Settings and options (#2637, #2669)
 

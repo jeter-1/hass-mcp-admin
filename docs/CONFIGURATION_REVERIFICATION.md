@@ -158,7 +158,7 @@ This implementation is included in the materialized 2.4.0-beta.7 candidate; sour
 metadata does not establish publication, deployment or installed acceptance.
 Existing descriptors, admission, provider fallback, stable-v1, package construction,
 signed registries and workflows are preserved. See the
-[beta.7 acceptance contract](V2_4_0_BETA7_ACCEPTANCE.md) for the distinct release,
+beta.7 acceptance contract (`V2_4_0_BETA7_ACCEPTANCE.md`, deleted by HAMCP-437) for the distinct release,
 installation and exact historical-task observation gates.
 
 ## Validation and later acceptance

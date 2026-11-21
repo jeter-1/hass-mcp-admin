@@ -163,7 +163,7 @@ the single-config-entry rule for enable and stop-on-first-failure are unchanged.
   pending. The implementation takes the next free beta when it materializes.
 - Static tools at base: 62 (25 canonical and 37 Engineering-native). Connector
   total: 90 (91 with the optional YAML reader). See
-  `tools/registry.py:178-179` and `docs/V2_4_1_BETA29_ACCEPTANCE.md:60,205`.
+  `tools/registry.py:178-179` and `docs/V2_4_1_BETA29_ACCEPTANCE.md:60,205` (deleted by HAMCP-437).
 - `.release/` contains only `README.md`. No next version is declared.
 - Pinned Core (`ci/support-window.yaml`):
   - current is 2026.10.1 (`abe1fdd7cd6b4de1715c87b6fd87d92699514ef9`);

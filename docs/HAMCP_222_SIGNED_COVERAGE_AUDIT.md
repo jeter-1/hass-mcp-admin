@@ -162,7 +162,7 @@ PR #297 is **merged** (merge `b8e6c36`, head `f204e16`, shipped inactive as
     unexpose on a disposable Core in each slot, with readback and cleanup;
   - receipts from the main full-tier CI run.
 - **Effort and risk:** S beyond the shared evidence work. Live canaries are
-  deferred until after the signing (`docs/V2_4_1_BETA31_ACCEPTANCE.md:185-188`).
+  deferred until after the signing (`docs/V2_4_1_BETA31_ACCEPTANCE.md:185-188`, deleted by HAMCP-437).
 
 ### 3.2 HAMCP-165: label create/update and device/area assignment
 
@@ -387,7 +387,7 @@ None of the following services is admitted:
   (`R:605-612`).
 - **Blocker.** It is not the Core registry. ha-mcp lifecycle admission is
   `held` for ha-mcp ≥ 8.2.0, and newer catalogs rename the tool to
-  `ha_manage_app` (`docs/HAMCP_218_SUPERVISOR_MANAGER_ROLE.md:495-502`;
+  `ha_manage_app` (`docs/HAMCP_218_SUPERVISOR_MANAGER_ROLE.md:495-502`, deleted by HAMCP-437;
   `docs/HA_MCP_8_6_0_COMPATIBILITY.md:60-63`).
 - **Widening.** Re-admitting the identity under a renamed tool, or adding a
   Core adapter, is a widening.
@@ -418,7 +418,7 @@ existing `dependency_helper_planning` route. See §7.1.
 
 Option C sets the add-on option `journald: true`. Supervisor then bind-mounts
 the host journal read-only, and a typed, allow-listed, redacted local reader
-reads it. Sources: `docs/HAMCP_218_SUPERVISOR_MANAGER_ROLE.md:363-374`,
+reads it. Sources: `docs/HAMCP_218_SUPERVISOR_MANAGER_ROLE.md:363-374` (deleted by HAMCP-437),
 `:519-521`, `:536-541`.
 
 - **Supervisor API role:** none. `hassio_role` stays `homeassistant`

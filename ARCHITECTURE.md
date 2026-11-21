@@ -336,7 +336,7 @@ RC2dev4 hardening boundaries while correcting audit-event reads.
 Audit JSONL records are parsed one at a time and a requested event matches only
 the exact, case-sensitive top-level `event` value. Nested tool arguments,
 messages, exceptions, and malformed records cannot satisfy the filter. See
-[`docs/RC2DEV7_RELEASE_NOTES.md`](docs/RC2DEV7_RELEASE_NOTES.md).
+`docs/RC2DEV7_RELEASE_NOTES.md` (deleted by HAMCP-437).
 
 ## RC3A dashboard-provider boundary
 

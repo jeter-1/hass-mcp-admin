@@ -47,7 +47,7 @@ The detail, inventory, health, Ingress, startup, and handoff paths project a
 matching record as terminal and non-actionable without modifying persisted
 bytes. All contract-v2 predicates, projection-failure containment, health
 reconciliation, and task-store failure propagation remain unchanged. See
-[`V2_2_0_BETA10_ACCEPTANCE.md`](V2_2_0_BETA10_ACCEPTANCE.md).
+`V2_2_0_BETA10_ACCEPTANCE.md` (deleted by HAMCP-437).
 
 ## 2.2.0-beta.9 real Beta 6 prohibited-plan compatibility
 
@@ -65,7 +65,7 @@ loaded record to a policy bucket and surfaces an explicit projection warning.
 Beta 7 response truthfulness remains unchanged. This changes no plan/policy
 hash, classification, approval sequence, task schema, provider route, or
 fallback. See
-[`V2_2_0_BETA9_ACCEPTANCE.md`](V2_2_0_BETA9_ACCEPTANCE.md) for the historical
+`V2_2_0_BETA9_ACCEPTANCE.md` (deleted by HAMCP-437) for the historical
 contract-v2 boundary.
 
 ## 2.2.0-beta.6 F2 policy and approval authority
