@@ -13,11 +13,40 @@ review finding F7: byte-identical receipts are unattainable).
 |---|---|
 | `receipt-exclusions.json` | The declaration, committed before any lane runs: per lane, the committed receipt and its SHA-256, the leaves excluded from value equality, and the value changes the task expects. |
 | `README.md` | This file. |
+| `lane/device_configuration_entity.json` | The device lane's receipt on ha-mcp 9.2.0 (D7), copied byte for byte. |
+| `lane/device_configuration_entity.comparison.json` | `compare_core_receipts.py` report for that receipt against hamcp366: equal. |
+| `lane/helper_value.json` | The helper_value lane's first committed receipt, on ha-mcp 9.2.0 (D7), copied byte for byte. |
 
 New receipts and comparison reports are added here as the lanes run. Only
 receipt JSON and comparison reports are committed. Run directories, container
 logs and host files never are: a container log can hold the disposable Core's
 admin token.
+
+## D7 runs on ha-mcp 9.2.0
+
+Both ran from `c94d66ce` (clean checkout, declaration already committed), on
+scriptbox (amd64), as `systemd-run --user` units with `MemoryMax=3G`,
+`OOMPolicy=continue` and `RuntimeMaxSec=3600`, one at a time, with
+`--mode local --pull never` and the staged Core 2026.11.0 archive
+(`85f3c42c…0ff1`). Child image
+`ghcr.io/homeassistant-ai/ha-mcp:9.2.0@sha256:9de5bf6c4216142fdffe862900abe72dac8dfe9621dd0b2b050d132372b676ba`.
+
+| Lane | Unit | Central time | Admission | Journal | Result | Receipt SHA-256 |
+|---|---|---|---|---|---|---|
+| `device_configuration_entity` | `hamcp443-devcfg-lane-c94d66ce` | 2026-11-20 18:22:20 to 18:26:44 | load1 0.16, 11.90 GB available, 0 other heavy jobs, 0 containers | seq 17 `3f79fce7…6a5d` | `PASS`, clean | `8a82f592…0ac2` |
+| `helper_value` | `hamcp443-helper-lane-c94d66ce` | 2026-11-20 18:27:25 to 18:28:47 | load1 0.37, 11.92 GB available, 0 other heavy jobs, 0 containers | seq 16 `8df3665c…b82c` | `PASS`, clean | `ce3a227c…d814` |
+
+Both journals came from the registry branch's history and match the harness
+pins: seq 16 from registry commit `cf415e29`, seq 17 from `e486028e`.
+
+Device comparison: `equal: true`. Both D7 changes were applied. No leaf
+outside the declaration differed. Of the 189 excluded leaves, these differed:
+`run_identity` 3, `host_admission` 3 (`load1`, `mem_available_bytes`, `utc`),
+`core_run_ids` 54, `engineering_task_ids` 20, `core_timestamps` 42 and
+`derived_from_run_values` 36. One `timing` leaf differed:
+`operations/number_stored_value_mismatch/seconds` went from 9.2 to 9.3. Every
+`state_reads_after_send` and `final.observation_attempts` value was equal, and
+so was `stub_host_entry.address`.
 
 ## How the comparison works
 
