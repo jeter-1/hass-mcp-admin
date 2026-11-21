@@ -51,6 +51,20 @@ FAILED_EVIDENCE_COVERAGE = (
     ("full_local_gate", "failed_locally"),
     *PASSED_EVIDENCE_COVERAGE[1:],
 )
+# HAMCP-365: check.ps1 -ReuseCiRun replaces the local unit-test run with a
+# proven reuse of one ci.yml run's shard results, and says so in its record.
+UNIT_TEST_STEP = "Run complete unittest suite"
+REUSED_UNIT_TEST_STEP = "Reuse CI unittest shard results"
+PASSED_REUSED_EVIDENCE_STEPS = tuple(
+    REUSED_UNIT_TEST_STEP if name == UNIT_TEST_STEP else name
+    for name in PASSED_EVIDENCE_STEPS
+)
+PASSED_REUSED_EVIDENCE_COVERAGE = (
+    ("full_local_gate", "executed_locally_except_unit_suite"),
+    ("unit_test_suite", "reused_from_ci"),
+    *PASSED_EVIDENCE_COVERAGE[1:],
+)
+RUN_ID = re.compile(r"[1-9][0-9]{0,19}")
 
 
 class EvidenceError(RuntimeError):
@@ -140,6 +154,39 @@ def same_repository_root(recorded_root: Any, actual_root: Path) -> bool:
         return False
 
 
+def declares_reuse(execution: Any) -> bool:
+    return isinstance(execution, dict) and execution.get("mode") == "reused_ci"
+
+
+def reuse_declaration_problems(
+    execution: dict[str, Any],
+    *,
+    overall_status: Any,
+    step_names: tuple[Any, ...],
+    repo_root: Path,
+    head_sha: str,
+) -> list[str]:
+    run_id = execution.get("run_id")
+    reused = execution.get("result") == "passed"
+    if (
+        execution.get("executed") is not False
+        or not isinstance(run_id, str)
+        or RUN_ID.fullmatch(run_id) is None
+        or UNIT_TEST_STEP in step_names
+        or (overall_status == "passed" and not reused)
+    ):
+        return ["inconsistent unit-test reuse declaration"]
+    if reused:
+        tree = run_git(repo_root, "rev-parse", f"{head_sha}^{{tree}}", required=False)
+        if (
+            not tree
+            or execution.get("head_sha") != head_sha
+            or execution.get("source_tree") != tree
+        ):
+            return ["reused unit-test results are not bound to this head and its tree"]
+    return []
+
+
 def untrusted_validation(reasons: list[str]) -> tuple[None, str]:
     detail = "; ".join(reasons)
     return None, (
@@ -221,11 +268,28 @@ def read_validation(
     expected_overall = "failed" if derived_failure else "passed"
     if not step_shape_valid or data.get("overall_status") != expected_overall:
         reasons.append("internally inconsistent step results")
-    if data.get("overall_status") == "passed":
-        step_names = tuple(
-            step.get("name") for step in steps if isinstance(step, dict)
+    step_names = tuple(
+        step.get("name") for step in steps if isinstance(step, dict)
+    )
+    execution = data.get("unit_test_execution")
+    reused = declares_reuse(execution)
+    if reused:
+        reasons.extend(
+            reuse_declaration_problems(
+                execution,
+                overall_status=data.get("overall_status"),
+                step_names=step_names,
+                repo_root=repo_root,
+                head_sha=head_sha,
+            )
         )
-        if step_names != PASSED_EVIDENCE_STEPS:
+    elif REUSED_UNIT_TEST_STEP in step_names:
+        reasons.append("inconsistent unit-test reuse declaration")
+    if data.get("overall_status") == "passed":
+        expected_steps = (
+            PASSED_REUSED_EVIDENCE_STEPS if reused else PASSED_EVIDENCE_STEPS
+        )
+        if step_names != expected_steps:
             reasons.append("incomplete passed Evidence step contract")
         if isinstance(coverage, list):
             coverage_pairs = tuple(
@@ -238,7 +302,10 @@ def read_validation(
                 for item in coverage
                 if isinstance(item, dict)
             )
-            if not coverage_shape_valid or coverage_pairs != PASSED_EVIDENCE_COVERAGE:
+            expected_coverage = (
+                PASSED_REUSED_EVIDENCE_COVERAGE if reused else PASSED_EVIDENCE_COVERAGE
+            )
+            if not coverage_shape_valid or coverage_pairs != expected_coverage:
                 reasons.append("incomplete passed Evidence coverage contract")
     elif isinstance(coverage, list):
         coverage_pairs = tuple(
@@ -251,7 +318,17 @@ def read_validation(
             for item in coverage
             if isinstance(item, dict)
         )
-        if not coverage_shape_valid or coverage_pairs != FAILED_EVIDENCE_COVERAGE:
+        expected_coverage = FAILED_EVIDENCE_COVERAGE
+        if reused:
+            unit_status = (
+                "reused_from_ci" if execution.get("result") == "passed" else "not_reused"
+            )
+            expected_coverage = (
+                FAILED_EVIDENCE_COVERAGE[0],
+                ("unit_test_suite", unit_status),
+                *FAILED_EVIDENCE_COVERAGE[1:],
+            )
+        if not coverage_shape_valid or coverage_pairs != expected_coverage:
             reasons.append("inconsistent failed Evidence coverage contract")
     if reasons:
         return untrusted_validation(reasons)
@@ -294,9 +371,28 @@ def validation_markdown(data: dict[str, Any] | None, missing: str | None) -> lis
     lines = [
         f"Overall local status: **{clean_field(data.get('overall_status', 'unknown'))}**",
         "",
-        "| Step | Command | Status | Exit | Tests | Duration (s) | Note |",
-        "|---|---|---:|---:|---:|---:|---|",
     ]
+    execution = data.get("unit_test_execution")
+    if declares_reuse(execution):
+        run_id = clean_field(execution.get("run_id"))
+        if execution.get("result") == "passed":
+            lines.append(
+                f"Unit tests: **reused from CI run `{run_id}` attempt "
+                f"`{clean_field(execution.get('run_attempt'))}`** for tree "
+                f"`{clean_field(execution.get('source_tree'))}`; no unit test ran locally."
+            )
+        else:
+            lines.append(
+                f"Unit tests: **not run** - CI run `{run_id}` was not reused and "
+                "the unit suite was not executed locally."
+            )
+        lines.append("")
+    lines.extend(
+        [
+            "| Step | Command | Status | Exit | Tests | Duration (s) | Note |",
+            "|---|---|---:|---:|---:|---:|---|",
+        ]
+    )
     steps = data.get("steps", [])[:MAX_VALIDATION_STEPS]
     for step in steps:
         if not isinstance(step, dict):

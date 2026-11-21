@@ -9,7 +9,11 @@ param(
     [string]$BaseRef,
     [string[]]$AuthorizedProtectedPath = @(),
     [ValidateRange(1, 4)]
-    [int]$Parallel
+    [int]$Parallel,
+    # HAMCP-365: a ci.yml run id whose unit-shard results stand in for the
+    # local unit suite (Evidence only). \z, unlike $, admits no final newline.
+    [ValidatePattern('^[1-9][0-9]{0,19}\z')]
+    [string]$ReuseCiRun
 )
 
 Set-StrictMode -Version Latest
@@ -31,7 +35,11 @@ $script:VersionCheckBaseSha = $null
 $script:GitIdentitySnapshot = $null
 $script:GitIdentityPaths = $null
 $previousGitCeilings = $env:GIT_CEILING_DIRECTORIES
-$script:UnitTestExecution = if ($Parallel) {
+$script:UnitTestExecution = if ($ReuseCiRun) {
+    # Not executed locally, whatever the reuse step decides.
+    [ordered]@{ mode = "reused_ci"; sharded = $true; executed = $false; run_id = $ReuseCiRun }
+}
+elseif ($Parallel) {
     [ordered]@{ mode = "sharded"; sharded = $true; workers = $Parallel; executed = $false }
 }
 else {
@@ -46,6 +54,12 @@ if ($Area -and $TestTarget) {
 }
 if ($Parallel -and $Tier -eq "Fast") {
     throw "-Parallel is supported only with -Tier Full or -Tier Evidence."
+}
+if ($ReuseCiRun -and $Tier -ne "Evidence") {
+    throw "-ReuseCiRun is supported only with -Tier Evidence."
+}
+if ($ReuseCiRun -and $Parallel) {
+    throw "Use either -ReuseCiRun or -Parallel, not both."
 }
 
 # HAMCP-356: an explicit -BaseRef always wins. Without one, the base is
@@ -275,6 +289,113 @@ function Invoke-ShardedUnitTestStep {
     else {
         $note = "$note; $($problems -join '; ')"
         Write-Host "Sharded unittest step failed: $($problems -join '; ')" -ForegroundColor Red
+    }
+    Add-Result -Name $label -Command $commandText -Status $status -ExitCode $exitCode -DurationSeconds $timer.Elapsed.TotalSeconds -TestCount $testCount -Note $note
+}
+
+function Invoke-ReusedUnitTestStep {
+    # HAMCP-365 opt-in (-ReuseCiRun): no unit test runs here. The helper
+    # accepts the named ci.yml run's shard results only for this exact head
+    # and tree (scripts/reuse_ci_unit_shards.py lists the checks); this step
+    # passes only when the helper exits 0 and its summary reports a passed
+    # reuse of that run, bound to the Evidence head and that head's tree.
+    $label = "Reuse CI unittest shard results"
+    # The sharded step's owned receipt directory and writer lock.
+    $relativeRunDirectory = ".artifacts/unit-test-shards/latest"
+    Write-Step $label
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    $problems = New-Object System.Collections.Generic.List[string]
+    $execution = [ordered]@{
+        mode = "reused_ci"
+        sharded = $true
+        executed = $false
+        run_id = $ReuseCiRun
+        result = "failed"
+        summary = "$relativeRunDirectory/summary.json"
+    }
+    $testCount = $null
+    $skipped = $null
+    $exitCode = 127
+    $commandText = "scripts/reuse_ci_unit_shards.py (not run)"
+    # Only OWNER/NAME is used or printed, never the origin URL.
+    $repository = Get-OriginRepository
+    if (-not $repository) {
+        $problems.Add("origin does not name a github.com OWNER/NAME repository; nothing was read from GitHub")
+    }
+    else {
+        $arguments = @(
+            "scripts/reuse_ci_unit_shards.py", "--repository", $repository, "--run-id", $ReuseCiRun, "--output-dir", $relativeRunDirectory, "--replace-output"
+        )
+        $commandText = Format-Command -Executable $PythonExecutable -Arguments $arguments
+        Write-Host $commandText
+        $output = @()
+        $previousErrorPreference = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = "Continue"
+            $output = @(& $PythonExecutable @arguments 2>&1 | ForEach-Object { "$_" })
+            $exitCode = $LASTEXITCODE
+        }
+        catch {
+            $output += $_.Exception.Message
+        }
+        finally {
+            $ErrorActionPreference = $previousErrorPreference
+        }
+        foreach ($line in $output) {
+            Write-Host $line
+        }
+        if ($exitCode -ne 0) {
+            $problems.Add("reuse helper exited $exitCode")
+        }
+        $summaryPath = Join-Path $RepoRoot "$relativeRunDirectory/summary.json"
+        try {
+            # A missing summary field throws under StrictMode, so it fails closed.
+            if (-not $script:ResolvedHeadSha) {
+                throw "the Evidence head is unknown"
+            }
+            $headTree = [string]((Invoke-GitRead -Arguments @("rev-parse", "--verify", "$($script:ResolvedHeadSha)^{tree}")) | Select-Object -First 1)
+            if (-not (Test-Path -LiteralPath $summaryPath -PathType Leaf)) {
+                throw "no reuse summary was written"
+            }
+            $summary = [IO.File]::ReadAllText($summaryPath) | ConvertFrom-Json
+            # Binding first, so a receipt left by another request never enters this record.
+            if ($summary.mode -cne "reused_ci" -or [string]$summary.run_id -cne $ReuseCiRun -or $summary.repository -cne $repository -or -not $headTree -or $summary.head_sha -cne $script:ResolvedHeadSha -or $summary.source_tree -cne $headTree) {
+                throw "reuse summary is not bound to CI run $ReuseCiRun, the Evidence head and its tree"
+            }
+            foreach ($field in @("run_attempt", "run_url", "event", "head_sha", "source_tree", "ci_source_sha", "shard_count", "general_shards", "serial_shards", "discovered_count", "discovered_sha256", "plan_sha256", "executed_tests", "skipped", "python_versions")) {
+                $execution[$field] = $summary.$field
+            }
+            if ($summary.result -cne "passed") {
+                throw "reuse summary result is $($summary.result)"
+            }
+            if ($null -eq $summary.executed_tests -or $null -eq $summary.skipped -or $null -eq $summary.discovered_count -or [int64]$summary.executed_tests -ne [int64]$summary.discovered_count) {
+                throw "reuse summary has no proven totals for every discovered test"
+            }
+            $testCount = [int]$summary.executed_tests
+            $skipped = [int]$summary.skipped
+        }
+        catch {
+            $problems.Add($_.Exception.Message)
+        }
+    }
+    $timer.Stop()
+    $status = if ($problems.Count -eq 0) { "passed" } else { "failed" }
+    if ($status -eq "failed") {
+        # A refused reuse proves no test result, so it claims no test count.
+        $testCount = $null
+        if ($exitCode -eq 0) {
+            $exitCode = 1
+        }
+    }
+    $execution.result = $status
+    $script:UnitTestExecution = $execution
+    $note = "reused CI run $ReuseCiRun; no unit test ran locally"
+    if ($status -eq "passed") {
+        $note = "skipped_tests=$skipped; reused CI run $ReuseCiRun attempt $($execution.run_attempt) shards=$($execution.shard_count) python=$(@($execution.python_versions) -join ','); no unit test ran locally"
+    }
+    else {
+        $note = "$note; $($problems -join '; ')"
+        Write-Host "Reused unittest step failed: $($problems -join '; ')" -ForegroundColor Red
     }
     Add-Result -Name $label -Command $commandText -Status $status -ExitCode $exitCode -DurationSeconds $timer.Elapsed.TotalSeconds -TestCount $testCount -Note $note
 }
@@ -954,7 +1075,7 @@ function Write-Evidence {
     catch {
         $workingTree = "unknown"
     }
-    $localGateStatus = if ($script:HadFailure) { "failed_locally" } else { "executed_locally" }
+    $localGateStatus = if ($script:HadFailure) { "failed_locally" } elseif ($ReuseCiRun) { "executed_locally_except_unit_suite" } else { "executed_locally" }
     $coverage = @(
         [ordered]@{ check = "full_local_gate"; status = $localGateStatus; evidence = "See recorded steps and overall_status." },
         [ordered]@{ check = "docker_image_build"; status = "delegated_to_ci"; evidence = ".github/workflows/ci.yml validate job" },
@@ -965,6 +1086,18 @@ function Write-Evidence {
         [ordered]@{ check = "provenance"; status = "delegated_to_ci"; evidence = ".github/workflows/ci.yml image build provenance assertion" },
         [ordered]@{ check = "deployment"; status = "not_applicable"; evidence = "This validation tier performs no deployment." }
     )
+    if ($ReuseCiRun) {
+        # HAMCP-365: the record says plainly that the unit suite did not run here.
+        # Indexing, unlike member access, reads a missing key as $null.
+        $reused = $script:UnitTestExecution
+        $unitSuite = if ($reused["result"] -eq "passed") {
+            [ordered]@{ check = "unit_test_suite"; status = "reused_from_ci"; evidence = "CI run $ReuseCiRun attempt $($reused["run_attempt"]) unit-test shard artifacts, proven for tree $($reused["source_tree"]) by scripts/reuse_ci_unit_shards.py; not executed locally" }
+        }
+        else {
+            [ordered]@{ check = "unit_test_suite"; status = "not_reused"; evidence = "CI run $ReuseCiRun was not reused and the unit suite was not executed locally." }
+        }
+        $coverage = @($coverage[0], $unitSuite) + $coverage[1..($coverage.Count - 1)]
+    }
     $payload = [ordered]@{
         schema_version = 2
         generated_at_utc = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", [Globalization.CultureInfo]::InvariantCulture)
@@ -1005,17 +1138,30 @@ function Write-Evidence {
     }
     $summary.Add("- Authorized protected paths: $authorizedPathText")
     $execution = $script:UnitTestExecution
-    $executionText = if ($execution.sharded) {
-        "sharded, $($execution.workers) worker(s)"
+    if ($execution.mode -eq "reused_ci") {
+        $executionText = if (-not $execution.Contains("result")) {
+            "reuse of CI run $($execution.run_id) not attempted; not executed locally"
+        }
+        elseif ($execution.result -eq "passed") {
+            "reused from CI run $($execution.run_id) attempt $($execution["run_attempt"]) ($($execution["shard_count"]) shards, tree $($execution["source_tree"])); not executed locally; result passed"
+        }
+        else {
+            "reuse of CI run $($execution.run_id) refused; not executed locally; result $($execution.result)"
+        }
     }
     else {
-        "single process"
-    }
-    if (-not $execution.executed) {
-        $executionText += " (not executed)"
-    }
-    elseif ($execution.sharded -and $execution.Contains("shard_count")) {
-        $executionText += ", $($execution.shard_count) shards, real-time shard(s) $(@($execution.serial_shards) -join ',') run serially; result $($execution.result)"
+        $executionText = if ($execution.sharded) {
+            "sharded, $($execution.workers) worker(s)"
+        }
+        else {
+            "single process"
+        }
+        if (-not $execution.executed) {
+            $executionText += " (not executed)"
+        }
+        elseif ($execution.sharded -and $execution.Contains("shard_count")) {
+            $executionText += ", $($execution.shard_count) shards, real-time shard(s) $(@($execution.serial_shards) -join ',') run serially; result $($execution.result)"
+        }
     }
     $summary.Add("- Unit test execution: $executionText")
     $summary.Add("")
@@ -1096,7 +1242,10 @@ try {
         Invoke-NativeStep -Label "Compile repository Python" -Executable $PythonExecutable -Arguments @(
             "-m", "compileall", "-q", "hass_mcp_admin", "hass_mcp_engineering_beta", "scripts", "tests"
         )
-        if ($Parallel) {
+        if ($ReuseCiRun) {
+            Invoke-ReusedUnitTestStep
+        }
+        elseif ($Parallel) {
             Invoke-ShardedUnitTestStep
         }
         else {

@@ -452,7 +452,9 @@ Every worker checks out the same event revision without overriding the ref.
 Source tests install the same declared dependencies in their own job; packaging
 uses its existing Docker builds. Generated registry comparison finishes inside
 the prerequisite job and requires no transfer to later workers. No built image
-or validation result is reused from another run.
+or validation result is reused from another run. Local Evidence can reuse a CI
+run's unit results (**Reusing CI unit-shard results** below); CI itself never
+does.
 
 ### Sharded unit discovery
 
@@ -565,6 +567,8 @@ Evidence keeps schema v2 and the same step names. It adds `unit_test_execution`:
 - Sharded runs also record the result, shard counts, run ID, proof digests and
   totals. They record the proof's `source_sha`, which must equal the Evidence
   head.
+- Reused runs (`-ReuseCiRun`) record `mode: reused_ci` and `executed: false`;
+  see **Reusing CI unit-shard results** below.
 
 Shard logs, manifests and `summary.json` use the fixed ignored
 `.artifacts/unit-test-shards/latest/` directory, replaced on each Full/Evidence
@@ -599,6 +603,76 @@ The full tier (schedule, `workflow_dispatch` and `workflow_call`) also
 regenerates the Beta 6 compatibility fixtures from their exact historical
 writer in `validate_prerequisites` and compares them byte-for-byte with the
 committed copies; pull requests rely on the committed fixtures and their tests.
+
+### Reusing CI unit-shard results (HAMCP-365)
+
+`check.ps1 -Tier Evidence -ReuseCiRun <run-id>` runs every other Evidence step
+locally but runs no unit test. In place of the unittest step,
+`Reuse CI unittest shard results` takes the unit-suite result from that
+`ci.yml` run. The option is opt-in; without it Evidence runs the suite as
+before. It is rejected on Fast and Full and beside `-Parallel`, and the run ID
+must be a decimal number of at most 20 digits with no leading zero. The
+repository is the `OWNER/NAME` of the `origin` remote, which must be on
+github.com, and `gh` must be signed in with read access to it. No write request
+is made.
+
+The step runs `scripts/reuse_ci_unit_shards.py`. It reads the run only through
+bounded GET requests (`scripts/github_retry.py`) and accepts it only when all
+of these hold:
+
+- the checkout is clean, and the run is a completed, successful `ci.yml` run of
+  this repository, not a fork, for exactly the Evidence head, with every shard
+  job and `validate_source` successful in its latest attempt;
+- each shard's artifact from that attempt is present and unexpired, matches the
+  digest and size GitHub records for it, and holds exactly one manifest;
+- `unit_test_shards.py aggregate --binding tree`, CI's own completeness proof,
+  accepts the manifests against this checkout: the same discovery and shard
+  plan, every discovered test executed exactly once and succeeding, and every
+  manifest naming the head's tree;
+- GitHub records the commit CI tested with the head's tree, and that commit is
+  the head or, for a pull-request run, GitHub's merge commit whose second
+  parent is the head; and
+- neither the run nor the checkout changed while the proof was made.
+
+Anything else is a refusal with a fixed category, such as
+`ci_artifact_expired` or `ci_proof_refused:shard_source_tree_mismatch`, and the
+step fails. No GitHub response text is printed. `check.ps1` then requires the
+summary to name the requested run, the origin repository, the Evidence head and
+its tree, with a passed result and totals for every discovered test. Otherwise
+the step fails and records no test count. A refusal never falls back to a local
+run: rerun Evidence without `-ReuseCiRun`.
+
+Binding is by tree because a pull-request run tests GitHub's merge commit, not
+the head. If the base has commits the head lacks, the merge tree differs and
+reuse refuses; merge the base into the branch and use the new head's CI run.
+Only runs whose manifests name their tree (written after HAMCP-365) can be
+reused; older runs refuse with `ci_proof_refused:shard_source_tree_missing`.
+`ci.yml` keeps the shard artifacts for 14 days.
+
+The reused result is CI job output read back from GitHub. It is trusted as CI
+output, not independently signed, and the Evidence record says it did not run
+locally:
+
+- `unit_test_execution` records `mode: reused_ci`, `executed: false`, the run ID
+  and the result. Once the summary is bound to the run, head and tree, it also
+  records the attempt, run URL, event, CI commit, shard counts, proof digests,
+  totals and Python versions.
+- The `unit_test_suite` coverage row is `reused_from_ci` or `not_reused`, and
+  the `full_local_gate` row is `executed_locally_except_unit_suite`, or
+  `failed_locally` when any step failed.
+- `scripts/pr-evidence.py` names the reused run and attempt, or says the unit
+  suite did not run.
+
+The receipt, the downloaded manifests and the proof log go to
+`.artifacts/unit-test-shards/latest/` under `latest.lock`, as a local sharded
+run's output does.
+
+CI is unchanged. Every pull request still runs the full suite, which remains
+the merge gate, and no workflow is path-filtered. Publication still validates
+its release source itself, and its rule that an equal tree does not transfer
+results to another commit (`scripts/publication_validation.py`) is unchanged.
+Whether a reused unit result satisfies a contract that requires Evidence is a
+separate owner decision; the pull request states which mode ran.
 
 ### Compatibility support window
 
