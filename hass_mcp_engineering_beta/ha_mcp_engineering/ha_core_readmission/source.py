@@ -299,11 +299,11 @@ def capability_evidence_for_probes(
                 "core.dashboard_metadata_operation",
                 # HAMCP-071 (dormant until signed in the November batch).
                 "core.scene_configuration_operation",
-                # HAMCP-290 Release 2.5.0 (dormant until signed).
+                # HAMCP-290 Release 2.5.0 (signed in seq 18 for 2026.11.0).
                 "core.marketplace_read",
                 # HAMCP-134 Release 2.6.0 (dormant until signed).
                 "core.security_metadata_read",
-                # HAMCP-297 Release 2.6.0 (dormant until signed).
+                # HAMCP-297 Release 2.6.0 (signed in seq 18 for 2026.11.0).
                 "core.device_configuration_entity_operation",
                 # HAMCP-329/298 Release 2.6.0 (dormant until signed).
                 "core.scene_create_delete_operation",

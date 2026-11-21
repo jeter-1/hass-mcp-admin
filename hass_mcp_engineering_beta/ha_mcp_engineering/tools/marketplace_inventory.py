@@ -1,7 +1,7 @@
 """Public installed-only Marketplace inventory read (HAMCP-290).
 
-The input boundary never reflects a refused value. The read is dormant until
-the owner-signed registry admits ``core.marketplace_read``.
+The input boundary never reflects a refused value. Owner-signed registry
+sequence 18 signs ``core.marketplace_read`` for Core 2026.11.0 only.
 """
 
 from typing import Annotated, Literal

@@ -13,9 +13,9 @@ claims of
    the retained owner-signed references for every carried Core release;
 2. an extended registry entry (the two new references, plus an unknown
    future reference) keeps every existing admission;
-3. the shipped reference set admits every existing capability exactly as
-   before, and only the new identities stay withheld (pending admission,
-   zero Home Assistant requests);
+3. an entry without the two new references (sequence 18 now signs both for
+   2026.11.0) admits every existing capability exactly as before and withholds
+   only the new identities (pending admission, zero Home Assistant requests);
 4. older Core releases never admit the new profiles from the extended
    registry, which extends only the 2026.11.0 entry;
 5. probe fingerprints are unchanged.
