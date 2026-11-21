@@ -347,6 +347,7 @@ __pycache__/
         python_executable: str | None = sys.executable,
         authorized_paths: tuple[str, ...] = (),
         parallel: str | None = None,
+        reuse_ci_run: str | None = None,
         env: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         # None omits -PythonExecutable or -BaseRef so check.ps1 uses its
@@ -374,6 +375,8 @@ __pycache__/
             invocation.extend(("-AuthorizedProtectedPath", f"@({path_array})"))
         if parallel is not None:
             invocation.extend(("-Parallel", parallel))
+        if reuse_ci_run is not None:
+            invocation.extend(("-ReuseCiRun", self.powershell_literal(reuse_ci_run)))
         arguments.extend(("-Command", " ".join(invocation)))
         return run(arguments, cwd=self.root, env=env, check=False)
 
@@ -1333,6 +1336,139 @@ class PrEvidenceTests(unittest.TestCase):
         self.assertFalse(output.exists())
         self.assertEqual(git(self.fixture.root, "status", "--porcelain"), "")
 
+    REUSE_RUN_ID = "123456789"
+
+    def reused_payload(self) -> dict:
+        # HAMCP-365: the record check.ps1 -ReuseCiRun writes after a passed reuse.
+        payload = self.validation_payload()
+        for step in payload["steps"]:
+            if step["name"] == "Run complete unittest suite":
+                step["name"] = "Reuse CI unittest shard results"
+                step["command"] = "fixture: Reuse CI unittest shard results"
+                step["note"] = "skipped_tests=1; reused CI run 123456789 attempt 2; no unit test ran locally"
+        payload["coverage"][0]["status"] = "executed_locally_except_unit_suite"
+        payload["coverage"].insert(
+            1, {"check": "unit_test_suite", "status": "reused_from_ci", "evidence": "fixture coverage"}
+        )
+        payload["unit_test_execution"] = {
+            "mode": "reused_ci",
+            "sharded": True,
+            "executed": False,
+            "run_id": self.REUSE_RUN_ID,
+            "result": "passed",
+            "run_attempt": 2,
+            "head_sha": payload["head_sha"],
+            "source_tree": git(self.fixture.root, "rev-parse", "HEAD^{tree}"),
+        }
+        return payload
+
+    def test_reused_unit_test_results_are_claimed_only_as_reused(self):
+        self.write_validation(self.validation_payload())
+        self.assertNotIn("Unit tests:", self.generate().read_text(encoding="utf-8"))
+        payload = self.reused_payload()
+        self.write_validation(payload)
+        text = self.generate().read_text(encoding="utf-8")
+        self.assertIn("Overall local status: **passed**", text)
+        tree = payload["unit_test_execution"]["source_tree"]
+        self.assertIn(
+            "Unit tests: **reused from CI run `123456789` attempt `2`** for tree "
+            f"`{tree}`; no unit test ran locally.\n",
+            text,
+        )
+        self.assertIn("full_local_gate: **executed_locally_except_unit_suite**", text)
+        self.assertIn("unit_test_suite: **reused_from_ci**", text)
+        self.assertIn("| Reuse CI unittest shard results |", text)
+        self.assertNotIn("Run complete unittest suite", text)
+
+    def test_inconsistent_unit_test_reuse_is_not_claimed(self):
+        def edit_execution(**changes):
+            def apply(payload):
+                payload["unit_test_execution"].update(changes)
+            return apply
+
+        def rename_step(payload):
+            for step in payload["steps"]:
+                if step["name"] == "Reuse CI unittest shard results":
+                    step["name"] = "Run complete unittest suite"
+
+        def drop_declaration(payload):
+            del payload["unit_test_execution"]
+
+        def drop_unit_row(payload):
+            del payload["coverage"][1]
+
+        base_sha = git(self.fixture.root, "rev-parse", "origin/main^{commit}")
+        cases = (
+            ("inconsistent unit-test reuse declaration", "a local unit-test run beside the reuse", rename_step),
+            ("inconsistent unit-test reuse declaration", "executed", edit_execution(executed=True)),
+            ("inconsistent unit-test reuse declaration", "executed null", edit_execution(executed=None)),
+            ("inconsistent unit-test reuse declaration", "integer run id", edit_execution(run_id=123456789)),
+            ("inconsistent unit-test reuse declaration", "run id with a newline", edit_execution(run_id="123456789\n")),
+            ("inconsistent unit-test reuse declaration", "leading zero", edit_execution(run_id="0123")),
+            ("inconsistent unit-test reuse declaration", "passed with a refused reuse", edit_execution(result="failed")),
+            ("inconsistent unit-test reuse declaration", "reuse step without a declaration", drop_declaration),
+            ("not bound to this head and its tree", "another head", edit_execution(head_sha=base_sha)),
+            ("not bound to this head and its tree", "another tree", edit_execution(source_tree="0" * 40)),
+            ("not bound to this head and its tree", "no tree", edit_execution(source_tree=None)),
+            ("incomplete passed Evidence coverage contract", "no unit-test row", drop_unit_row),
+        )
+        for reason, name, change in cases:
+            with self.subTest(name):
+                payload = self.reused_payload()
+                change(payload)
+                self.write_validation(payload)
+                text = self.generate().read_text(encoding="utf-8")
+                self.assertIn(reason, text)
+                self.assertIn("no local test result is claimed", text)
+                self.assertNotIn("Overall local status: **passed**", text)
+                self.assertNotIn("Unit tests:", text)
+        # A plain record cannot borrow the reuse coverage either.
+        payload = self.validation_payload()
+        payload["coverage"] = self.reused_payload()["coverage"]
+        self.write_validation(payload)
+        text = self.generate().read_text(encoding="utf-8")
+        self.assertIn("incomplete passed Evidence coverage contract", text)
+        self.assertNotIn("Overall local status: **passed**", text)
+
+    def test_failed_reuse_records_stay_visible_and_name_what_ran(self):
+        def failed(step_name, result, unit_status):
+            payload = self.reused_payload()
+            payload["overall_status"] = "failed"
+            for step in payload["steps"]:
+                if step["name"] == step_name:
+                    step.update(status="failed", exit_code=1, note="fixture failure")
+            payload["coverage"][0]["status"] = "failed_locally"
+            payload["coverage"][1]["status"] = unit_status
+            payload["unit_test_execution"]["result"] = result
+            return payload
+
+        refused = failed("Reuse CI unittest shard results", "failed", "not_reused")
+        self.write_validation(refused)
+        text = self.generate().read_text(encoding="utf-8")
+        self.assertIn("Overall local status: **failed**", text)
+        self.assertIn(
+            "Unit tests: **not run** - CI run `123456789` was not reused and the unit suite was not "
+            "executed locally.\n",
+            text,
+        )
+        self.assertNotIn("no local test result is claimed", text)
+
+        elsewhere = failed("Check Git whitespace", "passed", "reused_from_ci")
+        self.write_validation(elsewhere)
+        text = self.generate().read_text(encoding="utf-8")
+        self.assertIn("Overall local status: **failed**", text)
+        self.assertIn("Unit tests: **reused from CI run `123456789` attempt `2`**", text)
+
+        for name, payload in (
+            ("refused reuse claimed as reused", failed("Reuse CI unittest shard results", "failed", "reused_from_ci")),
+            ("passed reuse claimed as not reused", failed("Check Git whitespace", "passed", "not_reused")),
+        ):
+            with self.subTest(name):
+                self.write_validation(payload)
+                text = self.generate().read_text(encoding="utf-8")
+                self.assertIn("inconsistent failed Evidence coverage contract", text)
+                self.assertIn("no local test result is claimed", text)
+
 
 class PowerShellValidationTests(unittest.TestCase):
     def test_all_repository_powershell_parses(self):
@@ -1990,6 +2126,253 @@ class CheckScriptExecutionTests(unittest.TestCase):
         for tier, workers, message in cases:
             with self.subTest(tier=tier, workers=workers):
                 result = self.fixture.run_check(self.powershell, tier, parallel=workers)
+                output = self.output(result)
+                self.assertNotEqual(result.returncode, 0, output)
+                self.assertIn(message, output)
+                self.assertNotIn(REPOSITORY_CODE_SENTINEL, output)
+                self.assertNotIn("validation passed", output)
+
+    # HAMCP-365: -ReuseCiRun. A forged scripts/reuse_ci_unit_shards.py stands
+    # in for the real helper, so nothing here reads from GitHub. Its
+    # FIXTURE_REUSE_MODE selects the summary it writes.
+    REUSE_RUN_ID = "123456789"
+    REUSE_REPOSITORY = "fixture-owner/fixture-repo"
+    REUSE_STEP = "Reuse CI unittest shard results"
+    REUSE_HELPER = """import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+argv = sys.argv[1:]
+Path(".artifacts").mkdir(exist_ok=True)
+Path(".artifacts/fixture-reuse-argv.json").write_text(json.dumps(argv))
+mode = os.environ.get("FIXTURE_REUSE_MODE", "passed")
+
+
+def value(name):
+    return argv[argv.index(name) + 1]
+
+
+def rev(name):
+    return subprocess.run(["git", "rev-parse", name], check=True, capture_output=True, text=True).stdout.strip()
+
+
+summary = {
+    "schema_version": 1, "mode": "reused_ci", "result": "passed", "problems": [],
+    "repository": value("--repository"), "run_id": int(value("--run-id")), "run_attempt": 2,
+    "run_url": "https://github.com/fixture/actions/runs/1/attempts/2", "event": "pull_request",
+    "head_sha": rev("HEAD"), "source_tree": rev("HEAD^{tree}"), "ci_source_sha": "c" * 40,
+    "shard_count": 11, "general_shards": 10, "serial_shards": [10],
+    "discovered_count": 7, "discovered_sha256": "d" * 64, "plan_sha256": "e" * 64,
+    "outcomes": {"success": 6, "skipped": 1}, "executed_tests": 7, "skipped": 1,
+    "python_versions": ["3.12.14"], "artifacts": [],
+}
+if mode == "foreign-head":
+    summary["head_sha"] = rev("origin/main")
+elif mode == "foreign-tree":
+    summary["source_tree"] = rev("origin/main^{tree}")
+elif mode == "other-run":
+    summary["run_id"] += 1
+elif mode == "other-repository":
+    summary["repository"] = "fixture-owner/other-repo"
+elif mode == "upper-case-head":
+    summary["head_sha"] = summary["head_sha"].upper()
+elif mode == "failed-result":
+    summary.update(result="failed", problems=["fixture refusal"])
+elif mode == "missing-field":
+    del summary["executed_tests"]
+elif mode == "short-totals":
+    summary["executed_tests"] = 6
+if mode != "no-summary":
+    output = Path(value("--output-dir"))
+    output.mkdir(parents=True, exist_ok=True)
+    (output / "summary.json").write_text(json.dumps(summary))
+print("Summary: fixture reuse " + mode)
+raise SystemExit(3 if mode == "nonzero-exit" else 0)
+"""
+    # Any unit-suite run imports this module and leaves the marker behind.
+    REUSE_TRIPWIRE = """from pathlib import Path
+
+Path(".artifacts").mkdir(exist_ok=True)
+Path(".artifacts/fixture-unit-suite-imported").write_text("imported")
+"""
+
+    def prepare_reuse(self, *, origin: bool = True) -> None:
+        self.fixture.write("scripts/reuse_ci_unit_shards.py", self.REUSE_HELPER)
+        self.fixture.write("tests/test_reuse_tripwire.py", self.REUSE_TRIPWIRE)
+        self.fixture.commit("fixture reuse helper")
+        if origin:
+            git(self.fixture.root, "config", "remote.origin.url", f"https://github.com/{self.REUSE_REPOSITORY}.git")
+
+    def run_reuse(self, mode: str = "passed") -> subprocess.CompletedProcess[str]:
+        # Each run starts without a receipt, record or marker from an earlier one.
+        artifacts = self.fixture.root / ".artifacts"
+        shutil.rmtree(artifacts / "unit-test-shards", ignore_errors=True)
+        for name in ("validation.json", "fixture-reuse-argv.json", "fixture-unit-suite-imported"):
+            (artifacts / name).unlink(missing_ok=True)
+        environment = dict(os.environ, FIXTURE_REUSE_MODE=mode)
+        if os.name != "nt":
+            # check.ps1 reads nothing from GitHub itself: a gh first on PATH is never run.
+            if not hasattr(self, "gh_log"):
+                temporary = tempfile.TemporaryDirectory(prefix="codex-reuse-gh-")
+                self.addCleanup(temporary.cleanup)
+                gh = Path(temporary.name) / "gh"
+                gh.write_text('#!/bin/sh\necho "$@" >> "$FIXTURE_GH_LOG"\nexit 1\n', encoding="utf-8")
+                gh.chmod(0o755)
+                self.gh_log = Path(temporary.name) / "gh.log"
+            environment["PATH"] = str(self.gh_log.parent) + os.pathsep + environment.get("PATH", "")
+            environment["FIXTURE_GH_LOG"] = str(self.gh_log)
+        return self.fixture.run_check(self.powershell, "Evidence", reuse_ci_run=self.REUSE_RUN_ID, env=environment)
+
+    def reuse_step(self, payload: dict) -> dict:
+        return next(step for step in payload["steps"] if step["name"] == self.REUSE_STEP)
+
+    def pr_evidence_draft(self) -> str:
+        draft = self.fixture.root / ".artifacts" / "pr.md"
+        run([sys.executable, str(self.fixture.root / "scripts" / "pr-evidence.py"), "--repo-root",
+             str(self.fixture.root), "--base", "origin/main", "--head", "HEAD", "--output", str(draft)],
+            cwd=self.fixture.root)
+        return draft.read_text(encoding="utf-8")
+
+    def test_reuse_evidence_records_a_bound_ci_result_and_runs_no_unit_test(self):
+        self.prepare_reuse()
+        result = self.run_reuse()
+        output = self.output(result)
+        self.assertEqual(result.returncode, 0, output)
+        self.assertIn("Evidence validation passed", output)
+        self.assertNotRegex(output, r"Ran \d+ tests? in")
+        artifacts = self.fixture.root / ".artifacts"
+        self.assertFalse((artifacts / "fixture-unit-suite-imported").exists())
+        if os.name != "nt":
+            self.assertFalse(self.gh_log.exists())
+        self.assertEqual(
+            json.loads((artifacts / "fixture-reuse-argv.json").read_text(encoding="utf-8")),
+            ["--repository", self.REUSE_REPOSITORY, "--run-id", self.REUSE_RUN_ID,
+             "--output-dir", ".artifacts/unit-test-shards/latest", "--replace-output"],
+        )
+        payload = self.evidence_payload()
+        head = git(self.fixture.root, "rev-parse", "HEAD")
+        tree = git(self.fixture.root, "rev-parse", "HEAD^{tree}")
+        execution = payload["unit_test_execution"]
+        expected = {"mode": "reused_ci", "sharded": True, "executed": False, "run_id": self.REUSE_RUN_ID,
+                    "result": "passed", "run_attempt": 2, "head_sha": head, "source_tree": tree,
+                    "shard_count": 11, "executed_tests": 7, "skipped": 1,
+                    "summary": ".artifacts/unit-test-shards/latest/summary.json"}
+        self.assertEqual({key: execution[key] for key in expected}, expected)
+        self.assertNotIn("Run complete unittest suite", [step["name"] for step in payload["steps"]])
+        step = self.reuse_step(payload)
+        self.assertEqual((step["status"], step["exit_code"], step["test_count"]), ("passed", 0, 7))
+        self.assertEqual(
+            step["note"],
+            f"skipped_tests=1; reused CI run {self.REUSE_RUN_ID} attempt 2 shards=11 python=3.12.14; "
+            "no unit test ran locally",
+        )
+        self.assertEqual(
+            [(item["check"], item["status"]) for item in payload["coverage"][:2]],
+            [("full_local_gate", "executed_locally_except_unit_suite"), ("unit_test_suite", "reused_from_ci")],
+        )
+        markdown = (artifacts / "validation.md").read_text(encoding="utf-8")
+        self.assertIn(
+            f"- Unit test execution: reused from CI run {self.REUSE_RUN_ID} attempt 2 (11 shards, tree {tree}); "
+            "not executed locally; result passed\n",
+            markdown,
+        )
+        text = self.pr_evidence_draft()
+        self.assertNotIn("not accepted", text)
+        self.assertIn("Overall local status: **passed**", text)
+        self.assertIn(
+            f"Unit tests: **reused from CI run `{self.REUSE_RUN_ID}` attempt `2`** for tree `{tree}`; "
+            "no unit test ran locally.\n",
+            text,
+        )
+        self.assertNotIn("Run complete unittest suite", text)
+        # The tripwire is live: a real unit-suite run imports it.
+        run([sys.executable, "-m", "unittest", "discover", "-s", "tests"], cwd=self.fixture.root)
+        self.assertTrue((artifacts / "fixture-unit-suite-imported").exists())
+
+    def test_reuse_evidence_fails_closed_on_every_unproven_result(self):
+        self.prepare_reuse()
+        unbound = f"reuse summary is not bound to CI run {self.REUSE_RUN_ID}, the Evidence head and its tree"
+        cases = {
+            "foreign-head": unbound,
+            "foreign-tree": unbound,
+            "other-run": unbound,
+            "other-repository": unbound,
+            # PowerShell -ne ignores case; the binding compares exactly, as pr-evidence.py does.
+            "upper-case-head": unbound,
+            "failed-result": "reuse summary result is failed",
+            "nonzero-exit": "reuse helper exited 3",
+            "no-summary": "no reuse summary was written",
+            "missing-field": "'executed_tests'",
+            "short-totals": "reuse summary has no proven totals for every discovered test",
+        }
+        for mode, message in cases.items():
+            with self.subTest(mode):
+                result = self.run_reuse(mode)
+                output = self.output(result)
+                self.assertNotEqual(result.returncode, 0, output)
+                self.assertIn(f"Summary: fixture reuse {mode}", output)
+                self.assertIn(message, output)
+                self.assertNotIn("Evidence validation passed", output)
+                self.assertFalse((self.fixture.root / ".artifacts" / "fixture-unit-suite-imported").exists())
+                payload = self.evidence_payload()
+                self.assertEqual(payload["overall_status"], "failed")
+                step = self.reuse_step(payload)
+                self.assertEqual(step["status"], "failed")
+                self.assertNotEqual(step["exit_code"], 0)
+                self.assertEqual(step["test_count"], "unknown")
+                self.assertIn(message, step["note"])
+                execution = payload["unit_test_execution"]
+                self.assertEqual(
+                    (execution["mode"], execution["executed"], execution["result"]), ("reused_ci", False, "failed")
+                )
+                self.assertEqual(
+                    [(item["check"], item["status"]) for item in payload["coverage"][:2]],
+                    [("full_local_gate", "failed_locally"), ("unit_test_suite", "not_reused")],
+                )
+                if message == unbound:
+                    # Binding is checked before anything is copied from the summary.
+                    self.assertNotIn("run_attempt", execution)
+                if mode == "failed-result":
+                    text = self.pr_evidence_draft()
+                    self.assertIn("Overall local status: **failed**", text)
+                    self.assertIn(
+                        f"Unit tests: **not run** - CI run `{self.REUSE_RUN_ID}` was not reused and the unit "
+                        "suite was not executed locally.\n",
+                        text,
+                    )
+
+    def test_reuse_evidence_without_a_github_origin_runs_no_helper(self):
+        self.prepare_reuse(origin=False)
+        result = self.run_reuse()
+        output = self.output(result)
+        self.assertNotEqual(result.returncode, 0, output)
+        self.assertIn("origin does not name a github.com OWNER/NAME repository; nothing was read from GitHub", output)
+        self.assertFalse((self.fixture.root / ".artifacts" / "fixture-reuse-argv.json").exists())
+        payload = self.evidence_payload()
+        step = self.reuse_step(payload)
+        self.assertEqual(
+            (step["status"], step["exit_code"], step["command"]),
+            ("failed", 127, "scripts/reuse_ci_unit_shards.py (not run)"),
+        )
+        self.assertEqual(payload["unit_test_execution"]["result"], "failed")
+        self.assertEqual(payload["coverage"][1]["status"], "not_reused")
+
+    def test_reuse_is_rejected_outside_evidence_beside_parallel_and_for_a_malformed_run_id(self):
+        cases = [
+            ("Fast", self.REUSE_RUN_ID, None, "-ReuseCiRun is supported only with -Tier Evidence."),
+            ("Full", self.REUSE_RUN_ID, None, "-ReuseCiRun is supported only with -Tier Evidence."),
+            ("Evidence", self.REUSE_RUN_ID, "2", "Use either -ReuseCiRun or -Parallel, not both."),
+        ]
+        # An empty value is refused too, so it can never fall back to a local run.
+        cases += [
+            ("Evidence", value, None, "parameter 'ReuseCiRun'")
+            for value in ("", "0", "0123", "12a", "1" + "0" * 20, "12\n")
+        ]
+        for tier, run_id, parallel, message in cases:
+            with self.subTest(tier=tier, run_id=run_id, parallel=parallel):
+                result = self.fixture.run_check(self.powershell, tier, parallel=parallel, reuse_ci_run=run_id)
                 output = self.output(result)
                 self.assertNotEqual(result.returncode, 0, output)
                 self.assertIn(message, output)

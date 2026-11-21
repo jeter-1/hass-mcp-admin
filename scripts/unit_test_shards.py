@@ -185,6 +185,16 @@ def head(root):
     return value
 
 
+def tree(root):
+    try:
+        value = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD^{tree}"], check=True,
+                               stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=15).stdout.decode().strip()
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise Refusal("git_identity_unavailable") from exc
+    require(re.fullmatch(r"[0-9a-f]{40}", value), "invalid_tree")
+    return value
+
+
 def run_identity(env):
     run_id, attempt = env.get("GITHUB_RUN_ID", ""), env.get("GITHUB_RUN_ATTEMPT", "")
     require(re.fullmatch(r"[1-9][0-9]{0,19}", run_id) and re.fullmatch(r"[1-9][0-9]{0,19}", attempt),
@@ -391,6 +401,8 @@ def run_shard(root, shard, env, output):
     manifest = {
         "schema_version": 1,
         "source_sha": head(root),
+        # HAMCP-365: lets a later Evidence run bind these results to its own tree.
+        "source_tree": tree(root),
         "run_id": run_id,
         "run_attempt": attempt,
         "shard": shard,
@@ -410,13 +422,26 @@ def run_shard(root, shard, env, output):
     return manifest
 
 
-def verify(root, manifests, env):
-    """Refuse unless the manifests prove the full suite ran once and passed."""
+def verify(root, manifests, env, binding="commit"):
+    """Refuse unless the manifests prove the full suite ran once and passed.
 
+    With ``binding="commit"`` every manifest must name this checkout's HEAD
+    commit. ``binding="tree"`` (HAMCP-365: Evidence reusing a CI run's results)
+    instead requires every manifest to name this checkout's HEAD tree and one
+    common CI commit, which is returned as ``ci_source_sha``. A pull-request
+    run tests GitHub's merge commit, so its commit is never the head; the
+    caller must bind that commit to the head before relying on the result.
+    """
+
+    require(binding in ("commit", "tree"), "invalid_binding")
     cases = discover(root)
     ids, assignment, count, bound = identity(root, cases)
     run_id, attempt = run_identity(env)
-    commit = head(root)
+    if binding == "commit":
+        commit = head(root)
+    else:
+        local_tree = tree(root)
+        ci_sources = set()
     require(len(manifests) == count, "shard_manifest_count_mismatch")
     by_shard = {}
     for manifest in manifests:
@@ -424,7 +449,15 @@ def verify(root, manifests, env):
         shard = manifest.get("shard")
         require(type(shard) is int and 0 <= shard < count and shard not in by_shard, "shard_index_invalid_or_duplicate")
         by_shard[shard] = manifest
-        require(manifest.get("source_sha") == commit, "shard_source_mismatch")
+        if binding == "commit":
+            require(manifest.get("source_sha") == commit, "shard_source_mismatch")
+        else:
+            # Manifests written before HAMCP-365 name no tree and are never reused.
+            require("source_tree" in manifest, "shard_source_tree_missing")
+            require(manifest["source_tree"] == local_tree, "shard_source_tree_mismatch")
+            source = manifest.get("source_sha")
+            require(isinstance(source, str) and re.fullmatch(r"[0-9a-f]{40}", source), "shard_source_invalid")
+            ci_sources.add(source)
         require(manifest.get("run_id") == run_id and manifest.get("run_attempt") == attempt, "shard_run_mismatch")
         require(all(manifest.get(key) == value for key, value in bound.items()), "shard_discovery_or_plan_mismatch")
         expected = sorted(test_id for test_id in ids if assignment[test_id] == shard)
@@ -444,6 +477,10 @@ def verify(root, manifests, env):
     require(sorted(union) == ids, "shard_union_differs_from_discovery")
     outcomes = {outcome: sum(row[1] == outcome for manifest in manifests for row in manifest["executed"])
                 for outcome in sorted(SUCCESS_OUTCOMES)}
+    if binding == "tree":
+        require(len(ci_sources) == 1, "shard_source_mixed")
+        return {"result": "success", "binding": "tree", "ci_source_sha": next(iter(ci_sources)),
+                "source_tree": local_tree, "run_id": run_id, "run_attempt": attempt, "outcomes": outcomes, **bound}
     return {"result": "success", "source_sha": commit, "run_id": run_id, "run_attempt": attempt,
             "outcomes": outcomes, **bound}
 
@@ -469,6 +506,8 @@ def main():
     run.add_argument("--output", type=Path, required=True)
     aggregate = commands.add_parser("aggregate")
     aggregate.add_argument("--manifests", type=Path, required=True)
+    aggregate.add_argument("--binding", choices=("commit", "tree"), default="commit",
+                           help="bind the manifests to this checkout's HEAD commit (CI) or HEAD tree (HAMCP-365 reuse)")
     describe = commands.add_parser("describe", help="print the module plan for review")
     for command in (ceilings, count, run, aggregate, describe):
         command.add_argument("--repo-root", type=Path, default=Path.cwd())
@@ -495,7 +534,7 @@ def main():
             if not manifest["was_successful"]:
                 parser.exit(1, "Unit test shard did not succeed.\n")
         else:
-            summary = verify(args.repo_root, load_manifests(args.manifests), os.environ)
+            summary = verify(args.repo_root, load_manifests(args.manifests), os.environ, binding=args.binding)
             print(json.dumps(summary, sort_keys=True))
     except Refusal as exc:
         parser.exit(1, "Unit test shard validation refused: " + str(exc) + "\n")
