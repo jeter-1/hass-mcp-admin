@@ -393,6 +393,26 @@ class CreatedObjectMaskTests(unittest.TestCase):
                     self.assertDifference(committed, changes, classes, masks, path, changed, "masked_value")
                     self.assertDifference(committed, changes, classes, masks, path, resuffixed(changed), "masked_value")
 
+    def test_domain_case_only_change_fails(self):
+        for lane, classes, changes, masks, committed, masked in self.each():
+            for path in masked:
+                value = value_at(committed, path)
+                domain, name = value.split(".", 1)
+                for changed in (domain.capitalize() + "." + name, domain.upper() + "." + name):
+                    self.assertCaseOnly(value, changed)
+                    self.assertDifference(committed, changes, classes, masks, path, changed, "masked_value")
+                    self.assertDifference(committed, changes, classes, masks, path, resuffixed(changed), "masked_value")
+
+    def test_object_name_case_only_change_fails(self):
+        for lane, classes, changes, masks, committed, masked in self.each():
+            for path in masked:
+                value = value_at(committed, path)
+                domain, name = value.split(".", 1)
+                for changed in (value.replace("hamcp_g4_", "hamcp_G4_"), domain + "." + name[:-9].upper() + name[-9:]):
+                    self.assertCaseOnly(value, changed)
+                    self.assertDifference(committed, changes, classes, masks, path, changed, "masked_value")
+                    self.assertDifference(committed, changes, classes, masks, path, resuffixed(changed), "masked_value")
+
     def test_wrongly_shaped_suffix_fails(self):
         for lane, classes, changes, masks, committed, masked in self.each():
             for path in masked:
@@ -426,6 +446,11 @@ class CreatedObjectMaskTests(unittest.TestCase):
         self.assertFalse(result["equal"], (path, value))
         self.assertEqual([(item["path"], item["kind"]) for item in result["differences"]],
                          [(compare.pointer(path), kind)], value)
+
+    def assertCaseOnly(self, value, changed):
+        self.assertNotEqual(changed, value)
+        self.assertEqual(changed.lower(), value.lower())
+        self.assertEqual(changed[-9:], value[-9:])
 
 
 def value_at(receipt, path):
