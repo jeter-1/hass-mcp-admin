@@ -1,7 +1,7 @@
 {
   "committed_receipt": "docs/evidence/hamcp364/lane/created_helper_delete.json",
   "committed_receipt_sha256": "c54b261f7dd46baa80ee7805c9ec6983e22d5c5ee9202c5a7befc8577cade1bd",
-  "declaration_sha256": "b60052b36bc927c003cd2d27f3df66b7a56769402c2f0102f6a8468c11041f03",
+  "declaration_sha256": "5d0089392a2a8407b4722dcce1d9dd5c2d184062c55b34d8578c1ff7cc0bc792",
   "differences": [],
   "equal": true,
   "excluded_differences": {
@@ -54,6 +54,39 @@
         "path": "/host_admission/utc"
       }
     ],
+    "run_identity": [
+      {
+        "committed": "2026-11-14T03:54:08.611647+00:00",
+        "observed": "2026-11-21T04:04:19.754803+00:00",
+        "path": "/ended_utc"
+      },
+      {
+        "committed": "d84d8d9e69c4fff8481b018182a6b43f088aac7d",
+        "observed": "982e2bf36a70d422f2efaf7369876c73bff48c8b",
+        "path": "/engineering_source/commit"
+      },
+      {
+        "committed": "d84d8d9e69c4fff8481b018182a6b43f088aac7d",
+        "observed": "982e2bf36a70d422f2efaf7369876c73bff48c8b",
+        "path": "/source_commit"
+      },
+      {
+        "committed": "2026-11-14T03:53:43.125681+00:00",
+        "observed": "2026-11-21T04:03:53.340070+00:00",
+        "path": "/started_utc"
+      }
+    ]
+  },
+  "excluded_leaves": 15,
+  "expected_changes": [
+    {
+      "applied": true,
+      "path": "/engineering_source/runtime_tree"
+    }
+  ],
+  "harness": "scripts/core_created_object_local.py",
+  "lane": "created_helper_delete",
+  "masked_differences": {
     "lane_suffix": [
       {
         "committed": "input_boolean.hamcp_g4_toggle_fe3f9d89",
@@ -100,39 +133,9 @@
         "observed": "input_boolean.hamcp_g4_mixed_aa4f6e54",
         "path": "/scenarios/mixed_plan_undo/readback/entity_id"
       }
-    ],
-    "run_identity": [
-      {
-        "committed": "2026-11-14T03:54:08.611647+00:00",
-        "observed": "2026-11-21T04:04:19.754803+00:00",
-        "path": "/ended_utc"
-      },
-      {
-        "committed": "d84d8d9e69c4fff8481b018182a6b43f088aac7d",
-        "observed": "982e2bf36a70d422f2efaf7369876c73bff48c8b",
-        "path": "/engineering_source/commit"
-      },
-      {
-        "committed": "d84d8d9e69c4fff8481b018182a6b43f088aac7d",
-        "observed": "982e2bf36a70d422f2efaf7369876c73bff48c8b",
-        "path": "/source_commit"
-      },
-      {
-        "committed": "2026-11-14T03:53:43.125681+00:00",
-        "observed": "2026-11-21T04:03:53.340070+00:00",
-        "path": "/started_utc"
-      }
     ]
   },
-  "excluded_leaves": 27,
-  "expected_changes": [
-    {
-      "applied": true,
-      "path": "/engineering_source/runtime_tree"
-    }
-  ],
-  "harness": "scripts/core_created_object_local.py",
-  "lane": "created_helper_delete",
-  "model": "hamcp443-receipt-comparison-report-v1",
+  "masked_leaves": 9,
+  "model": "hamcp443-receipt-comparison-report-v2",
   "observed_receipt_sha256": "8904c23418745571b721e9ad21d9ba998b8b1f9824535481401f1c4ac00f01b3"
 }

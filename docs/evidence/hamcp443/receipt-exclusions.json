@@ -328,6 +328,29 @@
       "harness": "scripts/core_created_object_local.py",
       "committed_receipt": "docs/evidence/hamcp364/lane/scene_create_delete.json",
       "committed_receipt_sha256": "03fef43d9c787762def3786955733b801a5eadf5e428a8bfaab25e52c89b7b8e",
+      "suffix_masked": [
+        {
+          "class": "lane_suffix",
+          "reason": "Created object ids end in a per-run suffix, _ plus secrets.token_hex(4), so a rerun cannot collide with a prior object. Only that final _ and eight lowercase hex digits are masked: the rest of each id compares exactly, and an id without that ending fails. registry_entity_id is masked only where the object exists; after an undo it is null and compares exactly.",
+          "paths": [
+            [
+              "scenarios",
+              "*",
+              "readback",
+              "entity_id"
+            ],
+            [
+              "scenarios",
+              [
+                "scene_create",
+                "scene_recreate"
+              ],
+              "readback",
+              "registry_entity_id"
+            ]
+          ]
+        }
+      ],
       "excluded": [
         {
           "class": "run_identity",
@@ -359,21 +382,6 @@
           ]
         },
         {
-          "class": "lane_suffix",
-          "reason": "Created object ids end in a per-run suffix, secrets.token_hex(4), so a rerun cannot collide with a prior object.",
-          "paths": [
-            [
-              "scenarios",
-              "*",
-              "readback",
-              [
-                "entity_id",
-                "registry_entity_id"
-              ]
-            ]
-          ]
-        },
-        {
           "class": "derived_from_run_values",
           "reason": "SHA-256 digests over the read-back, which contains the suffixed object ids above.",
           "paths": [
@@ -393,7 +401,7 @@
           ],
           "committed": "19d9d13f07f67d7dedc6868e86d02bfd3120f2a3",
           "observed": "a2c1f448fff6e34cbb5c7fbcf9b3a323d39d6eb2",
-          "reason": "The committed receipt ran on d84d8d9e; release/2.9.0 at 9af0d7dc carries later runtime changes (hass_mcp_engineering_beta/ tree a2c1f448). 443-A changes no runtime file, so the branch tree equals the base's."
+          "reason": "The committed receipt ran on d84d8d9e (runtime tree 19d9d13f). The pin is the runtime tree (hass_mcp_engineering_beta/ha_mcp_engineering) at the receipt commit 982e2bf3, the same as 9af0d7dc's. This branch, after the ad9881be catch-up merge, has tree d91f1358; the difference is 5 files, comment and docstring changes only. A lane re-run at a later tree fails this pin by design, because this is a one-time proof of the refactor at 982e2bf3."
         }
       ]
     },
@@ -401,6 +409,30 @@
       "harness": "scripts/core_created_object_local.py",
       "committed_receipt": "docs/evidence/hamcp364/lane/created_helper_delete.json",
       "committed_receipt_sha256": "c54b261f7dd46baa80ee7805c9ec6983e22d5c5ee9202c5a7befc8577cade1bd",
+      "suffix_masked": [
+        {
+          "class": "lane_suffix",
+          "reason": "Created object ids end in a per-run suffix, _ plus secrets.token_hex(4), so a rerun cannot collide with a prior object. Only that final _ and eight lowercase hex digits are masked: the rest of each id compares exactly, and an id without that ending fails. registry_entity_id is masked only where the object exists; after an undo it is null and compares exactly.",
+          "paths": [
+            [
+              "scenarios",
+              "*",
+              "readback",
+              "entity_id"
+            ],
+            [
+              "scenarios",
+              [
+                "helper_create_input_boolean",
+                "helper_create_input_number",
+                "mixed_plan_create"
+              ],
+              "readback",
+              "registry_entity_id"
+            ]
+          ]
+        }
+      ],
       "excluded": [
         {
           "class": "run_identity",
@@ -432,21 +464,6 @@
           ]
         },
         {
-          "class": "lane_suffix",
-          "reason": "Created object ids end in a per-run suffix, secrets.token_hex(4), so a rerun cannot collide with a prior object.",
-          "paths": [
-            [
-              "scenarios",
-              "*",
-              "readback",
-              [
-                "entity_id",
-                "registry_entity_id"
-              ]
-            ]
-          ]
-        },
-        {
           "class": "derived_from_run_values",
           "reason": "SHA-256 digests over the read-back, which contains the suffixed object ids above.",
           "paths": [
@@ -466,7 +483,7 @@
           ],
           "committed": "19d9d13f07f67d7dedc6868e86d02bfd3120f2a3",
           "observed": "a2c1f448fff6e34cbb5c7fbcf9b3a323d39d6eb2",
-          "reason": "The committed receipt ran on d84d8d9e; release/2.9.0 at 9af0d7dc carries later runtime changes (hass_mcp_engineering_beta/ tree a2c1f448). 443-A changes no runtime file, so the branch tree equals the base's."
+          "reason": "The committed receipt ran on d84d8d9e (runtime tree 19d9d13f). The pin is the runtime tree (hass_mcp_engineering_beta/ha_mcp_engineering) at the receipt commit 982e2bf3, the same as 9af0d7dc's. This branch, after the ad9881be catch-up merge, has tree d91f1358; the difference is 5 files, comment and docstring changes only. A lane re-run at a later tree fails this pin by design, because this is a one-time proof of the refactor at 982e2bf3."
         }
       ]
     },

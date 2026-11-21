@@ -1,7 +1,7 @@
 {
   "committed_receipt": "docs/evidence/hamcp443/lane/helper_value.json",
   "committed_receipt_sha256": "ce3a227cf42d66f3843615df9993a77e57aab4f53af859cb0cc79b374adcd814",
-  "declaration_sha256": "b60052b36bc927c003cd2d27f3df66b7a56769402c2f0102f6a8468c11041f03",
+  "declaration_sha256": "5d0089392a2a8407b4722dcce1d9dd5c2d184062c55b34d8578c1ff7cc0bc792",
   "differences": [],
   "equal": true,
   "excluded_differences": {
@@ -44,6 +44,8 @@
   "expected_changes": [],
   "harness": "scripts/core_helper_value_local.py",
   "lane": "helper_value",
-  "model": "hamcp443-receipt-comparison-report-v1",
+  "masked_differences": {},
+  "masked_leaves": 0,
+  "model": "hamcp443-receipt-comparison-report-v2",
   "observed_receipt_sha256": "ba345359934fb286c46178e9cadd474bac29992f1d73c61aecc2286935426413"
 }

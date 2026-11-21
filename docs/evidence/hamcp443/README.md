@@ -11,7 +11,7 @@ review finding F7: byte-identical receipts are unattainable).
 
 | File | Purpose |
 |---|---|
-| `receipt-exclusions.json` | The declaration, committed before any lane runs: per lane, the committed receipt and its SHA-256, the leaves excluded from value equality, and the value changes the task expects. |
+| `receipt-exclusions.json` | The declaration, committed before any lane ran: per lane, the committed receipt and its SHA-256, the leaves excluded from value equality, the leaves compared with a per-run suffix masked, and the value changes the task expects. The correction batch tightened it after the runs (see **Correction batch after review r1**). |
 | `README.md` | This file. |
 | `lane/device_configuration_entity.json` | The device lane's receipt on ha-mcp 9.2.0 (D7), copied byte for byte. |
 | `lane/device_configuration_entity.comparison.json` | `compare_core_receipts.py` report for that receipt against hamcp366: equal. |
@@ -40,9 +40,10 @@ scriptbox (amd64), as `systemd-run --user` units with `MemoryMax=3G`,
 Both journals came from the registry branch's history and match the harness
 pins: seq 16 from registry commit `cf415e29`, seq 17 from `e486028e`.
 
-The D7 report's `declaration_sha256` (`af4be4ce…`) names the declaration as
-committed in `c94d66ce`, which held only the device lane. Step 3 added the
-other lanes afterwards, so the current file hashes differently.
+The D7 report as first committed (`5fbb8de1`) had `declaration_sha256`
+`af4be4ce…`, the declaration as committed in `c94d66ce`, which held only the
+device lane. Git history keeps that report. The correction batch regenerated
+it over the same receipt, so all nine reports name the current declaration.
 
 Device comparison: `equal: true`. Both D7 changes were applied. No leaf
 outside the declaration differed. Of the 189 excluded leaves, these differed:
@@ -66,6 +67,11 @@ types (`true` is not `1`, `1` is not `1.0`). Then:
 
 - A leaf that an exclusion pattern matches skips value equality only. Its
   differences are listed in the report under its class.
+- A leaf that a suffix mask matches is not excluded. Both values must be
+  strings ending in `_` and exactly eight lowercase hex digits, and everything
+  before that ending must be equal. A value without that ending fails
+  (`mask_shape`), and so does a different prefix (`masked_value`). Suffix-only
+  differences are listed in the report under the mask's class.
 - A declared expected change must hold exactly the declared committed value
   in the committed receipt and exactly the declared observed value in the new
   one. A stale baseline, an unchanged value or any other value fails.
@@ -77,9 +83,10 @@ difference outside the declaration is a STOP.
 A pattern is a list of segments. A string matches that dict key, a list of
 strings matches any one of them, `*` matches exactly one segment (a key or a
 list index) and `**` matches zero or more. A literal never matches a list
-index. Every pattern must match at least one leaf of the committed receipt, so
-a pattern cannot silently go stale. An expected change may not sit under an
-exclusion.
+index. Every exclusion and mask pattern must match at least one leaf of the
+committed receipt, so a pattern cannot silently go stale. An expected change
+may not sit under an exclusion or a mask, a leaf may not be both masked and
+excluded, and a class name may not be both.
 
 ## Device lane (`device_configuration_entity`)
 
@@ -121,16 +128,16 @@ compared, including all results, refusal codes, counts, send and dispatch
 counts, image digests, profile fingerprints and the journal, manifest and
 source-hash SHA-256s.
 
-| Lane | Committed receipt (SHA-256) | Leaves | Excluded | Extra classes | Expected changes |
-|---|---|---|---|---|---|
-| `helper_value` | `hamcp443/lane/helper_value.json` (`ce3a227c…d814`), the D7 9.2.0 run on `c94d66ce` | 123 | 8 | none | none |
-| `marketplace_read` | `hamcp290/lane/marketplace_read.json` (`a61da63c…1037`) | 100 | 10 | `public_store_snapshot` 2 | none |
-| `security_metadata` | `hamcp134/lane/security_metadata.json` (`5e9e0439…706a`) | 104 | 8 | none | none |
-| `scene_create_delete` | `hamcp364/lane/scene_create_delete.json` (`03fef43d…7b8e`) | 134 | 21 | `run_identity` +1, `lane_suffix` 8, `derived_from_run_values` 4 | `engineering_source.runtime_tree` |
-| `created_helper_delete` | `hamcp364/lane/created_helper_delete.json` (`c54b261f…e1bd`) | 181 | 27 | `run_identity` +1, `lane_suffix` 12, `derived_from_run_values` 6 | `engineering_source.runtime_tree` |
-| `thread_matter_topology` (A1) | `hamcp231/lane/thread_matter_topology.json` (`6cfb5217…7393`) | 74 | 8 | none | none |
-| `thread_matter_topology_a2` | `hamcp231/lane/thread_matter_topology_a2.json` (`f36d8c1a…f798`) | 111 | 10 | `docker_assigned` 2 | none |
-| `device_configuration_entity` | `hamcp366/device_configuration_entity.json` (`710a6aa1…f5dc`) | 933 | 189 | as above | the two D7 changes |
+| Lane | Committed receipt (SHA-256) | Leaves | Excluded | Masked | Extra classes | Expected changes |
+|---|---|---|---|---|---|---|
+| `helper_value` | `hamcp443/lane/helper_value.json` (`ce3a227c…d814`), the D7 9.2.0 run on `c94d66ce` | 123 | 8 | 0 | none | none |
+| `marketplace_read` | `hamcp290/lane/marketplace_read.json` (`a61da63c…1037`) | 100 | 10 | 0 | `public_store_snapshot` 2 | none |
+| `security_metadata` | `hamcp134/lane/security_metadata.json` (`5e9e0439…706a`) | 104 | 8 | 0 | none | none |
+| `scene_create_delete` | `hamcp364/lane/scene_create_delete.json` (`03fef43d…7b8e`) | 134 | 13 | 6 | `run_identity` +1, `derived_from_run_values` 4; mask `lane_suffix` 6 | `engineering_source.runtime_tree` |
+| `created_helper_delete` | `hamcp364/lane/created_helper_delete.json` (`c54b261f…e1bd`) | 181 | 15 | 9 | `run_identity` +1, `derived_from_run_values` 6; mask `lane_suffix` 9 | `engineering_source.runtime_tree` |
+| `thread_matter_topology` (A1) | `hamcp231/lane/thread_matter_topology.json` (`6cfb5217…7393`) | 74 | 8 | 0 | none | none |
+| `thread_matter_topology_a2` | `hamcp231/lane/thread_matter_topology_a2.json` (`f36d8c1a…f798`) | 111 | 10 | 0 | `docker_assigned` 2 | none |
+| `device_configuration_entity` | `hamcp366/device_configuration_entity.json` (`710a6aa1…f5dc`) | 933 | 189 | 0 | as above | the two D7 changes |
 
 - `public_store_snapshot` (marketplace): `store_records` and `store_sha256`.
   The disposable Core fetches the live public HACS store, so both move when
@@ -141,16 +148,29 @@ source-hash SHA-256s.
   reports both values.
 - `run_identity` +1 (created object): `engineering_source.commit` is the same
   commit as `source_commit`.
-- `lane_suffix` (created object): `scenarios.*.readback.entity_id` and
-  `registry_entity_id`. Created object ids end in a per-run
-  `secrets.token_hex(4)` so a rerun cannot collide with an earlier object.
-  The suffix appears in no other leaf.
+- `lane_suffix` (created object, suffix mask): `scenarios.*.readback.entity_id`,
+  and `readback.registry_entity_id` in the scenarios that create the object
+  (scene: `scene_create`, `scene_recreate`; helper:
+  `helper_create_input_boolean`, `helper_create_input_number`,
+  `mixed_plan_create`). Created object ids end in `_` plus a per-run
+  `secrets.token_hex(4)`, so a rerun cannot collide with an earlier object.
+  Only that final `_` and eight lowercase hex digits are masked: the domain and
+  object name compare exactly, and an id without that ending fails. After an
+  undo, `registry_entity_id` is `null` and compares exactly. The suffix
+  appears in no other leaf.
 - `derived_from_run_values` (created object): `scenarios.*.readback_fingerprint`,
   a SHA-256 over the read-back, which holds the suffixed ids.
 - `engineering_source.runtime_tree` (created object, expected change): the
-  committed receipts ran on `d84d8d9e` (tree `19d9d13f…`). `release/2.9.0`
-  at `9af0d7dc` carries later runtime changes (tree `a2c1f448…`). 443-A
-  changes no runtime file, so the branch's tree equals the base's.
+  committed receipts ran on `d84d8d9e` (tree `19d9d13f…`). The pinned
+  observed value, `a2c1f448…`, is the runtime tree
+  (`hass_mcp_engineering_beta/ha_mcp_engineering`) at the receipt commit
+  `982e2bf3`, the same as `9af0d7dc`'s. This branch, after the `ad9881be`
+  catch-up merge, has tree `d91f1358…`. The two trees differ in 5 of 400
+  files (`application.py`, `capabilities.py`,
+  `ha_core_readmission/profiles.py`, `ha_core_readmission/source.py`,
+  `tools/marketplace_inventory.py`), comment and docstring changes only. A
+  lane re-run at a later tree fails this pin by design, because this is a
+  one-time proof of the refactor at `982e2bf3`.
 - `docker_assigned` (A2): `lane_network.subnet` and `target_address`, the
   internal network's subnet and the Core's address in it. `lane_network.name`,
   `egress_probe.outcome` and every stub and topology count stay compared.
@@ -161,7 +181,7 @@ whose observed values a committed receipt cannot hold.
 
 ## Shared lane host runs
 
-All runs below used `982e2bf3` (a clean checkout with the declaration already committed) on scriptbox (amd64). Each ran
+All runs below used `982e2bf3` (a clean checkout with the declaration, then `b60052b3…`, already committed) on scriptbox (amd64). Each ran
 as a `systemd-run --user` unit with `MemoryMax=3G`, `OOMPolicy=continue` and `RuntimeMaxSec=3600`, one lane at a
 time, with `--mode local --pull never` and the same staged inputs as the D7 runs. After marketplace run 1, each
 lane on port 18123 started only once no socket remained on that port.
@@ -176,8 +196,8 @@ lane on port 18123 started only once no socket remained on that port.
 | `thread_matter_topology_a2` run 1 | `hamcp443-a2-host-982e2bf3` | 21:55:02, 0.9 s | not reached | refused at preflight (`a2_stub_file_set_mismatch`, see below) | none | none |
 | `thread_matter_topology_a2` run 2 | `hamcp443-a2-host2-982e2bf3` | 21:57:38 to 21:58:00 | load1 1.38, 11.48 GB, 0, 0 | `PASS`, clean; equal | `7c145f6e…21de` | `run_identity` 3, `host_admission` 3; `docker_assigned` 0 |
 | `security_metadata` | `hamcp443-security-host-982e2bf3` | 21:58:26 to 21:58:40 | load1 1.35, 11.36 GB, 0, 0 | `PASS`, clean; equal | `12939cc0…2bf7` | `run_identity` 3, `host_admission` 3 |
-| `scene_create_delete` | `hamcp443-scene-host-982e2bf3` | 22:02:28 to 22:02:50 | load1 1.32, 11.45 GB, 0, 0 | `PASS`, clean; equal; `runtime_tree` change applied | `b7a57bd7…aa83` | `run_identity` 4, `host_admission` 3, `lane_suffix` 6, `derived_from_run_values` 4 |
-| `created_helper_delete` | `hamcp443-createdhelper-host-982e2bf3` | 22:03:50 to 22:04:19 | load1 1.24, 11.42 GB, 0, 0 | `PASS`, clean; equal; `runtime_tree` change applied | `8904c234…01b3` | `run_identity` 4, `host_admission` 3, `lane_suffix` 9, `derived_from_run_values` 6 |
+| `scene_create_delete` | `hamcp443-scene-host-982e2bf3` | 22:02:28 to 22:02:50 | load1 1.32, 11.45 GB, 0, 0 | `PASS`, clean; equal; `runtime_tree` change applied | `b7a57bd7…aa83` | `run_identity` 4, `host_admission` 3, `derived_from_run_values` 4; masked `lane_suffix` 6 (suffix only) |
+| `created_helper_delete` | `hamcp443-createdhelper-host-982e2bf3` | 22:03:50 to 22:04:19 | load1 1.24, 11.42 GB, 0, 0 | `PASS`, clean; equal; `runtime_tree` change applied | `8904c234…01b3` | `run_identity` 4, `host_admission` 3, `derived_from_run_values` 6; masked `lane_suffix` 9 (suffix only) |
 
 Two runs were refused at preflight. Neither created a run directory, claimed a name or started a container, and
 neither produced a receipt:
@@ -204,5 +224,65 @@ device lane's last 43 s onward. Under the host-wide policy that is one other hea
 reported `other_heavy_jobs: 0` because it counts only Evidence `pwsh` processes and lane containers. Both counts were
 within limits: the policy allows at most 4 heavy jobs host-wide, and the harness refuses above 1.
 
-In the created-object lanes, the `lane_suffix` leaves that did not differ are the `registry_entity_id` read-backs
-after an undo. Those are `null` in both receipts, because the undo removed the object.
+The last column gives the regenerated reports (correction batch, below). In the created-object lanes, the
+`registry_entity_id` read-backs after an undo are `null` in both receipts, because the undo removed the object. Since
+the correction batch they compare exactly (scene 2 leaves, helper 3) instead of being excluded.
+
+## Correction batch after review r1
+
+Independent review r1 of PR #469 (Cursor) found that the created-object id leaves were excluded whole, so any id
+would compare equal (R1-01), and that the two `runtime_tree` reasons described the pin inexactly (R1-02). The
+architect's ruling set one correction batch. Editing the declaration after the runs is acceptable here only because
+the edits tighten it (R1-01) or change prose (R1-02).
+
+- **Comparator.** `compare_core_receipts.py` gained a separate `suffix_masked` class, described under **How the
+  comparison works**. It does not widen `excluded`. The report model is now
+  `hamcp443-receipt-comparison-report-v2`, which adds `masked_leaves` and `masked_differences`.
+- **Declaration.** Its SHA-256 went from `b60052b3…1f03` (as at `982e2bf3`, when the lanes ran) to
+  `5d008939…c792`. The diff is exactly two kinds of entry, both in the two created-object lanes:
+  - the id entries, which moved from `excluded` to `suffix_masked`, with `registry_entity_id` now masked only in the
+    create scenarios;
+  - the two `runtime_tree` reasons.
+
+  No other entry changed.
+- **Receipts.** No receipt was rerun or edited. The SHA-256 of every receipt file, recorded before and after the
+  regeneration, is unchanged:
+
+  | Receipt | SHA-256 |
+  |---|---|
+  | `hamcp443/host/created_helper_delete.json` | `8904c23418745571b721e9ad21d9ba998b8b1f9824535481401f1c4ac00f01b3` |
+  | `hamcp443/host/device_configuration_entity.json` | `eb3ce849675439be07475d6a0a6c1746f5ff62303f4c6dfe6d8c5819b9f3f55d` |
+  | `hamcp443/host/helper_value.json` | `ba345359934fb286c46178e9cadd474bac29992f1d73c61aecc2286935426413` |
+  | `hamcp443/host/marketplace_read.json` | `9ed0792e9649d85a4bbaf09024bebb1f0f95aa52878a264a0da667aa05361522` |
+  | `hamcp443/host/scene_create_delete.json` | `b7a57bd78080abcda502b60aa5a4820e1621afe801a5a865fcf1fa145defaa83` |
+  | `hamcp443/host/security_metadata.json` | `12939cc08c036b98b63afd3d589492ffa6d1064a385e621709235fb091962bf7` |
+  | `hamcp443/host/thread_matter_topology.json` | `c67841a5f6573981616b1104655282fc7c045184593392bd0100a631a07780c1` |
+  | `hamcp443/host/thread_matter_topology_a2.json` | `7c145f6e828d55ab699d3a133a606e5eed12f347f6779c84f0f5e4dc6ed221de` |
+  | `hamcp443/lane/device_configuration_entity.json` | `8a82f59203371cab270bff52d6be2be4973a553eb5d77d78c62be81a64450ac2` |
+  | `hamcp443/lane/helper_value.json` | `ce3a227cf42d66f3843615df9993a77e57aab4f53af859cb0cc79b374adcd814` |
+  | `hamcp134/lane/security_metadata.json` | `5e9e0439a40699d5d5e7a52368cf82790cde56dd0787b298b3dfde1810cb706a` |
+  | `hamcp231/lane/thread_matter_topology.json` | `6cfb52178627332beab4dc07a9ab34a641d12e93aec523a27fadb055cc2b7393` |
+  | `hamcp231/lane/thread_matter_topology_a2.json` | `f36d8c1a82e657de1dd82373eace0372f3ae31c2a1ee7e6fc50330f92913f798` |
+  | `hamcp290/lane/marketplace_read.json` | `a61da63ccedc9989a8c1a02c3cf4880f3323b3a539898c9aca080b937a781037` |
+  | `hamcp364/lane/created_helper_delete.json` | `c54b261f7dd46baa80ee7805c9ec6983e22d5c5ee9202c5a7befc8577cade1bd` |
+  | `hamcp364/lane/scene_create_delete.json` | `03fef43d9c787762def3786955733b801a5eadf5e428a8bfaab25e52c89b7b8e` |
+  | `hamcp366/device_configuration_entity.json` | `710a6aa172ded0dd168eef8b9784456081db0f3f888985ba17a742bc1071f5dc` |
+
+- **Reports.** First, the previous comparator and declaration were run again over the committed host receipts. They
+  reproduced all eight committed host reports byte for byte. Then the new comparator, over the same receipts,
+  regenerated all nine reports. Every one is `equal: true` with no differences, and every one names `5d008939…`:
+
+  | Report | Excluded | Masked (suffix differed) | Change from the previous report |
+  |---|---|---|---|
+  | `host/device_configuration_entity` | 189 | 0 | model and declaration hash only |
+  | `host/helper_value` | 8 | 0 | model and declaration hash only |
+  | `host/marketplace_read` | 10 | 0 | model and declaration hash only |
+  | `host/security_metadata` | 8 | 0 | model and declaration hash only |
+  | `host/scene_create_delete` | 13 | 6 (6) | the 6 `lane_suffix` differences move from excluded to masked; 21 to 13 excluded |
+  | `host/created_helper_delete` | 15 | 9 (9) | the 9 `lane_suffix` differences move from excluded to masked; 27 to 15 excluded |
+  | `host/thread_matter_topology` | 8 | 0 | model and declaration hash only |
+  | `host/thread_matter_topology_a2` | 10 | 0 | model and declaration hash only |
+  | `lane/device_configuration_entity` (D7) | 189 | 0 | model and declaration hash only (`af4be4ce…` before) |
+
+  The D7 report's device lane entry is identical in `af4be4ce…`, `b60052b3…` and `5d008939…`. Its excluded
+  differences, including the one `timing` leaf, are unchanged.

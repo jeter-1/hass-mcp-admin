@@ -1,7 +1,7 @@
 {
   "committed_receipt": "docs/evidence/hamcp366/device_configuration_entity.json",
   "committed_receipt_sha256": "710a6aa172ded0dd168eef8b9784456081db0f3f888985ba17a742bc1071f5dc",
-  "declaration_sha256": "b60052b36bc927c003cd2d27f3df66b7a56769402c2f0102f6a8468c11041f03",
+  "declaration_sha256": "5d0089392a2a8407b4722dcce1d9dd5c2d184062c55b34d8578c1ff7cc0bc792",
   "differences": [],
   "equal": true,
   "excluded_differences": {
@@ -821,6 +821,8 @@
   ],
   "harness": "scripts/core_device_configuration_local.py",
   "lane": "device_configuration_entity",
-  "model": "hamcp443-receipt-comparison-report-v1",
+  "masked_differences": {},
+  "masked_leaves": 0,
+  "model": "hamcp443-receipt-comparison-report-v2",
   "observed_receipt_sha256": "eb3ce849675439be07475d6a0a6c1746f5ff62303f4c6dfe6d8c5819b9f3f55d"
 }

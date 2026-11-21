@@ -1,7 +1,7 @@
 {
   "committed_receipt": "docs/evidence/hamcp231/lane/thread_matter_topology.json",
   "committed_receipt_sha256": "6cfb52178627332beab4dc07a9ab34a641d12e93aec523a27fadb055cc2b7393",
-  "declaration_sha256": "b60052b36bc927c003cd2d27f3df66b7a56769402c2f0102f6a8468c11041f03",
+  "declaration_sha256": "5d0089392a2a8407b4722dcce1d9dd5c2d184062c55b34d8578c1ff7cc0bc792",
   "differences": [],
   "equal": true,
   "excluded_differences": {
@@ -44,6 +44,8 @@
   "expected_changes": [],
   "harness": "scripts/core_thread_matter_topology_local.py",
   "lane": "thread_matter_topology",
-  "model": "hamcp443-receipt-comparison-report-v1",
+  "masked_differences": {},
+  "masked_leaves": 0,
+  "model": "hamcp443-receipt-comparison-report-v2",
   "observed_receipt_sha256": "c67841a5f6573981616b1104655282fc7c045184593392bd0100a631a07780c1"
 }

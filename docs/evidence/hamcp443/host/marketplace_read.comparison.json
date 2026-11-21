@@ -1,7 +1,7 @@
 {
   "committed_receipt": "docs/evidence/hamcp290/lane/marketplace_read.json",
   "committed_receipt_sha256": "a61da63ccedc9989a8c1a02c3cf4880f3323b3a539898c9aca080b937a781037",
-  "declaration_sha256": "b60052b36bc927c003cd2d27f3df66b7a56769402c2f0102f6a8468c11041f03",
+  "declaration_sha256": "5d0089392a2a8407b4722dcce1d9dd5c2d184062c55b34d8578c1ff7cc0bc792",
   "differences": [],
   "equal": true,
   "excluded_differences": {
@@ -56,6 +56,8 @@
   "expected_changes": [],
   "harness": "scripts/core_marketplace_read_local.py",
   "lane": "marketplace_read",
-  "model": "hamcp443-receipt-comparison-report-v1",
+  "masked_differences": {},
+  "masked_leaves": 0,
+  "model": "hamcp443-receipt-comparison-report-v2",
   "observed_receipt_sha256": "9ed0792e9649d85a4bbaf09024bebb1f0f95aa52878a264a0da667aa05361522"
 }

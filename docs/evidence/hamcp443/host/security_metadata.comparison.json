@@ -1,7 +1,7 @@
 {
   "committed_receipt": "docs/evidence/hamcp134/lane/security_metadata.json",
   "committed_receipt_sha256": "5e9e0439a40699d5d5e7a52368cf82790cde56dd0787b298b3dfde1810cb706a",
-  "declaration_sha256": "b60052b36bc927c003cd2d27f3df66b7a56769402c2f0102f6a8468c11041f03",
+  "declaration_sha256": "5d0089392a2a8407b4722dcce1d9dd5c2d184062c55b34d8578c1ff7cc0bc792",
   "differences": [],
   "equal": true,
   "excluded_differences": {
@@ -44,6 +44,8 @@
   "expected_changes": [],
   "harness": "scripts/core_security_metadata_local.py",
   "lane": "security_metadata",
-  "model": "hamcp443-receipt-comparison-report-v1",
+  "masked_differences": {},
+  "masked_leaves": 0,
+  "model": "hamcp443-receipt-comparison-report-v2",
   "observed_receipt_sha256": "12939cc08c036b98b63afd3d589492ffa6d1064a385e621709235fb091962bf7"
 }

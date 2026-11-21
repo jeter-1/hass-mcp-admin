@@ -7,6 +7,11 @@ type is compared everywhere. Only a leaf that a declared exclusion pattern
 matches skips value equality, and only a declared expected change may hold a
 different value; any other difference fails the comparison.
 
+A leaf that a declared suffix mask matches is neither excluded nor compared
+raw: both values must be strings ending in ``_`` and exactly eight lowercase
+hex digits (a per-run ``secrets.token_hex(4)``), and everything before that
+ending must be equal. A value without that ending fails the comparison.
+
 Patterns are lists of segments. A string matches that dict key, a list of
 strings matches any of them, ``*`` matches one segment and ``**`` zero or more.
 """
@@ -18,15 +23,18 @@ import hashlib
 import json
 import math
 from pathlib import Path
+import re
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 DECLARATION = ROOT / "docs/evidence/hamcp443/receipt-exclusions.json"
 MODEL = "hamcp443-receipt-comparison-v1"
-REPORT_MODEL = "hamcp443-receipt-comparison-report-v1"
+REPORT_MODEL = "hamcp443-receipt-comparison-report-v2"
 LANE_KEYS = {"harness", "committed_receipt", "committed_receipt_sha256", "excluded", "expected_changes"}
+OPTIONAL_LANE_KEYS = {"suffix_masked"}
 CLASS_KEYS = {"class", "reason", "paths"}
 CHANGE_KEYS = {"path", "committed", "observed", "reason"}
+SUFFIX = re.compile(r"_[0-9a-f]{8}\Z")
 
 
 class Refusal(Exception):
@@ -126,18 +134,26 @@ def lane_declaration(declaration, lane):
     if not isinstance(lanes, dict) or lane not in lanes:
         raise Refusal("lane_not_declared")
     entry = lanes[lane]
-    if not isinstance(entry, dict) or set(entry) != LANE_KEYS:
+    if not isinstance(entry, dict) or not LANE_KEYS <= set(entry) <= LANE_KEYS | OPTIONAL_LANE_KEYS:
         raise Refusal("lane_shape")
-    classes, names = [], set()
-    if not isinstance(entry["excluded"], list):
-        raise Refusal("lane_shape")
-    for item in entry["excluded"]:
-        if (not isinstance(item, dict) or set(item) != CLASS_KEYS or not isinstance(item["class"], str)
-                or not item["class"] or item["class"] in names or not isinstance(item["reason"], str)
-                or not item["reason"] or not isinstance(item["paths"], list) or not item["paths"]):
-            raise Refusal("exclusion_class_shape")
-        names.add(item["class"])
-        classes.append((item["class"], tuple(_pattern(path) for path in item["paths"])))
+    names = set()
+
+    def declared(key, refusal):
+        items = entry.get(key, [])
+        if not isinstance(items, list):
+            raise Refusal("lane_shape")
+        result = []
+        for item in items:
+            if (not isinstance(item, dict) or set(item) != CLASS_KEYS or not isinstance(item["class"], str)
+                    or not item["class"] or item["class"] in names or not isinstance(item["reason"], str)
+                    or not item["reason"] or not isinstance(item["paths"], list) or not item["paths"]):
+                raise Refusal(refusal)
+            names.add(item["class"])
+            result.append((item["class"], tuple(_pattern(path) for path in item["paths"])))
+        return result
+
+    classes = declared("excluded", "exclusion_class_shape")
+    masks = declared("suffix_masked", "suffix_mask_shape")
     changes = {}
     if not isinstance(entry["expected_changes"], list):
         raise Refusal("lane_shape")
@@ -153,7 +169,9 @@ def lane_declaration(declaration, lane):
     for path in changes:
         if any(matches(pattern, path) for _, patterns in classes for pattern in patterns):
             raise Refusal("expected_change_excluded")
-    return entry, classes, changes
+        if any(matches(pattern, path) for _, patterns in masks for pattern in patterns):
+            raise Refusal("expected_change_masked")
+    return entry, classes, changes, masks
 
 
 def exclusion_class(classes, path):
@@ -163,17 +181,24 @@ def exclusion_class(classes, path):
     return None
 
 
-def compare(committed, observed, classes, changes):
+def unmasked(value):
+    """The value without its per-run suffix, or None when it does not end in exactly that suffix."""
+    if isinstance(value, str) and SUFFIX.search(value):
+        return value[:-9]
+    return None
+
+
+def compare(committed, observed, classes, changes, masks=()):
     """Return the comparison report body for two parsed receipts."""
-    unused = [pointer(pattern) for _, patterns in classes for pattern in patterns
+    unused = [pointer(pattern) for _, patterns in (*classes, *masks) for pattern in patterns
               if not any(matches(pattern, path) for path, _ in leaves(committed))]
     if unused:
         raise Refusal("exclusion_pattern_unused: " + ", ".join(unused))
-    differences, excluded, seen, applied = [], {}, set(), set()
-    excluded_leaves = 0
+    differences, excluded, masked, seen, applied = [], {}, {}, set(), set()
+    excluded_leaves = masked_leaves = 0
 
     def walk(left, right, path):
-        nonlocal excluded_leaves
+        nonlocal excluded_leaves, masked_leaves
         if path in changes:
             seen.add(path)
             before, after = changes[path]
@@ -204,8 +229,19 @@ def compare(committed, observed, classes, changes):
             for index, (a, b) in enumerate(zip(left, right)):
                 walk(a, b, path + (index,))
             return
-        name = exclusion_class(classes, path)
-        if name is not None:
+        name, mask = exclusion_class(classes, path), exclusion_class(masks, path)
+        if name is not None and mask is not None:
+            raise Refusal("masked_and_excluded: " + pointer(path))
+        if mask is not None:
+            masked_leaves += 1
+            before, after = unmasked(left), unmasked(right)
+            if before is None or after is None:
+                differences.append({"path": pointer(path), "kind": "mask_shape", "committed": left, "observed": right})
+            elif before != after:
+                differences.append({"path": pointer(path), "kind": "masked_value", "committed": left, "observed": right})
+            elif left != right:
+                masked.setdefault(mask, []).append({"path": pointer(path), "committed": left, "observed": right})
+        elif name is not None:
             excluded_leaves += 1
             if not same(left, right):
                 excluded.setdefault(name, []).append({"path": pointer(path), "committed": left, "observed": right})
@@ -219,12 +255,14 @@ def compare(committed, observed, classes, changes):
     return {"equal": not differences, "differences": differences,
             "expected_changes": [{"path": pointer(path), "applied": path in applied} for path in changes],
             "excluded_leaves": excluded_leaves,
-            "excluded_differences": {name: excluded[name] for name, _ in classes if name in excluded}}
+            "excluded_differences": {name: excluded[name] for name, _ in classes if name in excluded},
+            "masked_leaves": masked_leaves,
+            "masked_differences": {name: masked[name] for name, _ in masks if name in masked}}
 
 
 def run(lane, observed_path, declaration_path=DECLARATION, root=ROOT):
     declaration_bytes = Path(declaration_path).read_bytes()
-    entry, classes, changes = lane_declaration(load_json(declaration_bytes), lane)
+    entry, classes, changes, masks = lane_declaration(load_json(declaration_bytes), lane)
     if not isinstance(entry["harness"], str) or not (root / entry["harness"]).is_file():
         raise Refusal("harness_not_found")
     if not isinstance(entry["committed_receipt"], str):
@@ -233,7 +271,7 @@ def run(lane, observed_path, declaration_path=DECLARATION, root=ROOT):
     if sha256(committed_bytes) != entry["committed_receipt_sha256"]:
         raise Refusal("committed_receipt_sha256_mismatch")
     observed_bytes = Path(observed_path).read_bytes()
-    body = compare(load_json(committed_bytes), load_json(observed_bytes), classes, changes)
+    body = compare(load_json(committed_bytes), load_json(observed_bytes), classes, changes, masks)
     return {"model": REPORT_MODEL, "lane": lane, "harness": entry["harness"],
             "declaration_sha256": sha256(declaration_bytes),
             "committed_receipt": entry["committed_receipt"], "committed_receipt_sha256": sha256(committed_bytes),
