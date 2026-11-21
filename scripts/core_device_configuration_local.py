@@ -354,7 +354,8 @@ async def exercise(run_dir, entry, core_image, upstream_image, run_id, memory, s
     with diagnostics.check("container_start", "upstream_start"):
         await acceptance.stub_ready(control)
     result = await acceptance.run(configured, entry, run_dir, stub_url=control, stub_hashes={
-        key: stub_hashes[key] for key in ("stub_sha256", "entry_sha256", "dump_hashes")})
+        key: stub_hashes[key] for key in ("stub_sha256", "entry_sha256", "dump_hashes")},
+        upstream_version=REVIEWED_CORE_BINDINGS[VERSION].child_consumer)
     return {**result, "images": identities}
 
 

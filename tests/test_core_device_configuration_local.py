@@ -38,9 +38,11 @@ import core_device_configuration_local as lane  # noqa: E402
 import device_configuration_contract_acceptance as acceptance  # noqa: E402
 import lane_failure_diagnostics as diagnostics  # noqa: E402
 import lane_session as shared  # noqa: E402
+import real_ha_contract_tests as harness  # noqa: E402
 import test_hamcp297_device_configuration as offline  # noqa: E402
 import core_release_evidence  # noqa: E402
 from core_release_evidence import groups, manifest, passing_subset  # noqa: E402
+from ha_mcp_engineering.clients import ha_mcp_endpoint  # noqa: E402
 from ha_mcp_engineering.clients.paths import rest_path  # noqa: E402
 from ha_mcp_engineering.configuration import Settings  # noqa: E402
 from ha_mcp_engineering.device_configuration.contracts import (  # noqa: E402
@@ -124,7 +126,21 @@ LANE_SUBNET = {"Subnet": "172.30.5.0/24", "Gateway": "172.30.5.1"}
 STUB_ADDRESS = "172.30.5.3"
 
 
-def settings(ha_url=acceptance.CORE_URL, upstream=acceptance.UPSTREAM_URL, token=TOKEN):
+# HAMCP-443 D7: the reviewed ha-mcp child for the lane's Core, and the child URL the
+# harness's own settings() builds for it from the environment the lane sets.
+CHILD_CONSUMER = lane.REVIEWED_CORE_BINDINGS[lane.VERSION].child_consumer
+
+
+def harness_upstream(version=CHILD_CONSUMER):
+    with patch.multiple(harness, HA_URL=acceptance.CORE_URL, UPSTREAM_IMAGE="synthetic-image",
+                        UPSTREAM_VERSION=version, UPSTREAM_PORT=lane.UPSTREAM_PORT):
+        return harness.settings(TOKEN).upstream_dashboard_mcp_url
+
+
+UPSTREAM = harness_upstream()
+
+
+def settings(ha_url=acceptance.CORE_URL, upstream=UPSTREAM, token=TOKEN):
     return Settings(ha_url=ha_url, ha_token=token, access_secret="synthetic-secret", port=8100,
                     audit_path="unused", rate_limit_per_minute=120, rate_limit_burst=25,
                     destructive_services=frozenset(), upstream_dashboard_mcp_url=upstream)
@@ -356,6 +372,7 @@ class Contracts(unittest.TestCase):
         self.assertEqual(acceptance.CORE_API_URL, acceptance.CORE_URL + "/api")
         self.assertEqual(settings().websocket_url, acceptance.CORE_WS_URL)
         self.assertEqual(f"http://127.0.0.1:{lane.UPSTREAM_PORT}/beta23-real-ha-mcp", acceptance.UPSTREAM_URL)
+        self.assertEqual(f"http://127.0.0.1:{lane.UPSTREAM_PORT}/beta23-real-ha-mcp/catalog/full", UPSTREAM)
         self.assertEqual(f"http://127.0.0.1:{lane.STUB_PORT}/_lane/control", acceptance.STUB_CONTROL_URL)
         self.assertEqual(lane.STUB_ALIAS, acceptance.STUB_ALIAS)
         self.assertEqual(f"ws://{lane.STUB_ALIAS}:{lane.STUB_CONTAINER_PORT}/ws", acceptance.MATTER_URL)
@@ -1367,7 +1384,8 @@ class Exercise(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.order[0], "upstream")
         self.assertEqual(self.order[1], ("stub_ready", acceptance.STUB_CONTROL_URL))
         self.assertEqual(self.order[2][0], "run")
-        self.assertEqual(self.order[2][1], {"stub_url": acceptance.STUB_CONTROL_URL, "stub_hashes": RECEIPT_STUB})
+        self.assertEqual(self.order[2][1], {"stub_url": acceptance.STUB_CONTROL_URL, "stub_hashes": RECEIPT_STUB,
+                                            "upstream_version": "9.2.0"})
         self.assertEqual(set(result["images"]), {lane.CORE, lane.UPSTREAM, lane.STUB})
         self.assertEqual(result["images"][lane.STUB]["image"], "core@sha256:a")
 
@@ -1479,11 +1497,11 @@ class UrlGuards(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(transport.untouched())
 
     def test_a_str_subclass_equal_to_the_upstream_constant_is_refused(self):
-        configured = settings(upstream=Text(acceptance.UPSTREAM_URL))
+        configured = settings(upstream=Text(UPSTREAM))
         self.assertIs(type(configured.upstream_dashboard_mcp_url), Text)
-        self.assertEqual(configured.upstream_dashboard_mcp_url, acceptance.UPSTREAM_URL)
+        self.assertEqual(configured.upstream_dashboard_mcp_url, UPSTREAM)
         with self.assertRaises(ValueError) as caught:
-            acceptance.pinned_upstream(configured)
+            acceptance.pinned_upstream(configured, CHILD_CONSUMER)
         self.assert_code(caught, "upstream_url_not_pinned")
 
     async def test_a_str_subclass_equal_to_the_stub_constant_is_refused_before_a_session(self):
@@ -1499,11 +1517,12 @@ class UrlGuards(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(transport.untouched())
 
     def test_any_upstream_url_but_the_constant_is_refused(self):
-        for url in url_cases(acceptance.UPSTREAM_URL):
-            with self.subTest(url=url):
-                with self.assertRaises(ValueError) as caught:
-                    acceptance.pinned_upstream(settings(upstream=url))
-                self.assert_code(caught, "upstream_url_not_pinned")
+        for version, pinned in ((CHILD_CONSUMER, UPSTREAM), ("8.5.0", acceptance.UPSTREAM_URL)):
+            for url in url_cases(pinned):
+                with self.subTest(version=version, url=url):
+                    with self.assertRaises(ValueError) as caught:
+                        acceptance.pinned_upstream(settings(upstream=url), version)
+                    self.assert_code(caught, "upstream_url_not_pinned")
 
     async def test_any_stub_url_but_the_constant_is_refused_before_a_session(self):
         for url in url_cases(acceptance.STUB_CONTROL_URL) + ["http://127.0.0.1:18299/control",
@@ -1521,7 +1540,8 @@ class UrlGuards(unittest.IsolatedAsyncioTestCase):
     def test_refusal_text_carries_neither_url_nor_token(self):
         url = "http://user:synthetic-password@127.0.0.1:18297@evil.example/api?k=synthetic-query"
         attempts = ((acceptance.RawCore, (settings(ha_url=url),)), (acceptance.LaneWebSocket, (settings(ha_url=url),)),
-                    (acceptance.pinned_upstream, (settings(upstream=url),)), (acceptance.StubControl, (url,)))
+                    (acceptance.pinned_upstream, (settings(upstream=url), CHILD_CONSUMER)),
+                    (acceptance.StubControl, (url,)))
         for build, args in attempts:
             with self.subTest(build=build.__name__), NoTransport():
                 with self.assertRaises(ValueError) as caught:
@@ -1536,7 +1556,7 @@ class UrlGuards(unittest.IsolatedAsyncioTestCase):
         safe = acceptance.pinned(configured)
         self.assertEqual((safe.ha_url, safe.api_url, safe.websocket_url),
                          (acceptance.CORE_URL, acceptance.CORE_API_URL, acceptance.CORE_WS_URL))
-        self.assertEqual(acceptance.pinned_upstream(safe).upstream_dashboard_mcp_url, acceptance.UPSTREAM_URL)
+        self.assertEqual(acceptance.pinned_upstream(safe, CHILD_CONSUMER).upstream_dashboard_mcp_url, UPSTREAM)
         with NoTransport() as transport:
             acceptance.LaneWebSocket(configured)
             acceptance.LaneRest(configured)
@@ -3193,19 +3213,99 @@ class StubEntry(unittest.IsolatedAsyncioTestCase):
         self.assertEqual({text: readme.count(text) for text in stated}, stated)
 
 
+class StrictFullUpstreamForm(unittest.TestCase):
+    """HAMCP-443 D7: the lane admits its loopback child only in the form Engineering admits for that ha-mcp release."""
+
+    STRICT = UPSTREAM
+    BARE = "http://127.0.0.1:18298/beta23-real-ha-mcp"
+
+    def refuse(self, url, version):
+        with self.assertRaises(ValueError) as caught:
+            acceptance.pinned_upstream(settings(upstream=url), version)
+        self.assertEqual(caught.exception.args, ("upstream_url_not_pinned",))
+
+    def test_the_reviewed_child_is_a_strict_release_and_the_harness_builds_the_strict_form(self):
+        self.assertEqual(CHILD_CONSUMER, "9.2.0")
+        self.assertIn(CHILD_CONSUMER, ha_mcp_endpoint.STRICT_FULL_SELECTOR_RELEASES)
+        self.assertEqual(self.STRICT, "http://127.0.0.1:18298/beta23-real-ha-mcp/catalog/full")
+        self.assertEqual(ha_mcp_endpoint.classify_endpoint_form(self.STRICT), ha_mcp_endpoint.STRICT_FULL)
+        self.assertEqual(ha_mcp_endpoint.classify_endpoint_form(self.BARE), ha_mcp_endpoint.LEGACY)
+        self.assertEqual(settings().upstream_dashboard_mcp_url, self.STRICT)
+
+    def test_the_strict_form_is_accepted_for_a_strict_release(self):
+        self.assertEqual(acceptance.upstream_url("9.2.0"), self.STRICT)
+        for version in sorted(ha_mcp_endpoint.STRICT_FULL_SELECTOR_RELEASES):
+            with self.subTest(version=version):
+                safe = acceptance.pinned_upstream(settings(upstream=self.STRICT), version)
+                self.assertEqual(safe.upstream_dashboard_mcp_url, self.STRICT)
+                self.assertIs(type(safe.upstream_dashboard_mcp_url), str)
+
+    def test_the_bare_form_is_refused_for_a_strict_release(self):
+        for version in sorted(ha_mcp_endpoint.STRICT_FULL_SELECTOR_RELEASES):
+            with self.subTest(version=version):
+                self.refuse(self.BARE, version)
+
+    def test_the_strict_form_is_refused_for_a_release_that_is_not_strict(self):
+        for version in ("8.5.0", "8.2.0", "9.0.0", "9.2.1", "9.2", " 9.2.0", "9.2.0 ", "9.2.0\n", ""):
+            with self.subTest(version=version):
+                self.assertNotIn(version, ha_mcp_endpoint.STRICT_FULL_SELECTOR_RELEASES)
+                self.refuse(self.STRICT, version)
+                self.assertEqual(acceptance.pinned_upstream(settings(upstream=self.BARE), version)
+                                 .upstream_dashboard_mcp_url, self.BARE)
+
+    def test_a_version_that_is_not_exactly_a_str_is_refused_for_either_form(self):
+        for version in (None, Text("9.2.0"), b"9.2.0", ("9.2.0",), ["9.2.0"], 920, 9.2, True,
+                        frozenset({"9.2.0"})):
+            for url in (self.STRICT, self.BARE):
+                with self.subTest(version=version, url=url):
+                    self.refuse(url, version)
+
+    def test_the_harness_settings_from_the_lanes_own_environment_are_accepted(self):
+        """The D7 defect end to end: a fresh harness import under exactly the variables the lane sets."""
+        probe = (
+            "import json, sys\n"
+            f"sys.path[:0] = {[str(ROOT / 'scripts'), str(ROOT / 'hass_mcp_engineering_beta')]!r}\n"
+            "import real_ha_contract_tests as harness\n"
+            "import device_configuration_contract_acceptance as acceptance\n"
+            "configured = harness.settings('synthetic-token-7f3a')\n"
+            "safe = acceptance.pinned_upstream(acceptance.pinned(configured), sys.argv[1])\n"
+            "print(json.dumps([configured.upstream_dashboard_mcp_url, safe.upstream_dashboard_mcp_url]))\n"
+        )
+        environment = {key: value for key, value in os.environ.items()
+                       if not key.startswith(("REAL_HA_", "HA_CONTRACT_", "CORE_EVIDENCE_"))}
+        # The lane's own values for the four variables settings() reads (core_device_configuration_local.main).
+        environment.update(REAL_HA_URL=f"http://127.0.0.1:{lane.CORE_PORT}", REAL_HA_UPSTREAM_IMAGE="up@sha256:b",
+                           REAL_HA_UPSTREAM_VERSION=lane.REVIEWED_CORE_BINDINGS[lane.VERSION].child_consumer,
+                           REAL_HA_UPSTREAM_PORT=str(lane.UPSTREAM_PORT))
+        with tempfile.TemporaryDirectory() as directory:
+            done = subprocess.run([sys.executable, "-I", "-c", probe, CHILD_CONSUMER], cwd=directory,
+                                  env=environment, capture_output=True, text=True, timeout=120)
+        self.assertEqual(done.returncode, 0, done.stderr[-2000:])
+        self.assertEqual(json.loads(done.stdout), [self.STRICT, self.STRICT])
+
+    def test_the_lane_passes_the_reviewed_child_and_sets_the_same_child_for_the_harness(self):
+        source = Path(lane.__file__).read_text(encoding="utf-8")
+        self.assertEqual(source.count("upstream_version=REVIEWED_CORE_BINDINGS[VERSION].child_consumer)"), 1)
+        self.assertEqual(source.count("REAL_HA_UPSTREAM_VERSION=REVIEWED_CORE_BINDINGS[VERSION].child_consumer"), 1)
+
+    def test_the_release_set_and_the_suffix_are_engineerings_own_objects(self):
+        self.assertIs(acceptance.STRICT_FULL_SELECTOR_RELEASES, ha_mcp_endpoint.STRICT_FULL_SELECTOR_RELEASES)
+        self.assertIs(acceptance.EXPECTED_SELECTOR_SUFFIX, ha_mcp_endpoint.EXPECTED_SELECTOR_SUFFIX)
+
+
 class AcceptanceFailurePreservation(unittest.IsolatedAsyncioTestCase):
     """run() fails closed before any key, authority, client or request."""
 
     ENTRY = {"version": "2026.11.0", "capabilities": [{"capability_id": f"core.synthetic_{n}"} for n in range(32)]}
 
-    async def refused(self, configured, stub_url, error, entry=None):
+    async def refused(self, configured, stub_url, error, entry=None, version=CHILD_CONSUMER):
         with tempfile.TemporaryDirectory() as directory, diagnostics.lane(lane.GROUP), NoTransport() as transport, \
                 patch.object(acceptance.Ed25519PrivateKey, "generate") as key, \
                 patch.object(acceptance, "CoreRuntime") as runtime, \
                 patch.object(acceptance, "DeviceConfigurationService") as service:
             with self.assertRaises(error) as caught:
                 await acceptance.run(configured, entry or self.ENTRY, Path(directory), stub_url=stub_url,
-                                     stub_hashes=RECEIPT_STUB)
+                                     stub_hashes=RECEIPT_STUB, upstream_version=version)
             runtime.assert_not_called()
             service.assert_not_called()
             transport.session.assert_not_called()
@@ -3218,6 +3318,8 @@ class AcceptanceFailurePreservation(unittest.IsolatedAsyncioTestCase):
                  (settings(upstream="http://127.0.0.1:18086/beta23-real-ha-mcp"), acceptance.STUB_CONTROL_URL,
                   "upstream_url_not_pinned"),
                  (settings(upstream=""), acceptance.STUB_CONTROL_URL, "upstream_url_not_pinned"),
+                 (settings(upstream=acceptance.UPSTREAM_URL), acceptance.STUB_CONTROL_URL,
+                  "upstream_url_not_pinned"),
                  (settings(), "http://127.0.0.1:18299/control", "stub_url_not_pinned"),
                  (settings(), "http://hamcp366-matter-stub:5580/_lane/control", "stub_url_not_pinned"))
         for configured, stub_url, code in cases:
@@ -3250,7 +3352,7 @@ class AcceptanceFailurePreservation(unittest.IsolatedAsyncioTestCase):
                     patch.object(acceptance, "CoreRuntime") as runtime:
                 with self.assertRaises(AssertionError):
                     await acceptance.run(settings(), self.ENTRY, Path(directory), stub_url=acceptance.STUB_CONTROL_URL,
-                                         stub_hashes=RECEIPT_STUB)
+                                         stub_hashes=RECEIPT_STUB, upstream_version=CHILD_CONSUMER)
                 runtime.assert_not_called()
                 requests = [event for event in events if event[0] == "request"]
                 self.assertEqual([(event[1], event[2]) for event in requests], [("GET", acceptance.STUB_CONTROL_URL)])
@@ -3274,6 +3376,7 @@ class LaneSourceShape(unittest.TestCase):
         "from alarmo_inspection_contract_acceptance import close_disposable_authority",
         "from prepare_core_release_registry import prepare_candidate, sign_candidate",
         "from ha_mcp_engineering.clients import HomeAssistantRestClient, HomeAssistantWebSocketClient",
+        "from ha_mcp_engineering.clients.ha_mcp_endpoint import EXPECTED_SELECTOR_SUFFIX, STRICT_FULL_SELECTOR_RELEASES",
         "from ha_mcp_engineering.clients.paths import Route, rest_path",
         "from ha_mcp_engineering.clients.rest import ExpectedHttpStatus",
         "from ha_mcp_engineering.device_configuration.contracts import ALLOWLIST, DeviceConfigurationRefusal,"
@@ -3601,8 +3704,8 @@ class LaneSourceShape(unittest.TestCase):
             ("STUB_CONTROL_URL", "StubControl.__init__", "url != STUB_CONTROL_URL"),
             ("STUB_CONTROL_URL", "StubControl._request",
              "session.request(method, STUB_CONTROL_URL, allow_redirects=False, **options)"),
-            ("UPSTREAM_URL", "pinned_upstream", "url != UPSTREAM_URL"),
-            ("UPSTREAM_URL", "pinned_upstream", "upstream_dashboard_mcp_url=UPSTREAM_URL"),
+            ("UPSTREAM_URL", "upstream_url", "UPSTREAM_URL + EXPECTED_SELECTOR_SUFFIX"),
+            ("UPSTREAM_URL", "upstream_url", "return UPSTREAM_URL"),
         ]))
         # The two statements that assign from an expression holding a constant bind the
         # closed route table and a reply, not an address.
@@ -3611,6 +3714,25 @@ class LaneSourceShape(unittest.TestCase):
                  and getattr(node, "value", None) is not None and names_in(node.value) & set(self.URLS)]
         self.assertEqual([(node.where, [ast.unparse(target) for target in getattr(node, "targets", [None])])
                           for node in bound], [("", ["RAW_REST"]), ("run", ["(status, flow)"])])
+
+    def test_the_strict_release_set_and_suffix_are_imported_never_copied(self):
+        """HAMCP-443 D7: no name, literal or read of the release set or the suffix but the one import and ``upstream_url``."""
+        watched = {"STRICT_FULL_SELECTOR_RELEASES", "EXPECTED_SELECTOR_SUFFIX"}
+        self.assertEqual([(node.where, node.id) for node in self.nodes
+                          if isinstance(node, ast.Name) and node.id in watched and not isinstance(node.ctx, ast.Load)],
+                         [])
+        self.assertEqual([node.arg for node in self.nodes if isinstance(node, ast.arg) and node.arg in watched], [])
+        self.assertEqual(sorted((node.where, node.id) for node in self.nodes
+                                if isinstance(node, ast.Name) and node.id in watched),
+                         [("upstream_url", "EXPECTED_SELECTOR_SUFFIX"), ("upstream_url", "STRICT_FULL_SELECTOR_RELEASES")])
+        bound = [ast.unparse(node) for node in self.nodes if isinstance(node, (ast.Import, ast.ImportFrom))
+                 and {alias.asname or alias.name for alias in node.names} & watched]
+        self.assertEqual(bound, ["from ha_mcp_engineering.clients.ha_mcp_endpoint import EXPECTED_SELECTOR_SUFFIX,"
+                                 " STRICT_FULL_SELECTOR_RELEASES"])
+        literals = [node.value for node in self.nodes if isinstance(node, ast.Constant) and isinstance(node.value, str)
+                    and (node.value in ha_mcp_endpoint.STRICT_FULL_SELECTOR_RELEASES or "catalog" in node.value
+                         or re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", node.value))]
+        self.assertEqual(literals, [])
 
     def test_the_import_statements_are_exactly_the_reviewed_list(self):
         """Every import is a top-level statement on the reviewed list; the module does not import itself."""
