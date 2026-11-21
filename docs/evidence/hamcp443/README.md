@@ -19,8 +19,7 @@ review finding F7: byte-identical receipts are unattainable).
 | `host/<lane>.json` | Each lane's receipt from the shared lane host (D2/D5), copied byte for byte. |
 | `host/<lane>.comparison.json` | `compare_core_receipts.py` report for that receipt against the lane's committed receipt. |
 
-New receipts and comparison reports are added here as the lanes run. Only
-receipt JSON and comparison reports are committed. Run directories, container
+Only receipt JSON and comparison reports are committed. Run directories, container
 logs and host files never are: a container log can hold the disposable Core's
 admin token.
 
@@ -114,8 +113,8 @@ names since HAMCP-437 I2b (`ci/support-window.yaml`).
 
 ## Shared lane host lanes (step 3)
 
-Each lane is re-run once on the shared lane host and compared with its
-committed receipt. Every lane excludes `run_identity` (`source_commit`,
+Each lane is re-run on the shared lane host and compared with its
+committed receipt (runs below). Every lane excludes `run_identity` (`source_commit`,
 `started_utc`, `ended_utc`) and `host_admission` (the five admission
 readings). Anything a lane adds is listed below; every other leaf is
 compared, including all results, refusal codes, counts, send and dispatch
@@ -159,3 +158,51 @@ source-hash SHA-256s.
 A self-check of each declaration against its own committed receipt passes:
 no pattern is unused, and the only differences are the expected-change paths,
 whose observed values a committed receipt cannot hold.
+
+## Shared lane host runs
+
+All runs below used `982e2bf3` (a clean checkout with the declaration already committed) on scriptbox (amd64). Each ran
+as a `systemd-run --user` unit with `MemoryMax=3G`, `OOMPolicy=continue` and `RuntimeMaxSec=3600`, one lane at a
+time, with `--mode local --pull never` and the same staged inputs as the D7 runs. After marketplace run 1, each
+lane on port 18123 started only once no socket remained on that port.
+
+| Lane | Unit | Central time, 2026-11-20 | Harness admission (load1, available, other heavy jobs, containers) | Result | Receipt SHA-256 | Excluded leaves that differed |
+|---|---|---|---|---|---|---|
+| `device_configuration_entity` | `hamcp443-devcfg-host-982e2bf3` | 21:39:19 to 21:43:47 | load1 0.46, 11.69 GB, 0, 0 | `PASS`, clean; equal; both D7 changes applied | `eb3ce849…f55d` | `run_identity` 3, `host_admission` 3, `core_run_ids` 54, `engineering_task_ids` 20, `core_timestamps` 42, `derived_from_run_values` 36; `timing` 0 |
+| `helper_value` | `hamcp443-helper-host-982e2bf3` | 21:45:44 to 21:47:11 | load1 1.34, 11.49 GB, 0, 0 | `PASS`, clean; equal | `ba345359…6413` | `run_identity` 3, `host_admission` 3 |
+| `marketplace_read` run 1 | `hamcp443-marketplace-host-982e2bf3` | 21:47:46, 2.4 s | not reached | refused at preflight (`OSError`, see below) | none | none |
+| `thread_matter_topology` (A1) | `hamcp443-a1-host-982e2bf3` | 21:52:01 to 21:52:17 | load1 3.46, 11.36 GB, 0, 0 | `PASS`, clean; equal | `c67841a5…80c1` | `run_identity` 3, `host_admission` 3 |
+| `marketplace_read` run 2 | `hamcp443-marketplace-host2-982e2bf3` | 21:52:56 to 21:53:22 | load1 2.10, 11.44 GB, 0, 0 | `PASS`, clean; equal | `9ed0792e…1522` | `run_identity` 3, `host_admission` 3, `public_store_snapshot` 2 (`store_records` 6415 to 6903; `store_sha256` `5566c816…` to `802ca902…`) |
+| `thread_matter_topology_a2` run 1 | `hamcp443-a2-host-982e2bf3` | 21:55:02, 0.9 s | not reached | refused at preflight (`a2_stub_file_set_mismatch`, see below) | none | none |
+| `thread_matter_topology_a2` run 2 | `hamcp443-a2-host2-982e2bf3` | 21:57:38 to 21:58:00 | load1 1.38, 11.48 GB, 0, 0 | `PASS`, clean; equal | `7c145f6e…21de` | `run_identity` 3, `host_admission` 3; `docker_assigned` 0 |
+| `security_metadata` | `hamcp443-security-host-982e2bf3` | 21:58:26 to 21:58:40 | load1 1.35, 11.36 GB, 0, 0 | `PASS`, clean; equal | `12939cc0…2bf7` | `run_identity` 3, `host_admission` 3 |
+| `scene_create_delete` | `hamcp443-scene-host-982e2bf3` | 22:02:28 to 22:02:50 | load1 1.32, 11.45 GB, 0, 0 | `PASS`, clean; equal; `runtime_tree` change applied | `b7a57bd7…aa83` | `run_identity` 4, `host_admission` 3, `lane_suffix` 6, `derived_from_run_values` 4 |
+| `created_helper_delete` | `hamcp443-createdhelper-host-982e2bf3` | 22:03:50 to 22:04:19 | load1 1.24, 11.42 GB, 0, 0 | `PASS`, clean; equal; `runtime_tree` change applied | `8904c234…01b3` | `run_identity` 4, `host_admission` 3, `lane_suffix` 9, `derived_from_run_values` 6 |
+
+Two runs were refused at preflight. Neither created a run directory, claimed a name or started a container, and
+neither produced a receipt:
+
+- **`marketplace_read` run 1** (`hamcp443-marketplace-host-982e2bf3`, 21:47:46) raised `OSError` after 2.4 s:
+  `require_free_ports` could not bind 127.0.0.1:18123. The helper lane's teardown 39 s earlier had left
+  server-side `TIME_WAIT` sockets on that port. The bind sets no `SO_REUSEADDR`, which is the same as the base
+  harness on `9af0d7dc`. The mechanism was confirmed afterwards:
+  - after A1, 17 sockets remained in `TIME_WAIT` on 18124, and a test bind failed with `EADDRINUSE`;
+  - after each later 18123 lane, 19 to 61 such sockets remained.
+
+  Run 2 started once the port was clear and passed.
+- **`thread_matter_topology_a2` run 1** (`hamcp443-a2-host-982e2bf3`, 21:55:02) refused
+  `a2_stub_file_set_mismatch` after 0.9 s. The committed stub directory held an extra, git-ignored
+  `__pycache__/stub.cpython-312.pyc`. Earlier test runs that import `stub.py` had written it. `verify_stub` is
+  unchanged from base, and it binds the exact file set. The ignored cache was removed, and run 2 passed against
+  the committed directory's 7 files.
+
+Both refusals' diagnostics label the lane `"helper_value"`. That is the pre-existing fallback label for a failure
+outside a lane context (`lane_failure_diagnostics.py`, unchanged).
+
+The orchestrator's `hamcp437-i2d-fast3` unit (a Fast check, started 21:43:04) ran alongside every run from the
+device lane's last 43 s onward. Under the host-wide policy that is one other heavy job. The harness's own admission
+reported `other_heavy_jobs: 0` because it counts only Evidence `pwsh` processes and lane containers. Both counts were
+within limits: the policy allows at most 4 heavy jobs host-wide, and the harness refuses above 1.
+
+In the created-object lanes, the `lane_suffix` leaves that did not differ are the `registry_entity_id` read-backs
+after an undo. Those are `null` in both receipts, because the undo removed the object.
