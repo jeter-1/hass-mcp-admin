@@ -1,0 +1,116 @@
+{
+  "committed_receipt": "docs/evidence/hamcp364/lane/scene_create_delete.json",
+  "committed_receipt_sha256": "03fef43d9c787762def3786955733b801a5eadf5e428a8bfaab25e52c89b7b8e",
+  "declaration_sha256": "5d0089392a2a8407b4722dcce1d9dd5c2d184062c55b34d8578c1ff7cc0bc792",
+  "differences": [],
+  "equal": true,
+  "excluded_differences": {
+    "derived_from_run_values": [
+      {
+        "committed": "sha256:5633cbd992aa28d028538da7417723c5182357ea170b34ce0bec3ea4046e496c",
+        "observed": "sha256:b29a678c0bd601b4f89ba9875f04714508fdc215f1a5318634a8d02fc4b793e8",
+        "path": "/scenarios/scene_create/readback_fingerprint"
+      },
+      {
+        "committed": "sha256:5633cbd992aa28d028538da7417723c5182357ea170b34ce0bec3ea4046e496c",
+        "observed": "sha256:b29a678c0bd601b4f89ba9875f04714508fdc215f1a5318634a8d02fc4b793e8",
+        "path": "/scenarios/scene_recreate/readback_fingerprint"
+      },
+      {
+        "committed": "sha256:3a77a90af3a559302016e934d84992d6227ad0f90339240452642e55cc2fb1fc",
+        "observed": "sha256:c88376041fa9d08e22284ac0c27e2f95f74af76166244e03233ad993fc440778",
+        "path": "/scenarios/scene_recreate_undo/readback_fingerprint"
+      },
+      {
+        "committed": "sha256:3a77a90af3a559302016e934d84992d6227ad0f90339240452642e55cc2fb1fc",
+        "observed": "sha256:c88376041fa9d08e22284ac0c27e2f95f74af76166244e03233ad993fc440778",
+        "path": "/scenarios/scene_undo/readback_fingerprint"
+      }
+    ],
+    "host_admission": [
+      {
+        "committed": 0.01806640625,
+        "observed": 1.32421875,
+        "path": "/host_admission/load1"
+      },
+      {
+        "committed": 13082275840,
+        "observed": 11446124544,
+        "path": "/host_admission/mem_available_bytes"
+      },
+      {
+        "committed": "2026-11-14T03:52:10.123781+00:00",
+        "observed": "2026-11-21T04:02:30.544891+00:00",
+        "path": "/host_admission/utc"
+      }
+    ],
+    "run_identity": [
+      {
+        "committed": "2026-11-14T03:52:31.582762+00:00",
+        "observed": "2026-11-21T04:02:50.676773+00:00",
+        "path": "/ended_utc"
+      },
+      {
+        "committed": "d84d8d9e69c4fff8481b018182a6b43f088aac7d",
+        "observed": "982e2bf36a70d422f2efaf7369876c73bff48c8b",
+        "path": "/engineering_source/commit"
+      },
+      {
+        "committed": "d84d8d9e69c4fff8481b018182a6b43f088aac7d",
+        "observed": "982e2bf36a70d422f2efaf7369876c73bff48c8b",
+        "path": "/source_commit"
+      },
+      {
+        "committed": "2026-11-14T03:52:10.170051+00:00",
+        "observed": "2026-11-21T04:02:30.595039+00:00",
+        "path": "/started_utc"
+      }
+    ]
+  },
+  "excluded_leaves": 13,
+  "expected_changes": [
+    {
+      "applied": true,
+      "path": "/engineering_source/runtime_tree"
+    }
+  ],
+  "harness": "scripts/core_created_object_local.py",
+  "lane": "scene_create_delete",
+  "masked_differences": {
+    "lane_suffix": [
+      {
+        "committed": "scene.hamcp_g4_scene_6f71bc7f",
+        "observed": "scene.hamcp_g4_scene_f309860a",
+        "path": "/scenarios/scene_create/readback/entity_id"
+      },
+      {
+        "committed": "scene.hamcp_g4_scene_6f71bc7f",
+        "observed": "scene.hamcp_g4_scene_f309860a",
+        "path": "/scenarios/scene_create/readback/registry_entity_id"
+      },
+      {
+        "committed": "scene.hamcp_g4_scene_6f71bc7f",
+        "observed": "scene.hamcp_g4_scene_f309860a",
+        "path": "/scenarios/scene_recreate/readback/entity_id"
+      },
+      {
+        "committed": "scene.hamcp_g4_scene_6f71bc7f",
+        "observed": "scene.hamcp_g4_scene_f309860a",
+        "path": "/scenarios/scene_recreate/readback/registry_entity_id"
+      },
+      {
+        "committed": "scene.hamcp_g4_scene_6f71bc7f",
+        "observed": "scene.hamcp_g4_scene_f309860a",
+        "path": "/scenarios/scene_recreate_undo/readback/entity_id"
+      },
+      {
+        "committed": "scene.hamcp_g4_scene_6f71bc7f",
+        "observed": "scene.hamcp_g4_scene_f309860a",
+        "path": "/scenarios/scene_undo/readback/entity_id"
+      }
+    ]
+  },
+  "masked_leaves": 6,
+  "model": "hamcp443-receipt-comparison-report-v2",
+  "observed_receipt_sha256": "b7a57bd78080abcda502b60aa5a4820e1621afe801a5a865fcf1fa145defaa83"
+}

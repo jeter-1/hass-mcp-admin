@@ -260,7 +260,7 @@ async def exercise(run_dir, entry, spec, core_image, run_id, core_memory, record
         reply = await raw.command({"type": "config/device_registry/list"})
         assert reply["success"] is True
         return reply["result"]
-    result = await run(configured, entry, run_dir, expectations=spec,
+    result = await run(configured, entry, run_dir, mode="local", expectations=spec,
                        read_stub_record=lambda: record.read_text().splitlines() if record.exists() else [],
                        read_devices=devices, stub_control=admin.stub_control, stub_state=admin.stub_state,
                        reload_matter=admin.reload_matter)

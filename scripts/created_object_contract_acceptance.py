@@ -787,8 +787,13 @@ def verify_result(lane, result):
             "scenarios": list(scenarios), "result": "PASS"}
 
 
-async def run(lane, configured, entry, directory):
+async def run(lane, configured, entry, directory, *, mode):
     """Run one lane against an owned loopback Core; the caller owns start-up, identity and teardown."""
+    # The caller names the mode; nothing here reads the environment to choose one.
+    if mode == "ci":
+        raise NotImplementedError("ci mode lands in 443-B")
+    if mode != "local":
+        raise ValueError("lane_mode_unknown")
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
     from alarmo_inspection_contract_acceptance import close_disposable_authority
     from prepare_core_release_registry import prepare_candidate, sign_candidate

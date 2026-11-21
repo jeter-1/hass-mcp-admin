@@ -37,6 +37,7 @@ from mcp.server.fastmcp import FastMCP
 from alarmo_inspection_contract_acceptance import close_disposable_authority
 from prepare_core_release_registry import prepare_candidate, sign_candidate
 from ha_mcp_engineering.clients import HomeAssistantRestClient, HomeAssistantWebSocketClient
+from ha_mcp_engineering.clients.ha_mcp_endpoint import EXPECTED_SELECTOR_SUFFIX, STRICT_FULL_SELECTOR_RELEASES
 from ha_mcp_engineering.clients.paths import Route, rest_path
 from ha_mcp_engineering.clients.rest import ExpectedHttpStatus
 from ha_mcp_engineering.device_configuration.contracts import (
@@ -217,12 +218,25 @@ def pinned(configured):
     return replace(configured, ha_url=CORE_URL)
 
 
-def pinned_upstream(configured):
-    """The configured ha-mcp child must be the lane's loopback child."""
-    url = configured.upstream_dashboard_mcp_url
-    if type(url) is not str or url != UPSTREAM_URL:
+def upstream_url(version):
+    """The one form of the lane's loopback child URL that Engineering admits for ha-mcp ``version``.
+
+    Engineering refuses the short form for its strict-full releases before tools/list
+    (``require_selector_agreement``). The release set and the suffix are Engineering's own, never a copy.
+    """
+    if type(version) is not str:
         raise ValueError(UPSTREAM_URL_REFUSED)
-    return replace(configured, upstream_dashboard_mcp_url=UPSTREAM_URL)
+    if version in STRICT_FULL_SELECTOR_RELEASES:
+        return UPSTREAM_URL + EXPECTED_SELECTOR_SUFFIX
+    return UPSTREAM_URL
+
+
+def pinned_upstream(configured, version):
+    """The configured ha-mcp child must be the lane's loopback child, in exactly the form for ``version``."""
+    url = configured.upstream_dashboard_mcp_url
+    if type(url) is not str or url != upstream_url(version):
+        raise ValueError(UPSTREAM_URL_REFUSED)
+    return replace(configured, upstream_dashboard_mcp_url=upstream_url(version))
 
 
 def reference():
@@ -596,10 +610,15 @@ async def refusal_form(attempt, code):
 
 
 @diagnostics.checked("helper_setup", "helper_contract")
-async def run(configured, entry, directory, *, stub_url, stub_hashes):
+async def run(configured, entry, directory, *, mode, stub_url, stub_hashes, upstream_version):
     """Run only device_configuration_entity; caller owns startup, identity and teardown proof."""
+    # The caller names the mode; nothing here reads the environment to choose one.
+    if mode == "ci":
+        raise NotImplementedError("ci mode lands in 443-B")
+    if mode != "local":
+        raise ValueError("lane_mode_unknown")
     # Every client is pinned before any authority, service or socket exists.
-    safe = pinned_upstream(pinned(configured))
+    safe = pinned_upstream(pinned(configured), upstream_version)
     stub = StubControl(stub_url)
     journal = []
     ws, rest = LaneWebSocket(configured, journal), LaneRest(configured, journal)
