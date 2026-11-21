@@ -81,7 +81,7 @@ Source authority:
 
 The 8.5.0 source is `311d6dc273fb4e9a5b8cde0de15f69472a64fe44`;
 its separate compiled provider evidence and adoption limits are recorded in
-8.5.0 compatibility (`HA_MCP_8_5_0_COMPATIBILITY.md`, deleted by HAMCP-437). Existing 8.4.3 source
+[8.5.0 compatibility](HA_MCP_8_5_0_COMPATIBILITY.md). Existing 8.4.3 source
 evidence above remains historical and does not identify the 8.5.0 binary.
 
 ## Execution, receipts and recovery

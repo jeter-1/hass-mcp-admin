@@ -64,6 +64,7 @@ in the [release index](RELEASES.md); this map lists no per-release history.
 - [Upstream compatibility operator guide](UPSTREAM_COMPATIBILITY_OPERATOR_GUIDE.md)
 - [Home Assistant Core capability-scoped readmission](HA_CORE_CAPABILITY_AUTO_READMISSION.md)
 - [ha-mcp 8.6.0 compiled compatibility candidate](HA_MCP_8_6_0_COMPATIBILITY.md)
+- [ha-mcp 8.5.0 compatibility candidate](HA_MCP_8_5_0_COMPATIBILITY.md)
 - [Core 2026.10.0 local compatibility evidence](CORE_2026_10_COMPATIBILITY_EVIDENCE.md)
 
 ## Release and publication operations
@@ -127,11 +128,14 @@ the time; current behavior is in source and the reference documents above.
 - [HAMCP-191 implementation notes](HAMCP_191_IMPLEMENTATION_NOTES.md)
 - [HAMCP-191: Identity-Only Redaction Markers for Every Tool (Design Sweep)](HAMCP_191_SHARED_SANITIZER_DESIGN.md)
 - [HAMCP-192 — Observing-task fix: design note](HAMCP_192_OBSERVING_FIX_DESIGN.md)
+- [HAMCP-196: Engineering add-on permissions review (read-only)](HAMCP_196_ADDON_PERMISSIONS_REVIEW.md)
 - [HAMCP-205: shared administrator verification for Ingress approval pages](HAMCP_205_ADMIN_VERIFICATION_DESIGN.md)
 - [HAMCP-209 Fast Dependency Index: Design Note](HAMCP_209_FAST_DEPENDENCY_INDEX_DESIGN.md)
+- [HAMCP-210: `pull_request_target` restriction on public repositories (read-only)](HAMCP_210_PULL_REQUEST_TARGET.md)
 - [HAMCP-212 Loaded Script Configuration: Design Note](HAMCP_212_LOADED_SCRIPT_CONFIG_DESIGN.md)
 - [HAMCP-213: Safety-Critical Owner Approval and Physical-Action Equivalence](HAMCP_213_SAFETY_CRITICAL_APPROVAL_DESIGN.md)
 - [HAMCP-215: Core authority recovery and visibility](HAMCP_215_CORE_AUTHORITY_RECOVERY_DESIGN.md)
+- [HAMCP-218: What the Supervisor `manager` role unlocks (read-only)](HAMCP_218_SUPERVISOR_MANAGER_ROLE.md)
 - [HAMCP-220: Incident-Log Entry Times](HAMCP_220_INCIDENT_LOG_TIMESTAMPS.md)
 - [HAMCP-222: signed-coverage audit and proposed seq-13 batch](HAMCP_222_SIGNED_COVERAGE_AUDIT.md)
 - [HAMCP-224 host journal sources for `get_incident_logs` (journald option C) — design](HAMCP_224_HOST_JOURNAL_DESIGN.md)

@@ -387,7 +387,7 @@ None of the following services is admitted:
   (`R:605-612`).
 - **Blocker.** It is not the Core registry. ha-mcp lifecycle admission is
   `held` for ha-mcp ≥ 8.2.0, and newer catalogs rename the tool to
-  `ha_manage_app` (`docs/HAMCP_218_SUPERVISOR_MANAGER_ROLE.md:495-502`, deleted by HAMCP-437;
+  `ha_manage_app` (`docs/HAMCP_218_SUPERVISOR_MANAGER_ROLE.md:495-502`;
   `docs/HA_MCP_8_6_0_COMPATIBILITY.md:60-63`).
 - **Widening.** Re-admitting the identity under a renamed tool, or adding a
   Core adapter, is a widening.
@@ -418,7 +418,7 @@ existing `dependency_helper_planning` route. See §7.1.
 
 Option C sets the add-on option `journald: true`. Supervisor then bind-mounts
 the host journal read-only, and a typed, allow-listed, redacted local reader
-reads it. Sources: `docs/HAMCP_218_SUPERVISOR_MANAGER_ROLE.md:363-374` (deleted by HAMCP-437),
+reads it. Sources: `docs/HAMCP_218_SUPERVISOR_MANAGER_ROLE.md:363-374`,
 `:519-521`, `:536-541`.
 
 - **Supervisor API role:** none. `hassio_role` stays `homeassistant`
