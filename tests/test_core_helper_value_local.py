@@ -376,7 +376,7 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
              patch.object(acceptance, 'HelperService', side_effect=service), \
              patch.object(acceptance, 'close_disposable_authority', new=AsyncMock()), \
              patch.object(acceptance.asyncio, 'sleep', side_effect=yield_only):
-            result = await acceptance.run(SimpleNamespace(), entry, Path(directory))
+            result = await acceptance.run(SimpleNamespace(), entry, Path(directory), mode="local")
         self.assertEqual(result['result'], 'PASS')
         self.assertTrue(result['reopened_recovery_read_only'])
         self.assertTrue(result['unverifiable_effect_not_success'])

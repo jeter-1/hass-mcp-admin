@@ -1384,7 +1384,8 @@ class Exercise(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.order[0], "upstream")
         self.assertEqual(self.order[1], ("stub_ready", acceptance.STUB_CONTROL_URL))
         self.assertEqual(self.order[2][0], "run")
-        self.assertEqual(self.order[2][1], {"stub_url": acceptance.STUB_CONTROL_URL, "stub_hashes": RECEIPT_STUB,
+        self.assertEqual(self.order[2][1], {"mode": "local", "stub_url": acceptance.STUB_CONTROL_URL,
+                                            "stub_hashes": RECEIPT_STUB,
                                             "upstream_version": "9.2.0"})
         self.assertEqual(set(result["images"]), {lane.CORE, lane.UPSTREAM, lane.STUB})
         self.assertEqual(result["images"][lane.STUB]["image"], "core@sha256:a")
@@ -3304,7 +3305,7 @@ class AcceptanceFailurePreservation(unittest.IsolatedAsyncioTestCase):
                 patch.object(acceptance, "CoreRuntime") as runtime, \
                 patch.object(acceptance, "DeviceConfigurationService") as service:
             with self.assertRaises(error) as caught:
-                await acceptance.run(configured, entry or self.ENTRY, Path(directory), stub_url=stub_url,
+                await acceptance.run(configured, entry or self.ENTRY, Path(directory), mode="local", stub_url=stub_url,
                                      stub_hashes=RECEIPT_STUB, upstream_version=version)
             runtime.assert_not_called()
             service.assert_not_called()
@@ -3351,7 +3352,8 @@ class AcceptanceFailurePreservation(unittest.IsolatedAsyncioTestCase):
                     patch.object(acceptance, "HomeAssistantRestClient"), \
                     patch.object(acceptance, "CoreRuntime") as runtime:
                 with self.assertRaises(AssertionError):
-                    await acceptance.run(settings(), self.ENTRY, Path(directory), stub_url=acceptance.STUB_CONTROL_URL,
+                    await acceptance.run(settings(), self.ENTRY, Path(directory), mode="local",
+                                         stub_url=acceptance.STUB_CONTROL_URL,
                                          stub_hashes=RECEIPT_STUB, upstream_version=CHILD_CONSUMER)
                 runtime.assert_not_called()
                 requests = [event for event in events if event[0] == "request"]

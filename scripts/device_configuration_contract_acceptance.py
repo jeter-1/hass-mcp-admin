@@ -610,8 +610,13 @@ async def refusal_form(attempt, code):
 
 
 @diagnostics.checked("helper_setup", "helper_contract")
-async def run(configured, entry, directory, *, stub_url, stub_hashes, upstream_version):
+async def run(configured, entry, directory, *, mode, stub_url, stub_hashes, upstream_version):
     """Run only device_configuration_entity; caller owns startup, identity and teardown proof."""
+    # The caller names the mode; nothing here reads the environment to choose one.
+    if mode == "ci":
+        raise NotImplementedError("ci mode lands in 443-B")
+    if mode != "local":
+        raise ValueError("lane_mode_unknown")
     # Every client is pinned before any authority, service or socket exists.
     safe = pinned_upstream(pinned(configured), upstream_version)
     stub = StubControl(stub_url)

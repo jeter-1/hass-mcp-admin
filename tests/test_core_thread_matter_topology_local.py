@@ -485,7 +485,7 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
                 patch.object(acceptance.RawCore, "command", new=raw), \
                 patch.object(acceptance, "close_disposable_authority", new=AsyncMock()) as close:
             result = await acceptance.run(configured, {"version": "2026.11.0", "capabilities": refs},
-                                          Path(directory))
+                                          Path(directory), mode="local")
         self.assertEqual(close.await_count, 2)
         return result, sent_frames
 

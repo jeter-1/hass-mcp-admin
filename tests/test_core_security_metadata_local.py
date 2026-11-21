@@ -558,7 +558,7 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
                 transport, \
                 patch.object(acceptance, "close_disposable_authority", new=AsyncMock()) as close:
             result = await acceptance.run(configured, {"version": "2026.11.0", "capabilities": refs},
-                                          Path(directory))
+                                          Path(directory), mode="local")
         self.assertEqual(close.await_count, 2)
         # The harness's own raw traffic is reads only: never a write-shaped type.
         self.assertTrue(set(raw_calls) <= {s["type"] for s in acceptance.SNAPSHOTS} | {
@@ -631,7 +631,7 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
                     patch.object(acceptance.SecurityMetadataReader, "read", new=AsyncMock()) as read:
                 with self.assertRaises(ValueError) as caught:
                     await acceptance.run(configured, {"version": "2026.11.0", "capabilities": refs},
-                                         Path(directory))
+                                         Path(directory), mode="local")
                 self.assertEqual(caught.exception.args, ("raw_core_url_not_pinned",))
                 self.assertEqual((events, read.await_count, runtime.call_count), ([], 0, 0))
 
