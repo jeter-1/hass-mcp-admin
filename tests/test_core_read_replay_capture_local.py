@@ -2297,15 +2297,30 @@ class ProfileBPlanTests(unittest.TestCase):
         "window_end_offset_free": "2026-01-02T00:00:00",
     }
 
-    def test_the_profile_b_plan_covers_every_component_read_and_the_yaml_read(self):
+    def test_the_profile_b_plan_on_the_shipped_policy_covers_every_component_read_and_the_yaml_read(self):
+        # Plan-builder coverage on the shipped 9.2.0 policy; the lane's
+        # ARGUMENT_POLICY (9.1.2) refuses after HAMCP-437, see the refusal test.
+        from ha_mcp_engineering import upstream_tool_policy
+
+        shipped = upstream_tool_policy.load_reviewed_upstream_release_registry()
+        self.assertEqual(shipped.default_version, "9.2.0")
         groups = list(lane.CAPTURE_GROUPS + lane.PROFILE_B_GROUPS)
-        cases = lane.calls_step.plan(lane.ARGUMENT_POLICY, groups, self.SEED)
+        cases = lane.calls_step.plan("9.2.0", groups, self.SEED)
         self.assertEqual(len(cases), 47)
         tools = {case["upstream_tool"] for case in cases}
         self.assertEqual(set(lane.COMPONENT_READS) - tools, set())
-        yaml = lane.calls_step.plan(lane.ARGUMENT_POLICY, list(lane.PROFILE_B_GROUPS), self.SEED)
+        yaml = lane.calls_step.plan("9.2.0", list(lane.PROFILE_B_GROUPS), self.SEED)
         self.assertEqual([case["id"] for case in yaml], ["y-group", "y-absent-key"])
         self.assertEqual({case["upstream_tool"] for case in yaml}, {lane.YAML_READ})
+
+    def test_the_lane_argument_policy_plan_refuses_after_hamcp_437(self):
+        # The scripts are unchanged: the lane still builds its arguments with the
+        # 9.1.2 policy, which the shipped registry no longer reviews.
+        self.assertEqual(lane.ARGUMENT_POLICY, "9.1.2")
+        groups = list(lane.CAPTURE_GROUPS + lane.PROFILE_B_GROUPS)
+        with self.assertRaises(lane.calls_step.CallsError) as raised:
+            lane.calls_step.plan(lane.ARGUMENT_POLICY, groups, self.SEED)
+        self.assertEqual(str(raised.exception), "policy_version_not_reviewed")
 
     def test_each_component_source_is_the_bound_upstream_commit(self):
         for version in lane.VERSIONS:
