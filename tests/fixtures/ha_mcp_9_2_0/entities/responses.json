@@ -142,6 +142,61 @@
       "ha_search_tools"
      ]
     }
+   },
+   "services_unavailable_partial": {
+    "ai_insights": {
+     "automation_ready": false,
+     "controllable_devices": [],
+     "monitoring_sensors": [],
+     "most_common_domains": [
+      "light"
+     ]
+    },
+    "area_analysis": {
+     "synthetic_office": {
+      "count": 1
+     }
+    },
+    "domain_stats": {
+     "light": {
+      "count": 1,
+      "states_summary": {
+       "on": 1
+      },
+      "truncated": false
+     }
+    },
+    "ha_mcp_update": {
+     "current": "9.2.0",
+     "latest": "9.2.0",
+     "update_available": false
+    },
+    "mcp_client": {
+     "capabilities": null,
+     "client_info": {
+      "name": "synthetic-client",
+      "version": "0"
+     },
+     "protocol_version": "2025-03-26"
+    },
+    "partial": true,
+    "settings_url_hint": "The settings page is served at '/synthetic/settings' on this MCP server.",
+    "success": true,
+    "system_summary": {
+     "total_areas": 1,
+     "total_domains": 1,
+     "total_entities": 1,
+     "total_services": 0
+    },
+    "tool_discovery": {
+     "hint": "Use ha_search_tools(query='...') to find tools.",
+     "pinned_tools": [
+      "ha_search_tools"
+     ]
+    },
+    "warnings": [
+     "Services unavailable: synthetic"
+    ]
    }
   },
   "ha_get_skill_guide": {
@@ -253,6 +308,23 @@
       "supported_features": 15
      }
     ]
+   },
+   "unavailable_items": {
+    "count": 1,
+    "entity_id": "todo.synthetic_list",
+    "items": [
+     {
+      "status": "needs_action",
+      "summary": "Synthetic item",
+      "uid": "synthetic-item-1"
+     }
+    ],
+    "message": "Found 1 item(s) in todo.synthetic_list",
+    "status_filter": null,
+    "success": true,
+    "warnings": [
+     "todo.synthetic_list is unavailable: these are the items Home Assistant last held"
+    ]
    }
   },
   "ha_get_zone": {
@@ -304,6 +376,51 @@
      }
     ]
    },
+   "list_with_gaps": {
+    "count": 3,
+    "message": "Found 3 zone(s)",
+    "success": true,
+    "warnings": [
+     "Who is in each zone (persons) is missing: synthetic"
+    ],
+    "zones": [
+     {
+      "editable": true,
+      "entity_icon": "mdi:office-building",
+      "entity_id": "zone.synthetic_office",
+      "icon": "mdi:briefcase",
+      "id": "synthetic_office",
+      "latitude": 0.0,
+      "longitude": 0.0,
+      "name": "Synthetic Office",
+      "passive": false,
+      "radius": 100,
+      "source": "storage"
+     },
+     {
+      "editable": false,
+      "entity_id": "zone.home",
+      "icon": "mdi:home",
+      "id": "home",
+      "latitude": 0.0,
+      "longitude": 0.0,
+      "name": "Home",
+      "radius": 100,
+      "source": "yaml"
+     },
+     {
+      "editable": false,
+      "entity_id": "zone.synthetic_yaml",
+      "id": "synthetic_yaml",
+      "latitude": 0.0,
+      "longitude": 0.0,
+      "name": "Synthetic YAML",
+      "passive": false,
+      "radius": 50,
+      "source": "yaml"
+     }
+    ]
+   },
    "single": {
     "success": true,
     "zone": {
@@ -347,6 +464,29 @@
     "success": true,
     "unassigned_areas": [],
     "unassigned_count": 0
+   },
+   "area_fields_unmatched": {
+    "area_count": 1,
+    "floor_count": 1,
+    "floors": [
+     {
+      "areas": [
+       {}
+      ],
+      "floor_id": "synthetic_ground",
+      "level": 0,
+      "name": "Synthetic Ground"
+     }
+    ],
+    "message": "Found 1 floor(s), 1 area(s), 0 unassigned, 0 orphaned",
+    "orphaned_areas": [],
+    "orphaned_count": 0,
+    "success": true,
+    "unassigned_areas": [],
+    "unassigned_count": 0,
+    "warnings": [
+     "area_fields ['synthetic_typo'] matched no record keys \u2014 records came out empty. Available keys: ['area_id', 'name']"
+    ]
    }
   },
   "ha_list_services": {

@@ -707,6 +707,71 @@ class EntitiesPending91Tests(ParityBase):
 
 
 # ---------------------------------------------------------------------------
+# 9.2.0 known gap HAMCP-464 (ANSWER 20261122-0118-01)
+# ---------------------------------------------------------------------------
+class EntitiesKnownGap92Tests(ParityBase):
+    """The four EntitiesPending91Tests outcomes restated on 9.2.0. Each pins a
+    known result-truthfulness gap in the key layer, not accepted behaviour:
+    upstream writes a top-level ``warnings`` the reviewed key set does not
+    admit, so it is withheld and counted and completeness() never sees it."""
+
+    version = '9.2.0'
+
+    async def test_row17_overview_services_warning_withheld_stays_partial(self):
+        """Known gap HAMCP-464: the upstream `warnings` key is withheld and the read reports complete. The fix flips this to partial with a disclosure.
+
+        Here upstream ``partial`` is admitted, so the read stays partial; only
+        the upstream-warnings disclosure is missing."""
+        template = V92['ha_get_overview']['services_unavailable_partial']
+        result = await self.call('ha_get_overview', {}, wrap(template))
+        self.assert_success(result, 'ha_get_overview', partial=True,
+                            counts=NONE_WITHHELD | {'fields_withheld': 1, 'fields_dropped_by_policy': 3})
+        self.assert_sent('ha_get_overview', {})
+        self.assertEqual(result['warnings'], [ent.VISIBLE_SCOPE, ent.UPSTREAM_PARTIAL])
+        self.assertNotIn(ent.UPSTREAM_WARNINGS, result['warnings'])
+        self.assertNotIn('warnings', result['data'])
+        self.assertTrue(result['data']['partial'])
+        self.assertEqual(result['data']['system_summary'], template['system_summary'])
+        self.assertNotIn('Services unavailable', json.dumps(result))
+
+    async def test_row20_todo_unavailable_warning_withheld_reports_complete(self):
+        """Known gap HAMCP-464: the upstream `warnings` key is withheld and the read reports complete. The fix flips this to partial with a disclosure."""
+        args = {'entity_id': 'todo.synthetic_list'}
+        template = V92['ha_get_todo']['unavailable_items']
+        result = await self.call('ha_get_todo', args, wrap(template))
+        self.assert_success(result, 'ha_get_todo', counts=NONE_WITHHELD | {'fields_withheld': 1})
+        self.assert_sent('ha_get_todo', args)
+        self.assertEqual(result['warnings'], [])
+        self.assertEqual(result['data'], {k: v for k, v in template.items() if k != 'warnings'})
+        self.assertNotIn('is unavailable', json.dumps(result))
+
+    async def test_row21_zone_gaps_warning_withheld_reports_complete(self):
+        """Known gap HAMCP-464: the upstream `warnings` key is withheld and the read reports complete. The fix flips this to partial with a disclosure."""
+        template = V92['ha_get_zone']['list_with_gaps']
+        result = await self.call('ha_get_zone', {}, wrap(template))
+        self.assert_success(result, 'ha_get_zone', counts=NONE_WITHHELD | {'fields_withheld': 1})
+        self.assert_sent('ha_get_zone', {})
+        self.assertEqual(result['warnings'], [])
+        self.assertNotIn('warnings', result['data'])
+        self.assertEqual(result['data']['zones'],
+                         [{**row, 'friendly_name': row['name']} for row in template['zones']])
+        # No occupancy rows came back, so only the icon note applies.
+        self.assertEqual(result['data'][ent_92.NOTES], [ent_92.ZONE_ICON_NOTE])
+        self.assertNotIn('persons) is missing', json.dumps(result))
+
+    async def test_row22_floors_area_fields_warning_withheld_reports_complete(self):
+        """Known gap HAMCP-464: the upstream `warnings` key is withheld and the read reports complete. The fix flips this to partial with a disclosure."""
+        args = {'area_fields': ['synthetic_typo']}
+        template = V92['ha_list_floors_areas']['area_fields_unmatched']
+        result = await self.call('ha_list_floors_areas', args, wrap(template))
+        self.assert_success(result, 'ha_list_floors_areas', counts=NONE_WITHHELD | {'fields_withheld': 1})
+        self.assert_sent('ha_list_floors_areas', args)
+        self.assertEqual(result['warnings'], [])
+        self.assertEqual(result['data'], {k: v for k, v in template.items() if k != 'warnings'})
+        self.assertNotIn('matched no record keys', json.dumps(result))
+
+
+# ---------------------------------------------------------------------------
 # Section 8.3 F3 replays of Phase 1 receipts (class C), 9.1.0
 # ---------------------------------------------------------------------------
 class F3ReplayTests(ParityBase):

@@ -9,7 +9,7 @@
     "registry_entry": "ha-mcp-v9.2.0-9de5bf6c",
     "source_commit": "51e3aac788482a081807591cd5d58d07dc4e540b"
   },
-  "generation": "Hand-written synthetic structuredContent templates transcribed from the pinned 9.2.0 source (read only, never executed). Every cited range was re-read in the 9.2.0 file. The templates are the 9.1.0 transcription unchanged, except: the zone rows add persons and device_trackers (empty lists; read from the zone state) and the office row's registry icon override entity_icon, as the 9.2.0 component path builds them; and the overview ha_mcp_update versions read 9.2.0. They are not captured records and carry no record hashes. Entity IDs, names, icons, timestamps and the acknowledgement key are synthetic. The listed sha256 values identify the pinned source files the line citations refer to. The 8.5.0 templates and the Phase 1 receipts stay in the 9.1.0 entities fixture.",
+  "generation": "Hand-written synthetic structuredContent templates transcribed from the pinned 9.2.0 source (read only, never executed). Every cited range was re-read in the 9.2.0 file. The templates are the 9.1.0 transcription unchanged, except: the zone rows add persons and device_trackers (empty lists; read from the zone state) and the office row's registry icon override entity_icon, as the 9.2.0 component path builds them; and the overview ha_mcp_update versions read 9.2.0. The four known-gap templates (overview services_unavailable_partial, todo unavailable_items, zone list_with_gaps, floors area_fields_unmatched) are the base templates with the upstream top-level warnings each cited path writes; the warning texts are the 9.2.0 f-strings with synthetic exception text. They are not captured records and carry no record hashes. Entity IDs, names, icons, timestamps and the acknowledgement key are synthetic. The listed sha256 values identify the pinned source files the line citations refer to. The 8.5.0 templates and the Phase 1 receipts stay in the 9.1.0 entities fixture.",
   "source_files": {
     "src/ha_mcp/server.py": "29d6d33d645117661f0e35945110ea21fb6650ae2c09b74398bdcc36f36931c1",
     "src/ha_mcp/strict_bps.py": "f7be9802d83d900d38ebbada78f5759e30b76a792c1d5f17c4934562c5e416d8",
@@ -22,7 +22,9 @@
     "src/ha_mcp/tools/tools_todo.py": "e55e77a1d78bdd3aa76df91f1d023fe8831a2a8c38b0203b543a12cba3498106",
     "src/ha_mcp/tools/tools_zones.py": "e0b921d52e862c1fa709c051d9273dc75bc29e7412804b67d848fe9206c92422",
     "src/ha_mcp/tools/tools_areas.py": "a4d83da7131fae539696cf72a0b24499317ff94c932bf90d4b3973f706398361",
-    "src/ha_mcp/tools/tools_services.py": "85993e53465529b0cc209535f3a77945e94cc86014e6f7bc88cc22473737cc3b"
+    "src/ha_mcp/tools/tools_services.py": "85993e53465529b0cc209535f3a77945e94cc86014e6f7bc88cc22473737cc3b",
+    "src/ha_mcp/tools/smart_search/_overview.py": "70f3b19df3ad091241dcf60e3736bf3d939727f74c20d2f537997e9bc6feb023",
+    "src/ha_mcp/tools/search/overview.py": "3abb612e7b567874cb31a8014f0f1c35c296349786aed679390ee94b04799fcc"
   },
   "fixtures": {
     "v92/ha_get_entity/single": {
@@ -142,6 +144,44 @@
       "class": "S",
       "sources": [
         "src/ha_mcp/tools/search/response.py:170-189 (_mirror_partial_to_warnings)"
+      ]
+    },
+    "v92/ha_get_overview/services_unavailable_partial": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_search.py:644-667 (no fields= projection: _collect_overview)",
+        "src/ha_mcp/tools/search/overview.py:538-547 (assembly runs get_system_overview)",
+        "src/ha_mcp/tools/smart_search/_overview.py:122-126 (services failure: a partial warning, services [])",
+        "src/ha_mcp/tools/smart_search/_overview.py:181 and 376-391 (_build_service_stats([]): total_services 0)",
+        "src/ha_mcp/tools/smart_search/_overview.py:190-196 (system_summary total_services)",
+        "src/ha_mcp/tools/smart_search/_overview.py:552-559 (partial True; warnings = partial_warnings)",
+        "src/ha_mcp/tools/tools_search.py:741-749 (ha_mcp_update and mcp_client added after projection)"
+      ]
+    },
+    "v92/ha_get_todo/unavailable_items": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_todo.py:373-375 (an unavailable list takes _read_unavailable)",
+        "src/ha_mcp/tools/tools_todo.py:231-278 (no status: the last-held items, status_filter None, with a warning)"
+      ]
+    },
+    "v92/ha_get_zone/list_with_gaps": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_zones.py:65-74 (list envelope)",
+        "src/ha_mcp/tools/tools_zones.py:137-149 (_with_registry_icons: entity_icon kept; the registry read succeeded)",
+        "src/ha_mcp/tools/tools_zones.py:152-164 (_with_occupancy with no states: no persons or device_trackers)",
+        "src/ha_mcp/tools/tools_zones.py:307-331 (component path: a states failure leaves states [] and appends the persons gap warning)"
+      ]
+    },
+    "v92/ha_list_floors_areas/area_fields_unmatched": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_areas.py:157-170 (area_fields argument)",
+        "src/ha_mcp/tools/tools_areas.py:215-238 (per-area projection; floors/areas envelope)",
+        "src/ha_mcp/tools/tools_areas.py:240-255 (typo guard appends the area_fields warning)",
+        "src/ha_mcp/tools/response_helpers.py:229-242 (project_records keeps only listed keys)",
+        "src/ha_mcp/tools/response_helpers.py:245-267 (result_fields_warning text; available keys from the template area record)"
       ]
     }
   }
