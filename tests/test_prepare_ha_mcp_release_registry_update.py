@@ -23,6 +23,7 @@ from ha_mcp_engineering.ha_mcp_readmission.registry import (  # noqa: E402
     _parse_signed_journal,
 )
 from ha_mcp_engineering.signed_registry import TrustAnchorStore  # noqa: E402
+from support import frozen_signed_reuse  # noqa: E402
 
 
 SCRIPT = ROOT / "scripts" / "prepare_ha_mcp_release_registry_update.py"
@@ -36,6 +37,13 @@ SPEC.loader.exec_module(MODULE)
 
 
 class PrepareHaMcpReleaseRegistryUpdateTests(unittest.TestCase):
+    """Dormant signed-reuse mechanism coverage until HAMCP-156/424 redesign.
+
+    HAMCP-437 I2a-D ruling 2: the shipped registry admits only 9.2.0, which no
+    signed entry can reuse, so the script selects its binary profile from the
+    frozen 8.2.0 fixture (tests/support/frozen_signed_reuse.py).
+    """
+
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
@@ -58,6 +66,11 @@ class PrepareHaMcpReleaseRegistryUpdateTests(unittest.TestCase):
             patch.object(MODULE, "INDEX_PATH", self.index),
             patch.object(MODULE, "CAPTURE_PATH", self.capture_path),
             patch.object(MODULE, "RELEASE_EVIDENCE_PATH", self.release_path),
+            patch.object(
+                MODULE,
+                "load_reviewed_upstream_release_registry",
+                frozen_signed_reuse.registry,
+            ),
         )
         for patcher in self.patchers:
             patcher.start()
@@ -68,16 +81,12 @@ class PrepareHaMcpReleaseRegistryUpdateTests(unittest.TestCase):
         )
         self.environment.start()
         self.addCleanup(self.environment.stop)
-        self._write_inputs("8.4.3")
+        self._write_inputs("8.2.0")
 
     def _write_inputs(self, version: str) -> None:
         version_marker = version.encode("ascii").hex().ljust(64, "0")[:64]
         capture = json.loads(
-            (
-                ROOT
-                / "docs/evidence/upstream-read-compatibility"
-                / "ha-mcp-8.4.3.json"
-            ).read_text(encoding="utf-8")
+            frozen_signed_reuse.CAPTURE.read_text(encoding="utf-8")
         )
         capture["server_version"] = version
         self.capture_path.write_text(
@@ -115,31 +124,31 @@ class PrepareHaMcpReleaseRegistryUpdateTests(unittest.TestCase):
         )
 
     def test_initial_bootstrap_selects_binary_profile_and_no_dashboard(self) -> None:
-        MODULE.prepare(version="8.4.3", operation="add", now=self.now)
+        MODULE.prepare(version="8.2.0", operation="add", now=self.now)
         journal = self._journal()
         self.assertEqual(journal.accepted.sequence, 1)
         self.assertIsNone(journal.accepted.previous_registry_sha256)
         self.assertEqual(len(journal.accepted.entries), 1)
         entry = journal.accepted.entries[0]
-        self.assertEqual(entry.version, "8.4.3")
-        self.assertEqual(entry.policy_resource, "upstream_tool_policy_8_4_3.json")
+        self.assertEqual(entry.version, "8.2.0")
+        self.assertEqual(entry.policy_resource, "upstream_tool_policy_8_2_0.json")
         self.assertEqual(entry.dashboard_attestation.status, "quarantined")
         evidence = json.loads(
-            (self.evidence / "ha-mcp-8.4.3.json").read_text(encoding="utf-8")
+            (self.evidence / "ha-mcp-8.2.0.json").read_text(encoding="utf-8")
         )
-        self.assertEqual(evidence["matched_read_count"], 28)
+        self.assertEqual(evidence["matched_read_count"], 25)
         self.assertEqual(evidence["withheld_reviewed_reads"], [])
         self.assertEqual(evidence["upstream_write_dispatches"], 0)
         self.assertEqual(evidence["fallback"], "none")
 
     def test_monotonic_linkage_duplicate_refusal_and_checkpoint(self) -> None:
-        MODULE.prepare(version="8.4.3", operation="add", now=self.now)
+        MODULE.prepare(version="8.2.0", operation="add", now=self.now)
         first = self._journal().accepted
         with self.assertRaisesRegex(SystemExit, "already has positive authority"):
-            MODULE.prepare(version="8.4.3", operation="add", now=self.now)
-        self._write_inputs("8.4.4")
+            MODULE.prepare(version="8.2.0", operation="add", now=self.now)
+        self._write_inputs("8.2.1")
         with patch.object(MODULE, "MAX_JOURNAL_ENVELOPES", 1):
-            MODULE.prepare(version="8.4.4", operation="add", now=self.now)
+            MODULE.prepare(version="8.2.1", operation="add", now=self.now)
         journal = self._journal()
         self.assertEqual(journal.accepted.sequence, 2)
         self.assertEqual(
@@ -152,11 +161,11 @@ class PrepareHaMcpReleaseRegistryUpdateTests(unittest.TestCase):
         )
 
     def test_denial_only_revocation_is_retained_and_cannot_be_readded(self) -> None:
-        MODULE.prepare(version="8.4.3", operation="add", now=self.now)
-        evidence = self.evidence / "ha-mcp-8.4.3.json"
+        MODULE.prepare(version="8.2.0", operation="add", now=self.now)
+        evidence = self.evidence / "ha-mcp-8.2.0.json"
         evidence_before = evidence.read_bytes()
         MODULE.prepare(
-            version="8.4.3",
+            version="8.2.0",
             operation="revoke",
             revocation_reason="Synthetic test revocation.",
             now=self.now,
@@ -164,13 +173,13 @@ class PrepareHaMcpReleaseRegistryUpdateTests(unittest.TestCase):
         journal = self._journal()
         self.assertEqual(journal.accepted.entries, ())
         self.assertEqual(len(journal.accepted.revocations), 1)
-        self.assertEqual(journal.accepted.revocations[0].version, "8.4.3")
+        self.assertEqual(journal.accepted.revocations[0].version, "8.2.0")
         self.assertEqual(evidence.read_bytes(), evidence_before)
         with self.assertRaisesRegex(SystemExit, "revoked release cannot be re-added"):
-            MODULE.prepare(version="8.4.3", operation="add", now=self.now)
+            MODULE.prepare(version="8.2.0", operation="add", now=self.now)
         with self.assertRaisesRegex(SystemExit, "one exact positive entry"):
             MODULE.prepare(
-                version="8.4.3",
+                version="8.2.0",
                 operation="revoke",
                 revocation_reason="Duplicate synthetic revocation.",
                 now=self.now,
@@ -179,7 +188,7 @@ class PrepareHaMcpReleaseRegistryUpdateTests(unittest.TestCase):
     def test_revocation_without_positive_authority_fails_closed(self) -> None:
         with self.assertRaisesRegex(SystemExit, "one exact positive entry"):
             MODULE.prepare(
-                version="8.4.3",
+                version="8.2.0",
                 operation="revoke",
                 revocation_reason="Synthetic bounded revocation.",
                 now=self.now,
@@ -188,7 +197,7 @@ class PrepareHaMcpReleaseRegistryUpdateTests(unittest.TestCase):
         self.assertFalse(self.index.exists())
 
     def test_unsigned_existing_authority_cannot_be_revoked(self) -> None:
-        MODULE.prepare(version="8.4.3", operation="add", now=self.now)
+        MODULE.prepare(version="8.2.0", operation="add", now=self.now)
         malformed = json.loads(self.registry.read_text(encoding="utf-8"))
         malformed.pop("signature")
         self.registry.write_text(
@@ -198,7 +207,7 @@ class PrepareHaMcpReleaseRegistryUpdateTests(unittest.TestCase):
         index_before = self.index.read_bytes()
         with self.assertRaisesRegex(RuntimeError, "registry_journal_invalid"):
             MODULE.prepare(
-                version="8.4.3",
+                version="8.2.0",
                 operation="revoke",
                 revocation_reason="Synthetic bounded revocation.",
                 now=self.now,
@@ -206,8 +215,8 @@ class PrepareHaMcpReleaseRegistryUpdateTests(unittest.TestCase):
         self.assertEqual(self.index.read_bytes(), index_before)
 
     def test_add_and_revoke_change_only_their_exact_allowed_files(self) -> None:
-        MODULE.prepare(version="8.4.3", operation="add", now=self.now)
-        evidence = self.evidence / "ha-mcp-8.4.3.json"
+        MODULE.prepare(version="8.2.0", operation="add", now=self.now)
+        evidence = self.evidence / "ha-mcp-8.2.0.json"
         add_outputs = {
             path.relative_to(self.root).as_posix()
             for path in self.root.rglob("*")
@@ -217,7 +226,7 @@ class PrepareHaMcpReleaseRegistryUpdateTests(unittest.TestCase):
             add_outputs,
             {
                 "upstream-trust/registry.json",
-                "docs/evidence/ha-mcp-8.4.3.json",
+                "docs/evidence/ha-mcp-8.2.0.json",
                 "docs/index.md",
             },
         )
@@ -227,7 +236,7 @@ class PrepareHaMcpReleaseRegistryUpdateTests(unittest.TestCase):
             if path.is_file() and self.compat not in path.parents
         }
         MODULE.prepare(
-            version="8.4.3",
+            version="8.2.0",
             operation="revoke",
             revocation_reason="Synthetic bounded revocation.",
             now=self.now,
@@ -245,7 +254,7 @@ class PrepareHaMcpReleaseRegistryUpdateTests(unittest.TestCase):
         )
 
     def test_revocation_never_reads_release_or_runtime_evidence(self) -> None:
-        MODULE.prepare(version="8.4.3", operation="add", now=self.now)
+        MODULE.prepare(version="8.2.0", operation="add", now=self.now)
         with (
             patch.object(
                 MODULE,
@@ -264,14 +273,14 @@ class PrepareHaMcpReleaseRegistryUpdateTests(unittest.TestCase):
             ),
         ):
             MODULE.prepare(
-                version="8.4.3",
+                version="8.2.0",
                 operation="revoke",
                 revocation_reason="Synthetic bounded revocation.",
                 now=self.now,
             )
 
     def test_revocation_reason_is_bounded_single_line_utf8(self) -> None:
-        MODULE.prepare(version="8.4.3", operation="add", now=self.now)
+        MODULE.prepare(version="8.2.0", operation="add", now=self.now)
         for reason, message in (
             (None, "bounded revocation reason"),
             ("", "bounded revocation reason"),
@@ -286,14 +295,14 @@ class PrepareHaMcpReleaseRegistryUpdateTests(unittest.TestCase):
                 SystemExit, message
             ):
                 MODULE.prepare(
-                    version="8.4.3",
+                    version="8.2.0",
                     operation="revoke",
                     revocation_reason=reason,
                     now=self.now,
                 )
         with self.assertRaisesRegex(SystemExit, "must be empty for add"):
             MODULE.prepare(
-                version="8.4.4",
+                version="8.2.1",
                 operation="add",
                 revocation_reason="not applicable",
                 now=self.now,
@@ -301,17 +310,17 @@ class PrepareHaMcpReleaseRegistryUpdateTests(unittest.TestCase):
 
     def test_invalid_version_key_and_ambiguous_profile_fail_closed(self) -> None:
         with self.assertRaisesRegex(SystemExit, "exact stable semantic version"):
-            MODULE.prepare(version="v8.4.3", operation="add", now=self.now)
+            MODULE.prepare(version="v8.2.0", operation="add", now=self.now)
         with patch.dict(os.environ, {}, clear=True), self.assertRaisesRegex(
             SystemExit, "signing key is missing"
         ):
-            MODULE.prepare(version="8.4.3", operation="add", now=self.now)
+            MODULE.prepare(version="8.2.0", operation="add", now=self.now)
         with patch.object(
             MODULE,
             "_signed_matching_capabilities",
             return_value=(),
         ), self.assertRaisesRegex(SystemExit, "unambiguous binary profile"):
-            MODULE.prepare(version="8.4.3", operation="add", now=self.now)
+            MODULE.prepare(version="8.2.0", operation="add", now=self.now)
 
     def test_mismatched_catalog_and_oversized_capture_fail_closed(self) -> None:
         capture = json.loads(self.capture_path.read_text(encoding="utf-8"))
@@ -321,12 +330,12 @@ class PrepareHaMcpReleaseRegistryUpdateTests(unittest.TestCase):
             encoding="utf-8",
         )
         with self.assertRaisesRegex(SystemExit, "incomplete or mismatched"):
-            MODULE.prepare(version="8.4.3", operation="add", now=self.now)
+            MODULE.prepare(version="8.2.0", operation="add", now=self.now)
         self.assertFalse(self.registry.exists())
 
         self.capture_path.write_bytes(b"{" + b" " * MODULE.MAX_CAPTURE_BYTES)
         with self.assertRaisesRegex(SystemExit, "bounded evidence exceeds limit"):
-            MODULE.prepare(version="8.4.3", operation="add", now=self.now)
+            MODULE.prepare(version="8.2.0", operation="add", now=self.now)
         self.assertFalse(self.registry.exists())
 
     def test_registry_persistence_failure_cannot_activate_authority(self) -> None:
@@ -342,12 +351,12 @@ class PrepareHaMcpReleaseRegistryUpdateTests(unittest.TestCase):
 
         with patch.object(MODULE.os, "replace", side_effect=fail_registry_write):
             with self.assertRaisesRegex(OSError, "persistence failure"):
-                MODULE.prepare(version="8.4.3", operation="add", now=self.now)
+                MODULE.prepare(version="8.2.0", operation="add", now=self.now)
         self.assertFalse(self.registry.exists())
         self.assertFalse(self.index.exists())
 
     def test_failed_revocation_restores_registry_and_index(self) -> None:
-        MODULE.prepare(version="8.4.3", operation="add", now=self.now)
+        MODULE.prepare(version="8.2.0", operation="add", now=self.now)
         registry_before = self.registry.read_bytes()
         index_before = self.index.read_bytes()
         real_replace = MODULE.os.replace
@@ -363,7 +372,7 @@ class PrepareHaMcpReleaseRegistryUpdateTests(unittest.TestCase):
         with patch.object(MODULE.os, "replace", side_effect=fail_registry_write):
             with self.assertRaisesRegex(OSError, "revocation persistence failure"):
                 MODULE.prepare(
-                    version="8.4.3",
+                    version="8.2.0",
                     operation="revoke",
                     revocation_reason="Synthetic bounded revocation.",
                     now=self.now,
@@ -372,7 +381,7 @@ class PrepareHaMcpReleaseRegistryUpdateTests(unittest.TestCase):
         self.assertEqual(self.index.read_bytes(), index_before)
 
     def test_failed_staging_leaves_no_partial_state_or_temporary_file(self) -> None:
-        MODULE.prepare(version="8.4.3", operation="add", now=self.now)
+        MODULE.prepare(version="8.2.0", operation="add", now=self.now)
         registry_before = self.registry.read_bytes()
         index_before = self.index.read_bytes()
         real_mkstemp = MODULE.tempfile.mkstemp
@@ -388,7 +397,7 @@ class PrepareHaMcpReleaseRegistryUpdateTests(unittest.TestCase):
         with patch.object(MODULE.tempfile, "mkstemp", side_effect=fail_second_stage):
             with self.assertRaisesRegex(OSError, "staging failure"):
                 MODULE.prepare(
-                    version="8.4.3",
+                    version="8.2.0",
                     operation="revoke",
                     revocation_reason="Synthetic bounded revocation.",
                     now=self.now,
