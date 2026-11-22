@@ -1,7 +1,7 @@
 """HAMCP-319: every upstream tool Engineering uses is admitted only exactly.
 
-Josh decision relayed by the architect, 2026-11-07: on ha-mcp 8.5.0 and 9.1.0
-each upstream tool Engineering dispatches must match its reviewed release
+Josh decision relayed by the architect, 2026-11-07: on each admitted ha-mcp
+release (9.2.0 since HAMCP-437 I2c-2 retired the 8.5.0 and 9.1 cases) each upstream tool Engineering dispatches must match its reviewed release
 descriptor field by field (name, title, description, inputSchema,
 outputSchema, annotations and _meta). A missing, changed or duplicated used
 tool fails closed (not admitted, not exposed, no dispatch). Extra unused
@@ -11,16 +11,15 @@ The comparison is the release's runtime model,
 ``ha-mcp-operational-tool-descriptor-v2``: the whole descriptor is hashed
 verbatim except that the four dynamic ``_meta.ha_mcp.policy`` values
 (deployment, enabled, live, rules) are projected to a validity bit, because
-they vary with the deployment and the operator's live policy state. 8.5.0
-publishes that policy object; 9.1.0 publishes no ``_meta.ha_mcp`` at all, so a
-9.1.0 descriptor that gains one is a change.
+they vary with the deployment and the operator's live policy state. 9.2.0
+publishes no ``_meta.ha_mcp`` at all, so a 9.2.0 descriptor that gains one is
+a change.
 
 Families: the read gateway's read routes (automatic reads and the adapter
 reads), the typed power/fan/helper providers, the dashboard provider (getter
 read path, best-practices guide and setter) and the optional YAML reader.
-Descriptors are the committed captures under
-docs/evidence/upstream-read-compatibility and docs/evidence/hamcp162; nothing
-is contacted.
+Descriptors are the committed 9.2.0 captures under docs/evidence; nothing is
+contacted.
 """
 from copy import deepcopy
 import json
@@ -45,16 +44,15 @@ from test_hamcp319_dashboard import (
     GETTER, GUIDE, SETTER, DashboardPeer, Harness as DashboardHarness,
 )
 from test_hamcp319_typed_writes import FAMILIES, catalog_tools
-from test_hamcp319_yaml import wire_catalog
 
-# HAMCP-351: exact 9.1.2 is admitted on the same terms as 9.1.0 (Josh,
-# 2026-11-09); every 9.1.0 case below also runs on 9.1.2.
 # HAMCP-371 (SB used-tool ruling): every case also runs on exact 9.2.0, against
 # the committed 9.2.0 standalone filesystem-on tools/list (WIRE_920).
-NINE_ONE = ('9.1.0', '9.1.2', '9.2.0')
-VERSIONS = ('8.5.0',) + NINE_ONE
-# The exact 9.1.2 wire catalog (HAMCP-351 standalone capture, filesystem on).
-WIRE_912 = ROOT / 'docs/evidence/hamcp351/catalogs/standalone-fs-on-tools-response.json'
+# HAMCP-437 I2c-2: the 8.5.0, 9.1.0 and 9.1.2 cases are retired with those
+# admissions (D1); every case runs on exact 9.2.0.
+VERSIONS = ('9.2.0',)
+# I2a-D narrows EXACT_GETTER_RELEASES and removes these rows; until then the
+# scope test pins the shipped set.
+SHIPPED_EXACT_RELEASES = frozenset({'8.5.0', '9.1.0', '9.1.2', '9.2.0'})
 WIRE_920 = ROOT / 'docs/evidence/hamcp371/s8/profiles-2/out/standalone-9.2.0-fs-on/observation.json'
 REGISTRY = load_reviewed_upstream_release_registry()
 EXTRA = 'ha_synthetic_unreviewed_extra'
@@ -70,8 +68,8 @@ def policy_read_routes(version):
 def used_reads(version):
     """Every read route the gateway may dispatch for this release.
 
-    HAMCP-290: a retired delegated read (ha_get_hacs_info) stays a reviewed
-    8.5.0 read route but is never exposed or dispatched, so it is not used.
+    HAMCP-290: a retired delegated read (ha_get_hacs_info) is never exposed or
+    dispatched, so it is not used.
     """
     return sorted(set(policy_read_routes(version)) - RETIRED_DELEGATED_READS)
 
@@ -104,8 +102,8 @@ def _set_static_meta(tool):
 
 
 def _set_dynamic_policy(tool):
-    # 8.5.0: an invalid dynamic value (outside the projection's domain).
-    # 9.1.0: no _meta.ha_mcp was reviewed, so adding one is a change.
+    # 9.2.0 publishes no _meta.ha_mcp, so adding one is a change. The dict
+    # branch makes an existing policy value invalid (outside the projection).
     ha_mcp = tool['_meta'].get('ha_mcp')
     if isinstance(ha_mcp, dict):
         ha_mcp['policy'] = dict(ha_mcp['policy'], rules=-1)
@@ -126,14 +124,6 @@ FIELD_CHANGES = {
     '_meta_ha_mcp_policy': _set_dynamic_policy,
 }
 
-
-def valid_dynamic_policy_change(tool):
-    """A different but valid policy state; True when the release has one."""
-    ha_mcp = tool['_meta'].get('ha_mcp')
-    if not isinstance(ha_mcp, dict):
-        return False
-    ha_mcp['policy'] = {'deployment': 'addon', 'enabled': True, 'live': True, 'rules': 7}
-    return True
 
 
 def changed(tools, name, change):
@@ -163,8 +153,8 @@ def with_extra(tools, template='ha_get_state'):
 
 class Scope(unittest.TestCase):
     def test_exact_used_tool_releases(self):
-        self.assertEqual(EXACT_GETTER_RELEASES, frozenset(VERSIONS))
-        for version in VERSIONS:
+        self.assertEqual(EXACT_GETTER_RELEASES, SHIPPED_EXACT_RELEASES)
+        for version in sorted(SHIPPED_EXACT_RELEASES):
             release = REGISTRY.by_version[version]
             self.assertEqual(release.runtime_contract_fingerprint_model,
                              'ha-mcp-operational-tool-descriptor-v2')
@@ -183,13 +173,11 @@ class Scope(unittest.TestCase):
             'ha_get_system_health', 'ha_get_todo', 'ha_get_zone', 'ha_list_floors_areas',
             'ha_list_services', 'ha_manage_blueprints', 'ha_search',
         }
-        self.assertEqual(set(used_reads('9.1.0')), expected_reads)
-        # HAMCP-290: ha_get_hacs_info stays an 8.5.0 policy read route but is
-        # retired (never exposed or dispatched); 9.1.0 classifies it unsupported.
-        self.assertEqual(set(used_reads('8.5.0')), expected_reads)
+        self.assertEqual(set(used_reads('9.2.0')), expected_reads)
+        # HAMCP-290: ha_get_hacs_info is retired (never exposed or
+        # dispatched); 9.2.0 classifies it unsupported.
         self.assertEqual(RETIRED_DELEGATED_READS, frozenset({'ha_get_hacs_info'}))
-        self.assertEqual(set(policy_read_routes('8.5.0')), expected_reads | RETIRED_DELEGATED_READS)
-        self.assertEqual(set(policy_read_routes('9.1.0')), expected_reads)
+        self.assertEqual(set(policy_read_routes('9.2.0')), expected_reads)
         self.assertEqual(REQUIRED_TOOLS, ('ha_list_services', 'ha_get_state', 'ha_call_service'))
         self.assertEqual((GETTER, GUIDE, SETTER), (
             'ha_config_get_dashboard', 'ha_get_skill_guide', 'ha_config_set_dashboard'))
@@ -200,11 +188,9 @@ class Scope(unittest.TestCase):
 # Read gateway: automatic reads and adapter reads.
 # ---------------------------------------------------------------------------
 def gateway_catalog(version):
-    if version == '9.2.0':
-        return deepcopy(json.loads(WIRE_920.read_text(encoding='utf-8'))['tools_list_pages'][0]['response']['result']['tools'])
-    if version == '9.1.2':
-        return deepcopy(json.loads(WIRE_912.read_text(encoding='utf-8'))['result']['tools'])
-    return deepcopy(adm.captured(version)) if version != '9.1.0' else deepcopy(wire_catalog())
+    if version != '9.2.0':
+        raise AssertionError(f'no reviewed wire catalog for {version}')
+    return deepcopy(json.loads(WIRE_920.read_text(encoding='utf-8'))['tools_list_pages'][0]['response']['result']['tools'])
 
 
 class ReadGatewayExactAdmission(adm.Harness):
@@ -238,14 +224,6 @@ class ReadGatewayExactAdmission(adm.Harness):
                     self.assertEqual(self.exposed(gateway), base - {EXPOSED_AS.get(name, name)})
                     self.assertEqual(transport.sent, [])
 
-    async def test_valid_dynamic_policy_change_is_projected(self):
-        base = await self.baseline('8.5.0')
-        tools = gateway_catalog('8.5.0')
-        self.assertTrue(valid_dynamic_policy_change(
-            next(tool for tool in tools if tool['name'] == 'ha_get_state')))
-        gateway, _transport = await self.gateway('8.5.0', tools)
-        self.assertEqual(self.exposed(gateway), base)
-
     async def test_missing_used_read_fails_closed(self):
         for version in VERSIONS:
             for name in ('ha_get_state', 'ha_manage_blueprints'):
@@ -254,15 +232,10 @@ class ReadGatewayExactAdmission(adm.Harness):
                         version, without(gateway_catalog(version), name))
                     self.assertNotIn(EXPOSED_AS.get(name, name), self.exposed(gateway))
                     self.assertEqual(transport.sent, [])
-                    if version in NINE_ONE:
-                        # Codex F1: on 9.1.0 only the missing used read is
-                        # withheld; the rest is not quarantined by its absence.
-                        base = await self.baseline(version)
-                        self.assertEqual(self.exposed(gateway), base - {EXPOSED_AS.get(name, name)})
-                    else:
-                        # 8.5.0 keeps its pre-existing order gate (architect
-                        # ruling 2026-11-08): the absence quarantines stock reads.
-                        self.assert_85_order_quarantine(gateway, transport)
+                    # Codex F1: only the missing used read is withheld; the
+                    # rest is not quarantined by its absence.
+                    base = await self.baseline(version)
+                    self.assertEqual(self.exposed(gateway), base - {EXPOSED_AS.get(name, name)})
 
     async def test_duplicate_used_read_fails_closed(self):
         for version in VERSIONS:
@@ -292,12 +265,11 @@ class ReadGatewayExactAdmission(adm.Harness):
                 self.assertNotIn(SETTER, self.exposed(gateway))
 
 
-    # Codex F1 (PR #406 verdict 6731785026): on 9.1.0 neither the catalog
-    # order nor the presence of an unused tool is a runtime admission
-    # condition. Only the used tools are bound, each exactly. The strict
-    # full-catalog comparison stays in the CI exact-image lanes. 8.5.0 keeps
-    # its pre-existing order gate unchanged (architect ruling 2026-11-08,
-    # outside #406 scope); test_85_order_gate_unchanged pins it.
+    # Codex F1 (PR #406 verdict 6731785026): on the strict-full releases
+    # neither the catalog order nor the presence of an unused tool is a
+    # runtime admission condition. Only the used tools are bound, each
+    # exactly. The strict full-catalog comparison stays in the CI exact-image
+    # lanes.
     def stock_reads(self, version):
         return {EXPOSED_AS.get(name, name) for name in used_reads(version)}
 
@@ -307,14 +279,8 @@ class ReadGatewayExactAdmission(adm.Harness):
         self.assertEqual(len(exposed - {YAML_TOOL}), 27)
         self.assertNotIn(EXTRA, exposed)
 
-    def assert_85_order_quarantine(self, gateway, transport):
-        health = gateway.health_snapshot()
-        self.assertIn('catalog_order_mismatch', health['quarantine_reason_counts'])
-        self.assertFalse(self.stock_reads('8.5.0') & self.exposed(gateway))
-        self.assertEqual(transport.sent, [])
-
     async def test_reordered_catalog_is_admitted(self):
-        for version in NINE_ONE:
+        for version in VERSIONS:
             base = await self.baseline(version)
             self.assertEqual(len(base), 28)
             self.assertIn(YAML_TOOL, base)
@@ -333,7 +299,7 @@ class ReadGatewayExactAdmission(adm.Harness):
                     self.assertEqual(transport.sent, [])
 
     async def test_unused_tool_removal_is_admitted(self):
-        for version in NINE_ONE:
+        for version in VERSIONS:
             base = await self.baseline(version)
             names = {tool['name'] for tool in gateway_catalog(version)}
             for name in ('ha_restart', 'ha_get_hacs_info'):
@@ -346,8 +312,6 @@ class ReadGatewayExactAdmission(adm.Harness):
                     self.assertEqual(transport.sent, [])
 
     async def test_extra_unused_tool_interspersed_is_admitted(self):
-        # 8.5.0 included: an unreviewed name never enters the reviewed-order
-        # fingerprint, so this was already admitted there before #406.
         for version in VERSIONS:
             base = await self.baseline(version)
             tools = gateway_catalog(version)
@@ -362,7 +326,7 @@ class ReadGatewayExactAdmission(adm.Harness):
 
     async def test_reordered_catalog_still_refuses_changed_missing_duplicate(self):
         """Lifting order does not lift the per-used-tool checks."""
-        for version in NINE_ONE:
+        for version in VERSIONS:
             base = await self.baseline(version)
             cases = {
                 'changed': changed(gateway_catalog(version), 'ha_get_state', _set_description),
@@ -376,48 +340,11 @@ class ReadGatewayExactAdmission(adm.Harness):
                     self.assertNotIn('ha_get_state', exposed)
                     self.assertEqual(transport.sent, [])
                     if label == 'duplicate':
-                        # 9.1 strict-full: a duplicate reviewed name blocks
+                        # Strict-full: a duplicate reviewed name blocks
                         # every stock read (HAMCP-319 sections 4 and 8.2).
                         self.assertLessEqual(exposed, {YAML_TOOL})
                     else:
                         self.assertEqual(exposed, base - {'ha_get_state'})
-
-    async def test_85_order_gate_unchanged(self):
-        """Architect ruling 2026-11-08: 8.5.0's pre-existing order gate stays.
-
-        F1 lifts the order and unused-presence condition on 9.1.0 only. On
-        8.5.0 a reorder or an absent reviewed tool, used or unused, still
-        quarantines every stock read (``catalog_order_mismatch``), exactly as
-        before #406; a changed unused descriptor and an unreviewed extra name
-        were already tolerated and still are.
-        """
-        version = '8.5.0'
-        base = await self.baseline(version)
-        tools = gateway_catalog(version)
-        blocked = {
-            'reversed': list(reversed(tools)),
-            'name_sorted': sorted(tools, key=lambda tool: tool['name']),
-            'rotated': tools[1:] + tools[:1],
-            'two_used_reads_swapped': _swap(tools, 'ha_get_state', 'ha_search'),
-            'unused_ha_restart_removed': without(tools, 'ha_restart'),
-            'used_ha_get_state_removed': without(tools, 'ha_get_state'),
-        }
-        for label, catalog in blocked.items():
-            with self.subTest(variant=label):
-                gateway, transport = await self.gateway(version, catalog)
-                self.assert_85_order_quarantine(gateway, transport)
-        extra = deepcopy(next(t for t in tools if t['name'] == 'ha_get_state'))
-        extra['name'] = EXTRA
-        tolerated = {
-            'unused_ha_restart_changed': changed(tools, 'ha_restart', _set_description),
-            'unreviewed_extra_interspersed': tools[:5] + [extra] + tools[5:],
-        }
-        for label, catalog in tolerated.items():
-            with self.subTest(variant=label):
-                gateway, transport = await self.gateway(version, catalog)
-                self.assertEqual(gateway.health_snapshot()['quarantine_reason_counts'], {})
-                self.assertEqual(self.exposed(gateway), base)
-                self.assertEqual(transport.sent, [])
 
 
 def _swap(tools, first, second):
@@ -464,15 +391,6 @@ class TypedControlExactAdmission(unittest.IsolatedAsyncioTestCase):
                                 self.admit(family, version,
                                            changed(catalog_tools(version), name, change))
                             self.assertIn('contract_mismatch', str(caught.exception.args))
-
-    def test_valid_dynamic_policy_change_is_projected(self):
-        for kind, family in FAMILIES.items():
-            tools = deepcopy(list(catalog_tools('8.5.0')))
-            for tool in tools:
-                if tool['name'] in REQUIRED_TOOLS:
-                    self.assertTrue(valid_dynamic_policy_change(tool))
-            with self.subTest(kind=kind):
-                self.assertEqual(self.admit(family, '8.5.0', tools)[0], '8.5.0')
 
     def test_missing_or_duplicate_used_tool_fails_closed(self):
         for kind, family in FAMILIES.items():
@@ -562,15 +480,6 @@ class DashboardExactAdmission(DashboardHarness):
                         peer.tools = changed(peer.tools, name, change)
                         await self.assert_guide_refused(peer)
 
-    async def test_valid_dynamic_policy_change_is_projected(self):
-        peer = DashboardPeer('8.5.0')
-        for tool in peer.tools:
-            if tool['name'] in (GETTER, GUIDE, SETTER):
-                self.assertTrue(valid_dynamic_policy_change(tool))
-        await self.assert_read_admitted(peer)
-        key = await self.provider(peer).best_practices_acknowledgement_key()
-        self.assertEqual(key, peer.key)
-
     async def test_missing_or_duplicate_getter_fails_closed(self):
         for version in VERSIONS:
             for label, edit in (('missing', without), ('duplicate', duplicated)):
@@ -626,13 +535,6 @@ class YamlReaderExactAdmission(adm.Harness):
                                     self.optional(gateway))
                     self.assertEqual(self.exposed(gateway), stock)
                     self.assertEqual(transport.sent, [])
-
-    async def test_valid_dynamic_policy_change_is_projected(self):
-        tools = gateway_catalog('8.5.0')
-        self.assertTrue(valid_dynamic_policy_change(
-            next(tool for tool in tools if tool['name'] == YAML_TOOL)))
-        gateway, _transport = await self.gateway('8.5.0', tools)
-        self.assertEqual(self.optional(gateway)[YAML_TOOL], 'admitted')
 
     async def test_missing_or_duplicate_reader_fails_closed(self):
         for version in VERSIONS:

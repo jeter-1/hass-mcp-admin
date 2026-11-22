@@ -1,14 +1,13 @@
 """HAMCP-319 Phase 2 section 8.1 item 1: useful results without a redirect.
 
-Design docs/HAMCP_319_PHASE2_DESIGN.md section 8.1 item 1 names two tests:
+Design docs/HAMCP_319_PHASE2_DESIGN.md section 8.1 item 1 named an 8.5.0 and a
+9.1.0 test. HAMCP-437 retired the 8.5.0 one (8.5.0 admission) and moved the
+9.1.0 one to 9.2.0, the admitted release, which shares the strict selector:
 
-* ``test_85_no_redirect_useful_both_forms``: an 8.5.0 peer that answers
-  without a redirect, on a ``legacy`` value and on a strict-form value,
-  returns useful results on every client: a delegated read, a governed
-  dashboard list and get, and a typed power, fan or helper operation with
-  verified readback.
-* ``test_91_no_redirect_useful_strict_full``: the same on a 9.1.0 peer with a
-  ``strict_full`` value.
+* ``test_920_no_redirect_useful_strict_full``: a 9.2.0 peer that answers
+  without a redirect, on a ``strict_full`` value, returns useful results on
+  every client: a delegated read, a governed dashboard list and get, and a
+  typed power operation with verified readback.
 
 Every operation runs over the production no-redirect HTTP transport (real
 ``streamable_http`` client, real ``NoRedirectBinding`` hooks, real catalog
@@ -20,16 +19,16 @@ synthetic URL canary reaches a result.
 
 Upstream response shapes come from committed fixtures only:
 
-* 8.5.0 delegated read: tests/fixtures/ha_mcp_8_5_0/read-results.json
-  ``standalone-call-04.json`` (captured 8.5.0 blueprint list).
-* 9.1.0 delegated read: tests/fixtures/ha_mcp_9_1_0/config/responses.json
-  ``/success/row_1_automation`` (class S, see its provenance.json).
+* Delegated read: tests/fixtures/ha_mcp_9_1_0/config/responses.json
+  ``/success/row_1_automation`` (class S, see its provenance.json), the case
+  ``test_hamcp371_admission_core`` already serves from a 9.2.0 peer.
 * Dashboard list and get: the DB-area envelopes
-  (tests/fixtures/ha_mcp_9_1_0/dashboard/envelopes.json) for 9.1.0 and the
-  8.5.0 shapes, both through ``test_hamcp319_dashboard``.
-* Typed power: the TW-area templates
-  (tests/fixtures/ha_mcp_9_1_0/typed/responses.json) for 9.1.0 and the 8.5.0
-  shapes, both through ``test_hamcp319_typed_writes.Peer.respond``.
+  (tests/fixtures/ha_mcp_9_1_0/dashboard/envelopes.json), which describe
+  9.2.0 by source identity (``test_hamcp319_dashboard`` NINE_TWO note).
+* Typed power: ``test_hamcp319_typed_writes.Peer.respond`` for 9.2.0, which
+  serves the synthetic, not source-cited, shapes that ``test_typed_power``
+  and ``test_hamcp371_write_providers_9_2`` use on 9.2.0; the 9.1.0 TW
+  templates are source-cited to 9.1.0 only.
 
 Nothing here contacts Home Assistant or a deployed endpoint; all secrets,
 credentials and canaries are synthetic.
@@ -70,9 +69,6 @@ import test_hamcp319_no_redirect_matrix as part2  # noqa: E402
 import test_hamcp319_typed_writes as typed_fixtures  # noqa: E402
 from tests.test_typed_fan import Clock, Core  # noqa: E402
 
-READ_RESULTS_85 = json.loads(
-    (ROOT / "tests/fixtures/ha_mcp_8_5_0/read-results.json").read_text()
-)
 CONFIG_91 = json.loads(
     (ROOT / "tests/fixtures/ha_mcp_9_1_0/config/responses.json").read_text()
 )["success"]["row_1_automation"]
@@ -135,14 +131,7 @@ class NoRedirectUseful(_UsefulAssertions, unittest.IsolatedAsyncioTestCase):
     # -- delegated read (S-a, governed public read gateway) ------------------
 
     def _delegated_read_case(self, version: str):
-        if version == "8.5.0":
-            record = READ_RESULTS_85["standalone-call-04.json"]
-            return SimpleNamespace(
-                public_tool="ha_get_blueprint",
-                public_arguments={},
-                upstream=("ha_manage_blueprints", record["arguments"]),
-                structured=record["result"]["structuredContent"],
-            )
+        # One case for every 9.x release; version is kept for callers.
         return SimpleNamespace(
             public_tool="ha_config_get_automation",
             public_arguments=dict(CONFIG_91["arguments"]),
@@ -194,14 +183,7 @@ class NoRedirectUseful(_UsefulAssertions, unittest.IsolatedAsyncioTestCase):
         self.assertIs(metadata["fallback_occurred"], False, result)
         self.assertEqual(result["timing"]["upstream_request_count"], 1, result)
         self.assertEqual(peer.calls, [case.upstream], label)
-        if version == "8.5.0":
-            listed = result["data"]["data"]["blueprints"]
-            self.assertEqual(
-                [item["path"] for item in listed],
-                [item["path"] for item in case.structured["data"]["blueprints"]],
-            )
-        else:
-            self.assertEqual(result["data"]["config"], case.structured["config"], result)
+        self.assertEqual(result["data"]["config"], case.structured["config"], result)
         self.assert_no_redirect_cost(peer, bindings, result, label=label)
 
     # -- governed dashboard list and get (S-c) -------------------------------
@@ -214,26 +196,17 @@ class NoRedirectUseful(_UsefulAssertions, unittest.IsolatedAsyncioTestCase):
 
         def handler(name, arguments):
             self.assertEqual(name, dashboard_fixtures.GETTER, label)
+            self.assertIn(version, dashboard_fixtures.NINE_ONE, label)
             if arguments.get("list_only") is True:
-                if version == "9.1.0":
-                    return dashboard_fixtures.fill(
-                        dashboard_fixtures.ENVELOPES["list"], rows=deepcopy(rows), count=len(rows)
-                    )
-                return {"success": True, "action": "list", "count": len(rows), "dashboards": deepcopy(rows)}
-            if version == "9.1.0":
                 return dashboard_fixtures.fill(
-                    dashboard_fixtures.ENVELOPES["get_stored_config"],
-                    config=deepcopy(configuration),
-                    config_hash=config_hash,
-                    config_size_bytes=len(json.dumps(configuration)),
-                ) | {"url_path": arguments["url_path"]}
-            return {
-                "success": True,
-                "action": "get",
-                "url_path": arguments["url_path"],
-                "config": deepcopy(configuration),
-                "config_hash": config_hash,
-            }
+                    dashboard_fixtures.ENVELOPES["list"], rows=deepcopy(rows), count=len(rows)
+                )
+            return dashboard_fixtures.fill(
+                dashboard_fixtures.ENVELOPES["get_stored_config"],
+                config=deepcopy(configuration),
+                config_hash=config_hash,
+                config_size_bytes=len(json.dumps(configuration)),
+            ) | {"url_path": arguments["url_path"]}
 
         peer = RedirectPeer(
             version=version,
@@ -350,12 +323,8 @@ class NoRedirectUseful(_UsefulAssertions, unittest.IsolatedAsyncioTestCase):
             with self.subTest(version=version, form=form, client=name):
                 await case(version, form)
 
-    async def test_85_no_redirect_useful_both_forms(self):
-        for form in ("legacy", "strict_full"):
-            await self._useful("8.5.0", form)
-
-    async def test_91_no_redirect_useful_strict_full(self):
-        await self._useful("9.1.0", "strict_full")
+    async def test_920_no_redirect_useful_strict_full(self):
+        await self._useful("9.2.0", "strict_full")
 
 
 if __name__ == "__main__":

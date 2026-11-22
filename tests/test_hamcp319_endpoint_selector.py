@@ -2,9 +2,10 @@
 
 Step 0 (configuration acceptance) is today's parser and stays the only
 configuration-time refusal. Step 1 (``classify_endpoint_form``) only labels an
-accepted value. Under ha-mcp 9.1.0 a ``legacy`` value is refused after
-initialize and before any ``tools/list``; every other registered version keeps
-its contract on either form, on the same no-redirect transport.
+accepted value. Under ha-mcp 9.2.0 a ``legacy`` value is refused after
+initialize and before any ``tools/list``. HAMCP-437 retired the 8.5.0 cases that
+admitted a legacy value; the selector-agreement unit tests keep the branch for a
+version outside the strict set.
 
 Loopback peers only (``support.ha_mcp_redirect_peer``); no Docker, network or
 Home Assistant access. Every secret and base value is synthetic.
@@ -78,7 +79,7 @@ SI = UPSTREAM_CATALOG_SELECTOR_INVALID
 MU = UPSTREAM_CATALOG_MODE_UNADMITTED
 
 # Design section 3.2 accept/reject table. (row, value, Step 0 accepted, form,
-# failing rule, 9.1 refusal code for a legacy value).
+# failing rule, 9.2.0 refusal code for a legacy value).
 ROWS: tuple[tuple[int, str, bool, str | None, str | None, str | None], ...] = (
     (1, f"{B}/catalog/full", True, STRICT_FULL, None, None),
     (
@@ -382,12 +383,12 @@ class SelectorAgreementUnitTests(unittest.TestCase):
     def test_selector_agreement_admits_by_version_and_form(self):
         strict_snapshot, strict_binding = self._bound(f"{B}/catalog/full")
         legacy_snapshot, legacy_binding = self._bound(f"{B}/mcp")
-        for version in ("9.1.0", "8.5.0", "8.6.0"):
+        for version in ("9.2.0", "8.5.0", "8.6.0"):
             require_selector_agreement(version, strict_snapshot, strict_binding)
         for version in ("8.5.0", "8.6.0", "7.2.0"):
             require_selector_agreement(version, legacy_snapshot, legacy_binding)
         with self.assertRaises(UpstreamEndpointRefused) as caught:
-            require_selector_agreement("9.1.0", legacy_snapshot, legacy_binding)
+            require_selector_agreement("9.2.0", legacy_snapshot, legacy_binding)
         self.assertEqual(caught.exception.category, MU)
         self.assertFalse(caught.exception.tool_call_attempted)
         self.assertNotIn("synthetictoken123", repr(caught.exception))
@@ -397,7 +398,7 @@ class SelectorAgreementUnitTests(unittest.TestCase):
         snapshot, binding = self._bound(f"{B}/catalog/full")
         other_snapshot, other_binding = self._bound(f"{B}/catalog/full")
         unfactored = NoRedirectBinding(snapshot)
-        for version in ("9.1.0", "8.5.0"):
+        for version in ("9.2.0", "8.5.0"):
             for candidate in (None, object(), unfactored, other_binding):
                 with self.subTest(version=version, binding=type(candidate).__name__):
                     with self.assertRaises(UpstreamEndpointRefused) as caught:
@@ -415,7 +416,7 @@ class SelectorAgreementUnitTests(unittest.TestCase):
         snapshot, binding = self._bound(f"{B}/catalog/full")
         binding.refuse_redirect()
         with self.assertRaises(UpstreamEndpointRefused) as caught:
-            require_selector_agreement("9.1.0", snapshot, binding)
+            require_selector_agreement("9.2.0", snapshot, binding)
         self.assertEqual(caught.exception.category, UPSTREAM_REDIRECT_REFUSED)
 
 
@@ -480,8 +481,8 @@ def _list_pages(counters) -> int:
     return counters.origin["tools/list:first"] + counters.origin["tools/list:cursor"]
 
 
-class LegacyValueOn91Tests(unittest.TestCase):
-    """Section 8.1 item 2: each legacy row on a 9.1.0 peer, every site."""
+class LegacyValueOn92Tests(unittest.TestCase):
+    """Section 8.1 item 2: each legacy row on a 9.2.0 peer, every site."""
 
     def _run_all(self, version: str):
         async def scenario():
@@ -496,8 +497,8 @@ class LegacyValueOn91Tests(unittest.TestCase):
             outcomes = asyncio.run(scenario())
         return outcomes, capture.lines
 
-    def test_91_legacy_form_refused_before_list(self):
-        outcomes, logs = self._run_all("9.1.0")
+    def test_920_legacy_form_refused_before_list(self):
+        outcomes, logs = self._run_all("9.2.0")
         for row, value, code, cell in outcomes:
             label = f"{cell.client}/row{row}/{value!r}"
             with self.subTest(cell=label):
@@ -525,36 +526,13 @@ class LegacyValueOn91Tests(unittest.TestCase):
                     self.assertNotIn("synthetictoken123", sink)
                     self.assertNotIn("synthetic-upstream-secret", sink)
 
-    def test_85_legacy_rows_admitted_on_same_transport(self):
-        outcomes, _logs = self._run_all("8.5.0")
-        for row, value, _code, cell in outcomes:
-            label = f"{cell.client}/row{row}/{value!r}"
-            with self.subTest(cell=label):
-                counters = cell.counters
-                self.assertEqual(counters.destination_total(), 0)
-                if "\t" in value:
-                    self.assertEqual(counters.origin_total(), 0)
-                    self.assertIsInstance(cell.error, DashboardTransportError)
-                    continue
-                if cell.error is not None:
-                    self.assertNotIn(
-                        getattr(cell.error, "category", None), ENDPOINT_REFUSAL_CODES
-                    )
-                # Admitted: the catalog was listed past selector agreement.
-                self.assertGreaterEqual(_list_pages(counters), 1)
-                if cell.kind == "read":
-                    self.assertIsNone(cell.error, repr(cell.error))
-                    self.assertEqual(counters.executions, 1)
-                if cell.kind == "dashboard":
-                    self.assertIsNone(cell.error, repr(cell.error))
-
-    def test_91_strict_rows_admitted(self):
+    def test_920_strict_rows_admitted(self):
         async def scenario():
             outcomes = []
             for client in SITES:
-                outcomes.append(await _run_value(client, f"{B}/catalog/full", "9.1.0"))
+                outcomes.append(await _run_value(client, f"{B}/catalog/full", "9.2.0"))
                 outcomes.append(
-                    await _run_value(client, f"{B}/catalog/full?x=1", "9.1.0")
+                    await _run_value(client, f"{B}/catalog/full?x=1", "9.2.0")
                 )
             return outcomes
 
@@ -620,7 +598,7 @@ class TransportBindingTests(unittest.TestCase):
         return asyncio.run(scenario())
 
     def test_url_drift_refused_before_send(self):
-        for version in ("8.5.0", "9.1.0"):
+        for version in ("9.2.0",):
             with self.subTest(version=version):
                 error, counters = self._run("drift", version)
                 self.assertIsInstance(error, DashboardTransportError)
@@ -629,7 +607,7 @@ class TransportBindingTests(unittest.TestCase):
                 self.assertEqual(counters.destination_total(), 0)
 
     def test_session_without_binding_refused_before_list(self):
-        for version in ("8.5.0", "9.1.0"):
+        for version in ("9.2.0",):
             with self.subTest(version=version):
                 error, counters = self._run("sdk_default", version)
                 self.assertIsInstance(error, DashboardTransportError)
@@ -640,8 +618,8 @@ class TransportBindingTests(unittest.TestCase):
 
     def test_generation_change_closes_retained_worker(self):
         async def scenario():
-            first = RedirectPeer(version="9.1.0", form="strict_full", tool_names=READ_TOOLS)
-            second = RedirectPeer(version="9.1.0", form="strict_full", tool_names=READ_TOOLS)
+            first = RedirectPeer(version="9.2.0", form="strict_full", tool_names=READ_TOOLS)
+            second = RedirectPeer(version="9.2.0", form="strict_full", tool_names=READ_TOOLS)
             with first.serve(), second.serve():
                 transport = McpReadGatewayTransport(
                     publish_endpoint_snapshot(first.url),

@@ -102,9 +102,7 @@ DASHBOARD_ARGUMENTS = {
 DASHBOARD_TOOLS = ("ha_config_get_dashboard", "ha_synthetic_two")
 READ_TOOLS = ("ha_synthetic_one", "ha_synthetic_two")
 PEER_SLUGS = {
-    ("8.5.0", "legacy"): "v85_legacy",
-    ("8.5.0", "strict_full"): "v85_strict",
-    ("9.1.0", "strict_full"): "v91_strict",
+    ("9.2.0", "strict_full"): "v92_strict",
 }
 REQUEST_SLUGS = {
     "initialize": "initialize",

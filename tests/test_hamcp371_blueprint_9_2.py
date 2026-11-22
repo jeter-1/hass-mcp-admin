@@ -6,14 +6,13 @@ policy entry. These tests cover:
 
 * the module: the reviewed list and get key sets, refusal of any other key
   under ``data``, ``config`` and ``yaml`` left open, and no payload mutation;
-* the real gateway, with the stock registry capture of each version and the
+* the real gateway, with the stock 9.2.0 registry capture and the
   committed ``r12-blueprints`` receipts (profile A without the component,
   profile B with it) plus a synthetic get-mode answer per profile: on 9.2.0 a
   key injected under ``data`` is refused as ``invalid_response`` in list and
-  get mode; on 9.1.2 and 8.5.0 the same payload passes as shipped;
+  get mode (HAMCP-437: the 9.1.2 and 8.5.0 pass-through cases are retired);
 * the top-level case: a key at the payload top level, outside ``data``, is
-  not covered by D5-B and passes unchanged on every version, 9.2.0 included
-  (HAMCP-402 owns it).
+  not covered by D5-B and passes unchanged on 9.2.0 (HAMCP-402 owns it).
 
 Get mode has no 9.2.0 receipt: its answers here are synthetic, shaped from the
 source review recorded in the module docstring. Synthetic values only; no
@@ -40,7 +39,8 @@ INJECTED = "hamcp371_injected_key"
 LIST_ARGS = {"domain": "automation"}
 PATH = "homeassistant/motion_light.yaml"
 GET_ARGS = {"domain": "automation", "path": PATH}
-VERSIONS = ("9.2.0", "9.1.2", "8.5.0")
+# HAMCP-437: only 9.2.0 is admitted (D1); the 9.1.2 and 8.5.0 comparisons are retired.
+VERSIONS = ("9.2.0",)
 
 
 def _get_answer(component: bool) -> dict:
@@ -177,7 +177,7 @@ class SharedGate(unittest.TestCase):
 
 
 class GatewayReplay(unittest.TestCase):
-    """The real gateway on each version's stock registry capture."""
+    """The real gateway on the 9.2.0 stock registry capture."""
 
     @classmethod
     def setUpClass(cls):
@@ -201,7 +201,7 @@ class GatewayReplay(unittest.TestCase):
     def out(self, version, profile, name):
         return self.results[version][(profile, name)]
 
-    def test_the_reviewed_answers_pass_on_every_version(self):
+    def test_the_reviewed_answers_pass_on_9_2_0(self):
         for version in VERSIONS:
             for profile in ("A", "B"):
                 for name, action in (("list", "list"), ("get", "get")):
@@ -220,27 +220,18 @@ class GatewayReplay(unittest.TestCase):
                     self.assertEqual(len(sent), 1)
                     self.assertNotIn(INJECTED, json.dumps(out))
 
-    def test_the_same_key_passes_as_before_on_9_1_2_and_8_5_0(self):
-        for version in ("9.1.2", "8.5.0"):
-            for profile in ("A", "B"):
-                for name in ("list_under", "get_under"):
-                    with self.subTest(version=version, profile=profile, mode=name):
-                        out, _sent = self.out(version, profile, name)
-                        self.assertIs(out["success"], True, out.get("details"))
-                        self.assertIn(INJECTED, json.dumps(out))
-
-    def test_the_top_level_case_is_unchanged_on_every_version(self):
-        # Outside ``data``; D5-B does not cover it (HAMCP-402). Same result on
-        # 9.2.0 as on the shipped versions.
+    def test_the_top_level_case_is_unchanged_on_9_2_0(self):
+        # Outside ``data``; D5-B does not cover it (HAMCP-402). The answer passes
+        # with the same keys the unchanged gateway has always returned for it.
         for profile in ("A", "B"):
-            for name in ("list_top", "get_top"):
-                shipped = self.out("9.1.2", profile, name)[0]
-                for version in VERSIONS:
-                    with self.subTest(version=version, profile=profile, mode=name):
-                        out, _sent = self.out(version, profile, name)
-                        self.assertIs(out["success"], True, out.get("details"))
-                        self.assertIn(INJECTED, out["data"])
-                        self.assertEqual(sorted(out["data"]), sorted(shipped["data"]))
+            content = self.receipts[profile][1]
+            answers = {"list_top": _top(content), "get_top": _top(_get_answer(profile == "B"))}
+            for name, answer in answers.items():
+                with self.subTest(profile=profile, mode=name):
+                    out, _sent = self.out("9.2.0", profile, name)
+                    self.assertIs(out["success"], True, out.get("details"))
+                    self.assertIn(INJECTED, out["data"])
+                    self.assertEqual(sorted(out["data"]), sorted(answer))
 
 
 if __name__ == "__main__":
