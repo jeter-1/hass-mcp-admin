@@ -211,15 +211,17 @@ class Transport920(FakeMcpTransport):
             payload = {"success": True, "addon": deepcopy(addon)}
         else:  # a legacy name never reaches a 9.2.0 peer
             raise AssertionError(f"unexpected 9.2.0 tool {tool_name}")
+        # ``raw_result`` (from FakeMcpTransport) replaces the reply verbatim.
+        call_result = self.raw_result if self.raw_result is not None else {
+            "content": [{"type": "text", "text": json.dumps(payload)}],
+            "structuredContent": deepcopy(payload),
+            "isError": False,
+        }
         return McpReadResult(
             protocol_version=self.catalog.protocol_version,
             server_name=self.catalog.server_name,
             server_version=self.catalog.server_version,
-            call_result={
-                "content": [{"type": "text", "text": json.dumps(payload)}],
-                "structuredContent": deepcopy(payload),
-                "isError": False,
-            },
+            call_result=call_result,
             connection_latency_ms=1.0,
             tool_call_latency_ms=1.0,
         )

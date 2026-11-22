@@ -65,6 +65,8 @@ from ha_mcp_engineering.governance.task_models import (  # noqa: E402
     RESERVED_TASK_STATES,
 )
 from ha_mcp_engineering.providers.operational_lifecycle import (  # noqa: E402
+    APP_ACTION_TOOL,
+    APP_READ_TOOL,
     OperationalLifecycleProviderError,
     ReviewedOperationalLifecycleProvider,
 )
@@ -82,7 +84,6 @@ from ha_mcp_engineering.mcp_sdk_compatibility import (  # noqa: E402
     registered_tools,
 )
 from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
-    RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1,
     RUNTIME_CONTRACT_FINGERPRINT_MODEL_V2,
     load_reviewed_upstream_release_registry,
 )
@@ -2975,6 +2976,18 @@ class FakeMcpTransport:
         )
 
 
+# HAMCP-437 I2a-D: the shipped registry admits only ha-mcp 9.2.0, so the
+# provider tests below run against the reviewed 9.2.0 peer (app tool names,
+# structured envelope). Imported lazily: that module imports this one.
+INSTALLED_INVENTORY = (APP_READ_TOOL, {"source": "installed", "include_stats": False})
+
+
+def transport_920():
+    from tests.test_hamcp401_lifecycle_9_2_0 import Transport920
+
+    return Transport920()
+
+
 class SupervisorSelfIdentityTests(unittest.IsolatedAsyncioTestCase):
     async def test_exact_self_info_is_authoritative_and_bounded(self):
         payload = json.dumps(
@@ -3027,7 +3040,7 @@ class SupervisorSelfIdentityTests(unittest.IsolatedAsyncioTestCase):
 
 class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
     async def test_addon_reads_require_current_core_authority_before_transport(self):
-        transport = FakeMcpTransport()
+        transport = transport_920()
         provider = ReviewedOperationalLifecycleProvider()
         provider.configure(
             lifecycle_settings(
@@ -3035,6 +3048,8 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
             ),
             transport=transport,
         )
+        # A 9.2.0 app read needs the probe that selects the app tool names.
+        await provider.probe("restart_addon")
         telemetry, token = begin_request("request-core-authority-refusal")
         authorizations = 0
 
@@ -3056,7 +3071,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(transport.calls, [])
 
     async def test_addon_reads_revalidate_core_authority_before_second_call(self):
-        transport = FakeMcpTransport()
+        transport = transport_920()
         provider = ReviewedOperationalLifecycleProvider()
         provider.configure(
             lifecycle_settings(
@@ -3064,6 +3079,8 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
             ),
             transport=transport,
         )
+        # A 9.2.0 app read needs the probe that selects the app tool names.
+        await provider.probe("restart_addon")
         telemetry, token = begin_request("request-core-authority-retired")
         authorizations = 0
 
@@ -3082,33 +3099,23 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(raised.exception.category, "provider_unavailable")
         self.assertFalse(raised.exception.dispatched)
         self.assertEqual(authorizations, 2)
-        self.assertEqual(
-            transport.calls,
-            [
-                (
-                    "ha_get_addon",
-                    {"source": "installed", "include_stats": False},
-                )
-            ],
-        )
+        self.assertEqual(transport.calls, [INSTALLED_INVENTORY])
 
     async def test_exact_release_models_validate_binding_without_dispatch(self):
+        # HAMCP-437 I2a-D: the 7.14.2 (descriptor model V1) and 8.0.0 cases
+        # retired with their rows; 9.2.0 is the only reviewed release and
+        # uses model V2.
         cases = (
             (
-                "7.14.2",
-                "ha-mcp-v7.14.2-7917b2d3",
-                RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1,
-            ),
-            (
-                "8.0.0",
-                "ha-mcp-v8.0.0-d65630f6",
+                "9.2.0",
+                "ha-mcp-v9.2.0-9de5bf6c",
                 RUNTIME_CONTRACT_FINGERPRINT_MODEL_V2,
             ),
         )
         registry = load_reviewed_upstream_release_registry()
         for version, entry_id, expected_model in cases:
             with self.subTest(version=version):
-                transport = FakeMcpTransport(version)
+                transport = transport_920()
                 provider = ReviewedOperationalLifecycleProvider()
                 provider.configure(
                     lifecycle_settings(
@@ -3141,17 +3148,8 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(
                     transport.calls,
                     [
-                        (
-                            "ha_get_addon",
-                            {
-                                "source": "installed",
-                                "include_stats": False,
-                            },
-                        ),
-                        (
-                            "ha_get_addon",
-                            {"slug": UPSTREAM_ADDON_SLUG},
-                        ),
+                        INSTALLED_INVENTORY,
+                        (APP_READ_TOOL, {"slug": UPSTREAM_ADDON_SLUG}),
                     ],
                 )
                 health = provider.health_snapshot()
@@ -3168,20 +3166,25 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
                     {
                         "ha_reload_core",
                         "ha_manage_addon",
+                        APP_ACTION_TOOL,
                         "ha_restart",
                     }
                     & {name for name, _arguments in transport.calls}
                 )
 
-    async def test_8_0_0_runtime_drift_fails_closed_with_diagnostics(self):
-        transport = FakeMcpTransport("8.0.0")
+    async def test_9_2_0_runtime_drift_fails_closed_with_diagnostics(self):
+        # HAMCP-437 I2a-D: was the 8.0.0 ``_meta.ha_mcp.pinned`` flip. The
+        # 9.2.0 descriptors carry no ``_meta.ha_mcp``; the same model-V2
+        # runtime-contract drift is a changed ``_meta.fastmcp.tags``.
+        transport = transport_920()
         tools = [deepcopy(item) for item in transport.catalog.tools]
         target = next(
-            item for item in tools if item["name"] == "ha_manage_addon"
+            item for item in tools if item["name"] == APP_ACTION_TOOL
         )
-        target["_meta"]["ha_mcp"]["pinned"] = not target["_meta"][
-            "ha_mcp"
-        ]["pinned"]
+        target["_meta"]["fastmcp"]["tags"] = [
+            *target["_meta"]["fastmcp"]["tags"],
+            "Synthetic drift",
+        ]
         transport.catalog = McpReadCatalog(
             protocol_version=transport.catalog.protocol_version,
             server_name=transport.catalog.server_name,
@@ -3245,7 +3248,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sum(health["dispatch_counts"].values()), 0)
         self.assertEqual(health["fallback_count"], 0)
         self.assertEqual(transport.calls, [])
-        self.assertEqual(diagnostics["tool_name"], "ha_manage_addon")
+        self.assertEqual(diagnostics["tool_name"], APP_ACTION_TOOL)
         self.assertEqual(
             catalog_validation["runtime_contract_fingerprint_model"],
             RUNTIME_CONTRACT_FINGERPRINT_MODEL_V2,
@@ -3255,7 +3258,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             diagnostics["runtime_contract_diff_fields"],
-            ["/_meta/ha_mcp/pinned"],
+            ["/_meta/fastmcp/tags"],
         )
 
     async def test_unknown_8_x_lifecycle_releases_fail_without_dispatch(self):
@@ -3431,7 +3434,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
     async def test_prefixed_upstream_slug_is_bound_to_admitted_endpoint(
         self,
     ):
-        transport = FakeMcpTransport()
+        transport = transport_920()
         provider = ReviewedOperationalLifecycleProvider()
         provider.configure(
             lifecycle_settings(
@@ -3455,7 +3458,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
             None,
             configuration_validator=lambda: None,
             runtime_snapshot=lambda: {
-                "upstream_version": "7.14.2",
+                "upstream_version": "9.2.0",
                 "upstream_protocol": "2025-03-26",
                 "upstream_catalog_fingerprint": (
                     "c6bd074d9ee1e832bd90318398c00efd9a9ffd983d5444817bc830208cbfc47c"
@@ -3525,17 +3528,15 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
             persisted.operational.verification_contract["required"],
         )
         self.assertNotIn(
-            "ha_manage_addon",
+            APP_ACTION_TOOL,
             [tool_name for tool_name, _arguments in transport.calls],
         )
 
-    async def test_inventory_arguments_match_both_reviewed_releases(self):
-        for version in ("7.14.1", "7.14.2"):
+    async def test_inventory_arguments_match_the_reviewed_release(self):
+        # HAMCP-437 I2a-D: was 7.14.1 and 7.14.2; 9.2.0 is the reviewed row.
+        for version in ("9.2.0",):
             with self.subTest(version=version):
-                transport = FakeMcpTransport(version)
-                for addon in transport.addons:
-                    if addon["slug"] == UPSTREAM_ADDON_SLUG:
-                        addon["version"] = version
+                transport = transport_920()
                 provider = ReviewedOperationalLifecycleProvider()
                 provider.configure(
                     lifecycle_settings(
@@ -3544,6 +3545,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
                     ),
                     transport=transport,
                 )
+                await provider.probe("restart_addon")
                 addon = await provider.get_addon(
                     UPSTREAM_ADDON_SLUG
                 )
@@ -3552,19 +3554,14 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
                     "bound",
                 )
                 self.assertEqual(
+                    addon["upstream_addon_identity"]["installed_version"],
+                    version,
+                )
+                self.assertEqual(
                     transport.calls[:2],
                     [
-                        (
-                            "ha_get_addon",
-                            {
-                                "source": "installed",
-                                "include_stats": False,
-                            },
-                        ),
-                        (
-                            "ha_get_addon",
-                            {"slug": UPSTREAM_ADDON_SLUG},
-                        ),
+                        INSTALLED_INVENTORY,
+                        (APP_READ_TOOL, {"slug": UPSTREAM_ADDON_SLUG}),
                     ],
                 )
 
@@ -3606,7 +3603,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_missing_addon_is_domain_outcome_not_provider_failure(self):
         provider = ReviewedOperationalLifecycleProvider()
-        transport = FakeMcpTransport()
+        transport = transport_920()
         provider._transport = transport
         await provider.probe("restart_addon")
         before = provider.health_snapshot()
@@ -3633,7 +3630,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
             before["selected_compatibility_entry_id"],
         )
         self.assertEqual(
-            after["observed_upstream_version"], "7.14.2"
+            after["observed_upstream_version"], "9.2.0"
         )
         self.assertEqual(
             after["domain_outcome_counts"], {"addon_not_found": 1}
@@ -3642,20 +3639,12 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(
             error_definition(ErrorCode.ADDON_NOT_FOUND).retryable
         )
-        self.assertEqual(
-            transport.calls,
-            [
-                (
-                    "ha_get_addon",
-                    {"source": "installed", "include_stats": False},
-                )
-            ],
-        )
+        self.assertEqual(transport.calls, [INSTALLED_INVENTORY])
 
     async def test_ambiguous_upstream_endpoint_binding_creates_no_plan(
         self,
     ):
-        transport = FakeMcpTransport()
+        transport = transport_920()
         transport.addons.append(
             {
                 "slug": "abcdef12-ha_mcp",
@@ -3675,6 +3664,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
             ),
             transport=transport,
         )
+        await provider.probe("restart_addon")
         observed = await provider.get_addon("local_test_addon")
         self.assertEqual(
             observed["upstream_addon_identity"]["status"],
@@ -3722,7 +3712,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(repository.list(), [])
         self.assertNotIn(
-            "ha_manage_addon",
+            APP_ACTION_TOOL,
             [tool_name for tool_name, _arguments in transport.calls],
         )
         health = provider.health_snapshot()
@@ -3731,35 +3721,30 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             transport.calls,
             [
-                (
-                    "ha_get_addon",
-                    {"source": "installed", "include_stats": False},
-                ),
-                ("ha_get_addon", {"slug": "local_test_addon"}),
+                INSTALLED_INVENTORY,
+                (APP_READ_TOOL, {"slug": "local_test_addon"}),
             ],
         )
 
     async def test_real_addon_provider_failure_still_degrades_health(self):
         provider = ReviewedOperationalLifecycleProvider()
-        transport = FakeMcpTransport()
+        transport = transport_920()
+        failure = {
+            "success": False,
+            "error": {
+                "code": "SERVICE_CALL_FAILED",
+                "message": "bounded fixture failure",
+            },
+        }
+        # HAMCP-437 I2a-D: the 9.2.0 structured envelope carries the failure
+        # in one text item equal to ``structuredContent``.
         transport.raw_result = {
-            "content": [
-                {
-                    "type": "text",
-                    "text": json.dumps(
-                        {
-                            "success": False,
-                            "error": {
-                                "code": "SERVICE_CALL_FAILED",
-                                "message": "bounded fixture failure",
-                            },
-                        }
-                    ),
-                }
-            ],
+            "content": [{"type": "text", "text": json.dumps(failure)}],
+            "structuredContent": deepcopy(failure),
             "isError": True,
         }
         provider._transport = transport
+        await provider.probe("restart_addon")
         with self.assertRaises(
             OperationalLifecycleProviderError
         ) as raised:
@@ -4833,8 +4818,9 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_only_constructed_reload_restart_arguments_are_dispatched(self):
         provider = ReviewedOperationalLifecycleProvider()
-        transport = FakeMcpTransport()
+        transport = transport_920()
         provider._transport = transport
+        await provider.probe("restart_addon")
         dispatched = []
 
         async def before_dispatch():
@@ -4854,7 +4840,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
             [
                 ("ha_reload_core", {"target": "automations"}),
                 (
-                    "ha_manage_addon",
+                    APP_ACTION_TOOL,
                     {
                         "slug": "local_test_addon",
                         "action": "restart",
@@ -4868,7 +4854,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_unknown_targets_and_catalog_drift_fail_before_dispatch(self):
         provider = ReviewedOperationalLifecycleProvider()
-        transport = FakeMcpTransport()
+        transport = transport_920()
         provider._transport = transport
         with self.assertRaises(OperationalLifecycleProviderError) as raised:
             await provider.reload("all", before_dispatch=lambda: None)
@@ -4910,7 +4896,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
         ):
             with self.subTest(text=text):
                 provider = ReviewedOperationalLifecycleProvider()
-                transport = FakeMcpTransport()
+                transport = transport_920()
                 transport.raw_result = {
                     "content": [{"type": "text", "text": text}],
                     "isError": False,
