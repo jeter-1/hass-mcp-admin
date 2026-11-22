@@ -47,7 +47,9 @@ tools, but clients caching an earlier list must re-list or reconnect. This
 decision does not claim `tools/list_changed` notification delivery.
 
 The committed machine-readable inventory is
-[`upstream_tool_policy.json`](../../hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy.json).
+`upstream_tool_policy.json` (HAMCP-437 removed this 7.14.1 file with its
+registry row; the shipped inventory is
+[`upstream_tool_policy_9_2_0.json`](../../hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_2_0.json)).
 It is the complete classification table for the 78-tool stock fixture reviewed
 from `ha-mcp` 7.14.1 source tag `v7.14.1`, commit
 `255acec1affa6528004a122eb83e30aee9c77713`. The loader requires all entries to
