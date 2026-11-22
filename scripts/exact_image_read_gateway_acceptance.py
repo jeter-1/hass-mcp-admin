@@ -30,6 +30,10 @@ from mcp.client.streamable_http import streamablehttp_client
 ROOT = Path(__file__).resolve().parents[1]
 BETA = ROOT / "hass_mcp_engineering_beta"
 sys.path.insert(0, str(BETA))
+if str(ROOT / "scripts") not in sys.path:
+    sys.path.insert(0, str(ROOT / "scripts"))
+
+from harness_send import harness_url  # noqa: E402
 
 from ha_mcp_engineering.tools import (  # noqa: E402
     ENGINEERING_STATIC_TOOL_COUNT,
@@ -1192,7 +1196,7 @@ def engineering_readiness(endpoint: str) -> dict[str, Any]:
     parts = urlsplit(endpoint)
     ready_url = urlunsplit((parts.scheme, parts.netloc, "/ready", "", ""))
     try:
-        with urlopen(ready_url, timeout=5) as response:  # noqa: S310 - fixed CI endpoint
+        with urlopen(harness_url(ready_url), timeout=5) as response:  # noqa: S310 - fixed CI endpoint
             status = response.status
             raw = response.read(1024)
     except HTTPError as exc:
@@ -1418,7 +1422,7 @@ def bounded_audit_outcome_diagnostics(
 
 
 def fixture_stats(url: str) -> dict[str, Any]:
-    with urlopen(url, timeout=5) as response:  # noqa: S310 - fixed CI fixture URL
+    with urlopen(harness_url(url), timeout=5) as response:  # noqa: S310 - fixed CI fixture URL
         return json.load(response)
 
 
@@ -1440,7 +1444,7 @@ async def inspect_upstream(
     expected_upstream_version: str,
 ) -> tuple[list[dict[str, Any]], str, dict[str, dict[str, Any]]]:
     error_envelopes: dict[str, dict[str, Any]] = {}
-    async with streamablehttp_client(endpoint) as (read, write, _session_id):
+    async with streamablehttp_client(harness_url(endpoint)) as (read, write, _session_id):
         async with ClientSession(read, write) as session:
             initialized = await session.initialize()
             require(initialized.serverInfo.name == "ha-mcp", "upstream name mismatch")
@@ -1552,7 +1556,7 @@ async def inspect_engineering(
             f"{EXPECTED_ENGINEERING_BASELINE_COUNT} tools"
         ),
     )
-    async with streamablehttp_client(endpoint) as (read, write, _session_id):
+    async with streamablehttp_client(harness_url(endpoint)) as (read, write, _session_id):
         async with ClientSession(read, write) as session:
             initialized = await session.initialize()
             require(
@@ -2333,7 +2337,7 @@ async def inspect_operational_backup(
     )
     before = fixture_stats(fixture_stats_url)
     creates_before = len(before.get("operational_backup_creates") or [])
-    async with streamablehttp_client(engineering_endpoint) as (
+    async with streamablehttp_client(harness_url(engineering_endpoint)) as (
         read,
         write,
         _session_id,
@@ -2711,7 +2715,7 @@ async def inspect_approval_notification(
         "actions": [],
         "mode": "single",
     }
-    async with streamablehttp_client(engineering_endpoint) as (
+    async with streamablehttp_client(harness_url(engineering_endpoint)) as (
         read,
         write,
         _session_id,

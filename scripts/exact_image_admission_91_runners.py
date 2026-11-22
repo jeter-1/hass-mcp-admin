@@ -35,6 +35,8 @@ from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from harness_send import harness_url  # noqa: E402
+
 from exact_image_admission_lanes import (  # noqa: E402
     CASES,
     DIGEST,
@@ -513,8 +515,9 @@ def evaluate_gateway_case(configuration: str, name: str, *, source: dict[str, An
 # --------------------------------------------------------------------------
 
 def http_json(url: str) -> dict[str, Any]:
-    require(urlsplit(url).hostname in ("127.0.0.1", "localhost"), "observation_not_loopback")
-    with urllib.request.urlopen(url, timeout=10) as response:  # noqa: S310 - loopback only
+    # An address, not a name the system would resolve (HAMCP-363).
+    require(urlsplit(url).hostname == "127.0.0.1", "observation_not_loopback")
+    with urllib.request.urlopen(harness_url(url), timeout=10) as response:  # noqa: S310 - loopback only
         value = json.loads(response.read(1_048_576).decode("utf-8"))
     require(isinstance(value, dict), "observation_not_object")
     return value
@@ -582,7 +585,7 @@ async def peer_catalog(endpoint: str) -> list[dict[str, Any]]:
 
     require(urlsplit(endpoint).hostname == "127.0.0.1", "peer_not_loopback")
     tools: list[dict[str, Any]] = []
-    async with streamablehttp_client(endpoint) as (read, write, _):
+    async with streamablehttp_client(harness_url(endpoint)) as (read, write, _):
         async with ClientSession(read, write) as session:
             await session.initialize()
             cursor = None
@@ -601,7 +604,7 @@ async def engineering_session(endpoint: str, *, probe: bool) -> tuple[dict[str, 
     from mcp.client.streamable_http import streamablehttp_client
 
     require(urlsplit(endpoint).hostname == "127.0.0.1", "engineering_not_loopback")
-    async with streamablehttp_client(endpoint) as (read, write, _):
+    async with streamablehttp_client(harness_url(endpoint)) as (read, write, _):
         async with ClientSession(read, write) as session:
             await session.initialize()
             names = sorted(tool.name for tool in (await session.list_tools()).tools)
@@ -743,7 +746,7 @@ def engineering_command(*, name: str, image: str, data_dir: str, mcp_port: int, 
 
 def http_status(url: str) -> int | None:
     try:
-        with urllib.request.urlopen(url, timeout=2) as response:  # noqa: S310 - loopback only
+        with urllib.request.urlopen(harness_url(url), timeout=2) as response:  # noqa: S310 - loopback only
             return response.status
     except urllib.error.HTTPError as error:
         return error.code

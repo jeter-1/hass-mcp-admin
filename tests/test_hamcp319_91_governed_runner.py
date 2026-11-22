@@ -622,13 +622,57 @@ class ProxyLogTests(unittest.TestCase):
             port = proxy.server.server_address[1]
             payload = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
                 "name": governed.GUIDE_TOOL, "arguments": dict(governed.GUIDE_ARGUMENTS)}}).encode()
-            request = urllib.request.Request(f"http://127.0.0.1:{port}/x", data=payload, method="POST",
+            request = urllib.request.Request(f"http://127.0.0.1:{port}{governed.SECRET_PATH}", data=payload,
+                                             method="POST",
                                              headers={"Content-Type": "application/json"})
             with urllib.request.urlopen(request, timeout=10) as response:  # noqa: S310 - loopback
                 self.assertIn(ev.RECEIPT, response.read().decode())
             self.assertEqual(proxy.forwarded, 1)
             self.assertEqual(governed.calls(proxy.since(0), governed.GUIDE_TOOL), 1)
             self.assertEqual(proxy.since(0)[0]["receipt_sha256"], [ev.RECEIPT_SHA256])
+        finally:
+            proxy.stop()
+            peer.shutdown()
+            peer.server_close()
+
+    def test_recording_proxy_refuses_a_path_off_the_harness_routes_without_forwarding(self):
+        import threading
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        import urllib.error
+        import urllib.request
+
+        reached = []
+
+        class Peer(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                return
+
+            def do_POST(self):
+                reached.append(self.path)
+                self.send_response(200)
+                self.end_headers()
+
+            do_GET = do_DELETE = do_POST
+
+        peer = ThreadingHTTPServer(("127.0.0.1", 0), Peer)
+        threading.Thread(target=peer.serve_forever, daemon=True).start()
+        proxy = governed.RecordingProxy(0, peer.server_address[1])
+        proxy.start()
+        try:
+            port = proxy.server.server_address[1]
+            for method, path in (("POST", "/x"), ("GET", "/api/hassio/addons"),
+                                 ("DELETE", governed.SECRET_PATH + "/../../api/config"),
+                                 ("POST", governed.SECRET_PATH + "?token=synthetic")):
+                request = urllib.request.Request(f"http://127.0.0.1:{port}{path}", data=b"{}" if method == "POST"
+                                                 else None, method=method)
+                with self.subTest(method=method, path=path):
+                    with self.assertRaises(urllib.error.HTTPError) as caught:
+                        urllib.request.urlopen(request, timeout=10)  # noqa: S310 - loopback
+                    self.assertEqual(caught.exception.code, 502)
+                    caught.exception.close()
+            self.assertEqual(reached, [])
+            self.assertEqual(proxy.forwarded, 0)
+            self.assertEqual(proxy.since(0), [])
         finally:
             proxy.stop()
             peer.shutdown()

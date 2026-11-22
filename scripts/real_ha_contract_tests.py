@@ -42,6 +42,7 @@ from ha_mcp_engineering.clients.ha_mcp_endpoint import (  # noqa: E402
 if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
 from harness_routes import harness_request  # noqa: E402
+from harness_send import harness_url, register_lane_origin  # noqa: E402
 import lane_failure_diagnostics as lane_diagnostics  # noqa: E402
 from lane_session import lane_session, refuse_redirect  # noqa: E402
 from ha_mcp_engineering.dependency.index import DependencyIndex  # noqa: E402
@@ -185,6 +186,8 @@ def use_internal_lane_core(origin, subnet):
         raise ValueError(LANE_SUBNET_REFUSED)
     if address not in network or address in (network.network_address, network.broadcast_address):
         raise ValueError(LANE_CORE_OUTSIDE)
+    # The verified origin is this harness's only off-loopback send target (HAMCP-363).
+    register_lane_origin(origin)
     HA_URL, CLIENT_ID, _lane_core = origin, f"{origin}/", origin
     return origin
 
@@ -784,7 +787,7 @@ async def _json_request(session, method, path, *, json_body=None, data=None, tok
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     async with session.request(
         method,
-        f"{HA_URL}{path}",
+        harness_url(HA_URL, path),
         json=json_body,
         data=data,
         headers=headers,
@@ -808,7 +811,8 @@ async def bootstrap_disposable_admin() -> str:
         with lane_diagnostics.check("core_boot", "onboarding_ready"):
             for _ in range(120):
                 try:
-                    async with session.get(f"{HA_URL}/api/onboarding", allow_redirects=False) as response:
+                    async with session.get(harness_url(HA_URL, "/api/onboarding"),
+                                           allow_redirects=False) as response:
                         refuse_redirect(response.status)
                         if response.status == 200:
                             break
@@ -2688,11 +2692,12 @@ async def _start_exact_upstream(token: str, *, pull_policy=None, labels=(), envi
         verify_started()
 
     timeout = aiohttp.ClientTimeout(total=2)
+    health = harness_url(f"http://127.0.0.1:{UPSTREAM_PORT}/healthz")
     for _ in range(60):
         try:
             async with lane_session(timeout=timeout) as session:
                 async with session.get(
-                    f"http://127.0.0.1:{UPSTREAM_PORT}/healthz",
+                    health,
                     allow_redirects=False,
                 ) as response:
                     refuse_redirect(response.status)
@@ -2723,7 +2728,7 @@ async def _call_exact_upstream_tool(
 ) -> dict[str, Any]:
     """Call one exact public ha-mcp tool through the disposable transport."""
 
-    endpoint = f"http://127.0.0.1:{UPSTREAM_PORT}{UPSTREAM_SECRET_PATH}"
+    endpoint = harness_url(f"http://127.0.0.1:{UPSTREAM_PORT}", UPSTREAM_SECRET_PATH)
     for _ in range(60):
         try:
             async with streamablehttp_client(endpoint) as (

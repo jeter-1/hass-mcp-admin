@@ -29,6 +29,13 @@ from pathlib import Path
 import secrets
 import sys
 
+# The lane runs this file as ``python -I``, which leaves its own directory off
+# ``sys.path``; harness_send sits next to it (HAMCP-363).
+SCRIPTS = Path(__file__).resolve().parent
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
+from harness_send import harness_url  # noqa: E402
+
 CORE_VERSION = "2026.11.0"
 BASE = "http://127.0.0.1:8123"
 CLIENT_ID = BASE + "/"
@@ -115,7 +122,7 @@ class AiohttpCore:
 
     async def rest(self, method, path, *, token=None, body=None, form=None):
         headers = {"Authorization": "Bearer " + token} if token else {}
-        async with self.session.request(method, self.base + path, headers=headers,
+        async with self.session.request(method, harness_url(self.base, path), headers=headers,
                                         json=body, data=form) as response:
             raw = await response.read()
             try:
@@ -124,7 +131,8 @@ class AiohttpCore:
                 return response.status, raw.decode("utf-8", "replace")
 
     async def connect(self, token):
-        socket = await self.session.ws_connect(self.base + "/api/websocket", max_msg_size=0)
+        socket = await self.session.ws_connect(harness_url(self.base, "/api/websocket"),
+                                             max_msg_size=0)
         if (await socket.receive_json()).get("type") != "auth_required":
             raise SeedError("websocket_handshake_unexpected")
         await socket.send_json({"type": "auth", "access_token": token})

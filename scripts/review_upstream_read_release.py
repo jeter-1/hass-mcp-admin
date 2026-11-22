@@ -20,6 +20,10 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 BETA = ROOT / "hass_mcp_engineering_beta"
 sys.path.insert(0, str(BETA))
+SCRIPTS = Path(__file__).resolve().parent
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
+from harness_send import harness_url  # noqa: E402
 
 from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
     CLASSIFICATIONS,
@@ -460,7 +464,7 @@ async def capture(endpoint: str) -> dict[str, Any]:
         ReviewedProtocolClientSession,
     )
 
-    async with streamablehttp_client(endpoint) as (
+    async with streamablehttp_client(harness_url(endpoint)) as (
         read_stream,
         write_stream,
         _session_id,

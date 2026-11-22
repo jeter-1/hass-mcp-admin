@@ -44,6 +44,11 @@ import sys
 from typing import Any, Callable
 from urllib.parse import urlsplit
 
+SCRIPTS = Path(__file__).resolve().parent
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
+from harness_send import harness_url  # noqa: E402
+
 
 SCHEMA = "hamcp319-exact-image-acceptance-manifest/v1"
 EXPECTED_PROTOCOL = "2025-03-26"
@@ -277,7 +282,7 @@ def post_initialize(url: str) -> tuple[int, str, str]:
     import httpx  # Engineering requirements.lock pins it; imported lazily for unit tests.
 
     with httpx.Client(follow_redirects=False, timeout=15.0) as client:
-        response = client.post(url, json=initialize_payload(), headers={
+        response = client.post(harness_url(url), json=initialize_payload(), headers={
             "Accept": "application/json, text/event-stream", "Content-Type": "application/json"})
         return response.status_code, response.headers.get("content-type", ""), response.text[:MAX_BODY]
 
