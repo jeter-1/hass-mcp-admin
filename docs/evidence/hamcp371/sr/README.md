@@ -611,6 +611,10 @@ and the receipt before use. Tests: `tests/test_hamcp371_p4_parity.py`,
   runs Engineering code and is not receipts-only. On both setups the 28
   names equal P1's (including `ha_config_get_yaml`), the fingerprint
   matches the lane, and no peer tool was called.
+  After HAMCP-437 the recovery runs for 9.2.0 only. 8.5.0 is no longer in
+  the shipped registry, so its entry records the lane fingerprint from the
+  committed `_health.json`, marked as not recomputed at the head. It was
+  last recomputed and matched at `901482d1`.
 - Five reads are flagged. Each cites its ruling, and each upstream
   condition the citation depends on is checked against the recorded proxy
   responses:
