@@ -15,6 +15,10 @@ on:
         description: Artifact only; no candidate branch or signing-workflow dispatch
         type: boolean
         default: true
+      withhold_groups:
+        description: "Owner override: '' (none) or exactly 'marketplace_read'; any other value refuses"
+        type: string
+        default: ''
   pull_request:
     types: [opened, reopened, synchronize]
     paths:
@@ -26,6 +30,27 @@ on:
       - 'scripts/alarmo_inspection_contract_acceptance.py'
       - 'ci/core-*.json'
       - 'tests/test_core_release_evidence.py'
+      - 'scripts/helper_value_contract_acceptance.py'
+      - 'scripts/marketplace_read_contract_acceptance.py'
+      - 'scripts/security_metadata_contract_acceptance.py'
+      - 'scripts/device_configuration_contract_acceptance.py'
+      - 'scripts/created_object_contract_acceptance.py'
+      - 'scripts/thread_matter_topology_contract_acceptance.py'
+      - 'scripts/core_created_object_local.py'
+      - 'scripts/core_device_configuration_local.py'
+      - 'scripts/core_helper_value_local.py'
+      - 'scripts/core_marketplace_read_local.py'
+      - 'scripts/core_read_replay_capture_local.py'
+      - 'scripts/core_security_metadata_local.py'
+      - 'scripts/core_thread_matter_topology_a2_local.py'
+      - 'scripts/core_thread_matter_topology_local.py'
+      - 'scripts/core_lane_host.py'
+      - 'scripts/core_evidence_lane_group.py'
+      - 'scripts/harness_send.py'
+      - 'tests/fixtures/hamcp297_matter_server_stub/**'
+      - 'tests/fixtures/hamcp366_device_configuration_lane/**'
+      - 'tests/fixtures/core_2026_11_0_lane_provenance.json'
+      - 'tests/test_core_lane_read_list.py'
       - '.github/workflows/core-release-evidence.yml'
 permissions:
   contents: read
@@ -45,6 +70,7 @@ jobs:
       refused: ${{ steps.prepare.outputs.refused }}
       release: ${{ steps.prepare.outputs.release }}
       matrix: ${{ steps.prepare.outputs.matrix }}
+      groups: ${{ steps.prepare.outputs.groups }}
       registry_exists: ${{ steps.prepare.outputs.registry_exists }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
@@ -62,12 +88,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
           REQUESTED_RELEASE: ${{ inputs.core_version }}
+          # Empty outside workflow_dispatch; prepare refuses any value but '' and 'marketplace_read'.
+          WITHHOLD_GROUPS: ${{ inputs.withhold_groups }}
         shell: bash
         run: |
           set -euo pipefail
           args=()
           if [[ "$EVENT_NAME" == pull_request ]]; then args+=(--acceptance); fi
-          python scripts/core_evidence_workflow.py prepare --directory "$RUNNER_TEMP/core-evidence-input" --release "$REQUESTED_RELEASE" "${args[@]}"
+          python scripts/core_evidence_workflow.py prepare --directory "$RUNNER_TEMP/core-evidence-input" --release "$REQUESTED_RELEASE" --withhold-groups "$WITHHOLD_GROUPS" "${args[@]}"
       - name: Retain bounded preparation and comparison
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
@@ -112,9 +140,81 @@ jobs:
           path: ${{ runner.temp }}/core-evidence-input
       - name: Fail once with the binding PR requirement
         run: python3 scripts/core_evidence_workflow.py refuse --directory "$RUNNER_TEMP/core-evidence-input"
+  lane-groups:
+    # HAMCP-443 D1: one row per case and lane group of ci/core-evidence-groups.json, each bound to
+    # its lanes row's same-run context. No token: the Core archive download below is anonymous.
+    name: Core evidence group ${{ matrix.case }} ${{ matrix.group }}
+    needs: prepare
+    if: needs.prepare.outputs.run == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.groups) }}
+    permissions:
+      contents: read
+    env:
+      CASE: ${{ matrix.case }}
+      GROUP: ${{ matrix.group }}
+      CORE_EVIDENCE_CONTEXT_SHA256: ${{ matrix.context_sha256 }}
+      CORE_SOURCE_COMMIT: ${{ matrix.core_source_commit }}
+      CORE_SOURCE_SHA256: ${{ matrix.core_source_sha256 }}
+      # The lane harness refuses a dirty checkout; no bytecode may land in it.
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+    - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      with:
+        persist-credentials: false
+    - name: Download same-run binding package
+      uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+      with:
+        name: core-evidence-preparation
+        path: ${{ runner.temp }}/core-evidence-input
+    - name: Bind exact context path
+      shell: bash
+      run: |-
+        set -euo pipefail
+        echo "CORE_EVIDENCE_CONTEXT=$RUNNER_TEMP/core-evidence-input/${CASE}.json" >> "$GITHUB_ENV"
+        echo "CORE_EVIDENCE_RESULTS=$RUNNER_TEMP/core-evidence-group-results" >> "$GITHUB_ENV"
+    - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+      with:
+        python-version: '3.12.14'
+    - name: Install locked dependencies
+      run: 'python -m pip --isolated install --require-hashes --only-binary=:all: --index-url https://pypi.org/simple -r hass_mcp_engineering_beta/requirements.lock'
+    - name: Download the release's exact Core source archive
+      shell: bash
+      run: |
+        set -euo pipefail
+        archive="$RUNNER_TEMP/core-source-$CASE.tar.gz"
+        # Only the two fixed GitHub archive forms, and only the exact bound digest, are accepted.
+        matched=""
+        for form in legacy.tar.gz tar.gz; do
+          rm -f "$archive"
+          if curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --max-time 300 --retry 3 \
+               "https://codeload.github.com/home-assistant/core/$form/$CORE_SOURCE_COMMIT" --output "$archive" \
+             && printf '%s  %s\n' "$CORE_SOURCE_SHA256" "$archive" | sha256sum --check --strict --status; then
+            matched="$form"
+            break
+          fi
+        done
+        test -n "$matched"
+        echo "Core source archive form: $matched"
+        echo "CORE_SOURCE_ARCHIVE=$archive" >> "$GITHUB_ENV"
+    - name: Run the lane group and record its D6a proof
+      run: python -B scripts/core_evidence_lane_group.py "$GROUP" --source-archive "$CORE_SOURCE_ARCHIVE"
+    - name: Retain the group receipt and its cleanup record
+      if: always()
+      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+      with:
+        name: core-evidence-group-${{ matrix.case }}-${{ matrix.group }}
+        path: |
+          ${{ runner.temp }}/core-evidence-group-results/${{ matrix.group }}.json
+          ${{ runner.temp }}/core-evidence-group-results/cleanup-${{ matrix.group }}.json
+        if-no-files-found: error
+        retention-days: 14
   lanes:
     name: Core evidence ${{ matrix.case }} ${{ matrix.ha_version }}
-    needs: prepare
+    needs: [prepare, lane-groups]
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     strategy:
@@ -362,6 +462,12 @@ jobs:
     - name: Verify all owned containers and network removed
       if: always()
       run: python scripts/core_evidence_lanes.py cleanup
+    - name: Download this case's lane-groups artifacts
+      uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+      with:
+        pattern: core-evidence-group-${{ matrix.case }}-*
+        path: ${{ runner.temp }}/core-evidence-results
+        merge-multiple: false
     - name: Build unsigned candidate from passing groups
       id: candidate
       run: python scripts/core_evidence_workflow.py assemble --directory "$RUNNER_TEMP/core-evidence-input" --receipts "$CORE_EVIDENCE_RESULTS"

@@ -152,6 +152,11 @@ INCLUDES = {"created_object": ("automations.yaml", "scripts.yaml", "scenes.yaml"
 TIME_WAIT_SECONDS = 90
 # CI mode (D6a): no lane container reaches the cloud metadata address. Forwarded traffic only, never the runner's own.
 METADATA_RULE = ("DOCKER-USER", "--destination", "169.254.169.254/32", "--jump", "DROP")
+# CI mode's D6a proof (HAMCP-443 part C): connects made from inside a lane container, as its own processes connect.
+METADATA_PROBE = ("import socket\ntry:\n socket.create_connection(('169.254.169.254', 80), 3).close()\n"
+                  " print('reachable')\nexcept OSError as exc:\n print('blocked', exc.errno)")
+EGRESS_PROBE = ("import socket\ntry:\n socket.create_connection(('1.1.1.1', 443), 3).close()\n"
+                " print('reachable')\nexcept OSError as exc:\n print('blocked', exc.errno)")
 RUNTIME_TREE = "HEAD:hass_mcp_engineering_beta/ha_mcp_engineering"
 # A digest pull of a Core image can outlast an ordinary host command.
 PULL_TIMEOUT = 900
@@ -334,6 +339,29 @@ class Lane:
             m.command("sudo", "-n", "iptables", "-w", "-I", *METADATA_RULE)
             m.command(*rule)
 
+    def d6a_proof(self, result, containers, network, run_id, *, internal):
+        """CI mode's D6a proof, from inside every lane container, kept in ``result["d6a"]`` before any
+        check can refuse: each container sits on the lane's own bridge alone, never the host network,
+        and cannot reach the metadata address; the bridge is internal exactly when the lane's is (A2),
+        and on an internal bridge an outbound connect fails too. Any miss refuses the lane."""
+        m = self.module
+        proof = result["d6a"] = {"proved": False, "network": network, "internal": None, "containers": {}}
+        data = m.inspect_owned("network", network, run_id)
+        proof["internal"] = (data or {}).get("Internal")
+        for name in containers:
+            info = m.inspect_owned("container", name, run_id) or {}
+            seen = proof["containers"][name] = {
+                "network_mode": (info.get("HostConfig") or {}).get("NetworkMode"),
+                "networks": sorted((info.get("NetworkSettings") or {}).get("Networks") or {})}
+            for key, probe in (("metadata", METADATA_PROBE), *((("egress", EGRESS_PROBE),) if internal else ())):
+                seen[key] = m.command("docker", "exec", name, "python3", "-I", "-c", probe).stdout.decode().strip()
+        if (data is None or data.get("Driver") != "bridge" or proof["internal"] is not internal
+                or any(seen["network_mode"] != network or seen["networks"] != [network]
+                       or not all(seen[key].startswith("blocked") for key in ("metadata", "egress") if key in seen)
+                       for seen in proof["containers"].values())):
+            raise m.Refusal("d6a_proof_failed")
+        proof["proved"] = True
+
     def ci_claim(self, path):
         """An exclusive run directory directly under the runner's own temporary directory."""
         m = self.module
@@ -441,7 +469,8 @@ class Lane:
         """Run ``body`` and tear down every owned resource; WITHHELD on any failure. Returns the exit code.
 
         ``remove`` is the removal order, ``containers`` the absence and log order, ``scratch`` the
-        run's other owned directories, removed before the configuration.
+        run's other owned directories, removed before the configuration. In CI mode a body that
+        succeeded is followed by the D6a proof, while every container still runs; local mode has none.
         """
         m = self.module
 
@@ -450,6 +479,8 @@ class Lane:
         previous_handler = signal.signal(signal.SIGTERM, interrupted)
         try:
             body()
+            if result["mode"] == "ci":
+                self.d6a_proof(result, containers, network, run_id, internal=False)
         except BaseException as exc:
             result.update(result="WITHHELD", failure_type=type(exc).__name__,
                           failure=diagnostics.failure(exc, extra=lambda stream: self.failure_logs(

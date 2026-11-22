@@ -52,8 +52,7 @@ RECEIPT = "thread_matter_topology_a2.json"
 NETWORK_POSTURE = {"driver": "bridge", "internal": True, "egress_allowed": False, "published_ports": False,
                    "host_access": "container_address_on_internal_bridge",
                    "egress_required_by_capability": False}
-EGRESS_PROBE = ("import socket\ntry:\n socket.create_connection(('1.1.1.1', 443), 3).close()\n"
-                " print('reachable')\nexcept OSError as exc:\n print('blocked', exc.errno)")
+EGRESS_PROBE = a1.core_lane_host.EGRESS_PROBE
 
 
 def expectations():
@@ -391,6 +390,9 @@ def _main(argv=None):
         result.update(asyncio.run(bounded()))
         if result.get("profile") != reference:
             raise Refusal("receipt_profile_mismatch")
+        if ci:
+            # D6a from inside both containers, while they still run: internal, no host network, no metadata.
+            a1.LANE_HOST.d6a_proof(result, (CORE, STUB), NETWORK, run_id, internal=True)
     except BaseException as exc:
         result.update(result="WITHHELD", failure_type=type(exc).__name__, failure=diagnostics.failure(exc))
     finally:

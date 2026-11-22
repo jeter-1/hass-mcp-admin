@@ -34,6 +34,11 @@ RUNTIME = "d" * 40
 ARCHIVE = "/runner/core-source.tar.gz"
 
 
+# A proved D6a record as Lane.d6a_proof keeps it (HAMCP-443 part C item 3).
+PROVED = {"proved": True, "network": "lane-net", "internal": False, "containers": {"lane-core": {
+    "network_mode": "lane-net", "networks": ["lane-net"], "metadata": "blocked 110"}}}
+
+
 class Reached(Exception):
     """Raised by a mock that must not be reached."""
 
@@ -42,7 +47,7 @@ def receipt(name, value, **changes):
     """A harness's CI receipt for this run, PASS and clean unless changed."""
     result = {"group": name, "mode": "ci", "pull": "digest", "source_commit": value["run"]["GITHUB_SHA"],
               "runtime_tree": RUNTIME, "core_version": e.slot(value)["version"], "result": "PASS",
-              "cleanup": {"clean": True, "containers_absent": True, "network_absent": True}}
+              "cleanup": {"clean": True, "containers_absent": True, "network_absent": True}, "d6a": PROVED}
     if name in ("scene_create_delete", "created_helper_delete"):
         result["lane"] = name
     result.update(changes)
@@ -371,13 +376,13 @@ class Written(Scratch):
         path = self.base / "assembly"; path.mkdir()
         return path
 
-    def run_main(self, group, outcomes, *, present=((), ())):
+    def run_main(self, group, outcomes, *, present=((), ()), extra=None):
         prepared, receipts, env, _ = assembly_inputs(self.assembly(), self.value, "coverage")
         folder = receipts / w.producer_name("coverage", group)
         shutil.rmtree(folder)
         harness = Harness(outcomes)
         with mock.patch.dict(os.environ, {**env, "GITHUB_ACTIONS": "true", "RUNNER_TEMP": self.runner(),
-                                          "CORE_EVIDENCE_RESULTS": str(folder)}, clear=True), \
+                                          "CORE_EVIDENCE_RESULTS": str(folder), **(extra or {})}, clear=True), \
                 mock.patch.object(lg, "run_harness", harness), \
                 mock.patch.object(lg.subprocess, "Popen", side_effect=Reached), \
                 mock.patch.object(lg, "runtime_tree", return_value=RUNTIME), \
@@ -447,6 +452,47 @@ class Written(Scratch):
         code, *_ = self.run_main("helper_value", [(0, "helper_value.json", receipt("helper_value", self.value))],
                                  present=(("other-lane-core",), ("bridge", "host", "none")))
         self.assertEqual(code, 0)
+
+    def test_d6a_lines_reach_the_job_summary(self):
+        summary = self.base / "summary.md"
+        code, *_ = self.run_main("helper_value", [(0, "helper_value.json", receipt("helper_value", self.value))],
+                                 extra={"GITHUB_STEP_SUMMARY": str(summary)})
+        self.assertEqual(code, 0)
+        self.assertEqual(summary.read_text().splitlines(), [
+            "D6a helper_value: network lane-net internal=False proved=True",
+            "D6a helper_value: lane-core network_mode=lane-net networks=lane-net metadata 169.254.169.254:80 "
+            "blocked 110"])
+
+    def test_a_failed_d6a_proof_fails_the_row(self):
+        failed = {**PROVED, "proved": False, "containers": {"lane-core": {
+            "network_mode": "host", "networks": [], "metadata": "reachable"}}}
+        body = receipt("helper_value", self.value, result="FAIL", failure="d6a_proof_failed", d6a=failed)
+        code, _, _, _, folder = self.run_main("helper_value", [(1, "helper_value.json", body)])
+        self.assertEqual(code, 1)
+        self.assertFalse(e.read_json(folder / "helper_value.json")["passed"])
+
+    def test_a_pass_without_a_proof_fails_the_row(self):
+        for proof in (Ellipsis, None, {**PROVED, "proved": "true"}):
+            with self.subTest(proof=proof):
+                code, *_ = self.run_main(
+                    "helper_value", [(0, "helper_value.json", receipt("helper_value", self.value, d6a=proof))])
+                self.assertEqual(code, 1)
+            shutil.rmtree(self.base / "assembly")
+
+    def test_thread_needs_both_proofs(self):
+        good, failed = receipt("thread_matter_topology", self.value), receipt(
+            "thread_matter_topology", self.value, result="FAIL", d6a={**PROVED, "proved": False, "internal": True})
+        code, *_ = self.run_main("thread_matter_topology", [(0, a1.RECEIPT, good), (1, a2.RECEIPT, failed)])
+        self.assertEqual(code, 1)
+
+    def test_a_lane_that_never_reached_its_proof_stays_a_recorded_failure(self):
+        body = receipt("security_metadata", self.value, result="FAIL", failure="x", d6a=Ellipsis)
+        for outcome in (RuntimeError("x"), (1, "security_metadata.json", body)):
+            with self.subTest(outcome=type(outcome).__name__):
+                code, _, _, _, folder = self.run_main("security_metadata", [outcome])
+                self.assertEqual(code, 0)
+                self.assertFalse(e.read_json(folder / "security_metadata.json")["passed"])
+            shutil.rmtree(self.base / "assembly")
 
     def test_docker_read_failure_writes_nothing(self):
         def failing(args, **_kwargs):

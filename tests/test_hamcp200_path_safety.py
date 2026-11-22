@@ -1339,18 +1339,14 @@ RUNTIME_CLIENT_MODULES = frozenset({"ha_mcp_engineering.clients", "ha_mcp_engine
 _SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
 _FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)
 
-# HAMCP-443 scripts keep their own reviewed lane checks until 443-B moves them
-# onto harness_send (Josh 2026-11-21: core_lane_host.py must send through the
-# HAMCP-363 helper). Temporary, by path, and only the HAMCP-443 files whose
-# sends the scanner flags today; the others (core_lane_host.py included) are
-# scanned. Each listed file that exists still has a finding, so an entry
-# cannot outlive its reason.
+# Until HAMCP-363 follow-up: config-entry reload route, the query form, and lane
+# stub control origins (443-C, 2026-11-22). These two HAMCP-443 scripts send to
+# destinations harness_send.ROUTES does not list; every other script, the other
+# HAMCP-443 ones included, is scanned. Each listed file that exists still has a
+# finding, so an entry cannot outlive its reason.
 HAMCP443_EXEMPT_SCRIPTS = frozenset({
     "scripts/core_thread_matter_topology_a2_local.py",
     "scripts/device_configuration_contract_acceptance.py",
-    "scripts/marketplace_read_contract_acceptance.py",
-    "scripts/security_metadata_contract_acceptance.py",
-    "scripts/thread_matter_topology_contract_acceptance.py",
 })
 # Scripts that talk only to GitHub, a registry or an image store, never to a
 # harness target; pinned to name no Home Assistant, Engineering or harness
