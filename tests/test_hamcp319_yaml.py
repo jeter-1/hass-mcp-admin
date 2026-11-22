@@ -19,9 +19,10 @@ Design ``docs/HAMCP_319_PHASE2_DESIGN.md`` section 6.4, ledger row 29
 Fixtures: ``tests/fixtures/ha_mcp_9_2_0/yaml`` (HAMCP-437: class C S6 and S8
 9.2.0 records re-verified here; class S re-cited at the pinned 9.2.0 source).
 The ``!secret`` and ``!input`` receipts and the disabled-tool receipt have no
-9.2.0 capture; those ``test_91_*`` cases stay on
-``tests/fixtures/ha_mcp_9_1_0/yaml`` and its 9.1.0 catalog. Synthetic peers
-and canaries only; no live Home Assistant and no real credential.
+9.2.0 capture. Their ``test_91_*`` cases project the frozen 9.1.0 receipts in
+``tests/fixtures/ha_mcp_9_1_0/yaml`` through the shipped 9.2.0 binding (ANSWER
+20261122-0907-01); that is not evidence of 9.2.0 upstream output. Synthetic
+peers and canaries only; no live Home Assistant and no real credential.
 """
 from __future__ import annotations
 
@@ -66,6 +67,12 @@ SIBLINGS_91 = ("ha_delete_file", "ha_list_files", "ha_read_file", "ha_write_file
 OPTIONAL_91 = (TOOL,) + SIBLINGS_91
 ENVELOPE_8X = ("file", "yaml_path", "source", "found", "value", "completeness",
                "limitations", "redaction")
+# ANSWER 20261122-0907-01 point 2: carried by every test_91_* case and by the
+# 9.1.0 fixture provenance.
+FROZEN_91_LABEL = (
+    "9.1.0 upstream receipt, frozen input, projected through the shipped 9.2.0 binding; "
+    "not evidence of 9.2.0 upstream output"
+)
 ENVELOPE_91 = ("file", "yaml_path", "source", "found", "value", "completeness",
                "tag_completeness", "tag_lossy", "lossy_tags", "limitations", "redaction")
 CANARIES = (
@@ -103,29 +110,6 @@ def filesystem_off_catalog():
     """The reviewed stock 9.2.0 catalog (77 tools, filesystem tools off)."""
 
     return adm.stock_catalog("9.2.0")
-
-
-def full_catalog():
-    return json.loads((PHASE1 / "catalogs/full-1.json").read_text(encoding="utf-8"))["tools"]
-
-
-def wire_catalog():
-    """full-1 in the reviewed wire order (9.1.0 provenance ``gateway_catalog_order``).
-
-    full-1 lists tools by name; the 77 stock descriptors are ordered by the
-    reviewed ``runtime_tool_order`` and the five optional ones appended.
-    """
-
-    by_name = {tool["name"]: tool for tool in full_catalog()}
-    review = json.loads((COMPATIBILITY / "ha-mcp-9.1.0-contract-review.json").read_text(encoding="utf-8"))
-    order = review["runtime_catalog"]["runtime_tool_order"]
-    return [by_name[name] for name in order] + [by_name[name] for name in OPTIONAL_91]
-
-
-def filesystem_off_catalog_91():
-    """Class S: the 9.1.0 wire catalog without the five filesystem-gated optional tools."""
-
-    return [tool for tool in wire_catalog() if tool["name"] not in OPTIONAL_91]
 
 
 def class_c(name):
@@ -283,8 +267,14 @@ class ProvenanceTests(unittest.TestCase):
                         self.assertTrue(row["source"])
                         self.assertTrue(all(":" in item for item in row["source"]))
                 self.assertEqual(provenance["upstream"]["version"], version)
-                self.assertEqual(provenance["upstream"]["source_commit"],
-                                 y.OPTIONAL_TOOL_BINDINGS[(version, TOOL)].source_commit)
+                if version == "9.2.0":
+                    self.assertEqual(provenance["upstream"]["source_commit"],
+                                     y.OPTIONAL_TOOL_BINDINGS[(version, TOOL)].source_commit)
+                else:
+                    # HAMCP-437 I2a retired the 9.1.0 binding (ANSWER
+                    # 20261122-0907-01 point 7): the source commit stays recorded.
+                    self.assertRegex(provenance["upstream"]["source_commit"], r"^[0-9a-f]{40}$")
+                    self.assertEqual(provenance["frozen_input_label"], FROZEN_91_LABEL)
         # The class S shape is re-cited at 9.2.0, not re-transcribed.
         self.assertEqual(RESPONSES["class_s"], RESPONSES_91["class_s"])
 
@@ -301,20 +291,12 @@ class ProvenanceTests(unittest.TestCase):
         self.assertEqual(y.sibling_tools("9.2.0"), SIBLINGS_91)
         self.assertIsNone(y.OPTIONAL_TOOL_BINDINGS[("9.2.0", "ha_read_file")].adapter_token)
 
-    def test_91_captured_descriptors_match_the_compiled_bindings(self):
-        tools = full_catalog()
-        self.assertEqual(len(tools), 82)
-        for name in OPTIONAL_91:
-            with self.subTest(tool=name):
-                self.assertEqual(adm._named(tools, name), RESPONSES_91["descriptors"][name])
-                binding = y.OPTIONAL_TOOL_BINDINGS[("9.1.0", name)]
-                self.assertEqual(y.match_descriptor(tools, binding).status, "matched")
-                self.assertEqual(binding.capture_resource, "docs/evidence/hamcp319/phase1/catalogs/full-1.json")
-                self.assertEqual(binding.capture_sha256,
-                                 sha256((PHASE1 / "catalogs/full-1.json").read_bytes()).hexdigest())
-        self.assertEqual(y.sibling_tools("9.1.0"), SIBLINGS_91)
-        self.assertEqual(y.sibling_tools("8.5.0"), ("ha_list_files", "ha_read_file"))
-        self.assertIsNone(y.OPTIONAL_TOOL_BINDINGS[("9.1.0", "ha_read_file")].adapter_token)
+    # Retired by HAMCP-437 I2a-D (ANSWER 20261122-0907-01 point 6):
+    # test_91_captured_descriptors_match_the_compiled_bindings compared the
+    # full-1 9.1.0 descriptors with the retired 9.1.0 bindings. The 9.2.0
+    # comparison is test_captured_descriptors_match_the_compiled_bindings above.
+    # Its sibling_tools("8.5.0") line asserted that the retired 8.5.0 row had
+    # two siblings, so it retires with the row.
 
     def test_gateway_catalog_uses_the_reviewed_wire_order(self):
         from ha_mcp_engineering.upstream_tool_policy import (
@@ -345,21 +327,10 @@ class ProvenanceTests(unittest.TestCase):
         self.assertIn("9.2.0", PROVENANCE["filesystem_off_catalog"])
         self.assertIn("gateway_catalog_order", json.dumps(PROVENANCE))
 
-    def test_91_gateway_catalog_uses_the_reviewed_wire_order(self):
-        from ha_mcp_engineering.upstream_tool_policy import (
-            EXACT_RUNTIME_TOOL_ORDER_FINGERPRINTS,
-            schema_fingerprint,
-        )
-
-        capture = json.loads((COMPATIBILITY / "ha-mcp-9.1.0.json").read_text(encoding="utf-8"))["tools"]
-        wire = wire_catalog()
-        self.assertEqual(len(wire), 82)
-        self.assertEqual(sorted(tool["name"] for tool in wire), [tool["name"] for tool in full_catalog()])
-        stock = wire[:77]
-        self.assertEqual({tool["name"]: tool for tool in stock}, {tool["name"]: tool for tool in capture})
-        self.assertEqual(schema_fingerprint([tool["name"] for tool in stock]),
-                         EXACT_RUNTIME_TOOL_ORDER_FINGERPRINTS["9.1.0"])
-        self.assertIn("gateway_catalog_order", json.dumps(PROVENANCE_91))
+    # Retired by HAMCP-437 I2a-D (ANSWER 20261122-0907-01 point 8):
+    # test_91_gateway_catalog_uses_the_reviewed_wire_order pinned
+    # EXACT_RUNTIME_TOOL_ORDER_FINGERPRINTS["9.1.0"], which I2a-D removes with
+    # the 9.1.x rows. The 9.2.0 order is test_gateway_catalog_uses_the_reviewed_wire_order.
 
 
 # ---------------------------------------------------------------------------
@@ -455,9 +426,10 @@ class ProjectionTests(unittest.TestCase):
         assert_clean(self, text, *raw_yaml_needles(content))
 
     def test_91_receipt_secret_projection_is_lossless(self):
-        # No 9.2.0 capture records a tagged node (ANSWER 20261122-0140-01 point 2).
+        # 9.1.0 upstream receipt, frozen input, projected through the shipped
+        # 9.2.0 binding; not evidence of 9.2.0 upstream output.
         response = class_c91("yaml_fixed_projection")
-        result = project(response, "input_text", version="9.1.0")
+        result = project(response, "input_text", version="9.2.0")
         envelope = result.envelope
         self.assertEqual(tuple(envelope), ENVELOPE_91)
         self.assertEqual((envelope["tag_completeness"], envelope["tag_lossy"], envelope["lossy_tags"]),
@@ -468,8 +440,10 @@ class ProjectionTests(unittest.TestCase):
         self.assert_stripped(response, "hamcp319_secret:\n  initial: !secret hamcp319_sentinel\n")
 
     def test_91_receipt_input_tag_is_disclosed_lossy(self):
+        # 9.1.0 upstream receipt, frozen input, projected through the shipped
+        # 9.2.0 binding; not evidence of 9.2.0 upstream output.
         response = class_c91("yaml_input_tag_source_only")
-        envelope = project(response, "input_text", version="9.1.0").envelope
+        envelope = project(response, "input_text", version="9.2.0").envelope
         self.assertEqual((envelope["tag_completeness"], envelope["tag_lossy"], envelope["lossy_tags"]),
                          (y.TAG_LOSSY, True, ["!input"]))
         self.assertEqual(envelope["completeness"], "partial")
@@ -694,8 +668,6 @@ def captured_logs():
 
 class GatewayTests(adm.Harness):
     async def gateway(self, version="9.2.0", tools=None, **kwargs):
-        if tools is None and version == "9.1.0":
-            tools = wire_catalog()
         with patch.object(adm, "RaceTransport", _Transport):
             return await super().gateway(version, tools, **kwargs)
 
@@ -705,9 +677,11 @@ class GatewayTests(adm.Harness):
         return result["data"]
 
     async def test_91_yaml_positive(self):
+        # 9.1.0 upstream receipt, frozen input, projected through the shipped
+        # 9.2.0 binding; not evidence of 9.2.0 upstream output.
         for mode in ("A", "B"):
             with self.subTest(mode=mode):
-                gateway, transport = await self.gateway("9.1.0", mode=mode)
+                gateway, transport = await self.gateway("9.2.0", mode=mode)
                 self.assertIn(TOOL, self.exposed(gateway))
                 self.assertEqual(self.optional(gateway)[TOOL], "admitted")
                 transport.respond = lambda args: class_c91("yaml_fixed_projection")
@@ -828,8 +802,9 @@ class GatewayTests(adm.Harness):
         self.assertIn(y.TAG_UNAVAILABLE_LIMITATION, data["limitations"])
 
     async def test_91_parity_row_29_unavailable_disclosure(self):
-        # Kept on 9.1.0: the !input receipt has no 9.2.0 capture.
-        gateway, transport = await self._row_29_unavailable("9.1.0")
+        # 9.1.0 upstream receipt, frozen input, projected through the shipped
+        # 9.2.0 binding; not evidence of 9.2.0 upstream output.
+        gateway, transport = await self._row_29_unavailable("9.2.0")
         transport.respond = lambda args: result91("initial: [HAMCP319_YAML_TAG_CANARY\n", {"initial": "v"})
         data = self.assert_success(await call(gateway, TOOL, {"yaml_path": "lamp"}))
         self.assertEqual(data["tag_completeness"], y.TAG_UNAVAILABLE)
@@ -844,13 +819,18 @@ class GatewayTests(adm.Harness):
     async def test_91_disabled_tool_is_never_routed(self):
         # Receipt alternate.json /full_disabled_yaml: the disabled tool is
         # unknown upstream; the filesystem-off catalog never advertises it.
-        # Kept on 9.1.0: no 9.2.0 capture records the disabled tool (ANSWER
-        # 20261122-0140-01 point 4).
+        # 9.1.0 upstream receipt, frozen input, projected through the shipped
+        # 9.2.0 binding; not evidence of 9.2.0 upstream output. alternate.json
+        # lists no optional tool (every catalog has yaml_listed false), so the
+        # case runs on the 9.2.0 filesystem-off catalog with the disabled
+        # receipt as the reply a call would get; nothing is sent, so it is
+        # never reached (ANSWER 20261122-0907-01 point 5).
         disabled = class_c91("full_disabled_yaml")
         self.assertTrue(disabled["isError"])
         for mode in ("A", "B"):
             with self.subTest(mode=mode):
-                gateway, transport = await self.gateway("9.1.0", filesystem_off_catalog_91(), mode=mode)
+                gateway, transport = await self.gateway("9.2.0", filesystem_off_catalog(), mode=mode)
+                transport.respond = lambda args: disabled
                 self.assertEqual(self.optional(gateway), {name: "optional_absent" for name in OPTIONAL_91})
                 names = self.exposed(gateway)
                 self.assertFalse(set(OPTIONAL_91) & names)
