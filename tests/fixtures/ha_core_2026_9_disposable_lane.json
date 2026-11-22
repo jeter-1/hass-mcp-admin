@@ -5,8 +5,8 @@
     "2026.9.0": "ghcr.io/home-assistant/home-assistant:2026.9.0@sha256:372d991e58882a1d8c68c07e9aa3f3b509276e695355f73ccdb03baa70407293",
     "2026.9.1": "ghcr.io/home-assistant/home-assistant:2026.9.1@sha256:612d76760b544cb40b7ba01387fdac964c59a6a550a50a4d30b4773c822d2918"
   },
-  "ha_mcp_version": "8.4.3",
-  "ha_mcp_image": "ghcr.io/homeassistant-ai/ha-mcp:8.4.3@sha256:d5cea47a0115e5d161c2b319ee637b1b0a5bcfafe1597cb490299bbbc6329456",
+  "ha_mcp_version": "9.2.0",
+  "ha_mcp_image": "ghcr.io/homeassistant-ai/ha-mcp:9.2.0@sha256:9de5bf6c4216142fdffe862900abe72dac8dfe9621dd0b2b050d132372b676ba",
   "protocol": "2025-03-26",
   "network": "dedicated_non_internal_docker_bridge_with_loopback_only_test_ports",
   "docker_internal": false,
