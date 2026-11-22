@@ -137,27 +137,23 @@ class F3AdapterIsolationTests(unittest.TestCase):
 
     def test_exact_upstream_release_accounting_is_unchanged(self):
         registry = validate_reviewed_release_evidence(repository_root=ROOT)
-        seven = registry.by_version["7.14.2"]
-        eight = registry.by_version["8.0.0"]
-        self.assertEqual(len(seven.tool_contracts), 78)
+        # HAMCP-437 I2a-D: the shipped registry reviews only 9.2.0 (the
+        # 7.14.2 and 8.0.0 rows are retired); its accounting is pinned here.
+        self.assertEqual(tuple(registry.by_version), ("9.2.0",))
+        release = registry.by_version["9.2.0"]
+        self.assertEqual(len(release.tool_contracts), 77)
         self.assertEqual(
-            seven.policy.classification_counts["automatic_read"], 26
-        )
-        self.assertEqual(50 + 26, 76)
-        self.assertEqual(len(eight.tool_contracts), 78)
-        self.assertEqual(
-            eight.policy.classification_counts["automatic_read"], 24
+            release.policy.classification_counts["automatic_read"], 27
         )
         self.assertEqual(
-            eight.policy.classification_counts["held_for_canary"], 2
+            release.policy.classification_counts["held_for_canary"], 1
         )
         held = {
             item.upstream_name
-            for item in eight.policy.tools
+            for item in release.policy.tools
             if item.classification == "held_for_canary"
         }
-        self.assertEqual(held, {"ha_search", "ha_get_operation_status"})
-        self.assertEqual(50 + 24, 74)
+        self.assertEqual(held, {"ha_get_operation_status"})
 
 
 if __name__ == "__main__":

@@ -25,19 +25,15 @@ from ha_mcp_engineering.f3_dashboard.planning import (  # noqa: E402
 )
 from ha_mcp_engineering.f3_dashboard.provider import EXACT_CONTRACTS  # noqa: E402
 from ha_mcp_engineering.f3_dashboard.raw_evidence import build_raw_dashboard_evidence  # noqa: E402
+from ha_mcp_engineering.upstream_tool_policy import load_reviewed_upstream_release_registry  # noqa: E402
 from f3_dashboard_support import FakeExactReader, load_dashboard, make_preread, make_proposal  # noqa: E402
 
 
 class RawDashboardEvidenceTests(unittest.TestCase):
     def test_exact_storage_prereads_are_accepted_for_reviewed_releases(self):
-        for version in (
-            "7.14.2",
-            "8.0.0",
-            "8.1.1",
-            "8.2.0",
-            "8.4.1",
-            "8.4.3",
-        ):
+        # HAMCP-437 I2a-D: every release the shipped registry reviews (9.2.0
+        # only; the 7.14.2-8.4.3 rows are retired).
+        for version in load_reviewed_upstream_release_registry().by_version:
             with self.subTest(version=version):
                 source = make_preread(version=version)
                 evidence = build_raw_dashboard_evidence(
