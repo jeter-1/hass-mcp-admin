@@ -23,6 +23,7 @@ tests/fixtures/hamcp224_journal/*.gz binary
 tests/fixtures/hamcp274_beta58_input_select_v1/** -text -whitespace
 # HAMCP-319: pinned dashboard guide blob (git bafb5456..., sha256 b4d42e93...).
 tests/fixtures/ha_mcp_9_1_0/dashboard/dashboard-guide.md -text
+tests/fixtures/ha_mcp_9_2_0/dashboard/dashboard-guide.md -text
 # HAMCP-371 S4: gate receipts and image inspect output, hash-bound by
 # docs/evidence/hamcp371/s4/SHA256SUMS; their trailing spaces must stay byte-exact.
 docs/evidence/hamcp371/s4/inspect-digest-9.2.0.txt -text -whitespace

@@ -1,0 +1,74 @@
+{
+  "get_no_stored_config": {
+    "success": true,
+    "action": "get",
+    "url_path": "operations",
+    "config": null,
+    "config_hash": null,
+    "config_size_bytes": 0,
+    "render_paths": [],
+    "stored_config": false,
+    "message": "Home Assistant has no config for this dashboard (a storage dashboard with nothing saved yet, a YAML dashboard whose file is missing, or recovery mode), so the frontend shows its generated default view."
+  },
+  "get_stored_config": {
+    "success": true,
+    "action": "get",
+    "url_path": "operations",
+    "config": "<config>",
+    "config_hash": "<config_hash>",
+    "config_size_bytes": "<config_size_bytes>",
+    "render_paths": [],
+    "stored_config": true
+  },
+  "list": {
+    "success": true,
+    "action": "list",
+    "dashboards": "<rows>",
+    "count": "<count>"
+  },
+  "set_update": {
+    "success": true,
+    "action": "update",
+    "url_path": "operations",
+    "dashboard_id": "operations",
+    "dashboard_created": false,
+    "config_updated": true,
+    "metadata_updated": false,
+    "message": "Dashboard operations updated successfully"
+  },
+  "set_update_native": {
+    "success": true,
+    "action": "update",
+    "url_path": "operations",
+    "dashboard_id": "operations",
+    "dashboard_created": false,
+    "config_updated": true,
+    "metadata_updated": false,
+    "message": "Dashboard operations updated successfully",
+    "config_hash": "<config_hash>",
+    "write_committed": true,
+    "post_write_verified": true,
+    "render_paths": []
+  },
+  "set_write_outcome_unknown": {
+    "success": false,
+    "error": {
+      "code": "SERVICE_CALL_FAILED",
+      "message": "Dashboard write outcome unknown: save request was cancelled",
+      "suggestion": "Read the dashboard before retrying to check whether the save applied"
+    },
+    "action": "set",
+    "url_path": "operations",
+    "reason": "write_outcome_unknown",
+    "write_committed": null,
+    "post_write_verified": false
+  },
+  "skill_guide_reference_file": {
+    "skill_content_hint": "You now have this best-practice reference in your context. Pass `MandatoryBPS=false` on subsequent write-tool calls in this session (ha_config_set_automation / _script / _scene / _helper / _dashboard / _yaml) to avoid re-receiving the canonical reference files inline.",
+    "success": true,
+    "file": "references/dashboard-guide.md",
+    "uri": "skill://home-assistant-best-practices/references/dashboard-guide.md",
+    "content": "<ack_line>\n\n<dashboard-guide.md>"
+  },
+  "strict_bps_ack_line": "Acknowledgment key: <key> \u2014 strict best-practices mode is ON; pass this exact value as the BestPracticeKey argument on gated write tools. This key is a read-receipt, not a secret: it is published here deliberately by the ha-mcp server, rotates hourly, and grants no privileges \u2014 replaying it is the designed acknowledgment protocol."
+}
