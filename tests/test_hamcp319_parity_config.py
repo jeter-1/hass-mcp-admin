@@ -6,10 +6,11 @@ source (tests/fixtures/ha_mcp_9_2_0/config/provenance.json).
 
 On 9.2.0 a key outside a read's reviewed key set is withheld and an unreviewed
 upstream warning is replaced, where 9.1.0 refused the response or passed the
-key through. KeySetPending91Tests keeps the cases whose guarded outcome that
-changes on their 9.1.0 templates, unedited, until the architect answers inbox
-item 20261122-0042-01-i2c2b-hamcp319-config-keyset-outcomes (ANSWER 20261121-2318-01 item 4). No live Home Assistant, no
-network.
+key through. The cause is the shipped key layer (upstream_reads_9_2_keys.py),
+not a 9.2.0 upstream change. KeySet92Tests pins each of those outcomes as its
+own case; KeySetPending91Tests keeps the 9.1.0 originals while the 9.1.0
+provider path is in the tree (ANSWER 20261122-0042-01). No live Home
+Assistant, no network.
 """
 from __future__ import annotations
 
@@ -49,6 +50,8 @@ ADAPTER_92 = "ha_mcp_error_contract_9_2_0_v1"
 PEER_URL = "http://synthetic-host-319:9583/synthetic-config-secret-319/mcp"
 COUNTS = ("fields_withheld", "fields_dropped_by_policy", "upstream_warnings_replaced")
 NONE_WITHHELD = dict.fromkeys(COUNTS, 0)
+WITHHELD_ONE = NONE_WITHHELD | {"fields_withheld": 1}
+REPLACED_ONE = NONE_WITHHELD | {"upstream_warnings_replaced": 1}
 
 AUTOMATION = "ha_config_get_automation"
 CALENDAR = "ha_config_get_calendar_events"
@@ -123,10 +126,7 @@ class _Base(unittest.IsolatedAsyncioTestCase):
             end_request(token)
 
     def succeeded(self, result, *, complete=True, counts=NONE_WITHHELD):
-        """The public data, without the 9.2.0 key-set counts (asserted here).
-
-        counts=None leaves a count unasserted where its case is pending.
-        """
+        """The public data, without the 9.2.0 key-set counts (asserted here)."""
         self.assertTrue(result.get("success"), result)
         metadata = result["metadata"]
         self.assertEqual(metadata["provider"], "upstream_read_gateway")
@@ -137,9 +137,7 @@ class _Base(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(result["warnings"], [], result)
         data = result["data"]
         if self.version == "9.2.0":
-            got = {key: data.pop(key) for key in COUNTS}
-            if counts is not None:
-                self.assertEqual(got, counts, result)
+            self.assertEqual({key: data.pop(key) for key in COUNTS}, counts, result)
         else:
             self.assertFalse(set(COUNTS) & set(data), result)
         return data
@@ -178,7 +176,7 @@ class Parity92Tests(_Base):
         data = self.succeeded(await self.call(AUTOMATION, arguments, ok(payload)))
         self.assertEqual(data, payload)
         self.assertEqual(self.last_sent(AUTOMATION), {"entity_id": "automation.gateway_fixture"})
-        # The warned and warnings=[1] cases stay on 9.1.0 (KeySetPending91Tests).
+        # The warned and warnings=[1] cases are KeySet92Tests row 1.
         await self.assert_refused_unsent(AUTOMATION, {})
         await self.assert_refused_unsent(AUTOMATION, {"entity_id": "automation.x"})
         await self.assert_refused_unsent(AUTOMATION, {"identifier": "   "})
@@ -258,7 +256,7 @@ class Parity92Tests(_Base):
             await self.assert_refused_unsent(SCENE, arguments | extra)
         await self.assert_refused_unsent(SCENE, {})
         await self.assert_refused_unsent(SCENE, {"scene_id": "  "})
-        # The scenes=[] case stays on 9.1.0 (KeySetPending91Tests).
+        # The scenes=[] case is KeySet92Tests row 5.
         for broken in (
             {"success": True, "scenes": [], "total_count": 0, "has_more": False},
             payload | {"category": 7},
@@ -297,7 +295,7 @@ class Parity92Tests(_Base):
         self.assertEqual((data["resource_mode"], data["note"]), ("yaml", "synthetic yaml note"))
         await self.assert_refused_unsent(RESOURCES, {"include_hash": True})
         await self.assert_refused_unsent(RESOURCES, arguments | {"include_hash": True})
-        # The resource-row _config_hash case stays on 9.1.0 (KeySetPending91Tests).
+        # The resource-row _config_hash case is KeySet92Tests row 7.
         for broken in (
             payload | {"has_more": False},
             payload | {"next_offset": None},
@@ -313,9 +311,8 @@ class Parity92Tests(_Base):
     async def test_92_parity_row_8_groups(self):
         arguments, payload = self.fixture("row_8_groups")
         result = await self.call(GROUPS, arguments, ok(payload))
-        # The second record's reported all field and the full-record case stay
-        # on 9.1.0 (KeySetPending91Tests), so its count is not asserted here.
-        data = self.succeeded(result, complete=False, counts=None)
+        # The second record's reported all field is withheld (KeySet92Tests row 8).
+        data = self.succeeded(result, complete=False, counts=WITHHELD_ONE)
         self.assertEqual(result["warnings"], [keys.TEXTS[config.GROUP_FIELDS_UNAVAILABLE_WARNING]])
         first, _ = data["groups"]
         self.assertEqual(first["unavailable_fields"], ["all"])
@@ -324,7 +321,7 @@ class Parity92Tests(_Base):
         await self.assert_refused_unsent(GROUPS, {"group_id": "x"})
         await self.assert_refused_unsent(GROUPS, arguments | {"group_id": "x"})
         record = payload["groups"][0]
-        # The upstream unavailable_fields case stays on 9.1.0 (KeySetPending91Tests).
+        # The upstream unavailable_fields case is KeySet92Tests row 8.
         for broken in (
             payload | {"groups": [record | {"entity_id": "light.x"}, payload["groups"][1]]},
             payload | {"groups": [record | {"object_id": "other"}, payload["groups"][1]]},
@@ -377,7 +374,7 @@ class Parity92Tests(_Base):
                     {"condition": "x"}, {"variables": {}}, {"strict": True}):
             await self.assert_refused_unsent(TEMPLATE, arguments | bad)
         # The upstream request_id, evaluation_time, unavailable_fields and
-        # condition cases stay on 9.1.0 (KeySetPending91Tests).
+        # condition cases are KeySet92Tests row 10.
         for broken in (
             payload | {"template": "{{ 2 }}"},
             payload | {"listeners": []},
@@ -388,8 +385,8 @@ class Parity92Tests(_Base):
     async def test_92_parity_row_11_automation_traces(self):
         for key in ("row_11_traces_list", "row_11_traces_detail"):
             arguments, payload = self.fixture(key)
-            # The returned records stay on 9.1.0 (KeySetPending91Tests).
-            self.succeeded(await self.call(TRACES, arguments, ok(payload)), counts=None)
+            # The withheld record keys are KeySet92Tests row 11.
+            self.succeeded(await self.call(TRACES, arguments, ok(payload)), counts=WITHHELD_ONE)
             self.assertEqual(self.last_sent(TRACES), arguments)
         await self.assert_refused_unsent(TRACES, {"automation_id": "automation.x", "order": "random"})
         await self.assert_refused_unsent(TRACES, {"automation_id": "automation.x", "limit": 51})
@@ -464,12 +461,140 @@ class Parity92Tests(_Base):
                 self.assertNotIn("missing_fixture", json.dumps(result))
 
 
+class KeySet92Tests(_Base):
+    """9.2.0 outcomes of the shipped key layer, one case per outcome.
+
+    Each case replaces a 9.1.0 KeySetPending91Tests case (ANSWER
+    20261122-0042-01): an unadmitted key is withheld and counted, and an
+    unreviewed upstream warning is replaced and makes the read partial.
+    """
+
+    async def test_92_keyset_row_1_upstream_warning_replaced_partial(self):
+        arguments, payload = self.fixture("row_1_automation")
+        # 9.1.0: complete, the warning passed through as data.
+        result = await self.call(AUTOMATION, arguments, ok(payload | {"warnings": ["Deprecated syntax detected."]}))
+        data = self.succeeded(result, complete=False, counts=REPLACED_ONE)
+        self.assertEqual(result["warnings"], [keys.REPLACED_PARTIAL])
+        self.assertEqual(data, payload | {"warnings": [keys.REPLACED_WARNING]})
+        self.assertNotIn("Deprecated syntax detected.", json.dumps(result))
+
+    async def test_92_keyset_row_1_non_string_warning_replaced_partial(self):
+        arguments, payload = self.fixture("row_1_automation")
+        # 9.1.0: invalid_response.
+        result = await self.call(AUTOMATION, arguments, ok(payload | {"warnings": [1]}))
+        data = self.succeeded(result, complete=False, counts=REPLACED_ONE)
+        self.assertEqual(result["warnings"], [keys.REPLACED_PARTIAL])
+        self.assertEqual(data, payload | {"warnings": [keys.REPLACED_WARNING]})
+
+    async def test_92_keyset_row_5_scene_listing_key_withheld(self):
+        arguments, payload = self.fixture("row_5_scene")
+        # 9.1.0: invalid_response.
+        data = self.succeeded(await self.call(SCENE, arguments, ok(payload | {"scenes": []})), counts=WITHHELD_ONE)
+        self.assertEqual(data, payload)
+
+    async def test_92_keyset_row_7_resource_config_hash_withheld(self):
+        arguments, payload = self.fixture("row_7_resources")
+        row = payload["resources"][0]
+        # 9.1.0: invalid_response.
+        result = await self.call(RESOURCES, arguments, ok(payload | {"resources": [row | {"_config_hash": "abc"}]}))
+        data = self.succeeded(result, counts=WITHHELD_ONE)
+        self.assertEqual(data["resources"], [row])
+        self.assertNotIn("abc", json.dumps(result))
+
+    async def test_92_keyset_row_8_group_all_withheld_and_listed_unavailable(self):
+        """Known gap HAMCP-450 (2.9.1 K1, list_groups `all`).
+
+        The second record reports all=true; 9.2.0 withholds it and lists it
+        unavailable although upstream sent it. HAMCP-450 flips this assertion.
+        """
+        arguments, payload = self.fixture("row_8_groups")
+        self.assertIs(payload["groups"][1]["all"], True)
+        result = await self.call(GROUPS, arguments, ok(payload))
+        data = self.succeeded(result, complete=False, counts=WITHHELD_ONE)
+        self.assertEqual(result["warnings"], [keys.TEXTS[config.GROUP_FIELDS_UNAVAILABLE_WARNING]])
+        for record in data["groups"]:
+            self.assertEqual(record["unavailable_fields"], ["all"])
+            self.assertNotIn("all", record)
+        # 9.1.0: the second record kept all=true and no unavailable_fields.
+
+    async def test_92_keyset_row_8_full_records_partial(self):
+        """Known gap HAMCP-450 (2.9.1 K1, list_groups `all`).
+
+        Both records report all; 9.1.0 was complete and undisclosed. 9.2.0
+        withholds all on both and lists it unavailable. HAMCP-450 flips this.
+        """
+        arguments, payload = self.fixture("row_8_groups")
+        full = deepcopy(payload)
+        full["groups"][0]["all"] = False
+        result = await self.call(GROUPS, arguments, ok(full))
+        data = self.succeeded(result, complete=False, counts=WITHHELD_ONE)
+        self.assertEqual(result["warnings"], [keys.TEXTS[config.GROUP_FIELDS_UNAVAILABLE_WARNING]])
+        self.assertEqual([record["unavailable_fields"] for record in data["groups"]], [["all"], ["all"]])
+
+    async def test_92_keyset_row_8_upstream_unavailable_fields_withheld(self):
+        arguments, payload = self.fixture("row_8_groups")
+        record = payload["groups"][0]
+        # 9.1.0: invalid_response.
+        result = await self.call(GROUPS, arguments, ok(payload | {
+            "groups": [record | {"unavailable_fields": []}, payload["groups"][1]]}))
+        # Two distinct unadmitted names: unavailable_fields (first record) and
+        # all (second record); _names counts distinct names, not occurrences.
+        data = self.succeeded(result, complete=False, counts=NONE_WITHHELD | {"fields_withheld": 2})
+        self.assertEqual(result["warnings"], [keys.TEXTS[config.GROUP_FIELDS_UNAVAILABLE_WARNING]])
+        # The gateway's own list replaces the upstream one.
+        self.assertEqual([r["unavailable_fields"] for r in data["groups"]], [["all"], ["all"]])
+
+    async def test_92_keyset_row_10_upstream_template_fields_withheld(self):
+        """Known gap HAMCP-450 (template row).
+
+        If upstream sends request_id or evaluation_time, the stock text still
+        says they are not reported. 9.2.0 source does not emit them, so this is
+        not reachable today; they are withheld, never synthesized.
+        """
+        arguments, payload = self.fixture("row_10_template")
+        for extra in ({"request_id": "synthetic"}, {"evaluation_time": 0.1}):
+            with self.subTest(extra=extra):
+                # 9.1.0: invalid_response.
+                result = await self.call(TEMPLATE, arguments, ok(payload | extra))
+                data = self.succeeded(result, complete=False, counts=WITHHELD_ONE)
+                self.assertEqual(result["warnings"], [keys.TEXTS[config.TEMPLATE_FIELDS_UNAVAILABLE_WARNING]])
+                self.assertEqual(data, payload | {"unavailable_fields": ["evaluation_time", "request_id"]})
+
+    async def test_92_keyset_row_10_unavailable_fields_and_condition_withheld(self):
+        arguments, payload = self.fixture("row_10_template")
+        for extra in ({"unavailable_fields": []}, {"condition": True}):
+            with self.subTest(extra=extra):
+                # 9.1.0: invalid_response.
+                result = await self.call(TEMPLATE, arguments, ok(payload | extra))
+                data = self.succeeded(result, complete=False, counts=WITHHELD_ONE)
+                self.assertEqual(result["warnings"], [keys.TEXTS[config.TEMPLATE_FIELDS_UNAVAILABLE_WARNING]])
+                self.assertEqual(data, payload | {"unavailable_fields": ["evaluation_time", "request_id"]})
+
+    async def test_92_keyset_row_11_trace_record_keys_withheld(self):
+        """Known gap HAMCP-446 (traces: list trigger, detail script_execution).
+
+        Withheld and counted, the read still complete. HAMCP-446 flips this.
+        """
+        for key, withheld in (("row_11_traces_list", "trigger"), ("row_11_traces_detail", "script_execution")):
+            with self.subTest(key=key):
+                arguments, payload = self.fixture(key)
+                data = self.succeeded(await self.call(TRACES, arguments, ok(payload)), counts=WITHHELD_ONE)
+                expected = deepcopy(payload)
+                if key == "row_11_traces_list":
+                    for trace in expected["traces"]:
+                        del trace[withheld]
+                else:
+                    del expected[withheld]
+                self.assertEqual(data, expected)
+                # 9.1.0: data equalled the payload.
+
+
 class KeySetPending91Tests(_Base):
     """Shipped 9.1.0 cases whose guarded outcome the 9.2.0 key sets change.
 
-    Kept unedited on the 9.1.0 templates until the architect answers inbox
-    item 20261122-0042-01-i2c2b-hamcp319-config-keyset-outcomes (ANSWER 20261121-2318-01 item 4). On 9.2.0 each of these
-    returns success, with the key withheld or the warning replaced.
+    Kept unedited on the 9.1.0 templates while the 9.1.0 provider path is in
+    the tree; whoever removes that path retires them, mapping each to its
+    KeySet92Tests case (ANSWER 20261122-0042-01 item 6).
     """
 
     version = "9.1.0"
