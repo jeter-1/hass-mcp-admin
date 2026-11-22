@@ -240,7 +240,7 @@ ROWS: dict = {
             'severity', 'state', 'states_summary', 'success', 'system_info',
             'system_summary', 'time_zone', 'total_areas', 'total_domains',
             'total_entities', 'total_entity_results', 'total_services',
-            'translation_key', 'truncated', 'update_available', 'version'
+            'translation_key', 'truncated', 'update_available', 'version', 'warnings'
         }),
         drops=frozenset({
             'mcp_client', 'python_required', 'settings_url', 'settings_url_hint',
@@ -261,7 +261,7 @@ ROWS: dict = {
             'attributes', 'context', 'count', 'data', 'entity_id', 'errors',
             'home_assistant_timezone', 'id', 'last_changed', 'last_reported',
             'last_updated', 'metadata', 'note', 'parent_id', 'partial', 'state',
-            'states', 'success', 'timestamp_format', 'user_id'
+            'states', 'success', 'timestamp_format', 'user_id', 'warnings'
         }),
         # HAMCP-410 (HAAC-E042): the bulk states map is keyed by entity_id
         # (search/state.py:50-91 at 51e3aac7).
@@ -272,7 +272,7 @@ ROWS: dict = {
         admitted=frozenset({
             'count', 'entity_id', 'friendly_name', 'icon', 'items', 'message', 'state',
             'status', 'status_filter', 'success', 'summary', 'supported_features',
-            'todo_lists', 'uid'
+            'todo_lists', 'uid', 'warnings'
         }),
     ),
     # Row 22.
@@ -280,8 +280,8 @@ ROWS: dict = {
         admitted=frozenset({
             'count', 'device_trackers', 'editable', 'entity_icon', 'entity_id',
             'friendly_name', 'icon', 'id', 'latitude', 'longitude', 'message', 'name',
-            'passive', 'persons', 'radius', 'source', 'success', 'zone', 'zone_id',
-            'zones'
+            'passive', 'persons', 'radius', 'source', 'success', 'warnings', 'zone',
+            'zone_id', 'zones'
         }),
     ),
     # Row 23.
@@ -291,7 +291,7 @@ ROWS: dict = {
             'floor_id', 'floors', 'humidity_entity_id', 'icon', 'labels', 'level',
             'message', 'modified_at', 'name', 'orphaned_areas', 'orphaned_count',
             'picture', 'success', 'temperature_entity_id', 'unassigned_areas',
-            'unassigned_count'
+            'unassigned_count', 'warnings'
         }),
     ),
     # Row 24.

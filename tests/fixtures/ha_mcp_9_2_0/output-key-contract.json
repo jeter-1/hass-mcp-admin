@@ -1978,7 +1978,8 @@
         "translation_key": "receipt 9.1.2 profile A+B",
         "truncated": "receipt 9.1.2 profile A+B",
         "update_available": "research G ruling 2d; 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/update_check.py:386-390, tools/tools_search.py:741-745; not reachable in the lane (no Supervisor, no PyPI)",
-        "version": "receipt 9.1.2 profile A+B"
+        "version": "receipt 9.1.2 profile A+B",
+        "warnings": "HAMCP-464 ruling 0132-01 (warnings, no reviewed text), ha-mcp 51e3aac7 src/ha_mcp/tools/smart_search/_overview.py:122-143, :555-559; search/overview.py:239, :302, :348, :357, :486-506"
       },
       "calls": {
         "A/9.1.2": [
@@ -2046,6 +2047,12 @@
           "observed_9_1_2_profiles": [],
           "observed_9_2_0_profiles": [],
           "source": "research G ruling 2d; 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/update_check.py:386-390, tools/tools_search.py:741-745; not reachable in the lane (no Supervisor, no PyPI)",
+          "status": "admitted"
+        },
+        "warnings": {
+          "observed_9_1_2_profiles": [],
+          "observed_9_2_0_profiles": [],
+          "source": "HAMCP-464 ruling 0132-01 (warnings, no reviewed text), ha-mcp 51e3aac7 src/ha_mcp/tools/smart_search/_overview.py:122-143, :555-559; search/overview.py:239, :302, :348, :357, :486-506",
           "status": "admitted"
         }
       },
@@ -2267,7 +2274,8 @@
         "states": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/search/state.py:91 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:189-205)",
         "success": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/search/state.py:89 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:189-205)",
         "timestamp_format": "receipt 9.1.2 profile A+B",
-        "user_id": "receipt 9.1.2 profile A+B"
+        "user_id": "receipt 9.1.2 profile A+B",
+        "warnings": "HAMCP-464 ruling 0132-01 (warnings, no reviewed text), ha-mcp 51e3aac7 src/ha_mcp/tools/search/state.py:94, :100 (bulk), :138, :144 (single)"
       },
       "calls": {
         "A/9.1.2": [
@@ -2291,7 +2299,14 @@
       "map_containers": {
         "states": 1
       },
-      "new_in_9_2_0": {},
+      "new_in_9_2_0": {
+        "warnings": {
+          "observed_9_1_2_profiles": [],
+          "observed_9_2_0_profiles": [],
+          "source": "HAMCP-464 ruling 0132-01 (warnings, no reviewed text), ha-mcp 51e3aac7 src/ha_mcp/tools/search/state.py:94, :100 (bulk), :138, :144 (single)",
+          "status": "admitted"
+        }
+      },
       "notes": [],
       "number": 19,
       "observed": {
@@ -2615,7 +2630,8 @@
         "summary": "receipt 9.1.2 profile A+B",
         "supported_features": "receipt 9.1.2 profile A+B",
         "todo_lists": "receipt 9.1.2 profile A+B",
-        "uid": "receipt 9.1.2 profile A+B"
+        "uid": "receipt 9.1.2 profile A+B",
+        "warnings": "HAMCP-464 ruling 0132-01 (warnings, no reviewed text), ha-mcp 51e3aac7 src/ha_mcp/tools/tools_todo.py:265-277 (via :375)"
       },
       "calls": {
         "A/9.1.2": [
@@ -2637,7 +2653,14 @@
       },
       "consumed_structure": [],
       "map_containers": {},
-      "new_in_9_2_0": {},
+      "new_in_9_2_0": {
+        "warnings": {
+          "observed_9_1_2_profiles": [],
+          "observed_9_2_0_profiles": [],
+          "source": "HAMCP-464 ruling 0132-01 (warnings, no reviewed text), ha-mcp 51e3aac7 src/ha_mcp/tools/tools_todo.py:265-277 (via :375)",
+          "status": "admitted"
+        }
+      },
       "notes": [],
       "number": 21,
       "observed": {
@@ -2713,6 +2736,7 @@
         "radius": "receipt 9.1.2 profile A+B",
         "source": "receipt 9.1.2 profile A+B",
         "success": "receipt 9.1.2 profile A+B",
+        "warnings": "HAMCP-464 ruling 0132-01 (warnings, no reviewed text), ha-mcp 51e3aac7 src/ha_mcp/tools/tools_zones.py:72-73, :107-108, :323-330",
         "zone": "receipt 9.1.2 profile A+B",
         "zone_id": "receipt 9.1.2 profile A+B",
         "zones": "receipt 9.1.2 profile A+B"
@@ -2764,6 +2788,12 @@
             "B"
           ],
           "source": "research G ruling 2e (Q2, with a disclosure note)",
+          "status": "admitted"
+        },
+        "warnings": {
+          "observed_9_1_2_profiles": [],
+          "observed_9_2_0_profiles": [],
+          "source": "HAMCP-464 ruling 0132-01 (warnings, no reviewed text), ha-mcp 51e3aac7 src/ha_mcp/tools/tools_zones.py:72-73, :107-108, :323-330",
           "status": "admitted"
         }
       },
@@ -2859,7 +2889,8 @@
         "success": "receipt 9.1.2 profile A+B",
         "temperature_entity_id": "receipt 9.1.2 profile A+B",
         "unassigned_areas": "receipt 9.1.2 profile A+B",
-        "unassigned_count": "receipt 9.1.2 profile A+B"
+        "unassigned_count": "receipt 9.1.2 profile A+B",
+        "warnings": "HAMCP-464 ruling 0132-01 (warnings, no reviewed text), ha-mcp 51e3aac7 src/ha_mcp/tools/tools_areas.py:241-255 (text response_helpers.py:245-267)"
       },
       "calls": {
         "A/9.1.2": [
@@ -2881,7 +2912,14 @@
       },
       "consumed_structure": [],
       "map_containers": {},
-      "new_in_9_2_0": {},
+      "new_in_9_2_0": {
+        "warnings": {
+          "observed_9_1_2_profiles": [],
+          "observed_9_2_0_profiles": [],
+          "source": "HAMCP-464 ruling 0132-01 (warnings, no reviewed text), ha-mcp 51e3aac7 src/ha_mcp/tools/tools_areas.py:241-255 (text response_helpers.py:245-267)",
+          "status": "admitted"
+        }
+      },
       "notes": [],
       "number": 23,
       "observed": {

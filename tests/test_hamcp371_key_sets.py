@@ -65,7 +65,8 @@ class RowsEqualTheContract(unittest.TestCase):
 
     def test_prefix_rules_are_the_two_reviewed_families(self):
         # HAMCP-371 E1 (13:25 ruling): the ha_get_state visibility prefix had no
-        # 9.2.0 receipt and was withdrawn with the state ``warnings`` key.
+        # 9.2.0 receipt and was withdrawn. HAMCP-464 re-admits the state
+        # ``warnings`` key with no reviewed text, so it stays withdrawn.
         with_prefixes = {tool for tool, row in keys.ROWS.items() if row.prefixes}
         self.assertEqual(with_prefixes, {"ha_config_get_automation", "ha_list_services"})
 
@@ -116,7 +117,7 @@ class Engine(unittest.TestCase):
         self.assertEqual(out["fields_withheld"], 1)
 
     def test_unreviewed_warnings_are_replaced_once_and_counted(self):
-        # ha_list_services: E1 withdrew ``warnings`` from the overview row.
+        # ha_list_services: an admitted ``warnings`` with no reviewed prefix match.
         out = self.project("ha_list_services", {
             "success": True, "warnings": ["hamcp371 one", 7, "hamcp371 two"]})
         self.assertEqual(out["warnings"], [keys.REPLACED_WARNING])
@@ -132,13 +133,26 @@ class Engine(unittest.TestCase):
         out = self.project("ha_list_services", {"success": True, "warnings": ["x " + language]})
         self.assertEqual(out["warnings"], [keys.REPLACED_WARNING])
 
-    def test_state_warnings_are_withheld_not_reviewed(self):
-        # E1: no 9.2.0 receipt shows ha_get_state ``warnings``; it is withheld
-        # and counted, and no longer marks the read partial.
-        out = self.project("ha_get_state", {"success": True, "warnings": ["hamcp371 w"]})
-        self.assertNotIn("warnings", out)
-        self.assertEqual(out["fields_withheld"], 1)
-        self.assertEqual(out["upstream_warnings_replaced"], 0)
+    def test_hamcp464_warnings_are_replaced_not_withheld(self):
+        # HAMCP-464 (ruling 0132-01): these rows admit a top-level ``warnings``
+        # with no reviewed text, so every upstream warning is replaced and
+        # counted, not withheld. Single-read state carries it beside ``data``.
+        cases = (
+            ("ha_get_overview", {"success": True}),
+            ("ha_get_state", {"success": True}),
+            ("ha_get_state", {"data": {"entity_id": "light.hamcp464"}, "metadata": {}}),
+            ("ha_get_todo", {"success": True}),
+            ("ha_get_zone", {"success": True}),
+            ("ha_list_floors_areas", {"success": True}),
+        )
+        for tool, payload in cases:
+            with self.subTest(tool=tool, payload=sorted(payload)):
+                self.assertEqual(keys.ROWS[tool].warnings, ())
+                out = self.project(tool, {**payload, "warnings": ["hamcp464 w", "hamcp464 x"]})
+                self.assertEqual(out["warnings"], [keys.REPLACED_WARNING])
+                self.assertEqual(out["upstream_warnings_replaced"], 2)
+                self.assertEqual(out["fields_withheld"], 0)
+                self.assertNotIn("hamcp464 w", json.dumps(out))
 
     def test_typed_service_keys(self):
         # S10-2: target.entity[].integration is a str and a field section's
