@@ -1,0 +1,26 @@
+{
+  "purpose": "Foreign-release refusal coverage for the 9.2.0 read adapters and the ha_search pair: real retired 8.6.0 and 9.1.2 releases that 9.2.0 must not trust (HAMCP-437 I2a-D, ANSWER 20261122-0005-01).",
+  "source_commit": "0f1adcb56b080c74ababfea84cf9892479a3b1cc",
+  "files": {
+    "upstream_tool_policy_8_6_0.json": {
+      "source_path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_8_6_0.json",
+      "generation": "git show <source_commit>:<source_path> (byte copy)",
+      "sha256": "sha256:27d8495e48c840899f308df1590ce8bb750b325032b41703dfaa295c8b3c3754"
+    },
+    "upstream_tool_policy_9_1_2.json": {
+      "source_path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_1_2.json",
+      "generation": "git show <source_commit>:<source_path> (byte copy)",
+      "sha256": "sha256:3c9b255dda2bad160cf20e1c0c58e91f94e500db42bd49464d2906fc8d8a0b20"
+    },
+    "upstream_release_registry.json": {
+      "source_path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_release_registry.json",
+      "generation": "the releases[] rows with versions 8.6.0 and 9.1.2 copied unchanged from <source_commit>, in their original order; registry_format_version copied; default_version set to 9.1.2; written with json.dumps(indent=2) and a trailing newline",
+      "entry_ids": [
+        "ha-mcp-v8.6.0-7426fb16",
+        "ha-mcp-v9.1.2-381b1e01"
+      ],
+      "sha256": "sha256:133a3e0d3bd3f2c5813ba19fb50b33551eb150b79b9fc80093ec57de36def58f"
+    }
+  },
+  "captures": "The rows' catalog captures stay at docs/evidence/upstream-read-compatibility/ha-mcp-8.6.0.json and ha-mcp-9.1.2.json, unchanged since <source_commit>."
+}
