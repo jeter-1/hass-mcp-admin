@@ -35,10 +35,10 @@ from harness_send import harness_url, register_lane_origin  # noqa: E402
 
 REVIEWED = "2791151b27424f686bc16c59f521ce5301517727"
 CORE = "ghcr.io/home-assistant/home-assistant:2026.9.4@sha256:3e6710a7ab2a61311d9d899b719f6c3657791c63e8f4942cec4ebc42401d6b76"
-MCP = "ghcr.io/homeassistant-ai/ha-mcp:8.5.0@sha256:e1538bcdadb13a5467bbb8258fba3262a05518585e18115742da638adec7057c"
+MCP = "ghcr.io/homeassistant-ai/ha-mcp:9.2.0@sha256:9de5bf6c4216142fdffe862900abe72dac8dfe9621dd0b2b050d132372b676ba"
 IMAGE_IDS = {
     CORE: "sha256:cd74b0e02cee84de9f53b0f8fc079c8979796b81a6b02e1ee0cd09f038703afd",
-    MCP: "sha256:e8dcb498378d91c9558698999f22461003c71aa67b405b9c17a76b792c85f4a7",
+    MCP: "sha256:39969c24073349ddf76bbf3bf94dc6911155079ceb1c6a2cb85eade54a02b7a4",
 }
 LABEL_KEY = "org.hass-mcp.dashboard-acceptance"
 OBSERVER = "dashboard_interval_observer"
