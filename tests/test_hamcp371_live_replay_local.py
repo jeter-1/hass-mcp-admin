@@ -25,6 +25,7 @@ import unittest
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
+CONTROL_REGISTRY = ROOT / "tests/fixtures/ha_mcp_8_5_0_control/upstream_release_registry.json"
 sys.path.insert(0, str(ROOT / "scripts"))
 import core_read_replay_calls as calls  # noqa: E402
 import core_read_replay_capture_local as lane  # noqa: E402
@@ -769,7 +770,12 @@ class CatalogAndControlTests(unittest.TestCase):
             sr.control_tree(fewer)
 
     def test_control_binding_is_the_reviewed_registry_row(self):
-        bound = sr.control_binding()
+        # The shipped registry holds only 9.2.0 (HAMCP-437), so the lane's
+        # default control binding refuses; the reviewed 8.5.0 row is frozen
+        # at 0f1adcb5 (tests/fixtures/ha_mcp_8_5_0_control).
+        with self.assertRaisesRegex(Refusal, "^control_registry_row_missing$"):
+            sr.control_binding()
+        bound = sr.control_binding(registry=CONTROL_REGISTRY)
         self.assertEqual(bound["index_digest"], "sha256:e1538bcdadb13a5467bbb8258fba3262"
                                                 "a05518585e18115742da638adec7057c")
         self.assertEqual(bound["revision"], "8182c6e6db68b37ae7041dec6dd4ade7b7356fb7")
