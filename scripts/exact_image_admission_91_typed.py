@@ -46,6 +46,7 @@ for _path in (ROOT / "scripts", ROOT / "hass_mcp_engineering_beta"):
 from exact_image_admission_lanes import (  # noqa: E402
     DIGEST, EXPECTED_PROTOCOL, LaneFailure, bounded, case_result, classify_form, require, write_json,
 )
+from harness_send import harness_url  # noqa: E402
 
 CASE = "91_typed_controls_verified_readback"
 FORM = "strict_full"
@@ -566,7 +567,7 @@ async def wait_http(url: str, attempts: int = 90) -> int:
     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=2)) as client:
         for _ in range(attempts):
             try:
-                async with client.get(url, allow_redirects=False) as response:
+                async with client.get(harness_url(url), allow_redirects=False) as response:
                     return response.status
             except (aiohttp.ClientError, TimeoutError, OSError):
                 pass

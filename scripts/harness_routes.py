@@ -11,7 +11,9 @@ cannot be given one: the runtime ``Route`` check accepts only the runtime
 client sent for these routes before they moved) with the same headers, JSON
 body and disabled redirects, and raises the same typed errors. It accepts only a template from
 ``HARNESS_ROUTE_TEMPLATES``, only a loopback (disposable) Core, and never
-inside an Engineering request context.
+inside an Engineering request context. The exact URL then passes
+``harness_send.harness_url`` (HAMCP-363), the one origin-and-route check every
+harness send goes through.
 """
 
 from __future__ import annotations
@@ -30,6 +32,7 @@ from ha_mcp_engineering.errors import (
     HomeAssistantUnavailableError,
 )
 from ha_mcp_engineering.request_context import current_telemetry
+from harness_send import HarnessRouteError, harness_url as harness_send_url
 
 
 HARNESS_ROUTE_TEMPLATES = frozenset({
@@ -38,11 +41,8 @@ HARNESS_ROUTE_TEMPLATES = frozenset({
     "/services/automation/reload",
     "/services/script/reload",
 })
-LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
-
-
-class HarnessRouteError(ValueError):
-    """A harness request named no harness route or left it; nothing was sent."""
+# Addresses only: harness_send refuses a name the system would resolve.
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1"})
 
 
 def harness_url(api_url: str, template: str) -> URL:
@@ -65,7 +65,7 @@ def harness_url(api_url: str, template: str) -> URL:
         or tuple(part for part in url.parts if part != "/") != expected
     ):
         raise HarnessRouteError("CI-harness route left its template")
-    return url
+    return URL(harness_send_url(str(url)))
 
 
 async def harness_request(settings: Any, method: str, template: str, body: Any = None) -> Any:

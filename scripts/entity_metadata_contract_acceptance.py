@@ -29,6 +29,10 @@ from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
+# harness_send sits next to this file (HAMCP-363).
+if str(ROOT / "scripts") not in sys.path:
+    sys.path.insert(0, str(ROOT / "scripts"))
+from harness_send import harness_url  # noqa: E402
 CAPABILITY = "core.entity_registry_metadata_operation"
 ADAPTER = "compiled-core-entity-registry-metadata-operation-v1"
 TOOL = "create_entity_metadata_plan"
@@ -187,7 +191,7 @@ class RawWebSocket:
         import aiohttp
         from lane_session import lane_session
         async with lane_session(timeout=aiohttp.ClientTimeout(total=30)) as session:
-            async with session.ws_connect(type(self).core_url) as websocket:
+            async with session.ws_connect(harness_url(type(self).core_url)) as websocket:
                 assert (await websocket.receive_json()).get("type") == "auth_required"
                 await websocket.send_json({"type": "auth", "access_token": self.token})
                 assert (await websocket.receive_json()).get("type") == "auth_ok"

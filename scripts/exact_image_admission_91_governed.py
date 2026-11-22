@@ -53,6 +53,7 @@ import sys
 import tempfile
 import threading
 from typing import Any, Awaitable, Callable
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parent.parent
 for _path in (ROOT / "scripts", ROOT / "hass_mcp_engineering_beta"):
@@ -63,6 +64,7 @@ from exact_image_admission_lanes import (  # noqa: E402
     EXPECTED_PROTOCOL, LaneFailure, bounded, case_result, require, write_json,
 )
 import exact_image_admission_91_runners as runners  # noqa: E402  (stdlib-only at import)
+from harness_send import HarnessRouteError, harness_url  # noqa: E402
 
 CASE_DASHBOARD = "91_governed_dashboard_verified_readback"
 CASE_TYPED = "91_typed_public_verified_readback"
@@ -776,9 +778,15 @@ class RecordingProxy:
                 body = self.rfile.read(length) if length else b""
                 headers = {k: v for k, v in self.headers.items() if k.lower() not in HOP}
                 headers["Host"] = f"127.0.0.1:{proxy.peer_port}"
-                connection = http.client.HTTPConnection("127.0.0.1", proxy.peer_port, timeout=120)
                 try:
-                    connection.request(method, self.path, body=body or None, headers=headers)
+                    checked = urlsplit(harness_url(f"http://127.0.0.1:{proxy.peer_port}", self.path))
+                except HarnessRouteError:
+                    # A path off the harness routes is never forwarded (HAMCP-363).
+                    self.send_error(502)
+                    return
+                connection = http.client.HTTPConnection(checked.hostname, checked.port, timeout=120)
+                try:
+                    connection.request(method, checked.path, body=body or None, headers=headers)
                     response = connection.getresponse()
                     with proxy.lock:
                         if method == "POST":
@@ -1051,7 +1059,7 @@ class CoreSocket:
     async def __aenter__(self):
         import aiohttp
         self.client = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30))
-        self.ws = await self.client.ws_connect(self.url)
+        self.ws = await self.client.ws_connect(harness_url(self.url))
         require((await self.ws.receive_json()).get("type") == "auth_required", "core_ws_no_auth_required")
         await self.ws.send_json({"type": "auth", "access_token": self.token})
         require((await self.ws.receive_json()).get("type") == "auth_ok", "core_ws_auth_failed")
@@ -1072,7 +1080,8 @@ class CoreSocket:
 
 
 async def core_state(client, core_url: str, token: str, entity: str) -> dict[str, Any]:
-    async with client.get(f"{core_url}/api/states/{entity}", headers={"Authorization": f"Bearer {token}"}) as r:
+    async with client.get(harness_url(core_url, f"/api/states/{entity}"),
+                          headers={"Authorization": f"Bearer {token}"}) as r:
         require(r.status == 200, "core_state_unreadable")
         return await r.json()
 
@@ -1341,7 +1350,7 @@ async def reset_core(lane: LaneContext) -> None:
     import exact_image_admission_91_typed as typed
     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as client:
         for domain, service, data in CORE_RESET:
-            async with client.post(f"{lane.core_url}/api/services/{domain}/{service}", json=data,
+            async with client.post(harness_url(lane.core_url, f"/api/services/{domain}/{service}"), json=data,
                                    headers={"Authorization": f"Bearer {lane.token}"}) as response:
                 require(response.status == 200, "core_fixture_reset_failed")
     await typed.wait_states(lane.rest, FIXTURE_STATES)
@@ -1391,7 +1400,7 @@ async def run_stage(plan: Plan, stage: Stage, lane: LaneContext) -> None:
         raise LaneFailure("engineering_not_ready")
     endpoint = f"http://127.0.0.1:{MCP_PORT}/{ACCESS_SECRET}/mcp"
     try:
-        async with streamablehttp_client(endpoint, timeout=60, sse_read_timeout=300) as (read, write, _):
+        async with streamablehttp_client(harness_url(endpoint), timeout=60, sse_read_timeout=300) as (read, write, _):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 _, health = await mcp_call(session, "get_server_health", {"check_ha": False})
@@ -1554,7 +1563,7 @@ async def run_lane(plan: Plan) -> None:
             async def host_probe(plan_id: str) -> int:
                 from urllib.error import HTTPError
                 from urllib.request import Request, urlopen
-                request = Request(f"http://127.0.0.1:{INGRESS_PORT}/plans/{plan_id}",
+                request = Request(harness_url(f"http://127.0.0.1:{INGRESS_PORT}", f"/plans/{plan_id}"),
                                                  headers={"X-Ingress-Path": INGRESS_PATH, "X-Remote-User-Id": owner})
 
                 def fetch() -> int:
@@ -1582,7 +1591,7 @@ def _wait_ready(url: str, seconds: float) -> bool:
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
         try:
-            with urlopen(url, timeout=3) as response:  # noqa: S310 - loopback
+            with urlopen(harness_url(url), timeout=3) as response:  # noqa: S310 - loopback
                 if response.status == 200:
                     return True
         except (URLError, OSError):

@@ -14,6 +14,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -206,10 +207,26 @@ class RefusalTests(unittest.TestCase):
             "http://[::1]:18086/mcp",
         ):
             with self.subTest(endpoint=endpoint):
-                with self.assertRaises(observer.ObservationError) as caught:
-                    observer.observe(endpoint, connect=self.fail)
+                with patch.object(observer.http.client, "HTTPConnection", self.fail):
+                    with self.assertRaises(observer.ObservationError) as caught:
+                        observer.observe(endpoint)
                 self.assertIn(str(caught.exception),
                               {"endpoint_not_loopback_http", "endpoint_port_invalid"})
+
+    def test_a_loopback_endpoint_off_the_harness_routes_is_refused_unsent(self) -> None:
+        # HAMCP-363: the existing checks run first, then harness_send's route check.
+        for endpoint in (
+            "http://127.0.0.1:18086/other",
+            "http://127.0.0.1:18086/mcp/../admin",
+            "http://127.0.0.1:18086/a%2fb/mcp",
+        ):
+            with self.subTest(endpoint=endpoint):
+                with patch.object(observer.http.client, "HTTPConnection", self.fail):
+                    with self.assertRaises(observer.ObservationError) as caught:
+                        observer.observe(endpoint)
+                self.assertEqual(caught.exception.args, ("endpoint_route_refused",))
+                self.assertIsNone(caught.exception.__cause__)
+                self.assertIsNone(caught.exception.__context__)
 
     def assert_refused(self, mode: str, reason: str) -> None:
         with Peer(mode) as peer:

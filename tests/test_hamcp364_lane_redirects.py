@@ -35,6 +35,7 @@ import core_thread_matter_topology_a2_local as a2_runner  # noqa: E402
 import created_object_contract_acceptance as created  # noqa: E402
 import device_configuration_contract_acceptance as device  # noqa: E402
 import entity_metadata_contract_acceptance as entity  # noqa: E402
+import harness_send  # noqa: E402
 import lane_session as subject  # noqa: E402
 import marketplace_read_contract_acceptance as marketplace  # noqa: E402
 import real_ha_contract_tests as harness  # noqa: E402
@@ -196,6 +197,7 @@ class Wired(unittest.IsolatedAsyncioTestCase):
         """The A2 runner's hand-over, through the harness's own function; undone after the test."""
         self.enterContext(patch.multiple(harness, HA_URL=harness.HA_URL, CLIENT_ID=harness.CLIENT_ID,
                                          _lane_core=None))
+        self.enterContext(patch.object(harness_send, "_lane_origins", set()))
         self.assertEqual(harness.use_internal_lane_core(BRIDGE_CORE, BRIDGE_SUBNET), BRIDGE_CORE)
         self.wire.local |= {BRIDGE, BRIDGE_STUB}
 

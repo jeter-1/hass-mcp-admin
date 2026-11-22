@@ -273,7 +273,7 @@ class StartupChecks(unittest.IsolatedAsyncioTestCase):
             def request(self, *args, **kwargs): return Response()
         with diagnostics.lane('helper_value'):
             with self.assertRaises(RuntimeError) as caught:
-                await harness._json_request(Session(), 'POST', '/synthetic')
+                await harness._json_request(Session(), 'POST', '/api/onboarding/users')
         self.assertEqual(caught.exception._local_lane_check, ('auth', 'bootstrap_http'))
 
     async def test_actual_helper_setup_failure_is_identified(self):

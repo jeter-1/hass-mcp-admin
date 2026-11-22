@@ -88,6 +88,10 @@ from ha_mcp_engineering.impact.provider import DirectHaImpactProvider  # noqa: E
 from ha_mcp_engineering.observability import METRICS  # noqa: E402
 from ha_mcp_engineering.request_context import begin_request, end_request  # noqa: E402
 from ha_mcp_engineering.tools import compatibility  # noqa: E402
+# harness_routes imports harness_send by its top-level name (HAMCP-363).
+SCRIPTS_DIR = ROOT / "scripts"
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.append(str(SCRIPTS_DIR))
 from scripts import harness_routes  # noqa: E402
 from scripts.harness_routes import (  # noqa: E402
     HARNESS_ROUTE_TEMPLATES,
@@ -1225,7 +1229,10 @@ class SourceScanTests(unittest.TestCase):
                     isinstance(node, ast.Constant)
                     and isinstance(node.value, str)
                     and any(t in node.value for t in HARNESS_ROUTE_TEMPLATES)
-                ) or names & {"HARNESS_ROUTE_TEMPLATES", "harness_routes", "harness_request"}:
+                ) or names & {
+                    "HARNESS_ROUTE_TEMPLATES", "harness_routes", "harness_request",
+                    "harness_send", "register_lane_origin",
+                }:
                     findings.append(f"{relative}:{getattr(node, 'lineno', '?')}")
         self.assertEqual(findings, [])
 
@@ -1306,23 +1313,66 @@ class SourceScanTests(unittest.TestCase):
 
 
 HARNESS_BINDERS = frozenset({"rest_path", "state_path"})
-# Reviewed raw HTTP sessions in harnesses that are not the guarded client:
-# the disposable-Core onboarding bootstrap and the 850 relay passthrough, and
-# the seq-13 lane's config-entry setup and cleanup (HAMCP-165 review1 M4),
-# which ``LaneRaw.rest`` closes to ``CONFIG_ENTRY_ROUTE`` on a loopback Core
-# (pinned in tests/test_seq13_contract_acceptance.py ``LaneRawRouteTests``),
-# and the seq-15 lane's setup, raw drift, readback and cleanup (HAMCP-232),
-# which ``LaneRaw.status`` closes to ``RAW_ROUTE`` on a loopback Core
-# (pinned in tests/test_seq15_contract_acceptance.py ``LaneRawRouteTests``),
-# and the device-configuration lane's config-entry flow start, flow continue
-# and entry reload (HAMCP-366), which ``RawRest.rest`` closes to ``RAW_REST``
-# on the pinned loopback Core (pinned in
-# tests/test_core_device_configuration_local.py ``LaneRawRouteTests``).
-HARNESS_EXEMPTIONS = frozenset({
-    ("real_ha_contract_tests.py", "f'{HA_URL}{path}'"),
-    ("seq13_contract_acceptance.py", "self.api_url + path"),
-    ("seq15_contract_acceptance.py", "self.api_url + path"),
-    ("device_configuration_contract_acceptance.py", "CORE_URL + path"),
+# HAMCP-363: every send in scripts/ names a destination that came from
+# ``harness_send.harness_url`` (the one origin-and-route check), a runtime
+# binder for the guarded runtime client, or one of the reviewed forms below.
+# Each send primitive, with where its destination sits: (position, keywords).
+URL_KEYWORDS = ("url", "str_or_url", "path")
+URL_SENDS = {
+    "request": 1,
+    "ws_connect": 0,
+    "urlopen": 0,
+    "streamablehttp_client": 0,
+    "sse_client": 0,
+}
+ADDRESS_SENDS = frozenset({"open_connection", "HTTPConnection", "HTTPSConnection"})
+SOCKET_SENDS = frozenset({"create_connection"})
+NAMED_SENDS = frozenset(URL_SENDS) - {"request"} | ADDRESS_SENDS | SOCKET_SENDS
+# HTTP verb methods (and an opener's ``open``) count as sends on a receiver
+# whose last name says it sends, so ``dict.get`` lookups stay ordinary.
+VERB_SENDS = frozenset({"get", "post", "put", "patch", "delete", "head", "options"})
+SEND_RECEIVER = re.compile(r"(?:client|session|rest|requests|httpx)$", re.IGNORECASE)
+OPENER_RECEIVER = re.compile(r"opener$", re.IGNORECASE)
+NET_MODULES = ("aiohttp", "requests", "httpx", "urllib3")
+HARNESS_URL = ("harness_send", "harness_url")
+RUNTIME_CLIENT_MODULES = frozenset({"ha_mcp_engineering.clients", "ha_mcp_engineering.clients.rest"})
+_SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
+_FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)
+
+# HAMCP-443 scripts keep their own reviewed lane checks until 443-B moves them
+# onto harness_send (Josh 2026-11-21: core_lane_host.py must send through the
+# HAMCP-363 helper). Temporary, by path, and only the HAMCP-443 files whose
+# sends the scanner flags today; the others (core_lane_host.py included) are
+# scanned. Each listed file that exists still has a finding, so an entry
+# cannot outlive its reason.
+HAMCP443_EXEMPT_SCRIPTS = frozenset({
+    "scripts/core_thread_matter_topology_a2_local.py",
+    "scripts/device_configuration_contract_acceptance.py",
+    "scripts/marketplace_read_contract_acceptance.py",
+    "scripts/security_metadata_contract_acceptance.py",
+    "scripts/thread_matter_topology_contract_acceptance.py",
+})
+# Scripts that talk only to GitHub, a registry or an image store, never to a
+# harness target; pinned to name no Home Assistant, Engineering or harness
+# marker, so a harness send cannot hide in one.
+NON_HARNESS_SCRIPTS = frozenset({
+    "scripts/advertised_image_watchdog.py",
+    "scripts/core_evidence_sources.py",
+    "scripts/github_retry.py",
+    "scripts/publish_registry_tags_guarded.py",
+    "scripts/verify_publication_source_image.py",
+    "scripts/verify_upstream_image_provenance.py",
+})
+HARNESS_MARKERS = (
+    "ha_mcp_engineering", "harness_routes", "harness_send", "ws_connect",
+    "streamablehttp_client", "/api/websocket", "8123", "8086", "/mcp",
+)
+# The only functions that may register an internal-bridge lane origin: the A2
+# hand-over and the dashboard lane, each after verifying the Docker address
+# (the named allowlist the 2.6 rebinding rulings recorded for this helper).
+LANE_ORIGIN_CALLERS = frozenset({
+    ("scripts/real_ha_contract_tests.py", "use_internal_lane_core"),
+    ("scripts/dashboard_analysis_disposable_acceptance.py", "owned_url"),
 })
 
 
@@ -1350,13 +1400,368 @@ def _binder_findings(tree: ast.AST) -> list[str]:
     return findings
 
 
-def scan_harness_source(source: str, filename: str = "<synthetic>") -> list[str]:
-    """Flag a harness path the guarded transport would refuse, or an alias."""
+def _local_nodes(scope: ast.AST):
+    """Nodes of one scope, without the bodies of nested functions or classes."""
 
-    tree = ast.parse(source)
+    pending = list(ast.iter_child_nodes(scope))
+    while pending:
+        node = pending.pop()
+        yield node
+        if not isinstance(node, _SCOPES):
+            pending.extend(ast.iter_child_nodes(node))
+
+
+class _HarnessFile:
+    """Where each name in one script was bound, for destination provenance."""
+
+    def __init__(self, tree: ast.AST):
+        self.tree = tree
+        self.parents = {}
+        for node in ast.walk(tree):
+            for child in ast.iter_child_nodes(node):
+                self.parents[child] = node
+        self.called = {id(node.func) for node in ast.walk(tree) if isinstance(node, ast.Call)}
+        self._tables = {}
+
+    def enclosing(self, node, kinds):
+        current = self.parents.get(node)
+        while current is not None and not isinstance(current, kinds):
+            current = self.parents.get(current)
+        return current
+
+    def table(self, scope):
+        """``name -> [(kind, detail)]`` for one scope, and its global/nonlocal names."""
+
+        if id(scope) in self._tables:
+            return self._tables[id(scope)]
+        table, declared, handled = {}, set(), set()
+
+        def add(name, binding):
+            table.setdefault(name, []).append(binding)
+
+        if isinstance(scope, _FUNCTIONS):
+            arguments = scope.args
+            for arg in arguments.posonlyargs + arguments.args + arguments.kwonlyargs:
+                add(arg.arg, ("param", None))
+            for arg in (arguments.vararg, arguments.kwarg):
+                if arg is not None:
+                    add(arg.arg, ("param", None))
+        for node in _local_nodes(scope):
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        add(target.id, ("value", node.value))
+                        handled.add(id(target))
+            elif isinstance(node, (ast.AnnAssign, ast.NamedExpr)) and isinstance(node.target, ast.Name):
+                if node.value is not None:
+                    add(node.target.id, ("value", node.value))
+                handled.add(id(node.target))
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    name = alias.asname or alias.name.split(".")[0]
+                    add(name, ("import", (None, alias.name if alias.asname else name)))
+            elif isinstance(node, ast.ImportFrom):
+                module = "." * node.level + (node.module or "")
+                for alias in node.names:
+                    add(alias.asname or alias.name, ("import", (module, alias.name)))
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                add(node.name, ("def", node))
+            elif isinstance(node, (ast.Global, ast.Nonlocal)):
+                declared.update(node.names)
+            elif isinstance(node, ast.ExceptHandler) and node.name:
+                add(node.name, ("other", None))
+            elif isinstance(node, ast.Name) and not isinstance(node.ctx, ast.Load):
+                if id(node) not in handled:
+                    add(node.id, ("other", None))
+        self._tables[id(scope)] = table, declared
+        return table, declared
+
+    def bindings(self, name: ast.Name) -> list:
+        """Every binding the name can refer to at this use, innermost scope first."""
+
+        scope = self.enclosing(name, _FUNCTIONS)
+        while scope is not None:
+            table, declared = self.table(scope)
+            if name.id in table and name.id not in declared:
+                return table[name.id]
+            scope = self.enclosing(scope, _FUNCTIONS)
+        return self.table(self.tree)[0].get(name.id, [])
+
+    def imported(self, node) -> tuple | None:
+        """``(module, name)`` when the expression is only an imported name."""
+
+        if isinstance(node, ast.Name):
+            bindings = self.bindings(node)
+            if len(bindings) == 1 and bindings[0][0] == "import":
+                module, name = bindings[0][1]
+                return (name, None) if module is None else (module, name)
+            if not bindings and node.id == "str":
+                return ("builtins", "str")
+            return None
+        if isinstance(node, ast.Attribute):
+            base = self.imported(node.value)
+            if base is None:
+                return None
+            module = base[0] if base[1] is None else f"{base[0]}.{base[1]}"
+            return (module, node.attr)
+        return None
+
+    def kinds(self, node, seen=frozenset()) -> frozenset:
+        """What a destination expression is: a checked URL, a split of one,
+        a part of a split, a request built on one, or a runtime binder."""
+
+        if isinstance(node, ast.Call):
+            target = self.imported(node.func)
+            first = node.args[0] if node.args else None
+            if target == HARNESS_URL:
+                return frozenset({"url"})
+            if target == ("urllib.parse", "urlsplit"):
+                return frozenset({"split"} if first is not None and "url" in self.kinds(first, seen) else ())
+            if target in {("yarl", "URL"), ("builtins", "str")}:
+                return frozenset({"url"} if first is not None and "url" in self.kinds(first, seen) else ())
+            if target == ("urllib.request", "Request"):
+                url = first if first is not None else next(
+                    (k.value for k in node.keywords if k.arg == "url"), None)
+                return frozenset({"request"} if url is not None and "url" in self.kinds(url, seen) else ())
+            name = _call_name(node)
+            if name == "rest_path" and isinstance(first, ast.Constant) and isinstance(first.value, str):
+                return frozenset({"binder"})
+            if name == "state_path":
+                return frozenset({"binder"})
+            if isinstance(node.func, ast.Name):
+                bindings = self.bindings(node.func)
+                if len(bindings) == 1 and bindings[0][0] == "def" and id(bindings[0][1]) not in seen:
+                    function = bindings[0][1]
+                    if isinstance(function, ast.ClassDef):
+                        return frozenset()
+                    returns = [
+                        item for item in _local_nodes(function) if isinstance(item, ast.Return)
+                    ]
+                    if not returns or any(item.value is None for item in returns):
+                        return frozenset()
+                    inner = seen | {id(function)}
+                    return frozenset.intersection(*(self.kinds(item.value, inner) for item in returns))
+            return frozenset()
+        if isinstance(node, ast.Name):
+            bindings = self.bindings(node)
+            key = (node.id, id(bindings))
+            if not bindings or key in seen or any(kind != "value" for kind, _ in bindings):
+                return frozenset()
+            inner = seen | {key}
+            return frozenset.intersection(*(self.kinds(value, inner) for _, value in bindings))
+        if isinstance(node, ast.Attribute) and node.attr in {"hostname", "port", "path"}:
+            return frozenset({"part"} if "split" in self.kinds(node.value, seen) else ())
+        if isinstance(node, ast.IfExp):
+            return self.kinds(node.body, seen) & self.kinds(node.orelse, seen)
+        return frozenset()
+
+    def runtime_client(self, receiver) -> bool:
+        """The receiver is only ever the runtime ``HomeAssistantRestClient``."""
+
+        def built(value):
+            return isinstance(value, ast.Call) and (
+                (self.imported(value.func) or ("", ""))[0] in RUNTIME_CLIENT_MODULES
+                and _call_name(value) == "HomeAssistantRestClient"
+            )
+
+        if isinstance(receiver, ast.Name):
+            bindings = self.bindings(receiver)
+            return bool(bindings) and all(kind == "value" and built(value) for kind, value in bindings)
+        if not (
+            isinstance(receiver, ast.Attribute)
+            and isinstance(receiver.value, ast.Name)
+            and receiver.value.id == "self"
+        ):
+            return False
+        owner = self.enclosing(receiver, ast.ClassDef)
+        if owner is None:
+            return False
+        stores = [
+            node for node in ast.walk(owner)
+            if isinstance(node, ast.Attribute)
+            and not isinstance(node.ctx, ast.Load)
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "self"
+            and node.attr == receiver.attr
+        ]
+        return bool(stores) and all(
+            isinstance(self.parents.get(node), ast.Assign)
+            and self.parents[node].targets == [node]
+            and built(self.parents[node].value)
+            for node in stores
+        )
+
+    def pass_through(self, call: ast.Call) -> bool:
+        """``request(self, method, path, *args, **kwargs)`` forwarding its own
+        method and path unchanged; its callers' destinations are scanned."""
+
+        function = self.enclosing(call, _FUNCTIONS)
+        if not isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)) or function.name != "request":
+            return False
+        params = [arg.arg for arg in function.args.posonlyargs + function.args.args]
+        if params[:1] == ["self"]:
+            params = params[1:]
+        if len(params) < 2:
+            return False
+        table, _ = self.table(function)
+        if any(binding != ("param", None) for name in params[:2] for binding in table.get(name, [])):
+            return False
+        return (
+            len(call.args) >= 2
+            and all(
+                isinstance(arg, ast.Name) and arg.id == name
+                for arg, name in zip(call.args[:2], params[:2])
+            )
+            and not any(keyword.arg in URL_KEYWORDS for keyword in call.keywords)
+        )
+
+    def send(self, call: ast.Call):
+        """The primitive this call sends with, or ``None``."""
+
+        name = _call_name(call)
+        if isinstance(call.func, ast.Attribute):
+            receiver = call.func.value
+            receiver_name = (
+                receiver.id if isinstance(receiver, ast.Name)
+                else receiver.attr if isinstance(receiver, ast.Attribute)
+                else _call_name(receiver) if isinstance(receiver, ast.Call)
+                else ""
+            )
+            if name in URL_SENDS or name in ADDRESS_SENDS or name in SOCKET_SENDS:
+                return name
+            if name in VERB_SENDS and SEND_RECEIVER.search(receiver_name):
+                return "verb"
+            if name == "open" and OPENER_RECEIVER.search(receiver_name):
+                return "verb"
+            return None
+        if isinstance(call.func, ast.Name):
+            if name in NAMED_SENDS:
+                return name
+            if name == "request" or name in VERB_SENDS:
+                target = self.imported(call.func)
+                if target is not None and target[0].split(".")[0] in NET_MODULES:
+                    return "request" if name == "request" else "verb"
+        return None
+
+
+def _destination(call: ast.Call, position: int, keywords) -> tuple:
+    """``(node, hidden)``: the destination argument, and whether a starred or
+    ``**`` argument could be carrying it instead."""
+
+    starred = any(isinstance(arg, ast.Starred) for arg in call.args[:position + 1])
+    if len(call.args) > position and not starred:
+        return call.args[position], False
+    for keyword in call.keywords:
+        if keyword.arg in keywords:
+            return keyword.value, False
+    hidden = starred or any(keyword.arg is None for keyword in call.keywords)
+    return None, hidden
+
+
+def _send_findings(scan: _HarnessFile, call: ast.Call, primitive: str) -> list[str]:
+    where = f"{call.lineno}: {ast.unparse(call)[:90]}"
+    if primitive in ADDRESS_SENDS:
+        host, host_hidden = _destination(call, 0, ("host",))
+        port, port_hidden = _destination(call, 1, ("port",))
+        parts = [item for item in (host, port) if item is not None]
+        if host_hidden or port_hidden or len(parts) != 2 or any(
+            "part" not in scan.kinds(item) for item in parts
+        ):
+            return [f"{where} (address not from harness_url)"]
+        return []
+    if primitive in SOCKET_SENDS:
+        address, hidden = _destination(call, 0, ("address",))
+        if hidden or not (
+            isinstance(address, ast.Tuple)
+            and len(address.elts) == 2
+            and all("part" in scan.kinds(item) for item in address.elts)
+        ):
+            return [f"{where} (address not from harness_url)"]
+        return []
+    position = 0 if primitive == "verb" else URL_SENDS[primitive]
+    allowed = {"url"}
+    if primitive == "urlopen":
+        allowed.add("request")
+    if primitive == "request":
+        allowed |= {"binder", "part"}
+        if isinstance(call.func, ast.Attribute) and (
+            scan.pass_through(call) or scan.runtime_client(call.func.value)
+        ):
+            return []
+    destination, hidden = _destination(call, position, URL_KEYWORDS)
+    if hidden:
+        return [f"{where} (destination hidden in a starred argument)"]
+    if destination is None:
+        return [f"{where} (no destination)"]
+    if not allowed & scan.kinds(destination):
+        return [f"{where} (destination not from harness_url)"]
+    return []
+
+
+def _getattr_send(node: ast.AST, sendable) -> bool:
+    """``getattr`` of a send primitive, of an HTTP verb on a sending receiver,
+    or of a name that is not a string literal on a sending receiver."""
+
+    if not (isinstance(node, ast.Call) and _call_name(node) == "getattr" and len(node.args) >= 2):
+        return False
+    receiver, name = node.args[0], node.args[1]
+    receiver_name = (
+        receiver.id if isinstance(receiver, ast.Name)
+        else receiver.attr if isinstance(receiver, ast.Attribute)
+        else _call_name(receiver) if isinstance(receiver, ast.Call)
+        else ""
+    ) or ""
+    sending_receiver = bool(SEND_RECEIVER.search(receiver_name))
+    if not (isinstance(name, ast.Constant) and isinstance(name.value, str)):
+        # A name computed at run time cannot be reviewed.
+        return sending_receiver
+    return name.value in sendable or (name.value in VERB_SENDS and sending_receiver)
+
+
+def _send_aliases(scan: _HarnessFile) -> list[ast.AST]:
+    """A send primitive read without calling it, or fetched by ``getattr``."""
+
+    found = []
+    sendable = set(URL_SENDS) | ADDRESS_SENDS | SOCKET_SENDS
+    for node in ast.walk(scan.tree):
+        if _getattr_send(node, sendable):
+            # Called or not: ``getattr(session, "get")(url)`` is never a
+            # reviewable send, so the getattr itself is the finding.
+            found.append(node)
+            continue
+        if id(node) in scan.called:
+            continue
+        if isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load):
+            receiver = node.value
+            receiver_name = (
+                receiver.id if isinstance(receiver, ast.Name)
+                else receiver.attr if isinstance(receiver, ast.Attribute) else ""
+            )
+            if node.attr == "request" and receiver_name == "urllib":
+                continue  # the ``urllib.request`` module itself
+            if node.attr in sendable or (
+                node.attr in VERB_SENDS and SEND_RECEIVER.search(receiver_name)
+            ):
+                found.append(node)
+        elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load) and node.id in NAMED_SENDS:
+            found.append(node)
+        elif isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                if alias.name in sendable and alias.asname not in (None, alias.name):
+                    found.append(node)
+    return found
+
+
+def scan_harness_source(source: str, filename: str = "<synthetic>") -> list[str]:
+    """Flag a harness send whose destination did not pass ``harness_url``."""
+
+    tree = ast.parse(source, filename)
+    scan = _HarnessFile(tree)
     findings = _binder_findings(tree)
     for node in ast.walk(tree):
-        if isinstance(node, ast.Call) and _call_name(node) == "harness_request":
+        if not isinstance(node, ast.Call):
+            continue
+        if _call_name(node) == "harness_request":
             # The harness-only sender takes a literal harness template.
             template = node.args[2] if len(node.args) >= 3 else None
             if not (
@@ -1365,33 +1770,25 @@ def scan_harness_source(source: str, filename: str = "<synthetic>") -> list[str]
             ):
                 findings.append(f"{node.lineno}: harness route {ast.unparse(node)[:80]}")
             continue
-        if not (isinstance(node, ast.Call) and _call_name(node) == "request"):
-            continue
-        paths_given = [k.value for k in node.keywords if k.arg in {"path", "url"}]
-        if len(node.args) >= 2:
-            paths_given.insert(0, node.args[1])
-        for path in paths_given:
-            if (filename, ast.unparse(path)) in HARNESS_EXEMPTIONS:
-                continue
-            if isinstance(path, ast.Call) and _call_name(path) in HARNESS_BINDERS:
-                if _call_name(path) == "rest_path" and not (
-                    path.args and isinstance(path.args[0], ast.Constant)
-                ):
-                    findings.append(f"{node.lineno}: computed template {ast.unparse(path)[:80]}")
-                continue
-            if (isinstance(path, ast.Constant) and isinstance(path.value, str)) or _dynamic(path):
-                # A plain string, static or built, is refused by the client.
-                findings.append(f"{node.lineno}: {ast.unparse(node)[:90]}")
-    for alias in _request_aliases(tree, any_receiver=True):
-        findings.append(f"{alias.lineno}: aliased request {ast.unparse(alias)[:80]}")
-    return findings
+        primitive = scan.send(node)
+        if primitive is not None:
+            findings.extend(_send_findings(scan, node, primitive))
+    for alias in _send_aliases(scan):
+        findings.append(f"{alias.lineno}: aliased send {ast.unparse(alias)[:80]}")
+    return sorted(findings, key=lambda item: int(item.split(":", 1)[0]))
 
 
-def harness_sources():
-    for script in sorted((ROOT / "scripts").glob("*.py")):
-        source = script.read_text(encoding="utf-8")
-        if "ha_mcp_engineering.clients" in source:
-            yield script.name, source
+def harness_sources(root: Path = ROOT):
+    """Every script under ``scripts/``, recursively, keyed by relative path."""
+
+    for script in sorted((root / "scripts").rglob("*.py")):
+        yield script.relative_to(root).as_posix(), script.read_text(encoding="utf-8")
+
+
+def scanned_harness_sources(root: Path = ROOT):
+    for name, source in harness_sources(root):
+        if name not in HAMCP443_EXEMPT_SCRIPTS | NON_HARNESS_SCRIPTS:
+            yield name, source
 
 
 def harness_request_templates(sources) -> Counter:
@@ -1420,29 +1817,75 @@ PRE_MOVE_HARNESS_CALLS = Counter({
 
 
 class HarnessScriptTests(unittest.TestCase):
-    """Disposable-Core harnesses call the guarded transport with bound routes."""
+    """Every harness send goes through the one origin-and-route check."""
 
-    def test_harness_scripts_bind_every_home_assistant_rest_path(self):
+    def test_harness_scripts_send_only_to_checked_destinations(self):
         findings = []
-        for name, source in harness_sources():
+        for name, source in scanned_harness_sources():
             findings.extend(f"{name}:{item}" for item in scan_harness_source(source, name))
         self.assertEqual(findings, [])
 
-    def test_harness_templates_are_registered_and_exemptions_present(self):
+    def test_harness_templates_are_registered(self):
         # Through the runtime client, harnesses use runtime routes only.
         self.assertLessEqual(rest_path_templates(harness_sources()), set(ROUTE_TEMPLATES))
         # Every harness-only route goes through the harness sender, at the
         # same call sites as before the move, and every one is still used.
         self.assertEqual(harness_request_templates(harness_sources()), PRE_MOVE_HARNESS_CALLS)
         self.assertEqual(set(PRE_MOVE_HARNESS_CALLS), set(HARNESS_ROUTE_TEMPLATES))
-        sources = dict(harness_sources())
-        for filename, text in HARNESS_EXEMPTIONS:
-            self.assertIn(
-                text,
-                {ast.unparse(n) for n in ast.walk(ast.parse(sources[filename]))},
-            )
 
-    def test_harness_scanner_flags_paths_the_transport_refuses(self):
+    def test_selection_is_every_script_by_relative_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "scripts" / "nested").mkdir(parents=True)
+            (root / "scripts" / "plain.py").write_text("x = 1\n", encoding="utf-8")
+            (root / "scripts" / "nested" / "plain.py").write_text("y = 2\n", encoding="utf-8")
+            (root / "scripts" / "notes.txt").write_text("z\n", encoding="utf-8")
+            self.assertEqual(
+                [name for name, _ in harness_sources(root)],
+                ["scripts/nested/plain.py", "scripts/plain.py"],
+            )
+        self.assertEqual(
+            {name for name, _ in harness_sources()},
+            {path.relative_to(ROOT).as_posix() for path in (ROOT / "scripts").rglob("*.py")},
+        )
+
+    def test_hamcp443_exemptions_still_have_findings(self):
+        sources = dict(harness_sources())
+        for name in sorted(HAMCP443_EXEMPT_SCRIPTS):
+            with self.subTest(script=name):
+                if name not in sources:
+                    continue  # 443-B may retire a script; its entry then goes too
+                self.assertTrue(scan_harness_source(sources[name], name))
+
+    def test_non_harness_scripts_name_no_harness_target(self):
+        sources = dict(harness_sources())
+        for name in sorted(NON_HARNESS_SCRIPTS):
+            with self.subTest(script=name):
+                self.assertIn(name, sources)
+                self.assertEqual(
+                    [marker for marker in HARNESS_MARKERS if marker in sources[name]], []
+                )
+
+    def test_lane_origins_are_registered_only_by_the_named_harnesses(self):
+        callers, touches = set(), set()
+        for name, source in harness_sources():
+            tree = ast.parse(source)
+            scan = _HarnessFile(tree)
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Call) and _call_name(node) == "register_lane_origin":
+                    function = scan.enclosing(node, _FUNCTIONS)
+                    callers.add((name, getattr(function, "name", None)))
+                if (
+                    (isinstance(node, ast.Name) and node.id == "_lane_origins")
+                    or (isinstance(node, ast.Attribute) and node.attr == "_lane_origins")
+                    or (isinstance(node, ast.Constant) and node.value == "_lane_origins")
+                ):
+                    touches.add(name)
+        callers.discard(("scripts/harness_send.py", None))
+        self.assertEqual(callers, set(LANE_ORIGIN_CALLERS))
+        self.assertEqual(touches, {"scripts/harness_send.py"})
+
+    def test_harness_scanner_flags_unchecked_sends(self):
         for source in (
             'await rest.request("GET", "/states/" + FAN)',
             'await rest.request("POST", "/states/light.synthetic_search_fixture", body={})',
@@ -1462,16 +1905,128 @@ class HarnessScriptTests(unittest.TestCase):
             'await harness_request(rest.settings, "POST", "/states", {})',
             'await harness_request(rest.settings, "POST", ROUTE, {})',
             'await harness_request(rest.settings, "POST", "/services/" + name, {})',
+            # HAMCP-363: a raw session with an unchecked destination, in any form.
+            'await session.request("GET", url)',
+            'await session.request("GET", self.url)',
+            'await session.request("GET", URLS["core"])',
+            'await session.request(*call)',
+            'await session.request("GET", **options)',
+            'await session.request("GET", f"{HA_URL}{path}")',
+            'await session.get(f"{core}/api/states")',
+            'await self.client.post(url, json={})',
+            'requests.get(url)',
+            'httpx.Client().get(url)',
+            'from requests import get\nget(url)',
+            'from aiohttp import request\nrequest("GET", url)',
+            'await session.ws_connect(type(self).core_url)',
+            'await self.client.ws_connect(url=self.url)',
+            'urllib.request.urlopen(url, timeout=3)',
+            'from urllib.request import urlopen\nurlopen(url)',
+            'from urllib.request import Request, urlopen\nurlopen(Request(url))',
+            'opener.open(url)',
+            'streamablehttp_client(url)',
+            'sse_client(endpoint)',
+            'await asyncio.open_connection(endpoint.hostname, endpoint.port)',
+            'http.client.HTTPConnection("127.0.0.1", port)',
+            'from http.client import HTTPConnection\nHTTPConnection(host=h, port=p)',
+            'socket.create_connection(("127.0.0.1", port))',
+            # A same-name helper that is not harness_send's, and a rebinding.
+            'def harness_url(url):\n return url\nawait session.get(harness_url(u))',
+            'from harness_send import harness_url\nharness_url = str\nawait session.get(harness_url(u))',
+            'from scripts.harness_send import harness_url\nawait session.get(harness_url(u))',
+            'from urllib.parse import urlsplit\nc = urlsplit(url)\nHTTPConnection(c.hostname, c.port)',
+            'from harness_send import harness_url\nfrom urllib.parse import urlsplit\n'
+            'c = urlsplit(harness_url(u))\nHTTPConnection(c.hostname, other_port)',
+            'from harness_send import harness_url\nurl = harness_url(u)\nurl = other\nawait session.get(url)',
+            'from harness_send import harness_url\ndef go(url=harness_url(u)):\n return session.get(url)',
+            # Aliases of a send primitive.
+            'fetch = session.get',
+            'fetch = urlopen',
+            'connect = functools.partial(session.ws_connect, url)',
+            'getattr(session, "ws_connect")',
+            # Cursor r1 R1-1: a session verb fetched by getattr, and a name not
+            # written as a string literal.
+            'getattr(session, "get")("http://example.invalid/mcp")',
+            'getattr(session, "post")("http://example.invalid/mcp")',
+            # Cursor r2 R2-2: the other verbs the getattr rule names.
+            'getattr(session, "put")(url)',
+            'getattr(session, "patch")(url)',
+            'getattr(session, "delete")(url)',
+            'getattr(session, "head")(url)',
+            'getattr(self.client, "options")(url)',
+            'getattr(session, "ws_connect")(url)',
+            'getattr(session, verb)(url)',
+            'getattr(self.rest_client, "re" + "quest")("GET", url)',
+            'from urllib.request import urlopen as fetch',
+            # A receiver that only looks like the runtime client.
+            'class Raw:\n def __init__(self):\n  self.client = HomeAssistantRestClient(s)\n'
+            ' async def call(self, route):\n  return await self.client.request("GET", route)',
+            'from ha_mcp_engineering.clients import HomeAssistantRestClient\nclass Raw:\n'
+            ' def __init__(self):\n  self.client = HomeAssistantRestClient(s)\n'
+            ' def swap(self):\n  self.client = aiohttp.ClientSession()\n'
+            ' async def call(self, route):\n  return await self.client.request("GET", route)',
+            # A pass-through that changes the destination it forwards.
+            'class Observed:\n async def request(self, method, path, *args, **kwargs):\n'
+            '  path = "/api/" + path\n  return await self.inner.request(method, path, *args, **kwargs)',
+            'class Observed:\n async def fetch(self, method, path, *args, **kwargs):\n'
+            '  return await self.inner.request(method, path, *args, **kwargs)',
         ):
             with self.subTest(source=source):
                 self.assertTrue(scan_harness_source(source))
+
+    def test_harness_scanner_accepts_checked_sends(self):
         for source in (
             'await rest.request("GET", rest_path("/config"))',
             'await rest.request("GET", state_path(FAN))',
             'await rest.request("GET", rest_path("/config/script/config/{}", key))',
-            'await session.request("GET", url)',
             'await harness_request(rest.settings, "POST", "/services/script/reload", {})',
             'def state_path(entity_id):\n from x import rest_path\n return rest_path("/states/{}", entity_id, kinds=("entity_id",))',
+            'if kind:\n route = rest_path("/config/automation/config/{}", rid)\nelse:\n'
+            ' route = rest_path("/config/script/config/{}", rid)\nawait gateway.rest_client.request("DELETE", route)',
+            # HAMCP-363: destinations that came from harness_send.harness_url.
+            'from harness_send import harness_url\nawait session.request("GET", harness_url(BASE, path))',
+            'from harness_send import harness_url\nawait session.get(harness_url(f"{core}/api/states"))',
+            'from harness_send import harness_url as checked\nawait session.ws_connect(checked(url))',
+            'import harness_send\nawait session.get(harness_send.harness_url(url))',
+            'import harness_send as send\nawait session.get(url=send.harness_url(url))',
+            'from harness_send import harness_url\nfrom yarl import URL\nawait session.get(URL(harness_url(u)))',
+            'from harness_send import harness_url\nawait session.get(str(harness_url(u)))',
+            'from harness_send import harness_url\nimport urllib.request\nurllib.request.urlopen(harness_url(u), timeout=3)',
+            'from harness_send import harness_url\nfrom urllib.request import Request, urlopen\n'
+            'request = Request(harness_url(u), data=b"")\nurlopen(request, timeout=30)',
+            'from harness_send import harness_url\nopener.open(harness_url(u))',
+            'from harness_send import harness_url\nstreamablehttp_client(harness_url(u))',
+            'from harness_send import harness_url\nfrom urllib.parse import urlsplit\n'
+            'checked = urlsplit(harness_url(u))\nconnection = HTTPConnection(checked.hostname, checked.port)\n'
+            'connection.request(method, checked.path, body=body)',
+            'from harness_send import harness_url\nimport urllib.parse\n'
+            'c = urllib.parse.urlsplit(harness_url(u))\nawait asyncio.open_connection(c.hostname, c.port)',
+            'from harness_send import harness_url\nfrom urllib.parse import urlsplit\n'
+            'c = urlsplit(harness_url(u))\nsocket.create_connection((c.hostname, c.port))',
+            'from harness_send import harness_url\nurl = harness_url(u) if a else harness_url(v)\nawait session.get(url)',
+            # Closures and same-file helpers.
+            'from harness_send import harness_url\ndef outer():\n url = harness_url(u)\n'
+            ' async def inner():\n  return await session.get(url)\n return inner',
+            'from harness_send import harness_url\ndef endpoint(path):\n return harness_url(BASE, path)\n'
+            'await session.get(endpoint("/api/config"))',
+            # A pass-through: callers' destinations are scanned at their call.
+            'class Observed:\n async def request(self, method, path, *args, **kwargs):\n'
+            '  self.calls.append(path)\n  return await self.inner.request(method, path, *args, **kwargs)',
+            # The runtime client, which refuses an unbound route itself.
+            'class Raw:\n def __init__(self, configured):\n'
+            '  from ha_mcp_engineering.clients import HomeAssistantRestClient\n'
+            '  self.client = HomeAssistantRestClient(configured)\n'
+            ' async def call(self, method, route):\n  return await self.client.request(method, route, None)',
+            # Not sends: a dict lookup, a local function, the urllib module.
+            'count = rest_reads.get("/addons/self/info", 0)',
+            'def request(action):\n return action\nrequest("turn_on")',
+            'import urllib.request\nopener = urllib.request.build_opener()',
+            'value = settings.get(url)',
+            # getattr that is not a send: a verb on a non-sending receiver, a
+            # computed name on one, and a non-send attribute of a session.
+            'value = getattr(mapping, "get")(key)',
+            'value = getattr(options, key)',
+            'closed = getattr(session, "closed")',
         ):
             with self.subTest(source=source):
                 self.assertEqual(scan_harness_source(source), [])
@@ -1666,6 +2221,7 @@ class AddOnPackagingTests(unittest.TestCase):
         self.assertIn(PACKAGE_DIR / "clients" / "paths.py", files)
         forbidden = [t.encode() for t in HARNESS_ROUTE_TEMPLATES]
         forbidden += [b"HARNESS_ROUTE_TEMPLATES", b"harness_routes", b"harness_request"]
+        forbidden += [b"harness_send", b"register_lane_origin"]
         findings = [
             f"{item.relative_to(ROOT).as_posix()}: {needle.decode()}"
             for item in files
@@ -1680,6 +2236,7 @@ class AddOnPackagingTests(unittest.TestCase):
             "sys.path[:0] = [sys.argv[1]]\n"
             "from ha_mcp_engineering.clients import paths\n"
             "assert importlib.util.find_spec('harness_routes') is None\n"
+            "assert importlib.util.find_spec('harness_send') is None\n"
             "assert importlib.util.find_spec('scripts') is None\n"
             "assert not hasattr(paths, 'HARNESS_ROUTE_TEMPLATES')\n"
             "for template in sys.argv[2:]:\n"

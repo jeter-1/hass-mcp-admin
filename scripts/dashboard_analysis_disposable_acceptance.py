@@ -27,6 +27,12 @@ import sys
 import tarfile
 import uuid
 
+# harness_send sits next to this file; a test may load it by path (HAMCP-363).
+SCRIPTS = Path(__file__).resolve().parent
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
+from harness_send import harness_url, register_lane_origin  # noqa: E402
+
 REVIEWED = "2791151b27424f686bc16c59f521ce5301517727"
 CORE = "ghcr.io/home-assistant/home-assistant:2026.9.4@sha256:3e6710a7ab2a61311d9d899b719f6c3657791c63e8f4942cec4ebc42401d6b76"
 MCP = "ghcr.io/homeassistant-ai/ha-mcp:8.5.0@sha256:e1538bcdadb13a5467bbb8258fba3262a05518585e18115742da638adec7057c"
@@ -368,7 +374,8 @@ class Lane:
         save(self.out / ("endpoint-" + str(port) + ".json"), {
             "network": self.network, "container": name, "address": str(address), "port": port,
             "internal": True, "ownership_verified": True, "published_ports": False})
-        return "http://" + str(address) + ":" + str(port)
+        # The verified address is this lane's only off-loopback harness origin.
+        return register_lane_origin("http://" + str(address) + ":" + str(port))
 
     def start_upstream(self, token):
         self.docker("run", "-d", "--name", self.upstream, "--label", self.label,
@@ -500,7 +507,7 @@ async def scenario(lane, core_url):
         upstream = UpstreamDashboardProvider(); upstream.configure(configured)
         # Readiness is setup only, not repeated admission or an analysis retry.
         from urllib.parse import urlsplit
-        endpoint = urlsplit(mcp_url)
+        endpoint = urlsplit(harness_url(mcp_url))
         for _ in range(60):
             try:
                 reader, writer = await asyncio.wait_for(asyncio.open_connection(endpoint.hostname, endpoint.port), 1)

@@ -58,6 +58,9 @@ CORE_MODULE, CORE_ATTRIBUTE = "ha_mcp_engineering.ha_core_readmission.runtime", 
 CORE_LATCH = "_boot_exception_spent"
 CORE_CARRIED = ("_admitted", "_recovery_active", "_recovery_required", "_flap_count",
                 "_backoff_level", "_retired_at", "_last_restored_at", "_last_restored_monotonic")
+# HAMCP-363: lane origins a test registers with the CI-harness send check
+# (scripts/harness_send.py). A later test must not inherit an allowed origin.
+HARNESS_SEND_MODULE, HARNESS_SEND_ATTRIBUTE = "harness_send", "_lane_origins"
 STATE_ATTRIBUTE = "_hamcp_process_isolation"
 MAX_LISTED = 10
 _MISSING = object()
@@ -555,6 +558,7 @@ PROBES = (
     ModuleAttributeProbe(CATALOG_MODULE, CATALOG_ATTRIBUTES[1], _summary_keys),
     ObjectAttributeProbe(SERVER_MODULE, SERVER_ATTRIBUTE, "_session_manager"),
     CarriedStateProbe(CORE_MODULE, CORE_ATTRIBUTE, CORE_LATCH, CORE_CARRIED),
+    ModuleAttributeProbe(HARNESS_SEND_MODULE, HARNESS_SEND_ATTRIBUTE),
     EnvironmentProbe(),
     WorkingDirectoryProbe(),
     SysPathProbe(),

@@ -9,7 +9,8 @@ and the body text exactly as received, next to the parsed JSON-RPC messages.
 Nothing is normalized, filtered or redacted here; the record is a capture, not
 a review, and its contents are untrusted data.
 
-Only a loopback endpoint is accepted.  A lane starts the peer and this
+Only a loopback endpoint on a harness route is accepted, and every send goes
+to the URL ``harness_send.harness_url`` checked (HAMCP-363).  A lane starts the peer and this
 observer in one network namespace that has no interface except loopback, so
 the peer cannot be anything but the disposable container the lane started.
 """
@@ -21,8 +22,15 @@ import http.client
 import json
 from pathlib import Path
 import sys
-from typing import Any, Callable
+from typing import Any
 from urllib.parse import urlsplit
+
+# A lane runs this file as ``python -I``, which leaves its own directory off
+# ``sys.path``; harness_send sits next to it (HAMCP-363).
+SCRIPTS = Path(__file__).resolve().parent
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
+from harness_send import HarnessRouteError, harness_url  # noqa: E402
 
 OBSERVATION_FORMAT_VERSION = 1
 # The protocol version Engineering's own upstream client requests
@@ -61,6 +69,13 @@ def parse_endpoint(endpoint: str) -> tuple[str, int, str]:
         or not parts.path.startswith("/")
     ):
         raise ObservationError("endpoint_not_loopback_http")
+    refused = False
+    try:
+        harness_url(endpoint)
+    except HarnessRouteError:
+        refused = True
+    if refused:
+        raise ObservationError("endpoint_route_refused")
     return parts.hostname, port, parts.path
 
 
@@ -124,11 +139,12 @@ def exchange(
     method: str = "POST",
     session_id: str | None = None,
     protocol_version: str | None = None,
-    connect: Callable[..., Any] = http.client.HTTPConnection,
 ) -> dict[str, Any]:
     """Send one JSON-RPC message (or a bare DELETE) and record the reply raw."""
 
-    host, port, path = parse_endpoint(endpoint)
+    parse_endpoint(endpoint)
+    checked = urlsplit(harness_url(endpoint))
+    path = checked.path
     headers = {"Accept": ACCEPT}
     body = None
     if payload is not None:
@@ -139,9 +155,9 @@ def exchange(
     if protocol_version is not None:
         headers["Mcp-Protocol-Version"] = protocol_version
     request_id = payload.get("id") if isinstance(payload, dict) else None
-    connection = connect(host, port, timeout=TIMEOUT_SECONDS)
+    connection = http.client.HTTPConnection(checked.hostname, checked.port, timeout=TIMEOUT_SECONDS)
     try:
-        connection.request(method, path, body=body, headers=headers)
+        connection.request(method, checked.path, body=body, headers=headers)
         response = connection.getresponse()
         response_headers = [[name, value] for name, value in response.getheaders()]
         content_type = (response.getheader("Content-Type") or "").split(";")[0].strip().lower()
@@ -199,8 +215,6 @@ def _header(record: dict[str, Any], name: str) -> str | None:
 
 def observe(
     endpoint: str,
-    *,
-    connect: Callable[..., Any] = http.client.HTTPConnection,
 ) -> dict[str, Any]:
     """Initialize one session and read the whole tool catalog, raw."""
 
@@ -216,7 +230,6 @@ def observe(
                 "clientInfo": dict(CLIENT_INFO),
             },
         },
-        connect=connect,
     )
     initialized = _result(initialize, "initialize_failed")
     negotiated = initialized.get("protocolVersion")
@@ -228,7 +241,6 @@ def observe(
         {"jsonrpc": "2.0", "method": "notifications/initialized"},
         session_id=session_id,
         protocol_version=negotiated,
-        connect=connect,
     )
     if notification["status"] not in {200, 202, 204}:
         raise ObservationError("initialized_notification_refused")
@@ -243,7 +255,6 @@ def observe(
             {"jsonrpc": "2.0", "id": index + 2, "method": "tools/list", "params": params},
             session_id=session_id,
             protocol_version=negotiated,
-            connect=connect,
         )
         pages.append(page)
         listed = _result(page, "tools_list_failed")
@@ -273,7 +284,6 @@ def observe(
             method="DELETE",
             session_id=session_id,
             protocol_version=negotiated,
-            connect=connect,
         )
     return {
         "observation_format_version": OBSERVATION_FORMAT_VERSION,

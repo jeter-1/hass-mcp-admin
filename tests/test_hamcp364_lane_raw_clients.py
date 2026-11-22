@@ -28,6 +28,7 @@ import core_thread_matter_topology_a2_local as a2_runner  # noqa: E402
 import created_object_contract_acceptance as created  # noqa: E402
 import device_configuration_contract_acceptance as device  # noqa: E402
 import entity_metadata_contract_acceptance as entity  # noqa: E402
+import harness_send  # noqa: E402
 import lane_session as shared  # noqa: E402
 import real_ha_contract_tests as harness  # noqa: E402
 import security_metadata_contract_acceptance as security  # noqa: E402
@@ -644,9 +645,10 @@ class ClientCase(unittest.IsolatedAsyncioTestCase):
         # The A2 lane's client has a Core only once its runner has handed one over, so every
         # test here starts after that hand-over, made through the harness's own function and
         # undone when the test ends.
-        manager = patch.multiple(harness, HA_URL=harness.HA_URL, CLIENT_ID=harness.CLIENT_ID, _lane_core=None)
-        manager.start()
-        self.addCleanup(manager.stop)
+        for manager in (patch.multiple(harness, HA_URL=harness.HA_URL, CLIENT_ID=harness.CLIENT_ID, _lane_core=None),
+                        patch.object(harness_send, "_lane_origins", set())):
+            manager.start()
+            self.addCleanup(manager.stop)
         self.assertEqual(harness.use_internal_lane_core(BRIDGE_CORE, BRIDGE_SUBNET), BRIDGE_CORE)
 
     def assert_dialled(self, item, target):
@@ -1919,7 +1921,7 @@ class HarnessRequest(HarnessCase):
         body = {"client_id": MAIN_CORE + "/", "name": "Synthetic"}
         for core in (MAIN_CORE, LOCAL_CORE, "http://[::1]:8123", "http://127.0.0.1"):
             for path in ("/api/onboarding", "/api/onboarding/users", "/auth/token",
-                         "/api/onboarding/integration", "/auth/long_lived_access_token",
+                         "/api/onboarding/integration", "/api/onboarding/core_config",
                          "/api/config/config_entries/flow",
                          "/api/config/config_entries/flow/0123456789abcdef0123456789abcdef"):
                 with self.subTest(core=core, path=path):
@@ -1940,13 +1942,41 @@ class HarnessRequest(HarnessCase):
 
     async def test_a_lane_that_rebinds_the_core_keeps_its_own_host(self):
         # The candidate-image lane points the harness at its own fixture network
-        # after import; its requests still go to that one configured host.
+        # after import, once it has registered that verified origin with
+        # harness_send; its requests still go to that one configured host.
         bridge = "http://172.25.0.2:8123"
         session = Requests({})
-        with patch.object(harness, "HA_URL", bridge):
-            await harness._json_request(session, "GET", "/api/onboarding")
-            self.assertEqual(session.calls[0][1], bridge + "/api/onboarding")
-        await self.refused("@" + ELSEWHERE + "/api", "real_ha_path_not_rooted", core=bridge)
+        with patch.object(harness_send, "_lane_origins", set()):
+            harness_send.register_lane_origin(bridge)
+            with patch.object(harness, "HA_URL", bridge):
+                await harness._json_request(session, "GET", "/api/onboarding")
+                self.assertEqual(session.calls[0][1], bridge + "/api/onboarding")
+            await self.refused("@" + ELSEWHERE + "/api", "real_ha_path_not_rooted", core=bridge)
+
+    async def test_a_rebound_core_that_no_lane_registered_is_refused_before_send(self):
+        # HAMCP-363: rebinding HA_URL alone does not make an off-loopback Core a target.
+        for bridge in ("http://172.25.0.2:8123", "http://192.168.1.10:8123", "http://10.0.0.2:8123"):
+            with self.subTest(core=bridge), patch.object(harness_send, "_lane_origins", set()):
+                session = Requests({})
+                with patch.object(harness, "HA_URL", bridge), self.assertRaises(ValueError) as caught:
+                    await harness._json_request(session, "GET", "/api/onboarding")
+                self.assertIs(type(caught.exception), harness_send.HarnessRouteError)
+                self.assertEqual(caught.exception.args, (harness_send.ORIGIN_REFUSED,))
+                self.assertNotIn(bridge.split("//")[1], repr(caught.exception))
+                self.assertEqual(session.calls, [])
+
+    async def test_a_path_off_the_harness_routes_is_refused_before_send(self):
+        # HAMCP-363: a rooted path on the configured Core must still be a harness route.
+        for path in ("/synthetic", "/api/hassio/addons", "/api/onboarding/../config", "/api/./config",
+                     "/auth/long_lived_access_token", "/api/states/light.kitchen"):
+            with self.subTest(path=path):
+                session = Requests({})
+                with patch.object(harness, "HA_URL", MAIN_CORE), self.assertRaises(ValueError) as caught:
+                    await harness._json_request(session, "POST", path, token=TOKEN)
+                self.assertIs(type(caught.exception), harness_send.HarnessRouteError)
+                self.assertEqual(caught.exception.args, (harness_send.ROUTE_REFUSED,))
+                self.assertNotIn(TOKEN, repr(caught.exception))
+                self.assertEqual(session.calls, [])
 
     async def test_a_core_error_status_is_still_the_harness_failure(self):
         class Failing(Requests):
@@ -1956,7 +1986,7 @@ class HarnessRequest(HarnessCase):
 
         session = Failing()
         with patch.object(harness, "HA_URL", MAIN_CORE), self.assertRaises(RuntimeError):
-            await harness._json_request(session, "POST", "/synthetic")
+            await harness._json_request(session, "POST", "/api/onboarding/users")
         self.assertEqual(len(session.calls), 1)
 
 
@@ -1976,6 +2006,7 @@ class HarnessHandOver(HarnessCase):
     def setUp(self):
         self.events = []
         for manager in (patch.multiple(harness, HA_URL=harness.HA_URL, CLIENT_ID=harness.CLIENT_ID, _lane_core=None),
+                        patch.object(harness_send, "_lane_origins", set()),
                         patch.object(aiohttp, "ClientSession", new=fake_session(self.events))):
             manager.start()
             self.addCleanup(manager.stop)
