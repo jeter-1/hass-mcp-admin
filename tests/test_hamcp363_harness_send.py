@@ -206,10 +206,18 @@ class LaneOriginTests(HarnessSendTestCase):
                     "http://255.255.255.255:8123", "http://192.0.2.1:8123",
                     "http://198.51.100.1:8086", "http://240.0.0.1:8123", "http://192.0.0.8:8123",
                     "http://172.32.0.1:8123", "http://172.15.255.254:8123",
+                    # Cursor r2 R2-1: benchmarking and documentation space that
+                    # is_private accepts.
+                    "http://198.18.0.1:8123", "http://203.0.113.1:8123",
                     b"http://172.18.0.2:8123", None):
             with self.subTest(url=url):
                 self.assertRefused(LANE_ORIGIN_REFUSED, url, function=register_lane_origin)
         self.assertEqual(harness_send._lane_origins, set())
+
+    def test_lane_networks_are_the_three_rfc1918_ranges(self):
+        # Cursor r2 R2-1: a range added here would register unnoticed.
+        self.assertEqual(tuple(str(n) for n in harness_send.LANE_NETWORKS),
+                         ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
 
 
 class RefusalTests(HarnessSendTestCase):

@@ -1948,6 +1948,11 @@ class HarnessScriptTests(unittest.TestCase):
             # written as a string literal.
             'getattr(session, "get")("http://example.invalid/mcp")',
             'getattr(session, "post")("http://example.invalid/mcp")',
+            # Cursor r2 R2-2: the other verbs the getattr rule names.
+            'getattr(session, "put")(url)',
+            'getattr(session, "patch")(url)',
+            'getattr(session, "delete")(url)',
+            'getattr(session, "head")(url)',
             'getattr(self.client, "options")(url)',
             'getattr(session, "ws_connect")(url)',
             'getattr(session, verb)(url)',
