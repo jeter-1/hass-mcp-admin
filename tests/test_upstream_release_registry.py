@@ -41,46 +41,19 @@ from tests.test_readonly_upstream_gateway import (  # noqa: E402
 
 
 REGISTRY = RUNTIME / "upstream_release_registry.json"
-POLICY_7141 = RUNTIME / "upstream_tool_policy.json"
-POLICY_7142 = RUNTIME / "upstream_tool_policy_7_14_2.json"
-POLICY_8000 = RUNTIME / "upstream_tool_policy_8_0_0.json"
-POLICY_8100 = RUNTIME / "upstream_tool_policy_8_1_0.json"
-POLICY_8111 = RUNTIME / "upstream_tool_policy_8_1_1.json"
-POLICY_8200 = RUNTIME / "upstream_tool_policy_8_2_0.json"
-POLICY_8410 = RUNTIME / "upstream_tool_policy_8_4_1.json"
-POLICY_8430 = RUNTIME / "upstream_tool_policy_8_4_3.json"
-POLICY_8500 = RUNTIME / "upstream_tool_policy_8_5_0.json"
-POLICY_8600 = RUNTIME / "upstream_tool_policy_8_6_0.json"
-POLICY_9100 = RUNTIME / "upstream_tool_policy_9_1_0.json"
-POLICY_9120 = RUNTIME / "upstream_tool_policy_9_1_2.json"
-# HAMCP-371: the S8 9.2.0 registry row's policy and contract-review evidence.
+# HAMCP-437 I2a-D: the shipped registry holds only the S8 9.2.0 row
+# (HAMCP-371); the retired rows' policy files are removed.
 POLICY_9200 = RUNTIME / "upstream_tool_policy_9_2_0.json"
 CAPTURE_DIRECTORY = (
     ROOT / "docs/evidence/upstream-read-compatibility"
 )
-ARTIFACT_EVIDENCE_8100 = (
-    CAPTURE_DIRECTORY / "ha-mcp-8.1.0-contract-review.json"
-)
-ARTIFACT_EVIDENCE_8111 = (
-    CAPTURE_DIRECTORY / "ha-mcp-8.1.1-contract-review.json"
-)
-ARTIFACT_EVIDENCE_8200 = (
-    CAPTURE_DIRECTORY / "ha-mcp-8.2.0-contract-review.json"
-)
-ARTIFACT_EVIDENCE_8410 = (
-    CAPTURE_DIRECTORY / "ha-mcp-8.4.1-contract-review.json"
-)
-ARTIFACT_EVIDENCE_8430 = (
-    CAPTURE_DIRECTORY / "ha-mcp-8.4.3-contract-review.json"
-)
-ARTIFACT_EVIDENCE_8500 = CAPTURE_DIRECTORY / "ha-mcp-8.5.0-contract-review.json"
-ARTIFACT_EVIDENCE_8600 = CAPTURE_DIRECTORY / "ha-mcp-8.6.0-contract-review.json"
-ARTIFACT_EVIDENCE_9100 = CAPTURE_DIRECTORY / "ha-mcp-9.1.0-contract-review.json"
-ARTIFACT_EVIDENCE_9120 = CAPTURE_DIRECTORY / "ha-mcp-9.1.2-contract-review.json"
 ARTIFACT_EVIDENCE_9200 = CAPTURE_DIRECTORY / "ha-mcp-9.2.0-contract-review.json"
-FAMILY_DECISION_8111 = (
-    CAPTURE_DIRECTORY / "ha-mcp-8.1.1-family-decision.json"
-)
+# A committed capture of a retired row, used only as the wrong
+# capture_resource in the provenance-mutation refusal.
+FOREIGN_CAPTURE = CAPTURE_DIRECTORY / "ha-mcp-7.14.1.json"
+# The frozen 8.2.0 row and policy (byte copies at 0f1adcb5, see its
+# provenance.json): the second reviewed row of the digest-conflict refusal.
+FROZEN_8200 = ROOT / "tests/fixtures/ha_mcp_8_2_0_signed_reuse"
 FAMILY_POLICY = RUNTIME / "upstream_compatibility_families.json"
 DASHBOARD_ATTESTATIONS = (
     RUNTIME
@@ -90,8 +63,7 @@ DASHBOARD_ATTESTATIONS = (
 )
 from ha_mcp_engineering.ha_core_readmission.routes import RETIRED_DELEGATED_READS  # noqa: E402
 # HAMCP-290: the delegated ha_get_hacs_info is retired on every reviewed
-# release (Josh decision 2026-11-08), so exposure pins drop by one.
-RETIRED_COUNT = len(RETIRED_DELEGATED_READS)
+# release (Josh decision 2026-11-08) and is never exposed.
 
 
 def captured_tools(version: str) -> list[dict]:
@@ -133,23 +105,7 @@ class RegistryFixture:
             / "ha_mcp_engineering"
         )
         self.runtime.mkdir(parents=True)
-        for path in (
-            REGISTRY,
-            POLICY_7141,
-            POLICY_7142,
-            POLICY_8000,
-            POLICY_8100,
-            POLICY_8111,
-            POLICY_8200,
-            POLICY_8410,
-            POLICY_8430,
-            POLICY_8500,
-            POLICY_8600,
-            POLICY_9100,
-            POLICY_9120,
-            POLICY_9200,
-            FAMILY_POLICY,
-        ):
+        for path in (REGISTRY, POLICY_9200, FAMILY_POLICY):
             shutil.copy2(path, self.runtime / path.name)
         self.path = self.runtime / REGISTRY.name
         self.capture_directory = (
@@ -159,51 +115,12 @@ class RegistryFixture:
             / "upstream-read-compatibility"
         )
         self.capture_directory.mkdir(parents=True)
-        for version in (
-            "7.14.1",
-            "7.14.2",
-            "8.0.0",
-            "8.1.0",
-            "8.1.1",
-            "8.2.0",
-            "8.4.1",
-            "8.4.3",
-            "8.5.0",
-            "8.6.0",
-            "9.1.0",
-            "9.1.2",
-            "9.2.0",
+        for evidence in (
+            CAPTURE_DIRECTORY / "ha-mcp-9.2.0.json",
+            ARTIFACT_EVIDENCE_9200,
+            FOREIGN_CAPTURE,
         ):
-            shutil.copy2(
-                CAPTURE_DIRECTORY / f"ha-mcp-{version}.json",
-                self.capture_directory / f"ha-mcp-{version}.json",
-            )
-        shutil.copy2(
-            ARTIFACT_EVIDENCE_8100,
-            self.capture_directory / ARTIFACT_EVIDENCE_8100.name,
-        )
-        for evidence in (ARTIFACT_EVIDENCE_8111, FAMILY_DECISION_8111):
-            shutil.copy2(
-                evidence,
-                self.capture_directory / evidence.name,
-            )
-        shutil.copy2(
-            ARTIFACT_EVIDENCE_8200,
-            self.capture_directory / ARTIFACT_EVIDENCE_8200.name,
-        )
-        shutil.copy2(
-            ARTIFACT_EVIDENCE_8410,
-            self.capture_directory / ARTIFACT_EVIDENCE_8410.name,
-        )
-        shutil.copy2(
-            ARTIFACT_EVIDENCE_8430,
-            self.capture_directory / ARTIFACT_EVIDENCE_8430.name,
-        )
-        shutil.copy2(ARTIFACT_EVIDENCE_8500, self.capture_directory / ARTIFACT_EVIDENCE_8500.name)
-        shutil.copy2(ARTIFACT_EVIDENCE_8600, self.capture_directory / ARTIFACT_EVIDENCE_8600.name)
-        shutil.copy2(ARTIFACT_EVIDENCE_9100, self.capture_directory / ARTIFACT_EVIDENCE_9100.name)
-        shutil.copy2(ARTIFACT_EVIDENCE_9120, self.capture_directory / ARTIFACT_EVIDENCE_9120.name)
-        shutil.copy2(ARTIFACT_EVIDENCE_9200, self.capture_directory / ARTIFACT_EVIDENCE_9200.name)
+            shutil.copy2(evidence, self.capture_directory / evidence.name)
         self.dashboard_attestations = (
             self.runtime
             / "providers"
@@ -267,74 +184,24 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
             REGISTRY,
             repository_root=ROOT,
         )
-        self.assertEqual(
-            registry.supported_versions,
-            (
-                "7.14.1",
-                "7.14.2",
-                "8.0.0",
-                "8.1.0",
-                "8.1.1",
-                "8.2.0",
-                "8.4.1",
-                "8.4.3",
-                "8.5.0",
-                "8.6.0",
-                "9.1.0",
-                "9.1.2",
-                # HAMCP-371: the S8 9.2.0 registry row.
-                "9.2.0",
-            ),
-        )
-        self.assertEqual(registry.default_version, "7.14.1")
+        # HAMCP-437 I2a-D: the S8 9.2.0 row (HAMCP-371) is the only row.
+        self.assertEqual(registry.supported_versions, ("9.2.0",))
+        self.assertEqual(registry.default_version, "9.2.0")
         self.assertEqual(
             REGISTRY.read_bytes().rstrip(b"\n"),
             canonical_json(json.loads(REGISTRY.read_text())),
         )
         for release in registry.releases:
-            expected_tool_count = 77 if release.version in {"8.5.0", "8.6.0", "9.1.0", "9.1.2", "9.2.0"} else 78  # 9.2.0: S8 advertised_tool_count
-            self.assertEqual(release.advertised_tool_count, expected_tool_count)
-            self.assertEqual(len(release.tool_contracts), expected_tool_count)
-            expected_automatic_reads = {
-                "7.14.1": 26,
-                "7.14.2": 26,
-                "8.0.0": 24,
-                "8.1.0": 24,
-                "8.1.1": 25,
-                "8.2.0": 25,
-                "8.4.1": 25,
-                "8.4.3": 28,
-                "8.5.0": 28,
-                "8.6.0": 28,
-                "9.1.0": 27,
-                "9.1.2": 27,
-                # HAMCP-371: automatic reads of the S8 upstream_tool_policy_9_2_0.json.
-                "9.2.0": 27,
-            }
+            # 9.2.0: S8 advertised_tool_count and the automatic reads of
+            # upstream_tool_policy_9_2_0.json; the row declares the v2 model.
+            self.assertEqual(release.advertised_tool_count, 77)
+            self.assertEqual(len(release.tool_contracts), 77)
             self.assertEqual(
-                release.policy.classification_counts["automatic_read"],
-                expected_automatic_reads[release.version],
+                release.policy.classification_counts["automatic_read"], 27
             )
             self.assertEqual(
                 release.runtime_contract_fingerprint_model,
-                (
-                    RUNTIME_CONTRACT_FINGERPRINT_MODEL_V2
-                    if release.version in {
-                        "8.0.0",
-                        "8.1.0",
-                        "8.1.1",
-                        "8.2.0",
-                        "8.4.1",
-                        "8.4.3",
-                        "8.5.0",
-                        "8.6.0",
-                        "9.1.0",
-                        "9.1.2",
-                        # HAMCP-371: the S8 9.2.0 row declares the v2 model.
-                        "9.2.0",
-                    }
-                    else RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1
-                ),
+                RUNTIME_CONTRACT_FINGERPRINT_MODEL_V2,
             )
             self.assertEqual(
                 {
@@ -386,7 +253,7 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
         )
         registry = load_reviewed_upstream_release_registry(REGISTRY)
 
-        for version in ("8.0.0", "8.1.0"):
+        for version in ("9.2.0",):
             raw_release = next(
                 item for item in raw["releases"] if item["version"] == version
             )
@@ -414,12 +281,12 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
                 "addon_artifact_digests",
             ):
                 self.assertEqual(generated_release[field], raw_release[field])
-            if version == "8.1.0":
+            if version == "9.2.0":
                 self.assertEqual(
                     release.artifact_evidence_resource,
                     (
                         "docs/evidence/upstream-read-compatibility/"
-                        "ha-mcp-8.1.0-contract-review.json"
+                        "ha-mcp-9.2.0-contract-review.json"
                     ),
                 )
                 self.assertEqual(
@@ -454,9 +321,13 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
             ]["linux/amd64"].update(
                 {"image_manifest_digest": "sha256:" + "0" * 63}
             ),
+            # The loader requires artifact evidence on the 8.1.0 row (retired)
+            # and on any family-admission row; the 9.2.0 row is given a
+            # family_admission key so the shipped family half refuses.
             "missing_artifact_evidence": lambda release: (
                 release.pop("artifact_evidence_resource"),
                 release.pop("artifact_evidence_sha256"),
+                release.update({"family_admission": {}}),
             ),
             "unsupported_artifact_evidence": lambda release: release.update(
                 {
@@ -475,12 +346,17 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
                 release = next(
                     item
                     for item in value["releases"]
-                    if item["version"] == "8.1.0"
+                    if item["version"] == "9.2.0"
                 )
                 mutation(release)
                 fixture.write(value)
-                with self.assertRaises(UpstreamToolPolicyError):
+                with self.assertRaises(UpstreamToolPolicyError) as raised:
                     load_reviewed_upstream_release_registry(fixture.path)
+                if name == "missing_artifact_evidence":
+                    self.assertEqual(
+                        str(raised.exception),
+                        "release_registry_release_identity_incomplete",
+                    )
 
     def test_v2_release_artifact_evidence_binds_exact_reviewed_identities(self):
         mutations = {
@@ -510,11 +386,11 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
                 release = next(
                     item
                     for item in value["releases"]
-                    if item["version"] == "8.1.0"
+                    if item["version"] == "9.2.0"
                 )
                 evidence_path = (
                     fixture.capture_directory
-                    / ARTIFACT_EVIDENCE_8100.name
+                    / ARTIFACT_EVIDENCE_9200.name
                 )
                 evidence = json.loads(
                     evidence_path.read_text(encoding="utf-8")
@@ -537,8 +413,9 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
             "protocol": lambda value: value.update(
                 {"protocol_version": "2099-01-01"}
             ),
+            # Any count other than the 9.2.0 capture's 77.
             "tool_count": lambda value: value.update(
-                {"tool_count": 77}
+                {"tool_count": 78}
             ),
             "catalog_fingerprint": lambda value: value.update(
                 {"catalog_fingerprint": "0" * 64}
@@ -583,24 +460,24 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
             with self.subTest(field=name):
                 fixture = RegistryFixture()
                 self.addCleanup(fixture.close)
-                capture = fixture.capture_value("7.14.2")
+                capture = fixture.capture_value("9.2.0")
                 mutation(capture)
                 if name in descriptor_mutations:
                     capture["catalog_fingerprint"] = (
                         catalog_fingerprint(capture["tools"])
                     )
-                fixture.write_capture("7.14.2", capture)
+                fixture.write_capture("9.2.0", capture)
                 with self.assertRaises(UpstreamToolPolicyError):
                     fixture.validate()
 
         fixture = RegistryFixture()
         self.addCleanup(fixture.close)
-        capture = fixture.capture_value("7.14.2")
+        capture = fixture.capture_value("9.2.0")
         capture["error_shapes"]["invalid_search"][
             "structured_code"
         ] = "CHANGED"
         fixture.write_capture(
-            "7.14.2", capture, update_registry_digest=False
+            "9.2.0", capture, update_registry_digest=False
         )
         with self.assertRaisesRegex(
             UpstreamToolPolicyError,
@@ -620,12 +497,21 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
         ):
             load_reviewed_upstream_release_registry(fixture.path)
 
+        # One shipped row: the frozen 8.2.0 row is the second reviewed row,
+        # and the 9.2.0 row claims its image digest.
+        shutil.copy2(
+            FROZEN_8200 / "upstream_tool_policy_8_2_0.json",
+            fixture.runtime / "upstream_tool_policy_8_2_0.json",
+        )
+        frozen = json.loads(
+            (FROZEN_8200 / REGISTRY.name).read_text(encoding="utf-8")
+        )
         value = fixture.value()
-        value["releases"] = value["releases"][:2]
+        value["releases"] = [frozen["releases"][0], value["releases"][0]]
         old_digest = value["releases"][0]["image_index_digest"]
         value["releases"][1]["image_index_digest"] = old_digest
         value["releases"][1]["entry_id"] = (
-            "ha-mcp-v7.14.2-" + old_digest.removeprefix("sha256:")[:8]
+            "ha-mcp-v9.2.0-" + old_digest.removeprefix("sha256:")[:8]
         )
         fixture.write(value)
         with self.assertRaisesRegex(
@@ -636,19 +522,19 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
 
     def test_incomplete_or_unapproved_contracts_fail_closed(self):
         mutations = (
-            lambda value: value["releases"][1].update(
+            lambda value: value["releases"][0].update(
                 {"approval_status": "candidate_unapproved"}
             ),
-            lambda value: value["releases"][1][
+            lambda value: value["releases"][0][
                 "tool_contracts"
             ].pop("ha_search"),
-            lambda value: value["releases"][1]["tool_contracts"][
+            lambda value: value["releases"][0]["tool_contracts"][
                 "ha_search"
             ].pop("runtime_contract_fingerprint"),
-            lambda value: value["releases"][1].pop(
+            lambda value: value["releases"][0].pop(
                 "runtime_contract_fingerprint_model"
             ),
-            lambda value: value["releases"][1]["tool_contracts"][
+            lambda value: value["releases"][0]["tool_contracts"][
                 "ha_search"
             ].update({"policy_classification": "unreviewed_read"}),
         )
@@ -676,12 +562,12 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
     def test_policy_digest_and_policy_classification_conflicts_fail_closed(self):
         fixture = RegistryFixture()
         self.addCleanup(fixture.close)
-        policy_path = fixture.runtime / POLICY_7142.name
+        policy_path = fixture.runtime / POLICY_9200.name
         policy = json.loads(policy_path.read_text(encoding="utf-8"))
         policy["tools"][0]["classification"] = "unknown"
         policy_path.write_bytes(canonical_json(policy) + b"\n")
         value = fixture.value()
-        value["releases"][1]["policy_sha256"] = (
+        value["releases"][0]["policy_sha256"] = (
             "sha256:" + hashlib.sha256(policy_path.read_bytes()).hexdigest()
         )
         fixture.write(value)
@@ -694,7 +580,7 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
     def test_policy_and_registry_provenance_mutations_fail_closed(self):
         fixture = RegistryFixture()
         self.addCleanup(fixture.close)
-        policy_path = fixture.runtime / POLICY_7142.name
+        policy_path = fixture.runtime / POLICY_9200.name
         policy = json.loads(policy_path.read_text(encoding="utf-8"))
         policy["tools"][0]["reason"] = "mutated reviewed policy"
         policy_path.write_bytes(canonical_json(policy) + b"\n")
@@ -750,7 +636,7 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
                 release = next(
                     item
                     for item in value["releases"]
-                    if item["version"] == "7.14.2"
+                    if item["version"] == "9.2.0"
                 )
                 mutation(release)
                 mutated.write(value)
@@ -802,7 +688,7 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
                 entry = next(
                     item
                     for item in value["entries"]
-                    if item["upstream_version"] == "7.14.2"
+                    if item["upstream_version"] == "9.2.0"
                 )
                 mutation(entry)
                 fixture.dashboard_attestations.write_bytes(
@@ -951,22 +837,8 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
                 for entry in release.policy.tools
                 if entry.is_read_route
             }
-            expected_automatic_reads = {
-                "7.14.1": 26,
-                "7.14.2": 26,
-                "8.0.0": 24,
-                "8.1.0": 24,
-                "8.1.1": 25,
-                "8.2.0": 25,
-                "8.4.1": 25,
-                "8.4.3": 28,
-                "8.5.0": 28,
-                "8.6.0": 28,
-                "9.1.0": 27,
-                "9.1.2": 27,
-                # HAMCP-371: automatic reads of the S8 upstream_tool_policy_9_2_0.json.
-                "9.2.0": 27,
-            }
+            # HAMCP-371: automatic reads of the S8 upstream_tool_policy_9_2_0.json.
+            expected_automatic_reads = {"9.2.0": 27}
             self.assertEqual(
                 len(automatic_names),
                 expected_automatic_reads[release.version],
@@ -1032,31 +904,47 @@ class DualVersionGatewayTests(unittest.IsolatedAsyncioTestCase):
         await gateway.initialize(server)
         return gateway, server, transport
 
-    async def test_both_reviewed_versions_admit_and_rollback_atomically(self):
+    # HAMCP-437 I2a-D: the shipped registry holds one row, so the switch
+    # between two reviewed rows (7.14.1 and 7.14.2) is retired with those
+    # rows. The admission identity, the fail-closed step to an unreviewed
+    # version and the atomic readmission with a new route generation are
+    # kept on 9.2.0.
+    async def test_reviewed_version_admits_and_rollback_is_atomic(self):
         gateway, server, transport = await self.configured_gateway(
-            "7.14.1"
+            "9.2.0"
         )
+        # 9.2.0 policy: 27 automatic reads; ha_get_hacs_info is unsupported
+        # there, so no retired read is among them (HAMCP-290).
         first = gateway.health_snapshot()
-        self.assertEqual(first["dynamically_exposed_count"], 26 - RETIRED_COUNT)  # HAMCP-290
+        self.assertEqual(first["dynamically_exposed_count"], 27)
         self.assertEqual(
             first["selected_compatibility_entry_id"],
-            "ha-mcp-v7.14.1-68f386d9",
+            "ha-mcp-v9.2.0-9de5bf6c",
         )
         first_generation = {
             route.generation for route in gateway._exposed.values()
         }
 
         transport.catalog = replace(
+            transport.catalog, server_version="9.2.1"
+        )
+        await gateway.initialize(server)
+        rejected = gateway.health_snapshot()
+        self.assertEqual(rejected["dynamically_exposed_count"], 0)
+        self.assertEqual(len(gateway._registered_names), 0)
+        self.assertEqual(rejected["fallback_count"], 0)
+
+        transport.catalog = replace(
             transport.catalog,
-            server_version="7.14.2",
-            tools=tuple(captured_tools("7.14.2")),
+            server_version="9.2.0",
+            tools=tuple(captured_tools("9.2.0")),
         )
         await gateway.initialize(server)
         candidate = gateway.health_snapshot()
-        self.assertEqual(candidate["dynamically_exposed_count"], 26 - RETIRED_COUNT)  # HAMCP-290
+        self.assertEqual(candidate["dynamically_exposed_count"], 27)
         self.assertEqual(
             candidate["selected_compatibility_entry_id"],
-            "ha-mcp-v7.14.2-7917b2d3",
+            "ha-mcp-v9.2.0-9de5bf6c",
         )
         self.assertEqual(candidate["catalog_comparison_status"], "exact")
         self.assertEqual(
@@ -1064,18 +952,18 @@ class DualVersionGatewayTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             candidate["reviewed_source_commit"],
-            "904c14ebbe76de700f7c3535f5cc71c017dca12e",
+            "51e3aac788482a081807591cd5d58d07dc4e540b",
         )
         self.assertEqual(
             candidate["reviewed_image_index_digest"],
             (
                 "sha256:"
-                "7917b2d385e16e43f45f92fc72a757e5c0aec8d88b3cd69fe64f3b5106cbfe36"
+                "9de5bf6c4216142fdffe862900abe72dac8dfe9621dd0b2b050d132372b676ba"
             ),
         )
         self.assertEqual(
             candidate["reviewed_image_revision"],
-            "c435dcb866a617da44e0527e0f4feca3b0612822",
+            "4d7148309af7e4d3da95e16ced8bb67d6a43b9c1",
         )
         self.assertFalse(
             candidate["runtime_artifact_provenance_observed"]
@@ -1104,27 +992,15 @@ class DualVersionGatewayTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(
             min(second_generation) > max(first_generation)
         )
-
-        transport.catalog = replace(
-            transport.catalog,
-            server_version="7.14.1",
-            tools=tuple(captured_tools("7.14.1")),
-        )
-        await gateway.initialize(server)
-        rollback = gateway.health_snapshot()
-        self.assertEqual(rollback["dynamically_exposed_count"], 26 - RETIRED_COUNT)  # HAMCP-290
-        self.assertEqual(
-            rollback["selected_compatibility_entry_id"],
-            "ha-mcp-v7.14.1-68f386d9",
-        )
-        self.assertEqual(len(gateway._registered_names), 26 - RETIRED_COUNT)  # HAMCP-290
+        self.assertEqual(len(gateway._registered_names), 27)
+        self.assertFalse(RETIRED_DELEGATED_READS & gateway._registered_names)
 
     async def test_unknown_version_fails_closed_with_operator_action(self):
         gateway, server, transport = await self.configured_gateway(
-            "7.14.1"
+            "9.2.0"
         )
         transport.catalog = replace(
-            transport.catalog, server_version="7.14.3"
+            transport.catalog, server_version="9.2.1"
         )
         await gateway.initialize(server)
         health = gateway.health_snapshot()
@@ -1137,17 +1013,17 @@ class DualVersionGatewayTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(health["fallback_count"], 0)
 
     async def test_changed_removed_and_new_tools_are_accounted_per_tool(self):
-        tools = captured_tools("7.14.2")
+        tools = captured_tools("9.2.0")
         changed = [dict(item) for item in tools]
         target = next(
             item for item in changed if item["name"] == "ha_get_state"
         )
         target["description"] += " drift"
         gateway, _server, _transport = await self.configured_gateway(
-            "7.14.2", changed
+            "9.2.0", changed
         )
         health = gateway.health_snapshot()
-        self.assertEqual(health["dynamically_exposed_count"], 25 - RETIRED_COUNT)  # HAMCP-290
+        self.assertEqual(health["dynamically_exposed_count"], 26)
         self.assertEqual(
             health["quarantined_automatic_read_count"], 1
         )
@@ -1157,10 +1033,10 @@ class DualVersionGatewayTests(unittest.IsolatedAsyncioTestCase):
             item for item in tools if item["name"] != "ha_get_state"
         ]
         gateway, _server, _transport = await self.configured_gateway(
-            "7.14.2", removed
+            "9.2.0", removed
         )
         health = gateway.health_snapshot()
-        self.assertEqual(health["dynamically_exposed_count"], 25 - RETIRED_COUNT)  # HAMCP-290
+        self.assertEqual(health["dynamically_exposed_count"], 26)
         self.assertEqual(health["missing_automatic_read_count"], 1)
 
         added = [
@@ -1177,10 +1053,10 @@ class DualVersionGatewayTests(unittest.IsolatedAsyncioTestCase):
             },
         ]
         gateway, _server, _transport = await self.configured_gateway(
-            "7.14.2", added
+            "9.2.0", added
         )
         health = gateway.health_snapshot()
-        self.assertEqual(health["dynamically_exposed_count"], 26 - RETIRED_COUNT)  # HAMCP-290
+        self.assertEqual(health["dynamically_exposed_count"], 27)
         self.assertEqual(health["unreviewed_observed_tool_count"], 1)
         self.assertNotIn(
             "ha_new_unreviewed_read", gateway._registered_names
@@ -1189,24 +1065,38 @@ class DualVersionGatewayTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_generic_writes_and_mixed_tools_remain_unreachable(self):
         gateway, _server, _transport = await self.configured_gateway(
-            "7.14.2"
+            "9.2.0"
         )
+        # Admitted, so the exclusions below are not vacuous.
+        self.assertEqual(len(gateway._registered_names), 27)
         policy = gateway._policy
         self.assertIsNotNone(policy)
         assert policy is not None
+        # HAMCP-129: on 9.2.0 three mixed tools are read routes only through
+        # their compiled platform adapters; every other non-automatic entry
+        # stays unreachable.
         blocked = {
             entry.upstream_name
             for entry in policy.tools
-            if entry.classification != "automatic_read"
+            if not entry.is_read_route
         }
         self.assertFalse(blocked & gateway._registered_names)
+        self.assertEqual(
+            {
+                entry.upstream_name
+                for entry in policy.tools
+                if entry.classification != "automatic_read"
+            }
+            & gateway._registered_names,
+            {"ha_get_app", "ha_get_integration", "ha_get_system_health"},
+        )
         self.assertNotIn("ha_call_service", gateway._registered_names)
         self.assertNotIn("ha_set_entity", gateway._registered_names)
         self.assertEqual(gateway.health_snapshot()["fallback_count"], 0)
 
     async def test_reviewed_entity_lookup_missing_entry_is_domain_outcome(self):
         gateway, server, transport = await self.configured_gateway(
-            "7.14.2"
+            "9.2.0"
         )
         transport.result = {
             "content": [

@@ -850,7 +850,7 @@ class F3ReplayTests(ParityBase):
 
 class F3Pending91Tests(ParityBase):
     """Kept on 9.1.0, unedited, pending an architect ANSWER (HAMCP-437 I2a-D,
-    inbox 20261122-0950-01): through the 9.2.0 binding this receipt keeps
+    inbox 20261122-0931-01): through the 9.2.0 binding this receipt keeps
     success and partial, but the visibility warning is replaced by the fixed
     upstream-warnings code (ruling 0132-01), so the reason changes."""
 
