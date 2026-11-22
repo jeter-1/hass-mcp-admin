@@ -85,6 +85,10 @@ DYNAMIC = {
 }
 # Version-specific data keyed to the anchor (D5), with the Core file each value was reviewed from.
 ANCHORED = {("thread_matter_topology_a2_acceptance", "NODE_DEVICE_IDENTIFIER"): (C + "matter/helpers.py",)}
+# Assignments whose route constants are not lane sends, each with its reason (ruling 20261122-0512-01).
+NOT_LANE_ROUTES = {
+    ("scripts/harness_send.py", "ROUTES"): "cross-harness allowlist of regex patterns, not a lane dependency",
+}
 CUSTOM = frozenset(path.name for path in (core_lane_host.DEVICE_LANE / "custom_components").iterdir()
                    if path.is_dir())
 NODE_IDS = json.loads((core_lane_host.MATTER_STUB / "provenance.json").read_text())["node_dumps"]["node_ids"]
@@ -267,7 +271,9 @@ class Lanes:
             harness = module.__name__
             found = self.reached(harness)
             files |= configuration_files(core_lane_host.CONFIGS[self.configured(harness)])
-            for _, _, node in found:
+            for where, name, node in found:
+                if ("scripts/" + where + ".py", name) in NOT_LANE_ROUTES:
+                    continue
                 for n in ast.walk(node):
                     if (isinstance(n, ast.Constant) and isinstance(n.value, str)
                             and n.value.startswith(("/api", "/auth", "/config/"))):
@@ -374,6 +380,13 @@ class ReadListCoverageTests(unittest.TestCase):
             keys = ast.literal_eval(ast.parse(lines[at]).body[0].value.keys[0])
             self.assertIn(keys, REVIEWED_CORE_BINDINGS)
         self.assertEqual(set(NODE_IDS), {path.name for path in (core_lane_host.MATTER_STUB / "nodes").iterdir()})
+
+    def test_only_the_harness_send_allowlist_is_not_a_lane_route(self):
+        self.assertEqual(set(NOT_LANE_ROUTES), {("scripts/harness_send.py", "ROUTES")})
+        for (path, name), reason in NOT_LANE_ROUTES.items():
+            node = self.lanes.table(Path(path).stem)[0][name]
+            self.assertIsInstance(node, ast.Assign)
+            self.assertTrue(reason)
 
     def test_a_new_integration_in_a_lane_configuration_is_an_undisclosed_gap(self):
         config = core_lane_host.CONFIGS["security_metadata"] + "otbr:\n"
