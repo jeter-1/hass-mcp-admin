@@ -72,28 +72,19 @@ REVIEWED_NORMALIZED_CATALOG_FINGERPRINT_MODEL_V1 = (
 # sequence to this fingerprint instead of treating alphabetical order as an
 # upstream contract.
 EXACT_RUNTIME_TOOL_ORDER_FINGERPRINTS = {
-    # HAMCP-319: wire order of the exact 9.1 standalone and app captures.
-    "9.1.0": "0aab73755d36e877b4ae6ed35683e7232974b04c98edb4fb4a0ea1f0bc8f6c8e",
-    # HAMCP-351: exact 9.1.2 advertises the same 77 names in the same order.
-    "9.1.2": "0aab73755d36e877b4ae6ed35683e7232974b04c98edb4fb4a0ea1f0bc8f6c8e",
-    # HAMCP-371: exact 9.2.0 advertises the same 77 names in the same order
-    # (docs/evidence/hamcp371/s4/ha-mcp-9.2.0/observation.json).
+    # HAMCP-371: exact 9.2.0 advertises the same 77 names in the same order as
+    # 9.1 (docs/evidence/hamcp371/s4/ha-mcp-9.2.0/observation.json). HAMCP-437
+    # I2a retired the 8.4.x, 8.5.0, 8.6.0 and 9.1.x rows and their entries.
     "9.2.0": "0aab73755d36e877b4ae6ed35683e7232974b04c98edb4fb4a0ea1f0bc8f6c8e",
-    "8.6.0": "0aab73755d36e877b4ae6ed35683e7232974b04c98edb4fb4a0ea1f0bc8f6c8e",
-    "8.5.0": "0aab73755d36e877b4ae6ed35683e7232974b04c98edb4fb4a0ea1f0bc8f6c8e",
-    "8.4.1": "b78ae4ddde97e9db9250830c96a666fbaa8561abe747fcab1223d43754bead34",
-    "8.4.3": "b78ae4ddde97e9db9250830c96a666fbaa8561abe747fcab1223d43754bead34",
 }
 # HAMCP-319 (Codex F1 on PR #406): on these releases runtime admission binds
 # each tool Engineering uses, exactly and once, and nothing else. Neither the
 # catalog order nor the presence of an unused tool is a runtime admission
 # condition; their order fingerprints above remain offline evidence bindings,
 # and the CI exact-image lanes keep the strict full-catalog comparison.
-# 9.1.0 only: the pre-existing order gate of every other release, 8.5.0
-# included, is deliberately unchanged (architect ruling 2026-11-08: outside
-# #406 scope). HAMCP-351 adds exact 9.1.2 and HAMCP-371 exact 9.2.0 under the
-# same used-tool rule.
-USED_TOOL_ADMISSION_RELEASES = frozenset({"9.1.0", "9.1.2", "9.2.0"})
+# HAMCP-371 put exact 9.2.0 under the rule 9.1.0 introduced; HAMCP-437 I2a
+# retired the 9.1.x rows, so 9.2.0 is the only release.
+USED_TOOL_ADMISSION_RELEASES = frozenset({"9.2.0"})
 STRICT_FULL_CONTRACT_FINGERPRINT_MODEL_V1 = (
     "ha-mcp-strict-full-contract-v1"
 )
