@@ -52,13 +52,19 @@ RESPONSES_92 = json.loads((FIXTURES_92 / 'responses.json').read_text(encoding='u
 PROVENANCE_92 = json.loads((FIXTURES_92 / 'provenance.json').read_text(encoding='utf-8'))
 V92 = RESPONSES_92['v92']
 # Read by the F3 replays (receipt provenance), FixtureProvenanceTests and the
-# 8.5 public-shape comparison.
+# 8.5-shaped call cases (V85).
 FIXTURES = ROOT / 'tests/fixtures/ha_mcp_9_1_0/entities'
 RESPONSES = json.loads((FIXTURES / 'responses.json').read_text(encoding='utf-8'))
 PROVENANCE = json.loads((FIXTURES / 'provenance.json').read_text(encoding='utf-8'))
 V91 = RESPONSES['v91']
 V85 = RESPONSES['v85']
 PHASE1 = ROOT / 'docs/evidence/hamcp319/phase1'
+# ANSWER 20261122-0931-01 case 2: the 8.5.0 public surface, generated at 310c6a0e
+# by tests/fixtures/hamcp319/generate_ent_public_surface.py (provenance.json).
+SURFACE_85_FILE = ROOT / 'tests/fixtures/hamcp319/ent-public-surface-8.5.0.json'
+SURFACE_85 = json.loads(SURFACE_85_FILE.read_text(encoding='utf-8'))
+SURFACE_85_LABEL = ('Engineering-published surface generated from the 8.5.0 row at 310c6a0e; '
+                    'not upstream evidence')
 SUMS = json.loads((PHASE1 / 'SHA256SUMS.json').read_text(encoding='utf-8'))
 
 BP = 'home-assistant-best-practices'
@@ -185,6 +191,11 @@ class ParityBase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['metadata']['completeness'], 'partial' if partial else 'complete')
         self.assert_fixed_warnings(result)
         self.assert_counts(result, counts)
+
+    def assert_no_hidden_value(self, result):
+        text = json.dumps(result)
+        self.assertNotIn(HIDDEN_ID, text)
+        self.assertNotIn(HIDDEN_CONTEXT, text)
 
     def assert_refused_unsent(self, result, category='argument_validation'):
         self.assertFalse(result['success'], result)
@@ -647,21 +658,25 @@ class Parity92Tests(ParityBase):
         # HAMCP-437 I2a-D: the "8.5 description is not reused" comparison read
         # the retired 8.5.0 policy; the exact pin above covers the 9.2.0 text.
 
-    async def test_92_parity_rows_public_surface_matches_85(self):
+    async def test_92_parity_rows_public_surface_matches_the_8_5_snapshot(self):
+        """SURFACE_85_LABEL: the 8.5.0 side is Engineering's own published
+        surface, generated at 310c6a0e before the 8.5.0 row retired (HAMCP-437
+        I2a-D, ANSWER 20261122-0931-01 case 2)."""
+
+        provenance = json.loads((SURFACE_85_FILE.parent / 'provenance.json').read_text(encoding='utf-8'))
+        self.assertEqual(hashlib.sha256(SURFACE_85_FILE.read_bytes()).hexdigest(), provenance['sha256'])
+        self.assertEqual((provenance['label'], provenance['source_commit']),
+                         (SURFACE_85_LABEL, '310c6a0e6b5b0abf9ea20d849d97ddaaf14c7933'))
+        self.assertEqual(SURFACE_85['label'], SURFACE_85_LABEL)
         ours = {t.name: t for t in await self.server.list_tools() if t.name in ENT_TOOLS}
-        baseline = Transport(previous.capture('8.5.0')['tools'], '8.5.0')
-        gateway = UpstreamReadGateway()
-        gateway.configure(replace(_settings('synthetic-no-key'), ha_mcp_release_registry_enabled=False),
-                          transport=baseline)
-        server = FastMCP('synthetic-hamcp319-ent-85')
-        await gateway.initialize(server)
-        theirs = {t.name: t for t in await server.list_tools() if t.name in ENT_TOOLS}
+        theirs = {t['name']: t for t in SURFACE_85['tools']}
         self.assertEqual(set(ours), set(ENT_TOOLS))
+        self.assertEqual(set(theirs), set(ENT_TOOLS))
         for name in ENT_TOOLS:
-            self.assertEqual(ours[name].inputSchema, theirs[name].inputSchema, name)
-            self.assertEqual(ours[name].annotations, theirs[name].annotations, name)
+            self.assertEqual(ours[name].inputSchema, theirs[name]['inputSchema'], name)
+            self.assertEqual(ours[name].annotations.model_dump(mode='json'), theirs[name]['annotations'], name)
             if name != 'ha_get_skill_guide':
-                self.assertEqual(ours[name].description, theirs[name].description, name)
+                self.assertEqual(ours[name].description, theirs[name]['description'], name)
 
 
 # HAMCP-437 I2a-D retired EntitiesPending91Tests with the 9.1.0 row (ANSWER
@@ -775,11 +790,6 @@ class F3ReplayTests(ParityBase):
 
     version = '9.2.0'
 
-    def assert_no_hidden_value(self, result):
-        text = json.dumps(result)
-        self.assertNotIn(HIDDEN_ID, text)
-        self.assertNotIn(HIDDEN_CONTEXT, text)
-
     async def test_91_f3_hidden_id_refusal(self):
         canary = receipt('visibility.json', '/before_toggle')
         self.assertEqual(canary['structuredContent']['data']['context']['id'], HIDDEN_CONTEXT)
@@ -848,13 +858,14 @@ class F3ReplayTests(ParityBase):
             self.assert_fixed_warnings(result)
 
 
-class F3Pending91Tests(ParityBase):
-    """Kept on 9.1.0, unedited, pending an architect ANSWER (HAMCP-437 I2a-D,
-    inbox 20261122-0931-01): through the 9.2.0 binding this receipt keeps
-    success and partial, but the visibility warning is replaced by the fixed
-    upstream-warnings code (ruling 0132-01), so the reason changes."""
+class F3NestedOmission92Tests(ParityBase):
+    """FROZEN_LABEL (HAMCP-437 I2a-D, ANSWER 20261122-0931-01 case 1): through
+    the 9.2.0 binding this receipt keeps success, partial, the useful state and
+    the absent attributes. The expected warnings changed by ruling 0132-01
+    (HAMCP-464): the upstream visibility warning is replaced by the fixed
+    upstream-warnings code and counted, instead of STATE_WITHHELD."""
 
-    version = '9.1.0'
+    version = '9.2.0'
 
     async def test_91_f3_nested_visible_omission(self):
         for name, pointer in (('visibility.json', '/visible_nested_hidden'),
@@ -873,7 +884,8 @@ class F3Pending91Tests(ParityBase):
             self.assertEqual(state['entity_id'], 'input_boolean.hamcp319_visible')
             self.assertNotIn('attributes', state)  # never fabricated as {}
             self.assertEqual(result['metadata']['completeness'], 'partial', pointer)
-            self.assertIn(ent.STATE_WITHHELD, result['warnings'], pointer)
+            self.assertEqual(result['warnings'], [ent.UPSTREAM_WARNINGS, keys.REPLACED_PARTIAL], pointer)
+            self.assertEqual(result['data']['upstream_warnings_replaced'], 1, pointer)
             self.assert_fixed_warnings(result)
             self.assert_no_hidden_value(result)
             # Typed actions refuse on incomplete state; attribute-free contracts stay useful.
