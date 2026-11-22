@@ -1,4 +1,4 @@
-"""HAMCP-319 Phase 2: typed power, fan and helper writes on ha-mcp 9.1.0 and 8.5.0.
+"""HAMCP-319 Phase 2: typed power, fan and helper writes on ha-mcp 9.2.0.
 
 Design section 6.2 (typed-writes outcome matrix), section 1.2 rules 6-8 and
 section 8.1 items 3, 5 and 6. The real pinned MCP ClientSession and the
@@ -6,10 +6,8 @@ production McpReadGatewayTransport run over in-memory streams against a
 synthetic peer; the real CoreRuntime runs on an ephemeral signed registry.
 No endpoint, household target, credential or filesystem path is supplied.
 
-9.1.0 peer responses are rendered from tests/fixtures/ha_mcp_9_1_0/typed/
-(class S templates; see provenance.json). 8.5.0 responses reuse the existing
-synthetic shapes of tests/test_hamcp175_power_fan_admission.py; they are not
-source-cited.
+9.2.0 peer responses are rendered from tests/fixtures/ha_mcp_9_2_0/typed/
+(class S templates; see provenance.json, pinned to 51e3aac7).
 """
 import asyncio
 from contextlib import asynccontextmanager
@@ -63,11 +61,13 @@ from ha_mcp_engineering.tools.helper import control_helper
 from ha_mcp_engineering.tools.power import control_power
 from ha_mcp_engineering.upstream_tool_policy import load_reviewed_upstream_release_registry
 
-VERSIONS = ('9.1.0', '8.5.0')
-# 9.1.0 is admitted only through the strict full-catalog selector (design 3.2);
-# 8.5.0 keeps its legacy form. Synthetic, never resolved: the client is replaced.
-URLS = {'9.1.0': 'http://synthetic.invalid/base/catalog/full', '8.5.0': ''}
-FIXTURES = ROOT / 'tests/fixtures/ha_mcp_9_1_0/typed'
+VERSIONS = ('9.2.0',)
+# 9.2.0 is admitted only through the strict full-catalog selector (design 3.2).
+# Synthetic, never resolved: the client is replaced.
+URLS = {'9.2.0': 'http://synthetic.invalid/base/catalog/full'}
+# Adjacent versions with no reviewed row; each must fail closed.
+UNREVIEWED = ('9.2.1', '9.1.1', '9.0.0')
+FIXTURES = ROOT / 'tests/fixtures/ha_mcp_9_2_0/typed'
 TEMPLATES = json.loads((FIXTURES / 'responses.json').read_text())
 SECRET = 'synthetic-private-exception-text'
 OPAQUE_ONLY = {'available': True, 'names': {'automation.acceptance_probe': 'Acceptance probe'},
@@ -111,7 +111,7 @@ FORBIDDEN_ARGUMENTS = (
 def extra_targets(kind):
     entity = FAMILIES[kind].entity
     domain = entity.split('.')[0]
-    # 9.1.0 ha_call_service accepts comma-separated entity_id lists.
+    # 9.2.0 ha_call_service accepts comma-separated entity_id lists.
     return ({'entity_id': f'{entity},{domain}.other'}, {'entity_id': [entity, f'{domain}.other']},
             {'entity_id': f'{entity} {domain}.other'})
 
@@ -185,9 +185,7 @@ class Peer:
         self.connections = []
 
     def last_updated(self):
-        if self.version == '9.1.0':
-            return TEMPLATES['synthetic_values']['last_updated_format'] % self.writes
-        return f'synthetic-revision-{self.writes}'
+        return TEMPLATES['synthetic_values']['last_updated_format'] % self.writes
 
     def record(self, args=None):
         attributes = {'percentage': self.percentage, 'supported_features': 49} if self.kind == 'fan' else {}
@@ -213,25 +211,17 @@ class Peer:
     def respond(self, name, args):
         if name == 'ha_list_services':
             domain = args['domain']
-            if self.version == '9.1.0':
-                services = {f'{domain}.{action}': {'name': action.replace('_', ' ').title(), 'description': '',
-                                                    'domain': domain, 'service': action}
-                            for action in self.family.services}
-                return self.template('list_services_summary', args, **{'${services}': services,
-                                                                        '${count}': len(services)})
-            return {'success': True, 'services': {f'{domain}.{action}': {} for action in self.family.services}}
+            services = {f'{domain}.{action}': {'name': action.replace('_', ' ').title(), 'description': '',
+                                                'domain': domain, 'service': action}
+                        for action in self.family.services}
+            return self.template('list_services_summary', args, **{'${services}': services,
+                                                                    '${count}': len(services)})
         if name == 'ha_get_state':
-            if self.version == '9.1.0':
-                return self.template('get_state', args, **{'${record}': self.record(args)})
-            return {'data': self.record(args)}
+            return self.template('get_state', args, **{'${record}': self.record(args)})
         if name == 'ha_call_service':
             compact = {key: value for key, value in self.record().items() if key != 'last_updated'}
             if self.call_mode == 'changed':
-                if self.version == '9.1.0':
-                    return self.template('call_service_success_changed_states', args, **{'${record}': compact})
-                return {'success': True}
-            # Non-admin and timeout envelopes are 9.1.0 shapes; on 8.5.0 they are
-            # conservative coverage only.
+                return self.template('call_service_success_changed_states', args, **{'${record}': compact})
             return self.template({'empty_list': 'call_service_nonadmin_empty_list',
                                   'envelope': 'call_service_nonadmin_envelope',
                                   'partial': 'call_service_timeout_partial'}[self.call_mode], args)
@@ -452,23 +442,14 @@ class TypedWritePositives(Harness):
         self.assertEqual(family.releases[version][:2], (release.entry_id, release.source_commit))
         self.balanced()
 
-    async def test_91_power_positive(self):
-        await self.positive('power', '9.1.0')
+    async def test_92_power_positive(self):
+        await self.positive('power', '9.2.0')
 
-    async def test_91_fan_positive(self):
-        await self.positive('fan', '9.1.0')
+    async def test_92_fan_positive(self):
+        await self.positive('fan', '9.2.0')
 
-    async def test_91_helper_positive(self):
-        await self.positive('helper', '9.1.0')
-
-    async def test_85_power_positive(self):
-        await self.positive('power', '8.5.0')
-
-    async def test_85_fan_positive(self):
-        await self.positive('fan', '8.5.0')
-
-    async def test_85_helper_positive(self):
-        await self.positive('helper', '8.5.0')
+    async def test_92_helper_positive(self):
+        await self.positive('helper', '9.2.0')
 
     async def test_fan_percentage_exact_arguments_on_each_release(self):
         for version in VERSIONS:
@@ -500,14 +481,15 @@ class TypedWritePositives(Harness):
                     token = getattr(UpstreamReadGateway, family.authority)(gateway, version)
                     self.assertIsInstance(token, str)
             # An adjacent unreviewed version has no row and fails closed.
-            for version in ('9.1.1', '9.0.0'):
+            for version in UNREVIEWED:
                 with self.subTest(kind=kind, version=version):
                     self.assertNotIn(version, family.releases)
                     with self.assertRaises(family.refusal):
                         getattr(UpstreamReadGateway, family.authority)(gateway, version)
-        self.assertEqual(FAN_RELEASES['9.1.0'][2], 'core-2026.9.2-ha-mcp-9.1.0-single-fan-v1')
-        self.assertEqual(POWER_RELEASES['9.1.0'][2], 'core-2026.9.2-ha-mcp-9.1.0-single-power-v1')
-        self.assertEqual(HELPER_RELEASES['9.1.0'][0], 'ha-mcp-v9.1.0-4259f247')
+        self.assertEqual(FAN_RELEASES['9.2.0'][2], 'core-2026.9.2-ha-mcp-9.2.0-single-fan-v1')
+        self.assertEqual(POWER_RELEASES['9.2.0'][2], 'core-2026.9.2-ha-mcp-9.2.0-single-power-v1')
+        self.assertEqual(HELPER_RELEASES['9.2.0'][:2],
+                         ('ha-mcp-v9.2.0-9de5bf6c', '51e3aac788482a081807591cd5d58d07dc4e540b'))
 
     def test_provider_admits_each_exact_catalog_and_refuses_cross_release_mapping(self):
         for kind, family in FAMILIES.items():
@@ -519,12 +501,16 @@ class TypedWritePositives(Harness):
                     self.assertEqual(contract, family.releases[version][2])
                     signed = family.provider(None, lambda *a: 'a').validate_catalog(c, signed_core=True)
                     self.assertEqual(signed[1], family.semantic[version])
-                # A session bound to one release never maps through the other's row.
-                other = '8.5.0' if version == '9.1.0' else '9.1.0'
-                with self.subTest(kind=kind, version=version, expected=other):
-                    with self.assertRaises(family.refusal):
-                        family.provider(None, lambda *a: 'a').validate_catalog(
-                            c, expected_contract=family.semantic[other])
+                # A session bound to one release never maps through another release's
+                # contract: every other row that exists, plus an adjacent unreviewed one.
+                others = [family.semantic[v] for v in family.semantic if v != version]
+                others += [family.releases[v][2] for v in family.releases if v != version]
+                others += [family.semantic[version].replace(version, v) for v in UNREVIEWED]
+                for other in others:
+                    with self.subTest(kind=kind, version=version, expected=other):
+                        with self.assertRaises(family.refusal):
+                            family.provider(None, lambda *a: 'a').validate_catalog(
+                                c, expected_contract=other)
 
 
 class ForwardingRefusals(Harness):

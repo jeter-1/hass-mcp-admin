@@ -95,6 +95,9 @@ CAPTURED_REPLAY_FIXTURE = (
 )
 BETA50_RELEASE_COMMIT = "66448fc8ece110a73900909ba113eab504db20f6"
 BETA50_RELEASE_TAG = "v2.2.0-beta.50"
+# Beta 51 acceptance recorded this as the complete runtime, test and
+# replay-provenance correction head (HAMCP-437 I2c-2 retired that doc).
+BETA51_CORRECTION_HEAD = "12ee70725083c5974810e8b071beb2b2be9ecf57"
 
 
 _REPLAY_ENTITY_ID = re.compile(
@@ -1532,16 +1535,7 @@ class Beta50CapturedProductionReplayTests(
         self.assertTrue(corrected["execution_eligible"])
 
     def test_beta51_acceptance_head_and_historical_replay_remain_bound(self):
-        acceptance = (
-            ROOT / "docs" / "V2_2_0_BETA51_ACCEPTANCE.md"
-        ).read_text(encoding="utf-8")
-        match = re.search(
-            r"complete runtime, test and replay-provenance correction "
-            r"is source head\s+`([0-9a-f]{40})`",
-            acceptance,
-        )
-        self.assertIsNotNone(match, acceptance[:500])
-        correction_head = match.group(1) if match is not None else ""
+        correction_head = BETA51_CORRECTION_HEAD
         ancestor = subprocess.run(
             (
                 "git",

@@ -7,7 +7,7 @@
     "start_time": "2026-10-19T00:00:00Z",
     "end_time": "2026-10-19T12:00:00Z"
    },
-   "ha_mcp_9_1_0": {
+   "ha_mcp_9_2_0": {
     "data": {
      "success": true,
      "source": "history",
@@ -114,7 +114,7 @@
     "end_time": "2026-10-19T12:00:00Z",
     "minimal_response": false
    },
-   "ha_mcp_9_1_0": {
+   "ha_mcp_9_2_0": {
     "data": {
      "success": true,
      "source": "history",
@@ -239,7 +239,7 @@
     "end_time": "2026-10-19T12:00:00Z",
     "minimal_response": false
    },
-   "ha_mcp_9_1_0": {
+   "ha_mcp_9_2_0": {
     "data": {
      "success": true,
      "source": "history",
@@ -358,7 +358,7 @@
      "bogus"
     ]
    },
-   "ha_mcp_9_1_0": {
+   "ha_mcp_9_2_0": {
     "data": {
      "success": true,
      "entities": [
@@ -446,7 +446,7 @@
     "end_time": "2026-10-19T12:00:00Z",
     "limit": 1
    },
-   "ha_mcp_9_1_0": {
+   "ha_mcp_9_2_0": {
     "data": {
      "success": true,
      "source": "history",
@@ -547,7 +547,7 @@
     "source": "statistics",
     "period": "hour"
    },
-   "ha_mcp_9_1_0": {
+   "ha_mcp_9_2_0": {
     "data": {
      "success": true,
      "source": "statistics",
@@ -682,7 +682,7 @@
     "period": "hour",
     "statistic_types": "sum,change"
    },
-   "ha_mcp_9_1_0": {
+   "ha_mcp_9_2_0": {
     "data": {
      "success": true,
      "source": "statistics",
@@ -833,7 +833,7 @@
      "mean"
     ]
    },
-   "ha_mcp_9_1_0": {
+   "ha_mcp_9_2_0": {
     "data": {
      "success": true,
      "source": "statistics",

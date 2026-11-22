@@ -5,7 +5,6 @@ from __future__ import annotations
 import copy
 from dataclasses import replace
 import hashlib
-import importlib.util
 import json
 from pathlib import Path
 import sys
@@ -74,8 +73,6 @@ from tests import test_f3_runtime_integration as f3tests  # noqa: E402
 from tests import test_governance as governance_tests  # noqa: E402
 
 
-ACCEPTANCE = ROOT / "docs" / "V2_2_0_BETA54_ACCEPTANCE.md"
-RELEASE_NOTES = ROOT / "docs" / "V2_2_0_BETA54_RELEASE_NOTES.md"
 V2_RECOVERY_FIXTURE = (
     ROOT
     / "tests"
@@ -2071,83 +2068,6 @@ class Beta54LegacyAutomationAuthorityBoundaryTests(
         assert persisted is not None
         self.assertIsNone(persisted.approval.challenge_id)
         self.assertEqual(0, self.gateway.write_calls)
-
-
-class Beta54ReleaseAuthorityTests(unittest.TestCase):
-    def test_documents_resolve_exactly_when_staged_or_materialized(self):
-        context_path = ROOT / "scripts" / "codex-context.py"
-        spec = importlib.util.spec_from_file_location(
-            "_beta54_context_authority",
-            context_path,
-        )
-        self.assertIsNotNone(spec)
-        self.assertIsNotNone(spec.loader)
-        context = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(context)
-        resolution = context.resolve_documents(ROOT, "2.2.0-beta.54")
-        self.assertEqual("exact", resolution["resolution_status"])
-        self.assertEqual(
-            "docs/V2_2_0_BETA54_ACCEPTANCE.md",
-            resolution["active_acceptance_document"],
-        )
-        self.assertEqual(
-            "docs/V2_2_0_BETA54_RELEASE_NOTES.md",
-            resolution["active_release_notes"],
-        )
-
-        marker = ROOT / ".release" / "next-version"
-        config = (
-            ROOT / "hass_mcp_engineering_beta" / "config.yaml"
-        ).read_text(encoding="utf-8")
-        staged_version = (
-            marker.read_text(encoding="utf-8").strip()
-            if marker.exists()
-            else None
-        )
-        if staged_version == "2.2.0-beta.54":
-            self.assertEqual(
-                "2.2.0-beta.54",
-                staged_version,
-            )
-            self.assertIn('version: "2.2.0-beta.53"', config)
-            self.assertIn(
-                "Beta 54 stages",
-                ACCEPTANCE.read_text(encoding="utf-8"),
-            )
-            self.assertIn(
-                "Engineering remains advertised as 2.2.0-beta.53",
-                RELEASE_NOTES.read_text(encoding="utf-8"),
-            )
-            return
-
-        for path in (ACCEPTANCE, RELEASE_NOTES):
-            text = path.read_text(encoding="utf-8")
-            self.assertIn("Beta 54 is materialized", text)
-            self.assertIn("Engineering now advertises 2.2.0-beta.54", text)
-
-        # Beta 54 remains exact historical acceptance authority after a newer
-        # Engineering beta is materialized. Current-version consistency is
-        # enforced by the active release tests and metadata validator.
-        self.assertNotIn('version: "2.2.0-beta.53"', config)
-
-    def test_acceptance_binds_new_authority_and_non_actions(self):
-        text = ACCEPTANCE.read_text(encoding="utf-8")
-        for required in (
-            "helper-dependency-risk-v13",
-            "f2-v2",
-            "execution_contract_complete",
-            "consequence_evidence_complete",
-            "policy_replan_required",
-            "plan_approval",
-            "approval authority remains version 3",
-            "task schema remains 1",
-            "public engineering tools remain 51",
-            "provider fallback remains absent",
-            "does not independently prohibit",
-            "at most one dispatch",
-            "does not publish",
-        ):
-            self.assertIn(required.lower(), text.lower())
 
 
 if __name__ == "__main__":

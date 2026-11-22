@@ -1,11 +1,15 @@
 """HAMCP-319 Phase 2 ENT parity: ledger rows 13, 14 and 17-24 (design section 7).
 
 8.5-shaped public calls run through the real UpstreamReadGateway against
-synthetic 8.5.0 and 9.1.0 transports. Upstream structuredContent comes from
-class S templates (tests/fixtures/ha_mcp_9_1_0/entities/responses.json) or,
-for the section 8.3 F3 replays, from the committed Phase 1 receipts, read by
-JSON pointer after their sha256 is checked against SHA256SUMS.json. Offline
-and deterministic; no live Home Assistant, no network.
+synthetic transports. Rows 13-24 run on ha-mcp 9.2.0 against class S templates
+transcribed from the pinned 9.2.0 source
+(tests/fixtures/ha_mcp_9_2_0/entities/provenance.json); every success asserts
+the 9.2.0 key-set counts. EntitiesPending91Tests keeps, unedited on their 9.1.0
+templates, the cases whose guarded outcome the 9.2.0 key layer changes (ANSWER
+20261121-2318-01 item 4; inbox item 20261122-0118-01). The section 8.3 F3
+replays read the committed Phase 1 receipts by JSON pointer after their sha256
+is checked against SHA256SUMS.json; they and the platform rows stay on 9.1.0
+and 8.5.0. Offline and deterministic; no live Home Assistant, no network.
 """
 import asyncio
 from copy import deepcopy
@@ -26,6 +30,9 @@ from ha_mcp_engineering.helper_value.contracts import (
 from ha_mcp_engineering.power.contracts import checked_state as power_checked_state
 from ha_mcp_engineering.providers import upstream_reads_9_1 as reads_9_1
 from ha_mcp_engineering.providers import upstream_reads_9_1_entities as ent
+from ha_mcp_engineering.providers import upstream_reads_9_2 as reads_9_2
+from ha_mcp_engineering.providers import upstream_reads_9_2_entities as ent_92
+from ha_mcp_engineering.providers import upstream_reads_9_2_keys as keys
 from ha_mcp_engineering.providers.upstream_read_gateway import (
     REDACTION_WARNING, UpstreamReadGateway,
 )
@@ -38,6 +45,12 @@ from ha_mcp_engineering.providers import upstream_blueprint as blueprint_adapter
 from ha_mcp_engineering.providers import upstream_platform_reads as platform_adapter
 import test_hamcp129_platform_reads as platform_tests
 
+FIXTURES_92 = ROOT / 'tests/fixtures/ha_mcp_9_2_0/entities'
+RESPONSES_92 = json.loads((FIXTURES_92 / 'responses.json').read_text(encoding='utf-8'))
+PROVENANCE_92 = json.loads((FIXTURES_92 / 'provenance.json').read_text(encoding='utf-8'))
+V92 = RESPONSES_92['v92']
+# Read by EntitiesPending91Tests, the F3 replays (receipt provenance) and the
+# 8.5 public-shape comparisons.
 FIXTURES = ROOT / 'tests/fixtures/ha_mcp_9_1_0/entities'
 RESPONSES = json.loads((FIXTURES / 'responses.json').read_text(encoding='utf-8'))
 PROVENANCE = json.loads((FIXTURES / 'provenance.json').read_text(encoding='utf-8'))
@@ -62,6 +75,11 @@ ENGINEERING_WARNINGS = frozenset({
     'The upstream search reported partial coverage.',
 })
 DASHBOARD_URL = 'http://upstream:9583/synthetic-upstream-secret/catalog/full'
+# The 9.2.0 peer: the host "upstream" is a redaction token that would mask the
+# 9.2.0 upstream_warnings_replaced key.
+PEER_URL = 'http://synthetic-host-319:9583/synthetic-ent-secret-319/mcp'
+COUNTS = ('fields_withheld', 'fields_dropped_by_policy', 'upstream_warnings_replaced')
+NONE_WITHHELD = dict.fromkeys(COUNTS, 0)
 HIDDEN_ID = 'hamcp319_hidden'
 # /before_toggle context id: present only on the hidden entity's record.
 HIDDEN_CONTEXT = '01M6Q7H0FKV71KHRNF8PES6H3K'
@@ -120,6 +138,8 @@ class ParityBase(unittest.IsolatedAsyncioTestCase):
         settings = replace(_settings('synthetic-no-key'), ha_mcp_release_registry_enabled=False)
         if self.version == '9.1.0':
             settings = replace(settings, upstream_dashboard_mcp_url=DASHBOARD_URL)
+        elif self.version == '9.2.0':
+            settings = replace(settings, upstream_dashboard_mcp_url=PEER_URL)
         self.gateway = UpstreamReadGateway()
         self.gateway.configure(settings, transport=self.transport)
         self.server = FastMCP('synthetic-hamcp319-ent')
@@ -141,15 +161,26 @@ class ParityBase(unittest.IsolatedAsyncioTestCase):
 
     def assert_fixed_warnings(self, result):
         self.assertIsInstance(result['warnings'], list)
-        self.assertLessEqual(set(result['warnings']), ENGINEERING_WARNINGS, result['warnings'])
+        allowed = ENGINEERING_WARNINGS | ({keys.REPLACED_PARTIAL} if self.version == '9.2.0' else set())
+        self.assertLessEqual(set(result['warnings']), allowed, result['warnings'])
 
-    def assert_success(self, result, name, *, partial=False):
+    def assert_counts(self, result, counts=NONE_WITHHELD):
+        """Pops and checks the 9.2.0 key-set counts; 9.1.0 has none."""
+
+        data = result['data']
+        if self.version == '9.2.0':
+            self.assertEqual({key: data.pop(key) for key in COUNTS}, counts, result)
+        else:
+            self.assertFalse(set(COUNTS) & set(data), result)
+
+    def assert_success(self, result, name, *, partial=False, counts=NONE_WITHHELD):
         self.assertTrue(result['success'], result)
         self.assertEqual(result['metadata']['upstream_tool'], name)
         self.assertEqual(result['metadata']['upstream_version'], self.version)
         self.assertFalse(result['metadata']['fallback_occurred'])
         self.assertEqual(result['metadata']['completeness'], 'partial' if partial else 'complete')
         self.assert_fixed_warnings(result)
+        self.assert_counts(result, counts)
 
     def assert_refused_unsent(self, result, category='argument_validation'):
         self.assertFalse(result['success'], result)
@@ -210,15 +241,18 @@ class ParityBase(unittest.IsolatedAsyncioTestCase):
 
 
 # ---------------------------------------------------------------------------
-# 9.1.0
+# 9.2.0
 # ---------------------------------------------------------------------------
-class Parity91Tests(ParityBase):
-    version = '9.1.0'
+class Parity92Tests(ParityBase):
+    """Rows 13-24 on 9.2.0. A key outside a read's reviewed key set is withheld
+    and counted (upstream_reads_9_2_keys.py); each success asserts the counts."""
+
+    version = '9.2.0'
 
     # Row 13 ha_get_entity -----------------------------------------------------
-    async def test_91_parity_row_13_entity(self):
+    async def test_92_parity_row_13_entity(self):
         args = {'entity_id': 'light.synthetic_lamp'}
-        template = V91['ha_get_entity']['single']
+        template = V92['ha_get_entity']['single']
         result = await self.call('ha_get_entity', args, wrap(template))
         self.assert_success(result, 'ha_get_entity')
         self.assert_sent('ha_get_entity', args)  # registry read only; no mutation sent
@@ -228,16 +262,20 @@ class Parity91Tests(ParityBase):
         self.assertLessEqual(set(V85['ha_get_entity']['single']['entity_entry']), set(entry))
         self.assertEqual(result['warnings'], [])
 
-    async def test_91_parity_row_13_entity_partial_disclosed(self):
+    async def test_92_parity_row_13_entity_partial_disclosed(self):
         args = {'entity_id': ['light.synthetic_lamp', 'light.synthetic_absent']}
-        template = V91['ha_get_entity']['bulk_partial']
+        template = V92['ha_get_entity']['bulk_partial']
         result = await self.call('ha_get_entity', args, wrap(template))
-        self.assert_success(result, 'ha_get_entity', partial=True)
+        # count, suggestions and the per-error text are outside the key set.
+        self.assert_success(result, 'ha_get_entity', partial=True,
+                            counts=NONE_WITHHELD | {'fields_withheld': 3})
         self.assert_sent('ha_get_entity', args)
-        self.assertEqual(result['data'], template)
+        expected = {key: deepcopy(template[key]) for key in ('success', 'entity_entries')}
+        expected['errors'] = [{'entity_id': 'light.synthetic_absent'}]
+        self.assertEqual(result['data'], expected)
         self.assertEqual(result['warnings'], [ent.ENTITY_INCOMPLETE])
 
-    async def test_91_parity_row_13_entity_refusals(self):
+    async def test_92_parity_row_13_entity_refusals(self):
         await self.assert_unknown_key_refused('ha_get_entity', {'entity_id': 'light.synthetic_lamp'})
         # Rule 9 error contract: a not-found or failed lookup is a bounded failure.
         result = await self.assert_upstream_error_fails('ha_get_entity', {'entity_id': 'light.synthetic_absent'})
@@ -250,16 +288,24 @@ class Parity91Tests(ParityBase):
                                            {'success': True, 'entity_entry': []})
 
     # Row 14 ha_get_entity_exposure --------------------------------------------
-    async def test_91_parity_row_14_exposure(self):
-        for args, case in (({'entity_id': 'light.synthetic_lamp'}, 'single'), ({}, 'list')):
-            template = V91['ha_get_entity_exposure'][case]
-            result = await self.call('ha_get_entity_exposure', args, wrap(template))
-            self.assert_success(result, 'ha_get_entity_exposure')
-            self.assert_sent('ha_get_entity_exposure', args)  # no exposure write sent
-            self.assertEqual(result['data'], template)
-            self.assertEqual(result['warnings'], [])
+    async def test_92_parity_row_14_exposure(self):
+        args = {'entity_id': 'light.synthetic_lamp'}
+        template = V92['ha_get_entity_exposure']['single']
+        result = await self.call('ha_get_entity_exposure', args, wrap(template))
+        self.assert_success(result, 'ha_get_entity_exposure')
+        self.assert_sent('ha_get_entity_exposure', args)  # no exposure write sent
+        self.assertEqual(result['data'], template)
+        self.assertEqual(result['warnings'], [])
+        template = V92['ha_get_entity_exposure']['list']
+        result = await self.call('ha_get_entity_exposure', {}, wrap(template))
+        # count, filters_applied, summary, total_entities_with_settings and
+        # summary's three keys are outside the key set.
+        self.assert_success(result, 'ha_get_entity_exposure', counts=NONE_WITHHELD | {'fields_withheld': 7})
+        self.assert_sent('ha_get_entity_exposure', {})
+        self.assertEqual(result['data'], {key: template[key] for key in ('success', 'exposed_entities')})
+        self.assertEqual(result['warnings'], [])
 
-    async def test_91_parity_row_14_exposure_refusals(self):
+    async def test_92_parity_row_14_exposure_refusals(self):
         await self.assert_unknown_key_refused('ha_get_entity_exposure', {})
         await self.assert_upstream_error_fails('ha_get_entity_exposure', {'entity_id': 'light.synthetic_lamp'})
         await self.assert_invalid_response('ha_get_entity_exposure', {'entity_id': 'light.synthetic_lamp'},
@@ -267,10 +313,11 @@ class Parity91Tests(ParityBase):
         await self.assert_invalid_response('ha_get_entity_exposure', {}, {'success': True})
 
     # Row 17 ha_get_overview ----------------------------------------------------
-    async def test_91_parity_row_17_overview(self):
-        template = V91['ha_get_overview']['minimal']
+    async def test_92_parity_row_17_overview(self):
+        template = V92['ha_get_overview']['minimal']
         result = await self.call('ha_get_overview', {}, wrap(template))
-        self.assert_success(result, 'ha_get_overview')
+        # mcp_client, tool_discovery and settings_url_hint are policy drops.
+        self.assert_success(result, 'ha_get_overview', counts=NONE_WITHHELD | {'fields_dropped_by_policy': 3})
         self.assert_sent('ha_get_overview', {})
         data = result['data']
         for dropped in ('mcp_client', 'tool_discovery', 'settings_url', 'settings_url_hint'):
@@ -282,52 +329,47 @@ class Parity91Tests(ParityBase):
         self.assertEqual(set(data), set(template) - {'mcp_client', 'tool_discovery', 'settings_url_hint'})
         self.assertEqual(result['warnings'], [ent.VISIBLE_SCOPE])
 
-    async def test_91_parity_row_17_overview_partial_disclosed(self):
-        template = V91['ha_get_overview']['partial']
-        result = await self.call('ha_get_overview', {}, wrap(template))
-        self.assert_success(result, 'ha_get_overview', partial=True)
-        self.assertNotIn('mcp_client', result['data'])
-        self.assertEqual(result['warnings'], [ent.VISIBLE_SCOPE, ent.UPSTREAM_PARTIAL, ent.UPSTREAM_WARNINGS])
-        self.assertNotIn('Services unavailable', json.dumps(result['warnings']))
-
-    async def test_91_parity_row_17_overview_refusals(self):
+    async def test_92_parity_row_17_overview_refusals(self):
         await self.assert_unknown_key_refused('ha_get_overview', {})
         await self.assert_upstream_error_fails('ha_get_overview', {})
         await self.assert_invalid_response('ha_get_overview', {}, {'success': True, 'domain_stats': []})
         await self.assert_invalid_response('ha_get_overview', {}, {'success': False})
 
     # Row 18 ha_get_skill_guide -------------------------------------------------
-    async def test_91_skill_guide_positive(self):
+    async def test_92_skill_guide_positive(self):
         args = {'skill': BP, 'file': 'SKILL.md'}
-        template = V91['ha_get_skill_guide']['file_skill_md']
+        template = V92['ha_get_skill_guide']['file_skill_md']
         result = await self.call('ha_get_skill_guide', args, wrap(template))
         self.assertTrue(result['success'], result)
         self.assert_sent('ha_get_skill_guide', {'file': 'SKILL.md'})
+        self.assert_counts(result, NONE_WITHHELD | {'fields_dropped_by_policy': 1})  # how_to_use
         data = result['data']
         self.assertEqual(set(data), {'success', 'skill', 'file', 'uri', 'content'})
         self.assertEqual(data['skill'], BP)
         self.assertEqual(data['file'], 'SKILL.md')
         self.assertEqual(data['uri'], f'skill://{BP}/SKILL.md')
-        self.assertNotIn('how_to_use', data)  # 9.1 file-only call form
+        self.assertNotIn('how_to_use', data)  # file-only call form
         self.assertNotIn('skill_content_hint', data)  # never fabricated
-        # Strict-BPS acknowledgement passes as for 8.6; the shared sanitizer
-        # redaction (and its disclosure) is the same on 8.5 (see the 8.5 test).
+        # Strict-BPS acknowledgement passes; the shared sanitizer redaction
+        # is disclosed.
         self.assertTrue(data['content'].startswith(f'Acknowledgment key: {ACK_KEY} '))
         self.assertTrue(data['content'].endswith('# Synthetic best practices\n'))
         self.assertEqual(result['warnings'], [REDACTION_WARNING])
         self.assertEqual(result['metadata']['completeness'], 'partial')
+        self.assert_fixed_warnings(result)
 
-    async def test_91_parity_row_18_skill_guide_reference_file(self):
+    async def test_92_parity_row_18_skill_guide_reference_file(self):
         args = {'skill': BP, 'file': 'references/synthetic.md'}
-        template = V91['ha_get_skill_guide']['file_reference']
+        template = V92['ha_get_skill_guide']['file_reference']
         result = await self.call('ha_get_skill_guide', args, wrap(template))
         self.assertTrue(result['success'], result)
         self.assert_sent('ha_get_skill_guide', {'file': 'references/synthetic.md'})
+        self.assert_counts(result)
         self.assertEqual(result['data']['skill_content_hint'], template['skill_content_hint'])
         self.assertEqual(result['data']['uri'], template['uri'])
         self.assert_fixed_warnings(result)
 
-    async def test_91_parity_row_18_skill_guide_unavailable_tiers(self):
+    async def test_92_parity_row_18_skill_guide_unavailable_tiers(self):
         for args in ({}, {'skill': BP}):
             result = await self.call('ha_get_skill_guide', args, wrap(V85['ha_get_skill_guide']['tier1']))
             self.assert_refused_unsent(result, 'capability_unavailable')
@@ -337,20 +379,20 @@ class Parity91Tests(ParityBase):
             self.assertNotIn(BP, json.dumps(result))
             self.assertNotIn('SKILL.md', json.dumps(result))
 
-    async def test_91_parity_row_18_skill_guide_refusals(self):
+    async def test_92_parity_row_18_skill_guide_refusals(self):
+        template = V92['ha_get_skill_guide']['file_skill_md']
         for args in ({'skill': 'synthetic-other-skill', 'file': 'SKILL.md'},
                      {'skill': 'synthetic-other-skill'},
                      {'file': 'SKILL.md'},
                      {'skill': BP, 'file': '../synthetic.md'},
                      {'skill': BP, 'file': '/etc/synthetic'},
                      {'skill': BP, 'file': 'SKILL.md', 'synthetic_unreviewed': 1}):
-            result = await self.call('ha_get_skill_guide', args, wrap(V91['ha_get_skill_guide']['file_skill_md']))
+            result = await self.call('ha_get_skill_guide', args, wrap(template))
             self.assertFalse(result['success'], (args, result))
             self.assertFalse(result['metadata']['upstream_dispatch_occurred'], args)
             self.assertEqual(self.transport.sent, [], args)
             self.assertNotIn(BP, result['message'])
         args = {'skill': BP, 'file': 'SKILL.md'}
-        template = V91['ha_get_skill_guide']['file_skill_md']
         for bad in ({**template, 'uri': f'skill://{BP}/references/other.md'},
                     {**template, 'file': 'references/other.md'},
                     {**template, 'content': None},
@@ -359,24 +401,29 @@ class Parity91Tests(ParityBase):
         await self.assert_upstream_error_fails('ha_get_skill_guide', args, 'RESOURCE_NOT_FOUND')
 
     # Row 19 ha_get_state -------------------------------------------------------
-    async def test_91_parity_row_19_state(self):
+    async def test_92_parity_row_19_state(self):
         args = {'entity_id': 'light.synthetic_lamp'}
-        template = V91['ha_get_state']['single']
+        template = V92['ha_get_state']['single']
         result = await self.call('ha_get_state', args, wrap(template))
         self.assert_success(result, 'ha_get_state')
         self.assert_sent('ha_get_state', args)
         self.assertEqual(result['data'], template)
         self.assertEqual(result['warnings'], [])
 
-    async def test_91_thread_credential_generic_attribute_redacted(self):
-        await self.assert_thread_credential_attribute_redacted(V91['ha_get_state']['single'])
+    async def test_92_thread_credential_generic_attribute_redacted(self):
+        await self.assert_thread_credential_attribute_redacted(V92['ha_get_state']['single'])
 
-    async def test_91_parity_row_19_state_bulk_partial_disclosed(self):
+    async def test_92_parity_row_19_state_bulk_partial_disclosed(self):
         args = {'entity_id': ['light.synthetic_lamp', 'light.synthetic_absent']}
-        template = V91['ha_get_state']['bulk_partial']
+        template = V92['ha_get_state']['bulk_partial']
         result = await self.call('ha_get_state', args, wrap(template))
-        self.assert_success(result, 'ha_get_state', partial=True)
-        self.assertEqual(result['data'], template)
+        # error_count, suggestions and the per-error text are outside the key set.
+        self.assert_success(result, 'ha_get_state', partial=True, counts=NONE_WITHHELD | {'fields_withheld': 3})
+        expected = deepcopy(template)
+        for key in ('error_count', 'suggestions'):
+            del expected['data'][key]
+        expected['data']['errors'] = [{'entity_id': 'light.synthetic_absent'}]
+        self.assertEqual(result['data'], expected)
         self.assertEqual(result['warnings'], [ent.STATE_INCOMPLETE])
         # Zero readable states is success:false upstream: still disclosed, never empty success.
         empty = {'data': {'success': False, 'count': 0, 'states': {},
@@ -386,42 +433,35 @@ class Parity91Tests(ParityBase):
         self.assertEqual(result['metadata']['completeness'], 'partial')
         self.assertIn(ent.STATE_INCOMPLETE, result['warnings'])
 
-    async def test_91_parity_row_19_state_refusals(self):
+    async def test_92_parity_row_19_state_refusals(self):
         await self.assert_unknown_key_refused('ha_get_state', {'entity_id': 'light.synthetic_lamp'})
         result = await self.call('ha_get_state', {'entity_id': 'light.synthetic_absent'},
                                  error_result('ENTITY_NOT_FOUND'))
         self.assertEqual(result['error_code'], 'entity_not_found')
         self.assertNotIn(UPSTREAM_CANARY, json.dumps(result))
         single = {'entity_id': 'light.synthetic_lamp'}
-        await self.assert_invalid_response('ha_get_state', single, V91['ha_get_state']['single']['data'])
+        await self.assert_invalid_response('ha_get_state', single, V92['ha_get_state']['single']['data'])
         await self.assert_invalid_response('ha_get_state', single,
-                                           {'data': {**V91['ha_get_state']['single']['data'], 'attributes': []},
+                                           {'data': {**V92['ha_get_state']['single']['data'], 'attributes': []},
                                             'metadata': {}})
-        await self.assert_invalid_response('ha_get_state', single, V91['ha_get_state']['bulk_partial'])
+        await self.assert_invalid_response('ha_get_state', single, V92['ha_get_state']['bulk_partial'])
         await self.assert_invalid_response('ha_get_state', {'entity_id': ['light.synthetic_lamp']},
-                                           V91['ha_get_state']['single'])
+                                           V92['ha_get_state']['single'])
 
     # Row 20 ha_get_todo --------------------------------------------------------
-    async def test_91_parity_row_20_todo(self):
+    async def test_92_parity_row_20_todo(self):
         for args, case in (({}, 'lists'),
                            ({'entity_id': 'todo.synthetic_list', 'status': 'needs_action'}, 'items')):
-            template = V91['ha_get_todo'][case]
+            template = V92['ha_get_todo'][case]
             result = await self.call('ha_get_todo', args, wrap(template))
             self.assert_success(result, 'ha_get_todo')
             self.assert_sent('ha_get_todo', args)  # read only; scalar status unchanged
             self.assertEqual(result['data'], template)
 
-    async def test_91_parity_row_20_todo_unavailable_disclosed(self):
-        template = V91['ha_get_todo']['unavailable_items']
-        result = await self.call('ha_get_todo', {'entity_id': 'todo.synthetic_list'}, wrap(template))
-        self.assert_success(result, 'ha_get_todo', partial=True)
-        self.assertEqual(result['data']['items'], template['items'])
-        self.assertEqual(result['warnings'], [ent.UPSTREAM_WARNINGS])
-
-    async def test_91_parity_row_20_todo_refusals(self):
-        # 9.1 also accepts a status list; the public scalar contract refuses it unsent.
+    async def test_92_parity_row_20_todo_refusals(self):
+        # Upstream also accepts a status list; the public scalar contract refuses it unsent.
         result = await self.call('ha_get_todo', {'entity_id': 'todo.synthetic_list', 'status': ['completed']},
-                                 wrap(V91['ha_get_todo']['items']))
+                                 wrap(V92['ha_get_todo']['items']))
         self.assert_refused_unsent(result)
         await self.assert_unknown_key_refused('ha_get_todo', {})
         await self.assert_upstream_error_fails('ha_get_todo', {'entity_id': 'todo.synthetic_list'})
@@ -429,103 +469,114 @@ class Parity91Tests(ParityBase):
                                            {'success': True, 'entity_id': 'todo.synthetic_list', 'items': {}})
 
     # Row 21 ha_get_zone --------------------------------------------------------
-    async def test_91_parity_row_21_zone(self):
-        template = V91['ha_get_zone']['list_with_extra_rows']
+    async def test_92_parity_row_21_zone(self):
+        notes = [ent_92.ZONE_LOCATION_NOTE, ent_92.ZONE_ICON_NOTE]
+        template = V92['ha_get_zone']['list_with_extra_rows']
         result = await self.call('ha_get_zone', {}, wrap(template))
         self.assert_success(result, 'ha_get_zone')
         self.assert_sent('ha_get_zone', {})
         zones = result['data']['zones']
-        self.assertEqual(zones, template['zones'])  # extra home/YAML rows kept
+        # Extra home/YAML rows kept; friendly_name restored from name.
+        self.assertEqual(zones, [{**row, 'friendly_name': row['name']} for row in template['zones']])
+        self.assertEqual(result['data'][ent_92.NOTES], notes)
         legacy = V85['ha_get_zone']['list']['zones'][0]
         matching = [z for z in zones if z['id'] == legacy['id']]
         self.assertEqual(len(matching), 1)
         self.assertEqual({k: matching[0][k] for k in legacy}, legacy)  # 8.5 row not dropped
         self.assertEqual(matching[0]['entity_id'], 'zone.synthetic_office')  # additive
         args = {'zone_id': 'synthetic_office'}
-        template = V91['ha_get_zone']['single']
+        template = V92['ha_get_zone']['single']
         result = await self.call('ha_get_zone', args, wrap(template))
         self.assert_success(result, 'ha_get_zone')
         self.assert_sent('ha_get_zone', args)
-        self.assertEqual(result['data'], template)
+        zone = template['zone']
+        self.assertEqual(result['data'], {**template, 'zone': {**zone, 'friendly_name': zone['name']},
+                                          ent_92.NOTES: notes})
 
-    async def test_91_parity_row_21_zone_gaps_disclosed(self):
-        template = V91['ha_get_zone']['list_with_gaps']
-        result = await self.call('ha_get_zone', {}, wrap(template))
-        self.assert_success(result, 'ha_get_zone', partial=True)
-        self.assertEqual(result['warnings'], [ent.UPSTREAM_WARNINGS])
-        self.assertNotIn('entity registry could not be read', json.dumps(result['warnings']))
-
-    async def test_91_parity_row_21_zone_refusals(self):
+    async def test_92_parity_row_21_zone_refusals(self):
         await self.assert_unknown_key_refused('ha_get_zone', {})
         await self.assert_upstream_error_fails('ha_get_zone', {'zone_id': 'synthetic_absent'}, 'RESOURCE_NOT_FOUND')
         await self.assert_invalid_response('ha_get_zone', {}, {'success': True, 'zones': ['x']})
         await self.assert_invalid_response('ha_get_zone', {}, {'success': True})
 
     # Row 22 ha_list_floors_areas -----------------------------------------------
-    async def test_91_parity_row_22_floors_areas(self):
-        template = V91['ha_list_floors_areas']['all']
+    async def test_92_parity_row_22_floors_areas(self):
+        template = V92['ha_list_floors_areas']['all']
         result = await self.call('ha_list_floors_areas', {}, wrap(template))
         self.assert_success(result, 'ha_list_floors_areas')
         self.assert_sent('ha_list_floors_areas', {})
         self.assertEqual(result['data'], template)
         self.assertEqual(result['warnings'], [])
 
-    async def test_91_parity_row_22_floors_areas_refusals(self):
+    async def test_92_parity_row_22_floors_areas_refusals(self):
         await self.assert_unknown_key_refused('ha_list_floors_areas', {})
         await self.assert_upstream_error_fails('ha_list_floors_areas', {})
         await self.assert_invalid_response('ha_list_floors_areas', {}, {'success': True, 'floors': {}})
-        partial = {**V91['ha_list_floors_areas']['all'], 'warnings': ['synthetic']}
-        result = await self.call('ha_list_floors_areas', {}, wrap(partial))
-        self.assert_success(result, 'ha_list_floors_areas', partial=True)
-        self.assertEqual(result['warnings'], [ent.UPSTREAM_WARNINGS])
 
     # Row 23 ha_list_services ---------------------------------------------------
-    async def test_91_parity_row_23_services(self):
+    async def test_92_parity_row_23_services(self):
         args = {'domain': 'light'}
-        template = V91['ha_list_services']['light']
+        template = V92['ha_list_services']['light']
         result = await self.call('ha_list_services', args, wrap(template))
         self.assert_success(result, 'ha_list_services')
         self.assert_sent('ha_list_services', args)
-        self.assertEqual(result['data'], template)
+        self.assertEqual(result['data'], {**template, ent_92.NOTES: [ent_92.SERVICES_TYPE_NOTE]})
 
-    async def test_91_parity_row_23_services_refusals(self):
+    async def test_92_parity_row_23_services_refusals(self):
         await self.assert_unknown_key_refused('ha_list_services', {})
         await self.assert_upstream_error_fails('ha_list_services', {'domain': 'light'})
         await self.assert_invalid_response('ha_list_services', {}, {'success': True, 'services': []})
 
     # Row 24 ha_search ----------------------------------------------------------
-    async def test_91_parity_row_24_search(self):
+    async def test_92_parity_row_24_search(self):
         args = {'query': 'synthetic lamp'}
-        template = V91['ha_search']['no_warnings']
+        template = V92['ha_search']['no_warnings']
         self.assertNotIn('warnings', template)
         result = await self.call('ha_search', args, wrap(template))
         self.assert_sent('ha_search', args)
         self.assertTrue(result['success'], result)
+        self.assert_counts(result)
         self.assertEqual(result['data'], {**template, 'warnings': []})  # normalized
         self.assertEqual(result['data']['entities'], template['entities'])
-        # Visibility omissions are disclosed on every 9.1 search.
+        # Visibility omissions are disclosed on every search.
         self.assertEqual(result['warnings'], [ent.VISIBLE_SCOPE])
         self.assertEqual(result['metadata']['completeness'], 'partial')
         self.assert_fixed_warnings(result)
 
-    async def test_91_parity_row_24_search_partial_disclosed(self):
-        template = V91['ha_search']['partial']
+    async def test_92_parity_row_24_search_partial_disclosed(self):
+        template = V92['ha_search']['partial']
         result = await self.call('ha_search', {'query': 'synthetic lamp'}, wrap(template))
+        self.assertTrue(result['success'], result)
+        # partial_reason is outside the key set; the unreviewed upstream
+        # warning text is replaced by the fixed code and disclosed.
+        self.assert_counts(result, NONE_WITHHELD | {'fields_withheld': 1, 'upstream_warnings_replaced': 1})
         self.assertEqual(result['metadata']['completeness'], 'partial')
-        self.assertEqual(result['warnings'], [ent.VISIBLE_SCOPE, ent.SEARCH_PARTIAL, ent.UPSTREAM_WARNINGS])
-        self.assertEqual(result['data']['warnings'], template['warnings'])
+        self.assertEqual(result['warnings'], [ent.VISIBLE_SCOPE, ent.SEARCH_PARTIAL, ent.UPSTREAM_WARNINGS,
+                                              keys.REPLACED_PARTIAL])
+        self.assertEqual(result['data']['warnings'], [keys.REPLACED_WARNING])
+        self.assertNotIn('partial_reason', result['data'])
+        self.assertNotIn('config backend timed out', json.dumps(result))
+        self.assert_fixed_warnings(result)
+        # The partial flag alone is disclosed (re-pinned from the retired 8.5.0 case).
+        flagged = {**V92['ha_search']['no_warnings'], 'partial': True}
+        result = await self.call('ha_search', {'query': 'synthetic lamp'}, wrap(flagged))
+        self.assertTrue(result['success'], result)
+        self.assert_counts(result)
+        self.assertEqual(result['metadata']['completeness'], 'partial')
+        self.assertEqual(result['warnings'], [ent.VISIBLE_SCOPE, ent.SEARCH_PARTIAL])
+        self.assert_fixed_warnings(result)
 
-    async def test_91_parity_row_24_search_refusals(self):
+    async def test_92_parity_row_24_search_refusals(self):
         args = {'query': 'synthetic lamp'}
         await self.assert_unknown_key_refused('ha_search', args)
         # All-legs failure raises upstream: a failure, never an empty success.
         await self.assert_upstream_error_fails('ha_search', args, 'SERVICE_CALL_FAILED')
-        await self.assert_invalid_response('ha_search', args, {**V91['ha_search']['no_warnings'], 'success': False})
-        await self.assert_invalid_response('ha_search', args, {**V91['ha_search']['no_warnings'], 'partial': None})
-        await self.assert_invalid_response('ha_search', args, {**V91['ha_search']['no_warnings'], 'entities': {}})
-        await self.assert_invalid_response('ha_search', args, {**V91['ha_search']['no_warnings'], 'warnings': 'x'})
+        await self.assert_invalid_response('ha_search', args, {**V92['ha_search']['no_warnings'], 'success': False})
+        await self.assert_invalid_response('ha_search', args, {**V92['ha_search']['no_warnings'], 'partial': None})
+        await self.assert_invalid_response('ha_search', args, {**V92['ha_search']['no_warnings'], 'entities': {}})
+        await self.assert_invalid_response('ha_search', args, {**V92['ha_search']['no_warnings'], 'warnings': 'x'})
         # Bounded: an oversized result is refused, not truncated into a success.
-        big = {**V91['ha_search']['no_warnings'],
+        big = {**V92['ha_search']['no_warnings'],
                'entities': [{'entity_id': f'light.synthetic_{i}', 'friendly_name': 'x' * 400}
                             for i in range(200)]}
         result = await self.call('ha_search', args, wrap(big))
@@ -533,9 +584,13 @@ class Parity91Tests(ParityBase):
         self.assertNotIn('data', result)
 
     # Projection unit checks ---------------------------------------------------
-    def test_91_parity_rows_unrecognized_shapes_raise(self):
+    def test_92_parity_rows_unrecognized_shapes_raise(self):
+        # 9.2.0 composes the key set with the 9.1 projection or the 9.2.0 override.
         self.assertEqual(set(ent.PROJECTIONS), set(ENT_TOOLS))
-        for name, (project, completeness) in ent.PROJECTIONS.items():
+        self.assertLessEqual(set(ent_92.PROJECTIONS), set(ENT_TOOLS))
+        self.assertLessEqual(set(ENT_TOOLS), set(keys.ROWS))
+        for name in ENT_TOOLS:
+            project, completeness = reads_9_2._projection(name)
             args = {'skill': BP, 'file': 'SKILL.md'} if name == 'ha_get_skill_guide' else {}
             for payload in (None, [], 'x', {'success': 'true'}, {'success': False}):
                 with self.assertRaises(ValueError, msg=(name, payload)) as caught:
@@ -545,34 +600,34 @@ class Parity91Tests(ParityBase):
             self.assertTrue(partial, name)
             self.assertLessEqual(set(warnings), ENGINEERING_WARNINGS)
 
-    def test_91_parity_rows_policy_bound_to_adapter(self):
-        policy = json.loads((ROOT / 'hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_1_0.json')
+    def test_92_parity_rows_policy_bound_to_adapter(self):
+        policy = json.loads((ROOT / 'hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_2_0.json')
                             .read_text(encoding='utf-8'))
         rows = {e['upstream_name']: e for e in policy['tools']}
         for name in ENT_TOOLS:
-            self.assertEqual(rows[name]['argument_restrictions'], [reads_9_1.ADAPTER], name)
+            self.assertEqual(rows[name]['argument_restrictions'], [reads_9_2.ADAPTER], name)
             self.assertEqual(rows[name]['classification'], 'automatic_read', name)
             self.assertEqual(rows[name]['exposed_name'], name)
-        self.assertEqual(reads_9_1.ADAPTER, 'ha-mcp-9.1.0-public-reads-v1')
-        # The public skill-guide description states the 9.1 behavior (file
-        # reads only; inventory and file-list are unavailable), not 8.6's.
+        self.assertEqual(reads_9_2.ADAPTER, 'ha-mcp-9.2.0-public-reads-v1')
+        # The public skill-guide description states the file-only behavior
+        # (inventory and file-list are unavailable), not 8.6's.
         guide = rows['ha_get_skill_guide']['description']
         self.assertNotIn('8.6', guide)
         self.assertIn('unavailable', guide)
         self.assertIn('SKILL.md', guide)
 
-    async def test_91_skill_guide_description_states_file_only(self):
-        """Architect ruling 2026-11-07 item 3: the 9.1 skill-guide description
-        rewrite is accepted on condition that it states 9.1 is file-only, with
-        the inventory and file-list tiers unavailable. Pinned exactly, both in
-        the reviewed policy and on the exposed MCP tool."""
+    async def test_92_skill_guide_description_states_file_only(self):
+        """Architect ruling 2026-11-07 item 3: the skill-guide description
+        states that the upstream is file-only, with the inventory and
+        file-list tiers unavailable. Pinned exactly, both in the reviewed 9.2.0
+        policy and on the exposed MCP tool."""
 
         expected = (
             "Read a bundled Home Assistant skill document: supply skill and a file "
             "path relative to that skill (start with SKILL.md). On this upstream "
             "version the skill inventory (no arguments) and file-list (skill only) "
             "modes are unavailable and return an unavailable refusal.")
-        policy = json.loads((ROOT / 'hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_1_0.json')
+        policy = json.loads((ROOT / 'hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_2_0.json')
                             .read_text(encoding='utf-8'))
         rows = {e['upstream_name']: e for e in policy['tools']}
         self.assertEqual(rows['ha_get_skill_guide']['description'], expected)
@@ -585,13 +640,13 @@ class Parity91Tests(ParityBase):
         for tier in ('skill inventory (no arguments)', 'file-list (skill only)'):
             self.assertIn(tier, guide)
         self.assertIn('modes are unavailable', guide)
-        # The 8.5 description is not reused for 9.1.
+        # The 8.5 description is not reused.
         policy_85 = json.loads((ROOT / 'hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_8_5_0.json')
                                .read_text(encoding='utf-8'))
         rows_85 = {e['upstream_name']: e for e in policy_85['tools']}
         self.assertNotEqual(rows_85['ha_get_skill_guide']['description'], expected)
 
-    async def test_91_parity_rows_public_surface_matches_85(self):
+    async def test_92_parity_rows_public_surface_matches_85(self):
         ours = {t.name: t for t in await self.server.list_tools() if t.name in ENT_TOOLS}
         baseline = Transport(previous.capture('8.5.0')['tools'], '8.5.0')
         gateway = UpstreamReadGateway()
@@ -609,107 +664,111 @@ class Parity91Tests(ParityBase):
 
 
 # ---------------------------------------------------------------------------
-# 8.5.0: today's surface is unchanged (pass-through, no 9.1 row consulted)
+# 9.1.0 cases whose guarded outcome the 9.2.0 key layer changes
 # ---------------------------------------------------------------------------
-class Parity85Tests(ParityBase):
-    version = '8.5.0'
+class EntitiesPending91Tests(ParityBase):
+    """Shipped 9.1.0 cases kept unedited on their 9.1.0 templates (ANSWER
+    20261121-2318-01 item 4; inbox item 20261122-0118-01). On 9.2.0 the
+    entity-envelope ``warnings`` key is outside the reviewed key set (S10 E1/E1-R
+    ruling), so it is withheld and counted and the read reports complete
+    where 9.1.0 reported partial; the overview's upstream-warnings
+    disclosure is lost the same way."""
 
-    async def assert_passthrough(self, name, args, template, *, partial=False):
-        result = await self.call(name, args, wrap(template))
-        self.assert_success(result, name, partial=partial)
-        self.assert_sent(name, args)
-        self.assertEqual(result['data'], template)
-        return result
+    version = '9.1.0'
 
-    async def test_85_parity_row_13_entity(self):
-        result = await self.assert_passthrough('ha_get_entity', {'entity_id': 'light.synthetic_lamp'},
-                                               V85['ha_get_entity']['single'])
-        self.assertNotIn('uses_device_name', result['data']['entity_entry'])  # not fabricated
-        await self.assert_unknown_key_refused('ha_get_entity', {'entity_id': 'light.synthetic_lamp'})
-        await self.assert_upstream_error_fails('ha_get_entity', {'entity_id': 'light.synthetic_absent'})
-
-    async def test_85_parity_row_14_exposure(self):
-        await self.assert_passthrough('ha_get_entity_exposure', {'entity_id': 'light.synthetic_lamp'},
-                                      V85['ha_get_entity_exposure']['single'])
-        await self.assert_unknown_key_refused('ha_get_entity_exposure', {})
-        await self.assert_upstream_error_fails('ha_get_entity_exposure', {})
-
-    async def test_85_parity_row_17_overview(self):
-        result = await self.assert_passthrough('ha_get_overview', {}, V85['ha_get_overview']['minimal'])
-        self.assertIn('tool_discovery', result['data'])  # 8.5 surface unchanged
+    async def test_91_parity_row_17_overview_partial_disclosed(self):
+        template = V91['ha_get_overview']['partial']
+        result = await self.call('ha_get_overview', {}, wrap(template))
+        self.assert_success(result, 'ha_get_overview', partial=True)
         self.assertNotIn('mcp_client', result['data'])
+        self.assertEqual(result['warnings'], [ent.VISIBLE_SCOPE, ent.UPSTREAM_PARTIAL, ent.UPSTREAM_WARNINGS])
+        self.assertNotIn('Services unavailable', json.dumps(result['warnings']))
+
+    async def test_91_parity_row_20_todo_unavailable_disclosed(self):
+        template = V91['ha_get_todo']['unavailable_items']
+        result = await self.call('ha_get_todo', {'entity_id': 'todo.synthetic_list'}, wrap(template))
+        self.assert_success(result, 'ha_get_todo', partial=True)
+        self.assertEqual(result['data']['items'], template['items'])
+        self.assertEqual(result['warnings'], [ent.UPSTREAM_WARNINGS])
+
+    async def test_91_parity_row_21_zone_gaps_disclosed(self):
+        template = V91['ha_get_zone']['list_with_gaps']
+        result = await self.call('ha_get_zone', {}, wrap(template))
+        self.assert_success(result, 'ha_get_zone', partial=True)
+        self.assertEqual(result['warnings'], [ent.UPSTREAM_WARNINGS])
+        self.assertNotIn('entity registry could not be read', json.dumps(result['warnings']))
+
+    async def test_91_parity_row_22_floors_areas_warnings_disclosed(self):
+        # The upstream-warnings subcase of test_91_parity_row_22_floors_areas_refusals.
+        partial = {**V91['ha_list_floors_areas']['all'], 'warnings': ['synthetic']}
+        result = await self.call('ha_list_floors_areas', {}, wrap(partial))
+        self.assert_success(result, 'ha_list_floors_areas', partial=True)
+        self.assertEqual(result['warnings'], [ent.UPSTREAM_WARNINGS])
+
+
+# ---------------------------------------------------------------------------
+# 9.2.0 known gap HAMCP-464 (ANSWER 20261122-0118-01)
+# ---------------------------------------------------------------------------
+class EntitiesKnownGap92Tests(ParityBase):
+    """The four EntitiesPending91Tests outcomes restated on 9.2.0. Each pins a
+    known result-truthfulness gap in the key layer, not accepted behaviour:
+    upstream writes a top-level ``warnings`` the reviewed key set does not
+    admit, so it is withheld and counted and completeness() never sees it."""
+
+    version = '9.2.0'
+
+    async def test_row17_overview_services_warning_withheld_stays_partial(self):
+        """Known gap HAMCP-464: the upstream `warnings` key is withheld and the read reports complete. The fix flips this to partial with a disclosure.
+
+        Here upstream ``partial`` is admitted, so the read stays partial; only
+        the upstream-warnings disclosure is missing."""
+        template = V92['ha_get_overview']['services_unavailable_partial']
+        result = await self.call('ha_get_overview', {}, wrap(template))
+        self.assert_success(result, 'ha_get_overview', partial=True,
+                            counts=NONE_WITHHELD | {'fields_withheld': 1, 'fields_dropped_by_policy': 3})
+        self.assert_sent('ha_get_overview', {})
+        self.assertEqual(result['warnings'], [ent.VISIBLE_SCOPE, ent.UPSTREAM_PARTIAL])
+        self.assertNotIn(ent.UPSTREAM_WARNINGS, result['warnings'])
+        self.assertNotIn('warnings', result['data'])
+        self.assertTrue(result['data']['partial'])
+        self.assertEqual(result['data']['system_summary'], template['system_summary'])
+        self.assertNotIn('Services unavailable', json.dumps(result))
+
+    async def test_row20_todo_unavailable_warning_withheld_reports_complete(self):
+        """Known gap HAMCP-464: the upstream `warnings` key is withheld and the read reports complete. The fix flips this to partial with a disclosure."""
+        args = {'entity_id': 'todo.synthetic_list'}
+        template = V92['ha_get_todo']['unavailable_items']
+        result = await self.call('ha_get_todo', args, wrap(template))
+        self.assert_success(result, 'ha_get_todo', counts=NONE_WITHHELD | {'fields_withheld': 1})
+        self.assert_sent('ha_get_todo', args)
         self.assertEqual(result['warnings'], [])
-        await self.assert_unknown_key_refused('ha_get_overview', {})
-        await self.assert_upstream_error_fails('ha_get_overview', {})
+        self.assertEqual(result['data'], {k: v for k, v in template.items() if k != 'warnings'})
+        self.assertNotIn('is unavailable', json.dumps(result))
 
-    async def test_85_skill_guide_three_tier_positive(self):
-        tiers = V85['ha_get_skill_guide']
-        result = await self.assert_passthrough('ha_get_skill_guide', {}, tiers['tier1'])
-        self.assertEqual(result['data']['skills'][0]['skill'], BP)
-        result = await self.assert_passthrough('ha_get_skill_guide', {'skill': BP}, tiers['tier2'])
-        self.assertEqual([f['name'] for f in result['data']['files']], ['SKILL.md', 'references/synthetic.md'])
-        args = {'skill': BP, 'file': 'SKILL.md'}
-        result = await self.call('ha_get_skill_guide', args, wrap(tiers['tier3']))
-        self.assertTrue(result['success'], result)
-        self.assert_sent('ha_get_skill_guide', args)
-        self.assertEqual(set(result['data']), set(tiers['tier3']))
-        self.assertEqual(result['data']['skill_content_hint'], tiers['tier3']['skill_content_hint'])
-        self.assertTrue(result['data']['content'].startswith(f'Acknowledgment key: {ACK_KEY} '))
-        # Same shared-sanitizer treatment of the acknowledgement line as 9.1.
-        self.assertEqual(result['warnings'], [REDACTION_WARNING])
-
-    async def test_85_skill_guide_three_tiers(self):
-        # Design section 8 name for the row 18 three-tier positive.
-        await self.test_85_skill_guide_three_tier_positive()
-
-    async def test_85_parity_row_18_skill_guide(self):
-        await self.assert_unknown_key_refused('ha_get_skill_guide', {})
-        await self.assert_upstream_error_fails('ha_get_skill_guide', {'skill': 'synthetic-other-skill'},
-                                               'RESOURCE_NOT_FOUND')
-
-    async def test_85_parity_row_19_state(self):
-        await self.assert_passthrough('ha_get_state', {'entity_id': 'light.synthetic_lamp'},
-                                      V85['ha_get_state']['single'])
-        await self.assert_unknown_key_refused('ha_get_state', {'entity_id': 'light.synthetic_lamp'})
-        await self.assert_upstream_error_fails('ha_get_state', {'entity_id': 'light.synthetic_absent'},
-                                               'ENTITY_NOT_FOUND')
-
-    async def test_85_thread_credential_generic_attribute_redacted(self):
-        await self.assert_thread_credential_attribute_redacted(V85['ha_get_state']['single'])
-
-    async def test_85_parity_row_20_todo(self):
-        await self.assert_passthrough('ha_get_todo', {'entity_id': 'todo.synthetic_list', 'status': 'needs_action'},
-                                      V85['ha_get_todo']['items'])
-        result = await self.call('ha_get_todo', {'entity_id': 'todo.synthetic_list', 'status': ['completed']},
-                                 wrap(V85['ha_get_todo']['items']))
-        self.assert_refused_unsent(result)
-        await self.assert_upstream_error_fails('ha_get_todo', {})
-
-    async def test_85_parity_row_21_zone(self):
-        result = await self.assert_passthrough('ha_get_zone', {}, V85['ha_get_zone']['list'])
-        self.assertNotIn('entity_id', result['data']['zones'][0])  # not fabricated
-        await self.assert_unknown_key_refused('ha_get_zone', {})
-        await self.assert_upstream_error_fails('ha_get_zone', {'zone_id': 'synthetic_absent'}, 'RESOURCE_NOT_FOUND')
-
-    async def test_85_parity_row_22_floors_areas(self):
-        await self.assert_passthrough('ha_list_floors_areas', {}, V85['ha_list_floors_areas']['all'])
-        await self.assert_unknown_key_refused('ha_list_floors_areas', {})
-        await self.assert_upstream_error_fails('ha_list_floors_areas', {})
-
-    async def test_85_parity_row_23_services(self):
-        await self.assert_passthrough('ha_list_services', {'domain': 'light'}, V85['ha_list_services']['light'])
-        await self.assert_unknown_key_refused('ha_list_services', {})
-        await self.assert_upstream_error_fails('ha_list_services', {})
-
-    async def test_85_parity_row_24_search(self):
-        result = await self.assert_passthrough('ha_search', {'query': 'synthetic lamp'}, V85['ha_search']['no_warnings'])
+    async def test_row21_zone_gaps_warning_withheld_reports_complete(self):
+        """Known gap HAMCP-464: the upstream `warnings` key is withheld and the read reports complete. The fix flips this to partial with a disclosure."""
+        template = V92['ha_get_zone']['list_with_gaps']
+        result = await self.call('ha_get_zone', {}, wrap(template))
+        self.assert_success(result, 'ha_get_zone', counts=NONE_WITHHELD | {'fields_withheld': 1})
+        self.assert_sent('ha_get_zone', {})
         self.assertEqual(result['warnings'], [])
-        partial = {**V85['ha_search']['no_warnings'], 'partial': True}
-        result = await self.call('ha_search', {'query': 'synthetic lamp'}, wrap(partial))
-        self.assertEqual(result['metadata']['completeness'], 'partial')
-        self.assertEqual(result['warnings'], ['The upstream search reported partial coverage.'])
-        await self.assert_unknown_key_refused('ha_search', {'query': 'synthetic lamp'})
-        await self.assert_upstream_error_fails('ha_search', {'query': 'synthetic lamp'})
+        self.assertNotIn('warnings', result['data'])
+        self.assertEqual(result['data']['zones'],
+                         [{**row, 'friendly_name': row['name']} for row in template['zones']])
+        # No occupancy rows came back, so only the icon note applies.
+        self.assertEqual(result['data'][ent_92.NOTES], [ent_92.ZONE_ICON_NOTE])
+        self.assertNotIn('persons) is missing', json.dumps(result))
+
+    async def test_row22_floors_area_fields_warning_withheld_reports_complete(self):
+        """Known gap HAMCP-464: the upstream `warnings` key is withheld and the read reports complete. The fix flips this to partial with a disclosure."""
+        args = {'area_fields': ['synthetic_typo']}
+        template = V92['ha_list_floors_areas']['area_fields_unmatched']
+        result = await self.call('ha_list_floors_areas', args, wrap(template))
+        self.assert_success(result, 'ha_list_floors_areas', counts=NONE_WITHHELD | {'fields_withheld': 1})
+        self.assert_sent('ha_list_floors_areas', args)
+        self.assertEqual(result['warnings'], [])
+        self.assertEqual(result['data'], {k: v for k, v in template.items() if k != 'warnings'})
+        self.assertNotIn('matched no record keys', json.dumps(result))
 
 
 # ---------------------------------------------------------------------------
@@ -971,6 +1030,28 @@ class FixtureProvenanceTests(unittest.TestCase):
                 name = entry['receipt'].rsplit('/', 1)[1]
                 self.assertEqual(entry['sha256'], SUMS[f'receipts/{name}'], key)
 
+
+    def test_92_every_template_has_provenance(self):
+        declared = PROVENANCE_92['fixtures']
+        self.assertEqual(set(RESPONSES_92), {'v92'})
+        seen = set()
+        for tool, cases in V92.items():
+            self.assertIn(tool, ENT_TOOLS)
+            for case in cases:
+                key = f'v92/{tool}/{case}'
+                seen.add(key)
+                entry = declared[key]
+                self.assertEqual(entry['class'], 'S', key)
+                self.assertTrue(entry['sources'], key)
+                for source in entry['sources']:
+                    # Every citation names a hashed 9.2.0 source file.
+                    self.assertIn(source.split(':', 1)[0], PROVENANCE_92['source_files'], key)
+        self.assertEqual(set(declared), seen)
+        self.assertEqual(set(V92), set(ENT_TOOLS))
+        self.assertEqual(PROVENANCE_92['upstream']['version'], '9.2.0')
+        self.assertEqual(PROVENANCE_92['upstream']['source_commit'], reads_9_2.SOURCE)
+        for path, digest in PROVENANCE_92['source_files'].items():
+            self.assertRegex(digest, r'^[0-9a-f]{64}$', path)
 
 if __name__ == '__main__':
     unittest.main()

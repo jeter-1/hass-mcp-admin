@@ -1,0 +1,71 @@
+{
+  "provenance_model": "hamcp319-fixture-provenance-v1",
+  "area": "typed",
+  "consumer": "tests/test_hamcp319_typed_writes.py",
+  "fixture_file": "responses.json",
+  "upstream": {
+    "name": "ha-mcp",
+    "version": "9.2.0",
+    "registry_entry": "ha-mcp-v9.2.0-9de5bf6c",
+    "source_commit": "51e3aac788482a081807591cd5d58d07dc4e540b"
+  },
+  "generation": "Hand-written structured-content templates transcribed from the pinned 9.2.0 source (read only, never executed). Every cited range was re-read in the 9.2.0 file; the template text is unchanged from the 9.1.0 transcription. These are not captured records and carry no hashes; placeholders are filled per synthetic call by the test peer. The listed sha256 values identify the pinned source files the line citations refer to.",
+  "source_files": {
+    "src/ha_mcp/tools/tools_service.py": "47a8112f0aa5e399cfcd3b2b22b71c389f0dc4bc91954e8d81fd8391dea49764",
+    "src/ha_mcp/client/rest_client.py": "27809238157dd1593cbba7bca1ad1a71491cf953645b3459622c56b0cae4275c",
+    "src/ha_mcp/tools/response_helpers.py": "514071e5194f6370016edf9cc1b7576483012537649ae9ff2c807a911fb2717f",
+    "src/ha_mcp/tools/search/state.py": "4e431b58a1ea7b9a3f4f3af01d3cefa61ad13d7c30011090d08e2e1badd8b8e6",
+    "src/ha_mcp/tools/tools_services.py": "85993e53465529b0cc209535f3a77945e94cc86014e6f7bc88cc22473737cc3b"
+  },
+  "fixtures": {
+    "templates/call_service_success_changed_states": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_service.py:1947-1952 (wait=false gives should_wait=false)",
+        "src/ha_mcp/tools/tools_service.py:1713-1714 (no wait: _maybe_component_call_service returns None, legacy REST path)",
+        "src/ha_mcp/tools/tools_service.py:2005-2019 (service-mode success envelope; warnings only when present; service_response only with has_response_envelope)",
+        "src/ha_mcp/tools/tools_service.py:1039-1040 (return_response=false: result passes through, no envelope)",
+        "src/ha_mcp/tools/response_helpers.py:119-121,148-179 (compact result drops context and last_* keys)"
+      ]
+    },
+    "templates/call_service_nonadmin_empty_list": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/client/rest_client.py:807 (non-admin websocket path, return_response=false returns [])",
+        "src/ha_mcp/tools/response_helpers.py:148-149 (empty list returned unchanged)",
+        "src/ha_mcp/tools/tools_service.py:2005-2019 (success envelope)"
+      ]
+    },
+    "templates/call_service_nonadmin_envelope": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/client/rest_client.py:804-806 (non-admin websocket path, return_response=true returns {changed_states: [], service_response})",
+        "src/ha_mcp/tools/tools_service.py:2005-2019 (success envelope)"
+      ],
+      "caveat": "The typed wrappers always send return_response=false, and with return_response=false 9.2.0 never builds this envelope (tools_service.py:1039-1040). Placing it under result is conservative coverage that design rule 7 requires; it is not a shape 9.2.0 produces on the typed path."
+    },
+    "templates/call_service_timeout_partial": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_service.py:824-866 (_build_timeout_response; return_response=false omits service_response)",
+        "src/ha_mcp/tools/tools_service.py:1134-1137 (REST timeout becomes the partial envelope)"
+      ]
+    },
+    "templates/get_state": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/search/state.py:116-136 (single-entity projection, always wrapped)",
+        "src/ha_mcp/tools/response_helpers.py:393-434,471-479 (data/metadata wrapper; last_updated converted to local time with offset)"
+      ]
+    },
+    "templates/list_services_summary": {
+      "class": "S",
+      "sources": [
+        "src/ha_mcp/tools/tools_services.py:506-519 (summary envelope)",
+        "src/ha_mcp/tools/tools_services.py:557-562 (summary entry name, description, domain, service)",
+        "src/ha_mcp/tools/tools_services.py:481,486,227-235 (field-metadata warnings only for detail_level full; warnings key omitted when empty)",
+        "src/ha_mcp/tools/response_helpers.py:271-292 (pagination metadata)"
+      ]
+    }
+  }
+}

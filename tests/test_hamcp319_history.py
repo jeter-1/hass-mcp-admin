@@ -9,7 +9,8 @@ the 9.1 shapes (equal in every real-Core 9.2.0 receipt,
 ``docs/evidence/hamcp371/s6``) and adds three counts. The shipped 8.5 public
 result each 9.2.0 result must reach is the committed 8.5.0 side of the same
 scenario, which the 8.5 gateway passed through unchanged. The fixtures are
-class S (``tests/fixtures/ha_mcp_9_1_0/history/provenance.json``). Synthetic
+class S (``tests/fixtures/ha_mcp_9_2_0/history/provenance.json``, cited at
+ha-mcp 9.2.0 ``51e3aac7``; the 8.5.0 sides keep their 8.5.0 citations). Synthetic
 data and credentials only; no live Home Assistant, no network.
 """
 from __future__ import annotations
@@ -42,10 +43,10 @@ from test_ha_mcp_production_readmission import _GatewayTransport, _settings  # n
 from support.ha_mcp_captures import capture  # noqa: E402  (HAMCP-437)
 
 FIXTURES = json.loads(
-    (ROOT / "tests/fixtures/ha_mcp_9_1_0/history/responses.json").read_text("utf-8")
+    (ROOT / "tests/fixtures/ha_mcp_9_2_0/history/responses.json").read_text("utf-8")
 )
 PROVENANCE = json.loads(
-    (ROOT / "tests/fixtures/ha_mcp_9_1_0/history/provenance.json").read_text("utf-8")
+    (ROOT / "tests/fixtures/ha_mcp_9_2_0/history/provenance.json").read_text("utf-8")
 )
 SCENARIOS = FIXTURES["scenarios"]
 TOOL = "ha_get_history"
@@ -90,7 +91,7 @@ def error(payload):
 
 def scenario(name, version):
     entry = SCENARIOS[name]
-    side = "ha_mcp_9_1_0" if version in ("9.1.0", CURRENT) else "ha_mcp_8_5_0"
+    side = "ha_mcp_9_2_0" if version in ("9.1.0", CURRENT) else "ha_mcp_8_5_0"
     return deepcopy(entry["arguments"]), deepcopy(entry[side])
 
 
@@ -555,9 +556,9 @@ class Row16RefusalTests(_Base):
             with self.subTest(payload=payload):
                 self.assertEqual(history.completeness(payload), (True, [history.UNVERIFIED_WARNING]))
 
-    def test_91_parity_row_16_fixture_provenance_covers_every_fixture(self):
+    def test_92_parity_row_16_fixture_provenance_covers_every_fixture(self):
         named = set(PROVENANCE["fixtures"])
-        expected = {f"scenarios/{name}/{side}" for name in SCENARIOS for side in ("ha_mcp_9_1_0", "ha_mcp_8_5_0")}
+        expected = {f"scenarios/{name}/{side}" for name in SCENARIOS for side in ("ha_mcp_9_2_0", "ha_mcp_8_5_0")}
         expected.add("refusals_8_5_0/statistics_invalid_period")
         self.assertEqual(named, expected)
         self.assertEqual({entry["class"] for entry in PROVENANCE["fixtures"].values()}, {"S"})
