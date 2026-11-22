@@ -1111,6 +1111,11 @@ class AssemblyOwnerOverrideAndRetry(unittest.TestCase):
 
 
 class PrepareWithhold(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        # Its temporary directories are under .artifacts, which a fresh checkout lacks; this class runs before the others that make it.
+        (ROOT / '.artifacts').mkdir(exist_ok=True)
+
     def test_withhold_admission(self):
         import core_evidence_workflow as w
         with patch.dict(os.environ, {'GITHUB_EVENT_NAME': 'workflow_dispatch'}, clear=True):
@@ -1281,6 +1286,8 @@ class ManifestAndWorkflow(unittest.TestCase):
         self.assertEqual(w['jobs']['handoff']['permissions'],{'contents':'write','actions':'write'})
         for name,job in w['jobs'].items():
             self.assertNotIn('environment',job);self.assertEqual(job['runs-on'],'ubuntu-24.04')
+            # HAMCP-443 part C (#478 r1 F1): this workflow feeds signing, so a failed need must skip every job that needs it; an exception needs review.
+            self.assertNotRegex(job.get('if',''),r'\b(always|failure|cancelled|success)\s*\(',name)
             self.assertNotIn('secrets.',json.dumps(job))
             for step in job['steps']:
                 if 'uses' in step:self.assertRegex(step['uses'],r'@[0-9a-f]{40}$')
@@ -1324,7 +1331,8 @@ class ManifestAndWorkflow(unittest.TestCase):
                                          'path':'${{ runner.temp }}/core-evidence-group-results/${{ matrix.group }}.json\n'
                                                 '${{ runner.temp }}/core-evidence-group-results/cleanup-${{ matrix.group }}.json\n',
                                          'if-no-files-found':'error','retention-days':14})
-        self.assertEqual(jobs['lanes']['needs'],['prepare','lane-groups'])
+        self.assertEqual((jobs['lanes']['needs'],jobs['lanes']['if']),
+                         (['prepare','lane-groups'],"needs.prepare.outputs.run == 'true'"))
         index=next(i for i,s in enumerate(lane_steps) if s.get('id')=='candidate')
         self.assertEqual(lane_steps[index-1],{'name':"Download this case's lane-groups artifacts",
                                               'uses':'actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131',
