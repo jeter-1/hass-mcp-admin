@@ -1,0 +1,12 @@
+{
+  "purpose": "The base policy input for the upstream review-candidate script tests (tests/test_upstream_review_candidate.py; HAMCP-437 I2a-D, ANSWER 20261122-0005-01). The shipped runtime holds only the 9.2.0 policy; the 8.0.0 capture input stays committed at docs/evidence/upstream-read-compatibility/ha-mcp-8.0.0.json.",
+  "source_commit": "0f1adcb56b080c74ababfea84cf9892479a3b1cc",
+  "files": {
+    "upstream_tool_policy_8_0_0.json": {
+      "source_path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_8_0_0.json",
+      "generation": "byte copy by git show <source_commit>:<source_path>",
+      "sha256": "sha256:c6d5e0685b2ea87d95e94e23db07d26b7cd1c72cd2590e71c63ee5e31f245e3b"
+    }
+  },
+  "scope": "Test input only. Never loaded as the shipped policy or registry."
+}
