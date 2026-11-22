@@ -383,11 +383,12 @@ class Lane:
                     "--read-only", "--tmpfs", "/tmp", "--tmpfs", "/home/mcpuser/.ha-mcp",
                     "-e", "HOMEASSISTANT_TOKEN",
                     "-e", "HOMEASSISTANT_URL=http://dashboard-core:8123", "-e", "MCP_HOST=0.0.0.0",
-                    "-e", "MCP_PORT=8086", "-e", "MCP_SECRET_PATH=/disposable-dashboard-mcp",
+                    "-e", "MCP_PORT=8086", "-e", "MCP_SECRET_PATH=/synthetic-upstream-secret/mcp",
                     "-e", "HA_MCP_DISABLE_UPDATE_CHECK=1", "-e", "HA_MCP_DISABLE_SETTINGS_UI=1",
                     "-e", "ENABLE_AUTO_BACKUP=false", "-e", "ENABLE_TOOL_SEARCH=false",
                     "-e", "PYTHONDONTWRITEBYTECODE=1", "-e", "MCP_HEALTHZ=true", MCP, "ha-mcp-web", token=token)
-        return self.owned_url(self.upstream, 8086) + "/disposable-dashboard-mcp"
+        # HAMCP-437: ha-mcp 9.2.0 is admitted only on its strict-full selector, the secret path + /catalog/full.
+        return self.owned_url(self.upstream, 8086) + "/synthetic-upstream-secret/mcp/catalog/full"
 
     def cleanup(self):
         result = {"status": "NOT_NEEDED" if not self.attempted else "PASS", "resources": []}
