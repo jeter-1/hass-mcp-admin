@@ -388,6 +388,24 @@ class ReadListCoverageTests(unittest.TestCase):
             self.assertIsInstance(node, ast.Assign)
             self.assertTrue(reason)
 
+    def test_the_only_skip_is_membership_in_not_lane_routes(self):
+        # The pin above locks the set; this locks the one predicate that consults it (Cursor #473 F1).
+        tree = ast.parse(Path(__file__).read_text(encoding="utf-8"))
+        lanes = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "Lanes")
+        method = next(n for n in lanes.body if isinstance(n, ast.FunctionDef) and n.name == "dependencies")
+        loops = [n for n in ast.walk(method) if isinstance(n, ast.For) and isinstance(n.iter, ast.Name)
+                 and n.iter.id == "found" and isinstance(n.target, ast.Tuple)
+                 and [getattr(e, "id", None) for e in n.target.elts] == ["where", "name", "node"]]
+        self.assertEqual(len(loops), 1)
+        skips = [n for n in ast.walk(method) if isinstance(n, ast.Continue)]
+        self.assertEqual(len(skips), 1)
+        skip = loops[0].body[0]
+        self.assertIsInstance(skip, ast.If)
+        expected = ast.parse('("scripts/" + where + ".py", name) in NOT_LANE_ROUTES', mode="eval").body
+        self.assertEqual(ast.dump(skip.test), ast.dump(expected))
+        self.assertEqual((len(skip.body), skip.orelse), (1, []))
+        self.assertIs(skip.body[0], skips[0])
+
     def test_a_new_integration_in_a_lane_configuration_is_an_undisclosed_gap(self):
         config = core_lane_host.CONFIGS["security_metadata"] + "otbr:\n"
         with mock.patch.dict(core_lane_host.CONFIGS, {"security_metadata": config}):
