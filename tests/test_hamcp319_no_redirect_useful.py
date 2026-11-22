@@ -26,9 +26,9 @@ Upstream response shapes come from committed fixtures only:
   (tests/fixtures/ha_mcp_9_1_0/dashboard/envelopes.json), which describe
   9.2.0 by source identity (``test_hamcp319_dashboard`` NINE_TWO note).
 * Typed power: ``test_hamcp319_typed_writes.Peer.respond`` for 9.2.0, which
-  serves the synthetic, not source-cited, shapes that ``test_typed_power``
-  and ``test_hamcp371_write_providers_9_2`` use on 9.2.0; the 9.1.0 TW
-  templates are source-cited to 9.1.0 only.
+  renders the templates in tests/fixtures/ha_mcp_9_2_0/typed/responses.json,
+  transcribed from the pinned 9.2.0 source (see its provenance.json, pinned
+  to 51e3aac7).
 
 Nothing here contacts Home Assistant or a deployed endpoint; all secrets,
 credentials and canaries are synthetic.
