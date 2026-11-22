@@ -843,18 +843,41 @@ class AssemblyProducerMap(unittest.TestCase):
             with self.subTest(name):
                 self.refuse('unmapped producer: ' + name, change)
 
-    def test_missing_lane_artifact_refuses_but_missing_run_receipt_is_false(self):
+    def test_missing_run_receipt_is_false(self):
+        # An absent lane-groups artifact is likewise not passed (#472 correction batch, option (a));
+        # AssemblyOwnerOverrideAndRetry proves that against a baseline holding the lane profiles.
         import core_evidence_workflow as w
-        import shutil
-        for name in e.LANE_GROUPS:
-            with self.subTest(name):
-                self.refuse('lane-groups artifact missing: core-evidence-group-coverage-' + name,
-                            lambda r, s, name=name: shutil.rmtree(self.lane(r, name)))
         with tempfile.TemporaryDirectory() as tmp:
             prepared, receipts, env, _ = assembly_inputs(Path(tmp), ctx('main'), 'coverage')
             (receipts / 'general.json').unlink()
             with patch.dict(os.environ, env, clear=True), self.assertRaisesRegex(ValueError, 'acceptance requires'):
                 w.assemble(prepared, receipts, 'coverage')
+
+    def test_a_missing_artifact_loosens_no_other_producer_check(self):
+        # With helper_value's artifact absent, the wrong-producer, duplicate, stray and
+        # contents-mismatch refusals still refuse.
+        import shutil
+        def wrong_producer(r, s):
+            (self.lane(r) / 'helper_value.json').rename(r / 'helper_value.json'); shutil.rmtree(self.lane(r))
+        def duplicate(r, s):
+            shutil.rmtree(self.lane(r))
+            shutil.copy(self.lane(r, 'marketplace_read') / 'marketplace_read.json', r / 'marketplace_read.json')
+        def stray(r, s):
+            shutil.rmtree(self.lane(r)); (r / 'notes.txt').write_text('x')
+        def other_case(r, s):
+            self.lane(r).rename(r / 'core-evidence-group-fixture-helper_value')
+        def contents(r, s):
+            shutil.rmtree(self.lane(r)); (self.lane(r, 'marketplace_read') / 'extra.json').write_text('{}')
+        def emptied(r, s):
+            shutil.rmtree(self.lane(r)); self.lane(r).mkdir()
+        for pattern, change in (('unmapped producer: helper_value.json', wrong_producer),
+                                ('unmapped producer: marketplace_read.json', duplicate),
+                                ('unmapped producer: notes.txt', stray),
+                                ('unmapped producer: core-evidence-group-fixture-helper_value', other_case),
+                                ('lane-groups artifact contents mismatch: marketplace_read', contents),
+                                ('lane-groups artifact contents mismatch: helper_value', emptied)):
+            with self.subTest(change.__name__):
+                self.refuse(pattern, change)
 
     def test_lane_artifact_must_hold_exactly_its_receipt_and_cleanup(self):
         import shutil
@@ -1013,12 +1036,34 @@ class AssemblyOwnerOverrideAndRetry(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'external dependency unavailable: thread_matter_topology'):
             self.run_assemble(self.production(['marketplace_read']), self.unavailable('thread_matter_topology'))
 
-    def test_withheld_group_artifact_is_still_required(self):
+    def test_absent_lane_artifacts_are_not_passed_with_no_refusal(self):
+        # #472 correction batch, option (a): CI at this head has no lane-groups job, so every
+        # lane group's artifact is absent; each such group is withheld, as at the base.
+        # HAMCP-443 part C adds the job and makes an absent artifact refuse.
         import shutil
         import core_evidence_workflow as w
-        with self.assertRaisesRegex(ValueError, 'lane-groups artifact missing'):
-            self.run_assemble(self.production(['marketplace_read']),
-                              lambda r, s: shutil.rmtree(r / w.producer_name('release', 'marketplace_read')))
+        for absent in [(name,) for name in e.LANE_GROUPS] + [e.LANE_GROUPS]:
+            with self.subTest(absent=absent):
+                def change(receipts, sha):
+                    for name in absent:
+                        shutil.rmtree(receipts / w.producer_name('release', name))
+                receipts, messages, run = self.run_assemble(self.production(), change)
+                evidence = e.read_json(receipts / 'candidate/core-review-evidence.json')
+                self.assertEqual({n for n, v in evidence['lane_groups'].items() if v is not True}, set(absent))
+                self.assertFalse(set(absent) & set(evidence['receipt_sha256']))
+                ids = {i for name in absent for i in e.groups()[name]}
+                self.assertEqual(evidence['withheld'], [p['capability_id'] for p in evidence['previous_capabilities']
+                                                        if p['capability_id'] in ids])
+                self.assertEqual(evidence['owner_withheld'], []); run.assert_called_once()
+
+    def test_withheld_group_with_no_artifact_stays_withheld(self):
+        import shutil
+        import core_evidence_workflow as w
+        receipts, messages, _ = self.run_assemble(self.production(['marketplace_read']),
+                                                  lambda r, s: shutil.rmtree(r / w.producer_name('release', 'marketplace_read')))
+        evidence = e.read_json(receipts / 'candidate/core-review-evidence.json')
+        self.assertEqual(evidence['owner_withheld'], ['marketplace_read'])
+        self.assertEqual(evidence['withheld'], ['core.marketplace_read'])
 
     def test_invalid_state_or_withhold_refuses(self):
         states = [{'acceptance': False, 'registry_exists': True},

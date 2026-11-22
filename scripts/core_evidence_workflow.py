@@ -342,22 +342,27 @@ def owned_names(value):
 def group_receipt_paths(receipts, case):
     """D8's fixed producer map. The seven lane groups come only from their own lane-groups
     artifact (exactly <group>.json and cleanup-<group>.json); the other groups only from this
-    lanes run's top level. A wrong producer, a duplicate or any stray entry refuses."""
+    lanes run's top level. A wrong producer, a duplicate or any stray entry refuses.
+
+    A lane group whose artifact is absent is not passed, as at the base: no workflow job
+    produces these artifacts yet. HAMCP-443 part C adds that job and, with it, makes an
+    absent artifact refuse."""
     run_groups = [name for name in groups() if name not in LANE_GROUPS]
     producers = {producer_name(case, name): name for name in LANE_GROUPS}
     allowed = {"cleanup.json"} | {name + ".json" for name in run_groups} | set(producers)
     present = {entry.name for entry in receipts.iterdir()}
     if present - allowed:
         raise ValueError("group receipt from an unmapped producer: " + ", ".join(sorted(present - allowed)))
-    if set(producers) - present:
-        raise ValueError("lane-groups artifact missing: " + ", ".join(sorted(set(producers) - present)))
     paths, cleanups = {}, {}
     for directory, name in producers.items():
         folder = receipts / directory
+        paths[name] = folder / (name + ".json")
+        if directory not in present:
+            continue  # assemble records the group as not passed
         if not folder.is_dir() or folder.is_symlink() or {e.name for e in folder.iterdir()} != {
                 name + ".json", "cleanup-" + name + ".json"}:
             raise ValueError("lane-groups artifact contents mismatch: " + name)
-        paths[name] = folder / (name + ".json"); cleanups[name] = folder / ("cleanup-" + name + ".json")
+        cleanups[name] = folder / ("cleanup-" + name + ".json")
     for name in run_groups:
         paths[name] = receipts / (name + ".json")
     if any(path.is_symlink() for path in [*paths.values(), *cleanups.values(), receipts / "cleanup.json"]):
