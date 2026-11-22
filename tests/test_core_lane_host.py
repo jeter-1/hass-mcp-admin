@@ -1,9 +1,10 @@
 """Offline checks of the shared local lane host and the explicit lane mode (HAMCP-443 D2/D5).
 
 No Docker, network, Home Assistant or production key. Every acceptance ``run()``
-takes ``mode`` as a required keyword: ``"ci"`` refuses until 443-B, anything but
-``"local"`` refuses, both before any argument is touched, and nothing in the
-environment chooses or changes the outcome. The seven local harnesses take
+takes ``mode`` as a required keyword: anything but ``"local"`` or ``"ci"`` refuses
+before any argument is touched, ``"ci"`` runs the D3 set-equality proof against
+the entry it is given before any client exists, and nothing in the environment
+chooses or changes the outcome. The seven local harnesses take
 their configuration and fixture paths from ``core_lane_host``, delegate the
 shared host steps to it, and keep their closed-lane refusal.
 """
@@ -37,7 +38,8 @@ import marketplace_read_contract_acceptance  # noqa: E402
 import security_metadata_contract_acceptance  # noqa: E402
 import thread_matter_topology_a2_acceptance  # noqa: E402
 import thread_matter_topology_contract_acceptance  # noqa: E402
-from core_release_evidence import read_json  # noqa: E402
+from core_lane_proof import ProofRefusal  # noqa: E402
+from core_release_evidence import groups as lane_host_groups, read_json  # noqa: E402
 
 # Each acceptance module and the keywords its run() takes besides mode.
 ACCEPTANCE = {
@@ -45,12 +47,21 @@ ACCEPTANCE = {
     marketplace_read_contract_acceptance: (),
     security_metadata_contract_acceptance: (),
     thread_matter_topology_contract_acceptance: (),
-    thread_matter_topology_a2_acceptance: ("expectations", "read_stub_record", "read_devices", "stub_control",
-                                           "stub_state", "reload_matter"),
+    thread_matter_topology_a2_acceptance: ("anchor", "expectations", "read_stub_record", "read_devices",
+                                           "stub_control", "stub_state", "reload_matter"),
     created_object_contract_acceptance: (),
     device_configuration_contract_acceptance: ("stub_url", "stub_hashes", "upstream_version"),
 }
 SCENE = "scene_create_delete"
+# Keywords given a real value: A2 checks its anchor before any Core command (HAMCP-443 D5).
+GIVEN = {"anchor": "2026.11.0"}
+# The lane group each acceptance module's CI-mode proof names (HAMCP-443 D3).
+GROUP = {helper_value_contract_acceptance: "helper_value", marketplace_read_contract_acceptance: "marketplace_read",
+         security_metadata_contract_acceptance: "security_metadata",
+         thread_matter_topology_contract_acceptance: "thread_matter_topology",
+         thread_matter_topology_a2_acceptance: "thread_matter_topology", created_object_contract_acceptance: SCENE,
+         device_configuration_contract_acceptance: "device_configuration_entity"}
+JOURNAL = ROOT / "upstream-trust/ha-core-release-registry.json"
 # The harnesses that own a host, keyed by their configuration in core_lane_host.CONFIGS.
 HOSTED = {"helper_value": helper, "marketplace_read": marketplace, "security_metadata": security,
           "thread_matter_topology": a1, "device_configuration_entity": device, "created_object": created_object}
@@ -82,13 +93,14 @@ def unmarked(**extra):
     return {**{k: v for k, v in os.environ.items() if k not in MARKERS}, **extra}
 
 
-def invoke(module, lane=None, **mode):
+def invoke(module, lane=None, entry=None, **mode):
     """Await one acceptance run() whose every other argument refuses any use."""
     head = (Untouchable() if lane is None else lane,) if module is created_object_contract_acceptance else ()
-    extras = {name: Untouchable() for name in ACCEPTANCE[module]}
+    extras = {name: GIVEN[name] if name in GIVEN else Untouchable() for name in ACCEPTANCE[module]}
+    entry = Untouchable() if entry is None else entry
 
     async def awaited():
-        return await module.run(*head, Untouchable(), Untouchable(), Untouchable(), **mode, **extras)
+        return await module.run(*head, Untouchable(), entry, Untouchable(), **mode, **extras)
     return asyncio.run(awaited())
 
 
@@ -118,11 +130,10 @@ class ModeIsRequired(unittest.TestCase):
                 invoke(module)
             self.assertIn("'mode'", str(caught.exception))
 
-    def test_ci_refuses_until_443_b_before_touching_anything(self):
+    def test_ci_runs_past_the_guard_into_the_proof(self):
         for module in ACCEPTANCE:
-            with self.subTest(module=module.__name__), self.assertRaises(NotImplementedError) as caught:
-                invoke(module, mode="ci")
-            self.assertEqual(str(caught.exception), "ci mode lands in 443-B")
+            with self.subTest(module=module.__name__), self.assertRaises(PastGuard):
+                invoke(module, lane=SCENE, mode="ci")
 
     def test_an_unknown_mode_refuses_before_touching_anything(self):
         for module in ACCEPTANCE:
@@ -137,20 +148,88 @@ class ModeIsRequired(unittest.TestCase):
             with self.subTest(module=module.__name__), self.assertRaises(PastGuard):
                 invoke(module, lane=SCENE, mode="local")
 
-    def test_every_harness_names_local(self):
+    def test_every_harness_names_its_own_mode(self):
+        """run() gets the harness's --mode and nothing else: exercise() defaults to local, _main passes args.mode."""
         for module in HARNESSES:
             with self.subTest(module=module.__name__):
+                nodes = list(ast.walk(tree(module)))
                 # The acceptance run(), imported by name or called through its module.
-                calls = [node for node in ast.walk(tree(module)) if isinstance(node, ast.Call) and (
+                calls = [node for node in nodes if isinstance(node, ast.Call) and (
                     isinstance(node.func, ast.Name) and node.func.id == "run"
                     or isinstance(node.func, ast.Attribute) and node.func.attr == "run"
                     and isinstance(node.func.value, ast.Name) and node.func.value.id == "acceptance")]
                 self.assertTrue(calls)
                 for node in calls:
-                    modes = [k.value for k in node.keywords if k.arg == "mode"]
-                    self.assertEqual(len(modes), 1)
-                    self.assertIsInstance(modes[0], ast.Constant)
-                    self.assertEqual(modes[0].value, "local")
+                    self.assertEqual([ast.unparse(k.value) for k in node.keywords if k.arg == "mode"], ["mode"])
+                parameter = inspect.signature(module.exercise).parameters["mode"]
+                self.assertIs(parameter.kind, inspect.Parameter.KEYWORD_ONLY)
+                self.assertEqual(parameter.default, "local")
+                passed = [ast.unparse(k.value) for node in nodes if isinstance(node, ast.Call)
+                          and isinstance(node.func, ast.Name) and node.func.id == "exercise"
+                          for k in node.keywords if k.arg == "mode"]
+                self.assertEqual(passed, ["args.mode"])
+                choices = [node.keywords for node in nodes if isinstance(node, ast.Call)
+                           and node.args and ast.unparse(node.args[0]) == "'--mode'"]
+                self.assertEqual([ast.unparse(k.value) for k in choices[0] if k.arg == "choices"],
+                                 ["('local', 'ci')"])
+
+
+def signed_entry(version="2026.11.0"):
+    from core_evidence_workflow import journal
+    signed, _ = journal(JOURNAL.read_bytes())
+    return next(x.to_mapping() for x in signed.accepted.entries if x.version == version)
+
+
+class CiModeProvesSetEquality(unittest.TestCase):
+    """HAMCP-443 D3 rules 1-3 run in each acceptance run() before configured, directory or a stub is touched."""
+
+    def without(self, group, change=None):
+        entry = signed_entry()
+        wanted = set(lane_host_groups()[group])
+        if change is None:
+            entry["capabilities"] = [ref for ref in entry["capabilities"] if ref["capability_id"] not in wanted]
+        else:
+            entry["capabilities"] = [change(ref) if ref["capability_id"] in wanted else ref
+                                     for ref in entry["capabilities"]]
+        return entry
+
+    def test_the_authenticated_baseline_passes_the_proof_into_the_lane(self):
+        for module, group in GROUP.items():
+            with self.subTest(module=module.__name__), self.assertRaises(PastGuard):
+                invoke(module, lane=SCENE, entry=signed_entry(), mode="ci")
+
+    def test_rule1_a_baseline_without_the_group_refuses_before_touching_anything(self):
+        for module, group in GROUP.items():
+            with self.subTest(module=module.__name__), self.assertRaises(ProofRefusal) as caught:
+                invoke(module, lane=SCENE, entry=self.without(group), mode="ci")
+            self.assertEqual(str(caught.exception), "group_not_in_baseline")
+
+    def test_rule3_the_compiled_profile_must_equal_the_signed_one(self):
+        def changed(ref):
+            return {**ref, "contract_fingerprint": "sha256:" + "0" * 64}
+        for module, group in GROUP.items():
+            with self.subTest(module=module.__name__), self.assertRaises(ProofRefusal) as caught:
+                invoke(module, lane=SCENE, entry=self.without(group, changed), mode="ci")
+            self.assertEqual(str(caught.exception), "extended_not_predecessor_plus_compiled")
+
+    def test_a_duplicated_baseline_profile_refuses(self):
+        for module, group in GROUP.items():
+            entry = signed_entry()
+            entry["capabilities"].append(dict(entry["capabilities"][0]))
+            with self.subTest(module=module.__name__), self.assertRaises(ProofRefusal) as caught:
+                invoke(module, lane=SCENE, entry=entry, mode="ci")
+            self.assertEqual(str(caught.exception), "baseline_duplicate_profile")
+
+    def test_local_mode_keeps_its_historical_count_check(self):
+        # The 38-profile baseline is not a local predecessor: local mode keeps its own count check and never
+        # reaches the proof. The device lane pins its clients first, so it touches configured before its check.
+        expected = {created_object_contract_acceptance: ValueError, device_configuration_contract_acceptance: PastGuard}
+        for module in GROUP:
+            with self.subTest(module=module.__name__), \
+                    mock.patch.object(module, "transition", side_effect=AssertionError("proof reached")), \
+                    self.assertRaises(expected.get(module, AssertionError)) as caught:
+                invoke(module, lane=SCENE, entry=signed_entry(), mode="local")
+            self.assertNotEqual(str(caught.exception), "proof reached")
 
 
 class EnvironmentDoesNotChooseTheMode(unittest.TestCase):
@@ -175,19 +254,33 @@ class EnvironmentDoesNotChooseTheMode(unittest.TestCase):
                         for marker in MARKERS:
                             self.assertNotIn(marker, node.value)
 
-    def test_the_host_passes_the_environment_on_only_for_removal(self):
-        nodes = list(ast.walk(tree(lane_host)))
+    def test_the_host_reads_the_environment_only_to_refuse_place_and_remove(self):
+        """The environment never chooses a mode: CI mode reads GITHUB_ACTIONS only to refuse off Actions
+        (ci_context) and RUNNER_TEMP only to place its run directory (ci_claim); local removal gets it passed on."""
+        module = tree(lane_host)
+        nodes = list(ast.walk(module))
+        functions = {node.name: {id(n) for n in ast.walk(node)} for node in nodes if isinstance(node, ast.FunctionDef)}
+        reads = {"ci_context": "'GITHUB_ACTIONS'", "ci_claim": "'RUNNER_TEMP'"}
         passed = {id(arg) for node in nodes if isinstance(node, ast.Call)
                   and isinstance(node.func, ast.Attribute) and node.func.attr == "local_remove" for arg in node.args}
         uses = [node for node in nodes if isinstance(node, ast.Attribute) and node.attr == "environ"]
-        self.assertEqual(len(uses), 1)
-        self.assertIn(id(uses[0]), passed)
+        self.assertEqual(len(uses), 3)
+        for use in uses:
+            if not any(id(use) in functions[name] for name in reads):
+                self.assertIn(id(use), passed)
+        for name, key in reads.items():
+            gets = [node for node in nodes if id(node) in functions[name] and isinstance(node, ast.Call)
+                    and ast.unparse(node.func) == "os.environ.get"]
+            self.assertEqual([ast.unparse(node.args[0]) for node in gets], [key])
+            self.assertEqual(sum(id(use) in functions[name] for use in uses), 1)
         for node in nodes:
             self.assertFalse(isinstance(node, (ast.Attribute, ast.Name))
                              and getattr(node, "attr", getattr(node, "id", None)) in {"environb", "getenv"})
             if isinstance(node, ast.Constant) and isinstance(node.value, str):
                 for marker in MARKERS:
-                    self.assertNotIn(marker, node.value)
+                    if marker in node.value:
+                        # Only ci_context's refusal names a marker, and only the Actions one.
+                        self.assertEqual((node.value, id(node) in functions["ci_context"]), ("GITHUB_ACTIONS", True))
 
 
 class ClosedLaneKept(unittest.TestCase):

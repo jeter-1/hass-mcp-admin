@@ -31,6 +31,7 @@ from ha_mcp_engineering.signed_registry import canonical_json
 from ha_mcp_engineering.providers.upstream_read_gateway import UpstreamReadGateway
 from ha_mcp_engineering.upstream_tool_policy import load_reviewed_upstream_release_registry
 
+from core_lane_proof import transition
 import lane_failure_diagnostics as diagnostics
 
 CAPABILITY = "core.typed_helper_value_operation"
@@ -102,15 +103,17 @@ class ObservedProvider(HelperProvider):
 async def run(configured, entry, directory, *, mode):
     """Run only helper_value; caller owns startup, identity and teardown proof."""
     # The caller names the mode; nothing here reads the environment to choose one.
-    if mode == "ci":
-        raise NotImplementedError("ci mode lands in 443-B")
-    if mode != "local":
+    if mode not in ("local", "ci"):
         raise ValueError("lane_mode_unknown")
     key = Ed25519PrivateKey.generate()
     now = datetime.now(timezone.utc)
     evidence = b"Disposable helper-value test authority; not registry publication authority"
-    old = entry["capabilities"]
-    assert len(old) == 31 and CAPABILITY not in {p["capability_id"] for p in old}
+    if mode == "ci":
+        # D3 rules 1-3: the authenticated baseline minus exactly this group, then its compiled profile.
+        old, _ = transition(entry, "helper_value", [reference()])
+    else:
+        old = entry["capabilities"]
+        assert len(old) == 31 and CAPABILITY not in {p["capability_id"] for p in old}
     runtimes, services = [], []
 
     @diagnostics.checked("helper_setup", "authority_setup")
@@ -298,7 +301,7 @@ async def run(configured, entry, directory, *, mode):
             assert not service.locks.records() and service.health()["nonterminal_tasks"] == 0
             assert service.health()["fallback_count"] == after.health_snapshot()["fallback_count"] == 0
         return {"result": "PASS", "group": "helper_value", "profile": reference(),
-                "authority_transition": [31, 32], "predecessor_writes": 0,
+                "authority_transition": [len(old), len(old) + 1], "predecessor_writes": 0,
                 "operations": outcomes, "invalid_requests": 4, "duplicate_writes": 0,
                 "lost_response_verified_without_replay": True,
                 "unverifiable_effect_not_success": True, "reopened_recovery_read_only": True,

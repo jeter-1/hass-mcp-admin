@@ -23,6 +23,13 @@ DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
 CONTEXT_ENV = "CORE_EVIDENCE_CONTEXT"
 PROVENANCE_FIELDS = frozenset({"entry_id", "server_name", "version", "source_commit", "source_tree",
                               "source_archive_sha256", "image_index_digest", "architecture_manifests"})
+# HAMCP-443 D1/D8: the seven groups the lane-groups job proves, one artifact per case and group.
+# Every other group comes from the lanes run itself (the fixed producer map).
+LANE_GROUPS = ("helper_value", "marketplace_read", "security_metadata", "device_configuration_entity",
+               "scene_create_delete", "created_helper_delete", "thread_matter_topology")
+# D6: the only group an owner dispatch may withhold; its Core reaches an external store.
+WITHHOLDABLE = frozenset({"marketplace_read"})
+EXTERNAL_DEPENDENCY = "external_dependency_unavailable"
 
 
 def canonical(value):
@@ -100,7 +107,7 @@ def equal_source_hashes(left, right):
 def groups():
     value = read_json(ROOT / "ci/core-evidence-groups.json")
     flat = [p for refs in value.values() for p in refs]
-    if len(flat) != len(set(flat)) or len(value["general"]) != 19:
+    if len(flat) != len(set(flat)) or len(value["general"]) != 19 or not set(LANE_GROUPS) <= set(value):
         raise ValueError("invalid evidence groups")
     return value
 
@@ -115,8 +122,17 @@ def version_key(value):
     return tuple(map(int, value.split(".")))
 
 
-def select_release(releases, published, runs, requested=None, *, retry_refused=False):
-    """Pending/success suppress; O3 refusal is terminal except explicit retry."""
+def select_release(releases, published, runs, requested=None, *, retry_refused=False, withhold=()):
+    """Pending/success suppress; O3 refusal is terminal except explicit retry.
+
+    A completed attempt that neither succeeded nor refused (for example assemble's
+    external_dependency_unavailable failure) stays selectable for the next schedule.
+    An owner withhold (D6) binds to one explicitly requested release and only to
+    WITHHOLDABLE groups; it never changes which release is selected.
+    """
+    if withhold and (not requested or len(set(withhold)) != len(withhold)
+                     or not set(withhold) <= WITHHOLDABLE):
+        raise ValueError("withhold requires an explicit release and only withholdable groups")
     eligible = {r["tag_name"] for r in releases if not r.get("draft") and not r.get("prerelease")
                 and stable_version(r.get("tag_name"))}
     if requested and requested not in eligible:

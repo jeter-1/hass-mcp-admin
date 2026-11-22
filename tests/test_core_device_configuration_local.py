@@ -795,6 +795,27 @@ class StubAssets(unittest.TestCase):
         self.build_archive(commit="0" * 40)
         self.refused("stub_dump_source_mismatch")
 
+    def test_ci_reads_the_dumps_from_the_release_archive_and_refuses_any_drift(self):
+        # D5: the dumps are the anchor's; CI mode finds them under the release's commit.
+        release = "1" * 40
+        self.build_archive(commit=release)
+        self.assertEqual(len(lane.stub_assets(self.archive, release_commit=release)["dump_hashes"]), 3)
+        self.refused("stub_dump_source_mismatch")  # Not under the anchor's commit.
+        self.build_archive(commit=release, change="eve_energy_plug.json")
+        with self.assertRaises(lane.Refusal) as caught:
+            lane.stub_assets(self.archive, release_commit=release)
+        self.assertEqual(caught.exception.args, ("stub_dump_source_mismatch",))
+
+    def test_ci_inputs_name_the_context_release_commit(self):
+        ctx = {"provenance": {"source_commit": "1" * 40}}
+        with patch.object(lane.LANE_HOST, "ci_entry", return_value="entry") as entry, \
+                patch.object(lane, "source_manifest", return_value="sources") as sources, \
+                patch.object(lane, "stub_assets", return_value="stub") as stub:
+            self.assertEqual(lane.ci_inputs(ctx, "archive"), ("entry", "sources", "stub"))
+        entry.assert_called_once_with(ctx, "archive")
+        self.assertEqual(sources.call_args.kwargs, {"release_commit": "1" * 40})
+        stub.assert_called_once_with("archive", release_commit="1" * 40)
+
 
 class StubContainer(unittest.TestCase):
     def test_stub_runs_test_only_on_the_lane_network_and_one_loopback_port(self):
@@ -3397,7 +3418,7 @@ class LaneSourceShape(unittest.TestCase):
         "from ha_mcp_engineering.request_context import begin_request, end_request",
         "from ha_mcp_engineering.signed_registry import canonical_json",
         "from ha_mcp_engineering.upstream_tool_policy import load_reviewed_upstream_release_registry",
-        "import lane_failure_diagnostics as diagnostics",
+        "from core_lane_proof import transition", "import lane_failure_diagnostics as diagnostics",
         "from lane_session import lane_session, refuse_redirect",
     )
     DIAGNOSTICS_IMPORTS = (

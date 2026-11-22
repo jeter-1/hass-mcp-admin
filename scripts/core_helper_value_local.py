@@ -87,7 +87,8 @@ def images():
 
 
 @diagnostics.checked("helper_setup", "helper_contract")
-async def exercise(run_dir, entry, core_image, upstream_image, run_id, core_memory, upstream_memory):
+async def exercise(run_dir, entry, core_image, upstream_image, run_id, core_memory, upstream_memory, *,
+                   version=VERSION, mode="local"):
     # Import only after the closed disposable endpoints have been set.
     import real_ha_contract_tests as harness
     from helper_value_contract_acceptance import run
@@ -98,7 +99,7 @@ async def exercise(run_dir, entry, core_image, upstream_image, run_id, core_memo
     with diagnostics.check("core_boot", "runtime_ready"):
         observed = await harness.wait_for_runtime_ready(HomeAssistantRestClient(configured))
     with diagnostics.check("image_verify", "running_identity"):
-        if observed.get("version") != VERSION:
+        if observed.get("version") != version:
             raise Refusal("running_core_version_mismatch")
     with diagnostics.check("container_start", "upstream_start"):
         await harness._start_exact_upstream(token, pull_policy="never", labels=(LABEL + "=" + run_id,),
@@ -114,7 +115,7 @@ async def exercise(run_dir, entry, core_image, upstream_image, run_id, core_memo
                 raise Refusal("running_container_memory_mismatch")
             identities[name] = {"image": image, "config_digest": data["Image"],
                                 "memory_bytes": data["HostConfig"]["Memory"]}
-    return {**await run(configured, entry, run_dir, mode="local"), "images": identities}
+    return {**await run(configured, entry, run_dir, mode=mode), "images": identities}
 
 
 @diagnostics.checked("admission", "preflight")
@@ -122,36 +123,44 @@ def _main(argv=None):
     if not __debug__:
         raise Refusal("assertions_required")
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=("local",), required=True)
-    parser.add_argument("--pull", choices=("never",), required=True)
-    parser.add_argument("--journal", type=Path, required=True)
+    parser.add_argument("--mode", choices=("local", "ci"), required=True)
+    parser.add_argument("--pull", choices=("never", "digest"), required=True)
+    parser.add_argument("--journal", type=Path, help="local mode only")
     parser.add_argument("--source-archive", type=Path, required=True)
     parser.add_argument("--run-dir", type=Path, required=True)
     parser.add_argument("--core-memory", default=CORE_MEMORY, help="Core Docker limit (default: 2g)")
     parser.add_argument("--upstream-memory", default=UPSTREAM_MEMORY, help="upstream Docker limit (default: 768m)")
     parser.add_argument("--fixture-memory", default=host.FIXTURE_MEMORY, help="cleanup Docker limit (default: 128m)")
     args = parser.parse_args(argv)
+    core_lane_host.require_mode_arguments(parser, args)
     limits = {"core": args.core_memory, "upstream": args.upstream_memory, "fixture": args.fixture_memory}
     for memory in limits.values():
         host.memory_bytes(memory)
-    if os.environ.get("GITHUB_ACTIONS") == "true" or os.environ.get("CORE_EVIDENCE_CONTEXT"):
-        raise Refusal("local_only_closed_lane")
-    revision = LANE_HOST.clean_revision()
-    entry = inputs(args.journal, args.source_archive)
-    core_image, upstream_image, fixture_image = images()
-    for image in (core_image, upstream_image, fixture_image):
-        cached_image(image)
-    LANE_HOST.require_unclaimed((CORE, UPSTREAM), NETWORK)
-    run_dir = LANE_HOST.claim(args.run_dir)
-    admission = LANE_HOST.admit(run_dir, RECEIPT, revision, (CORE, UPSTREAM), NETWORK)
-    if admission is None:
-        return 1
+    if args.mode == "ci":
+        ctx, revision, entry, (core_image, upstream_image, fixture_image), run_dir = LANE_HOST.ci_admission(
+            args.run_dir, lambda ctx: LANE_HOST.ci_entry(ctx, args.source_archive),
+            upstream=True, containers=(CORE, UPSTREAM), network=NETWORK)
+        admission, version = None, ctx["provenance"]["version"]
+    else:
+        if os.environ.get("GITHUB_ACTIONS") == "true" or os.environ.get("CORE_EVIDENCE_CONTEXT"):
+            raise Refusal("local_only_closed_lane")
+        revision = LANE_HOST.clean_revision()
+        entry = inputs(args.journal, args.source_archive)
+        core_image, upstream_image, fixture_image = images()
+        for image in (core_image, upstream_image, fixture_image):
+            cached_image(image)
+        LANE_HOST.require_unclaimed((CORE, UPSTREAM), NETWORK)
+        run_dir = LANE_HOST.claim(args.run_dir)
+        admission = LANE_HOST.admit(run_dir, RECEIPT, revision, (CORE, UPSTREAM), NETWORK)
+        if admission is None:
+            return 1
+        version = VERSION
     run_id = uuid4().hex
     owned = LANE_HOST.configuration(run_dir, CORE, CONFIG)
-    os.environ.update(CORE_EVIDENCE_HOST_MODE="local", RUNNER_TEMP=str(run_dir),
+    os.environ.update(CORE_EVIDENCE_HOST_MODE="actions" if args.mode == "ci" else "local", RUNNER_TEMP=str(run_dir),
         HA_CONTRACT_LANE=LANE, HA_FIXTURE_WRITER_IMAGE=fixture_image,
         HA_CONTRACT_CONTAINER=CORE, HA_CONTRACT_NETWORK=NETWORK,
-        REAL_HA_URL="http://127.0.0.1:18123", REAL_HA_EXPECTED_VERSION=VERSION,
+        REAL_HA_URL="http://127.0.0.1:18123", REAL_HA_EXPECTED_VERSION=version,
         REAL_HA_UPSTREAM_IMAGE=upstream_image, REAL_HA_UPSTREAM_VERSION=REVIEWED_CORE_BINDINGS[VERSION].child_consumer,
         REAL_HA_UPSTREAM_CONTAINER=UPSTREAM, REAL_HA_UPSTREAM_PORT="18086")
     result = {"model": "core-helper-value-local-evidence-v1", "group": "helper_value",
@@ -159,6 +168,8 @@ def _main(argv=None):
               "journal_sha256": JOURNAL_SHA256, "manifest_sha256": sha256(ROOT / "ci/core-contract-read-files.json"),
               "host_admission": admission, "container_memory": limits, "network_posture": NETWORK_POSTURE,
               "mode": "local", "pull": "never", "cleanup": {"clean": False}}
+    if args.mode == "ci":
+        result.update(LANE_HOST.ci_fields(ctx))
     def body():
         LANE_HOST.create_bridge(NETWORK, run_id)
         LANE_HOST.start_core(CORE, NETWORK, run_id, args.core_memory, owned, core_image,
@@ -167,7 +178,7 @@ def _main(argv=None):
         async def bounded():
             async with asyncio.timeout(1800):
                 return await exercise(run_dir, entry, core_image, upstream_image, run_id,
-                                      args.core_memory, args.upstream_memory)
+                                      args.core_memory, args.upstream_memory, version=version, mode=args.mode)
         result.update(asyncio.run(bounded()))
     return LANE_HOST.execute(result, RECEIPT, body, run_dir=run_dir, run_id=run_id, owned=owned, network=NETWORK,
                              remove=(UPSTREAM, CORE), containers=(CORE, UPSTREAM),

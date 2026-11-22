@@ -77,8 +77,9 @@ def compiled_reference():
 
 
 @diagnostics.checked("image_verify", "journal_inputs")
-def source_manifest(archive_path, provenance):
-    """Bind the manifest profile, committed source hashes and exact archive."""
+def source_manifest(archive_path, provenance, *, release_commit=None):
+    """Bind the manifest profile, committed source hashes and exact archive. CI mode reads the release's
+    archive (``release_commit``) against the anchor's committed hashes, so any drift refuses."""
     profile = read_json(MANIFEST).get("profiles", {}).get(CAPABILITY)
     if not profile or not SOURCE_HASHES.is_file():
         raise Refusal("thread_matter_manifest_missing")
@@ -89,7 +90,8 @@ def source_manifest(archive_path, provenance):
         raise Refusal("thread_matter_source_provenance_mismatch")
     if [row["path"] for row in record["files"]] != profile or len(rows) != len(profile):
         raise Refusal("thread_matter_manifest_mismatch")
-    prefix, observed = "core-" + provenance["source_commit"] + "/", {}
+    commit = provenance["source_commit"] if release_commit is None else release_commit
+    prefix, observed = "core-" + commit + "/", {}
     with tarfile.open(archive_path, "r:gz") as tar:
         for member in tar:
             name = member.name[len(prefix):] if member.name.startswith(prefix) else None
@@ -132,12 +134,25 @@ def inputs(journal_path, archive_path):
     return entry, reference, sources
 
 
+@diagnostics.checked("image_verify", "journal_inputs")
+def ci_inputs(ctx, archive_path):
+    """CI mode's inputs: the release's signed entry and exact archive, and the reviewed profile and
+    source hashes of the context's anchor (D5)."""
+    entry = LANE_HOST.ci_entry(ctx, archive_path)
+    reference = compiled_reference()
+    if reference.get("capability_id") != CAPABILITY or reference.get("contract_fingerprint") != CONTRACT_FINGERPRINT:
+        raise Refusal("profile_fingerprint_mismatch")
+    sources = source_manifest(archive_path, read_json(core_lane_host.LANE_PROVENANCE),
+                              release_commit=ctx["provenance"]["source_commit"])
+    return entry, reference, sources
+
+
 def images():
     return LANE_HOST.images(upstream=False)
 
 
 @diagnostics.checked("helper_setup", "helper_contract")
-async def exercise(run_dir, entry, core_image, run_id, core_memory):
+async def exercise(run_dir, entry, core_image, run_id, core_memory, *, version=VERSION, mode="local"):
     # Import only after the closed disposable endpoints have been set.
     import real_ha_contract_tests as harness
     from thread_matter_topology_contract_acceptance import run
@@ -150,7 +165,7 @@ async def exercise(run_dir, entry, core_image, run_id, core_memory):
     with diagnostics.check("core_boot", "runtime_ready"):
         observed = await harness.wait_for_runtime_ready(HomeAssistantRestClient(configured))
     with diagnostics.check("image_verify", "running_identity"):
-        if observed.get("version") != VERSION:
+        if observed.get("version") != version:
             raise Refusal("running_core_version_mismatch")
         components = set(observed.get("components", []))
         if "thread" not in components or "matter" in components:
@@ -162,7 +177,7 @@ async def exercise(run_dir, entry, core_image, run_id, core_memory):
             raise Refusal("running_container_memory_mismatch")
         identities = {CORE: {"image": core_image, "config_digest": data["Image"],
                              "memory_bytes": data["HostConfig"]["Memory"]}}
-    return {**await run(configured, entry, run_dir, mode="local"), "images": identities}
+    return {**await run(configured, entry, run_dir, mode=mode), "images": identities}
 
 
 @diagnostics.checked("admission", "preflight")
@@ -170,35 +185,43 @@ def _main(argv=None):
     if not __debug__:
         raise Refusal("assertions_required")
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=("local",), required=True)
-    parser.add_argument("--pull", choices=("never",), required=True)
-    parser.add_argument("--journal", type=Path, required=True)
+    parser.add_argument("--mode", choices=("local", "ci"), required=True)
+    parser.add_argument("--pull", choices=("never", "digest"), required=True)
+    parser.add_argument("--journal", type=Path, help="local mode only")
     parser.add_argument("--source-archive", type=Path, required=True)
     parser.add_argument("--run-dir", type=Path, required=True)
     parser.add_argument("--core-memory", default=CORE_MEMORY, help="Core Docker limit (default: 2g)")
     parser.add_argument("--fixture-memory", default=host.FIXTURE_MEMORY, help="cleanup Docker limit (default: 128m)")
     args = parser.parse_args(argv)
+    core_lane_host.require_mode_arguments(parser, args)
     limits = {"core": args.core_memory, "fixture": args.fixture_memory}
     for memory in limits.values():
         host.memory_bytes(memory)
-    if os.environ.get("GITHUB_ACTIONS") == "true" or os.environ.get("CORE_EVIDENCE_CONTEXT"):
-        raise Refusal("local_only_closed_lane")
-    revision = LANE_HOST.clean_revision()
-    entry, reference, sources = inputs(args.journal, args.source_archive)
-    core_image, fixture_image = images()
-    for image in (core_image, fixture_image):
-        cached_image(image)
-    LANE_HOST.require_unclaimed((CORE,), NETWORK)
-    run_dir = LANE_HOST.claim(args.run_dir)
-    admission = LANE_HOST.admit(run_dir, RECEIPT, revision, (CORE,), NETWORK)
-    if admission is None:
-        return 1
+    if args.mode == "ci":
+        ctx, revision, (entry, reference, sources), (core_image, fixture_image), run_dir = LANE_HOST.ci_admission(
+            args.run_dir, lambda ctx: ci_inputs(ctx, args.source_archive),
+            upstream=False, containers=(CORE,), network=NETWORK)
+        admission, version = None, ctx["provenance"]["version"]
+    else:
+        if os.environ.get("GITHUB_ACTIONS") == "true" or os.environ.get("CORE_EVIDENCE_CONTEXT"):
+            raise Refusal("local_only_closed_lane")
+        revision = LANE_HOST.clean_revision()
+        entry, reference, sources = inputs(args.journal, args.source_archive)
+        core_image, fixture_image = images()
+        for image in (core_image, fixture_image):
+            cached_image(image)
+        LANE_HOST.require_unclaimed((CORE,), NETWORK)
+        run_dir = LANE_HOST.claim(args.run_dir)
+        admission = LANE_HOST.admit(run_dir, RECEIPT, revision, (CORE,), NETWORK)
+        if admission is None:
+            return 1
+        version = VERSION
     run_id = uuid4().hex
     owned = LANE_HOST.configuration(run_dir, CORE, CONFIG)
-    os.environ.update(CORE_EVIDENCE_HOST_MODE="local", RUNNER_TEMP=str(run_dir),
+    os.environ.update(CORE_EVIDENCE_HOST_MODE="actions" if args.mode == "ci" else "local", RUNNER_TEMP=str(run_dir),
         HA_CONTRACT_LANE=LANE, HA_FIXTURE_WRITER_IMAGE=fixture_image,
         HA_CONTRACT_CONTAINER=CORE, HA_CONTRACT_NETWORK=NETWORK,
-        REAL_HA_URL=f"http://127.0.0.1:{PORT}", REAL_HA_EXPECTED_VERSION=VERSION)
+        REAL_HA_URL=f"http://127.0.0.1:{PORT}", REAL_HA_EXPECTED_VERSION=version)
     for name in ("REAL_HA_UPSTREAM_IMAGE", "REAL_HA_UPSTREAM_VERSION",
                  "REAL_HA_UPSTREAM_CONTAINER", "REAL_HA_UPSTREAM_PORT"):
         os.environ.pop(name, None)
@@ -208,6 +231,8 @@ def _main(argv=None):
               "profile_reference": reference, "contract_fingerprint": reference["contract_fingerprint"],
               **sources, "host_admission": admission, "container_memory": limits,
               "network_posture": NETWORK_POSTURE, "mode": "local", "pull": "never", "cleanup": {"clean": False}}
+    if args.mode == "ci":
+        result.update(LANE_HOST.ci_fields(ctx))
     def body():
         LANE_HOST.create_bridge(NETWORK, run_id)
         LANE_HOST.start_core(CORE, NETWORK, run_id, args.core_memory, owned, core_image,
@@ -215,7 +240,8 @@ def _main(argv=None):
         verify_port_mapping(CORE, 8123, PORT, run_id)
         async def bounded():
             async with asyncio.timeout(1800):
-                return await exercise(run_dir, entry, core_image, run_id, args.core_memory)
+                return await exercise(run_dir, entry, core_image, run_id, args.core_memory,
+                                      version=version, mode=args.mode)
         result.update(asyncio.run(bounded()))
         if result.get("profile") != reference:
             raise Refusal("receipt_profile_mismatch")
