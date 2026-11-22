@@ -11,9 +11,11 @@ Architect task 2026-11-16 18:34 CST and ruling 19:35 CST:
   never relied on;
 * Home Assistant restart is admitted without the app-endpoint binding, so it
   is verified only by Engineering's own observed Core outage and recovery;
-* a held disposition (8.5.0 lifecycle, 9.2.0 backup) is ``provider_held``
-  with the compatibility entry id in health and no dispatch; an unknown
-  version stays ``upstream_version_mismatch``.
+* a held disposition (9.2.0 backup) is ``provider_held`` with the
+  compatibility entry id in health and no dispatch; an unknown version stays
+  ``upstream_version_mismatch``;
+* HAMCP-437 I2a-D: the 8.5.0 row (held lifecycle) and every pre-9.2.0 row are
+  gone, so 8.5.0 refuses exactly as a version that never was a row.
 
 Committed captures and in-memory fakes only; every secret is synthetic.
 """
@@ -79,7 +81,6 @@ from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
 )
 from tests.test_2_1a_beta2_operational_lifecycle import (  # noqa: E402
     FakeMcpTransport,
-    UPSTREAM_ADDON_NAME,
     UPSTREAM_ADDON_SLUG,
     lifecycle_settings,
 )
@@ -87,7 +88,8 @@ from tests.test_2_1a_beta2_operational_lifecycle import (  # noqa: E402
 VERSION = "9.2.0"
 ENTRY = "ha-mcp-v9.2.0-9de5bf6c"
 PROTOCOL = "2025-03-26"
-HELD_LIFECYCLE = "8.5.0"
+DELETED_ROW = "8.5.0"
+NEVER_A_ROW = "9.3.0"
 LEGACY_ADMITTED = "8.1.0"
 ENDPOINT = "http://abcdef12-ha-mcp:9583/synthetic-upstream-secret/mcp"
 OTHER_ADDON = "local_test_addon"
@@ -308,7 +310,6 @@ class ReviewedRowTests(unittest.TestCase):
         self.assertEqual(release.entry_id, ENTRY)
         self.assertEqual(release.provider_disposition("lifecycle"), "admitted")
         self.assertEqual(release.provider_disposition("backup"), "held")
-        self.assertEqual(REGISTRY.by_version[HELD_LIFECYCLE].provider_disposition("lifecycle"), "held")
 
     def test_920_classifications_equal_tool_policy(self):
         tools = {tool["name"]: tool for tool in catalog_920().tools}
@@ -365,21 +366,6 @@ class ReviewedRowTests(unittest.TestCase):
                     tools[name].get("outputSchema"),
                     {"additionalProperties": True, "type": "object"},
                 )
-
-    def test_every_other_admitted_release_keeps_legacy_names(self):
-        for release in REGISTRY.releases:
-            if release.version == VERSION or release.provider_disposition("lifecycle") != "admitted":
-                continue
-            contract = _lifecycle_addon_response_contract(
-                entry_id=release.entry_id,
-                upstream_version=release.version,
-                protocol_version=PROTOCOL,
-            )
-            if contract is None:
-                continue
-            with self.subTest(version=release.version):
-                self.assertEqual(contract.upstream_tool(ADDON_ACTION_TOOL), ADDON_ACTION_TOOL)
-                self.assertEqual(contract.upstream_tool(ADDON_READ_TOOL), ADDON_READ_TOOL)
 
 
 class PositiveDispatchTests(unittest.IsolatedAsyncioTestCase):
@@ -565,37 +551,74 @@ class RefusalTests(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(raised.exception.dispatched)
                 self.assertEqual((transport.calls, persisted), ([], []))
 
-    async def test_selection_from_another_release_is_catalog_mismatch(self):
-        # A 9.2.0 selection never dispatches against a peer that is now 8.1.0.
-        transport = Transport920()
-        provider = provider_for(transport)
-        await provider.probe("restart_addon")
-        legacy = FakeMcpTransport(LEGACY_ADMITTED)
-        provider._transport = legacy
-        with self.assertRaises(OperationalLifecycleProviderError) as raised:
-            await provider.restart_addon(OTHER_ADDON, before_dispatch=lambda: None)
-        self.assertEqual(raised.exception.category, "catalog_mismatch")
-        self.assertEqual(legacy.calls, [])
-
-    async def test_held_lifecycle_850_is_provider_held_with_entry_id(self):
-        catalog = McpReadCatalog(PROTOCOL, "ha-mcp", HELD_LIFECYCLE, (), 1.0)
-        for operation in ("controlled_reload", "restart_addon", "restart_home_assistant"):
-            with self.subTest(operation=operation):
-                transport = Transport920(catalog)
-                provider = provider_for(transport)
+    async def test_selection_never_dispatches_to_a_changed_peer(self):
+        # A 9.2.0 selection never dispatches against a peer that changed after
+        # the probe. HAMCP-437 I2a-D: 8.1.0 has no row now, so a peer that
+        # became 8.1.0 is refused at the version check; a peer that still says
+        # 9.2.0 with another catalog is the catalog mismatch.
+        tools = [dict(tool) for tool in catalog_920().tools]
+        for tool in tools:
+            if tool["name"] == APP_ACTION_TOOL:
+                tool["description"] = "Manage an app (drifted)."
+        drifted = McpReadCatalog(PROTOCOL, "ha-mcp", VERSION, tuple(tools), 1.0)
+        cases = (
+            ("same_version_other_catalog", Transport920(drifted), "catalog_mismatch"),
+            ("version_without_row", FakeMcpTransport(LEGACY_ADMITTED), "upstream_version_mismatch"),
+        )
+        for name, peer, category in cases:
+            with self.subTest(peer=name):
+                provider = provider_for(Transport920())
+                await provider.probe("restart_addon")
+                provider._transport = peer
                 with self.assertRaises(OperationalLifecycleProviderError) as raised:
-                    await provider.probe(operation)
-                self.assertEqual(raised.exception.category, "provider_held")
+                    await provider.restart_addon(OTHER_ADDON, before_dispatch=lambda: None)
+                self.assertEqual(raised.exception.category, category)
                 self.assertFalse(raised.exception.dispatched)
-                health = provider.health_snapshot()
-                self.assertEqual(
-                    health["selected_compatibility_entry_id"],
-                    REGISTRY.by_version[HELD_LIFECYCLE].entry_id,
-                )
-                self.assertEqual(health["observed_upstream_version"], HELD_LIFECYCLE)
-                self.assertEqual(sum(health["dispatch_counts"].values()), 0)
-                self.assertEqual(transport.calls, [])
-        self.assertEqual(ChangeGovernanceService._lifecycle_error_code("provider_held", dispatched=False), ErrorCode.OPERATIONAL_CONTRACT_MISMATCH)
+                self.assertEqual(peer.calls, [])
+
+    async def test_deleted_850_lifecycle_refuses_like_a_version_never_a_row(self):
+        # HAMCP-437 I2a-D: the 8.5.0 row is gone. 8.5.0 refuses with the same
+        # generic registry-miss category as a version that never was a row.
+        self.assertNotIn(DELETED_ROW, REGISTRY.by_version)
+        self.assertNotIn(NEVER_A_ROW, REGISTRY.by_version)
+        for operation in ("controlled_reload", "restart_addon", "restart_home_assistant"):
+            categories = {}
+            for version in (DELETED_ROW, NEVER_A_ROW):
+                with self.subTest(operation=operation, version=version):
+                    transport = Transport920(catalog_920(server_version=version))
+                    provider = provider_for(transport)
+                    with self.assertRaises(OperationalLifecycleProviderError) as raised:
+                        await provider.probe(operation)
+                    categories[version] = raised.exception.category
+                    self.assertFalse(raised.exception.dispatched)
+                    health = provider.health_snapshot()
+                    self.assertIsNone(health["selected_compatibility_entry_id"])
+                    self.assertEqual(sum(health["dispatch_counts"].values()), 0)
+                    self.assertEqual(transport.calls, [])
+            self.assertEqual(categories[DELETED_ROW], categories[NEVER_A_ROW])
+            self.assertEqual(categories[DELETED_ROW], "upstream_version_mismatch")
+
+    async def test_deleted_850_row_is_refused_by_both_providers(self):
+        # HAMCP-437 I2a-D: neither operational provider dispatches to an 8.5.0
+        # peer; both refuse with the registry-miss category.
+        self.assertNotIn(DELETED_ROW, REGISTRY.by_version)
+        catalog = catalog_920(server_version=DELETED_ROW)
+        backup = ReviewedOperationalBackupProvider()
+        with self.assertRaises(OperationalBackupProviderError) as refused:
+            backup._validate_catalog(catalog)
+        self.assertEqual(refused.exception.category, "upstream_version_mismatch")
+        self.assertFalse(refused.exception.dispatched)
+        health = backup.health_snapshot()
+        self.assertIsNone(health["selected_compatibility_entry_id"])
+        self.assertEqual(health["dispatch_count"], 0)
+        transport = Transport920(catalog)
+        lifecycle = provider_for(transport)
+        with self.assertRaises(OperationalLifecycleProviderError) as raised:
+            await lifecycle.probe("restart_home_assistant")
+        self.assertEqual(raised.exception.category, "upstream_version_mismatch")
+        self.assertFalse(raised.exception.dispatched)
+        self.assertEqual(sum(lifecycle.health_snapshot()["dispatch_counts"].values()), 0)
+        self.assertEqual(transport.calls, [])
 
     def test_held_backup_920_is_provider_held_with_entry_id(self):
         provider = ReviewedOperationalBackupProvider()
@@ -767,35 +790,6 @@ class FilesystemToolsEnabledTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(validation["missing_tools"], ["ha_get_overview"])
 
 
-class LegacyReleaseUnchangedTests(unittest.IsolatedAsyncioTestCase):
-    async def test_810_dispatch_and_reads_keep_legacy_names(self):
-        transport = FakeMcpTransport(LEGACY_ADMITTED)
-        provider = provider_for(transport)
-        await provider.probe("restart_addon")
-        addon = await provider.get_addon(UPSTREAM_ADDON_SLUG)
-        self.assertEqual(addon["name"], UPSTREAM_ADDON_NAME)
-        await provider.reload("automation", before_dispatch=lambda: None)
-        await provider.restart_addon(OTHER_ADDON, before_dispatch=lambda: None)
-        await provider.restart_home_assistant(before_dispatch=lambda: None)
-        self.assertEqual(
-            transport.calls,
-            [
-                (ADDON_READ_TOOL, {"source": "installed", "include_stats": False}),
-                (ADDON_READ_TOOL, {"slug": UPSTREAM_ADDON_SLUG}),
-                (RELOAD_TOOL, {"target": "automations"}),
-                (ADDON_ACTION_TOOL, {"slug": OTHER_ADDON, "action": "restart"}),
-                (HA_RESTART_TOOL, {"confirm": True}),
-            ],
-        )
-
-    async def test_legacy_call_without_probe_keeps_legacy_names(self):
-        transport = FakeMcpTransport(LEGACY_ADMITTED)
-        provider = provider_for(transport)
-        await provider.restart_addon(OTHER_ADDON, before_dispatch=lambda: None)
-        self.assertEqual(transport.calls, [(ADDON_ACTION_TOOL, {"slug": OTHER_ADDON, "action": "restart"})])
-
-
-
 def _load_script(name: str):
     spec = importlib.util.spec_from_file_location(
         f"{name}_hamcp401_test_module", ROOT / "scripts" / f"{name}.py"
@@ -881,15 +875,6 @@ class ExactImageOperationalAcceptanceTests(unittest.IsolatedAsyncioTestCase):
             lifecycle["operations"]["restart_home_assistant"]["argument_constraints"]["variants_allowed"]
         )
 
-    async def test_held_850_expects_provider_held_for_both_providers(self):
-        catalog = McpReadCatalog(PROTOCOL, "ha-mcp", HELD_LIFECYCLE, (), 1.0)
-        (backup, lifecycle), calls = await self._run(HELD_LIFECYCLE, catalog)
-        self.assertEqual(len(calls), 2)  # one refused attempt per provider
-        for result in (backup, lifecycle):
-            self.assertEqual(result["status"], "quarantined")
-            self.assertEqual(result["provider_disposition"], "held")
-            self.assertEqual(result["provider_dispatch_count"], 0)
-
     async def test_920_probe_contract_drift_fails_acceptance(self):
         catalog = catalog_920()
         tools = [dict(tool) for tool in catalog.tools]
@@ -928,7 +913,15 @@ class ExactImageOperationalAcceptanceTests(unittest.IsolatedAsyncioTestCase):
             gateway_acceptance.AcceptanceFailure, "no reviewed probe expectation"
         ):
             await gateway_acceptance.admitted_lifecycle_probe_acceptance(
-                REGISTRY.by_version["9.1.2"],
+                SimpleNamespace(version=NEVER_A_ROW, entry_id=f"ha-mcp-v{NEVER_A_ROW}-00000000"),
+                endpoint=ENDPOINT,
+                settings=lifecycle_settings(ENDPOINT),
+            )
+        with self.assertRaisesRegex(
+            gateway_acceptance.AcceptanceFailure, "no reviewed probe expectation"
+        ):
+            await gateway_acceptance.admitted_lifecycle_probe_acceptance(
+                SimpleNamespace(version=VERSION, entry_id="ha-mcp-v9.2.0-00000000"),
                 endpoint=ENDPOINT,
                 settings=lifecycle_settings(ENDPOINT),
             )
