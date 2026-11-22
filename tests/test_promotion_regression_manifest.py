@@ -32,11 +32,12 @@ CAPABILITIES_PATH = (
     / "ha_mcp_engineering"
     / "capabilities.py"
 )
+# HAMCP-437 I2a-D: the shipped policy (the registry holds only 9.2.0).
 UPSTREAM_POLICY_PATH = (
     ROOT
     / "hass_mcp_engineering_beta"
     / "ha_mcp_engineering"
-    / "upstream_tool_policy_8_2_0.json"
+    / "upstream_tool_policy_9_2_0.json"
 )
 
 def _load_checker():
