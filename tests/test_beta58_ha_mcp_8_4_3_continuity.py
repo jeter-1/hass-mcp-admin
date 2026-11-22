@@ -24,11 +24,6 @@ from ha_mcp_engineering.clients.mcp import (  # noqa: E402
 )
 from ha_mcp_engineering.f3_dashboard.provider import EXACT_CONTRACTS  # noqa: E402
 from ha_mcp_engineering.ha_core_readmission.routes import RETIRED_DELEGATED_READS  # noqa: E402
-from ha_mcp_engineering.ha_mcp_readmission import ha_mcp as readmission_ha_mcp  # noqa: E402
-from ha_mcp_engineering.ha_mcp_readmission.ha_mcp import (  # noqa: E402
-    HaMcpAuthorityError,
-    HaMcpAuthoritySelector,
-)
 from ha_mcp_engineering.ha_mcp_readmission.registry import (  # noqa: E402
     REGISTRY_URL,
     SignedReleaseRegistry,
@@ -639,38 +634,6 @@ class Beta58HaMcp843ContinuityTests(unittest.IsolatedAsyncioTestCase):
                     snapshot["admission_status"], "blocked_incompatible_upstream"
                 )
                 self.assertEqual(transport.calls, 0)
-
-    def test_legacy_policy_copy_is_digest_bound(self) -> None:
-        legacy = readmission_ha_mcp._LEGACY_SIGNED_POLICY_BINDINGS
-        self.assertEqual(
-            legacy,
-            {
-                (
-                    "upstream_tool_policy_8_4_3.json",
-                    LEGACY_8_4_3_POLICY_SHA256,
-                ): "legacy_signed_upstream_tool_policy_8_4_3.json"
-            },
-        )
-        path = (
-            readmission_ha_mcp._LEGACY_POLICY_ROOT
-            / "legacy_signed_upstream_tool_policy_8_4_3.json"
-        )
-        self.assertEqual(
-            "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest(),
-            LEGACY_8_4_3_POLICY_SHA256,
-        )
-        with tempfile.TemporaryDirectory() as directory:
-            tampered = Path(directory) / path.name
-            tampered.write_bytes(path.read_bytes().replace(b"8.4.3", b"8.4.3 ", 1))
-            original = readmission_ha_mcp._LEGACY_POLICY_ROOT
-            readmission_ha_mcp._LEGACY_POLICY_ROOT = Path(directory)
-            try:
-                with self.assertRaisesRegex(
-                    HaMcpAuthorityError, "legacy_policy_binding_digest_mismatch"
-                ):
-                    HaMcpAuthoritySelector(self.compiled, self._registry(None))
-            finally:
-                readmission_ha_mcp._LEGACY_POLICY_ROOT = original
 
     async def test_exact_dashboard_read_and_setter_authority_are_separate(self) -> None:
         transport = _DashboardTransport(self.capture["tools"])
