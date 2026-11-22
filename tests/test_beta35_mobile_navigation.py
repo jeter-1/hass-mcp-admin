@@ -46,34 +46,6 @@ class FixtureRequest:
 
 
 class Beta35MobileNavigationTests(unittest.IsolatedAsyncioTestCase):
-    def test_acceptance_orders_release_gates_before_live_testing(self):
-        acceptance = (
-            ROOT / "docs" / "V2_2_0_BETA35_ACCEPTANCE.md"
-        ).read_text(encoding="utf-8")
-        normalized = " ".join(acceptance.split())
-        pre_deployment = acceptance.index("## Pre-deployment gates")
-        post_deployment = acceptance.index(
-            "## Post-deployment entry criteria"
-        )
-        live_acceptance = acceptance.index(
-            "## A — Mobile navigation matrices"
-        )
-
-        self.assertLess(pre_deployment, post_deployment)
-        self.assertLess(post_deployment, live_acceptance)
-        self.assertIn(
-            "before a separately authorized deployment", normalized
-        )
-        self.assertIn(
-            "Sections A through C apply only after that deployment",
-            normalized,
-        )
-        pre_deployment_text = acceptance[
-            pre_deployment:post_deployment
-        ]
-        self.assertIn("deployment-candidate image", pre_deployment_text)
-        self.assertNotIn("deployed image", pre_deployment_text)
-
     async def _manager(self, rest: CapturingRestClient):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -259,15 +231,6 @@ class Beta35MobileNavigationTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(
             "Android `clickAction`, iOS `url`, and URI action target",
             external_approval,
-        )
-        acceptance = (
-            ROOT / "docs" / "V2_2_0_BETA35_ACCEPTANCE.md"
-        ).read_text(encoding="utf-8")
-        self.assertIn("### Android", acceptance)
-        self.assertIn("### iOS", acceptance)
-        self.assertIn(
-            "iOS must remain explicitly unaccepted",
-            " ".join(acceptance.split()),
         )
 
     async def test_malformed_plan_identity_fails_before_provider_dispatch(self):

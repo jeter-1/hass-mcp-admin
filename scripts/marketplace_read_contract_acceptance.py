@@ -40,6 +40,8 @@ from ha_mcp_engineering.marketplace_inventory import (
 from ha_mcp_engineering.request_context import begin_request, end_request
 from ha_mcp_engineering.signed_registry import canonical_json
 
+from core_lane_proof import transition
+from core_release_evidence import EXTERNAL_DEPENDENCY
 import lane_failure_diagnostics as diagnostics
 from lane_session import lane_session
 
@@ -90,6 +92,17 @@ FIXTURE_REASONS = (
     "installed_record_unbounded", "installed_record_text_changed", "secret_in_page",
     "redaction_canary_unavailable", "redaction_canary_leaked", "redaction_canary_undisclosed",
     "redaction_canary_changed_records")
+
+
+class ExternalDependencyUnavailable(RuntimeError):
+    """CI mode only (D6b): the public Marketplace store never finished its first fetch.
+
+    A code-owned retry signal, never upstream text: the adapter records it as
+    external_dependency_unavailable and assemble fails the run before any candidate exists.
+    """
+
+    def __init__(self):
+        super().__init__(EXTERNAL_DEPENDENCY)
 
 
 class FixtureError(AssertionError):
@@ -292,15 +305,17 @@ def redaction_canary(raw_record):
 async def run(configured, entry, directory, *, mode):
     """Run only marketplace_read; caller owns startup, identity and teardown proof."""
     # The caller names the mode; nothing here reads the environment to choose one.
-    if mode == "ci":
-        raise NotImplementedError("ci mode lands in 443-B")
-    if mode != "local":
+    if mode not in ("local", "ci"):
         raise ValueError("lane_mode_unknown")
     key = Ed25519PrivateKey.generate()
     now = datetime.now(timezone.utc)
     evidence = b"Disposable marketplace-read test authority; not registry publication authority"
-    old = entry["capabilities"]
-    assert len(old) == 32 and CAPABILITY not in {p["capability_id"] for p in old}
+    if mode == "ci":
+        # D3 rules 1-3: the authenticated baseline minus exactly this group, then its compiled profile.
+        old, _ = transition(entry, "marketplace_read", [reference()])
+    else:
+        old = entry["capabilities"]
+        assert len(old) == 32 and CAPABILITY not in {p["capability_id"] for p in old}
     runtimes = []
     raw = RawCore(configured)
 
@@ -382,6 +397,8 @@ async def run(configured, entry, directory, *, mode):
                 if store:
                     return info["result"], store
             await asyncio.sleep(10)
+        if mode == "ci":
+            raise ExternalDependencyUnavailable()
         raise RuntimeError("Disposable Marketplace store did not finish its first fetch")
 
     try:
@@ -481,7 +498,7 @@ async def run(configured, entry, directory, *, mode):
             fallback_count = observed_fallbacks(withheld_reader, reader, canary_reader, direct)
             assert fallback_count == 0
         return {"result": "PASS", "group": "marketplace_read", "profile": reference(),
-                "authority_transition": [32, 33], "predecessor_reads": 0,
+                "authority_transition": [len(old), len(old) + 1], "predecessor_reads": 0,
                 "marketplace_stage": info["stage"], "store_records": len(baseline),
                 "fresh_installed": 0, "install_fixture": {
                     "repository": raw_record["full_name"], "id": str(raw_record["id"]),

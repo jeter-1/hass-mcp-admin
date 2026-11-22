@@ -9,12 +9,11 @@ difference is reported.
 
 The classifiers take no upstream version.  A version enters only through the
 compiled error-contract entry (``_ERROR_ADAPTERS``), whose probes name the
-(tool, structured code) pairs reviewed for that release.  "Against both
-entries" therefore means: every probe pair of the 9.1.2 entry and of the 9.2.0
-entry is classified, and the two entries must classify alike.  The 9.2.0 entry
-is added by the admission step that binds 9.2.0; until then
-``test_the_9_2_0_error_contract_entry_exists`` fails and says so, and the
-per-entry assertions run for the entries that exist.
+(tool, structured code) pairs reviewed for that release.  Every probe pair of
+the 9.2.0 entry is classified against the pinned categories.  HAMCP-437: only
+9.2.0 is admitted (D1), so the 9.1.2 entry check and the 9.1.2-against-9.2.0
+comparison are retired; the pinned categories are the N31 shapes both
+releases reproduced.
 """
 
 import json
@@ -41,9 +40,8 @@ from ha_mcp_engineering.providers import operational_lifecycle  # noqa: E402
 from ha_mcp_engineering.providers import upstream_dashboard  # noqa: E402
 from ha_mcp_engineering.providers import upstream_read_gateway as gateway  # noqa: E402
 
-BASELINE_VERSION = "9.1.2"
 CANDIDATE_VERSION = "9.2.0"
-ENTRY_VERSIONS = (BASELINE_VERSION, CANDIDATE_VERSION)
+ENTRY_VERSIONS = (CANDIDATE_VERSION,)
 
 # JSON-RPC numbers an upstream client exception may carry.
 INVALID_PARAMS = -32602
@@ -109,9 +107,6 @@ def probe_categories(entry):
 
 
 class ErrorContractEntryTests(unittest.TestCase):
-    def test_the_9_1_2_error_contract_entry_exists(self):
-        self.assertIsNotNone(version_bound_entry(BASELINE_VERSION))
-
     def test_the_9_2_0_error_contract_entry_exists(self):
         self.assertIsNotNone(
             version_bound_entry(CANDIDATE_VERSION),
@@ -130,16 +125,6 @@ class ErrorContractEntryTests(unittest.TestCase):
             with self.subTest(version=version):
                 self.assertEqual(probe_categories(entry), EXPECTED_PROBE_CATEGORIES)
         self.assertGreaterEqual(seen, 1)
-
-    def test_entries_that_exist_classify_alike(self):
-        baseline = version_bound_entry(BASELINE_VERSION)
-        self.assertIsNotNone(baseline)
-        for version in ENTRY_VERSIONS:
-            entry = version_bound_entry(version)
-            if entry is None:
-                continue
-            with self.subTest(version=version):
-                self.assertEqual(probe_categories(entry), probe_categories(baseline))
 
     def test_validation_body_is_invalid_request_for_every_entry_tool(self):
         for version in ENTRY_VERSIONS:

@@ -10,9 +10,9 @@ from pathlib import Path
 import subprocess
 import sys
 
-from core_release_evidence import (ROOT, canonical, compare_sources, context, derive_binding, digest,
-    groups, manifest, passing_subset, read_json, run_identity, select_release, slot, stable_version,
-    validate_provenance, verify_context, version_key)
+from core_release_evidence import (EXTERNAL_DEPENDENCY, LANE_GROUPS, ROOT, WITHHOLDABLE, canonical,
+    compare_sources, context, derive_binding, digest, groups, manifest, passing_subset, read_json,
+    run_identity, select_release, slot, stable_version, validate_provenance, verify_context, version_key)
 from core_evidence_sources import CORE, REPOSITORY, github, image_provenance, source
 
 
@@ -209,7 +209,20 @@ def discover_releases(entries, requested):
     raise ValueError("release discovery did not reach the signed predecessor within the page bound")
 
 
-def prepare(directory, acceptance, requested):
+def admit_withhold(withhold, acceptance, requested):
+    """D6: an owner withhold is a manual dispatch for one named production release only."""
+    withhold = list(withhold)
+    if not withhold:
+        return []
+    if acceptance or os.environ.get("GITHUB_EVENT_NAME") != "workflow_dispatch" or not requested:
+        raise ValueError("withhold requires a manual dispatch for one named production release")
+    if len(set(withhold)) != len(withhold) or not set(withhold) <= WITHHOLDABLE:
+        raise ValueError("withhold names a group that may not be withheld")
+    return sorted(withhold)
+
+
+def prepare(directory, acceptance, requested, withhold=()):
+    withhold = admit_withhold(withhold, acceptance, requested)
     directory.mkdir(parents=True, exist_ok=True)
     if acceptance:
         raw = (ROOT / "upstream-trust/ha-core-release-registry.json").read_bytes(); exists = False
@@ -240,7 +253,7 @@ def prepare(directory, acceptance, requested):
         fixture_ctx = new_context(anchor, derived, "2026.10.4", "derived", fixture_proof, fixture=True)
         write(directory / "fixture.json", fixture_ctx)
         write(directory / "baseline.json", target)
-        write(directory / "state.json", {"registry_exists": False, "acceptance": True})
+        write(directory / "state.json", {"registry_exists": False, "acceptance": True, "withhold": []})
         rows = [matrix_row(ctx, "coverage"), matrix_row(fixture_ctx, "fixture")]
         output(refused=False, run=True, release="2026.11.0", matrix=json.dumps({"include": rows}), registry_exists=False)
         return
@@ -282,7 +295,7 @@ def prepare(directory, acceptance, requested):
         raise ValueError("run discovery exceeds pagination bound")
     version = select_release(releases, {e["version"] for e in entries}, runs, newest,
                              retry_refused=(os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
-                                            and requested == newest))
+                                            and requested == newest), withhold=withhold)
     if version is None:
         summary("No eligible stable release (already published, pending, succeeded or terminally refused).")
         output(refused=False, run=False, release="none", matrix='{"include":[]} ', registry_exists=exists)
@@ -310,36 +323,117 @@ def prepare(directory, acceptance, requested):
     ctx = new_context(anchor, derived, predecessor["version"], "derived", proof)
     write(directory / "release.json", ctx); write(directory / "oci.json", receipts)
     write(directory / "baseline.json", predecessor)
-    write(directory / "state.json", {"registry_exists": exists, "acceptance": False})
+    write(directory / "state.json", {"registry_exists": exists, "acceptance": False, "withhold": withhold})
+    if withhold:
+        summary(withhold_consequence(withhold))
     summary("O3 inherits " + predecessor["version"] + " → " + version + ("; pre-cutover: artifact only" if not exists else ""))
     output(refused=False, run=True, release=version, matrix=json.dumps({"include": [matrix_row(ctx, "release")]}), registry_exists=exists)
 
 
+def producer_name(case, group):
+    return "core-evidence-group-" + case + "-" + group
+
+
+def owned_names(value):
+    return (isinstance(value, list) and value and value == sorted(set(value))
+            and all(isinstance(v, str) and v for v in value))
+
+
+def group_receipt_paths(receipts, case):
+    """D8's fixed producer map. The seven lane groups come only from their own lane-groups
+    artifact (exactly <group>.json and cleanup-<group>.json); the other groups only from this
+    lanes run's top level. A wrong producer, a duplicate or any stray entry refuses.
+
+    A lane group whose artifact is absent is not passed, as at the base: no workflow job
+    produces these artifacts yet. HAMCP-443 part C adds that job and, with it, makes an
+    absent artifact refuse."""
+    run_groups = [name for name in groups() if name not in LANE_GROUPS]
+    producers = {producer_name(case, name): name for name in LANE_GROUPS}
+    allowed = {"cleanup.json"} | {name + ".json" for name in run_groups} | set(producers)
+    present = {entry.name for entry in receipts.iterdir()}
+    if present - allowed:
+        raise ValueError("group receipt from an unmapped producer: " + ", ".join(sorted(present - allowed)))
+    paths, cleanups = {}, {}
+    for directory, name in producers.items():
+        folder = receipts / directory
+        paths[name] = folder / (name + ".json")
+        if directory not in present:
+            continue  # assemble records the group as not passed
+        if not folder.is_dir() or folder.is_symlink() or {e.name for e in folder.iterdir()} != {
+                name + ".json", "cleanup-" + name + ".json"}:
+            raise ValueError("lane-groups artifact contents mismatch: " + name)
+        cleanups[name] = folder / ("cleanup-" + name + ".json")
+    for name in run_groups:
+        paths[name] = receipts / (name + ".json")
+    if any(path.is_symlink() for path in [*paths.values(), *cleanups.values(), receipts / "cleanup.json"]):
+        raise ValueError("group receipt is not a regular file")
+    return paths, cleanups
+
+
+def owner_withhold(state):
+    withhold = state["withhold"]
+    if (not isinstance(withhold, list) or withhold != sorted(set(withhold))
+            or not set(withhold) <= WITHHOLDABLE or (withhold and state["acceptance"])):
+        raise ValueError("invalid owner withhold")
+    return withhold
+
+
+def withhold_consequence(withhold):
+    profiles = [p for name in withhold for p in groups()[name]]
+    return ("OWNER OVERRIDE: withheld " + ", ".join(withhold) + ". The signed release will lack "
+            + ", ".join(profiles) + ", and every later automated candidate will lack it too, because "
+            "automated evidence never adds a profile back. Only a manual signing restores it.")
+
+
 def assemble(directory, receipts, case):
     ctx = context(); baseline = read_json(directory / "baseline.json")
+    sha = os.environ["CORE_EVIDENCE_CONTEXT_SHA256"]
+    state = read_json(directory / "state.json")
+    if set(state) != {"registry_exists", "acceptance", "withhold"}:
+        raise ValueError("preparation state mismatch")
+    withhold = owner_withhold(state)
+    paths, cleanups = group_receipt_paths(receipts, case)
     cleanup = read_json(receipts / "cleanup.json")
-    if cleanup != {"clean": True, "run": ctx["run"], "context_sha256": os.environ["CORE_EVIDENCE_CONTEXT_SHA256"]}:
+    if cleanup != {"clean": True, "run": ctx["run"], "context_sha256": sha}:
         raise ValueError("cleanup proof mismatch")
-    results = {}; receipt_hashes = {}
+    for name, path in cleanups.items():
+        proof = read_json(path)
+        owned = proof.get("owned")
+        if (set(proof) != {"clean", "run", "context_sha256", "group", "owned"} or proof["clean"] is not True
+                or proof["run"] != ctx["run"] or proof["context_sha256"] != sha or proof["group"] != name
+                or not isinstance(owned, dict) or set(owned) != {"containers", "networks"}
+                or not all(owned_names(v) for v in owned.values())):
+            raise ValueError("lane-group cleanup proof mismatch: " + name)
+    results = {}; receipt_hashes = {}; unavailable = []
     for name in groups():
-        path = receipts / (name + ".json")
+        path = paths[name]
         if not path.exists():
             results[name] = False
             continue
         r = read_json(path)
         if (r.get("model") != "core-evidence-group-v1" or r["run"] != ctx["run"]
-                or r["context_sha256"] != os.environ["CORE_EVIDENCE_CONTEXT_SHA256"]
+                or r["context_sha256"] != sha
                 or r["release"] != ctx["provenance"]["version"] or r["group"] != name
                 or r["profiles"] != groups()[name] or type(r["passed"]) is not bool):
             raise ValueError("lane receipt binding mismatch")
         results[name] = r["passed"]; receipt_hashes[name] = digest(path.read_bytes())
+        if r["passed"] is False and r.get("receipt") == {"failure_type": EXTERNAL_DEPENDENCY} and name not in withhold:
+            unavailable.append(name)
+    if unavailable:
+        # D6: a FAILED run, raised before any candidate exists; select_release re-selects it.
+        summary("FAILED: external dependency unavailable for " + ", ".join(unavailable)
+                + "; no candidate. The next scheduled run retries this release.")
+        raise ValueError("external dependency unavailable: " + ", ".join(unavailable))
+    for name in withhold:
+        results[name] = False
     refs = passing_subset(baseline["capabilities"], results)
     evidence = {"model": "core-automated-release-evidence-v1", "context": ctx,
                 "predecessor_entry_sha256": digest(canonical(baseline)), "lane_groups": results,
                 "receipt_sha256": receipt_hashes, "previous_capabilities": baseline["capabilities"],
-                "selected_capabilities": refs,
+                "selected_capabilities": refs, "owner_withheld": withhold,
                 "withheld": [p["capability_id"] for p in baseline["capabilities"] if p not in refs]}
-    state = read_json(directory / "state.json")
+    if withhold:
+        summary(withhold_consequence(withhold))
     if state["acceptance"] and refs != baseline["capabilities"]:
         raise ValueError("acceptance requires every exact signed profile reference in the predecessor entry")
     if not refs:
@@ -371,9 +465,12 @@ if __name__ == "__main__":
     parser.add_argument("--release", default="")
     parser.add_argument("--receipts", type=Path)
     parser.add_argument("--case", default="release")
+    parser.add_argument("--withhold", action="append", default=[])
     args = parser.parse_args()
+    if args.withhold and args.command != "prepare":
+        parser.error("--withhold is a prepare input; assemble reads it from state.json")
     if args.command == "prepare":
-        prepare(args.directory, args.acceptance, args.release or None)
+        prepare(args.directory, args.acceptance, args.release or None, args.withhold)
     elif args.command == "refuse":
         fail_refusal(args.directory)
     else:

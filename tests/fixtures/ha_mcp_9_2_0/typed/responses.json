@@ -1,6 +1,10 @@
 {
   "fixture_model": "hamcp319-typed-structured-content-templates-v1",
-  "upstream": {"name": "ha-mcp", "version": "9.1.0", "source_commit": "d2e3f4b0647d815fb32d530fed15a6a99b1d4b33"},
+  "upstream": {
+    "name": "ha-mcp",
+    "version": "9.2.0",
+    "source_commit": "51e3aac788482a081807591cd5d58d07dc4e540b"
+  },
   "placeholders": {
     "${domain}": "ha_call_service domain argument",
     "${service}": "ha_call_service service argument",
@@ -18,7 +22,9 @@
       "service": "${service}",
       "entity_id": "${entity_id}",
       "parameters": "${data}",
-      "result": ["${record}"],
+      "result": [
+        "${record}"
+      ],
       "message": "Successfully executed ${domain}.${service}"
     },
     "call_service_nonadmin_empty_list": {
@@ -36,7 +42,10 @@
       "service": "${service}",
       "entity_id": "${entity_id}",
       "parameters": "${data}",
-      "result": {"changed_states": [], "service_response": null},
+      "result": {
+        "changed_states": [],
+        "service_response": null
+      },
       "message": "Successfully executed ${domain}.${service}"
     },
     "call_service_timeout_partial": {
@@ -61,7 +70,9 @@
     },
     "list_services_summary": {
       "success": true,
-      "domains": ["${domain}"],
+      "domains": [
+        "${domain}"
+      ],
       "services": "${services}",
       "total_count": "${count}",
       "offset": 0,
@@ -70,7 +81,10 @@
       "has_more": false,
       "next_offset": null,
       "detail_level": "summary",
-      "filters_applied": {"domain": "${domain}", "query": null}
+      "filters_applied": {
+        "domain": "${domain}",
+        "query": null
+      }
     }
   },
   "synthetic_values": {

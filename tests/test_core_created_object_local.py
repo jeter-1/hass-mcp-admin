@@ -1179,6 +1179,105 @@ class Scenarios(fixtures.CreatedObjectServiceTestCase):
                          {"input_boolean/list", "input_number/list", "input_boolean/delete", "input_number/delete"})
 
 
+class Reached(Exception):
+    """The test stops ``acceptance.run`` here, just past the predecessor check."""
+
+
+class PredecessorSection(unittest.IsolatedAsyncioTestCase):
+    """D3 rule 4 inside ``acceptance.run`` (Cursor HAMCP443B-R4, #472).
+
+    Synthetic authority and registry; the dependency runtime that run()
+    configures right after the predecessor check stops it. No client is used.
+    """
+    CHECK = 'assert predecessor.route_status((spec["capability"],))["available"] is False'
+
+    async def run_to_dependency(self, lane, *, available):
+        runtimes, dependency = [], []
+
+        class Registry:
+            def __init__(self, **kwargs):
+                self.fetch = kwargs["fetcher"]
+
+            async def refresh(self):
+                self.count = json.loads(await self.fetch(None, None))["capabilities"]
+                return True
+
+        class Runtime:
+            current_observation = SimpleNamespace(version=acceptance.CORE_VERSION)
+
+            def __init__(self):
+                runtimes.append(self)
+
+            def configure(self, _configured, *, release_registry):
+                self.registry = release_registry
+
+            async def reconcile_once(self, _trigger):
+                return None
+
+            def health_snapshot(self):
+                return {"compatible_count": self.registry.count}
+
+            def acquire(self, requirements):
+                return object()
+
+            def release(self, _token):
+                return None
+
+            def route_status(self, requirements):
+                return {"available": available}
+
+        class Dependency:
+            def configure(self, *args, **kwargs):
+                dependency.append(kwargs["core_runtime"])
+                raise Reached
+
+            async def shutdown(self):
+                return None
+
+        entry = {"version": acceptance.CORE_VERSION, "capabilities": [
+            {"capability_id": "synthetic.predecessor_%02d" % index}
+            for index in range(acceptance.SIGNED_PREDECESSOR_COUNT)]}
+        settings = SimpleNamespace(**vars(configured()), ha_url="http://127.0.0.1:18123",
+                                   access_secret="synthetic-access")
+        with tempfile.TemporaryDirectory() as directory, \
+                patch("prepare_core_release_registry.prepare_candidate",
+                      side_effect=lambda **kw: {"capabilities": len(kw["entry"]["capabilities"])}), \
+                patch("prepare_core_release_registry.sign_candidate", side_effect=lambda candidate, **kw: candidate), \
+                patch("ha_mcp_engineering.ha_core_readmission.registry.CoreReleaseRegistry", Registry), \
+                patch("ha_mcp_engineering.ha_core_readmission.CoreRuntime", Runtime), \
+                patch("ha_mcp_engineering.dependency.runtime.DependencyAnalysisRuntime", Dependency), \
+                patch("alarmo_inspection_contract_acceptance.close_disposable_authority", new=AsyncMock()), \
+                patch.object(acceptance, "cleanup_fixtures", new=AsyncMock(return_value=None)):
+            try:
+                await acceptance.run(lane, settings, entry, Path(directory), mode="local")
+            finally:
+                self.runtimes, self.dependency = runtimes, dependency
+
+    async def test_a_refusing_predecessor_reaches_the_withheld_path(self):
+        # Control: the check holds and run() goes on to configure the
+        # predecessor's dependency runtime.
+        for group in lane.LANES:
+            with self.subTest(lane=group):
+                with self.assertRaises(Reached):
+                    await self.run_to_dependency(group, available=False)
+                self.assertEqual(len(self.runtimes), 1)
+                self.assertEqual(self.dependency, self.runtimes)
+
+    async def test_an_admitting_predecessor_fails_the_lane_before_any_scenario(self):
+        for group in lane.LANES:
+            with self.subTest(lane=group):
+                try:
+                    await self.run_to_dependency(group, available=True)
+                except AssertionError as error:  # assertRaises would drop the traceback
+                    frame = traceback.extract_tb(error.__traceback__)[-1]
+                else:
+                    self.fail("the lane went on with a predecessor that admits the capability")
+                self.assertEqual((frame.name, frame.line), ("run", self.CHECK))
+                # Only the predecessor authority exists; nothing used it further.
+                self.assertEqual(len(self.runtimes), 1)
+                self.assertEqual(self.dependency, [])
+
+
 class Orchestration(unittest.TestCase):
     GROUP = "created_helper_delete"
 

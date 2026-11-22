@@ -1,17 +1,22 @@
-"""Shared host steps of the local Core lanes (HAMCP-443 D2/D5).
+"""Shared host steps of the Core lanes, local and CI (HAMCP-443 D2/D5/D6).
 
 One source of truth for the lanes' disposable Core configurations and fixture
-directories, and for the host steps every local harness shares: exact cached
-images, owned names and free loopback ports, the claimed run directory,
-admission, the dedicated bridge, the Core container, and teardown with absence
-checks. Onboarding, readiness and lane-specific containers stay in the harness.
+directories, and for the host steps every harness shares: exact images, owned
+names and free loopback ports, the claimed run directory, admission, the
+dedicated bridge, the Core container, and teardown with absence checks.
+Onboarding, readiness and lane-specific containers stay in the harness.
 
-Local by construction: nothing here reads the environment to choose a mode; ci
-mode lands in 443-B. A Lane is bound to its harness module and resolves every
-name through it at call time, so a harness's own names stay its interface.
+The harness's --mode argument chooses the mode; nothing here reads the
+environment to choose one. CI mode refuses off Actions, without the
+run's verified context (core_release_evidence.context, the check the
+run_specialized groups use), on a lane whose reviewed data is keyed to another
+anchor, or on a checkout that is not the run's own commit. A Lane is bound to
+its harness module and resolves every name through it at call time, so a
+harness's own names stay its interface.
 """
 import argparse
 from datetime import datetime, timezone
+import errno
 import hashlib
 import json
 import os
@@ -20,10 +25,12 @@ import shutil
 import signal
 import socket
 import subprocess
+import time
 
 import core_evidence_host as host
 import core_local_resources as resources
 import lane_failure_diagnostics as diagnostics
+import core_release_evidence as release
 from core_lane_bindings import REVIEWED_CORE_BINDINGS
 from core_release_evidence import canonical
 
@@ -141,6 +148,13 @@ input_number: {}
 }
 # Files a configuration includes, written empty next to it.
 INCLUDES = {"created_object": ("automations.yaml", "scripts.yaml", "scenes.yaml")}
+# Linux keeps a closed loopback port in TIME_WAIT for 60 s; the next lane waits at most this long (HAMCP-443 7c).
+TIME_WAIT_SECONDS = 90
+# CI mode (D6a): no lane container reaches the cloud metadata address. Forwarded traffic only, never the runner's own.
+METADATA_RULE = ("DOCKER-USER", "--destination", "169.254.169.254/32", "--jump", "DROP")
+RUNTIME_TREE = "HEAD:hass_mcp_engineering_beta/ha_mcp_engineering"
+# A digest pull of a Core image can outlast an ordinary host command.
+PULL_TIMEOUT = 900
 
 
 def utc():
@@ -155,16 +169,45 @@ def sha256(path):
     return value.hexdigest()
 
 
+def require_mode_arguments(parser, args):
+    """--mode local pairs with --pull never and a journal; --mode ci with --pull digest and no journal,
+    since its signed baseline comes from the run's context (D2)."""
+    if ((args.mode, args.pull) not in (("local", "never"), ("ci", "digest"))
+            or (args.journal is None) != (args.mode == "ci")):
+        parser.error("--mode local takes --pull never and --journal; --mode ci takes --pull digest and no --journal")
+
+
+def time_wait_only(port):
+    """Whether a reusable bind succeeds: it passes the TIME_WAIT a reusable listener (docker-proxy) left,
+    never a listener or another bound socket."""
+    with socket.socket() as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.bind(("127.0.0.1", port))
+        except OSError as exc:
+            if exc.errno != errno.EADDRINUSE:
+                raise
+            return False
+        return True
+
+
+def listening(port):
+    """Whether anything accepts a connection on the loopback port."""
+    with socket.socket() as sock:
+        sock.settimeout(1)
+        return sock.connect_ex(("127.0.0.1", port)) == 0
+
+
 class Lane:
     """The host steps of one harness, resolving its names (ROOT, LABEL, PORTS, Refusal...) at call time."""
 
     def __init__(self, module):
         self.module = module
 
-    def command(self, *args, check=True):
+    def command(self, *args, check=True, timeout=120):
         m = self.module
         host.require_memory(args)
-        result = subprocess.run(args, cwd=m.ROOT, capture_output=True, timeout=120)
+        result = subprocess.run(args, cwd=m.ROOT, capture_output=True, timeout=timeout)
         if check and result.returncode:
             # Never include Docker output, synthetic credentials or arbitrary upstream text.
             raise m.Refusal("host_command_failed")
@@ -195,10 +238,21 @@ class Lane:
             raise m.Refusal("cached_image_digest_mismatch")
         return value["Id"]
 
-    def require_free_ports(self):
+    def require_free_ports(self, *, wait=TIME_WAIT_SECONDS, sleep=time.sleep, clock=time.monotonic):
+        """Free loopback ports; a held port raises its EADDRINUSE as before. Only a port the previous lane
+        left in TIME_WAIT gets a bounded wait (7c): a live listener, or any other holder, raises at once."""
         for port in self.module.PORTS:
-            with socket.socket() as sock:
-                sock.bind(("127.0.0.1", port))
+            deadline = clock() + wait
+            while True:
+                try:
+                    with socket.socket() as sock:
+                        sock.bind(("127.0.0.1", port))
+                    break
+                except OSError as exc:
+                    if (exc.errno != errno.EADDRINUSE or listening(port) or not time_wait_only(port)
+                            or clock() >= deadline):
+                        raise
+                sleep(1)
 
     def inspect_owned(self, kind, name, run_id):
         m = self.module
@@ -237,6 +291,78 @@ class Lane:
         if m.command("git", "status", "--porcelain", "--untracked-files=normal").stdout.strip():
             raise m.Refusal("clean_committed_checkout_required")
         return m.command("git", "rev-parse", "HEAD").stdout.decode().strip()
+
+    def ci_context(self):
+        """The run's verified context and its commit (D2): Actions only, this run's own checkout,
+        and an anchor equal to the lane's, since its reviewed data is keyed to that anchor (D5)."""
+        m = self.module
+        if os.environ.get("GITHUB_ACTIONS") != "true":
+            raise m.Refusal("ci_mode_requires_actions")
+        ctx = release.context()
+        if ctx is None:
+            raise m.Refusal("ci_context_required")
+        if ctx["anchor"] != m.VERSION:
+            raise m.Refusal("lane_anchor_unreviewed")
+        revision = self.clean_revision()
+        if revision != ctx["run"]["GITHUB_SHA"]:
+            raise m.Refusal("ci_revision_mismatch")
+        return ctx, revision
+
+    def ci_entry(self, ctx, archive_path):
+        """The release's exact source archive and the signed entry its D3 proof starts from."""
+        from core_lane_proof import authenticated_baseline, release_entry
+        m = self.module
+        if m.sha256(archive_path) != release.slot(ctx)["source_archive_sha256"]:
+            raise m.Refusal("input_hash_mismatch")
+        return release_entry(authenticated_baseline(ctx), ctx)
+
+    def ci_images(self, ctx, *, upstream):
+        """The release Core from the context's slot, then the anchor's reviewed child and the fixture
+        writer, each pulled by digest and verified; the lane itself still runs ``--pull never``."""
+        m = self.module
+        images = (release.slot(ctx)["image"], *self.images(upstream=upstream)[1:])
+        for image in images:
+            m.command("docker", "pull", image, timeout=PULL_TIMEOUT)
+            m.cached_image(image)
+        return images
+
+    def block_metadata(self):
+        """Drop forwarded traffic to the metadata address, then read the rule back (D6a)."""
+        m = self.module
+        rule = ("sudo", "-n", "iptables", "-w", "-C", *METADATA_RULE)
+        if m.command(*rule, check=False).returncode:
+            m.command("sudo", "-n", "iptables", "-w", "-I", *METADATA_RULE)
+            m.command(*rule)
+
+    def ci_claim(self, path):
+        """An exclusive run directory directly under the runner's own temporary directory."""
+        m = self.module
+        temp, run_dir = Path(os.environ.get("RUNNER_TEMP") or "relative"), path.absolute()
+        # A relative RUNNER_TEMP never equals its resolve(); is_symlink() comes first, before resolve() meets a loop.
+        if (temp.is_symlink() or temp.resolve() != temp
+                or run_dir.resolve() != run_dir or run_dir.parent != temp):
+            raise m.Refusal("runner_temp_run_directory_required")
+        run_dir.mkdir(mode=0o700)  # Exclusive, as in local mode.
+        return run_dir
+
+    def ci_admission(self, path, inputs, *, upstream, containers, network):
+        """CI mode's preflight in order, every step before any resource: the context, the harness's
+        ``inputs(ctx)``, digest-pulled images, the metadata block, unclaimed names and ports, the run directory."""
+        ctx, revision = self.ci_context()
+        values = inputs(ctx)
+        images = self.ci_images(ctx, upstream=upstream)
+        self.block_metadata()
+        self.require_unclaimed(containers, network)
+        return ctx, revision, values, images, self.ci_claim(path)
+
+    def ci_fields(self, ctx):
+        """Receipt fields CI mode replaces: no journal or host admission, the release Core, the run's own tree."""
+        return {"mode": "ci", "pull": "digest", "journal_sha256": None, "host_admission": None,
+                "core_version": release.slot(ctx)["version"], "runtime_tree": self.runtime_tree()}
+
+    def runtime_tree(self):
+        """The Engineering runtime tree of the run's own checkout, never a pinned constant (HAMCP-443 7e)."""
+        return self.module.command("git", "rev-parse", RUNTIME_TREE).stdout.decode().strip()
 
     def require_unclaimed(self, containers, network):
         m = self.module
@@ -301,6 +427,9 @@ class Lane:
     def start_core(self, name, network, run_id, memory, owned, image, *options):
         """Run the Core; ``options`` (port publication, host entries) go after its memory limit."""
         m = self.module
+        # No lane Core on the host network, in any mode (D6a); the bridge is the harness's own.
+        if network == "host" or any(str(option).split("=", 1)[0] in ("--network", "--net") for option in options):
+            raise m.Refusal("lane_core_host_network_refused")
         with diagnostics.check("container_start", "core_start"):
             m.command("docker", "run", "--detach", "--pull", "never", "--name", name,
                       "--label", m.LABEL + "=" + run_id, "--network", network, "--memory", memory,

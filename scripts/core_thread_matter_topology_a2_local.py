@@ -226,7 +226,8 @@ class CoreAdmin:
 
 
 @diagnostics.checked("helper_setup", "helper_contract")
-async def exercise(run_dir, entry, spec, core_image, run_id, core_memory, record, ha_url, stub_url):
+async def exercise(run_dir, entry, spec, core_image, run_id, core_memory, record, ha_url, stub_url, *,
+                   version=a1.VERSION, anchor=a1.VERSION, mode="local"):
     import real_ha_contract_tests as harness
     if harness.HA_URL != ha_url:
         raise Refusal("harness_core_address_mismatch")
@@ -243,7 +244,7 @@ async def exercise(run_dir, entry, spec, core_image, run_id, core_memory, record
     with diagnostics.check("helper_setup", "provider_setup"):
         observed = await admin.configure_matter()
     with diagnostics.check("image_verify", "running_identity"):
-        if observed.get("version") != a1.VERSION or "matter" not in set(observed.get("components", [])):
+        if observed.get("version") != version or "matter" not in set(observed.get("components", [])):
             raise Refusal("running_integration_set_mismatch")
         identities = {}
         for name, image, memory in ((CORE, core_image, core_memory), (STUB, core_image, STUB_MEMORY)):
@@ -260,7 +261,7 @@ async def exercise(run_dir, entry, spec, core_image, run_id, core_memory, record
         reply = await raw.command({"type": "config/device_registry/list"})
         assert reply["success"] is True
         return reply["result"]
-    result = await run(configured, entry, run_dir, mode="local", expectations=spec,
+    result = await run(configured, entry, run_dir, mode=mode, anchor=anchor, expectations=spec,
                        read_stub_record=lambda: record.read_text().splitlines() if record.exists() else [],
                        read_devices=devices, stub_control=admin.stub_control, stub_state=admin.stub_state,
                        reload_matter=admin.reload_matter)
@@ -272,9 +273,9 @@ def _main(argv=None):
     if not __debug__:
         raise Refusal("assertions_required")
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=("local",), required=True)
-    parser.add_argument("--pull", choices=("never",), required=True)
-    parser.add_argument("--journal", type=Path, required=True)
+    parser.add_argument("--mode", choices=("local", "ci"), required=True)
+    parser.add_argument("--pull", choices=("never", "digest"), required=True)
+    parser.add_argument("--journal", type=Path, help="local mode only")
     parser.add_argument("--source-archive", type=Path, required=True)
     parser.add_argument("--run-dir", type=Path, required=True)
     parser.add_argument("--core-memory", default=a1.CORE_MEMORY)
@@ -282,42 +283,58 @@ def _main(argv=None):
     parser.add_argument("--stub-dir", type=Path, default=None,
                         help="extracted copy of the pinned HAMCP-297 commit under .artifacts/ (default: the committed stub)")
     args = parser.parse_args(argv)
+    a1.core_lane_host.require_mode_arguments(parser, args)
     for memory in (args.core_memory, args.fixture_memory, STUB_MEMORY):
         host.memory_bytes(memory)
-    if os.environ.get("GITHUB_ACTIONS") == "true" or os.environ.get("CORE_EVIDENCE_CONTEXT"):
-        raise Refusal("local_only_closed_lane")
-    if command("git", "status", "--porcelain", "--untracked-files=normal").stdout.strip():
-        raise Refusal("clean_committed_checkout_required")
-    revision = command("git", "rev-parse", "HEAD").stdout.decode().strip()
+    ci = args.mode == "ci"
+    if ci:
+        # A1's host: the same verified context, anchor and run commit (HAMCP-443 D2).
+        ctx, revision = a1.LANE_HOST.ci_context()
+        version, anchor = ctx["provenance"]["version"], ctx["anchor"]
+    else:
+        if os.environ.get("GITHUB_ACTIONS") == "true" or os.environ.get("CORE_EVIDENCE_CONTEXT"):
+            raise Refusal("local_only_closed_lane")
+        if command("git", "status", "--porcelain", "--untracked-files=normal").stdout.strip():
+            raise Refusal("clean_committed_checkout_required")
+        revision = command("git", "rev-parse", "HEAD").stdout.decode().strip()
+        version = anchor = a1.VERSION
     # The stub contract first: pending refuses before any input, image or container.
     spec = expectations()
     stub = spec["stub"]
     stub_dir = (args.stub_dir or ROOT / stub["committed_dir"]).absolute()
     stub_identity = verify_stub(stub_dir, stub)
-    entry, reference, sources = a1.inputs(args.journal, args.source_archive)
-    core_image, fixture_image = a1.images()
-    for image in (core_image, fixture_image):
-        a1.cached_image(image)
+    if ci:
+        entry, reference, sources = a1.ci_inputs(ctx, args.source_archive)
+        core_image, fixture_image = a1.LANE_HOST.ci_images(ctx, upstream=False)
+        a1.LANE_HOST.block_metadata()
+    else:
+        entry, reference, sources = a1.inputs(args.journal, args.source_archive)
+        core_image, fixture_image = a1.images()
+        for image in (core_image, fixture_image):
+            a1.cached_image(image)
     for kind, names in (("container", (CORE, STUB)), ("network", (NETWORK,))):
         for name in names:
             if command("docker", kind, "inspect", name, check=False).returncode == 0:
                 raise Refusal("disposable_name_already_exists")
-    run_dir = args.run_dir.absolute()
-    if run_dir.resolve() != run_dir or ROOT / ".artifacts" not in run_dir.parents:
-        raise Refusal("new_task_artifact_directory_required")
-    run_dir.mkdir(mode=0o700)
-    admission = resources.wait_for_admission(run_dir / "resource-admission.json")
-    if command("git", "rev-parse", "HEAD").stdout.decode().strip() != revision:
-        raise Refusal("checkout_changed_during_admission")
+    if ci:
+        run_dir, admission = a1.LANE_HOST.ci_claim(args.run_dir), None
+    else:
+        run_dir = args.run_dir.absolute()
+        if run_dir.resolve() != run_dir or ROOT / ".artifacts" not in run_dir.parents:
+            raise Refusal("new_task_artifact_directory_required")
+        run_dir.mkdir(mode=0o700)
+        admission = resources.wait_for_admission(run_dir / "resource-admission.json")
+        if command("git", "rev-parse", "HEAD").stdout.decode().strip() != revision:
+            raise Refusal("checkout_changed_during_admission")
     run_id = uuid4().hex
     owned, record_dir = run_dir / CORE, run_dir / "stub-record"
     owned.mkdir(mode=0o700)
     record_dir.mkdir(mode=0o700)
     (owned / "configuration.yaml").write_text(a1.CONFIG)
     record = record_dir / spec["stub"]["record_name"]
-    os.environ.update(CORE_EVIDENCE_HOST_MODE="local", RUNNER_TEMP=str(run_dir),
+    os.environ.update(CORE_EVIDENCE_HOST_MODE="actions" if ci else "local", RUNNER_TEMP=str(run_dir),
         HA_CONTRACT_LANE=LANE, HA_FIXTURE_WRITER_IMAGE=fixture_image,
-        HA_CONTRACT_CONTAINER=CORE, HA_CONTRACT_NETWORK=NETWORK, REAL_HA_EXPECTED_VERSION=a1.VERSION)
+        HA_CONTRACT_CONTAINER=CORE, HA_CONTRACT_NETWORK=NETWORK, REAL_HA_EXPECTED_VERSION=version)
     os.environ.pop("REAL_HA_URL", None)
     for name in ("REAL_HA_UPSTREAM_IMAGE", "REAL_HA_UPSTREAM_VERSION",
                  "REAL_HA_UPSTREAM_CONTAINER", "REAL_HA_UPSTREAM_PORT"):
@@ -331,6 +348,8 @@ def _main(argv=None):
               **sources, "host_admission": admission,
               "container_memory": {"core": args.core_memory, "stub": STUB_MEMORY, "fixture": args.fixture_memory},
               "network_posture": NETWORK_POSTURE, "mode": "local", "pull": "never", "cleanup": {"clean": False}}
+    if ci:
+        result.update(a1.LANE_HOST.ci_fields(ctx))
 
     def interrupted(_signum, _frame):
         raise Refusal("lane_interrupted")
@@ -368,7 +387,7 @@ def _main(argv=None):
         async def bounded():
             async with asyncio.timeout(1800):
                 return await exercise(run_dir, entry, spec, core_image, run_id, args.core_memory, record,
-                                      ha_url, stub_url)
+                                      ha_url, stub_url, version=version, anchor=anchor, mode=args.mode)
         result.update(asyncio.run(bounded()))
         if result.get("profile") != reference:
             raise Refusal("receipt_profile_mismatch")

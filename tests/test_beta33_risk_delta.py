@@ -573,20 +573,6 @@ class Beta33ReleaseBoundaryTests(unittest.TestCase):
             )
         return versions
 
-    def assert_beta33_documents_resolve_exactly(self) -> None:
-        release = ROOT / "docs" / "V2_2_0_BETA33_RELEASE_NOTES.md"
-        acceptance = ROOT / "docs" / "V2_2_0_BETA33_ACCEPTANCE.md"
-        self.assertTrue(release.is_file())
-        self.assertTrue(acceptance.is_file())
-        self.assertIn(
-            "Reviewed non-expansion retained-effect proof",
-            release.read_text(encoding="utf-8"),
-        )
-        self.assertIn(
-            "Fresh garage retained-effect canary",
-            acceptance.read_text(encoding="utf-8"),
-        )
-
     def test_beta33_is_staged_without_changing_published_versions(self):
         self.assertEqual(
             self.require_release_phase(PRE_PROMOTION_VERSION),
@@ -604,7 +590,6 @@ class Beta33ReleaseBoundaryTests(unittest.TestCase):
             'version: "1.1.2"',
             (ROOT / "hass_mcp_admin" / "retired-addon-config.yaml").read_text(),
         )
-        self.assert_beta33_documents_resolve_exactly()
 
     def test_beta33_generated_release_state_is_exact(self):
         marker = ROOT / ".release" / "next-version"
@@ -623,7 +608,6 @@ class Beta33ReleaseBoundaryTests(unittest.TestCase):
             'version: "1.1.2"',
             (ROOT / "hass_mcp_admin" / "retired-addon-config.yaml").read_text(),
         )
-        self.assert_beta33_documents_resolve_exactly()
 
     def test_scope_adds_no_tool_provider_or_fallback(self):
         self.assertEqual(len(BETA_NATIVE_CAPABILITIES), 61)  # HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology

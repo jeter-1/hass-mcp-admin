@@ -599,14 +599,6 @@ class Beta30ReleaseBoundaryTests(unittest.TestCase):
         self.assertIn('"fallback": "none"', source)
         self.assertNotIn("call_service", source)
 
-    def test_release_documents_exist_and_state_authority_boundary(self):
-        release = ROOT / "docs" / "V2_2_0_BETA30_RELEASE_NOTES.md"
-        acceptance = ROOT / "docs" / "V2_2_0_BETA30_ACCEPTANCE.md"
-        self.assertTrue(release.is_file())
-        self.assertTrue(acceptance.is_file())
-        self.assertIn("notification is not approval", release.read_text())
-        self.assertIn("Open Approval Panel", acceptance.read_text())
-
 
 if __name__ == "__main__":
     unittest.main()

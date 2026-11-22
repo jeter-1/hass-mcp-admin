@@ -57,6 +57,7 @@ from ha_mcp_engineering.request_context import begin_request, end_request
 from ha_mcp_engineering.signed_registry import canonical_json
 from ha_mcp_engineering.upstream_tool_policy import load_reviewed_upstream_release_registry
 
+from core_lane_proof import transition
 import lane_failure_diagnostics as diagnostics
 from lane_session import lane_session, refuse_redirect
 
@@ -613,10 +614,12 @@ async def refusal_form(attempt, code):
 async def run(configured, entry, directory, *, mode, stub_url, stub_hashes, upstream_version):
     """Run only device_configuration_entity; caller owns startup, identity and teardown proof."""
     # The caller names the mode; nothing here reads the environment to choose one.
-    if mode == "ci":
-        raise NotImplementedError("ci mode lands in 443-B")
-    if mode != "local":
+    if mode not in ("local", "ci"):
         raise ValueError("lane_mode_unknown")
+    if mode == "ci":
+        # D3 rules 1-3, before any client: the authenticated baseline minus exactly this group, then its
+        # compiled profile.
+        old, _ = transition(entry, "device_configuration_entity", [reference()])
     # Every client is pinned before any authority, service or socket exists.
     safe = pinned_upstream(pinned(configured), upstream_version)
     stub = StubControl(stub_url)
@@ -627,8 +630,9 @@ async def run(configured, entry, directory, *, mode, stub_url, stub_hashes, upst
     key = Ed25519PrivateKey.generate()
     now = datetime.now(timezone.utc)
     evidence_text = b"Disposable device-configuration test authority; not registry publication authority"
-    old = entry["capabilities"]
-    assert len(old) == PREDECESSOR_CAPABILITIES and CAPABILITY not in {p["capability_id"] for p in old}
+    if mode == "local":
+        old = entry["capabilities"]
+        assert len(old) == PREDECESSOR_CAPABILITIES and CAPABILITY not in {p["capability_id"] for p in old}
     assert tuple(sorted(ALLOWLIST)) == tuple(sorted(ADMITTED))  # F1: exactly three triples
     runtimes, services = [], []
     counted = {"sends": 0, "writes": 0}

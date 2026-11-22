@@ -27,18 +27,7 @@ from ha_mcp_engineering.clients.mcp import (  # noqa: E402
     McpDashboardHandshake,
     validate_dashboard_read_arguments,
 )
-from ha_mcp_engineering.clients.upstream_read import (  # noqa: E402
-    McpReadCatalog,
-)
 from ha_mcp_engineering.configuration import Settings  # noqa: E402
-from ha_mcp_engineering.providers.operational_backup import (  # noqa: E402
-    OperationalBackupProviderError,
-    ReviewedOperationalBackupProvider,
-)
-from ha_mcp_engineering.providers.operational_lifecycle import (  # noqa: E402
-    OperationalLifecycleProviderError,
-    ReviewedOperationalLifecycleProvider,
-)
 from ha_mcp_engineering.providers.upstream_contracts import (  # noqa: E402
     CONTRACT_FAMILY_V3,
     decide_admission,
@@ -48,6 +37,7 @@ from ha_mcp_engineering.providers.upstream_contracts import (  # noqa: E402
 from ha_mcp_engineering.providers.upstream_dashboard import (  # noqa: E402
     UpstreamDashboardProvider,
 )
+from tests.test_hamcp401_lifecycle_9_2_0 import catalog_920  # noqa: E402
 
 
 def load_json(path: Path) -> dict:
@@ -76,6 +66,12 @@ def reviewed_tools(version: str) -> list[dict]:
     return deepcopy(load_json(EVIDENCE / f"ha-mcp-{version}.json")["tools"])
 
 
+def tools_920() -> list[dict]:
+    """The reviewed 9.2.0 catalog in its runtime order."""
+
+    return [deepcopy(tool) for tool in catalog_920().tools]
+
+
 def addon_8_tools() -> list[dict]:
     tools = reviewed_tools("8.0.0")
     reconstruction = load_json(
@@ -93,10 +89,10 @@ def dashboard_tool(tools: list[dict]) -> dict:
     )
 
 
-def dashboard_decision(tool: dict):
+def dashboard_decision(tool: dict, server_version: str = "9.2.0"):
     return decide_admission(
         server_name="ha-mcp",
-        server_version="8.0.0",
+        server_version=server_version,
         protocol_version="2025-03-26",
         tool=tool,
         attestations=tuple((item, "builtin") for item in load_attestations()),
@@ -133,21 +129,6 @@ def validate(version: str, tools: list[dict], **overrides):
     )
 
 
-class CatalogTransport:
-    def __init__(self, version: str, tools: list[dict]) -> None:
-        self.catalog = McpReadCatalog(
-            protocol_version="2025-03-26",
-            server_name="ha-mcp",
-            server_version=version,
-            tools=tuple(tools),
-            connection_latency_ms=1.0,
-        )
-        self.dispatch_count = 0
-
-    async def discover(self) -> McpReadCatalog:
-        return self.catalog
-
-
 class DashboardCatalogTransport:
     def __init__(self, tool: dict) -> None:
         self.handshake = McpDashboardHandshake(
@@ -165,14 +146,16 @@ class DashboardCatalogTransport:
 
 class ReviewedCatalogValidatorTests(unittest.TestCase):
     def test_exact_reviewed_standalone_catalogs_are_fully_accounted(self):
-        for version in ("7.14.2", "8.0.0"):
+        # HAMCP-437: re-bound from 7.14.2 and 8.0.0 to the admitted 9.2.0
+        # catalog.
+        for version, tools in (("9.2.0", tools_920()),):
             with self.subTest(version=version):
-                result = validate(version, reviewed_tools(version))
+                result = validate(version, tools)
                 self.assertTrue(result.valid)
                 self.assertEqual(result.validation_status, "accepted_exact")
-                self.assertEqual(result.expected_tool_count, 78)
-                self.assertEqual(result.observed_tool_count, 78)
-                self.assertEqual(result.reviewed_accounted_count, 78)
+                self.assertEqual(result.expected_tool_count, 77)
+                self.assertEqual(result.observed_tool_count, 77)
+                self.assertEqual(result.reviewed_accounted_count, 77)
                 self.assertEqual(result.missing_tool_count, 0)
                 self.assertEqual(result.additional_tool_count, 0)
                 self.assertEqual(result.duplicated_tool_count, 0)
@@ -192,6 +175,8 @@ class ReviewedCatalogValidatorTests(unittest.TestCase):
                 )
 
     def test_exact_addon_catalog_uses_same_normalized_identity(self):
+        # HAMCP-437: kept on 8.0.0 and reported. Its subject is the
+        # _meta.ha_mcp descriptor block, which no 9.2.0 descriptor carries.
         standalone = validate("8.0.0", reviewed_tools("8.0.0"))
         addon = validate("8.0.0", addon_8_tools())
 
@@ -215,18 +200,19 @@ class ReviewedCatalogValidatorTests(unittest.TestCase):
         )
 
     def test_identity_tool_set_and_contract_drift_fail_closed(self):
-        tools = addon_8_tools()
+        # HAMCP-437: re-bound from the 8.0.0 add-on catalog to 9.2.0.
+        tools = tools_920()
         cases = (
             (
                 "unknown_patch",
                 tools,
-                {"upstream_version": "8.0.1"},
+                {"upstream_version": "9.2.1"},
                 "upstream_version_mismatch",
             ),
             (
                 "unknown_minor",
                 tools,
-                {"upstream_version": "8.2.0"},
+                {"upstream_version": "9.3.0"},
                 "upstream_version_mismatch",
             ),
             (
@@ -260,7 +246,7 @@ class ReviewedCatalogValidatorTests(unittest.TestCase):
         )
         for name, candidate, overrides, status in cases:
             with self.subTest(name=name):
-                result = validate("8.0.0", candidate, **overrides)
+                result = validate("9.2.0", candidate, **overrides)
                 self.assertFalse(result.valid)
                 self.assertEqual(result.validation_status, status)
                 if name in {"missing_tool", "duplicate_tool"}:
@@ -278,8 +264,26 @@ class ReviewedCatalogValidatorTests(unittest.TestCase):
                         result.expected_normalized_catalog_fingerprint,
                     )
 
-    def test_security_schema_output_and_policy_drift_fail_closed(self):
-        baseline = addon_8_tools()
+    def _assert_all_rejected(self, version: str, candidates: dict) -> None:
+        for name, tools in candidates.items():
+            with self.subTest(name=name):
+                result = validate(version, tools)
+                self.assertFalse(result.valid)
+                self.assertEqual(
+                    result.validation_status,
+                    "rejected_catalog_mismatch",
+                )
+                self.assertGreater(
+                    result.invalid_descriptor_count
+                    + result.additional_tool_count
+                    + sum(dict(result.component_mismatch_counts).values()),
+                    0,
+                )
+
+    def test_security_schema_and_output_drift_fail_closed(self):
+        # HAMCP-437: re-bound from the 8.0.0 add-on catalog to 9.2.0. The
+        # _meta.ha_mcp subcases stay on 8.0.0 in the next test.
+        baseline = tools_920()
         target_index = next(
             index
             for index, tool in enumerate(baseline)
@@ -292,20 +296,6 @@ class ReviewedCatalogValidatorTests(unittest.TestCase):
         unreviewed["name"] = "ha_unreviewed_beta14"
         additional.append(unreviewed)
         candidates["additional_unreviewed_tool"] = additional
-
-        pinned = deepcopy(baseline)
-        pinned[target_index]["_meta"]["ha_mcp"]["pinned"] = not pinned[
-            target_index
-        ]["_meta"]["ha_mcp"]["pinned"]
-        candidates["pinned"] = pinned
-
-        exposed = deepcopy(baseline)
-        exposed[target_index]["_meta"]["ha_mcp"][
-            "llm_api_exposed"
-        ] = not exposed[target_index]["_meta"]["ha_mcp"][
-            "llm_api_exposed"
-        ]
-        candidates["llm_api_exposed"] = exposed
 
         tags = deepcopy(baseline)
         tags[target_index]["_meta"]["fastmcp"]["tags"].append(
@@ -332,6 +322,33 @@ class ReviewedCatalogValidatorTests(unittest.TestCase):
             "properties": {"unreviewed": {"type": "string"}},
         }
         candidates["output_contract"] = output_contract
+
+        self._assert_all_rejected("9.2.0", candidates)
+
+    def test_ha_mcp_meta_and_policy_drift_fail_closed(self):
+        # HAMCP-437: kept on 8.0.0 and reported. Its subject is the
+        # _meta.ha_mcp descriptor block, which no 9.2.0 descriptor carries.
+        baseline = addon_8_tools()
+        target_index = next(
+            index
+            for index, tool in enumerate(baseline)
+            if tool["name"] == "ha_get_state"
+        )
+        candidates: dict[str, list[dict]] = {}
+
+        pinned = deepcopy(baseline)
+        pinned[target_index]["_meta"]["ha_mcp"]["pinned"] = not pinned[
+            target_index
+        ]["_meta"]["ha_mcp"]["pinned"]
+        candidates["pinned"] = pinned
+
+        exposed = deepcopy(baseline)
+        exposed[target_index]["_meta"]["ha_mcp"][
+            "llm_api_exposed"
+        ] = not exposed[target_index]["_meta"]["ha_mcp"][
+            "llm_api_exposed"
+        ]
+        candidates["llm_api_exposed"] = exposed
 
         policy_cases: dict[str, object] = {
             "policy_not_object": "addon",
@@ -383,24 +400,12 @@ class ReviewedCatalogValidatorTests(unittest.TestCase):
         missing_policy[target_index]["_meta"]["ha_mcp"].pop("policy")
         candidates["policy_missing"] = missing_policy
 
-        for name, tools in candidates.items():
-            with self.subTest(name=name):
-                result = validate("8.0.0", tools)
-                self.assertFalse(result.valid)
-                self.assertEqual(
-                    result.validation_status,
-                    "rejected_catalog_mismatch",
-                )
-                self.assertGreater(
-                    result.invalid_descriptor_count
-                    + result.additional_tool_count
-                    + sum(dict(result.component_mismatch_counts).values()),
-                    0,
-                )
+        self._assert_all_rejected("8.0.0", candidates)
 
     def test_reviewed_classification_and_runtime_model_are_fail_closed(self):
+        # HAMCP-437: re-bound from the 8.0.0 add-on catalog to 9.2.0.
         registry = load_reviewed_upstream_release_registry()
-        release = registry.by_version["8.0.0"]
+        release = registry.by_version["9.2.0"]
         entries = tuple(
             replace(entry, classification="persistent_write")
             if entry.upstream_name == "ha_manage_backup"
@@ -410,7 +415,7 @@ class ReviewedCatalogValidatorTests(unittest.TestCase):
         changed_policy = replace(release.policy, tools=entries)
         changed_release = replace(release, policy=changed_policy)
         result = validate(
-            "8.0.0", addon_8_tools(), release=changed_release
+            "9.2.0", tools_920(), release=changed_release
         )
         self.assertFalse(result.valid)
         self.assertEqual(result.classification_mismatch_count, 1)
@@ -422,7 +427,7 @@ class ReviewedCatalogValidatorTests(unittest.TestCase):
             release,
             runtime_contract_fingerprint_model="unreviewed-model-v9",
         )
-        result = validate("8.0.0", addon_8_tools(), release=unsupported)
+        result = validate("9.2.0", tools_920(), release=unsupported)
         self.assertFalse(result.valid)
         self.assertEqual(
             result.validation_status,
@@ -431,240 +436,34 @@ class ReviewedCatalogValidatorTests(unittest.TestCase):
         self.assertEqual(result.normalized_catalog_fingerprint, None)
 
 
-class SpecialProviderCatalogAdmissionTests(unittest.IsolatedAsyncioTestCase):
-    async def test_backup_accepts_each_exact_reviewed_deployment(self):
-        deployments = (
-            ("7.14.2", reviewed_tools("7.14.2")),
-            ("8.0.0-standalone", reviewed_tools("8.0.0")),
-            ("8.0.0-addon", addon_8_tools()),
-        )
-        for label, tools in deployments:
-            version = label.split("-")[0]
-            with self.subTest(deployment=label):
-                transport = CatalogTransport(version, tools)
-                provider = ReviewedOperationalBackupProvider()
-                provider._transport = transport
-                provider._state.configured = True
-
-                evidence = await provider.probe()
-
-                self.assertEqual(evidence.server_version, version)
-                self.assertEqual(provider.health_snapshot()["dispatch_count"], 0)
-                self.assertEqual(provider.health_snapshot()["fallback_count"], 0)
-
-    async def test_backup_accepts_exact_addon_catalog_without_dispatch(self):
-        transport = CatalogTransport("8.0.0", addon_8_tools())
-        provider = ReviewedOperationalBackupProvider()
-        provider._transport = transport
-        provider._state.configured = True
-
-        evidence = await provider.probe()
-
-        self.assertEqual(
-            evidence.catalog_fingerprint,
-            "c61b0959e766f3900300dd4dd69a6d799fc113186d91983f21be69f1bc6b8768",
-        )
-        self.assertEqual(
-            evidence.normalized_catalog_fingerprint,
-            provider.health_snapshot()["catalog_validation"][
-                "expected_normalized_catalog_fingerprint"
-            ],
-        )
-        health = provider.health_snapshot()
-        self.assertEqual(
-            health["selected_compatibility_entry_id"],
-            "ha-mcp-v8.0.0-d65630f6",
-        )
-        self.assertEqual(
-            health["catalog_validation"]["reviewed_accounted_count"], 78
-        )
-        self.assertEqual(
-            health["catalog_validation"]["validation_status"],
-            "accepted_exact",
-        )
-        self.assertEqual(health["dispatch_count"], 0)
-        self.assertEqual(health["fallback_count"], 0)
-
-    async def test_lifecycle_accepts_exact_addon_catalog_for_each_operation(
-        self,
-    ):
-        for operation in (
-            "controlled_reload",
-            "restart_addon",
-            "restart_home_assistant",
-        ):
-            with self.subTest(operation=operation):
-                transport = CatalogTransport("8.0.0", addon_8_tools())
-                provider = ReviewedOperationalLifecycleProvider()
-                provider._transport = transport
-                provider._state.configured = True
-
-                evidence = await provider.probe(operation)
-
-                self.assertEqual(
-                    evidence.normalized_catalog_fingerprint,
-                    provider.health_snapshot()["catalog_validation"][
-                        "expected_normalized_catalog_fingerprint"
-                    ],
-                )
-                health = provider.health_snapshot()
-                self.assertEqual(
-                    health["selected_compatibility_entry_id"],
-                    "ha-mcp-v8.0.0-d65630f6",
-                )
-                self.assertEqual(
-                    health["catalog_validation"]["observed_tool_count"],
-                    78,
-                )
-                self.assertEqual(sum(health["dispatch_counts"].values()), 0)
-                self.assertEqual(health["fallback_count"], 0)
-
-    async def test_lifecycle_accepts_7_14_2_and_8_0_0_standalone_catalogs(self):
-        for version in ("7.14.2", "8.0.0"):
-            with self.subTest(version=version):
-                transport = CatalogTransport(
-                    version, reviewed_tools(version)
-                )
-                provider = ReviewedOperationalLifecycleProvider()
-                provider._transport = transport
-                provider._state.configured = True
-
-                evidence = await provider.probe("restart_addon")
-
-                self.assertEqual(evidence.server_version, version)
-                health = provider.health_snapshot()
-                self.assertEqual(sum(health["dispatch_counts"].values()), 0)
-                self.assertEqual(health["fallback_count"], 0)
-
-    async def test_catalog_drift_fails_before_special_provider_dispatch(self):
-        # HAMCP-436: drift on a tool the provider dispatches still refuses
-        # before dispatch.
-        def flip_pinned(tools: list[dict], name: str) -> None:
-            tool = next(item for item in tools if item["name"] == name)
-            tool["_meta"]["ha_mcp"]["pinned"] = not tool["_meta"]["ha_mcp"][
-                "pinned"
-            ]
-
-        tools = addon_8_tools()
-        flip_pinned(tools, "ha_manage_backup")
-        backup_transport = CatalogTransport("8.0.0", tools)
-        backup = ReviewedOperationalBackupProvider()
-        backup._transport = backup_transport
-        backup._state.configured = True
-        with self.assertRaises(OperationalBackupProviderError) as caught:
-            await backup.probe()
-        self.assertEqual(
-            caught.exception.category, "reviewed_contract_mismatch"
-        )
-        self.assertEqual(backup.health_snapshot()["dispatch_count"], 0)
-
-        for dispatched in ("ha_manage_addon", "ha_get_addon"):
-            with self.subTest(dispatched=dispatched):
-                tools = addon_8_tools()
-                flip_pinned(tools, dispatched)
-                lifecycle_transport = CatalogTransport("8.0.0", tools)
-                lifecycle = ReviewedOperationalLifecycleProvider()
-                lifecycle._transport = lifecycle_transport
-                lifecycle._state.configured = True
-                with self.assertRaises(
-                    OperationalLifecycleProviderError
-                ) as caught:
-                    await lifecycle.probe("restart_addon")
-                self.assertEqual(caught.exception.category, "catalog_mismatch")
-                lifecycle_health = lifecycle.health_snapshot()
-                self.assertEqual(
-                    sum(lifecycle_health["dispatch_counts"].values()), 0
-                )
-                self.assertEqual(lifecycle_health["fallback_count"], 0)
-                self.assertEqual(
-                    lifecycle_health["catalog_admission"]["status"],
-                    "rejected_dispatched_tool_mismatch",
-                )
-                self.assertEqual(
-                    lifecycle_health["catalog_admission"][
-                        "exact_tool_mismatches"
-                    ],
-                    [dispatched],
-                )
-
-    async def test_unused_tool_drift_is_recorded_not_rejected(self):
-        # HAMCP-436: drift on a reviewed tool neither provider dispatches is
-        # recorded in health, and the reviewed normalized fingerprint binds.
-        exact_backup = ReviewedOperationalBackupProvider()
-        exact_backup._transport = CatalogTransport("8.0.0", addon_8_tools())
-        exact_backup._state.configured = True
-        exact_backup_evidence = await exact_backup.probe()
-        exact_lifecycle = ReviewedOperationalLifecycleProvider()
-        exact_lifecycle._transport = CatalogTransport(
-            "8.0.0", addon_8_tools()
-        )
-        exact_lifecycle._state.configured = True
-        exact_lifecycle_evidence = await exact_lifecycle.probe("restart_addon")
-
-        tools = addon_8_tools()
-        self.assertEqual(tools[0]["name"], "ha_bulk_control")
-        tools[0]["_meta"]["ha_mcp"]["pinned"] = not tools[0][
-            "_meta"
-        ]["ha_mcp"]["pinned"]
-
-        backup = ReviewedOperationalBackupProvider()
-        backup._transport = CatalogTransport("8.0.0", tools)
-        backup._state.configured = True
-        backup_evidence = await backup.probe()
-        backup_health = backup.health_snapshot()
-        self.assertEqual(backup_health["dispatch_count"], 0)
-        self.assertEqual(
-            backup_health["catalog_validation"]["validation_status"],
-            "rejected_catalog_mismatch",
-        )
-        self.assertEqual(
-            backup_health["catalog_admission"]["status"],
-            "accepted_unused_tool_drift",
-        )
-        self.assertEqual(
-            backup_health["catalog_admission"]["unused_tool_drift"],
-            [
-                {
-                    "tool_name": "ha_bulk_control",
-                    "components": ["runtime_contract_fingerprint"],
-                    "runtime_contract_diff_fields": ["/_meta/ha_mcp/pinned"],
-                }
-            ],
-        )
-        self.assertEqual(
-            backup_evidence.normalized_catalog_fingerprint,
-            exact_backup_evidence.normalized_catalog_fingerprint,
-        )
-        self.assertNotEqual(
-            backup_evidence.catalog_fingerprint,
-            exact_backup_evidence.catalog_fingerprint,
-        )
-
-        lifecycle = ReviewedOperationalLifecycleProvider()
-        lifecycle._transport = CatalogTransport("8.0.0", tools)
-        lifecycle._state.configured = True
-        lifecycle_evidence = await lifecycle.probe("restart_addon")
-        lifecycle_health = lifecycle.health_snapshot()
-        self.assertEqual(sum(lifecycle_health["dispatch_counts"].values()), 0)
-        self.assertEqual(lifecycle_health["fallback_count"], 0)
-        self.assertEqual(
-            lifecycle_health["catalog_admission"]["status"],
-            "accepted_unused_tool_drift",
-        )
-        self.assertEqual(
-            lifecycle_health["catalog_admission"]["unused_tool_drift_count"],
-            1,
-        )
-        self.assertEqual(
-            lifecycle_evidence.normalized_catalog_fingerprint,
-            exact_lifecycle_evidence.normalized_catalog_fingerprint,
-        )
+# HAMCP-437 retired SpecialProviderCatalogAdmissionTests. Each case admitted
+# a retired release:
+# - test_backup_accepts_each_exact_reviewed_deployment and
+#   test_backup_accepts_exact_addon_catalog_without_dispatch: 7.14.2 and 8.0.0
+#   backup admission. Backup is held on 9.2.0
+#   (test_hamcp436_dispatch_scoped_catalog.BackupDispatchScopedCatalogTests).
+# - test_lifecycle_accepts_exact_addon_catalog_for_each_operation and
+#   test_lifecycle_accepts_7_14_2_and_8_0_0_standalone_catalogs: 7.14.2 and
+#   8.0.0 lifecycle admission. 9.2.0 lifecycle admission is covered by
+#   test_hamcp436_dispatch_scoped_catalog.LifecycleComponentCatalogTests
+#   and test_hamcp401_lifecycle_9_2_0.
+# - test_catalog_drift_fails_before_special_provider_dispatch and
+#   test_unused_tool_drift_is_recorded_not_rejected: 8.0.0 _meta.ha_mcp.pinned
+#   drift. The lifecycle guards on 9.2.0 are
+#   test_drift_on_a_dispatched_or_versioned_addon_tool_is_refused and
+#   test_other_unused_tool_drift_is_recorded_not_rejected in hamcp436. The
+#   backup drift guards stay in hamcp436 BackupDispatchScopedCatalogTests
+#   (test_drift_on_the_dispatched_tool_is_refused and
+#   test_unused_tool_drift_is_recorded_and_backup_dispatches_once), on 7.14.2
+#   until I2a-D moves them to a synthetic test-only release.
 
 
 class DashboardV3RuntimeAdmissionTests(unittest.IsolatedAsyncioTestCase):
     def test_standalone_and_addon_use_identical_normalized_dashboard_contracts(
         self,
     ):
+        # HAMCP-437: kept on 8.0.0 and reported. Its subject is the
+        # _meta.ha_mcp descriptor block, which no 9.2.0 descriptor carries.
         standalone_tool = dashboard_tool(reviewed_tools("8.0.0"))
         addon_tool = dashboard_tool(addon_8_tools())
         standalone = normalize_runtime_contract(
@@ -694,10 +493,12 @@ class DashboardV3RuntimeAdmissionTests(unittest.IsolatedAsyncioTestCase):
             addon.runtime_fingerprint,
             "806f6d6b0b54cd49162684834e650f8ca7c8f2735b36e8772263b1bbe00a5569",
         )
-        self.assertTrue(dashboard_decision(standalone_tool).accepted)
-        self.assertTrue(dashboard_decision(addon_tool).accepted)
+        self.assertTrue(dashboard_decision(standalone_tool, "8.0.0").accepted)
+        self.assertTrue(dashboard_decision(addon_tool, "8.0.0").accepted)
 
     async def test_addon_dashboard_admission_reports_exact_release_model(self):
+        # HAMCP-437: kept on 8.0.0 and reported. Its subject is the
+        # _meta.ha_mcp descriptor block, which no 9.2.0 descriptor carries.
         tool = dashboard_tool(addon_8_tools())
         transport = DashboardCatalogTransport(tool)
         provider = UpstreamDashboardProvider()
@@ -729,6 +530,8 @@ class DashboardV3RuntimeAdmissionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(transport.dispatch_count, 0)
 
     def test_all_four_valid_policy_values_are_normalized(self):
+        # HAMCP-437: kept on 8.0.0 and reported. Its subject is the
+        # _meta.ha_mcp descriptor block, which no 9.2.0 descriptor carries.
         baseline = dashboard_tool(reviewed_tools("8.0.0"))
         expected = runtime_contract_fingerprint(
             baseline,
@@ -751,9 +554,11 @@ class DashboardV3RuntimeAdmissionTests(unittest.IsolatedAsyncioTestCase):
                     ),
                     expected,
                 )
-                self.assertTrue(dashboard_decision(tool).accepted)
+                self.assertTrue(dashboard_decision(tool, "8.0.0").accepted)
 
     def test_malformed_policy_shapes_fail_closed(self):
+        # HAMCP-437: kept on 8.0.0 and reported. Its subject is the
+        # _meta.ha_mcp descriptor block, which no 9.2.0 descriptor carries.
         baseline = dashboard_tool(addon_8_tools())
         cases: dict[str, object] = {
             "missing_policy": None,
@@ -802,22 +607,32 @@ class DashboardV3RuntimeAdmissionTests(unittest.IsolatedAsyncioTestCase):
                     tool["_meta"]["ha_mcp"].pop("policy")
                 else:
                     tool["_meta"]["ha_mcp"]["policy"] = policy
-                decision = dashboard_decision(tool)
+                decision = dashboard_decision(tool, "8.0.0")
                 self.assertFalse(decision.accepted)
                 self.assertEqual(
                     decision.failure_category,
                     "upstream_runtime_contract_mismatch",
                 )
 
-    def test_security_and_execution_relevant_drift_remains_rejected(self):
+    def test_ha_mcp_meta_drift_remains_rejected(self):
+        # HAMCP-437: kept on 8.0.0 and reported. Its subject is the
+        # _meta.ha_mcp descriptor block, which no 9.2.0 descriptor carries.
         baseline = dashboard_tool(addon_8_tools())
-        cases: dict[str, dict] = {}
+        self.assertTrue(dashboard_decision(baseline, "8.0.0").accepted)
         pinned = deepcopy(baseline)
         pinned["_meta"]["ha_mcp"]["pinned"] = True
-        cases["pinned"] = pinned
         exposed = deepcopy(baseline)
         exposed["_meta"]["ha_mcp"]["llm_api_exposed"] = False
-        cases["llm_api_exposed"] = exposed
+        for label, tool in (("pinned", pinned), ("llm_api_exposed", exposed)):
+            with self.subTest(label=label):
+                self.assertFalse(dashboard_decision(tool, "8.0.0").accepted)
+
+    def test_security_and_execution_relevant_drift_remains_rejected(self):
+        # HAMCP-437: re-bound from the 8.0.0 add-on descriptor to 9.2.0. The
+        # _meta.ha_mcp subcases stay on 8.0.0 in the previous test.
+        baseline = dashboard_tool(tools_920())
+        self.assertTrue(dashboard_decision(baseline).accepted)
+        cases: dict[str, dict] = {}
         tags = deepcopy(baseline)
         tags["_meta"]["fastmcp"]["tags"].append("future")
         cases["tags"] = tags

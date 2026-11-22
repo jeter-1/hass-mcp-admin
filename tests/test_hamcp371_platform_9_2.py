@@ -15,8 +15,9 @@ shared ``upstream_platform_reads.project_result``. These tests cover:
   payload only;
 * every upstream warning replaced and counted, with Engineering's own codes
   kept, and the 999 cap;
-* 8.5.0 and 9.1.2 unchanged: the module is never called and the result equals
-  the shipped rebuild.
+* the gate is keyed on the module's ``RELEASES``: with 9.2.0 taken out of it,
+  the module is never called and the result equals the shipped rebuild.
+  HAMCP-437: only 9.2.0 is admitted (D1), so the 8.5.0/9.1.2 loop is retired.
 
 Receipt payloads are hash-checked through the replay module; other values are
 synthetic. No endpoint is contacted.
@@ -212,9 +213,9 @@ class Synthetic(unittest.TestCase):
             project("9.2.0", HEALTH, {"success": False})
 
 
-class EarlierReleasesUnchanged(unittest.TestCase):
+class OutsideTheModuleSet(unittest.TestCase):
 
-    def test_8_5_and_9_1_never_call_the_module(self):
+    def test_a_release_outside_the_module_set_never_calls_it(self):
         payloads = {
             HEALTH: (shipped_tests.health_payload(warnings=["hamcp371"]), {}),
             APP: (synthetic_apps(shipped_tests.app("core_ssh"), warnings=["hamcp371"]), {}),
@@ -223,11 +224,11 @@ class EarlierReleasesUnchanged(unittest.TestCase):
         }
         shipped = {HEALTH: platform._project_health, APP: platform._project_apps,
                    INTEGRATION: platform._project_integrations}
-        for version in ("8.5.0", "9.1.2"):
+        with patch.object(platform_9_2, "RELEASES", frozenset()):
             for tool, (payload, arguments) in payloads.items():
-                with self.subTest(version=version, tool=tool), patch.object(
+                with self.subTest(tool=tool), patch.object(
                         platform_9_2, "project", side_effect=AssertionError("9.2.0 only")) as spy:
-                    out = project(version, tool, payload, arguments)
+                    out = project("9.2.0", tool, payload, arguments)
                     spy.assert_not_called()
                     self.assertFalse(set(COUNTS) & set(out))
                     self.assertIn(platform_9_2.SHIPPED_WITHHELD, out["warnings"])

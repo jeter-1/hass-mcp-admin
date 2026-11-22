@@ -1,0 +1,86 @@
+{
+  "provenance_model": "hamcp319-fixture-provenance-v1",
+  "area": "yaml",
+  "consumer": "tests/test_hamcp319_yaml.py",
+  "fixture_file": "responses.json",
+  "upstream": {
+    "name": "ha-mcp",
+    "version": "9.2.0",
+    "registry_entry": "ha-mcp-v9.2.0-9de5bf6c",
+    "source_commit": "51e3aac788482a081807591cd5d58d07dc4e540b"
+  },
+  "generation": "Class C values were extracted by JSON pointer from committed 9.2.0 records with json.loads and written with json.dumps(indent=2, sort_keys=True); no value was edited. The two calls are the S6 run-b-9.2.0-2 receipts (filesystem tools on), re-verified against that run's SHA256SUMS; the descriptors come from the S8 standalone 9.2.0 filesystem-on capture, re-verified against the S8 SHA256SUMS and the reader's _CAPTURES digest. The consumer re-verifies each sha256 and each value against its pointer. Class S is a re-citation of the 9.1.0 transcription at the pinned 9.2.0 source (read only, never executed). The !secret and !input receipts and the disabled-tool receipt have no 9.2.0 equivalent and stay in ha_mcp_9_1_0/yaml. No record carries a record hash.",
+  "fixtures": {
+    "/class_c/yaml_group": {
+      "class": "C",
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls/y-group.json",
+      "sha256": "966bf452d3bf874e9f800c00247e88cf23e08e3e795b0eb28bfc273450000556",
+      "sha256_source": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/SHA256SUMS",
+      "pointer": "/exchange/response/result"
+    },
+    "/class_c/yaml_missing_key": {
+      "class": "C",
+      "receipt": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/out/9.2.0/calls/y-absent-key.json",
+      "sha256": "17bf464f286b3a3c4d1786a3df8bec342082dc57967441113c61bfb0bbcfd882",
+      "sha256_source": "docs/evidence/hamcp371/s6/run-b-9.2.0-2/SHA256SUMS",
+      "pointer": "/exchange/response/result"
+    },
+    "/descriptors/ha_config_get_yaml": {
+      "class": "C",
+      "receipt": "docs/evidence/hamcp371/s8/profiles-2/out/standalone-9.2.0-fs-on/capture.json",
+      "sha256": "8a4d3770f04159b2362308a4207230866dbcf1a1f3e3bb2c5076aeaae000efab",
+      "sha256_source": "docs/evidence/hamcp371/s8/profiles-2/SHA256SUMS (the capture-1.json and capture-2.json lines; capture.json is the committed copy)",
+      "pointer": "/tools/12"
+    },
+    "/descriptors/ha_delete_file": {
+      "class": "C",
+      "receipt": "docs/evidence/hamcp371/s8/profiles-2/out/standalone-9.2.0-fs-on/capture.json",
+      "sha256": "8a4d3770f04159b2362308a4207230866dbcf1a1f3e3bb2c5076aeaae000efab",
+      "sha256_source": "docs/evidence/hamcp371/s8/profiles-2/SHA256SUMS (the capture-1.json and capture-2.json lines; capture.json is the committed copy)",
+      "pointer": "/tools/33"
+    },
+    "/descriptors/ha_list_files": {
+      "class": "C",
+      "receipt": "docs/evidence/hamcp371/s8/profiles-2/out/standalone-9.2.0-fs-on/capture.json",
+      "sha256": "8a4d3770f04159b2362308a4207230866dbcf1a1f3e3bb2c5076aeaae000efab",
+      "sha256_source": "docs/evidence/hamcp371/s8/profiles-2/SHA256SUMS (the capture-1.json and capture-2.json lines; capture.json is the committed copy)",
+      "pointer": "/tools/52"
+    },
+    "/descriptors/ha_read_file": {
+      "class": "C",
+      "receipt": "docs/evidence/hamcp371/s8/profiles-2/out/standalone-9.2.0-fs-on/capture.json",
+      "sha256": "8a4d3770f04159b2362308a4207230866dbcf1a1f3e3bb2c5076aeaae000efab",
+      "sha256_source": "docs/evidence/hamcp371/s8/profiles-2/SHA256SUMS (the capture-1.json and capture-2.json lines; capture.json is the committed copy)",
+      "pointer": "/tools/64"
+    },
+    "/descriptors/ha_write_file": {
+      "class": "C",
+      "receipt": "docs/evidence/hamcp371/s8/profiles-2/out/standalone-9.2.0-fs-on/capture.json",
+      "sha256": "8a4d3770f04159b2362308a4207230866dbcf1a1f3e3bb2c5076aeaae000efab",
+      "sha256_source": "docs/evidence/hamcp371/s8/profiles-2/SHA256SUMS (the capture-1.json and capture-2.json lines; capture.json is the committed copy)",
+      "pointer": "/tools/81"
+    },
+    "/class_s/component_missing": {
+      "class": "S",
+      "source": [
+        "src/ha_mcp/tools/tools_yaml_read.py:551 (_assert_mcp_tools_available first in the read)",
+        "src/ha_mcp/tools/tools_yaml_read.py:622-623 (except ToolError: raise, no rewrap)",
+        "src/ha_mcp/tools/tools_filesystem.py:513-559 (no-services verdict raises)",
+        "src/ha_mcp/tools/tools_filesystem.py:194-223 (_raise_tools_entry_not_set_up: COMPONENT_NOT_INSTALLED, three suggestions)",
+        "src/ha_mcp/errors.py:261-327 (create_error_response: success false, error.code/message/suggestion/suggestions)",
+        "src/ha_mcp/tools/helpers.py:45-78 (raise_tool_error raises tool_error_from_response: ToolError(json.dumps(..., indent=2, default=str)) gives isError true)"
+      ],
+      "synthetic_text": "message and suggestion strings are synthetic canaries; code, key layout and indent=2 serialization follow the cited source",
+      "note": "Re-cited at 9.2.0: the shape is byte-for-byte the 9.1.0 class S fixture. tools_yaml_read.py and errors.py are byte-identical to 9.1.0; _assert_mcp_tools_available is unchanged; in _raise_tools_entry_not_set_up only the wording of the first two suggestion strings changed (code, message, and the three-suggestion layout did not); helpers.py moved the ToolError construction into tool_error_from_response with the same json.dumps(indent=2, default=str) serialization. No 9.2.0 receipt captures this state."
+    }
+  },
+  "source_files": {
+    "src/ha_mcp/tools/tools_yaml_read.py": "d72be9de84711fe0ca54065b30034fc9f85541a851337c26615f694f6d1f6d89",
+    "src/ha_mcp/tools/tools_filesystem.py": "0d47adc8137dbd58cdc91f0dffcd38abab5b8e4a786a9193a75aedbf443fd327",
+    "src/ha_mcp/errors.py": "02877355134d059b5fe6698d6bb974248016ddc333e84d322c4c9a209a7647bb",
+    "src/ha_mcp/tools/helpers.py": "da869916ca76da7bbea51321682a003e649f85548d5640a1f386df114eb75a11"
+  },
+  "synthetic_variants": "Scanner and integrity cases are built at test time from the 9.2.0 match shape (class S: src/ha_mcp/tools/tools_yaml_read.py:190-243 _evaluate_read match = {file, yaml_path, content = subtree, parsed}, and :605-614 result keys; the file is byte-identical to 9.1.0) with synthetic content, keys and canaries.",
+  "filesystem_off_catalog": "The reviewed stock 9.2.0 catalog (docs/evidence/upstream-read-compatibility/ha-mcp-9.2.0.json, 77 tools). It differs from the 82-tool filesystem-on capture by exactly the five filesystem-gated optional tools (src/ha_mcp/tools/tools_yaml_read.py:644-654; the filesystem tools register only when filesystem tools are enabled); the consumer checks that by name.",
+  "gateway_catalog_order": "capture.json lists tools by name, not in wire order. Gateway tests order them by the S8 observation (out/standalone-9.2.0-fs-on/observation.json tool_names_in_wire_order, hash-checked against the S8 SHA256SUMS), as test_hamcp162_yaml_admission.captured does."
+}
