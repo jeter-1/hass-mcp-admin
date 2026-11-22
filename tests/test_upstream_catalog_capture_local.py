@@ -18,6 +18,8 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
+if str(ROOT / "tests") not in sys.path:
+    sys.path.append(str(ROOT / "tests"))
 import upstream_catalog_capture_local as lane  # noqa: E402
 from support import frozen_capture_baseline as baseline  # noqa: E402
 

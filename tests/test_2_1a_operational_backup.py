@@ -23,6 +23,8 @@ from mcp import types as mcp_types
 ROOT = Path(__file__).resolve().parents[1]
 BETA_DIR = ROOT / "hass_mcp_engineering_beta"
 sys.path.insert(0, str(BETA_DIR))
+if str(ROOT / "tests") not in sys.path:
+    sys.path.append(str(ROOT / "tests"))
 
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
 from ha_mcp_engineering.clients.upstream_read import (  # noqa: E402

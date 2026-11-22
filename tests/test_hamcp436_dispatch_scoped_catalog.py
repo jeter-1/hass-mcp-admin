@@ -34,6 +34,8 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "hass_mcp_engineering_beta"), str(ROOT)]
+if str(ROOT / "tests") not in sys.path:
+    sys.path.append(str(ROOT / "tests"))
 
 from ha_mcp_engineering.clients.upstream_read import McpReadCatalog  # noqa: E402
 from ha_mcp_engineering.providers.operational_backup import (  # noqa: E402

@@ -17,6 +17,8 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 ROOT = Path(__file__).resolve().parents[1]
 BETA = ROOT / "hass_mcp_engineering_beta"
 sys.path.insert(0, str(BETA))
+if str(ROOT / "tests") not in sys.path:
+    sys.path.append(str(ROOT / "tests"))
 
 from ha_mcp_engineering.ha_mcp_readmission.registry import (  # noqa: E402
     TRUST_ANCHOR_KEY_ID,
