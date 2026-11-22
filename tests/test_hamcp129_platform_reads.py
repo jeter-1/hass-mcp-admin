@@ -38,7 +38,7 @@ from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
     validate_reviewed_release_catalog,
     validate_reviewed_release_evidence,
 )
-from test_beta58_ha_mcp_8_4_3_continuity import EXACT_READS  # noqa: E402
+from support.shipped_920_reads import READS_920 as EXACT_READS  # noqa: E402  (HAMCP-437 A3.4)
 from test_ha_mcp_production_readmission import _GatewayTransport, _settings  # noqa: E402
 from support.ha_mcp_captures import capture  # noqa: E402  (HAMCP-437)
 from support.ha_mcp_920_receipts import receipt  # noqa: E402  (HAMCP-437)
