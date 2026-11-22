@@ -1,15 +1,14 @@
-"""HAMCP-319 section 7 ledger rows 1-11: 9.1.0 parity with the shipped 8.5 surface.
+"""HAMCP-319 section 7 ledger rows 1-11: the shipped config reads on ha-mcp 9.2.0.
 
-Every call is an 8.5-shaped public call through the real upstream read gateway
-with a fake transport. 9.1 responses are class S fixtures transcribed from the
-pinned 9.1.0 source (tests/fixtures/ha_mcp_9_1_0/config/provenance.json).
+Every call is a public call through the real upstream read gateway with a fake
+transport. 9.2 responses are class S fixtures transcribed from the pinned 9.2.0
+source (tests/fixtures/ha_mcp_9_2_0/config/provenance.json).
 
-Evidence class of the 8.5-side rows (architect ruling 2026-11-07, item 1): **S
-(8.6 replay), never C.** No 8.5.0 capture exists for rows 1-11, so the 8.5.0
-policy is exercised with the decoded 8.6.0 standalone records
-(tests/fixtures/ha_mcp_8_6_0/read-results.json). Those records prove the 8.5.0
-gateway's pass-through handling of that shape, not 8.5.0 upstream output; the
-live 8.5.0 proof is the 8.5 exact-image lanes. No live Home Assistant, no
+On 9.2.0 a key outside a read's reviewed key set is withheld and an unreviewed
+upstream warning is replaced, where 9.1.0 refused the response or passed the
+key through. KeySetPending91Tests keeps the cases whose guarded outcome that
+changes on their 9.1.0 templates, unedited, until the architect answers inbox
+item 20261122-0042-01-i2c2b-hamcp319-config-keyset-outcomes (ANSWER 20261121-2318-01 item 4). No live Home Assistant, no
 network.
 """
 from __future__ import annotations
@@ -29,23 +28,27 @@ from mcp.server.fastmcp import FastMCP  # noqa: E402
 from ha_mcp_engineering.ha_mcp_readmission import ha_mcp as readmission  # noqa: E402
 from ha_mcp_engineering.providers import upstream_reads_9_1  # noqa: E402
 from ha_mcp_engineering.providers import upstream_reads_9_1_config as config  # noqa: E402
+from ha_mcp_engineering.providers import upstream_reads_9_2_keys as keys  # noqa: E402
 from ha_mcp_engineering.providers.upstream_read_gateway import UpstreamReadGateway  # noqa: E402
 from ha_mcp_engineering.request_context import begin_request, end_request  # noqa: E402
 from ha_mcp_engineering.upstream_tool_policy import load_reviewed_upstream_release_registry  # noqa: E402
 from test_ha_mcp_production_readmission import _GatewayTransport, _settings  # noqa: E402
 from support.ha_mcp_captures import capture  # noqa: E402  (HAMCP-437)
 
+FIXTURES_92 = json.loads(
+    (ROOT / "tests/fixtures/ha_mcp_9_2_0/config/responses.json").read_text("utf-8")
+)
+# Read only by KeySetPending91Tests.
 FIXTURES_91 = json.loads(
     (ROOT / "tests/fixtures/ha_mcp_9_1_0/config/responses.json").read_text("utf-8")
 )
-_READS_86 = json.loads(
-    (ROOT / "tests/fixtures/ha_mcp_8_6_0/read-results.json").read_text("utf-8")
-)
-# S (8.6 replay): 8.6.0 records fed to the 8.5.0 policy; not 8.5.0 captures.
-FIXTURES_85 = {entry["upstream_name"]: entry for entry in _READS_86["standalone"][:11]}
 CANARY = "SYNTHETIC-CANARY-319-CFG"
-ADAPTER_91 = "ha_mcp_error_contract_9_1_0_v1"
-ADAPTER_85 = "ha_mcp_error_contract_8_5_0_v1"
+ADAPTER_92 = "ha_mcp_error_contract_9_2_0_v1"
+# The default _settings peer host is "upstream", a redaction token that would
+# mask the 9.2.0 upstream_warnings_replaced key.
+PEER_URL = "http://synthetic-host-319:9583/synthetic-config-secret-319/mcp"
+COUNTS = ("fields_withheld", "fields_dropped_by_policy", "upstream_warnings_replaced")
+NONE_WITHHELD = dict.fromkeys(COUNTS, 0)
 
 AUTOMATION = "ha_config_get_automation"
 CALENDAR = "ha_config_get_calendar_events"
@@ -76,11 +79,6 @@ def error(payload):
     return {"isError": True, "content": [{"type": "text", "text": json.dumps(payload)}]}
 
 
-def fixture(key):
-    entry = FIXTURES_91["success"][key]
-    return deepcopy(entry["arguments"]), deepcopy(entry["structuredContent"])
-
-
 class Transport(_GatewayTransport):
     def __init__(self, tools, version):
         super().__init__(tools, version=version)
@@ -94,16 +92,25 @@ class Transport(_GatewayTransport):
 
 
 class _Base(unittest.IsolatedAsyncioTestCase):
-    version = "9.1.0"
+    version = "9.2.0"
+    fixtures = FIXTURES_92
 
     async def asyncSetUp(self):
         self.transport = Transport(capture(self.version)["tools"], self.version)
         self.gateway = UpstreamReadGateway()
         self.gateway.configure(
-            replace(_settings("synthetic-no-key"), ha_mcp_release_registry_enabled=False),
+            replace(
+                _settings("synthetic-no-key"),
+                ha_mcp_release_registry_enabled=False,
+                upstream_dashboard_mcp_url=PEER_URL,
+            ),
             transport=self.transport,
         )
         await self.gateway.initialize(FastMCP(f"synthetic-hamcp319-cfg-{self.version}"))
+
+    def fixture(self, key):
+        entry = self.fixtures["success"][key]
+        return deepcopy(entry["arguments"]), deepcopy(entry["structuredContent"])
 
     async def call(self, name, arguments, response=None):
         self.transport.response = response
@@ -115,7 +122,11 @@ class _Base(unittest.IsolatedAsyncioTestCase):
         finally:
             end_request(token)
 
-    def succeeded(self, result, *, complete=True):
+    def succeeded(self, result, *, complete=True, counts=NONE_WITHHELD):
+        """The public data, without the 9.2.0 key-set counts (asserted here).
+
+        counts=None leaves a count unasserted where its case is pending.
+        """
         self.assertTrue(result.get("success"), result)
         metadata = result["metadata"]
         self.assertEqual(metadata["provider"], "upstream_read_gateway")
@@ -124,7 +135,14 @@ class _Base(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(metadata["completeness"], "complete" if complete else "partial", result)
         if complete:
             self.assertEqual(result["warnings"], [], result)
-        return result["data"]
+        data = result["data"]
+        if self.version == "9.2.0":
+            got = {key: data.pop(key) for key in COUNTS}
+            if counts is not None:
+                self.assertEqual(got, counts, result)
+        else:
+            self.assertFalse(set(COUNTS) & set(data), result)
+        return data
 
     def refused(self, result, *, dispatched, category):
         self.assertFalse(result.get("success"), result)
@@ -152,21 +170,16 @@ class _Base(unittest.IsolatedAsyncioTestCase):
         return arguments
 
 
-class Parity91Tests(_Base):
-    """9.1.0 adapter rows 1-11 against class S 9.1 fixtures."""
+class Parity92Tests(_Base):
+    """9.2.0 rows 1-11 against class S 9.2 fixtures."""
 
-    version = "9.1.0"
-
-    async def test_91_parity_row_1_automation(self):
-        arguments, payload = fixture("row_1_automation")
+    async def test_92_parity_row_1_automation(self):
+        arguments, payload = self.fixture("row_1_automation")
         data = self.succeeded(await self.call(AUTOMATION, arguments, ok(payload)))
         self.assertEqual(data, payload)
         self.assertEqual(self.last_sent(AUTOMATION), {"entity_id": "automation.gateway_fixture"})
-        # Upstream warnings stay untrusted data; they never become gateway warnings.
-        warned = payload | {"warnings": ["Deprecated syntax detected."]}
-        result = await self.call(AUTOMATION, arguments, ok(warned))
-        self.assertEqual(self.succeeded(result), warned)
-        self.assertNotIn("Deprecated syntax detected.", result["warnings"])
+        # The warned and warnings=[1] cases stay on 9.1.0 (KeySetPending91Tests).
+        await self.assert_refused_unsent(AUTOMATION, {})
         await self.assert_refused_unsent(AUTOMATION, {"entity_id": "automation.x"})
         await self.assert_refused_unsent(AUTOMATION, {"identifier": "   "})
         for broken in (
@@ -175,16 +188,16 @@ class Parity91Tests(_Base):
             payload | {"action": "list"},
             payload | {"config": "alias: x"},
             payload | {"success": False},
-            payload | {"warnings": [1]},
             [payload],
         ):
             await self.assert_invalid_response(AUTOMATION, arguments, broken)
 
-    async def test_91_parity_row_2_calendar(self):
-        arguments, payload = fixture("row_2_calendar")
+    async def test_92_parity_row_2_calendar(self):
+        arguments, payload = self.fixture("row_2_calendar")
         data = self.succeeded(await self.call(CALENDAR, arguments, ok(payload)))
         self.assertEqual(data, payload)
         self.assertEqual(self.last_sent(CALENDAR), arguments)
+        await self.assert_refused_unsent(CALENDAR, {})
         await self.assert_refused_unsent(CALENDAR, arguments | {"calendar_id": "x"})
         events = payload["events"] * 6
         for broken in (
@@ -197,16 +210,16 @@ class Parity91Tests(_Base):
         ):
             await self.assert_invalid_response(CALENDAR, arguments, broken)
 
-    async def test_91_parity_row_3_category(self):
+    async def test_92_parity_row_3_category(self):
         for key in ("row_3_category_list", "row_3_category_get"):
-            arguments, payload = fixture(key)
+            arguments, payload = self.fixture(key)
             data = self.succeeded(await self.call(CATEGORY, arguments, ok(payload)))
             self.assertEqual(data, payload)
             self.assertEqual(self.last_sent(CATEGORY), arguments)
         await self.assert_refused_unsent(CATEGORY, {})
         await self.assert_refused_unsent(CATEGORY, {"scope": "automation", "name": "x"})
-        list_arguments, listed = fixture("row_3_category_list")
-        get_arguments, got = fixture("row_3_category_get")
+        list_arguments, listed = self.fixture("row_3_category_list")
+        get_arguments, got = self.fixture("row_3_category_get")
         for arguments, broken in (
             (list_arguments, listed | {"scope": "script"}),
             (list_arguments, listed | {"count": 0}),
@@ -217,15 +230,15 @@ class Parity91Tests(_Base):
         ):
             await self.assert_invalid_response(CATEGORY, arguments, broken)
 
-    async def test_91_parity_row_4_label(self):
+    async def test_92_parity_row_4_label(self):
         for key in ("row_4_label_list", "row_4_label_get"):
-            arguments, payload = fixture(key)
+            arguments, payload = self.fixture(key)
             data = self.succeeded(await self.call(LABEL, arguments, ok(payload)))
             self.assertEqual(data, payload)
             self.assertEqual(self.last_sent(LABEL), arguments)
         await self.assert_refused_unsent(LABEL, {"name": "x"})
-        list_arguments, listed = fixture("row_4_label_list")
-        get_arguments, got = fixture("row_4_label_get")
+        list_arguments, listed = self.fixture("row_4_label_list")
+        get_arguments, got = self.fixture("row_4_label_get")
         for arguments, broken in (
             (list_arguments, listed | {"count": 3}),
             (list_arguments, got),
@@ -235,8 +248,8 @@ class Parity91Tests(_Base):
         ):
             await self.assert_invalid_response(LABEL, arguments, broken)
 
-    async def test_91_parity_row_5_scene(self):
-        arguments, payload = fixture("row_5_scene")
+    async def test_92_parity_row_5_scene(self):
+        arguments, payload = self.fixture("row_5_scene")
         data = self.succeeded(await self.call(SCENE, arguments, ok(payload)))
         self.assertEqual(data, payload)
         self.assertEqual(self.last_sent(SCENE), {"scene_id": "gateway_fixture"})
@@ -245,16 +258,16 @@ class Parity91Tests(_Base):
             await self.assert_refused_unsent(SCENE, arguments | extra)
         await self.assert_refused_unsent(SCENE, {})
         await self.assert_refused_unsent(SCENE, {"scene_id": "  "})
+        # The scenes=[] case stays on 9.1.0 (KeySetPending91Tests).
         for broken in (
             {"success": True, "scenes": [], "total_count": 0, "has_more": False},
-            payload | {"scenes": []},
             payload | {"category": 7},
             {key: value for key, value in payload.items() if key != "config_hash"},
         ):
             await self.assert_invalid_response(SCENE, arguments, broken)
 
-    async def test_91_parity_row_6_script(self):
-        arguments, payload = fixture("row_6_script")
+    async def test_92_parity_row_6_script(self):
+        arguments, payload = self.fixture("row_6_script")
         data = self.succeeded(await self.call(SCRIPT, arguments, ok(payload)))
         # The dependency consumer needs complete, success, script_id and config.
         self.assertEqual(data, payload)
@@ -271,8 +284,8 @@ class Parity91Tests(_Base):
         ):
             await self.assert_invalid_response(SCRIPT, arguments, broken)
 
-    async def test_91_parity_row_7_dashboard_resources(self):
-        arguments, payload = fixture("row_7_resources")
+    async def test_92_parity_row_7_dashboard_resources(self):
+        arguments, payload = self.fixture("row_7_resources")
         data = self.succeeded(await self.call(RESOURCES, arguments, ok(payload)))
         # The shipped 8.5 css/js/module keys are zero-filled, never invented.
         self.assertEqual(data, payload | {"by_type": {"css": 1, "js": 0, "module": 1}})
@@ -282,10 +295,10 @@ class Parity91Tests(_Base):
         yaml_mode = payload | {"resource_mode": "yaml", "note": "synthetic yaml note"}
         data = self.succeeded(await self.call(RESOURCES, arguments, ok(yaml_mode)))
         self.assertEqual((data["resource_mode"], data["note"]), ("yaml", "synthetic yaml note"))
+        await self.assert_refused_unsent(RESOURCES, {"include_hash": True})
         await self.assert_refused_unsent(RESOURCES, arguments | {"include_hash": True})
-        row = payload["resources"][0]
+        # The resource-row _config_hash case stays on 9.1.0 (KeySetPending91Tests).
         for broken in (
-            payload | {"resources": [row | {"_config_hash": "abc"}]},
             payload | {"has_more": False},
             payload | {"next_offset": None},
             payload | {"limit": 100},
@@ -297,29 +310,22 @@ class Parity91Tests(_Base):
         ):
             await self.assert_invalid_response(RESOURCES, arguments, broken)
 
-    async def test_91_parity_row_8_groups(self):
-        arguments, payload = fixture("row_8_groups")
+    async def test_92_parity_row_8_groups(self):
+        arguments, payload = self.fixture("row_8_groups")
         result = await self.call(GROUPS, arguments, ok(payload))
-        data = self.succeeded(result, complete=False)
-        self.assertEqual(result["warnings"], [config.GROUP_FIELDS_UNAVAILABLE_WARNING])
-        first, second = data["groups"]
+        # The second record's reported all field and the full-record case stay
+        # on 9.1.0 (KeySetPending91Tests), so its count is not asserted here.
+        data = self.succeeded(result, complete=False, counts=None)
+        self.assertEqual(result["warnings"], [keys.TEXTS[config.GROUP_FIELDS_UNAVAILABLE_WARNING]])
+        first, _ = data["groups"]
         self.assertEqual(first["unavailable_fields"], ["all"])
         self.assertNotIn("all", first)
-        self.assertNotIn("unavailable_fields", second)
-        self.assertEqual(second["all"], True)
-        expected = deepcopy(payload)
-        expected["groups"][0]["unavailable_fields"] = ["all"]
-        self.assertEqual(data, expected)
         self.assertEqual(self.last_sent(GROUPS), arguments)
-        # A record that reports both fields stays complete and undisclosed.
-        full = deepcopy(payload)
-        full["groups"][0]["all"] = False
-        result = await self.call(GROUPS, arguments, ok(full))
-        self.assertEqual(self.succeeded(result), full)
+        await self.assert_refused_unsent(GROUPS, {"group_id": "x"})
         await self.assert_refused_unsent(GROUPS, arguments | {"group_id": "x"})
         record = payload["groups"][0]
+        # The upstream unavailable_fields case stays on 9.1.0 (KeySetPending91Tests).
         for broken in (
-            payload | {"groups": [record | {"unavailable_fields": []}, payload["groups"][1]]},
             payload | {"groups": [record | {"entity_id": "light.x"}, payload["groups"][1]]},
             payload | {"groups": [record | {"object_id": "other"}, payload["groups"][1]]},
             payload | {"groups": [{k: v for k, v in record.items() if k != "entity_ids"}, payload["groups"][1]]},
@@ -328,8 +334,8 @@ class Parity91Tests(_Base):
         ):
             await self.assert_invalid_response(GROUPS, arguments, broken)
 
-    async def test_91_parity_row_9_helpers(self):
-        arguments, payload = fixture("row_9_helpers")
+    async def test_92_parity_row_9_helpers(self):
+        arguments, payload = self.fixture("row_9_helpers")
         data = self.succeeded(await self.call(HELPERS, arguments, ok(payload)))
         self.assertEqual(data, payload)
         sent = self.last_sent(HELPERS)
@@ -352,11 +358,11 @@ class Parity91Tests(_Base):
         ):
             await self.assert_invalid_response(HELPERS, arguments, broken)
 
-    async def test_91_parity_row_10_eval_template(self):
-        arguments, payload = fixture("row_10_template")
+    async def test_92_parity_row_10_eval_template(self):
+        arguments, payload = self.fixture("row_10_template")
         result = await self.call(TEMPLATE, arguments, ok(payload))
         data = self.succeeded(result, complete=False)
-        self.assertEqual(result["warnings"], [config.TEMPLATE_FIELDS_UNAVAILABLE_WARNING])
+        self.assertEqual(result["warnings"], [keys.TEXTS[config.TEMPLATE_FIELDS_UNAVAILABLE_WARNING]])
         self.assertEqual(data, payload | {"unavailable_fields": ["evaluation_time", "request_id"]})
         self.assertNotIn("request_id", data)
         self.assertNotIn("evaluation_time", data)
@@ -370,27 +376,25 @@ class Parity91Tests(_Base):
         for bad in ({"timeout": 0}, {"timeout": 61}, {"timeout": 2.5}, {"timeout": True},
                     {"condition": "x"}, {"variables": {}}, {"strict": True}):
             await self.assert_refused_unsent(TEMPLATE, arguments | bad)
+        # The upstream request_id, evaluation_time, unavailable_fields and
+        # condition cases stay on 9.1.0 (KeySetPending91Tests).
         for broken in (
             payload | {"template": "{{ 2 }}"},
-            payload | {"request_id": "synthetic"},
-            payload | {"evaluation_time": 0.1},
-            payload | {"unavailable_fields": []},
-            payload | {"condition": True},
             payload | {"listeners": []},
             {key: value for key, value in payload.items() if key != "result"},
         ):
             await self.assert_invalid_response(TEMPLATE, arguments, broken)
 
-    async def test_91_parity_row_11_automation_traces(self):
+    async def test_92_parity_row_11_automation_traces(self):
         for key in ("row_11_traces_list", "row_11_traces_detail"):
-            arguments, payload = fixture(key)
-            data = self.succeeded(await self.call(TRACES, arguments, ok(payload)))
-            self.assertEqual(data, payload)
+            arguments, payload = self.fixture(key)
+            # The returned records stay on 9.1.0 (KeySetPending91Tests).
+            self.succeeded(await self.call(TRACES, arguments, ok(payload)), counts=None)
             self.assertEqual(self.last_sent(TRACES), arguments)
         await self.assert_refused_unsent(TRACES, {"automation_id": "automation.x", "order": "random"})
         await self.assert_refused_unsent(TRACES, {"automation_id": "automation.x", "limit": 51})
-        list_arguments, listed = fixture("row_11_traces_list")
-        detail_arguments, detail = fixture("row_11_traces_detail")
+        list_arguments, listed = self.fixture("row_11_traces_list")
+        detail_arguments, detail = self.fixture("row_11_traces_detail")
         for arguments, broken in (
             (list_arguments, listed | {"automation_id": "automation.other"}),
             (list_arguments, listed | {"order": "oldest"}),
@@ -405,8 +409,8 @@ class Parity91Tests(_Base):
         ):
             await self.assert_invalid_response(TRACES, arguments, broken)
 
-    async def test_91_parity_rows_1_11_bounded_output(self):
-        arguments, payload = fixture("row_9_helpers")
+    async def test_92_parity_rows_1_11_bounded_output(self):
+        arguments, payload = self.fixture("row_9_helpers")
         # 20 records of 4000 characters exceed the 60000-byte policy limit for
         # this row while each string stays below the sanitizer's string cap.
         huge = payload | {"helpers": [{"id": f"h{i}", "name": "x" * 4000} for i in range(20)],
@@ -415,8 +419,8 @@ class Parity91Tests(_Base):
         self.refused(result, dispatched=True, category="response_too_large")
         self.assertLess(len(json.dumps(result)), 20000)
 
-    async def test_91_parity_rows_1_11_upstream_errors_fail_closed(self):
-        arguments, _ = fixture("row_5_scene")
+    async def test_92_parity_rows_1_11_upstream_errors_fail_closed(self):
+        arguments, _ = self.fixture("row_5_scene")
         # CONFIG_NOT_FOUND has no domain mapping: generic upstream_error, no widening.
         result = await self.call(SCENE, arguments, error({
             "success": False, "error": {"code": "CONFIG_NOT_FOUND", "message": f"{CANARY}"},
@@ -426,30 +430,31 @@ class Parity91Tests(_Base):
             "success": False, "error": {"code": "ENTITY_NOT_FOUND", "message": CANARY}}))
         self.refused(result, dispatched=True, category="entity_not_found")
         for tool, key in ((CALENDAR, "row_2_calendar"), (GROUPS, "row_8_groups"), (TRACES, "row_11_traces_list")):
-            arguments, _ = fixture(key)
+            arguments, _ = self.fixture(key)
             result = await self.call(tool, arguments, error({
                 "success": False, "error": {"code": "INTERNAL_ERROR", "message": CANARY}}))
             self.refused(result, dispatched=True, category="upstream_error")
 
-    async def test_91_error_adapter_positive(self):
-        release = load_reviewed_upstream_release_registry().by_version["9.1.0"]
+    async def test_92_error_adapter_positive(self):
+        release = load_reviewed_upstream_release_registry().by_version["9.2.0"]
         adapter = readmission._error_adapter(
-            release.error_contract_fingerprint, upstream_version="9.1.0"
+            release.error_contract_fingerprint, upstream_version="9.2.0"
         )
         self.assertIsNotNone(adapter)
-        self.assertEqual(adapter.adapter_id, ADAPTER_91)
-        self.assertEqual(adapter.upstream_versions, frozenset({"9.1.0"}))
-        self.assertEqual(adapter.evidence_class, "source_derived")
-        # Never attached by analogy: 8.5.0 with the equal aggregate is not served by it.
-        other = readmission._error_adapter(
-            release.error_contract_fingerprint, upstream_version="8.5.0"
-        )
-        self.assertNotEqual(getattr(other, "adapter_id", None), ADAPTER_91)
+        self.assertEqual(adapter.adapter_id, ADAPTER_92)
+        self.assertEqual(adapter.upstream_versions, frozenset({"9.2.0"}))
+        self.assertEqual(adapter.evidence_class, "real_core_capture")
+        # Never attached by analogy: other versions with the equal aggregate are not served by it.
+        for version in ("9.1.2", "9.2.1", "8.5.0"):
+            other = readmission._error_adapter(
+                release.error_contract_fingerprint, upstream_version=version
+            )
+            self.assertNotEqual(getattr(other, "adapter_id", None), ADAPTER_92)
         self.assertTrue(readmission._error_contract_matches_capability(
             capability_id=AUTOMATION, selected_adapter=adapter, observed_adapter=adapter,
             selected_entity_status="", observed_entity_status="",
         ))
-        for key, entry in FIXTURES_91["errors"].items():
+        for key, entry in self.fixtures["errors"].items():
             with self.subTest(key=key):
                 result = await self.call(entry["tool"], entry["arguments"], error(entry["error"]))
                 self.refused(result, dispatched=True,
@@ -459,99 +464,77 @@ class Parity91Tests(_Base):
                 self.assertNotIn("missing_fixture", json.dumps(result))
 
 
-class Parity85Tests(_Base):
-    """The 8.5.0 policy passes the replayed records through byte-identically.
+class KeySetPending91Tests(_Base):
+    """Shipped 9.1.0 cases whose guarded outcome the 9.2.0 key sets change.
 
-    Evidence class S (8.6 replay): the inputs are 8.6.0 records, so this proves
-    the 8.5.0 gateway path, not 8.5.0 upstream output (8.5 lanes carry that).
+    Kept unedited on the 9.1.0 templates until the architect answers inbox
+    item 20261122-0042-01-i2c2b-hamcp319-config-keyset-outcomes (ANSWER 20261121-2318-01 item 4). On 9.2.0 each of these
+    returns success, with the key withheld or the warning replaced.
     """
 
-    version = "8.5.0"
+    version = "9.1.0"
+    fixtures = FIXTURES_91
 
-    async def _pass_through(self, tool):
-        entry = FIXTURES_85[tool]
-        result = await self.call(tool, deepcopy(entry["arguments"]), deepcopy(entry["result"]))
-        data = self.succeeded(result)
-        self.assertEqual(data, entry["decoded"])
-        self.assertNotIn("unavailable_fields", json.dumps(data))
-        self.assertEqual(self.last_sent(tool), entry["arguments"])
-        return entry
+    async def test_91_pending_row_1_upstream_warnings(self):
+        arguments, payload = self.fixture("row_1_automation")
+        # Upstream warnings stay untrusted data; they never become gateway warnings.
+        warned = payload | {"warnings": ["Deprecated syntax detected."]}
+        result = await self.call(AUTOMATION, arguments, ok(warned))
+        self.assertEqual(self.succeeded(result), warned)
+        self.assertNotIn("Deprecated syntax detected.", result["warnings"])
+        await self.assert_invalid_response(AUTOMATION, arguments, payload | {"warnings": [1]})
 
-    async def _shape_refusals(self, tool, refusals):
-        for arguments in refusals:
-            await self.assert_refused_unsent(tool, arguments)
+    async def test_91_pending_row_5_scene_listing_key(self):
+        arguments, payload = self.fixture("row_5_scene")
+        await self.assert_invalid_response(SCENE, arguments, payload | {"scenes": []})
 
-    async def test_85_parity_row_1_automation(self):
-        await self._pass_through(AUTOMATION)
-        await self._shape_refusals(AUTOMATION, [{}, {"entity_id": "automation.x"}])
-
-    async def test_85_parity_row_2_calendar(self):
-        await self._pass_through(CALENDAR)
-        await self._shape_refusals(CALENDAR, [{}, {"entity_id": "calendar.x", "calendar_id": "x"}])
-
-    async def test_85_parity_row_3_category(self):
-        await self._pass_through(CATEGORY)
-        await self._shape_refusals(CATEGORY, [{}, {"scope": "automation", "name": "x"}])
-
-    async def test_85_parity_row_4_label(self):
-        await self._pass_through(LABEL)
-        await self._shape_refusals(LABEL, [{"name": "x"}])
-
-    async def test_85_parity_row_5_scene(self):
-        await self._pass_through(SCENE)
-        await self._shape_refusals(SCENE, [{}, {"scene_id": "x", "query": "x"}, {"scene_id": "x", "limit": 1}])
-
-    async def test_85_parity_row_6_script(self):
-        entry = await self._pass_through(SCRIPT)
-        self.assertEqual(entry["decoded"]["script_id"], "gateway_fixture")
-        await self._shape_refusals(SCRIPT, [{}, {"script_id": "x", "raw": True}])
-
-    async def test_85_parity_row_7_dashboard_resources(self):
-        entry = await self._pass_through(RESOURCES)
-        self.assertEqual(entry["decoded"]["by_type"], {"css": 0, "js": 0, "module": 0})
-        await self._shape_refusals(RESOURCES, [{"include_hash": True}])
-
-    async def test_85_parity_row_8_groups(self):
-        await self._pass_through(GROUPS)
-        await self._shape_refusals(GROUPS, [{"group_id": "x"}])
-
-    async def test_85_parity_row_9_helpers(self):
-        await self._pass_through(HELPERS)
-        await self._shape_refusals(HELPERS, [
-            {"helper_type": "input_boolean", "describe": True},
-            {"helper_type": "input_boolean", "menu_choice": "x"},
-            {"helper_type": "input_boolean", "helper_id": "x"},
-        ])
-
-    async def test_85_parity_row_10_eval_template(self):
-        await self._pass_through(TEMPLATE)
-        await self._shape_refusals(TEMPLATE, [
-            {"template": "x", "condition": "x"}, {"template": "x", "variables": {}},
-            {"template": "x", "strict": True},
-        ])
-
-    async def test_85_parity_row_11_automation_traces(self):
-        await self._pass_through(TRACES)
-        await self._shape_refusals(TRACES, [{"automation_id": "automation.x", "order": "random"}])
-
-    async def test_85_error_adapter_positive(self):
-        release = load_reviewed_upstream_release_registry().by_version["8.5.0"]
-        adapter = readmission._error_adapter(
-            release.error_contract_fingerprint, upstream_version="8.5.0"
+    async def test_91_pending_row_7_resource_config_hash(self):
+        arguments, payload = self.fixture("row_7_resources")
+        row = payload["resources"][0]
+        await self.assert_invalid_response(
+            RESOURCES, arguments, payload | {"resources": [row | {"_config_hash": "abc"}]}
         )
-        self.assertIsNotNone(adapter)
-        self.assertEqual(adapter.adapter_id, ADAPTER_85)
-        self.assertIsNone(adapter.upstream_versions)
-        self.assertIsNone(adapter.evidence_class)
-        self.assertTrue(readmission._error_contract_matches_capability(
-            capability_id=AUTOMATION, selected_adapter=adapter, observed_adapter=adapter,
-            selected_entity_status="", observed_entity_status="",
-        ))
-        for key, entry in FIXTURES_91["errors"].items():
-            with self.subTest(key=key):
-                result = await self.call(entry["tool"], entry["arguments"], error(entry["error"]))
-                self.refused(result, dispatched=True,
-                             category=entry.get("failure_category", entry["public_outcome"]))
+
+    async def test_91_pending_row_8_reported_group_fields(self):
+        arguments, payload = self.fixture("row_8_groups")
+        result = await self.call(GROUPS, arguments, ok(payload))
+        data = self.succeeded(result, complete=False)
+        self.assertEqual(result["warnings"], [config.GROUP_FIELDS_UNAVAILABLE_WARNING])
+        first, second = data["groups"]
+        self.assertEqual(first["unavailable_fields"], ["all"])
+        self.assertNotIn("all", first)
+        self.assertNotIn("unavailable_fields", second)
+        self.assertEqual(second["all"], True)
+        expected = deepcopy(payload)
+        expected["groups"][0]["unavailable_fields"] = ["all"]
+        self.assertEqual(data, expected)
+        # A record that reports both fields stays complete and undisclosed.
+        full = deepcopy(payload)
+        full["groups"][0]["all"] = False
+        result = await self.call(GROUPS, arguments, ok(full))
+        self.assertEqual(self.succeeded(result), full)
+
+    async def test_91_pending_row_8_upstream_unavailable_fields(self):
+        arguments, payload = self.fixture("row_8_groups")
+        record = payload["groups"][0]
+        await self.assert_invalid_response(GROUPS, arguments, payload | {
+            "groups": [record | {"unavailable_fields": []}, payload["groups"][1]]})
+
+    async def test_91_pending_row_10_upstream_template_fields(self):
+        arguments, payload = self.fixture("row_10_template")
+        for broken in (
+            payload | {"request_id": "synthetic"},
+            payload | {"evaluation_time": 0.1},
+            payload | {"unavailable_fields": []},
+            payload | {"condition": True},
+        ):
+            await self.assert_invalid_response(TEMPLATE, arguments, broken)
+
+    async def test_91_pending_row_11_trace_records(self):
+        for key in ("row_11_traces_list", "row_11_traces_detail"):
+            arguments, payload = self.fixture(key)
+            data = self.succeeded(await self.call(TRACES, arguments, ok(payload)))
+            self.assertEqual(data, payload)
 
 
 class ProjectionTableTests(unittest.TestCase):
