@@ -92,7 +92,7 @@ GROUP_ENVELOPE = {
 }
 
 
-def wire_catalog():
+def wire_catalog_92():
     """The 82-tool S8 9.2.0 filesystem-on catalog in its observed wire order."""
 
     return adm.captured("9.2.0")
@@ -108,7 +108,7 @@ def full_catalog():
     return json.loads((PHASE1 / "catalogs/full-1.json").read_text(encoding="utf-8"))["tools"]
 
 
-def wire_catalog_91():
+def wire_catalog():
     """full-1 in the reviewed wire order (9.1.0 provenance ``gateway_catalog_order``).
 
     full-1 lists tools by name; the 77 stock descriptors are ordered by the
@@ -124,7 +124,7 @@ def wire_catalog_91():
 def filesystem_off_catalog_91():
     """Class S: the 9.1.0 wire catalog without the five filesystem-gated optional tools."""
 
-    return [tool for tool in wire_catalog_91() if tool["name"] not in OPTIONAL_91]
+    return [tool for tool in wire_catalog() if tool["name"] not in OPTIONAL_91]
 
 
 def class_c(name):
@@ -288,7 +288,7 @@ class ProvenanceTests(unittest.TestCase):
         self.assertEqual(RESPONSES["class_s"], RESPONSES_91["class_s"])
 
     def test_captured_descriptors_match_the_compiled_bindings(self):
-        tools = wire_catalog()
+        tools = wire_catalog_92()
         self.assertEqual(len(tools), 82)
         for name in OPTIONAL_91:
             with self.subTest(tool=name):
@@ -329,7 +329,7 @@ class ProvenanceTests(unittest.TestCase):
         self.assertEqual(sorted(stock, key=lambda tool: tool["name"]),
                          sorted(committed, key=lambda tool: tool["name"]))
         self.assertEqual([tool["name"] for tool in stock], review["runtime_catalog"]["runtime_tool_order"])
-        wire = wire_catalog()
+        wire = wire_catalog_92()
         self.assertEqual(len(wire), 82)
         captured = json.loads((ROOT / S8_CAPTURE).read_text(encoding="utf-8"))["tools"]
         self.assertEqual(sorted(tool["name"] for tool in wire), [tool["name"] for tool in captured])
@@ -351,7 +351,7 @@ class ProvenanceTests(unittest.TestCase):
         )
 
         capture = json.loads((COMPATIBILITY / "ha-mcp-9.1.0.json").read_text(encoding="utf-8"))["tools"]
-        wire = wire_catalog_91()
+        wire = wire_catalog()
         self.assertEqual(len(wire), 82)
         self.assertEqual(sorted(tool["name"] for tool in wire), [tool["name"] for tool in full_catalog()])
         stock = wire[:77]
@@ -638,7 +638,7 @@ class ProjectionTests(unittest.TestCase):
             with self.assertRaisesRegex(y.OptionalBindingError, "optional_admitted_contract_absent"):
                 y.validate_bindings_against_registry(registry)
             self.assertEqual(y.withheld_reason(release, signed_selection=False), "optional_contract_absent")
-            state = dict(y.evaluate_optional(wire_catalog(), release).tools)
+            state = dict(y.evaluate_optional(wire_catalog_92(), release).tools)
             self.assertEqual(state[TOOL], "withheld:optional_contract_absent")
             with self.assertRaises(YamlReadRefusal):
                 y.upstream_arguments("lamp", entry=entry("9.2.0"))
@@ -696,7 +696,7 @@ def captured_logs():
 class GatewayTests(adm.Harness):
     async def gateway(self, version="9.2.0", tools=None, **kwargs):
         if tools is None and version == "9.1.0":
-            tools = wire_catalog_91()
+            tools = wire_catalog()
         with patch.object(adm, "RaceTransport", _Transport):
             return await super().gateway(version, tools, **kwargs)
 
@@ -903,7 +903,7 @@ class GatewayTests(adm.Harness):
         off = filesystem_off_catalog()
         self.assertEqual(len(off), 77)
         self.assertEqual(schema_fingerprint([tool["name"] for tool in off]), reviewed_order)
-        full_stock_order = [tool["name"] for tool in wire_catalog() if tool["name"] not in OPTIONAL_91]
+        full_stock_order = [tool["name"] for tool in wire_catalog_92() if tool["name"] not in OPTIONAL_91]
         self.assertEqual(schema_fingerprint(full_stock_order), reviewed_order)
         for mode in ("A", "B"):
             with self.subTest(mode=mode):
@@ -930,9 +930,9 @@ class GatewayTests(adm.Harness):
         # read dispatches and succeeds.
         from test_hamcp129_platform_reads import HEALTH
 
-        reader_only_92 = [tool for tool in wire_catalog() if tool["name"] not in SIBLINGS_91]
+        reader_only_92 = [tool for tool in wire_catalog_92() if tool["name"] not in SIBLINGS_91]
         variants = {
-            "9.2.0": {"full": wire_catalog(), "reader_only": reader_only_92,
+            "9.2.0": {"full": wire_catalog_92(), "reader_only": reader_only_92,
                       "component_off": filesystem_off_catalog()},
             "8.5.0": {"full": adm.captured("8.5.0"), "component_off": adm.stock_catalog("8.5.0")},
         }
@@ -989,7 +989,7 @@ class GatewayTests(adm.Harness):
             for label, change in (("reader_clone", as_reader(sibling)), ("drift", drift),
                                   ("reader_input_schema", reader_schema)):
                 with self.subTest(sibling=sibling, change=label):
-                    tools = wire_catalog()
+                    tools = wire_catalog_92()
                     change(adm._named(tools, sibling))
                     gateway, transport = await self.gateway("9.2.0", tools)
                     self.assertEqual(self.optional(gateway)[sibling], "prohibited_withheld")
@@ -998,7 +998,7 @@ class GatewayTests(adm.Harness):
                     self.assertFalse(gateway.health_snapshot()["reviewed_tool_accounting_valid"])
                     self.assertEqual(transport.sent, [])
         with self.subTest(change="reader_drift"):
-            tools = wire_catalog()
+            tools = wire_catalog_92()
             drift(adm._named(tools, TOOL))
             gateway, transport = await self.gateway("9.2.0", tools)
             self.assertTrue(self.optional(gateway)[TOOL].startswith("quarantined:"))

@@ -45,7 +45,7 @@ from test_hamcp319_dashboard import (
     GETTER, GUIDE, SETTER, DashboardPeer, Harness as DashboardHarness,
 )
 from test_hamcp319_typed_writes import FAMILIES, catalog_tools
-from test_hamcp319_yaml import wire_catalog_91
+from test_hamcp319_yaml import wire_catalog
 
 # HAMCP-351: exact 9.1.2 is admitted on the same terms as 9.1.0 (Josh,
 # 2026-11-09); every 9.1.0 case below also runs on 9.1.2.
@@ -204,7 +204,7 @@ def gateway_catalog(version):
         return deepcopy(json.loads(WIRE_920.read_text(encoding='utf-8'))['tools_list_pages'][0]['response']['result']['tools'])
     if version == '9.1.2':
         return deepcopy(json.loads(WIRE_912.read_text(encoding='utf-8'))['result']['tools'])
-    return deepcopy(adm.captured(version)) if version != '9.1.0' else deepcopy(wire_catalog_91())
+    return deepcopy(adm.captured(version)) if version != '9.1.0' else deepcopy(wire_catalog())
 
 
 class ReadGatewayExactAdmission(adm.Harness):
