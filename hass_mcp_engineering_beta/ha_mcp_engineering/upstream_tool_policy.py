@@ -12,7 +12,8 @@ import re
 from typing import Any
 
 
-POLICY_PATH = Path(__file__).with_name("upstream_tool_policy.json")
+# HAMCP-437 I2a: 9.2.0 is the only registry row, so the default policy is its own.
+POLICY_PATH = Path(__file__).with_name("upstream_tool_policy_9_2_0.json")
 # Mirrors compatibility_family.PROVIDER_DISPOSITIONS without an import cycle.
 _PROVIDER_DISPOSITION_VALUES = frozenset({"admitted", "partial", "held"})
 RELEASE_REGISTRY_PATH = Path(__file__).with_name(
@@ -22,7 +23,7 @@ POLICY_SCHEMA_VERSION = 1
 RELEASE_REGISTRY_FORMAT_VERSION = 3
 REVIEWED_CAPTURE_FORMAT_VERSION = 1
 REVIEWED_UPSTREAM_SERVER = "ha-mcp"
-REVIEWED_UPSTREAM_VERSION = "7.14.1"
+REVIEWED_UPSTREAM_VERSION = "9.2.0"
 REVIEWED_UPSTREAM_PROTOCOL = "2025-03-26"
 UPSTREAM_SOURCE_REPOSITORY = "https://github.com/homeassistant-ai/ha-mcp"
 _POLICY_RESOURCE = re.compile(
@@ -1461,8 +1462,8 @@ def load_upstream_tool_policy(
     path: Path = POLICY_PATH,
     *,
     expected_version: str = REVIEWED_UPSTREAM_VERSION,
-    expected_source_tag: str = "v7.14.1",
-    expected_source_commit: str = "255acec1affa6528004a122eb83e30aee9c77713",
+    expected_source_tag: str = "v9.2.0",
+    expected_source_commit: str = "51e3aac788482a081807591cd5d58d07dc4e540b",
 ) -> UpstreamToolPolicy:
     value = _load_strict_json(path, error="policy_document_unreadable")
     if not isinstance(value, dict) or set(value) != {
