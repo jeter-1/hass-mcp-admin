@@ -4,12 +4,14 @@
 synthetic transports. Rows 13-24 run on ha-mcp 9.2.0 against class S templates
 transcribed from the pinned 9.2.0 source
 (tests/fixtures/ha_mcp_9_2_0/entities/provenance.json); every success asserts
-the 9.2.0 key-set counts. EntitiesPending91Tests keeps, unedited on their 9.1.0
-templates, the cases whose guarded outcome the 9.2.0 key layer changes (ANSWER
-20261121-2318-01 item 4; inbox item 20261122-0118-01). The section 8.3 F3
-replays read the committed Phase 1 receipts by JSON pointer after their sha256
-is checked against SHA256SUMS.json; they and the platform rows stay on 9.1.0
-and 8.5.0. Offline and deterministic; no live Home Assistant, no network.
+the 9.2.0 key-set counts. HAMCP-437 I2a-D retired the 9.1.0 and 8.5.0 rows:
+the 9.1.0 pending cases are restated in EntitiesUpstreamWarnings92Tests
+(ANSWER 20261122-0042-01 item 6, 20261122-0118-01 item 4). The section 8.3 F3
+replays read the committed Phase 1 9.1.0 receipts by JSON pointer after their
+sha256 is checked against SHA256SUMS.json and project them through the shipped
+9.2.0 binding as frozen inputs (ANSWER 20261122-0907-01 conditions; see
+FROZEN_LABEL). The platform rows run on 9.2.0. Offline and deterministic; no
+live Home Assistant, no network.
 """
 import asyncio
 from copy import deepcopy
@@ -49,8 +51,8 @@ FIXTURES_92 = ROOT / 'tests/fixtures/ha_mcp_9_2_0/entities'
 RESPONSES_92 = json.loads((FIXTURES_92 / 'responses.json').read_text(encoding='utf-8'))
 PROVENANCE_92 = json.loads((FIXTURES_92 / 'provenance.json').read_text(encoding='utf-8'))
 V92 = RESPONSES_92['v92']
-# Read by EntitiesPending91Tests, the F3 replays (receipt provenance) and the
-# 8.5 public-shape comparisons.
+# Read by the F3 replays (receipt provenance), FixtureProvenanceTests and the
+# 8.5 public-shape comparison.
 FIXTURES = ROOT / 'tests/fixtures/ha_mcp_9_1_0/entities'
 RESPONSES = json.loads((FIXTURES / 'responses.json').read_text(encoding='utf-8'))
 PROVENANCE = json.loads((FIXTURES / 'provenance.json').read_text(encoding='utf-8'))
@@ -84,6 +86,8 @@ HIDDEN_ID = 'hamcp319_hidden'
 # /before_toggle context id: present only on the hidden entity's record.
 HIDDEN_CONTEXT = '01M6Q7H0FKV71KHRNF8PES6H3K'
 UPSTREAM_CANARY = 'synthetic-upstream-canary-text'
+FROZEN_LABEL = ('9.1.0 upstream receipt, frozen input, projected through the shipped 9.2.0 '
+                'binding; not evidence of 9.2.0 upstream output')
 
 
 def wrap(payload):
@@ -640,11 +644,8 @@ class Parity92Tests(ParityBase):
         for tier in ('skill inventory (no arguments)', 'file-list (skill only)'):
             self.assertIn(tier, guide)
         self.assertIn('modes are unavailable', guide)
-        # The 8.5 description is not reused.
-        policy_85 = json.loads((ROOT / 'hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_8_5_0.json')
-                               .read_text(encoding='utf-8'))
-        rows_85 = {e['upstream_name']: e for e in policy_85['tools']}
-        self.assertNotEqual(rows_85['ha_get_skill_guide']['description'], expected)
+        # HAMCP-437 I2a-D: the "8.5 description is not reused" comparison read
+        # the retired 8.5.0 policy; the exact pin above covers the 9.2.0 text.
 
     async def test_92_parity_rows_public_surface_matches_85(self):
         ours = {t.name: t for t in await self.server.list_tools() if t.name in ENT_TOOLS}
@@ -663,53 +664,21 @@ class Parity92Tests(ParityBase):
                 self.assertEqual(ours[name].description, theirs[name].description, name)
 
 
-# ---------------------------------------------------------------------------
-# 9.1.0 cases whose guarded outcome the 9.2.0 key layer changes
-# ---------------------------------------------------------------------------
-class EntitiesPending91Tests(ParityBase):
-    """Shipped 9.1.0 cases kept unedited on their 9.1.0 templates (ANSWER
-    20261121-2318-01 item 4; inbox item 20261122-0118-01). On 9.2.0 these
-    rows admit the top-level ``warnings`` key with no reviewed text
-    (HAMCP-464, ruling 0132-01); EntitiesUpstreamWarnings92Tests restates
-    them there."""
-
-    version = '9.1.0'
-
-    async def test_91_parity_row_17_overview_partial_disclosed(self):
-        template = V91['ha_get_overview']['partial']
-        result = await self.call('ha_get_overview', {}, wrap(template))
-        self.assert_success(result, 'ha_get_overview', partial=True)
-        self.assertNotIn('mcp_client', result['data'])
-        self.assertEqual(result['warnings'], [ent.VISIBLE_SCOPE, ent.UPSTREAM_PARTIAL, ent.UPSTREAM_WARNINGS])
-        self.assertNotIn('Services unavailable', json.dumps(result['warnings']))
-
-    async def test_91_parity_row_20_todo_unavailable_disclosed(self):
-        template = V91['ha_get_todo']['unavailable_items']
-        result = await self.call('ha_get_todo', {'entity_id': 'todo.synthetic_list'}, wrap(template))
-        self.assert_success(result, 'ha_get_todo', partial=True)
-        self.assertEqual(result['data']['items'], template['items'])
-        self.assertEqual(result['warnings'], [ent.UPSTREAM_WARNINGS])
-
-    async def test_91_parity_row_21_zone_gaps_disclosed(self):
-        template = V91['ha_get_zone']['list_with_gaps']
-        result = await self.call('ha_get_zone', {}, wrap(template))
-        self.assert_success(result, 'ha_get_zone', partial=True)
-        self.assertEqual(result['warnings'], [ent.UPSTREAM_WARNINGS])
-        self.assertNotIn('entity registry could not be read', json.dumps(result['warnings']))
-
-    async def test_91_parity_row_22_floors_areas_warnings_disclosed(self):
-        # The upstream-warnings subcase of test_91_parity_row_22_floors_areas_refusals.
-        partial = {**V91['ha_list_floors_areas']['all'], 'warnings': ['synthetic']}
-        result = await self.call('ha_list_floors_areas', {}, wrap(partial))
-        self.assert_success(result, 'ha_list_floors_areas', partial=True)
-        self.assertEqual(result['warnings'], [ent.UPSTREAM_WARNINGS])
+# HAMCP-437 I2a-D retired EntitiesPending91Tests with the 9.1.0 row (ANSWER
+# 20261122-0042-01 item 6, 20261122-0118-01 item 4). Each case maps to its
+# 9.2.0 restatement in EntitiesUpstreamWarnings92Tests:
+# * row 17 overview partial -> test_row17_overview_services_warning_replaced_stays_partial
+#   and test_row17_overview_warnings_only_reports_partial;
+# * row 20 todo unavailable -> test_row20_todo_unavailable_warning_reports_partial;
+# * row 21 zone gaps -> test_row21_zone_gaps_warning_reports_partial;
+# * row 22 floors/areas warnings -> test_row22_floors_area_fields_warning_reports_partial.
 
 
 # ---------------------------------------------------------------------------
 # 9.2.0 upstream warnings, HAMCP-464 (ruling 0132-01)
 # ---------------------------------------------------------------------------
 class EntitiesUpstreamWarnings92Tests(ParityBase):
-    """The four EntitiesPending91Tests outcomes restated on 9.2.0, plus
+    """The four retired 9.1.0 pending outcomes restated on 9.2.0, plus
     single-read state and a warnings-only overview. These rows admit a
     top-level ``warnings`` with no reviewed text (ruling 0132-01): every
     upstream warning is replaced by the fixed code and counted, and the read
@@ -797,10 +766,14 @@ class EntitiesUpstreamWarnings92Tests(ParityBase):
 
 
 # ---------------------------------------------------------------------------
-# Section 8.3 F3 replays of Phase 1 receipts (class C), 9.1.0
+# Section 8.3 F3 replays of Phase 1 receipts (class C)
 # ---------------------------------------------------------------------------
 class F3ReplayTests(ParityBase):
-    version = '9.1.0'
+    """FROZEN_LABEL: each case replays a committed 9.1.0 receipt through the
+    9.2.0 binding with the same outcome and reason code it had on 9.1.0
+    (HAMCP-437 I2a-D, ANSWER 20261122-0907-01 conditions)."""
+
+    version = '9.2.0'
 
     def assert_no_hidden_value(self, result):
         text = json.dumps(result)
@@ -822,37 +795,6 @@ class F3ReplayTests(ParityBase):
             self.assertNotIn('data', result)
             self.assert_no_hidden_value(result)
             self.assertNotIn('editable', json.dumps(result))
-
-    async def test_91_f3_nested_visible_omission(self):
-        for name, pointer in (('visibility.json', '/visible_nested_hidden'),
-                              ('visibility.json', '/invalid_visibility_config'),
-                              ('extended.json', '/last_good_visible_read'),
-                              ('visibility-registry.json', '/area_visible_state')):
-            record = receipt(name, pointer)
-            upstream = record['structuredContent']
-            self.assertNotIn('attributes', upstream['data'])
-            args = {'entity_id': 'input_boolean.hamcp319_visible'}
-            result = await self.call('ha_get_state', args, record)
-            self.assert_sent('ha_get_state', args)
-            self.assertTrue(result['success'], (pointer, result))
-            state = result['data']['data']
-            self.assertEqual(state['state'], 'off')  # useful data stays available
-            self.assertEqual(state['entity_id'], 'input_boolean.hamcp319_visible')
-            self.assertNotIn('attributes', state)  # never fabricated as {}
-            self.assertEqual(result['metadata']['completeness'], 'partial', pointer)
-            self.assertIn(ent.STATE_WITHHELD, result['warnings'], pointer)
-            self.assert_fixed_warnings(result)
-            self.assert_no_hidden_value(result)
-            # Typed actions refuse on incomplete state; attribute-free contracts stay useful.
-            with self.assertRaises(FanRefusal) as caught:
-                fan_checked_state({**state, 'entity_id': 'fan.hamcp319_visible'}, 'fan.hamcp319_visible')
-            self.assertEqual(caught.exception.details['category'], 'target_state_unavailable')
-            derived = {**state, 'entity_id': 'input_select.hamcp319_visible'}  # in-memory test derivation
-            with self.assertRaises(HelperRefusal) as caught:
-                helper_checked_state(derived, 'input_select.hamcp319_visible')
-            self.assertEqual(caught.exception.details['category'], 'helper_attributes_unproven')
-            self.assertEqual(helper_checked_state(state, state['entity_id'])['state'], 'off')
-            self.assertEqual(power_checked_state(state, state['entity_id'])['state'], 'off')
 
     async def test_91_f3_empty_hidden_search(self):
         for name, pointer, query in (('visibility.json', '/search_hidden', 'hamcp319_hidden'),
@@ -906,27 +848,67 @@ class F3ReplayTests(ParityBase):
             self.assert_fixed_warnings(result)
 
 
+class F3Pending91Tests(ParityBase):
+    """Kept on 9.1.0, unedited, pending an architect ANSWER (HAMCP-437 I2a-D,
+    inbox 20261122-0950-01): through the 9.2.0 binding this receipt keeps
+    success and partial, but the visibility warning is replaced by the fixed
+    upstream-warnings code (ruling 0132-01), so the reason changes."""
+
+    version = '9.1.0'
+
+    async def test_91_f3_nested_visible_omission(self):
+        for name, pointer in (('visibility.json', '/visible_nested_hidden'),
+                              ('visibility.json', '/invalid_visibility_config'),
+                              ('extended.json', '/last_good_visible_read'),
+                              ('visibility-registry.json', '/area_visible_state')):
+            record = receipt(name, pointer)
+            upstream = record['structuredContent']
+            self.assertNotIn('attributes', upstream['data'])
+            args = {'entity_id': 'input_boolean.hamcp319_visible'}
+            result = await self.call('ha_get_state', args, record)
+            self.assert_sent('ha_get_state', args)
+            self.assertTrue(result['success'], (pointer, result))
+            state = result['data']['data']
+            self.assertEqual(state['state'], 'off')  # useful data stays available
+            self.assertEqual(state['entity_id'], 'input_boolean.hamcp319_visible')
+            self.assertNotIn('attributes', state)  # never fabricated as {}
+            self.assertEqual(result['metadata']['completeness'], 'partial', pointer)
+            self.assertIn(ent.STATE_WITHHELD, result['warnings'], pointer)
+            self.assert_fixed_warnings(result)
+            self.assert_no_hidden_value(result)
+            # Typed actions refuse on incomplete state; attribute-free contracts stay useful.
+            with self.assertRaises(FanRefusal) as caught:
+                fan_checked_state({**state, 'entity_id': 'fan.hamcp319_visible'}, 'fan.hamcp319_visible')
+            self.assertEqual(caught.exception.details['category'], 'target_state_unavailable')
+            derived = {**state, 'entity_id': 'input_select.hamcp319_visible'}  # in-memory test derivation
+            with self.assertRaises(HelperRefusal) as caught:
+                helper_checked_state(derived, 'input_select.hamcp319_visible')
+            self.assertEqual(caught.exception.details['category'], 'helper_attributes_unproven')
+            self.assertEqual(helper_checked_state(state, state['entity_id'])['state'], 'off')
+            self.assertEqual(power_checked_state(state, state['entity_id'])['state'], 'off')
+
+
 # Ledger rows 25-28 (design section 7): the compiled blueprint list/get wrapper
-# and the three platform wrappers, one row-named test per release.
+# and the three platform wrappers, on the shipped 9.2.0 binding.
 #
-# Evidence class per row (architect ruling 2026-11-07, item 1):
-# * 8.5.0 row 25 is C: the decoded 8.5.0 standalone captures
-#   tests/fixtures/ha_mcp_8_5_0/read-results.json standalone-call-04/05.
-# * 8.5.0 rows 26-28 are C: tests/fixtures/hamcp129/results-8.5.0.json, the
-#   output of the exact pinned 8.5.0 release run offline against synthetic
-#   Core and Supervisor fakes (tests/fixtures/hamcp129/provenance.json).
-# * 9.1.0 rows 25-28 are S: no 9.1.0 call capture exists for these tools. The
-#   9.1.0 wire input schemas equal 8.6.0 (same adapter fingerprints in
-#   upstream_blueprint.py and upstream_platform_reads.py), so the 8.6.0
-#   recordings are replayed (tests/fixtures/ha_mcp_8_6_0/read-results.json
-#   standalone[11], an empty list, and hamcp129/results-8.6.0.json), plus the
-#   8.5.0 blueprint capture replayed for a non-empty list and a get. The live
-#   9.1.0 proof is the 9.1 exact-image lanes, not these replays.
+# HAMCP-437 I2a-D retired the 8.5.0 and 9.1.0 rows (architect ruling
+# 2026-11-07 item 1 evidence classes no longer apply) and moved the tests to
+# 9.2.0:
+# * row 25 replays the same frozen recordings as the 9.1.0 test did
+#   (tests/fixtures/ha_mcp_8_5_0/read-results.json standalone-call-04/05 and
+#   tests/fixtures/ha_mcp_8_6_0/read-results.json standalone[11]) through the
+#   9.2.0 binding, with the same outcome. They are frozen inputs, not
+#   evidence of 9.2.0 upstream output; the 9.2.0 receipt proof is
+#   tests/test_hamcp371_blueprint_9_2.py.
+# * rows 26-28 check the published schema and the refusal set on 9.2.0. The
+#   generated 8.6.0 result replays retire: through the 9.2.0 key layer two of
+#   them add the upstream_warnings_replaced completeness reason, so the outcome
+#   is not the same. The committed 9.2.0 receipts are replayed by
+#   test_hamcp129_platform_reads.test_committed_920_receipts_project_through_the_allowlists.
 READ_85 = json.loads((ROOT / 'tests/fixtures/ha_mcp_8_5_0/read-results.json').read_text(encoding='utf-8'))
 READ_86 = json.loads((ROOT / 'tests/fixtures/ha_mcp_8_6_0/read-results.json').read_text(encoding='utf-8'))
 BLUEPRINT = 'ha_get_blueprint'
 PLATFORM_ROW = {26: platform_adapter.APP, 27: platform_adapter.INTEGRATION, 28: platform_adapter.HEALTH}
-PLATFORM_RESULTS = {'8.5.0': 'results-8.5.0.json', '9.1.0': 'results-8.6.0.json'}
 BLUEPRINT_REFUSALS = (
     {'action': 'delete'}, {'action': 'import'}, {'url': 'https://example.invalid/x.yaml'},
     {'path': '../secrets.yaml'}, {'path': 'a/../b.yaml'}, {'path': 'https://example.invalid/x.yaml'},
@@ -940,10 +922,9 @@ class ParityPlatformRowsTests(unittest.IsolatedAsyncioTestCase):
         captured_list = READ_85['standalone-call-04.json']
         captured_get = READ_85['standalone-call-05.json']
         cases = [({}, captured_list), ({'path': 'assessment/read.yaml'}, captured_get)]
-        if version == '9.1.0':
-            replay = READ_86['standalone'][11]
-            self.assertEqual((replay['public_name'], replay['upstream_name']), (BLUEPRINT, 'ha_manage_blueprints'))
-            cases.insert(0, ({'domain': 'automation'}, {'arguments': replay['arguments'], 'result': replay['result']}))
+        replay = READ_86['standalone'][11]
+        self.assertEqual((replay['public_name'], replay['upstream_name']), (BLUEPRINT, 'ha_manage_blueprints'))
+        cases.insert(0, ({'domain': 'automation'}, {'arguments': replay['arguments'], 'result': replay['result']}))
         return cases
 
     async def _row_25(self, version):
@@ -975,38 +956,10 @@ class ParityPlatformRowsTests(unittest.IsolatedAsyncioTestCase):
 
     async def _platform_row(self, version, row):
         tool_name = PLATFORM_ROW[row]
-        cases = json.loads((platform_tests.FIXTURES / PLATFORM_RESULTS[version]).read_text(encoding='utf-8'))
         gateway, transport = await platform_tests.make_gateway(version)
         published = gateway._registered_tool_registry.snapshot()[tool_name]
         self.assertEqual(published.parameters, platform_adapter.PUBLIC_SCHEMAS[tool_name])
-        replayed = 0
-        for case in sorted(cases):
-            name = case.split('@')[0]
-            public_tool, public = platform_tests.FIXTURE_PUBLIC[name]
-            if public_tool != tool_name:
-                continue
-            mode = case[len(name):]
-            fixture = cases[case]
-            by_args = {json.dumps(fixture['arguments'], sort_keys=True): fixture['result']}
-            if fixture['arguments'].get('include_stats'):
-                plain = cases['apps_installed' + mode]
-                by_args[json.dumps(plain['arguments'], sort_keys=True)] = plain['result']
-            with self.subTest(version=version, case=case):
-                transport.sent.clear()
-                transport.respond = lambda _n, args, by_args=by_args: platform_tests.ok(
-                    by_args[json.dumps(args, sort_keys=True)])
-                result = await platform_tests.call(gateway, tool_name, public)
-                self.assertTrue(result['success'], result)
-                self.assertFalse(result['metadata']['fallback_occurred'])
-                self.assertEqual(transport.sent[-1], (fixture['tool'], fixture['arguments']))
-                status, reasons = platform_tests.FIXTURE_COMPLETENESS[name]
-                self.assertEqual(result['data']['completeness'], {'status': status, 'reasons': reasons})
-                text = json.dumps(result)
-                for canary in platform_tests.FIXTURE_CANARIES:
-                    self.assertNotIn(canary, text)
-                replayed += 1
-        self.assertGreater(replayed, 0)
-        transport.sent.clear()
+        self.assertIs(published.annotations.readOnlyHint, True)
         for arguments in platform_tests.REFUSALS[tool_name]:
             with self.subTest(version=version, refusal=arguments):
                 result = await platform_tests.call(gateway, tool_name, arguments)
@@ -1014,29 +967,19 @@ class ParityPlatformRowsTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIn(result['details']['failure_category'], platform_tests.REFUSED, result)
         self.assertEqual(transport.sent, [])
 
-    async def test_91_parity_row_25_blueprint(self):
-        await self._row_25('9.1.0')
+    # HAMCP-437 I2a-D: test_91_parity_row_25..28 become test_92_parity_row_25..28;
+    # test_85_parity_row_25..28 retire with the 8.5.0 row.
+    async def test_92_parity_row_25_blueprint(self):
+        await self._row_25('9.2.0')
 
-    async def test_85_parity_row_25_blueprint(self):
-        await self._row_25('8.5.0')
+    async def test_92_parity_row_26_app(self):
+        await self._platform_row('9.2.0', 26)
 
-    async def test_91_parity_row_26_app(self):
-        await self._platform_row('9.1.0', 26)
+    async def test_92_parity_row_27_integration(self):
+        await self._platform_row('9.2.0', 27)
 
-    async def test_85_parity_row_26_app(self):
-        await self._platform_row('8.5.0', 26)
-
-    async def test_91_parity_row_27_integration(self):
-        await self._platform_row('9.1.0', 27)
-
-    async def test_85_parity_row_27_integration(self):
-        await self._platform_row('8.5.0', 27)
-
-    async def test_91_parity_row_28_system_health(self):
-        await self._platform_row('9.1.0', 28)
-
-    async def test_85_parity_row_28_system_health(self):
-        await self._platform_row('8.5.0', 28)
+    async def test_92_parity_row_28_system_health(self):
+        await self._platform_row('9.2.0', 28)
 
 
 class FixtureProvenanceTests(unittest.TestCase):
@@ -1050,6 +993,7 @@ class FixtureProvenanceTests(unittest.TestCase):
                     self.assertEqual(entry['class'], 'S')
                     self.assertTrue(entry['sources'])
         self.assertEqual(PROVENANCE['upstream']['source_commit'], reads_9_1.SOURCE)
+        self.assertEqual(PROVENANCE['frozen_input_label'], FROZEN_LABEL)
         for key, entry in declared.items():
             if entry['class'] == 'C':
                 name = entry['receipt'].rsplit('/', 1)[1]

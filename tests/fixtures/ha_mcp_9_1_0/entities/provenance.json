@@ -9,6 +9,7 @@
     "registry_entry": "ha-mcp-v9.1.0-4259f247",
     "source_commit": "d2e3f4b0647d815fb32d530fed15a6a99b1d4b33"
   },
+  "frozen_input_label": "9.1.0 upstream receipt, frozen input, projected through the shipped 9.2.0 binding; not evidence of 9.2.0 upstream output",
   "baseline_upstream": {
     "name": "ha-mcp",
     "version": "8.5.0",
