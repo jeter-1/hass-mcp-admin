@@ -27,6 +27,7 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import core_read_replay_capture_local as lane  # noqa: E402
+from support import frozen_capture_baseline as baseline  # noqa: E402
 
 
 def export_stream(members):
@@ -979,6 +980,12 @@ def synthetic_resolved(version):
 class LaneFlowTests(unittest.TestCase):
     """The whole lane against the synthetic Docker above; no process is started."""
 
+    def setUp(self):
+        # Historical capture-lane coverage; shipped default refuses (HAMCP-437).
+        patcher = baseline.patch_binding()
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def launch(self, docker, *tail):
         def cached(image, labels):
             return {"image": image, "config_digest": fake_digest(image), "labels": dict(labels)}
@@ -1518,6 +1525,19 @@ class LaneFlowTests(unittest.TestCase):
         self.assertEqual((code, launch["failure"]), (2, "disposable_name_already_exists"))
         self.assertFalse(run_dir.exists())
         self.assertEqual(docker.volumes, {"hamcp371-s6-run-config": {"Labels": {}}})
+
+    def test_the_shipped_registry_refuses_the_9_1_2_baseline_at_the_entry_point(self):
+        # The lane's own binding, not the frozen one: the shipped registry has no
+        # 9.1.2 row after HAMCP-437, so the run is a preflight refusal.
+        self.assertIs(baseline.s4, lane.s4)
+        docker = FakeDocker()
+        with mock.patch.object(lane.s4, "binding", baseline.SHIPPED_BINDING):
+            code, launch, receipt, run_dir = self.launch(docker, "run", "--profile", "A")
+        self.assertEqual((code, launch["result"], launch["failure"]),
+                         (2, "REFUSED", "baseline_registry_row_missing"))
+        self.assertFalse(launch["execution_started"])
+        self.assertIsNone(receipt)
+        self.assertFalse(run_dir.exists())
 
 
 # --- Profile B sources: synthetic export streams, wheels and component clones ---
@@ -2259,6 +2279,12 @@ class ProfileBCheckTests(unittest.TestCase):
 
 class ProfileBPlanTests(unittest.TestCase):
     """The calls plan, the bound sources and the names a profile B run uses."""
+
+    def setUp(self):
+        # Historical capture-lane coverage; shipped default refuses (HAMCP-437).
+        patcher = baseline.patch_binding()
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     SEED = {
         "automation_id": "synthetic_automation", "automation_entity": "automation.synthetic",

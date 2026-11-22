@@ -19,6 +19,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import upstream_catalog_capture_local as lane  # noqa: E402
+from support import frozen_capture_baseline as baseline  # noqa: E402
 
 RUN_ID = "0" * 32
 HELPER = {"image": lane.HELPER_IMAGE, "config_digest": "sha256:" + "a" * 64}
@@ -173,13 +174,31 @@ class BindingTests(unittest.TestCase):
             return lane.binding("9.2.0", provenance=path)
 
     def test_baseline_comes_from_the_reviewed_registry_row(self) -> None:
-        bound = lane.binding("9.1.2")
-        row, = [item for item in json.loads(lane.REGISTRY.read_text())["releases"]
+        # Historical capture-lane coverage; shipped default refuses (HAMCP-437).
+        bound = baseline.binding("9.1.2")
+        row, = [item for item in json.loads(baseline.REGISTRY.read_text())["releases"]
                 if item["version"] == "9.1.2"]
         self.assertEqual(bound["image"], lane.UPSTREAM_REPOSITORY + "@" + row["image_index_digest"])
         self.assertEqual(bound["labels"]["org.opencontainers.image.revision"],
                          row["image_revision"])
         self.assertEqual(bound["committed_capture_sha256"], row["capture_sha256"])
+
+    def test_the_shipped_registry_refuses_the_9_1_2_baseline(self) -> None:
+        # HAMCP-437: the shipped registry holds only 9.2.0, so the lane's default
+        # binding of the historical baseline refuses fail-closed.
+        self.assertIs(baseline.s4, lane)
+        self.assertEqual([item["version"] for item in
+                          json.loads(lane.REGISTRY.read_text())["releases"]], ["9.2.0"])
+        with self.assertRaises(lane.Refusal) as caught:
+            lane.binding("9.1.2")
+        self.assertEqual(str(caught.exception), "baseline_registry_row_missing")
+
+    def test_the_frozen_row_binds_the_committed_capture(self) -> None:
+        row, = [item for item in json.loads(baseline.REGISTRY.read_text())["releases"]
+                if item["version"] == "9.1.2"]
+        capture = (ROOT / row["capture_resource"]).read_bytes()
+        self.assertEqual(baseline.binding("9.1.2")["committed_capture_sha256"],
+                         lane.sha256_bytes(capture))
 
     def test_candidate_comes_from_the_provenance_record(self) -> None:
         bound = self.candidate()
@@ -416,6 +435,12 @@ class FakeExport:
 
 
 class LaneTests(unittest.TestCase):
+    def setUp(self) -> None:
+        # Historical capture-lane coverage; shipped default refuses (HAMCP-437).
+        patcher = baseline.patch_binding()
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def launch(self, *argv, **options):
         fake = FakeHost(self, **options)
         scratch = tempfile.TemporaryDirectory(dir=ROOT / ".artifacts")
@@ -575,7 +600,8 @@ def write_evidence(base, files, prefix=""):
 class ProfileHost(FakeHost):
     """The scripted host for ``profiles`` and ``pull --image app``."""
 
-    STANDALONE = {lane.binding("9.2.0")["image"]: "9.2.0", lane.binding("9.1.2")["image"]: "9.1.2"}
+    STANDALONE = {lane.binding("9.2.0")["image"]: "9.2.0",
+                  baseline.binding("9.1.2")["image"]: "9.1.2"}
     APP = lane.APP_REPOSITORY + "@" + lane.APP_MANIFEST_DIGEST
 
     def __init__(self, test, **options) -> None:
@@ -657,6 +683,12 @@ class ProfileHost(FakeHost):
 
 
 class ProfileTests(unittest.TestCase):
+    def setUp(self) -> None:
+        # Historical capture-lane coverage; shipped default refuses (HAMCP-437).
+        patcher = baseline.patch_binding()
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def launch(self, *argv, references=None, **options):
         fake = ProfileHost(self, **options)
         scratch = tempfile.TemporaryDirectory(dir=ROOT / ".artifacts")
