@@ -54,6 +54,7 @@ from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
     load_reviewed_upstream_release_registry,
     validate_reviewed_release_catalog,
 )
+from support import synthetic_backup_admission  # noqa: E402
 from tests.test_2_1a_operational_backup import (  # noqa: E402
     FakeTransport as BackupTransport,
     exact_catalog,
@@ -76,7 +77,13 @@ GENERATOR = ROOT / "scripts/generate_hamcp436_component_helper_fixture.py"
 REWRITTEN_TOOL = "ha_config_set_helper"
 SOURCE_COMMIT = "51e3aac788482a081807591cd5d58d07dc4e540b"
 REGISTRY = load_reviewed_upstream_release_registry()
-BACKUP_VERSION = "7.14.2"
+# HAMCP-437: the shipped 9.2.0 backup is held, so the admitted backup cases run
+# on the test-only synthetic admission (I2a-D ruling 1, group B), alongside the
+# shipped (held) 9.2.0 row.
+BACKUP_REGISTRY = dataclasses.replace(
+    synthetic_backup_admission.registry(),
+    releases=(synthetic_backup_admission.release(), REGISTRY.by_version[VERSION]),
+)
 OPERATIONS = ("controlled_reload", "restart_addon", "restart_home_assistant")
 
 
@@ -547,7 +554,8 @@ class BackupDispatchScopedCatalogTests(unittest.IsolatedAsyncioTestCase):
         return provider, transport
 
     async def test_unused_tool_drift_is_recorded_and_backup_dispatches_once(self):
-        exact = exact_catalog(BACKUP_VERSION)
+        self.enterContext(synthetic_backup_admission.patch_backup_registry(BACKUP_REGISTRY))
+        exact = exact_catalog()
         exact_evidence = await self._provider(exact)[0].probe()
         provider, transport = self._provider(
             _with_tools(exact, _drift_description(exact.tools, "ha_get_state"))
@@ -578,7 +586,8 @@ class BackupDispatchScopedCatalogTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_missing_duplicate_extra_or_reordered_names_are_refused(self):
-        exact = exact_catalog(BACKUP_VERSION)
+        self.enterContext(synthetic_backup_admission.patch_backup_registry(BACKUP_REGISTRY))
+        exact = exact_catalog()
         for kind, tools in _structural_variants(exact.tools, "ha_get_state").items():
             with self.subTest(kind=kind):
                 provider, transport = self._provider(_with_tools(exact, tools))
@@ -598,7 +607,8 @@ class BackupDispatchScopedCatalogTests(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(health["catalog_admission"]["admitted"])
 
     async def test_drift_on_the_dispatched_tool_is_refused(self):
-        exact = exact_catalog(BACKUP_VERSION)
+        self.enterContext(synthetic_backup_admission.patch_backup_registry(BACKUP_REGISTRY))
+        exact = exact_catalog()
         provider, transport = self._provider(
             _with_tools(exact, _drift_description(exact.tools, "ha_manage_backup"))
         )
@@ -612,7 +622,8 @@ class BackupDispatchScopedCatalogTests(unittest.IsolatedAsyncioTestCase):
     async def test_a_later_refusal_clears_the_earlier_admission(self):
         # Cursor round 1, HAMCP-436-R1-1: a refusal that returns before
         # admission must not leave the previous catalog reported as admitted.
-        exact = exact_catalog(BACKUP_VERSION)
+        self.enterContext(synthetic_backup_admission.patch_backup_registry(BACKUP_REGISTRY))
+        exact = exact_catalog()
         refusals = {
             "reviewed_contract_mismatch": _with_tools(
                 exact, _drift_description(exact.tools, "ha_manage_backup")

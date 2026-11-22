@@ -40,6 +40,7 @@ from tests.core_authority_fakes import require_core_authority  # noqa: E402
 from tests import test_beta37_exact_helper_state as helper_state_tests  # noqa: E402
 from tests import test_f3_runtime_integration as f3_integration  # noqa: E402
 from tests.test_beta37_exact_helper_state import FakeHelperStateGateway  # noqa: E402
+from support import synthetic_backup_admission  # noqa: E402
 from tests.test_2_1a_operational_backup import exact_catalog  # noqa: E402
 from tests.test_dev14_resource_adapters import (  # noqa: E402
     AUTOMATION,
@@ -852,7 +853,9 @@ class _UnwrappedBackupTransport:
     """Reviewed catalog; a callback failure reaches the provider unwrapped."""
 
     def __init__(self) -> None:
-        self.catalog = exact_catalog("8.0.0")
+        # HAMCP-437: the test-only synthetic backup admission (I2a-D ruling 1,
+        # group B); the shipped 9.2.0 backup is held.
+        self.catalog = exact_catalog()
         self.sends = 0
 
     async def execute_read(self, tool, arguments, *, catalog_validator, before_dispatch,
@@ -925,6 +928,7 @@ class BackupExclusionTests(_ExclusionCases, f3_integration.F3BackupActivationTes
     async def test_real_provider_not_dispatched_error_after_intent_is_never_proven_not_sent(self):
         # The shipped provider and gateway turn the failed callback into
         # OperationalGatewayError(dispatched=False) after the intent committed.
+        self.enterContext(synthetic_backup_admission.patch_backup_registry())
         provider = ReviewedOperationalBackupProvider()
         transport = _UnwrappedBackupTransport()
         provider._transport = transport
