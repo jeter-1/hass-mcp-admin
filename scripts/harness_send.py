@@ -39,6 +39,10 @@ LANE_ORIGIN_REFUSED = "lane_origin_refused"
 
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "[::1]"})
 LANE_PORTS = frozenset({8086, 8123})
+# The RFC 1918 private ranges: a Docker bridge address is in one of these.
+LANE_NETWORKS = tuple(
+    ipaddress.IPv4Network(network) for network in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")
+)
 # Printable ASCII only, without the characters that start a query, a fragment,
 # user info or an escape, or that some clients read as a path separator.
 _TEXT = re.compile(r"[!-~]+")
@@ -143,10 +147,11 @@ def harness_url(url, path=""):
 def register_lane_origin(url):
     """Allow sends to one internal-bridge origin a lane verified; returns ``url``.
 
-    Only ``http://<private IPv4>:<8123 or 8086>``, the address the caller read
-    from the Docker network and container it created and checked; never
-    loopback, link-local, unspecified or multicast. Registering again is a
-    no-op. Raises ``HarnessRouteError`` otherwise.
+    Only ``http://<IPv4 in 10/8, 172.16/12 or 192.168/16>:<8123 or 8086>``,
+    the address the caller read from the Docker network and container it
+    created and checked. Loopback needs no registration and is refused here,
+    as are broadcast, documentation, reserved and other non-RFC 1918 ranges.
+    Registering again is a no-op. Raises ``HarnessRouteError`` otherwise.
     """
 
     match = _LANE_ORIGIN.fullmatch(url) if type(url) is str else None
@@ -154,11 +159,7 @@ def register_lane_origin(url):
     allowed = (
         address is not None
         and int(match.group(2)) in LANE_PORTS
-        and address.is_private
-        and not address.is_loopback
-        and not address.is_link_local
-        and not address.is_unspecified
-        and not address.is_multicast
+        and any(address in network for network in LANE_NETWORKS)
     )
     if not allowed:
         raise _refused(LANE_ORIGIN_REFUSED)

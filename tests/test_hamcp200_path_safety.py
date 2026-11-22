@@ -1698,12 +1698,37 @@ def _send_findings(scan: _HarnessFile, call: ast.Call, primitive: str) -> list[s
     return []
 
 
+def _getattr_send(node: ast.AST, sendable) -> bool:
+    """``getattr`` of a send primitive, of an HTTP verb on a sending receiver,
+    or of a name that is not a string literal on a sending receiver."""
+
+    if not (isinstance(node, ast.Call) and _call_name(node) == "getattr" and len(node.args) >= 2):
+        return False
+    receiver, name = node.args[0], node.args[1]
+    receiver_name = (
+        receiver.id if isinstance(receiver, ast.Name)
+        else receiver.attr if isinstance(receiver, ast.Attribute)
+        else _call_name(receiver) if isinstance(receiver, ast.Call)
+        else ""
+    ) or ""
+    sending_receiver = bool(SEND_RECEIVER.search(receiver_name))
+    if not (isinstance(name, ast.Constant) and isinstance(name.value, str)):
+        # A name computed at run time cannot be reviewed.
+        return sending_receiver
+    return name.value in sendable or (name.value in VERB_SENDS and sending_receiver)
+
+
 def _send_aliases(scan: _HarnessFile) -> list[ast.AST]:
     """A send primitive read without calling it, or fetched by ``getattr``."""
 
     found = []
     sendable = set(URL_SENDS) | ADDRESS_SENDS | SOCKET_SENDS
     for node in ast.walk(scan.tree):
+        if _getattr_send(node, sendable):
+            # Called or not: ``getattr(session, "get")(url)`` is never a
+            # reviewable send, so the getattr itself is the finding.
+            found.append(node)
+            continue
         if id(node) in scan.called:
             continue
         if isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load):
@@ -1719,14 +1744,6 @@ def _send_aliases(scan: _HarnessFile) -> list[ast.AST]:
             ):
                 found.append(node)
         elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load) and node.id in NAMED_SENDS:
-            found.append(node)
-        elif (
-            isinstance(node, ast.Call)
-            and _call_name(node) == "getattr"
-            and len(node.args) >= 2
-            and isinstance(node.args[1], ast.Constant)
-            and node.args[1].value in sendable
-        ):
             found.append(node)
         elif isinstance(node, ast.ImportFrom):
             for alias in node.names:
@@ -1927,6 +1944,14 @@ class HarnessScriptTests(unittest.TestCase):
             'fetch = urlopen',
             'connect = functools.partial(session.ws_connect, url)',
             'getattr(session, "ws_connect")',
+            # Cursor r1 R1-1: a session verb fetched by getattr, and a name not
+            # written as a string literal.
+            'getattr(session, "get")("http://example.invalid/mcp")',
+            'getattr(session, "post")("http://example.invalid/mcp")',
+            'getattr(self.client, "options")(url)',
+            'getattr(session, "ws_connect")(url)',
+            'getattr(session, verb)(url)',
+            'getattr(self.rest_client, "re" + "quest")("GET", url)',
             'from urllib.request import urlopen as fetch',
             # A receiver that only looks like the runtime client.
             'class Raw:\n def __init__(self):\n  self.client = HomeAssistantRestClient(s)\n'
@@ -1992,6 +2017,11 @@ class HarnessScriptTests(unittest.TestCase):
             'def request(action):\n return action\nrequest("turn_on")',
             'import urllib.request\nopener = urllib.request.build_opener()',
             'value = settings.get(url)',
+            # getattr that is not a send: a verb on a non-sending receiver, a
+            # computed name on one, and a non-send attribute of a session.
+            'value = getattr(mapping, "get")(key)',
+            'value = getattr(options, key)',
+            'closed = getattr(session, "closed")',
         ):
             with self.subTest(source=source):
                 self.assertEqual(scan_harness_source(source), [])

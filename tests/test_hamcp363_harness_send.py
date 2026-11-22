@@ -187,12 +187,25 @@ class LaneOriginTests(HarnessSendTestCase):
         register_lane_origin(LANE)
         self.assertEqual(harness_send._lane_origins, {LANE})
 
+    def test_each_rfc1918_range_registers_on_both_lane_ports(self):
+        for url in ("http://10.0.0.5:8123", "http://10.255.255.254:8086",
+                    "http://172.16.0.2:8123", "http://172.31.255.254:8086",
+                    "http://192.168.0.2:8123", "http://192.168.255.254:8086"):
+            with self.subTest(url=url):
+                self.assertEqual(register_lane_origin(url), url)
+        self.assertEqual(len(harness_send._lane_origins), 6)
+
     def test_only_private_unicast_addresses_on_lane_ports_register(self):
         for url in ("http://127.0.0.1:8123", "http://8.8.8.8:8123", "http://169.254.1.1:8123",
                     "http://0.0.0.0:8123", "http://224.0.0.1:8123", "http://100.64.0.1:8123",
                     "http://172.18.0.2:8124", "http://172.18.0.2", "http://172.018.0.2:8123",
                     "http://172.18.0.2:8123/", "https://172.18.0.2:8123", "ws://172.18.0.2:8123",
                     "http://[fd00::2]:8123", "http://lane.invalid:8123", "http://172.18.0.256:8123",
+                    # Cursor r1 R1-2: broadcast, documentation, reserved, and just
+                    # outside 172.16/12.
+                    "http://255.255.255.255:8123", "http://192.0.2.1:8123",
+                    "http://198.51.100.1:8086", "http://240.0.0.1:8123", "http://192.0.0.8:8123",
+                    "http://172.32.0.1:8123", "http://172.15.255.254:8123",
                     b"http://172.18.0.2:8123", None):
             with self.subTest(url=url):
                 self.assertRefused(LANE_ORIGIN_REFUSED, url, function=register_lane_origin)
