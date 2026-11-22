@@ -83,13 +83,13 @@
     {
      "tool": "ha_config_get_automation",
      "provider": "upstream_read_gateway",
-     "purpose_binding": "ha-mcp-8.6.0-public-reads-v1 (automatic_read)",
+     "purpose_binding": "ha-mcp-9.2.0-public-reads-v1 (automatic_read)",
      "admission": "upstream:ha_config_get_automation (automatic_read in stock policies 7.14.2 through 8.6.0; README reviewed healthy pairing 8.4.3/8.5.0; 8.6.0 adapter ha-mcp-8.6.0-public-reads-v1); core.automation_configuration_read (compiled-active; signed in registry seq 15 for Core 2026.10.0/.1/.3 (deployed registry state unknown))",
      "completeness": "complete",
      "detail": "Delegated exact-schema read of one automation config; same stored-config coverage as get_automation_config, via upstream.",
      "refs": [
       {
-       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_8_6_0.json",
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_2_0.json",
        "line": 1,
        "anchor": "\"ha_config_get_automation\""
       },
@@ -331,7 +331,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 91,
+       "line": 89,
        "anchor": "ALLOWED_FILE = \"configuration.yaml\""
       },
       {
@@ -353,13 +353,13 @@
     {
      "tool": "ha_config_get_script",
      "provider": "upstream_read_gateway",
-     "purpose_binding": "ha-mcp-8.6.0-public-reads-v1 (automatic_read)",
+     "purpose_binding": "ha-mcp-9.2.0-public-reads-v1 (automatic_read)",
      "admission": "upstream:ha_config_get_script (automatic_read in stock policies 7.14.2 through 8.6.0; reviewed pairing 8.4.3/8.5.0); core.basic_websocket_read (compiled-active; signed in registry seq 15 for Core 2026.10.0/.1/.3 (deployed registry state unknown))",
      "completeness": "complete",
      "detail": "Delegated exact read of one script's stored config.",
      "refs": [
       {
-       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_8_6_0.json",
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_2_0.json",
        "line": 1,
        "anchor": "\"ha_config_get_script\""
       },
@@ -587,13 +587,13 @@
     {
      "tool": "ha_config_get_scene",
      "provider": "upstream_read_gateway",
-     "purpose_binding": "ha-mcp-8.6.0-public-reads-v1 (automatic_read); scene_id required",
+     "purpose_binding": "ha-mcp-9.2.0-public-reads-v1 (automatic_read); scene_id required",
      "admission": "upstream:ha_config_get_scene (automatic_read in stock policies 7.14.2 through 8.6.0; reviewed pairing 8.4.3/8.5.0); core.basic_websocket_read (compiled-active; signed in registry seq 15 for Core 2026.10.0/.1/.3 (deployed registry state unknown))",
      "completeness": "partial",
      "detail": "Delegated read of one scene by scene_id (scene_identity_required otherwise). No client-visible scene LIST tool in Engineering; listing is via ha_search / ha_get_state. UNCERTAIN: whether upstream returns YAML-defined scene config (upstream behavior not verified).",
      "refs": [
       {
-       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_8_6_0.json",
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_2_0.json",
        "line": 1,
        "anchor": "\"ha_config_get_scene\""
       },
@@ -792,13 +792,13 @@
     {
      "tool": "ha_config_list_groups",
      "provider": "upstream_read_gateway",
-     "purpose_binding": "ha-mcp-8.6.0-public-reads-v1 (automatic_read)",
+     "purpose_binding": "ha-mcp-9.2.0-public-reads-v1 (automatic_read)",
      "admission": "upstream:ha_config_list_groups (automatic_read in stock policies 7.14.2 through 8.6.0); core.basic_websocket_read (compiled-active; signed in registry seq 15 for Core 2026.10.0/.1/.3 (deployed registry state unknown))",
      "completeness": "partial",
      "detail": "Delegated paged list (limit/offset) of groups. UNCERTAIN: upstream semantics - believed to list service-created groups, not YAML group: definitions or group helper config entries; verify upstream source.",
      "refs": [
       {
-       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_8_6_0.json",
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_2_0.json",
        "line": 1,
        "anchor": "\"ha_config_list_groups\""
       },
@@ -869,17 +869,17 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 91,
+       "line": 89,
        "anchor": "ALLOWED_FILE"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 99,
+       "line": 100,
        "anchor": "YAML_PATH_PATTERN"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 247,
+       "line": 245,
        "anchor": "_L2_SEGMENTS ="
       },
       {
@@ -977,7 +977,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 91,
+       "line": 89,
        "anchor": "ALLOWED_FILE = \"configuration.yaml\""
       },
       {
@@ -995,7 +995,7 @@
      "register": [],
      "refs": [
       {
-       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_8_6_0.json",
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_2_0.json",
        "line": 1,
        "anchor": "\"ha_config_set_group\""
       }
@@ -1073,7 +1073,7 @@
     {
      "tool": "ha_get_blueprint",
      "provider": "upstream_read_gateway (special adapter)",
-     "purpose_binding": "ha-mcp-8.6.0-blueprint-list-get-v1 (exposed name for upstream ha_manage_blueprints)",
+     "purpose_binding": "ha-mcp-9.2.0-blueprint-list-get-v1 (exposed name for upstream ha_manage_blueprints)",
      "admission": "upstream:ha_manage_blueprints (mixed_or_requires_wrapper, present from policy 8.5.0; 8.5.0 adapter ha-mcp-8.5.0-blueprint-list-get-v1; 8.6.0 adapter ha-mcp-8.6.0-blueprint-list-get-v1); core.basic_websocket_read (compiled-active; signed in registry seq 15 for Core 2026.10.0/.1/.3 (deployed registry state unknown))",
      "completeness": "complete",
      "detail": "Only two constructed argument shapes (list by domain / get by path) reach upstream; mixed upstream tool never public.",
@@ -1084,7 +1084,7 @@
        "anchor": "ADAPTER_BINDINGS"
       },
       {
-       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_8_6_0.json",
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_2_0.json",
        "line": 1,
        "anchor": "\"ha_manage_blueprints\""
       },
@@ -1209,17 +1209,17 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 91,
+       "line": 89,
        "anchor": "ALLOWED_FILE"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 99,
+       "line": 100,
        "anchor": "YAML_PATH_PATTERN"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 247,
+       "line": 245,
        "anchor": "_L2_SEGMENTS ="
       },
       {
@@ -1326,7 +1326,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 91,
+       "line": 89,
        "anchor": "ALLOWED_FILE = \"configuration.yaml\""
       },
       {
@@ -1369,17 +1369,17 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 91,
+       "line": 89,
        "anchor": "ALLOWED_FILE"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 99,
+       "line": 100,
        "anchor": "YAML_PATH_PATTERN"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 247,
+       "line": 245,
        "anchor": "_L2_SEGMENTS ="
       },
       {
@@ -1448,7 +1448,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 91,
+       "line": 89,
        "anchor": "ALLOWED_FILE = \"configuration.yaml\""
       },
       {
@@ -1469,7 +1469,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 1983,
+       "line": 1976,
        "anchor": "yaml-fragment-read"
       }
      ]
@@ -1507,17 +1507,17 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 91,
+       "line": 89,
        "anchor": "ALLOWED_FILE"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 99,
+       "line": 100,
        "anchor": "YAML_PATH_PATTERN"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 247,
+       "line": 245,
        "anchor": "_L2_SEGMENTS ="
       },
       {
@@ -1564,7 +1564,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 253,
+       "line": 251,
        "anchor": "_L2_BASENAMES ="
       }
      ]
@@ -1589,7 +1589,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 247,
+       "line": 245,
        "anchor": "_L2_SEGMENTS ="
       },
       {
@@ -1652,24 +1652,24 @@
      "tool": "ha_config_get_yaml",
      "provider": "upstream_read_gateway (optional adapter)",
      "purpose_binding": "ha-mcp-{version}-yaml-fragment-read-v1; file fixed to configuration.yaml; dotted mapping-key path <=8 segments; credential-shaped keys refused",
-     "admission": "upstream:ha_config_get_yaml; OPTIONAL_TOOL_DISPOSITIONS admitted 8.4.3/8.5.0/9.1.0, held 7.14.x/8.0.0-8.2.0/8.4.1/8.6.0 (so NOT reachable on 8.6.0); also depends on ha_mcp_tools custom component",
+     "admission": "upstream:ha_config_get_yaml; OPTIONAL_TOOL_DISPOSITIONS admitted on 9.2.0, the only registry version (HAMCP-437 I2a: every older release refuses as an unknown version); also depends on ha_mcp_tools custom component",
      "completeness": "partial",
      "detail": "YAML-defined input_boolean: any dotted path in configuration.yaml (e.g. input_boolean). Best-effort redaction (partial disclosed); packages and !include content are not covered. (Researched for: input_boolean, input_number.)",
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 99,
+       "line": 97,
        "anchor": "YAML_PATH_PATTERN = ("
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 2208,
+       "line": 2192,
        "anchor": "OPTIONAL_TOOL_DISPOSITIONS"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 2218,
-       "anchor": "\"8.6.0\": \"held\""
+       "line": 2154,
+       "anchor": "\"9.2.0\": \"admitted\""
       }
      ]
     },
@@ -1787,7 +1787,7 @@
    "gaps": [
     {
      "id": "RCG-021",
-     "missing": "YAML-defined input_boolean and input_number definitions: not in the configuration_definitions YAML paths; only ha_config_get_yaml could read them, and it is held on ha-mcp 8.6.0 (admitted on 8.4.3 and 8.5.0 only).",
+     "missing": "YAML-defined input_boolean and input_number definitions: not in the configuration_definitions YAML paths; only ha_config_get_yaml can read them (admitted on ha-mcp 9.2.0; configuration.yaml only, best-effort redaction, packages and !include content not covered).",
      "requirement_type": "new_reader_purpose",
      "requirement": "Add the helper domains to the configuration_definitions reader purpose (or a new purpose) with a pinned per-type key allowlist and its own audit coverage, and admit the YAML reader on the observed ha-mcp version; or record YAML helpers as out of scope.",
      "register": [
@@ -1801,8 +1801,8 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 2218,
-       "anchor": "\"8.6.0\": \"held\""
+       "line": 2154,
+       "anchor": "\"9.2.0\": \"admitted\""
       }
      ]
     },
@@ -1891,24 +1891,24 @@
      "tool": "ha_config_get_yaml",
      "provider": "upstream_read_gateway (optional adapter)",
      "purpose_binding": "ha-mcp-{version}-yaml-fragment-read-v1; file fixed to configuration.yaml; dotted mapping-key path <=8 segments; credential-shaped keys refused",
-     "admission": "upstream:ha_config_get_yaml; OPTIONAL_TOOL_DISPOSITIONS admitted 8.4.3/8.5.0/9.1.0, held 7.14.x/8.0.0-8.2.0/8.4.1/8.6.0 (so NOT reachable on 8.6.0); also depends on ha_mcp_tools custom component",
+     "admission": "upstream:ha_config_get_yaml; OPTIONAL_TOOL_DISPOSITIONS admitted on 9.2.0, the only registry version (HAMCP-437 I2a: every older release refuses as an unknown version); also depends on ha_mcp_tools custom component",
      "completeness": "partial",
      "detail": "YAML-defined input_select. Best-effort redaction (partial disclosed); packages and !include content are not covered.",
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 99,
+       "line": 97,
        "anchor": "YAML_PATH_PATTERN = ("
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 2208,
+       "line": 2192,
        "anchor": "OPTIONAL_TOOL_DISPOSITIONS"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 2218,
-       "anchor": "\"8.6.0\": \"held\""
+       "line": 2154,
+       "anchor": "\"9.2.0\": \"admitted\""
       }
      ]
     },
@@ -2031,7 +2031,7 @@
     },
     {
      "id": "RCG-027",
-     "missing": "YAML-defined input_select definitions: not in the configuration_definitions YAML paths; only ha_config_get_yaml could read them, and it is held on ha-mcp 8.6.0 (admitted on 8.4.3 and 8.5.0 only).",
+     "missing": "YAML-defined input_select definitions: not in the configuration_definitions YAML paths; only ha_config_get_yaml can read them (admitted on ha-mcp 9.2.0; configuration.yaml only, best-effort redaction, packages and !include content not covered).",
      "requirement_type": "new_reader_purpose",
      "requirement": "Add the helper domains to the configuration_definitions reader purpose (or a new purpose) with a pinned per-type key allowlist and its own audit coverage, and admit the YAML reader on the observed ha-mcp version; or record YAML helpers as out of scope.",
      "register": [
@@ -2045,8 +2045,8 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 2218,
-       "anchor": "\"8.6.0\": \"held\""
+       "line": 2154,
+       "anchor": "\"9.2.0\": \"admitted\""
       }
      ]
     },
@@ -2125,24 +2125,24 @@
      "tool": "ha_config_get_yaml",
      "provider": "upstream_read_gateway (optional adapter)",
      "purpose_binding": "ha-mcp-{version}-yaml-fragment-read-v1; file fixed to configuration.yaml; dotted mapping-key path <=8 segments; credential-shaped keys refused",
-     "admission": "upstream:ha_config_get_yaml; OPTIONAL_TOOL_DISPOSITIONS admitted 8.4.3/8.5.0/9.1.0, held 7.14.x/8.0.0-8.2.0/8.4.1/8.6.0 (so NOT reachable on 8.6.0); also depends on ha_mcp_tools custom component",
+     "admission": "upstream:ha_config_get_yaml; OPTIONAL_TOOL_DISPOSITIONS admitted on 9.2.0, the only registry version (HAMCP-437 I2a: every older release refuses as an unknown version); also depends on ha_mcp_tools custom component",
      "completeness": "partial",
      "detail": "YAML-defined input_text. Best-effort redaction (partial disclosed); packages and !include content are not covered. (Researched for: input_text, input_datetime, input_button, counter, timer, schedule.)",
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 99,
+       "line": 97,
        "anchor": "YAML_PATH_PATTERN = ("
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 2208,
+       "line": 2192,
        "anchor": "OPTIONAL_TOOL_DISPOSITIONS"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 2218,
-       "anchor": "\"8.6.0\": \"held\""
+       "line": 2154,
+       "anchor": "\"9.2.0\": \"admitted\""
       }
      ]
     },
@@ -2212,7 +2212,7 @@
     },
     {
      "id": "RCG-031",
-     "missing": "YAML-defined input_text, input_datetime, input_button, counter, timer and schedule definitions: not in the configuration_definitions YAML paths; only ha_config_get_yaml could read them, and it is held on ha-mcp 8.6.0 (admitted on 8.4.3 and 8.5.0 only).",
+     "missing": "YAML-defined input_text, input_datetime, input_button, counter, timer and schedule definitions: not in the configuration_definitions YAML paths; only ha_config_get_yaml can read them (admitted on ha-mcp 9.2.0; configuration.yaml only, best-effort redaction, packages and !include content not covered).",
      "requirement_type": "new_reader_purpose",
      "requirement": "Add the helper domains to the configuration_definitions reader purpose (or a new purpose) with a pinned per-type key allowlist and its own audit coverage, and admit the YAML reader on the observed ha-mcp version; or record YAML helpers as out of scope.",
      "register": [
@@ -2226,8 +2226,8 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 2218,
-       "anchor": "\"8.6.0\": \"held\""
+       "line": 2154,
+       "anchor": "\"9.2.0\": \"admitted\""
       }
      ]
     },
@@ -2286,7 +2286,7 @@
      "tool": "get_configuration_definitions",
      "provider": "direct_ha_api + upstream_read_gateway",
      "purpose_binding": "configuration_definitions_read_v1 / reader purpose configuration_definitions (closed INTEGRATIONS) [yaml_reader:configuration_definitions, gateway_reader:yaml_config_reader]",
-     "admission": "native (YAML half via upstream ha_config_get_yaml adapter: admitted 8.4.3/8.5.0, held 8.6.0, see ref)",
+     "admission": "native (YAML half via upstream ha_config_get_yaml adapter: admitted 9.2.0, the only registry version, see ref)",
      "completeness": "partial",
      "detail": "template: YAML entries (template: sensor/binary_sensor lists, legacy platform presence only) reported with TEMPLATE_ENTITY_KEYS (sensor, binary_sensor) allowlists. UI/config-entry half: entry metadata only (entity ids, count), readability=definition_not_readable_without_flow, capped at MAX_UI_ENTRIES=50; options/data never returned. YAML half: allowlisted keys from configuration.yaml paths in DEFINITION_YAML_PATHS only, capped MAX_DEFINITIONS=200. Other template entity types are not projected. (Researched for: template, filter, statistics.)",
      "refs": [
@@ -2317,8 +2317,8 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 2218,
-       "anchor": "\"8.6.0\": \"held\""
+       "line": 2154,
+       "anchor": "\"9.2.0\": \"admitted\""
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/schemas.py",
@@ -2586,7 +2586,7 @@
      "tool": "get_configuration_definitions",
      "provider": "direct_ha_api + upstream_read_gateway",
      "purpose_binding": "configuration_definitions_read_v1 / reader purpose configuration_definitions (closed INTEGRATIONS) [yaml_reader:configuration_definitions, gateway_reader:yaml_config_reader]",
-     "admission": "native (YAML half via upstream ha_config_get_yaml adapter: admitted 8.4.3/8.5.0, held 8.6.0, see ref)",
+     "admission": "native (YAML half via upstream ha_config_get_yaml adapter: admitted 9.2.0, the only registry version, see ref)",
      "completeness": "partial",
      "detail": "Derivative helper: derivative YAML platform entries under sensor:. UI/config-entry half: entry metadata only (entity ids, count), readability=definition_not_readable_without_flow, capped at MAX_UI_ENTRIES=50; options/data never returned. YAML half: allowlisted keys from configuration.yaml paths in DEFINITION_YAML_PATHS only, capped MAX_DEFINITIONS=200. derivative entries under sensor: platform list (Researched for: derivative, integration, min_max, history_stats, threshold, trend, utility_meter, sql, group.)",
      "refs": [
@@ -2617,8 +2617,8 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 2218,
-       "anchor": "\"8.6.0\": \"held\""
+       "line": 2154,
+       "anchor": "\"9.2.0\": \"admitted\""
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/schemas.py",
@@ -2820,7 +2820,7 @@
        "anchor": "async def list_dashboards"
       },
       {
-       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_8_6_0.json",
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_2_0.json",
        "line": 1,
        "anchor": "\"ha_config_get_dashboard\""
       },
@@ -3228,13 +3228,13 @@
     {
      "tool": "ha_config_list_dashboard_resources",
      "provider": "upstream_read_gateway",
-     "purpose_binding": "ha-mcp-8.6.0-public-reads-v1 (automatic_read)",
-     "admission": "upstream:ha_config_list_dashboard_resources 8.6.0 adapter ha-mcp-8.6.0-public-reads-v1; signed:core.dashboard_configuration_read compiled-active (CORE_CAPABILITY_PROFILES; compiled_exact_authority for SUPPORTED_CORE_RELEASES 2026.7.2/8.0/8.1/9.0/9.1)",
+     "purpose_binding": "ha-mcp-9.2.0-public-reads-v1 (automatic_read)",
+     "admission": "upstream:ha_config_list_dashboard_resources 9.2.0 adapter ha-mcp-9.2.0-public-reads-v1; signed:core.dashboard_configuration_read compiled-active (CORE_CAPABILITY_PROFILES; compiled_exact_authority for SUPPORTED_CORE_RELEASES 2026.7.2/8.0/8.1/9.0/9.1)",
      "completeness": "partial",
      "detail": "Read-only list of resources via the generic delegated read adapter; per-result size and sanitization bounds of the gateway apply. Whether the 60k limit truncates or refuses was not verified.",
      "refs": [
       {
-       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_8_6_0.json",
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_2_0.json",
        "line": 1,
        "anchor": "\"ha_config_list_dashboard_resources\""
       },
@@ -3261,12 +3261,12 @@
      "register": [],
      "refs": [
       {
-       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_8_6_0.json",
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_2_0.json",
        "line": 1,
        "anchor": "\"ha_config_set_dashboard_resource\""
       },
       {
-       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_8_6_0.json",
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_2_0.json",
        "line": 1,
        "anchor": "\"ha_config_delete_dashboard_resource\""
       }
@@ -3285,9 +3285,9 @@
      "tool": "ha_config_get_yaml",
      "provider": "upstream_read_gateway (optional reviewed tool, upstream_yaml_reader)",
      "purpose_binding": "hamcp162-yaml-fragment-read-arguments-v1; file=configuration.yaml only",
-     "admission": "upstream:ha_config_get_yaml optional binding for ha-mcp 8.4.3 and 8.5.0 only (adapter ha-mcp-{version}-yaml-fragment-read-v1); not present in 8.6.0 policy; core.basic_rest_read + core.basic_websocket_read (compiled-active (CORE_CAPABILITY_PROFILES; compiled_exact_authority for SUPPORTED_CORE_RELEASES 2026.7.2/8.0/8.1/9.0/9.1))",
+     "admission": "upstream:ha_config_get_yaml optional binding for ha-mcp 9.2.0, the only registry version (adapter ha-mcp-9.2.0-yaml-fragment-read-v1); core.basic_rest_read + core.basic_websocket_read (compiled-active (CORE_CAPABILITY_PROFILES; compiled_exact_authority for SUPPORTED_CORE_RELEASES 2026.7.2/8.0/8.1/9.0/9.1))",
      "completeness": "unavailable",
-     "detail": "Reads one dotted mapping-key path of configuration.yaml, redacted. Other files (dashboard YAML files, packages, secrets.yaml) are refused. A 'lovelace' key inside configuration.yaml may be readable in principle, but referenced dashboard YAML files are not. lovelace/dashboards/list may list YAML dashboards as metadata but the body is unreadable. Whether the reader is bound on the current 8.6.0 upstream is not established (no 8.6.0 entry in OPTIONAL_TOOL_BINDINGS captures).",
+     "detail": "Reads one dotted mapping-key path of configuration.yaml, redacted. Other files (dashboard YAML files, packages, secrets.yaml) are refused. A 'lovelace' key inside configuration.yaml may be readable in principle, but referenced dashboard YAML files are not. lovelace/dashboards/list may list YAML dashboards as metadata but the body is unreadable. The reader is bound and admitted on 9.2.0 (_CAPTURES and OPTIONAL_TOOL_DISPOSITIONS), but it still reads configuration.yaml only, so YAML dashboard bodies stay unavailable.",
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
@@ -3301,13 +3301,13 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 2186,
+       "line": 2129,
        "anchor": "OPTIONAL_TOOL_BINDINGS: dict"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 2102,
-       "anchor": "\"8.5.0\": ("
+       "line": 2080,
+       "anchor": "_CAPTURES = {"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
@@ -3328,24 +3328,24 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 91,
+       "line": 89,
        "anchor": "ALLOWED_FILE"
       }
      ]
     },
     {
      "id": "RCG-052",
-     "missing": "ha_config_get_yaml on current upstream 8.6.0",
+     "missing": "YAML dashboard bodies through ha_config_get_yaml on ha-mcp 9.2.0",
      "requirement_type": "upstream_admission",
-     "requirement": "Add 8.6.0 capture and OPTIONAL_TOOL_BINDINGS entry (UNVERIFIED whether this is actually missing in the shipped runtime; bindings list only 8.4.3 and 8.5.0).",
+     "requirement": "The 9.2.0 binding (OPTIONAL_TOOL_BINDINGS, admitted) reads one dotted path of configuration.yaml only; referenced dashboard YAML files are refused. Reading them needs a reviewed file scope for the YAML reader or a native reader. (HAMCP-437 I2a retired the 8.4.3/8.5.0/8.6.0 rows this gap was written against.)",
      "register": [
       "HAMCP-156"
      ],
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 2102,
-       "anchor": "\"8.5.0\": ("
+       "line": 2080,
+       "anchor": "_CAPTURES = {"
       }
      ]
     }
@@ -3391,13 +3391,13 @@
     {
      "tool": "ha_get_entity",
      "provider": "upstream_read_gateway",
-     "purpose_binding": "ha-mcp-8.6.0-public-reads-v1 (automatic_read)",
-     "admission": "upstream:ha_get_entity 8.6.0; signed:core.delegated_device_effective_area compiled-active (CORE_CAPABILITY_PROFILES; compiled_exact_authority for SUPPORTED_CORE_RELEASES 2026.7.2/8.0/8.1/9.0/9.1)",
+     "purpose_binding": "ha-mcp-9.2.0-public-reads-v1 (automatic_read)",
+     "admission": "upstream:ha_get_entity 9.2.0; signed:core.delegated_device_effective_area compiled-active (CORE_CAPABILITY_PROFILES; compiled_exact_authority for SUPPORTED_CORE_RELEASES 2026.7.2/8.0/8.1/9.0/9.1)",
      "completeness": "partial",
      "detail": "Exact per-entity registry entry (labels, categories, aliases etc. as upstream returns) through the gateway; sanitization and size bound apply.",
      "refs": [
       {
-       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_8_6_0.json",
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_2_0.json",
        "line": 1,
        "anchor": "\"ha_get_entity\""
       },
@@ -3411,13 +3411,13 @@
     {
      "tool": "ha_get_entity_exposure",
      "provider": "upstream_read_gateway",
-     "purpose_binding": "ha-mcp-8.6.0-public-reads-v1",
-     "admission": "upstream:ha_get_entity_exposure 8.6.0; signed:core.delegated_device_effective_area compiled-active (CORE_CAPABILITY_PROFILES; compiled_exact_authority for SUPPORTED_CORE_RELEASES 2026.7.2/8.0/8.1/9.0/9.1)",
+     "purpose_binding": "ha-mcp-9.2.0-public-reads-v1",
+     "admission": "upstream:ha_get_entity_exposure 9.2.0; signed:core.delegated_device_effective_area compiled-active (CORE_CAPABILITY_PROFILES; compiled_exact_authority for SUPPORTED_CORE_RELEASES 2026.7.2/8.0/8.1/9.0/9.1)",
      "completeness": "partial",
      "detail": "Assistant exposure read for entities via ha-mcp (use in exposure planning not verified).",
      "refs": [
       {
-       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_8_6_0.json",
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_2_0.json",
        "line": 1,
        "anchor": "\"ha_get_entity_exposure\""
       },
@@ -3574,13 +3574,13 @@
     {
      "tool": "ha_get_device",
      "provider": "upstream_read_gateway + HA 2026.8 composite device adapter",
-     "purpose_binding": "ha-mcp-8.6.0-public-reads-v1; adapter ha-get-device-composite-ha-2026.8-v1 / ha-get-device-composite-ha-2026.8.1-v1",
-     "admission": "upstream:ha_get_device 8.6.0; signed:core.delegated_device_effective_area compiled-active (CORE_CAPABILITY_PROFILES; compiled_exact_authority for SUPPORTED_CORE_RELEASES 2026.7.2/8.0/8.1/9.0/9.1)",
+     "purpose_binding": "ha-mcp-9.2.0-public-reads-v1; adapter ha-get-device-composite-ha-2026.8-v1 / ha-get-device-composite-ha-2026.8.1-v1",
+     "admission": "upstream:ha_get_device 9.2.0; signed:core.delegated_device_effective_area compiled-active (CORE_CAPABILITY_PROFILES; compiled_exact_authority for SUPPORTED_CORE_RELEASES 2026.7.2/8.0/8.1/9.0/9.1)",
      "completeness": "partial",
      "detail": "Exact device lookup. The 2026.8 composite adapter restores the entity join only for upstream 8.1.0/8.1.1/8.2.0 (REVIEWED_UPSTREAM_VERSIONS) and Core 2026.8.0/2026.8.1; for other upstream versions the payload passes through unadapted. Whether ha-mcp 8.6.0 still needs it on 2026.8.x is NOT established.",
      "refs": [
       {
-       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_8_6_0.json",
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_2_0.json",
        "line": 1,
        "anchor": "\"ha_get_device\""
       },
@@ -3679,13 +3679,13 @@
     {
      "tool": "ha_list_floors_areas",
      "provider": "upstream_read_gateway",
-     "purpose_binding": "ha-mcp-8.6.0-public-reads-v1",
-     "admission": "upstream:ha_list_floors_areas 8.6.0; signed:core.non_device_registry_read compiled-active (CORE_CAPABILITY_PROFILES; compiled_exact_authority for SUPPORTED_CORE_RELEASES 2026.7.2/8.0/8.1/9.0/9.1)",
+     "purpose_binding": "ha-mcp-9.2.0-public-reads-v1",
+     "admission": "upstream:ha_list_floors_areas 9.2.0; signed:core.non_device_registry_read compiled-active (CORE_CAPABILITY_PROFILES; compiled_exact_authority for SUPPORTED_CORE_RELEASES 2026.7.2/8.0/8.1/9.0/9.1)",
      "completeness": "partial",
      "detail": "Floors with their areas via ha-mcp; gateway bounds apply.",
      "refs": [
       {
-       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_8_6_0.json",
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_2_0.json",
        "line": 1,
        "anchor": "\"ha_list_floors_areas\""
       },
@@ -3725,13 +3725,13 @@
     {
      "tool": "ha_list_floors_areas",
      "provider": "upstream_read_gateway (floor_registry list inside the compiled non_device profile)",
-     "purpose_binding": "ha-mcp-8.6.0-public-reads-v1",
-     "admission": "upstream:ha_list_floors_areas 8.6.0; signed:core.non_device_registry_read compiled-active (CORE_CAPABILITY_PROFILES; compiled_exact_authority for SUPPORTED_CORE_RELEASES 2026.7.2/8.0/8.1/9.0/9.1) (websocket_floor_registry_list)",
+     "purpose_binding": "ha-mcp-9.2.0-public-reads-v1",
+     "admission": "upstream:ha_list_floors_areas 9.2.0; signed:core.non_device_registry_read compiled-active (CORE_CAPABILITY_PROFILES; compiled_exact_authority for SUPPORTED_CORE_RELEASES 2026.7.2/8.0/8.1/9.0/9.1) (websocket_floor_registry_list)",
      "completeness": "partial",
      "detail": "Only read path for floors; no standalone Engineering floor tool.",
      "refs": [
       {
-       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_8_6_0.json",
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_2_0.json",
        "line": 1,
        "anchor": "\"ha_list_floors_areas\""
       },
@@ -3776,13 +3776,13 @@
     {
      "tool": "ha_config_get_label",
      "provider": "upstream_read_gateway",
-     "purpose_binding": "ha-mcp-8.6.0-public-reads-v1",
-     "admission": "upstream:ha_config_get_label 8.6.0; signed:core.non_device_registry_read compiled-active (CORE_CAPABILITY_PROFILES; compiled_exact_authority for SUPPORTED_CORE_RELEASES 2026.7.2/8.0/8.1/9.0/9.1)",
+     "purpose_binding": "ha-mcp-9.2.0-public-reads-v1",
+     "admission": "upstream:ha_config_get_label 9.2.0; signed:core.non_device_registry_read compiled-active (CORE_CAPABILITY_PROFILES; compiled_exact_authority for SUPPORTED_CORE_RELEASES 2026.7.2/8.0/8.1/9.0/9.1)",
      "completeness": "partial",
      "detail": "Label list or lookup via ha-mcp; planner also reads config/label_registry/list directly (cap 5_000).",
      "refs": [
       {
-       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_8_6_0.json",
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_2_0.json",
        "line": 1,
        "anchor": "\"ha_config_get_label\""
       },
@@ -3865,13 +3865,13 @@
     {
      "tool": "ha_config_get_category",
      "provider": "upstream_read_gateway",
-     "purpose_binding": "ha-mcp-8.6.0-public-reads-v1",
-     "admission": "upstream:ha_config_get_category 8.6.0; signed:core.non_device_registry_read compiled-active (CORE_CAPABILITY_PROFILES; compiled_exact_authority for SUPPORTED_CORE_RELEASES 2026.7.2/8.0/8.1/9.0/9.1)",
+     "purpose_binding": "ha-mcp-9.2.0-public-reads-v1",
+     "admission": "upstream:ha_config_get_category 9.2.0; signed:core.non_device_registry_read compiled-active (CORE_CAPABILITY_PROFILES; compiled_exact_authority for SUPPORTED_CORE_RELEASES 2026.7.2/8.0/8.1/9.0/9.1)",
      "completeness": "partial",
      "detail": "Category listing/lookup via ha-mcp. core.non_device_registry_read profile attests area, floor, label and entity lists only (no category_registry command listed in the compiled profile), so category attestation is thin. UNVERIFIED how the gateway handles that mismatch.",
      "refs": [
       {
-       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_8_6_0.json",
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_2_0.json",
        "line": 1,
        "anchor": "\"ha_config_get_category\""
       },
@@ -4077,6 +4077,16 @@
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/marketplace_inventory.py",
        "line": 50,
        "anchor": "PROFILE = MARKETPLACE_PROFILE"
+      },
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
+       "line": 242,
+       "anchor": "RETIRED_DELEGATED_READ_TOOLS: tuple[str, ...] = (\"ha_get_hacs_info\",)"
+      },
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+       "line": 1608,
+       "anchor": "\"disposition\": \"retired_delegated_read\""
       }
      ]
     },
@@ -4193,13 +4203,13 @@
     {
      "tool": "ha_get_state",
      "provider": "upstream_read_gateway",
-     "purpose_binding": "ha-mcp-8.6.0-public-reads-v1",
-     "admission": "upstream:ha_get_state 8.6.0; signed:core.direct_entity_state_read compiled-active (CORE_CAPABILITY_PROFILES; compiled_exact_authority for SUPPORTED_CORE_RELEASES 2026.7.2/8.0/8.1/9.0/9.1)",
+     "purpose_binding": "ha-mcp-9.2.0-public-reads-v1",
+     "admission": "upstream:ha_get_state 9.2.0; signed:core.direct_entity_state_read compiled-active (CORE_CAPABILITY_PROFILES; compiled_exact_authority for SUPPORTED_CORE_RELEASES 2026.7.2/8.0/8.1/9.0/9.1)",
      "completeness": "partial",
      "detail": "Delegated state read (single/multi per upstream schema), gateway bounds.",
      "refs": [
       {
-       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_8_6_0.json",
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_2_0.json",
        "line": 1,
        "anchor": "\"ha_get_state\""
       },
@@ -4213,13 +4223,13 @@
     {
      "tool": "ha_search",
      "provider": "upstream_read_gateway search adapter",
-     "purpose_binding": "ha-mcp-8.6.0-search-descriptor-pair-v1",
-     "admission": "upstream:ha_search 8.6.0 exact descriptor pair; signed:core.delegated_device_effective_area compiled-active (CORE_CAPABILITY_PROFILES; compiled_exact_authority for SUPPORTED_CORE_RELEASES 2026.7.2/8.0/8.1/9.0/9.1)",
+     "purpose_binding": "ha-mcp-9.2.0-search-descriptor-pair-v1",
+     "admission": "upstream:ha_search 9.2.0 exact descriptor pair; signed:core.delegated_device_effective_area compiled-active (CORE_CAPABILITY_PROFILES; compiled_exact_authority for SUPPORTED_CORE_RELEASES 2026.7.2/8.0/8.1/9.0/9.1)",
      "completeness": "partial",
      "detail": "Fuzzy entity/area/device search through the exact search descriptor pair adapter; bounded results.",
      "refs": [
       {
-       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_8_6_0.json",
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_2_0.json",
        "line": 1,
        "anchor": "\"ha_search\""
       },
@@ -4238,13 +4248,13 @@
     {
      "tool": "ha_get_overview",
      "provider": "upstream_read_gateway",
-     "purpose_binding": "ha-mcp-8.6.0-public-reads-v1",
-     "admission": "upstream:ha_get_overview 8.6.0; signed:core.delegated_device_effective_area compiled-active (CORE_CAPABILITY_PROFILES; compiled_exact_authority for SUPPORTED_CORE_RELEASES 2026.7.2/8.0/8.1/9.0/9.1)",
+     "purpose_binding": "ha-mcp-9.2.0-public-reads-v1",
+     "admission": "upstream:ha_get_overview 9.2.0; signed:core.delegated_device_effective_area compiled-active (CORE_CAPABILITY_PROFILES; compiled_exact_authority for SUPPORTED_CORE_RELEASES 2026.7.2/8.0/8.1/9.0/9.1)",
      "completeness": "partial",
      "detail": "System/entity overview summary from ha-mcp; gateway sanitization and size bound.",
      "refs": [
       {
-       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_8_6_0.json",
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_2_0.json",
        "line": 1,
        "anchor": "\"ha_get_overview\""
       },
@@ -4288,13 +4298,13 @@
     {
      "tool": "ha_eval_template",
      "provider": "upstream_read_gateway",
-     "purpose_binding": "ha-mcp-8.6.0-public-reads-v1",
-     "admission": "upstream:ha_eval_template 8.6.0; signed:core.template_semantics compiled-active (CORE_CAPABILITY_PROFILES; compiled_exact_authority for SUPPORTED_CORE_RELEASES 2026.7.2/8.0/8.1/9.0/9.1)",
+     "purpose_binding": "ha-mcp-9.2.0-public-reads-v1",
+     "admission": "upstream:ha_eval_template 9.2.0; signed:core.template_semantics compiled-active (CORE_CAPABILITY_PROFILES; compiled_exact_authority for SUPPORTED_CORE_RELEASES 2026.7.2/8.0/8.1/9.0/9.1)",
      "completeness": "partial",
      "detail": "Delegated template evaluation.",
      "refs": [
       {
-       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_8_6_0.json",
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_2_0.json",
        "line": 1,
        "anchor": "\"ha_eval_template\""
       },
@@ -4314,9 +4324,9 @@
      "detail": "Status of device operations started through ha-mcp; not a general state read.",
      "refs": [
       {
-       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy.json",
-       "line": 1108,
-       "anchor": "\"exposed_name\": \"ha_get_operation_status\""
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_2_0.json",
+       "line": 1,
+       "anchor": "\"exposed_name\":\"ha_get_operation_status\""
       }
      ]
     }
@@ -4474,13 +4484,13 @@
     {
      "tool": "ha_list_services",
      "provider": "upstream_read_gateway",
-     "purpose_binding": "ha-mcp-8.6.0-public-reads-v1",
-     "admission": "upstream:ha_list_services 8.6.0; signed:core.state_service_discovery compiled-active (CORE_CAPABILITY_PROFILES; compiled_exact_authority for SUPPORTED_CORE_RELEASES 2026.7.2/8.0/8.1/9.0/9.1)",
+     "purpose_binding": "ha-mcp-9.2.0-public-reads-v1",
+     "admission": "upstream:ha_list_services 9.2.0; signed:core.state_service_discovery compiled-active (CORE_CAPABILITY_PROFILES; compiled_exact_authority for SUPPORTED_CORE_RELEASES 2026.7.2/8.0/8.1/9.0/9.1)",
      "completeness": "partial",
      "detail": "Delegated service listing.",
      "refs": [
       {
-       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_8_6_0.json",
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_2_0.json",
        "line": 1,
        "anchor": "\"ha_list_services\""
       },
@@ -4520,13 +4530,13 @@
     {
      "tool": "ha_get_zone",
      "provider": "upstream_read_gateway",
-     "purpose_binding": "ha-mcp-8.6.0-public-reads-v1",
-     "admission": "upstream:ha_get_zone 8.6.0; core.basic_rest_read (compiled-active (CORE_CAPABILITY_PROFILES; compiled_exact_authority for SUPPORTED_CORE_RELEASES 2026.7.2/8.0/8.1/9.0/9.1))",
+     "purpose_binding": "ha-mcp-9.2.0-public-reads-v1",
+     "admission": "upstream:ha_get_zone 9.2.0; core.basic_rest_read (compiled-active (CORE_CAPABILITY_PROFILES; compiled_exact_authority for SUPPORTED_CORE_RELEASES 2026.7.2/8.0/8.1/9.0/9.1))",
      "completeness": "partial",
      "detail": "Zone read; zone writes (ha_set_zone/ha_remove_zone) are persistent_write and unreachable.",
      "refs": [
       {
-       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_8_6_0.json",
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_2_0.json",
        "line": 1,
        "anchor": "\"ha_get_zone\""
       },
@@ -4536,7 +4546,7 @@
        "anchor": "\"ha_get_zone\""
       },
       {
-       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_8_6_0.json",
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_2_0.json",
        "line": 1,
        "anchor": "\"ha_set_zone\""
       }
@@ -4545,13 +4555,13 @@
     {
      "tool": "ha_get_todo",
      "provider": "upstream_read_gateway",
-     "purpose_binding": "ha-mcp-8.6.0-public-reads-v1",
-     "admission": "upstream:ha_get_todo 8.6.0; core.basic_websocket_read (compiled-active (CORE_CAPABILITY_PROFILES; compiled_exact_authority for SUPPORTED_CORE_RELEASES 2026.7.2/8.0/8.1/9.0/9.1))",
+     "purpose_binding": "ha-mcp-9.2.0-public-reads-v1",
+     "admission": "upstream:ha_get_todo 9.2.0; core.basic_websocket_read (compiled-active (CORE_CAPABILITY_PROFILES; compiled_exact_authority for SUPPORTED_CORE_RELEASES 2026.7.2/8.0/8.1/9.0/9.1))",
      "completeness": "partial",
      "detail": "To-do list/item read; item writes are not reachable.",
      "refs": [
       {
-       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_8_6_0.json",
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_2_0.json",
        "line": 1,
        "anchor": "\"ha_get_todo\""
       },
@@ -4565,13 +4575,13 @@
     {
      "tool": "ha_config_get_calendar_events",
      "provider": "upstream_read_gateway",
-     "purpose_binding": "ha-mcp-8.6.0-public-reads-v1",
-     "admission": "upstream:ha_config_get_calendar_events 8.6.0; core.basic_websocket_read (compiled-active (CORE_CAPABILITY_PROFILES; compiled_exact_authority for SUPPORTED_CORE_RELEASES 2026.7.2/8.0/8.1/9.0/9.1))",
+     "purpose_binding": "ha-mcp-9.2.0-public-reads-v1",
+     "admission": "upstream:ha_config_get_calendar_events 9.2.0; core.basic_websocket_read (compiled-active (CORE_CAPABILITY_PROFILES; compiled_exact_authority for SUPPORTED_CORE_RELEASES 2026.7.2/8.0/8.1/9.0/9.1))",
      "completeness": "partial",
      "detail": "Calendar event read; event create/delete are not reachable.",
      "refs": [
       {
-       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_8_6_0.json",
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_2_0.json",
        "line": 1,
        "anchor": "\"ha_config_get_calendar_events\""
       },
@@ -4593,7 +4603,7 @@
      "register": [],
      "refs": [
       {
-       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_8_6_0.json",
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_2_0.json",
        "line": 1,
        "anchor": "\"ha_set_zone\""
       }
@@ -4717,18 +4727,13 @@
      "register": [],
      "refs": [
       {
-       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_8_6_0.json",
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_2_0.json",
        "line": 1,
        "anchor": "\"exposed_name\":\"ha_get_logs\""
       },
       {
-       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy.json",
-       "line": 1089,
-       "anchor": "Raw Home Assistant, Supervisor, host, and add-on logs cross an unresolved confidentiality boundary"
-      },
-      {
        "path": "tests/test_readonly_upstream_gateway.py",
-       "line": 1637,
+       "line": 1640,
        "anchor": "self.assertNotIn(\"ha_get_logs\", automatic)"
       }
      ]
@@ -5453,7 +5458,7 @@
      "register": [],
      "refs": [
       {
-       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_8_6_0.json",
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_2_0.json",
        "line": 1,
        "anchor": "\"exposed_name\":\"ha_manage_energy_prefs\""
       }
@@ -5535,18 +5540,13 @@
    "gaps": [
     {
      "id": "RCG-082",
-     "missing": "Add-on restart at ha-mcp 8.2.0 to 9.1.2 (lifecycle held; tool renamed to ha_manage_app). 9.2.0 lifecycle is admitted with ha_manage_app and ha_get_app (HAMCP-401).",
+     "missing": "Add-on restart on ha-mcp releases before 9.2.0: lifecycle was held there (tool renamed to ha_manage_app), and HAMCP-437 I2a retired those registry rows, so they refuse as unknown versions. 9.2.0 lifecycle is admitted with ha_manage_app and ha_get_app (HAMCP-401).",
      "requirement_type": "upstream_admission",
      "requirement": "Review the 8.x ha_manage_app surface and admit the lifecycle disposition per release; tool names are selected per admitted release.",
      "register": [
       "HAMCP-401"
      ],
      "refs": [
-      {
-       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_release_registry.json",
-       "line": 1,
-       "anchor": "\"provider_dispositions\":{\"backup\":\"held\",\"dashboard\":\"admitted\",\"lifecycle\":\"held\",\"read_gateway\":\"admitted\"}"
-      },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_release_registry.json",
        "line": 1,
@@ -5567,9 +5567,9 @@
      "register": [],
      "refs": [
       {
-       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy.json",
-       "line": 859,
-       "anchor": "Single-add-on details may include secret-bearing option data"
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_2_0.json",
+       "line": 1,
+       "anchor": "\"exposed_name\":\"ha_get_app\""
       }
      ]
     },
@@ -5653,7 +5653,7 @@
        "anchor": "\"provider_dispositions\":{\"backup\":\"held\""
       },
       {
-       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_8_6_0.json",
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_2_0.json",
        "line": 1,
        "anchor": "\"exposed_name\":\"ha_manage_backup\""
       }
@@ -5878,7 +5878,7 @@
      "register": [],
      "refs": [
       {
-       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_8_6_0.json",
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_2_0.json",
        "line": 1,
        "anchor": "\"exposed_name\":\"ha_manage_updates\""
       }
@@ -6753,25 +6753,9 @@
    "reason": "Delegated ha-mcp read of bundled best-practice guides; static upstream content, no Home Assistant data.",
    "refs": [
     {
-     "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy.json",
-     "line": 1154,
-     "anchor": "\"exposed_name\": \"ha_get_skill_guide\""
-    }
-   ]
-  },
-  {
-   "tool": "ha_get_hacs_info",
-   "reason": "Retired delegated ha-mcp read (HAMCP-290, Josh decision 2026-11-08): never exposed or dispatched on any reviewed release, with or without the native route; a matched read is withheld as retired_delegated_read and the dispatch guard refuses it as prohibited_delegation. No alias and no fallback. Superseded by the Engineering-native get_marketplace_inventory.",
-   "refs": [
-    {
-     "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-     "line": 242,
-     "anchor": "RETIRED_DELEGATED_READ_TOOLS: tuple[str, ...] = (\"ha_get_hacs_info\",)"
-    },
-    {
-     "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-     "line": 1608,
-     "anchor": "\"disposition\": \"retired_delegated_read\""
+     "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_2_0.json",
+     "line": 1,
+     "anchor": "\"exposed_name\":\"ha_get_skill_guide\""
     }
    ]
   }
@@ -7156,7 +7140,7 @@
  },
  "inventory": {
   "tool_catalog": {
-   "fingerprint": "8850781e9b622972d5d256713a1493d2a8c6ac1e2b81dc83de21bd59afa974b4",
+   "fingerprint": "740dfe2a873023790da9125ec8afd23b3640e03b833b9d84e16186b0e8752a45",
    "items": {
     "adapter:ha-mcp-8.4.3-platform-apps-v1": "c96ec4d8b2f2fc06",
     "adapter:ha-mcp-8.4.3-platform-health-v1": "73c2eb69c76e7f2b",
@@ -7184,938 +7168,6 @@
     "adapter:ha-mcp-9.2.0-platform-health-v1": "a82cfa0545656fa2",
     "adapter:ha-mcp-9.2.0-platform-integrations-v1": "04753388ae4ac58f",
     "adapter:ha_config_get_yaml": "6f132512e8ffe15f",
-    "ha_mcp_7.14.1:ha_bulk_control": "8c7d2bf6015904b3",
-    "ha_mcp_7.14.1:ha_call_event": "2c6f95b236dffbef",
-    "ha_mcp_7.14.1:ha_call_service": "a30c40d0a3c7baef",
-    "ha_mcp_7.14.1:ha_config_delete_dashboard": "c0ca46dd1d2a6a1c",
-    "ha_mcp_7.14.1:ha_config_delete_dashboard_resource": "088c74cbb30ba1c9",
-    "ha_mcp_7.14.1:ha_config_get_automation": "c1ac46bb0e398faa",
-    "ha_mcp_7.14.1:ha_config_get_calendar_events": "5985672b966c215d",
-    "ha_mcp_7.14.1:ha_config_get_category": "417a99edeb84e8c9",
-    "ha_mcp_7.14.1:ha_config_get_dashboard": "23fe08e3e9d71d67",
-    "ha_mcp_7.14.1:ha_config_get_label": "c6a51224e9dc7166",
-    "ha_mcp_7.14.1:ha_config_get_scene": "b1ba25c871739a7a",
-    "ha_mcp_7.14.1:ha_config_get_script": "4ddc23d8df87e8f3",
-    "ha_mcp_7.14.1:ha_config_list_dashboard_resources": "d1a844591c9c2fa4",
-    "ha_mcp_7.14.1:ha_config_list_groups": "9fd5aef795dbeaa3",
-    "ha_mcp_7.14.1:ha_config_list_helpers": "d255d9a42abcf8ea",
-    "ha_mcp_7.14.1:ha_config_remove_automation": "ca021df0d030c72e",
-    "ha_mcp_7.14.1:ha_config_remove_calendar_event": "431725c2bcc22496",
-    "ha_mcp_7.14.1:ha_config_remove_category": "422ae33e586ac656",
-    "ha_mcp_7.14.1:ha_config_remove_group": "2fd522359aa8c8be",
-    "ha_mcp_7.14.1:ha_config_remove_label": "79021cb249de86fc",
-    "ha_mcp_7.14.1:ha_config_remove_scene": "fc76fb6bd4dbf7b5",
-    "ha_mcp_7.14.1:ha_config_remove_script": "d52b54181f21f511",
-    "ha_mcp_7.14.1:ha_config_set_automation": "e3796204d9e08168",
-    "ha_mcp_7.14.1:ha_config_set_calendar_event": "1ed2909f59686a13",
-    "ha_mcp_7.14.1:ha_config_set_category": "f89e7063fe303708",
-    "ha_mcp_7.14.1:ha_config_set_dashboard": "30e7a46bca63938f",
-    "ha_mcp_7.14.1:ha_config_set_dashboard_resource": "9e8d31a5ad5920f9",
-    "ha_mcp_7.14.1:ha_config_set_group": "85dfe091bacb8815",
-    "ha_mcp_7.14.1:ha_config_set_helper": "25de06beb5351201",
-    "ha_mcp_7.14.1:ha_config_set_label": "98c05c5879ef27b2",
-    "ha_mcp_7.14.1:ha_config_set_scene": "d0d703e2183e5708",
-    "ha_mcp_7.14.1:ha_config_set_script": "c9969dffc4c4185e",
-    "ha_mcp_7.14.1:ha_eval_template": "0233566922525819",
-    "ha_mcp_7.14.1:ha_get_addon": "3acdd607f8a43943",
-    "ha_mcp_7.14.1:ha_get_automation_traces": "50cd3db94140461d",
-    "ha_mcp_7.14.1:ha_get_blueprint": "0b6fed6863b7d6a5",
-    "ha_mcp_7.14.1:ha_get_camera_image": "8c28fb1c40d75b59",
-    "ha_mcp_7.14.1:ha_get_device": "b91f24e645b25618",
-    "ha_mcp_7.14.1:ha_get_entity": "8dd35073d15c78cb",
-    "ha_mcp_7.14.1:ha_get_entity_exposure": "4c83e095d72c58d1",
-    "ha_mcp_7.14.1:ha_get_hacs_info": "a32a40383f1a9181",
-    "ha_mcp_7.14.1:ha_get_history": "15c64067f635529f",
-    "ha_mcp_7.14.1:ha_get_integration": "5ffcee6453b53bf4",
-    "ha_mcp_7.14.1:ha_get_logs": "83f6c233caf308f9",
-    "ha_mcp_7.14.1:ha_get_operation_status": "764222c160cc418a",
-    "ha_mcp_7.14.1:ha_get_overview": "a0c4326d344b2f96",
-    "ha_mcp_7.14.1:ha_get_skill_guide": "f1ea0f87e3da520a",
-    "ha_mcp_7.14.1:ha_get_state": "541c537d585fe86b",
-    "ha_mcp_7.14.1:ha_get_system_health": "fe9371e133bd70ec",
-    "ha_mcp_7.14.1:ha_get_todo": "081e9aa5e1cf0045",
-    "ha_mcp_7.14.1:ha_get_zone": "0f2423c0be1e844e",
-    "ha_mcp_7.14.1:ha_import_blueprint": "136c73595230aa3d",
-    "ha_mcp_7.14.1:ha_list_floors_areas": "4cb0748876ff5bde",
-    "ha_mcp_7.14.1:ha_list_services": "b4729dc5fe5bffde",
-    "ha_mcp_7.14.1:ha_manage_addon": "ad48d2a9563ec394",
-    "ha_mcp_7.14.1:ha_manage_backup": "abdd96de8e6f3969",
-    "ha_mcp_7.14.1:ha_manage_energy_prefs": "d5bd18be54199e6d",
-    "ha_mcp_7.14.1:ha_manage_hacs": "4ec164cf3361e9d1",
-    "ha_mcp_7.14.1:ha_manage_pipeline": "f8e3b9aea97af1f5",
-    "ha_mcp_7.14.1:ha_manage_radio": "0a635f53a755a10c",
-    "ha_mcp_7.14.1:ha_manage_theme": "0e268d0fd8d897a6",
-    "ha_mcp_7.14.1:ha_manage_updates": "f748b425761c8aaa",
-    "ha_mcp_7.14.1:ha_reload_core": "a7517588ec0788e8",
-    "ha_mcp_7.14.1:ha_remove_area_or_floor": "29f7ee6d7afbab5c",
-    "ha_mcp_7.14.1:ha_remove_device": "447798ffcbcba46a",
-    "ha_mcp_7.14.1:ha_remove_entity": "46c9ec089aea06ae",
-    "ha_mcp_7.14.1:ha_remove_helpers_integrations": "67c351dafbc93cdd",
-    "ha_mcp_7.14.1:ha_remove_todo_item": "13354d2ff6f1fa7c",
-    "ha_mcp_7.14.1:ha_remove_zone": "f33200a663b07c36",
-    "ha_mcp_7.14.1:ha_report_issue": "86177dc5fd9a52af",
-    "ha_mcp_7.14.1:ha_restart": "e56742ef94a883a6",
-    "ha_mcp_7.14.1:ha_search": "3e4d7dabb3cab73e",
-    "ha_mcp_7.14.1:ha_set_area_or_floor": "bff6b464d564f114",
-    "ha_mcp_7.14.1:ha_set_device": "cb81a2f70292e228",
-    "ha_mcp_7.14.1:ha_set_entity": "45db05149df5530f",
-    "ha_mcp_7.14.1:ha_set_integration": "30eac2bce7043556",
-    "ha_mcp_7.14.1:ha_set_todo_item": "4389d74449e91278",
-    "ha_mcp_7.14.1:ha_set_zone": "b2ecc57f57455c89",
-    "ha_mcp_7.14.2:ha_bulk_control": "8c7d2bf6015904b3",
-    "ha_mcp_7.14.2:ha_call_event": "2c6f95b236dffbef",
-    "ha_mcp_7.14.2:ha_call_service": "a30c40d0a3c7baef",
-    "ha_mcp_7.14.2:ha_config_delete_dashboard": "c0ca46dd1d2a6a1c",
-    "ha_mcp_7.14.2:ha_config_delete_dashboard_resource": "088c74cbb30ba1c9",
-    "ha_mcp_7.14.2:ha_config_get_automation": "c1ac46bb0e398faa",
-    "ha_mcp_7.14.2:ha_config_get_calendar_events": "5985672b966c215d",
-    "ha_mcp_7.14.2:ha_config_get_category": "417a99edeb84e8c9",
-    "ha_mcp_7.14.2:ha_config_get_dashboard": "23fe08e3e9d71d67",
-    "ha_mcp_7.14.2:ha_config_get_label": "c6a51224e9dc7166",
-    "ha_mcp_7.14.2:ha_config_get_scene": "b1ba25c871739a7a",
-    "ha_mcp_7.14.2:ha_config_get_script": "4ddc23d8df87e8f3",
-    "ha_mcp_7.14.2:ha_config_list_dashboard_resources": "d1a844591c9c2fa4",
-    "ha_mcp_7.14.2:ha_config_list_groups": "9fd5aef795dbeaa3",
-    "ha_mcp_7.14.2:ha_config_list_helpers": "d255d9a42abcf8ea",
-    "ha_mcp_7.14.2:ha_config_remove_automation": "ca021df0d030c72e",
-    "ha_mcp_7.14.2:ha_config_remove_calendar_event": "431725c2bcc22496",
-    "ha_mcp_7.14.2:ha_config_remove_category": "422ae33e586ac656",
-    "ha_mcp_7.14.2:ha_config_remove_group": "2fd522359aa8c8be",
-    "ha_mcp_7.14.2:ha_config_remove_label": "79021cb249de86fc",
-    "ha_mcp_7.14.2:ha_config_remove_scene": "fc76fb6bd4dbf7b5",
-    "ha_mcp_7.14.2:ha_config_remove_script": "d52b54181f21f511",
-    "ha_mcp_7.14.2:ha_config_set_automation": "e3796204d9e08168",
-    "ha_mcp_7.14.2:ha_config_set_calendar_event": "1ed2909f59686a13",
-    "ha_mcp_7.14.2:ha_config_set_category": "f89e7063fe303708",
-    "ha_mcp_7.14.2:ha_config_set_dashboard": "30e7a46bca63938f",
-    "ha_mcp_7.14.2:ha_config_set_dashboard_resource": "9e8d31a5ad5920f9",
-    "ha_mcp_7.14.2:ha_config_set_group": "85dfe091bacb8815",
-    "ha_mcp_7.14.2:ha_config_set_helper": "25de06beb5351201",
-    "ha_mcp_7.14.2:ha_config_set_label": "98c05c5879ef27b2",
-    "ha_mcp_7.14.2:ha_config_set_scene": "d0d703e2183e5708",
-    "ha_mcp_7.14.2:ha_config_set_script": "c9969dffc4c4185e",
-    "ha_mcp_7.14.2:ha_eval_template": "0233566922525819",
-    "ha_mcp_7.14.2:ha_get_addon": "3acdd607f8a43943",
-    "ha_mcp_7.14.2:ha_get_automation_traces": "50cd3db94140461d",
-    "ha_mcp_7.14.2:ha_get_blueprint": "0b6fed6863b7d6a5",
-    "ha_mcp_7.14.2:ha_get_camera_image": "8c28fb1c40d75b59",
-    "ha_mcp_7.14.2:ha_get_device": "b91f24e645b25618",
-    "ha_mcp_7.14.2:ha_get_entity": "8dd35073d15c78cb",
-    "ha_mcp_7.14.2:ha_get_entity_exposure": "4c83e095d72c58d1",
-    "ha_mcp_7.14.2:ha_get_hacs_info": "a32a40383f1a9181",
-    "ha_mcp_7.14.2:ha_get_history": "15c64067f635529f",
-    "ha_mcp_7.14.2:ha_get_integration": "5ffcee6453b53bf4",
-    "ha_mcp_7.14.2:ha_get_logs": "83f6c233caf308f9",
-    "ha_mcp_7.14.2:ha_get_operation_status": "764222c160cc418a",
-    "ha_mcp_7.14.2:ha_get_overview": "a0c4326d344b2f96",
-    "ha_mcp_7.14.2:ha_get_skill_guide": "f1ea0f87e3da520a",
-    "ha_mcp_7.14.2:ha_get_state": "541c537d585fe86b",
-    "ha_mcp_7.14.2:ha_get_system_health": "fe9371e133bd70ec",
-    "ha_mcp_7.14.2:ha_get_todo": "081e9aa5e1cf0045",
-    "ha_mcp_7.14.2:ha_get_zone": "0f2423c0be1e844e",
-    "ha_mcp_7.14.2:ha_import_blueprint": "136c73595230aa3d",
-    "ha_mcp_7.14.2:ha_list_floors_areas": "4cb0748876ff5bde",
-    "ha_mcp_7.14.2:ha_list_services": "b4729dc5fe5bffde",
-    "ha_mcp_7.14.2:ha_manage_addon": "ad48d2a9563ec394",
-    "ha_mcp_7.14.2:ha_manage_backup": "abdd96de8e6f3969",
-    "ha_mcp_7.14.2:ha_manage_energy_prefs": "d5bd18be54199e6d",
-    "ha_mcp_7.14.2:ha_manage_hacs": "4ec164cf3361e9d1",
-    "ha_mcp_7.14.2:ha_manage_pipeline": "f8e3b9aea97af1f5",
-    "ha_mcp_7.14.2:ha_manage_radio": "0a635f53a755a10c",
-    "ha_mcp_7.14.2:ha_manage_theme": "0e268d0fd8d897a6",
-    "ha_mcp_7.14.2:ha_manage_updates": "f748b425761c8aaa",
-    "ha_mcp_7.14.2:ha_reload_core": "a7517588ec0788e8",
-    "ha_mcp_7.14.2:ha_remove_area_or_floor": "29f7ee6d7afbab5c",
-    "ha_mcp_7.14.2:ha_remove_device": "447798ffcbcba46a",
-    "ha_mcp_7.14.2:ha_remove_entity": "46c9ec089aea06ae",
-    "ha_mcp_7.14.2:ha_remove_helpers_integrations": "67c351dafbc93cdd",
-    "ha_mcp_7.14.2:ha_remove_todo_item": "13354d2ff6f1fa7c",
-    "ha_mcp_7.14.2:ha_remove_zone": "f33200a663b07c36",
-    "ha_mcp_7.14.2:ha_report_issue": "86177dc5fd9a52af",
-    "ha_mcp_7.14.2:ha_restart": "e56742ef94a883a6",
-    "ha_mcp_7.14.2:ha_search": "3e4d7dabb3cab73e",
-    "ha_mcp_7.14.2:ha_set_area_or_floor": "bff6b464d564f114",
-    "ha_mcp_7.14.2:ha_set_device": "cb81a2f70292e228",
-    "ha_mcp_7.14.2:ha_set_entity": "45db05149df5530f",
-    "ha_mcp_7.14.2:ha_set_integration": "30eac2bce7043556",
-    "ha_mcp_7.14.2:ha_set_todo_item": "4389d74449e91278",
-    "ha_mcp_7.14.2:ha_set_zone": "b2ecc57f57455c89",
-    "ha_mcp_8.0.0:ha_bulk_control": "8c7d2bf6015904b3",
-    "ha_mcp_8.0.0:ha_call_event": "2c6f95b236dffbef",
-    "ha_mcp_8.0.0:ha_call_service": "23d690382ebe323c",
-    "ha_mcp_8.0.0:ha_config_delete_dashboard": "c0ca46dd1d2a6a1c",
-    "ha_mcp_8.0.0:ha_config_delete_dashboard_resource": "088c74cbb30ba1c9",
-    "ha_mcp_8.0.0:ha_config_get_automation": "c1ac46bb0e398faa",
-    "ha_mcp_8.0.0:ha_config_get_calendar_events": "5985672b966c215d",
-    "ha_mcp_8.0.0:ha_config_get_category": "417a99edeb84e8c9",
-    "ha_mcp_8.0.0:ha_config_get_dashboard": "e58ed9df070d5fd3",
-    "ha_mcp_8.0.0:ha_config_get_label": "c6a51224e9dc7166",
-    "ha_mcp_8.0.0:ha_config_get_scene": "b1ba25c871739a7a",
-    "ha_mcp_8.0.0:ha_config_get_script": "4ddc23d8df87e8f3",
-    "ha_mcp_8.0.0:ha_config_list_dashboard_resources": "d1a844591c9c2fa4",
-    "ha_mcp_8.0.0:ha_config_list_groups": "9fd5aef795dbeaa3",
-    "ha_mcp_8.0.0:ha_config_list_helpers": "d255d9a42abcf8ea",
-    "ha_mcp_8.0.0:ha_config_remove_automation": "ca021df0d030c72e",
-    "ha_mcp_8.0.0:ha_config_remove_calendar_event": "431725c2bcc22496",
-    "ha_mcp_8.0.0:ha_config_remove_category": "422ae33e586ac656",
-    "ha_mcp_8.0.0:ha_config_remove_group": "2fd522359aa8c8be",
-    "ha_mcp_8.0.0:ha_config_remove_label": "79021cb249de86fc",
-    "ha_mcp_8.0.0:ha_config_remove_scene": "fc76fb6bd4dbf7b5",
-    "ha_mcp_8.0.0:ha_config_remove_script": "d52b54181f21f511",
-    "ha_mcp_8.0.0:ha_config_set_automation": "e3796204d9e08168",
-    "ha_mcp_8.0.0:ha_config_set_calendar_event": "1b7a03a69514594d",
-    "ha_mcp_8.0.0:ha_config_set_category": "f89e7063fe303708",
-    "ha_mcp_8.0.0:ha_config_set_dashboard": "30e7a46bca63938f",
-    "ha_mcp_8.0.0:ha_config_set_dashboard_resource": "505cc127de3e926a",
-    "ha_mcp_8.0.0:ha_config_set_group": "85dfe091bacb8815",
-    "ha_mcp_8.0.0:ha_config_set_helper": "25de06beb5351201",
-    "ha_mcp_8.0.0:ha_config_set_label": "98c05c5879ef27b2",
-    "ha_mcp_8.0.0:ha_config_set_scene": "d0d703e2183e5708",
-    "ha_mcp_8.0.0:ha_config_set_script": "c9969dffc4c4185e",
-    "ha_mcp_8.0.0:ha_eval_template": "0233566922525819",
-    "ha_mcp_8.0.0:ha_get_addon": "3acdd607f8a43943",
-    "ha_mcp_8.0.0:ha_get_automation_traces": "50cd3db94140461d",
-    "ha_mcp_8.0.0:ha_get_blueprint": "0b6fed6863b7d6a5",
-    "ha_mcp_8.0.0:ha_get_camera_image": "8c28fb1c40d75b59",
-    "ha_mcp_8.0.0:ha_get_device": "b91f24e645b25618",
-    "ha_mcp_8.0.0:ha_get_entity": "8dd35073d15c78cb",
-    "ha_mcp_8.0.0:ha_get_entity_exposure": "4c83e095d72c58d1",
-    "ha_mcp_8.0.0:ha_get_hacs_info": "a32a40383f1a9181",
-    "ha_mcp_8.0.0:ha_get_history": "15c64067f635529f",
-    "ha_mcp_8.0.0:ha_get_integration": "5ffcee6453b53bf4",
-    "ha_mcp_8.0.0:ha_get_logs": "83f6c233caf308f9",
-    "ha_mcp_8.0.0:ha_get_operation_status": "6ad1a7af3943db20",
-    "ha_mcp_8.0.0:ha_get_overview": "a0c4326d344b2f96",
-    "ha_mcp_8.0.0:ha_get_skill_guide": "f1ea0f87e3da520a",
-    "ha_mcp_8.0.0:ha_get_state": "541c537d585fe86b",
-    "ha_mcp_8.0.0:ha_get_system_health": "fe9371e133bd70ec",
-    "ha_mcp_8.0.0:ha_get_todo": "081e9aa5e1cf0045",
-    "ha_mcp_8.0.0:ha_get_zone": "0f2423c0be1e844e",
-    "ha_mcp_8.0.0:ha_import_blueprint": "136c73595230aa3d",
-    "ha_mcp_8.0.0:ha_list_floors_areas": "4cb0748876ff5bde",
-    "ha_mcp_8.0.0:ha_list_services": "b4729dc5fe5bffde",
-    "ha_mcp_8.0.0:ha_manage_addon": "ad48d2a9563ec394",
-    "ha_mcp_8.0.0:ha_manage_backup": "abdd96de8e6f3969",
-    "ha_mcp_8.0.0:ha_manage_energy_prefs": "d5bd18be54199e6d",
-    "ha_mcp_8.0.0:ha_manage_hacs": "4ec164cf3361e9d1",
-    "ha_mcp_8.0.0:ha_manage_pipeline": "f8e3b9aea97af1f5",
-    "ha_mcp_8.0.0:ha_manage_radio": "0a635f53a755a10c",
-    "ha_mcp_8.0.0:ha_manage_theme": "0e268d0fd8d897a6",
-    "ha_mcp_8.0.0:ha_manage_updates": "f748b425761c8aaa",
-    "ha_mcp_8.0.0:ha_reload_core": "a7517588ec0788e8",
-    "ha_mcp_8.0.0:ha_remove_area_or_floor": "29f7ee6d7afbab5c",
-    "ha_mcp_8.0.0:ha_remove_device": "447798ffcbcba46a",
-    "ha_mcp_8.0.0:ha_remove_entity": "46c9ec089aea06ae",
-    "ha_mcp_8.0.0:ha_remove_helpers_integrations": "67c351dafbc93cdd",
-    "ha_mcp_8.0.0:ha_remove_todo_item": "13354d2ff6f1fa7c",
-    "ha_mcp_8.0.0:ha_remove_zone": "f33200a663b07c36",
-    "ha_mcp_8.0.0:ha_report_issue": "2d64413ff015ef72",
-    "ha_mcp_8.0.0:ha_restart": "e56742ef94a883a6",
-    "ha_mcp_8.0.0:ha_search": "1f71fdfe6779967b",
-    "ha_mcp_8.0.0:ha_set_area_or_floor": "bff6b464d564f114",
-    "ha_mcp_8.0.0:ha_set_device": "cb81a2f70292e228",
-    "ha_mcp_8.0.0:ha_set_entity": "45db05149df5530f",
-    "ha_mcp_8.0.0:ha_set_integration": "30eac2bce7043556",
-    "ha_mcp_8.0.0:ha_set_todo_item": "4389d74449e91278",
-    "ha_mcp_8.0.0:ha_set_zone": "b2ecc57f57455c89",
-    "ha_mcp_8.1.0:ha_bulk_control": "8c7d2bf6015904b3",
-    "ha_mcp_8.1.0:ha_call_event": "2c6f95b236dffbef",
-    "ha_mcp_8.1.0:ha_call_service": "23d690382ebe323c",
-    "ha_mcp_8.1.0:ha_config_delete_dashboard": "c0ca46dd1d2a6a1c",
-    "ha_mcp_8.1.0:ha_config_delete_dashboard_resource": "088c74cbb30ba1c9",
-    "ha_mcp_8.1.0:ha_config_get_automation": "c1ac46bb0e398faa",
-    "ha_mcp_8.1.0:ha_config_get_calendar_events": "5985672b966c215d",
-    "ha_mcp_8.1.0:ha_config_get_category": "417a99edeb84e8c9",
-    "ha_mcp_8.1.0:ha_config_get_dashboard": "e58ed9df070d5fd3",
-    "ha_mcp_8.1.0:ha_config_get_label": "c6a51224e9dc7166",
-    "ha_mcp_8.1.0:ha_config_get_scene": "b1ba25c871739a7a",
-    "ha_mcp_8.1.0:ha_config_get_script": "4ddc23d8df87e8f3",
-    "ha_mcp_8.1.0:ha_config_list_dashboard_resources": "d1a844591c9c2fa4",
-    "ha_mcp_8.1.0:ha_config_list_groups": "9fd5aef795dbeaa3",
-    "ha_mcp_8.1.0:ha_config_list_helpers": "d255d9a42abcf8ea",
-    "ha_mcp_8.1.0:ha_config_remove_automation": "ca021df0d030c72e",
-    "ha_mcp_8.1.0:ha_config_remove_calendar_event": "431725c2bcc22496",
-    "ha_mcp_8.1.0:ha_config_remove_category": "422ae33e586ac656",
-    "ha_mcp_8.1.0:ha_config_remove_group": "2fd522359aa8c8be",
-    "ha_mcp_8.1.0:ha_config_remove_label": "79021cb249de86fc",
-    "ha_mcp_8.1.0:ha_config_remove_scene": "fc76fb6bd4dbf7b5",
-    "ha_mcp_8.1.0:ha_config_remove_script": "d52b54181f21f511",
-    "ha_mcp_8.1.0:ha_config_set_automation": "e3796204d9e08168",
-    "ha_mcp_8.1.0:ha_config_set_calendar_event": "1b7a03a69514594d",
-    "ha_mcp_8.1.0:ha_config_set_category": "f89e7063fe303708",
-    "ha_mcp_8.1.0:ha_config_set_dashboard": "30e7a46bca63938f",
-    "ha_mcp_8.1.0:ha_config_set_dashboard_resource": "505cc127de3e926a",
-    "ha_mcp_8.1.0:ha_config_set_group": "85dfe091bacb8815",
-    "ha_mcp_8.1.0:ha_config_set_helper": "25de06beb5351201",
-    "ha_mcp_8.1.0:ha_config_set_label": "98c05c5879ef27b2",
-    "ha_mcp_8.1.0:ha_config_set_scene": "d0d703e2183e5708",
-    "ha_mcp_8.1.0:ha_config_set_script": "c9969dffc4c4185e",
-    "ha_mcp_8.1.0:ha_eval_template": "0233566922525819",
-    "ha_mcp_8.1.0:ha_get_addon": "3acdd607f8a43943",
-    "ha_mcp_8.1.0:ha_get_automation_traces": "50cd3db94140461d",
-    "ha_mcp_8.1.0:ha_get_blueprint": "0b6fed6863b7d6a5",
-    "ha_mcp_8.1.0:ha_get_camera_image": "8c28fb1c40d75b59",
-    "ha_mcp_8.1.0:ha_get_device": "b91f24e645b25618",
-    "ha_mcp_8.1.0:ha_get_entity": "8dd35073d15c78cb",
-    "ha_mcp_8.1.0:ha_get_entity_exposure": "4c83e095d72c58d1",
-    "ha_mcp_8.1.0:ha_get_hacs_info": "a32a40383f1a9181",
-    "ha_mcp_8.1.0:ha_get_history": "15c64067f635529f",
-    "ha_mcp_8.1.0:ha_get_integration": "5ffcee6453b53bf4",
-    "ha_mcp_8.1.0:ha_get_logs": "83f6c233caf308f9",
-    "ha_mcp_8.1.0:ha_get_operation_status": "6ad1a7af3943db20",
-    "ha_mcp_8.1.0:ha_get_overview": "a0c4326d344b2f96",
-    "ha_mcp_8.1.0:ha_get_skill_guide": "f1ea0f87e3da520a",
-    "ha_mcp_8.1.0:ha_get_state": "541c537d585fe86b",
-    "ha_mcp_8.1.0:ha_get_system_health": "fe9371e133bd70ec",
-    "ha_mcp_8.1.0:ha_get_todo": "081e9aa5e1cf0045",
-    "ha_mcp_8.1.0:ha_get_zone": "0f2423c0be1e844e",
-    "ha_mcp_8.1.0:ha_import_blueprint": "136c73595230aa3d",
-    "ha_mcp_8.1.0:ha_list_floors_areas": "4cb0748876ff5bde",
-    "ha_mcp_8.1.0:ha_list_services": "b4729dc5fe5bffde",
-    "ha_mcp_8.1.0:ha_manage_addon": "ad48d2a9563ec394",
-    "ha_mcp_8.1.0:ha_manage_backup": "abdd96de8e6f3969",
-    "ha_mcp_8.1.0:ha_manage_energy_prefs": "d5bd18be54199e6d",
-    "ha_mcp_8.1.0:ha_manage_hacs": "845a59b2fb8c24fe",
-    "ha_mcp_8.1.0:ha_manage_pipeline": "f8e3b9aea97af1f5",
-    "ha_mcp_8.1.0:ha_manage_radio": "0a635f53a755a10c",
-    "ha_mcp_8.1.0:ha_manage_theme": "0e268d0fd8d897a6",
-    "ha_mcp_8.1.0:ha_manage_updates": "f748b425761c8aaa",
-    "ha_mcp_8.1.0:ha_reload_core": "a7517588ec0788e8",
-    "ha_mcp_8.1.0:ha_remove_area_or_floor": "29f7ee6d7afbab5c",
-    "ha_mcp_8.1.0:ha_remove_device": "447798ffcbcba46a",
-    "ha_mcp_8.1.0:ha_remove_entity": "46c9ec089aea06ae",
-    "ha_mcp_8.1.0:ha_remove_helpers_integrations": "67c351dafbc93cdd",
-    "ha_mcp_8.1.0:ha_remove_todo_item": "13354d2ff6f1fa7c",
-    "ha_mcp_8.1.0:ha_remove_zone": "f33200a663b07c36",
-    "ha_mcp_8.1.0:ha_report_issue": "2d64413ff015ef72",
-    "ha_mcp_8.1.0:ha_restart": "e56742ef94a883a6",
-    "ha_mcp_8.1.0:ha_search": "1f71fdfe6779967b",
-    "ha_mcp_8.1.0:ha_set_area_or_floor": "bff6b464d564f114",
-    "ha_mcp_8.1.0:ha_set_device": "cb81a2f70292e228",
-    "ha_mcp_8.1.0:ha_set_entity": "45db05149df5530f",
-    "ha_mcp_8.1.0:ha_set_integration": "55e05cb1ed5ea79d",
-    "ha_mcp_8.1.0:ha_set_todo_item": "4389d74449e91278",
-    "ha_mcp_8.1.0:ha_set_zone": "b2ecc57f57455c89",
-    "ha_mcp_8.1.1:ha_bulk_control": "8c7d2bf6015904b3",
-    "ha_mcp_8.1.1:ha_call_event": "2c6f95b236dffbef",
-    "ha_mcp_8.1.1:ha_call_service": "23d690382ebe323c",
-    "ha_mcp_8.1.1:ha_config_delete_dashboard": "c0ca46dd1d2a6a1c",
-    "ha_mcp_8.1.1:ha_config_delete_dashboard_resource": "088c74cbb30ba1c9",
-    "ha_mcp_8.1.1:ha_config_get_automation": "c1ac46bb0e398faa",
-    "ha_mcp_8.1.1:ha_config_get_calendar_events": "5985672b966c215d",
-    "ha_mcp_8.1.1:ha_config_get_category": "417a99edeb84e8c9",
-    "ha_mcp_8.1.1:ha_config_get_dashboard": "e58ed9df070d5fd3",
-    "ha_mcp_8.1.1:ha_config_get_label": "c6a51224e9dc7166",
-    "ha_mcp_8.1.1:ha_config_get_scene": "b1ba25c871739a7a",
-    "ha_mcp_8.1.1:ha_config_get_script": "4ddc23d8df87e8f3",
-    "ha_mcp_8.1.1:ha_config_list_dashboard_resources": "d1a844591c9c2fa4",
-    "ha_mcp_8.1.1:ha_config_list_groups": "9fd5aef795dbeaa3",
-    "ha_mcp_8.1.1:ha_config_list_helpers": "d255d9a42abcf8ea",
-    "ha_mcp_8.1.1:ha_config_remove_automation": "ca021df0d030c72e",
-    "ha_mcp_8.1.1:ha_config_remove_calendar_event": "431725c2bcc22496",
-    "ha_mcp_8.1.1:ha_config_remove_category": "422ae33e586ac656",
-    "ha_mcp_8.1.1:ha_config_remove_group": "2fd522359aa8c8be",
-    "ha_mcp_8.1.1:ha_config_remove_label": "79021cb249de86fc",
-    "ha_mcp_8.1.1:ha_config_remove_scene": "fc76fb6bd4dbf7b5",
-    "ha_mcp_8.1.1:ha_config_remove_script": "d52b54181f21f511",
-    "ha_mcp_8.1.1:ha_config_set_automation": "e3796204d9e08168",
-    "ha_mcp_8.1.1:ha_config_set_calendar_event": "1b7a03a69514594d",
-    "ha_mcp_8.1.1:ha_config_set_category": "f89e7063fe303708",
-    "ha_mcp_8.1.1:ha_config_set_dashboard": "30e7a46bca63938f",
-    "ha_mcp_8.1.1:ha_config_set_dashboard_resource": "505cc127de3e926a",
-    "ha_mcp_8.1.1:ha_config_set_group": "85dfe091bacb8815",
-    "ha_mcp_8.1.1:ha_config_set_helper": "25de06beb5351201",
-    "ha_mcp_8.1.1:ha_config_set_label": "98c05c5879ef27b2",
-    "ha_mcp_8.1.1:ha_config_set_scene": "d0d703e2183e5708",
-    "ha_mcp_8.1.1:ha_config_set_script": "c9969dffc4c4185e",
-    "ha_mcp_8.1.1:ha_eval_template": "0233566922525819",
-    "ha_mcp_8.1.1:ha_get_addon": "3acdd607f8a43943",
-    "ha_mcp_8.1.1:ha_get_automation_traces": "50cd3db94140461d",
-    "ha_mcp_8.1.1:ha_get_blueprint": "0b6fed6863b7d6a5",
-    "ha_mcp_8.1.1:ha_get_camera_image": "8c28fb1c40d75b59",
-    "ha_mcp_8.1.1:ha_get_device": "b91f24e645b25618",
-    "ha_mcp_8.1.1:ha_get_entity": "8dd35073d15c78cb",
-    "ha_mcp_8.1.1:ha_get_entity_exposure": "4c83e095d72c58d1",
-    "ha_mcp_8.1.1:ha_get_hacs_info": "a32a40383f1a9181",
-    "ha_mcp_8.1.1:ha_get_history": "15c64067f635529f",
-    "ha_mcp_8.1.1:ha_get_integration": "5ffcee6453b53bf4",
-    "ha_mcp_8.1.1:ha_get_logs": "83f6c233caf308f9",
-    "ha_mcp_8.1.1:ha_get_operation_status": "6ad1a7af3943db20",
-    "ha_mcp_8.1.1:ha_get_overview": "a0c4326d344b2f96",
-    "ha_mcp_8.1.1:ha_get_skill_guide": "f1ea0f87e3da520a",
-    "ha_mcp_8.1.1:ha_get_state": "541c537d585fe86b",
-    "ha_mcp_8.1.1:ha_get_system_health": "fe9371e133bd70ec",
-    "ha_mcp_8.1.1:ha_get_todo": "081e9aa5e1cf0045",
-    "ha_mcp_8.1.1:ha_get_zone": "0f2423c0be1e844e",
-    "ha_mcp_8.1.1:ha_import_blueprint": "136c73595230aa3d",
-    "ha_mcp_8.1.1:ha_list_floors_areas": "4cb0748876ff5bde",
-    "ha_mcp_8.1.1:ha_list_services": "b4729dc5fe5bffde",
-    "ha_mcp_8.1.1:ha_manage_addon": "ad48d2a9563ec394",
-    "ha_mcp_8.1.1:ha_manage_backup": "abdd96de8e6f3969",
-    "ha_mcp_8.1.1:ha_manage_energy_prefs": "d5bd18be54199e6d",
-    "ha_mcp_8.1.1:ha_manage_hacs": "845a59b2fb8c24fe",
-    "ha_mcp_8.1.1:ha_manage_pipeline": "f8e3b9aea97af1f5",
-    "ha_mcp_8.1.1:ha_manage_radio": "0a635f53a755a10c",
-    "ha_mcp_8.1.1:ha_manage_theme": "0e268d0fd8d897a6",
-    "ha_mcp_8.1.1:ha_manage_updates": "f748b425761c8aaa",
-    "ha_mcp_8.1.1:ha_reload_core": "a7517588ec0788e8",
-    "ha_mcp_8.1.1:ha_remove_area_or_floor": "29f7ee6d7afbab5c",
-    "ha_mcp_8.1.1:ha_remove_device": "447798ffcbcba46a",
-    "ha_mcp_8.1.1:ha_remove_entity": "46c9ec089aea06ae",
-    "ha_mcp_8.1.1:ha_remove_helpers_integrations": "67c351dafbc93cdd",
-    "ha_mcp_8.1.1:ha_remove_todo_item": "13354d2ff6f1fa7c",
-    "ha_mcp_8.1.1:ha_remove_zone": "f33200a663b07c36",
-    "ha_mcp_8.1.1:ha_report_issue": "2d64413ff015ef72",
-    "ha_mcp_8.1.1:ha_restart": "e56742ef94a883a6",
-    "ha_mcp_8.1.1:ha_search": "1b36155cc27fbb5c",
-    "ha_mcp_8.1.1:ha_set_area_or_floor": "bff6b464d564f114",
-    "ha_mcp_8.1.1:ha_set_device": "cb81a2f70292e228",
-    "ha_mcp_8.1.1:ha_set_entity": "45db05149df5530f",
-    "ha_mcp_8.1.1:ha_set_integration": "55e05cb1ed5ea79d",
-    "ha_mcp_8.1.1:ha_set_todo_item": "4389d74449e91278",
-    "ha_mcp_8.1.1:ha_set_zone": "b2ecc57f57455c89",
-    "ha_mcp_8.2.0:ha_bulk_control": "8c7d2bf6015904b3",
-    "ha_mcp_8.2.0:ha_call_event": "2c6f95b236dffbef",
-    "ha_mcp_8.2.0:ha_call_service": "23d690382ebe323c",
-    "ha_mcp_8.2.0:ha_config_delete_dashboard": "c0ca46dd1d2a6a1c",
-    "ha_mcp_8.2.0:ha_config_delete_dashboard_resource": "088c74cbb30ba1c9",
-    "ha_mcp_8.2.0:ha_config_get_automation": "c1ac46bb0e398faa",
-    "ha_mcp_8.2.0:ha_config_get_calendar_events": "5985672b966c215d",
-    "ha_mcp_8.2.0:ha_config_get_category": "417a99edeb84e8c9",
-    "ha_mcp_8.2.0:ha_config_get_dashboard": "e58ed9df070d5fd3",
-    "ha_mcp_8.2.0:ha_config_get_label": "c6a51224e9dc7166",
-    "ha_mcp_8.2.0:ha_config_get_scene": "b1ba25c871739a7a",
-    "ha_mcp_8.2.0:ha_config_get_script": "4ddc23d8df87e8f3",
-    "ha_mcp_8.2.0:ha_config_list_dashboard_resources": "d1a844591c9c2fa4",
-    "ha_mcp_8.2.0:ha_config_list_groups": "9fd5aef795dbeaa3",
-    "ha_mcp_8.2.0:ha_config_list_helpers": "d255d9a42abcf8ea",
-    "ha_mcp_8.2.0:ha_config_remove_automation": "ca021df0d030c72e",
-    "ha_mcp_8.2.0:ha_config_remove_calendar_event": "431725c2bcc22496",
-    "ha_mcp_8.2.0:ha_config_remove_category": "422ae33e586ac656",
-    "ha_mcp_8.2.0:ha_config_remove_group": "2fd522359aa8c8be",
-    "ha_mcp_8.2.0:ha_config_remove_label": "79021cb249de86fc",
-    "ha_mcp_8.2.0:ha_config_remove_scene": "fc76fb6bd4dbf7b5",
-    "ha_mcp_8.2.0:ha_config_remove_script": "d52b54181f21f511",
-    "ha_mcp_8.2.0:ha_config_set_automation": "e3796204d9e08168",
-    "ha_mcp_8.2.0:ha_config_set_calendar_event": "1b7a03a69514594d",
-    "ha_mcp_8.2.0:ha_config_set_category": "f89e7063fe303708",
-    "ha_mcp_8.2.0:ha_config_set_dashboard": "30e7a46bca63938f",
-    "ha_mcp_8.2.0:ha_config_set_dashboard_resource": "505cc127de3e926a",
-    "ha_mcp_8.2.0:ha_config_set_group": "85dfe091bacb8815",
-    "ha_mcp_8.2.0:ha_config_set_helper": "25de06beb5351201",
-    "ha_mcp_8.2.0:ha_config_set_label": "98c05c5879ef27b2",
-    "ha_mcp_8.2.0:ha_config_set_scene": "d0d703e2183e5708",
-    "ha_mcp_8.2.0:ha_config_set_script": "c9969dffc4c4185e",
-    "ha_mcp_8.2.0:ha_eval_template": "0233566922525819",
-    "ha_mcp_8.2.0:ha_get_addon": "3acdd607f8a43943",
-    "ha_mcp_8.2.0:ha_get_automation_traces": "50cd3db94140461d",
-    "ha_mcp_8.2.0:ha_get_blueprint": "0b6fed6863b7d6a5",
-    "ha_mcp_8.2.0:ha_get_camera_image": "8c28fb1c40d75b59",
-    "ha_mcp_8.2.0:ha_get_device": "b91f24e645b25618",
-    "ha_mcp_8.2.0:ha_get_entity": "8dd35073d15c78cb",
-    "ha_mcp_8.2.0:ha_get_entity_exposure": "4c83e095d72c58d1",
-    "ha_mcp_8.2.0:ha_get_hacs_info": "a32a40383f1a9181",
-    "ha_mcp_8.2.0:ha_get_history": "15c64067f635529f",
-    "ha_mcp_8.2.0:ha_get_integration": "5ffcee6453b53bf4",
-    "ha_mcp_8.2.0:ha_get_logs": "83f6c233caf308f9",
-    "ha_mcp_8.2.0:ha_get_operation_status": "6ad1a7af3943db20",
-    "ha_mcp_8.2.0:ha_get_overview": "a0c4326d344b2f96",
-    "ha_mcp_8.2.0:ha_get_skill_guide": "f1ea0f87e3da520a",
-    "ha_mcp_8.2.0:ha_get_state": "541c537d585fe86b",
-    "ha_mcp_8.2.0:ha_get_system_health": "fe9371e133bd70ec",
-    "ha_mcp_8.2.0:ha_get_todo": "081e9aa5e1cf0045",
-    "ha_mcp_8.2.0:ha_get_zone": "0f2423c0be1e844e",
-    "ha_mcp_8.2.0:ha_import_blueprint": "136c73595230aa3d",
-    "ha_mcp_8.2.0:ha_list_floors_areas": "4cb0748876ff5bde",
-    "ha_mcp_8.2.0:ha_list_services": "b4729dc5fe5bffde",
-    "ha_mcp_8.2.0:ha_manage_addon": "ad48d2a9563ec394",
-    "ha_mcp_8.2.0:ha_manage_backup": "abdd96de8e6f3969",
-    "ha_mcp_8.2.0:ha_manage_energy_prefs": "d5bd18be54199e6d",
-    "ha_mcp_8.2.0:ha_manage_hacs": "eb1d929b03db9377",
-    "ha_mcp_8.2.0:ha_manage_pipeline": "f8e3b9aea97af1f5",
-    "ha_mcp_8.2.0:ha_manage_radio": "0a635f53a755a10c",
-    "ha_mcp_8.2.0:ha_manage_theme": "0e268d0fd8d897a6",
-    "ha_mcp_8.2.0:ha_manage_updates": "f748b425761c8aaa",
-    "ha_mcp_8.2.0:ha_reload_core": "a7517588ec0788e8",
-    "ha_mcp_8.2.0:ha_remove_area_or_floor": "29f7ee6d7afbab5c",
-    "ha_mcp_8.2.0:ha_remove_device": "447798ffcbcba46a",
-    "ha_mcp_8.2.0:ha_remove_entity": "46c9ec089aea06ae",
-    "ha_mcp_8.2.0:ha_remove_helpers_integrations": "67c351dafbc93cdd",
-    "ha_mcp_8.2.0:ha_remove_todo_item": "13354d2ff6f1fa7c",
-    "ha_mcp_8.2.0:ha_remove_zone": "f33200a663b07c36",
-    "ha_mcp_8.2.0:ha_report_issue": "2d64413ff015ef72",
-    "ha_mcp_8.2.0:ha_restart": "e56742ef94a883a6",
-    "ha_mcp_8.2.0:ha_search": "1b36155cc27fbb5c",
-    "ha_mcp_8.2.0:ha_set_area_or_floor": "bff6b464d564f114",
-    "ha_mcp_8.2.0:ha_set_device": "cb81a2f70292e228",
-    "ha_mcp_8.2.0:ha_set_entity": "45db05149df5530f",
-    "ha_mcp_8.2.0:ha_set_integration": "55e05cb1ed5ea79d",
-    "ha_mcp_8.2.0:ha_set_todo_item": "4389d74449e91278",
-    "ha_mcp_8.2.0:ha_set_zone": "b2ecc57f57455c89",
-    "ha_mcp_8.4.1:ha_bulk_control": "99ab17de9b3058df",
-    "ha_mcp_8.4.1:ha_call_event": "2c6f95b236dffbef",
-    "ha_mcp_8.4.1:ha_call_service": "224a7f8d775400e3",
-    "ha_mcp_8.4.1:ha_config_delete_dashboard": "c0ca46dd1d2a6a1c",
-    "ha_mcp_8.4.1:ha_config_delete_dashboard_resource": "088c74cbb30ba1c9",
-    "ha_mcp_8.4.1:ha_config_get_automation": "c1ac46bb0e398faa",
-    "ha_mcp_8.4.1:ha_config_get_calendar_events": "5985672b966c215d",
-    "ha_mcp_8.4.1:ha_config_get_category": "417a99edeb84e8c9",
-    "ha_mcp_8.4.1:ha_config_get_dashboard": "bcd12573fc0edca4",
-    "ha_mcp_8.4.1:ha_config_get_label": "c6a51224e9dc7166",
-    "ha_mcp_8.4.1:ha_config_get_scene": "b1ba25c871739a7a",
-    "ha_mcp_8.4.1:ha_config_get_script": "4ddc23d8df87e8f3",
-    "ha_mcp_8.4.1:ha_config_list_dashboard_resources": "d1a844591c9c2fa4",
-    "ha_mcp_8.4.1:ha_config_list_groups": "9fd5aef795dbeaa3",
-    "ha_mcp_8.4.1:ha_config_list_helpers": "01598f5769aecf5c",
-    "ha_mcp_8.4.1:ha_config_remove_automation": "ca021df0d030c72e",
-    "ha_mcp_8.4.1:ha_config_remove_calendar_event": "431725c2bcc22496",
-    "ha_mcp_8.4.1:ha_config_remove_category": "422ae33e586ac656",
-    "ha_mcp_8.4.1:ha_config_remove_group": "2fd522359aa8c8be",
-    "ha_mcp_8.4.1:ha_config_remove_label": "79021cb249de86fc",
-    "ha_mcp_8.4.1:ha_config_remove_scene": "fc76fb6bd4dbf7b5",
-    "ha_mcp_8.4.1:ha_config_remove_script": "d52b54181f21f511",
-    "ha_mcp_8.4.1:ha_config_set_automation": "e3796204d9e08168",
-    "ha_mcp_8.4.1:ha_config_set_calendar_event": "1b7a03a69514594d",
-    "ha_mcp_8.4.1:ha_config_set_category": "f89e7063fe303708",
-    "ha_mcp_8.4.1:ha_config_set_dashboard": "2c02c72c170925f3",
-    "ha_mcp_8.4.1:ha_config_set_dashboard_resource": "505cc127de3e926a",
-    "ha_mcp_8.4.1:ha_config_set_group": "85dfe091bacb8815",
-    "ha_mcp_8.4.1:ha_config_set_helper": "93383f2fe53fa149",
-    "ha_mcp_8.4.1:ha_config_set_label": "98c05c5879ef27b2",
-    "ha_mcp_8.4.1:ha_config_set_scene": "d0d703e2183e5708",
-    "ha_mcp_8.4.1:ha_config_set_script": "c9969dffc4c4185e",
-    "ha_mcp_8.4.1:ha_eval_template": "0233566922525819",
-    "ha_mcp_8.4.1:ha_get_app": "bf52c11fe0a8ef5b",
-    "ha_mcp_8.4.1:ha_get_automation_traces": "50cd3db94140461d",
-    "ha_mcp_8.4.1:ha_get_blueprint": "0b6fed6863b7d6a5",
-    "ha_mcp_8.4.1:ha_get_camera_image": "8c28fb1c40d75b59",
-    "ha_mcp_8.4.1:ha_get_device": "b91f24e645b25618",
-    "ha_mcp_8.4.1:ha_get_entity": "8dd35073d15c78cb",
-    "ha_mcp_8.4.1:ha_get_entity_exposure": "4c83e095d72c58d1",
-    "ha_mcp_8.4.1:ha_get_hacs_info": "a32a40383f1a9181",
-    "ha_mcp_8.4.1:ha_get_history": "15c64067f635529f",
-    "ha_mcp_8.4.1:ha_get_integration": "5ffcee6453b53bf4",
-    "ha_mcp_8.4.1:ha_get_logs": "f52485a9e470e1b8",
-    "ha_mcp_8.4.1:ha_get_operation_status": "64da9ec2b0c3e93f",
-    "ha_mcp_8.4.1:ha_get_overview": "14f1f3f971d9212c",
-    "ha_mcp_8.4.1:ha_get_skill_guide": "f1ea0f87e3da520a",
-    "ha_mcp_8.4.1:ha_get_state": "541c537d585fe86b",
-    "ha_mcp_8.4.1:ha_get_system_health": "fe9371e133bd70ec",
-    "ha_mcp_8.4.1:ha_get_todo": "081e9aa5e1cf0045",
-    "ha_mcp_8.4.1:ha_get_zone": "0f2423c0be1e844e",
-    "ha_mcp_8.4.1:ha_import_blueprint": "136c73595230aa3d",
-    "ha_mcp_8.4.1:ha_list_floors_areas": "4cb0748876ff5bde",
-    "ha_mcp_8.4.1:ha_list_services": "b4729dc5fe5bffde",
-    "ha_mcp_8.4.1:ha_manage_app": "a5d64b2a91592061",
-    "ha_mcp_8.4.1:ha_manage_backup": "67bd188fd36fb6a1",
-    "ha_mcp_8.4.1:ha_manage_energy_prefs": "d5bd18be54199e6d",
-    "ha_mcp_8.4.1:ha_manage_hacs": "eb1d929b03db9377",
-    "ha_mcp_8.4.1:ha_manage_pipeline": "c0f5a5920905ff29",
-    "ha_mcp_8.4.1:ha_manage_radio": "0a635f53a755a10c",
-    "ha_mcp_8.4.1:ha_manage_theme": "08e382785a8057e1",
-    "ha_mcp_8.4.1:ha_manage_updates": "f748b425761c8aaa",
-    "ha_mcp_8.4.1:ha_reload_core": "a7517588ec0788e8",
-    "ha_mcp_8.4.1:ha_remove_area_or_floor": "29f7ee6d7afbab5c",
-    "ha_mcp_8.4.1:ha_remove_device": "447798ffcbcba46a",
-    "ha_mcp_8.4.1:ha_remove_entity": "46c9ec089aea06ae",
-    "ha_mcp_8.4.1:ha_remove_helpers_integrations": "4f28e18d08bf44c5",
-    "ha_mcp_8.4.1:ha_remove_todo_item": "13354d2ff6f1fa7c",
-    "ha_mcp_8.4.1:ha_remove_zone": "f33200a663b07c36",
-    "ha_mcp_8.4.1:ha_report_issue": "2d64413ff015ef72",
-    "ha_mcp_8.4.1:ha_restart": "e56742ef94a883a6",
-    "ha_mcp_8.4.1:ha_search": "6f28883725e002b7",
-    "ha_mcp_8.4.1:ha_set_area_or_floor": "bff6b464d564f114",
-    "ha_mcp_8.4.1:ha_set_device": "cb81a2f70292e228",
-    "ha_mcp_8.4.1:ha_set_entity": "45db05149df5530f",
-    "ha_mcp_8.4.1:ha_set_integration": "5ae12019a552ae83",
-    "ha_mcp_8.4.1:ha_set_todo_item": "4389d74449e91278",
-    "ha_mcp_8.4.1:ha_set_zone": "b2ecc57f57455c89",
-    "ha_mcp_8.4.3:ha_bulk_control": "99ab17de9b3058df",
-    "ha_mcp_8.4.3:ha_call_event": "2c6f95b236dffbef",
-    "ha_mcp_8.4.3:ha_call_service": "224a7f8d775400e3",
-    "ha_mcp_8.4.3:ha_config_delete_dashboard": "c0ca46dd1d2a6a1c",
-    "ha_mcp_8.4.3:ha_config_delete_dashboard_resource": "088c74cbb30ba1c9",
-    "ha_mcp_8.4.3:ha_config_get_automation": "c1ac46bb0e398faa",
-    "ha_mcp_8.4.3:ha_config_get_calendar_events": "5985672b966c215d",
-    "ha_mcp_8.4.3:ha_config_get_category": "417a99edeb84e8c9",
-    "ha_mcp_8.4.3:ha_config_get_dashboard": "bcd12573fc0edca4",
-    "ha_mcp_8.4.3:ha_config_get_label": "c6a51224e9dc7166",
-    "ha_mcp_8.4.3:ha_config_get_scene": "b1ba25c871739a7a",
-    "ha_mcp_8.4.3:ha_config_get_script": "4ddc23d8df87e8f3",
-    "ha_mcp_8.4.3:ha_config_list_dashboard_resources": "d1a844591c9c2fa4",
-    "ha_mcp_8.4.3:ha_config_list_groups": "9fd5aef795dbeaa3",
-    "ha_mcp_8.4.3:ha_config_list_helpers": "01598f5769aecf5c",
-    "ha_mcp_8.4.3:ha_config_remove_automation": "ca021df0d030c72e",
-    "ha_mcp_8.4.3:ha_config_remove_calendar_event": "431725c2bcc22496",
-    "ha_mcp_8.4.3:ha_config_remove_category": "422ae33e586ac656",
-    "ha_mcp_8.4.3:ha_config_remove_group": "2fd522359aa8c8be",
-    "ha_mcp_8.4.3:ha_config_remove_label": "79021cb249de86fc",
-    "ha_mcp_8.4.3:ha_config_remove_scene": "fc76fb6bd4dbf7b5",
-    "ha_mcp_8.4.3:ha_config_remove_script": "d52b54181f21f511",
-    "ha_mcp_8.4.3:ha_config_set_automation": "e3796204d9e08168",
-    "ha_mcp_8.4.3:ha_config_set_calendar_event": "1b7a03a69514594d",
-    "ha_mcp_8.4.3:ha_config_set_category": "f89e7063fe303708",
-    "ha_mcp_8.4.3:ha_config_set_dashboard": "2c02c72c170925f3",
-    "ha_mcp_8.4.3:ha_config_set_dashboard_resource": "505cc127de3e926a",
-    "ha_mcp_8.4.3:ha_config_set_group": "85dfe091bacb8815",
-    "ha_mcp_8.4.3:ha_config_set_helper": "93383f2fe53fa149",
-    "ha_mcp_8.4.3:ha_config_set_label": "98c05c5879ef27b2",
-    "ha_mcp_8.4.3:ha_config_set_scene": "d0d703e2183e5708",
-    "ha_mcp_8.4.3:ha_config_set_script": "c9969dffc4c4185e",
-    "ha_mcp_8.4.3:ha_eval_template": "0233566922525819",
-    "ha_mcp_8.4.3:ha_get_app": "3a9e7f681d929306",
-    "ha_mcp_8.4.3:ha_get_automation_traces": "50cd3db94140461d",
-    "ha_mcp_8.4.3:ha_get_blueprint": "0b6fed6863b7d6a5",
-    "ha_mcp_8.4.3:ha_get_camera_image": "8c28fb1c40d75b59",
-    "ha_mcp_8.4.3:ha_get_device": "b91f24e645b25618",
-    "ha_mcp_8.4.3:ha_get_entity": "8dd35073d15c78cb",
-    "ha_mcp_8.4.3:ha_get_entity_exposure": "4c83e095d72c58d1",
-    "ha_mcp_8.4.3:ha_get_hacs_info": "a32a40383f1a9181",
-    "ha_mcp_8.4.3:ha_get_history": "15c64067f635529f",
-    "ha_mcp_8.4.3:ha_get_integration": "5b22318c2a250195",
-    "ha_mcp_8.4.3:ha_get_logs": "f52485a9e470e1b8",
-    "ha_mcp_8.4.3:ha_get_operation_status": "64da9ec2b0c3e93f",
-    "ha_mcp_8.4.3:ha_get_overview": "14f1f3f971d9212c",
-    "ha_mcp_8.4.3:ha_get_skill_guide": "f1ea0f87e3da520a",
-    "ha_mcp_8.4.3:ha_get_state": "541c537d585fe86b",
-    "ha_mcp_8.4.3:ha_get_system_health": "ec40bedcc0371e07",
-    "ha_mcp_8.4.3:ha_get_todo": "081e9aa5e1cf0045",
-    "ha_mcp_8.4.3:ha_get_zone": "0f2423c0be1e844e",
-    "ha_mcp_8.4.3:ha_import_blueprint": "136c73595230aa3d",
-    "ha_mcp_8.4.3:ha_list_floors_areas": "4cb0748876ff5bde",
-    "ha_mcp_8.4.3:ha_list_services": "b4729dc5fe5bffde",
-    "ha_mcp_8.4.3:ha_manage_app": "a5d64b2a91592061",
-    "ha_mcp_8.4.3:ha_manage_backup": "67bd188fd36fb6a1",
-    "ha_mcp_8.4.3:ha_manage_energy_prefs": "d5bd18be54199e6d",
-    "ha_mcp_8.4.3:ha_manage_hacs": "eb1d929b03db9377",
-    "ha_mcp_8.4.3:ha_manage_pipeline": "c0f5a5920905ff29",
-    "ha_mcp_8.4.3:ha_manage_radio": "0a635f53a755a10c",
-    "ha_mcp_8.4.3:ha_manage_theme": "08e382785a8057e1",
-    "ha_mcp_8.4.3:ha_manage_updates": "f748b425761c8aaa",
-    "ha_mcp_8.4.3:ha_reload_core": "a7517588ec0788e8",
-    "ha_mcp_8.4.3:ha_remove_area_or_floor": "29f7ee6d7afbab5c",
-    "ha_mcp_8.4.3:ha_remove_device": "447798ffcbcba46a",
-    "ha_mcp_8.4.3:ha_remove_entity": "46c9ec089aea06ae",
-    "ha_mcp_8.4.3:ha_remove_helpers_integrations": "4f28e18d08bf44c5",
-    "ha_mcp_8.4.3:ha_remove_todo_item": "13354d2ff6f1fa7c",
-    "ha_mcp_8.4.3:ha_remove_zone": "f33200a663b07c36",
-    "ha_mcp_8.4.3:ha_report_issue": "2d64413ff015ef72",
-    "ha_mcp_8.4.3:ha_restart": "e56742ef94a883a6",
-    "ha_mcp_8.4.3:ha_search": "38e2b040ca7e8086",
-    "ha_mcp_8.4.3:ha_set_area_or_floor": "bff6b464d564f114",
-    "ha_mcp_8.4.3:ha_set_device": "cb81a2f70292e228",
-    "ha_mcp_8.4.3:ha_set_entity": "45db05149df5530f",
-    "ha_mcp_8.4.3:ha_set_integration": "5ae12019a552ae83",
-    "ha_mcp_8.4.3:ha_set_todo_item": "4389d74449e91278",
-    "ha_mcp_8.4.3:ha_set_zone": "b2ecc57f57455c89",
-    "ha_mcp_8.5.0:ha_bulk_control": "99ab17de9b3058df",
-    "ha_mcp_8.5.0:ha_call_event": "2c6f95b236dffbef",
-    "ha_mcp_8.5.0:ha_call_service": "224a7f8d775400e3",
-    "ha_mcp_8.5.0:ha_config_delete_dashboard": "c0ca46dd1d2a6a1c",
-    "ha_mcp_8.5.0:ha_config_delete_dashboard_resource": "088c74cbb30ba1c9",
-    "ha_mcp_8.5.0:ha_config_get_automation": "c1ac46bb0e398faa",
-    "ha_mcp_8.5.0:ha_config_get_calendar_events": "5985672b966c215d",
-    "ha_mcp_8.5.0:ha_config_get_category": "417a99edeb84e8c9",
-    "ha_mcp_8.5.0:ha_config_get_dashboard": "0a14c5e021b88a40",
-    "ha_mcp_8.5.0:ha_config_get_label": "c6a51224e9dc7166",
-    "ha_mcp_8.5.0:ha_config_get_scene": "b1ba25c871739a7a",
-    "ha_mcp_8.5.0:ha_config_get_script": "4ddc23d8df87e8f3",
-    "ha_mcp_8.5.0:ha_config_list_dashboard_resources": "d1a844591c9c2fa4",
-    "ha_mcp_8.5.0:ha_config_list_groups": "9fd5aef795dbeaa3",
-    "ha_mcp_8.5.0:ha_config_list_helpers": "01598f5769aecf5c",
-    "ha_mcp_8.5.0:ha_config_remove_automation": "ca021df0d030c72e",
-    "ha_mcp_8.5.0:ha_config_remove_calendar_event": "431725c2bcc22496",
-    "ha_mcp_8.5.0:ha_config_remove_category": "422ae33e586ac656",
-    "ha_mcp_8.5.0:ha_config_remove_group": "2fd522359aa8c8be",
-    "ha_mcp_8.5.0:ha_config_remove_label": "79021cb249de86fc",
-    "ha_mcp_8.5.0:ha_config_remove_scene": "fc76fb6bd4dbf7b5",
-    "ha_mcp_8.5.0:ha_config_remove_script": "d52b54181f21f511",
-    "ha_mcp_8.5.0:ha_config_set_automation": "1526b986d16b532c",
-    "ha_mcp_8.5.0:ha_config_set_calendar_event": "1b7a03a69514594d",
-    "ha_mcp_8.5.0:ha_config_set_category": "f89e7063fe303708",
-    "ha_mcp_8.5.0:ha_config_set_dashboard": "c6bdc33624476162",
-    "ha_mcp_8.5.0:ha_config_set_dashboard_resource": "505cc127de3e926a",
-    "ha_mcp_8.5.0:ha_config_set_group": "85dfe091bacb8815",
-    "ha_mcp_8.5.0:ha_config_set_helper": "93383f2fe53fa149",
-    "ha_mcp_8.5.0:ha_config_set_label": "98c05c5879ef27b2",
-    "ha_mcp_8.5.0:ha_config_set_scene": "d0d703e2183e5708",
-    "ha_mcp_8.5.0:ha_config_set_script": "d7ace4b7c21367bb",
-    "ha_mcp_8.5.0:ha_eval_template": "0233566922525819",
-    "ha_mcp_8.5.0:ha_get_app": "0e686d23b3478d13",
-    "ha_mcp_8.5.0:ha_get_automation_traces": "50cd3db94140461d",
-    "ha_mcp_8.5.0:ha_get_camera_image": "8c28fb1c40d75b59",
-    "ha_mcp_8.5.0:ha_get_device": "b91f24e645b25618",
-    "ha_mcp_8.5.0:ha_get_entity": "8dd35073d15c78cb",
-    "ha_mcp_8.5.0:ha_get_entity_exposure": "4c83e095d72c58d1",
-    "ha_mcp_8.5.0:ha_get_hacs_info": "a32a40383f1a9181",
-    "ha_mcp_8.5.0:ha_get_history": "15c64067f635529f",
-    "ha_mcp_8.5.0:ha_get_integration": "4dcc81a0c79f383e",
-    "ha_mcp_8.5.0:ha_get_logs": "e7b02663aa285f5f",
-    "ha_mcp_8.5.0:ha_get_operation_status": "64da9ec2b0c3e93f",
-    "ha_mcp_8.5.0:ha_get_overview": "e12c76ea22de5fa2",
-    "ha_mcp_8.5.0:ha_get_skill_guide": "f1ea0f87e3da520a",
-    "ha_mcp_8.5.0:ha_get_state": "541c537d585fe86b",
-    "ha_mcp_8.5.0:ha_get_system_health": "0d6f01b76b7eb247",
-    "ha_mcp_8.5.0:ha_get_todo": "081e9aa5e1cf0045",
-    "ha_mcp_8.5.0:ha_get_zone": "0f2423c0be1e844e",
-    "ha_mcp_8.5.0:ha_list_floors_areas": "4cb0748876ff5bde",
-    "ha_mcp_8.5.0:ha_list_services": "b4729dc5fe5bffde",
-    "ha_mcp_8.5.0:ha_manage_app": "714723e596fca719",
-    "ha_mcp_8.5.0:ha_manage_backup": "6dc2fc3e9e2df95f",
-    "ha_mcp_8.5.0:ha_manage_blueprints": "3cad6ca537c32e92",
-    "ha_mcp_8.5.0:ha_manage_energy_prefs": "d5bd18be54199e6d",
-    "ha_mcp_8.5.0:ha_manage_hacs": "eb1d929b03db9377",
-    "ha_mcp_8.5.0:ha_manage_pipeline": "c0f5a5920905ff29",
-    "ha_mcp_8.5.0:ha_manage_radio": "0a635f53a755a10c",
-    "ha_mcp_8.5.0:ha_manage_theme": "08e382785a8057e1",
-    "ha_mcp_8.5.0:ha_manage_updates": "f748b425761c8aaa",
-    "ha_mcp_8.5.0:ha_reload_core": "a7517588ec0788e8",
-    "ha_mcp_8.5.0:ha_remove_area_or_floor": "29f7ee6d7afbab5c",
-    "ha_mcp_8.5.0:ha_remove_device": "447798ffcbcba46a",
-    "ha_mcp_8.5.0:ha_remove_entity": "46c9ec089aea06ae",
-    "ha_mcp_8.5.0:ha_remove_helpers_integrations": "4f28e18d08bf44c5",
-    "ha_mcp_8.5.0:ha_remove_todo_item": "13354d2ff6f1fa7c",
-    "ha_mcp_8.5.0:ha_remove_zone": "f33200a663b07c36",
-    "ha_mcp_8.5.0:ha_report_issue": "2d64413ff015ef72",
-    "ha_mcp_8.5.0:ha_restart": "e56742ef94a883a6",
-    "ha_mcp_8.5.0:ha_search": "38e2b040ca7e8086",
-    "ha_mcp_8.5.0:ha_set_area_or_floor": "bff6b464d564f114",
-    "ha_mcp_8.5.0:ha_set_device": "cb81a2f70292e228",
-    "ha_mcp_8.5.0:ha_set_entity": "45db05149df5530f",
-    "ha_mcp_8.5.0:ha_set_integration": "5ae12019a552ae83",
-    "ha_mcp_8.5.0:ha_set_todo_item": "4389d74449e91278",
-    "ha_mcp_8.5.0:ha_set_zone": "b2ecc57f57455c89",
-    "ha_mcp_8.6.0:ha_bulk_control": "b23076a3c92505ca",
-    "ha_mcp_8.6.0:ha_call_event": "8bd61d3484e9cf5b",
-    "ha_mcp_8.6.0:ha_call_service": "3479b8dd8d4a53e1",
-    "ha_mcp_8.6.0:ha_config_delete_dashboard": "c0ca46dd1d2a6a1c",
-    "ha_mcp_8.6.0:ha_config_delete_dashboard_resource": "5e09e65d0299d81a",
-    "ha_mcp_8.6.0:ha_config_get_automation": "9dfaacb72eea9054",
-    "ha_mcp_8.6.0:ha_config_get_calendar_events": "d6326b2752fa6dfa",
-    "ha_mcp_8.6.0:ha_config_get_category": "a2301e74234cfb1c",
-    "ha_mcp_8.6.0:ha_config_get_dashboard": "9d2b8af3fea756be",
-    "ha_mcp_8.6.0:ha_config_get_label": "d9ccadf95fd67f33",
-    "ha_mcp_8.6.0:ha_config_get_scene": "233ae60cf452c823",
-    "ha_mcp_8.6.0:ha_config_get_script": "b487629a96879929",
-    "ha_mcp_8.6.0:ha_config_list_dashboard_resources": "d2d228b4fc05f782",
-    "ha_mcp_8.6.0:ha_config_list_groups": "2a5ad8121a40be1a",
-    "ha_mcp_8.6.0:ha_config_list_helpers": "25c339190f007333",
-    "ha_mcp_8.6.0:ha_config_remove_automation": "756f184a282a1f6a",
-    "ha_mcp_8.6.0:ha_config_remove_calendar_event": "f0c00494ad24c0cc",
-    "ha_mcp_8.6.0:ha_config_remove_category": "422ae33e586ac656",
-    "ha_mcp_8.6.0:ha_config_remove_group": "7d06e8cbffdf8a5a",
-    "ha_mcp_8.6.0:ha_config_remove_label": "79021cb249de86fc",
-    "ha_mcp_8.6.0:ha_config_remove_scene": "0c7f7f6c62d52b43",
-    "ha_mcp_8.6.0:ha_config_remove_script": "a3d7d43d4a079e1a",
-    "ha_mcp_8.6.0:ha_config_set_automation": "58a1a8675e0ce32d",
-    "ha_mcp_8.6.0:ha_config_set_calendar_event": "0e98aa754d3112d7",
-    "ha_mcp_8.6.0:ha_config_set_category": "0c6d478d7e8e2e8a",
-    "ha_mcp_8.6.0:ha_config_set_dashboard": "b91f5daf020b5702",
-    "ha_mcp_8.6.0:ha_config_set_dashboard_resource": "65f5cc0240850a0a",
-    "ha_mcp_8.6.0:ha_config_set_group": "31c9190e44894727",
-    "ha_mcp_8.6.0:ha_config_set_helper": "7316c72d020abeeb",
-    "ha_mcp_8.6.0:ha_config_set_label": "6a254b6664c4083a",
-    "ha_mcp_8.6.0:ha_config_set_scene": "50097bb84ec41fb7",
-    "ha_mcp_8.6.0:ha_config_set_script": "ec1d0baa8f0c7aed",
-    "ha_mcp_8.6.0:ha_eval_template": "5a74b281c5599ddd",
-    "ha_mcp_8.6.0:ha_get_app": "c472e37a893dc977",
-    "ha_mcp_8.6.0:ha_get_automation_traces": "aecbb985e6daab1f",
-    "ha_mcp_8.6.0:ha_get_camera_image": "c272afe3c86e853d",
-    "ha_mcp_8.6.0:ha_get_device": "25387552533cf4a4",
-    "ha_mcp_8.6.0:ha_get_entity": "8d2f12615d64dff9",
-    "ha_mcp_8.6.0:ha_get_entity_exposure": "4e3aeac5d54a31b4",
-    "ha_mcp_8.6.0:ha_get_hacs_info": "cc36eef97854c452",
-    "ha_mcp_8.6.0:ha_get_history": "f91763d5f0fb156d",
-    "ha_mcp_8.6.0:ha_get_integration": "e903fdff770db01b",
-    "ha_mcp_8.6.0:ha_get_logs": "df4476171fba7b59",
-    "ha_mcp_8.6.0:ha_get_operation_status": "8f0dce97c6d3feb8",
-    "ha_mcp_8.6.0:ha_get_overview": "25ccf31f3d829405",
-    "ha_mcp_8.6.0:ha_get_skill_guide": "3520f8be9410cac4",
-    "ha_mcp_8.6.0:ha_get_state": "e78da59e38bc615c",
-    "ha_mcp_8.6.0:ha_get_system_health": "a45b91e0f74ac15b",
-    "ha_mcp_8.6.0:ha_get_todo": "ae05e99601d7f774",
-    "ha_mcp_8.6.0:ha_get_zone": "31794cd0601cd3b5",
-    "ha_mcp_8.6.0:ha_list_floors_areas": "47dc8457b5455efb",
-    "ha_mcp_8.6.0:ha_list_services": "b6e3ab9b1cd25a68",
-    "ha_mcp_8.6.0:ha_manage_app": "c9c16a4e08653a79",
-    "ha_mcp_8.6.0:ha_manage_backup": "c948a02d56fb7f59",
-    "ha_mcp_8.6.0:ha_manage_blueprints": "dce9a8e35680299f",
-    "ha_mcp_8.6.0:ha_manage_energy_prefs": "7a4349f674ca49f3",
-    "ha_mcp_8.6.0:ha_manage_hacs": "eb1d929b03db9377",
-    "ha_mcp_8.6.0:ha_manage_pipeline": "e87a42dcf1e9cd1d",
-    "ha_mcp_8.6.0:ha_manage_radio": "9d4449d2781a5dae",
-    "ha_mcp_8.6.0:ha_manage_theme": "6b1bc8975d4a6240",
-    "ha_mcp_8.6.0:ha_manage_updates": "7f54f6a9a7245316",
-    "ha_mcp_8.6.0:ha_reload_core": "a7421f415081db49",
-    "ha_mcp_8.6.0:ha_remove_area_or_floor": "29f7ee6d7afbab5c",
-    "ha_mcp_8.6.0:ha_remove_device": "447798ffcbcba46a",
-    "ha_mcp_8.6.0:ha_remove_entity": "626a6790eec71f26",
-    "ha_mcp_8.6.0:ha_remove_helpers_integrations": "632a39aeab90da3f",
-    "ha_mcp_8.6.0:ha_remove_todo_item": "e29f01d2ec76e12e",
-    "ha_mcp_8.6.0:ha_remove_zone": "c511e403db5a345c",
-    "ha_mcp_8.6.0:ha_report_issue": "a496fb191bde43d6",
-    "ha_mcp_8.6.0:ha_restart": "5d93040c0fb7f2da",
-    "ha_mcp_8.6.0:ha_search": "4beb360840704c56",
-    "ha_mcp_8.6.0:ha_set_area_or_floor": "1e013921e5513c05",
-    "ha_mcp_8.6.0:ha_set_device": "a174e4d40efef6e6",
-    "ha_mcp_8.6.0:ha_set_entity": "4eb6c4b0717c1a3b",
-    "ha_mcp_8.6.0:ha_set_integration": "061530d9c09dea42",
-    "ha_mcp_8.6.0:ha_set_todo_item": "68174611d159f0d8",
-    "ha_mcp_8.6.0:ha_set_zone": "c1c347204a300fe7",
-    "ha_mcp_9.1.0:ha_bulk_control": "b23076a3c92505ca",
-    "ha_mcp_9.1.0:ha_call_event": "8bd61d3484e9cf5b",
-    "ha_mcp_9.1.0:ha_call_service": "3479b8dd8d4a53e1",
-    "ha_mcp_9.1.0:ha_config_delete_dashboard": "c0ca46dd1d2a6a1c",
-    "ha_mcp_9.1.0:ha_config_delete_dashboard_resource": "5e09e65d0299d81a",
-    "ha_mcp_9.1.0:ha_config_get_automation": "7e1ff0b270fce22c",
-    "ha_mcp_9.1.0:ha_config_get_calendar_events": "29086fba688dab59",
-    "ha_mcp_9.1.0:ha_config_get_category": "4491feff2fff5247",
-    "ha_mcp_9.1.0:ha_config_get_dashboard": "b15a800becf3b204",
-    "ha_mcp_9.1.0:ha_config_get_label": "c818b5f5c1aacaf0",
-    "ha_mcp_9.1.0:ha_config_get_scene": "a390544d7dbfe567",
-    "ha_mcp_9.1.0:ha_config_get_script": "f9d741c18b89e67b",
-    "ha_mcp_9.1.0:ha_config_list_dashboard_resources": "2f660ae1c1631978",
-    "ha_mcp_9.1.0:ha_config_list_groups": "f6d96a65cd52423d",
-    "ha_mcp_9.1.0:ha_config_list_helpers": "d540cfc8bb6f8c16",
-    "ha_mcp_9.1.0:ha_config_remove_automation": "61aa5be9666b1baf",
-    "ha_mcp_9.1.0:ha_config_remove_calendar_event": "f0c00494ad24c0cc",
-    "ha_mcp_9.1.0:ha_config_remove_category": "422ae33e586ac656",
-    "ha_mcp_9.1.0:ha_config_remove_group": "0d510d5fb562a441",
-    "ha_mcp_9.1.0:ha_config_remove_label": "79021cb249de86fc",
-    "ha_mcp_9.1.0:ha_config_remove_scene": "0c7f7f6c62d52b43",
-    "ha_mcp_9.1.0:ha_config_remove_script": "a3d7d43d4a079e1a",
-    "ha_mcp_9.1.0:ha_config_set_automation": "4aff6f2e3dcb5bfa",
-    "ha_mcp_9.1.0:ha_config_set_calendar_event": "0e98aa754d3112d7",
-    "ha_mcp_9.1.0:ha_config_set_category": "0c6d478d7e8e2e8a",
-    "ha_mcp_9.1.0:ha_config_set_dashboard": "ec41632a8689a13d",
-    "ha_mcp_9.1.0:ha_config_set_dashboard_resource": "2fda9aea0b01627b",
-    "ha_mcp_9.1.0:ha_config_set_group": "41792599a1ef68cd",
-    "ha_mcp_9.1.0:ha_config_set_helper": "b8270e49b433e805",
-    "ha_mcp_9.1.0:ha_config_set_label": "6a254b6664c4083a",
-    "ha_mcp_9.1.0:ha_config_set_scene": "3274b2a201a217b4",
-    "ha_mcp_9.1.0:ha_config_set_script": "9335b08acaab39b0",
-    "ha_mcp_9.1.0:ha_eval_template": "08343db1f50a2de5",
-    "ha_mcp_9.1.0:ha_get_app": "49898ca442580e35",
-    "ha_mcp_9.1.0:ha_get_automation_traces": "ffe3d3e65e0945fb",
-    "ha_mcp_9.1.0:ha_get_camera_image": "e15e28637fa727ca",
-    "ha_mcp_9.1.0:ha_get_device": "d000870b4e832e53",
-    "ha_mcp_9.1.0:ha_get_entity": "f5dd17936dd843ee",
-    "ha_mcp_9.1.0:ha_get_entity_exposure": "20124ff2893e7005",
-    "ha_mcp_9.1.0:ha_get_hacs_info": "cc7f3537efb571a8",
-    "ha_mcp_9.1.0:ha_get_history": "4fe77436c48cf20e",
-    "ha_mcp_9.1.0:ha_get_integration": "b3728afa53533c36",
-    "ha_mcp_9.1.0:ha_get_logs": "6474823c8a66451d",
-    "ha_mcp_9.1.0:ha_get_operation_status": "2b1347525cc2aecb",
-    "ha_mcp_9.1.0:ha_get_overview": "9b2ad6e30808bfb9",
-    "ha_mcp_9.1.0:ha_get_skill_guide": "b66b838db6bc47f1",
-    "ha_mcp_9.1.0:ha_get_state": "83e578092b146dc4",
-    "ha_mcp_9.1.0:ha_get_system_health": "32f3f4c88a2428fc",
-    "ha_mcp_9.1.0:ha_get_todo": "5a0338238fcec3bc",
-    "ha_mcp_9.1.0:ha_get_zone": "f5055c87ee14bdd4",
-    "ha_mcp_9.1.0:ha_list_floors_areas": "06e8c56fc95c25d9",
-    "ha_mcp_9.1.0:ha_list_services": "e6d83ab1823e8b6f",
-    "ha_mcp_9.1.0:ha_manage_app": "ef5114a956709cfe",
-    "ha_mcp_9.1.0:ha_manage_backup": "14839e432bf4c889",
-    "ha_mcp_9.1.0:ha_manage_blueprints": "342dff9dfec96e4d",
-    "ha_mcp_9.1.0:ha_manage_energy_prefs": "ea11f22a5415f4d2",
-    "ha_mcp_9.1.0:ha_manage_hacs": "18db7b36b77273c4",
-    "ha_mcp_9.1.0:ha_manage_pipeline": "e87a42dcf1e9cd1d",
-    "ha_mcp_9.1.0:ha_manage_radio": "6c8915e83180e0e9",
-    "ha_mcp_9.1.0:ha_manage_theme": "6b1bc8975d4a6240",
-    "ha_mcp_9.1.0:ha_manage_updates": "7f54f6a9a7245316",
-    "ha_mcp_9.1.0:ha_reload_core": "a7421f415081db49",
-    "ha_mcp_9.1.0:ha_remove_area_or_floor": "29f7ee6d7afbab5c",
-    "ha_mcp_9.1.0:ha_remove_device": "447798ffcbcba46a",
-    "ha_mcp_9.1.0:ha_remove_entity": "626a6790eec71f26",
-    "ha_mcp_9.1.0:ha_remove_helpers_integrations": "0fab6da4e7919f26",
-    "ha_mcp_9.1.0:ha_remove_todo_item": "36b3738029bf2bac",
-    "ha_mcp_9.1.0:ha_remove_zone": "ee56ff52c1161944",
-    "ha_mcp_9.1.0:ha_report_issue": "34334d0e3a096c37",
-    "ha_mcp_9.1.0:ha_restart": "fa53839652546809",
-    "ha_mcp_9.1.0:ha_search": "573456a040b0f6f9",
-    "ha_mcp_9.1.0:ha_set_area_or_floor": "7ce9f9b5f35fee8a",
-    "ha_mcp_9.1.0:ha_set_device": "66fc7aa2e0372759",
-    "ha_mcp_9.1.0:ha_set_entity": "7d947e0ef2fa71e8",
-    "ha_mcp_9.1.0:ha_set_integration": "061530d9c09dea42",
-    "ha_mcp_9.1.0:ha_set_todo_item": "051e83a9c3147b4f",
-    "ha_mcp_9.1.0:ha_set_zone": "b5868bba1909f15a",
-    "ha_mcp_9.1.2:ha_bulk_control": "b23076a3c92505ca",
-    "ha_mcp_9.1.2:ha_call_event": "8bd61d3484e9cf5b",
-    "ha_mcp_9.1.2:ha_call_service": "3479b8dd8d4a53e1",
-    "ha_mcp_9.1.2:ha_config_delete_dashboard": "c0ca46dd1d2a6a1c",
-    "ha_mcp_9.1.2:ha_config_delete_dashboard_resource": "5e09e65d0299d81a",
-    "ha_mcp_9.1.2:ha_config_get_automation": "33893d35cf9c7200",
-    "ha_mcp_9.1.2:ha_config_get_calendar_events": "1b598c09aea37a01",
-    "ha_mcp_9.1.2:ha_config_get_category": "9589b1ceb240fdd6",
-    "ha_mcp_9.1.2:ha_config_get_dashboard": "b15a800becf3b204",
-    "ha_mcp_9.1.2:ha_config_get_label": "f53b38c4b4651202",
-    "ha_mcp_9.1.2:ha_config_get_scene": "68f8abec17ef8e6a",
-    "ha_mcp_9.1.2:ha_config_get_script": "b4c42d23a0ab65a8",
-    "ha_mcp_9.1.2:ha_config_list_dashboard_resources": "cae70d387a3bea67",
-    "ha_mcp_9.1.2:ha_config_list_groups": "bf31fce97bf09cf1",
-    "ha_mcp_9.1.2:ha_config_list_helpers": "8b43b302c48eb6c1",
-    "ha_mcp_9.1.2:ha_config_remove_automation": "61aa5be9666b1baf",
-    "ha_mcp_9.1.2:ha_config_remove_calendar_event": "f0c00494ad24c0cc",
-    "ha_mcp_9.1.2:ha_config_remove_category": "422ae33e586ac656",
-    "ha_mcp_9.1.2:ha_config_remove_group": "0d510d5fb562a441",
-    "ha_mcp_9.1.2:ha_config_remove_label": "79021cb249de86fc",
-    "ha_mcp_9.1.2:ha_config_remove_scene": "0c7f7f6c62d52b43",
-    "ha_mcp_9.1.2:ha_config_remove_script": "a3d7d43d4a079e1a",
-    "ha_mcp_9.1.2:ha_config_set_automation": "4aff6f2e3dcb5bfa",
-    "ha_mcp_9.1.2:ha_config_set_calendar_event": "0e98aa754d3112d7",
-    "ha_mcp_9.1.2:ha_config_set_category": "0c6d478d7e8e2e8a",
-    "ha_mcp_9.1.2:ha_config_set_dashboard": "ec41632a8689a13d",
-    "ha_mcp_9.1.2:ha_config_set_dashboard_resource": "2fda9aea0b01627b",
-    "ha_mcp_9.1.2:ha_config_set_group": "41792599a1ef68cd",
-    "ha_mcp_9.1.2:ha_config_set_helper": "b8270e49b433e805",
-    "ha_mcp_9.1.2:ha_config_set_label": "6a254b6664c4083a",
-    "ha_mcp_9.1.2:ha_config_set_scene": "3274b2a201a217b4",
-    "ha_mcp_9.1.2:ha_config_set_script": "9335b08acaab39b0",
-    "ha_mcp_9.1.2:ha_eval_template": "289af5e1e68c1fab",
-    "ha_mcp_9.1.2:ha_get_app": "f30e609df72b9ae6",
-    "ha_mcp_9.1.2:ha_get_automation_traces": "78d5c3da073aab67",
-    "ha_mcp_9.1.2:ha_get_camera_image": "e15e28637fa727ca",
-    "ha_mcp_9.1.2:ha_get_device": "7747e246c1fe7c03",
-    "ha_mcp_9.1.2:ha_get_entity": "c5d415ca85435865",
-    "ha_mcp_9.1.2:ha_get_entity_exposure": "9c4fed35a86ddbec",
-    "ha_mcp_9.1.2:ha_get_hacs_info": "cc7f3537efb571a8",
-    "ha_mcp_9.1.2:ha_get_history": "53dc3e9c68dfc4cf",
-    "ha_mcp_9.1.2:ha_get_integration": "dfd354b27b376573",
-    "ha_mcp_9.1.2:ha_get_logs": "6474823c8a66451d",
-    "ha_mcp_9.1.2:ha_get_operation_status": "2b1347525cc2aecb",
-    "ha_mcp_9.1.2:ha_get_overview": "c60ce8cd0b8feaca",
-    "ha_mcp_9.1.2:ha_get_skill_guide": "813e50cfd6b697eb",
-    "ha_mcp_9.1.2:ha_get_state": "782b9dc0a078610b",
-    "ha_mcp_9.1.2:ha_get_system_health": "fdd9e7eea087d9fb",
-    "ha_mcp_9.1.2:ha_get_todo": "305841fc7d039b45",
-    "ha_mcp_9.1.2:ha_get_zone": "4e9f2e6e77f0ff7f",
-    "ha_mcp_9.1.2:ha_list_floors_areas": "742e487b335c2566",
-    "ha_mcp_9.1.2:ha_list_services": "4ff9bc4d4fd5776d",
-    "ha_mcp_9.1.2:ha_manage_app": "ef5114a956709cfe",
-    "ha_mcp_9.1.2:ha_manage_backup": "14839e432bf4c889",
-    "ha_mcp_9.1.2:ha_manage_blueprints": "bd5f639ec25c34a7",
-    "ha_mcp_9.1.2:ha_manage_energy_prefs": "ea11f22a5415f4d2",
-    "ha_mcp_9.1.2:ha_manage_hacs": "f493da2f2170652d",
-    "ha_mcp_9.1.2:ha_manage_pipeline": "e87a42dcf1e9cd1d",
-    "ha_mcp_9.1.2:ha_manage_radio": "6c8915e83180e0e9",
-    "ha_mcp_9.1.2:ha_manage_theme": "6b1bc8975d4a6240",
-    "ha_mcp_9.1.2:ha_manage_updates": "7f54f6a9a7245316",
-    "ha_mcp_9.1.2:ha_reload_core": "a7421f415081db49",
-    "ha_mcp_9.1.2:ha_remove_area_or_floor": "29f7ee6d7afbab5c",
-    "ha_mcp_9.1.2:ha_remove_device": "447798ffcbcba46a",
-    "ha_mcp_9.1.2:ha_remove_entity": "626a6790eec71f26",
-    "ha_mcp_9.1.2:ha_remove_helpers_integrations": "0fab6da4e7919f26",
-    "ha_mcp_9.1.2:ha_remove_todo_item": "36b3738029bf2bac",
-    "ha_mcp_9.1.2:ha_remove_zone": "ee56ff52c1161944",
-    "ha_mcp_9.1.2:ha_report_issue": "34334d0e3a096c37",
-    "ha_mcp_9.1.2:ha_restart": "fa53839652546809",
-    "ha_mcp_9.1.2:ha_search": "8977d887e5770b67",
-    "ha_mcp_9.1.2:ha_set_area_or_floor": "7ce9f9b5f35fee8a",
-    "ha_mcp_9.1.2:ha_set_device": "66fc7aa2e0372759",
-    "ha_mcp_9.1.2:ha_set_entity": "7d947e0ef2fa71e8",
-    "ha_mcp_9.1.2:ha_set_integration": "7c8930a01478a0ea",
-    "ha_mcp_9.1.2:ha_set_todo_item": "051e83a9c3147b4f",
-    "ha_mcp_9.1.2:ha_set_zone": "b5868bba1909f15a",
     "ha_mcp_9.2.0:ha_bulk_control": "b23076a3c92505ca",
     "ha_mcp_9.2.0:ha_call_event": "8bd61d3484e9cf5b",
     "ha_mcp_9.2.0:ha_call_service": "3479b8dd8d4a53e1",
