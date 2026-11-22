@@ -9,8 +9,9 @@ Design ``docs/HAMCP_319_PHASE2_DESIGN.md`` section 6.4, ledger row 29
 - the 2.2.1 preserved tags are not loss; ``!input`` and any other tag are
   disclosed through the closed ``lossy_tags`` allowlist; missing, malformed,
   oversize or untokenizable text is ``unavailable``, never lossless;
-- the 8.4.3 and 8.5.0 contract (``include_content=false``, match keys
-  ``{file, yaml_path, parsed}``, no tag fields) is unchanged;
+- the legacy direct call (``contract_for(None)``: ``include_content=false``,
+  match keys ``{file, yaml_path, parsed}``, no tag fields) still refuses a
+  content member (HAMCP-437 I2a retired the 8.4.3 and 8.5.0 rows);
 - all four 9.1 file siblings stay ``prohibited_withheld`` and are never
   routed; with filesystem tools off every optional name is
   ``optional_absent``.
@@ -203,16 +204,16 @@ def sums(relative):
 
 class PolicySiblingRefusalTests(unittest.TestCase):
     """A policy document can never review an optional YAML name, including
-    the 9.1-only prohibited siblings ha_write_file and ha_delete_file."""
+    the 9.x prohibited siblings ha_write_file and ha_delete_file."""
 
-    def test_policy_reviewing_a_91_sibling_is_refused(self):
+    def test_policy_reviewing_a_92_sibling_is_refused(self):
         import tempfile
         from ha_mcp_engineering.upstream_tool_policy import (
             UpstreamToolPolicyError, load_upstream_tool_policy)
 
-        path = ROOT / "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_1_0.json"
+        path = ROOT / "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_2_0.json"
         document = json.loads(path.read_text(encoding="utf-8"))
-        pins = dict(expected_version="9.1.0", expected_source_tag="v9.1.0",
+        pins = dict(expected_version="9.2.0", expected_source_tag="v9.2.0",
                     expected_source_commit=document["reviewed_source_commit"])
         with tempfile.TemporaryDirectory() as tmp:
             unchanged = Path(tmp) / "unchanged.json"
@@ -590,28 +591,26 @@ class ProjectionTests(unittest.TestCase):
                 project(response)
             assert_clean(self, repr(caught.exception))
 
-    def test_85_contract_is_unchanged(self):
-        for version in ("8.4.3", "8.5.0"):
-            with self.subTest(version=version):
-                contract = y.contract_for(entry(version))
-                self.assertEqual(contract.contract_id, "hamcp162-yaml-read-8x-v1")
-                self.assertEqual(contract.match_keys, frozenset({"file", "yaml_path", "parsed"}))
-                self.assertEqual(y.upstream_arguments("recorder", entry=entry(version)), {
-                    "yaml_path": "recorder", "file": "configuration.yaml",
-                    "include_content": False, "include_parsed": True})
-                legacy = y.project_success(result85({"purge_keep_days": 10}), "lamp")
-                bound = project(result85({"purge_keep_days": 10}), version=version)
-                self.assertEqual(tuple(bound.envelope), ENVELOPE_8X)
-                self.assertEqual(json.dumps(bound.envelope), json.dumps(legacy.envelope))
-                # The 8.x ingress boundary still refuses a content member.
-                with self.assertRaises(YamlReadRefusal) as caught:
-                    project(result91("initial: !HAMCP319_YAML_TAG_CANARY v\n", {"initial": "v"}),
-                            version=version)
-                self.assertEqual(caught.exception.code, y.IDENTITY_INVALID)
-                assert_clean(self, repr(caught.exception))
-        self.assertEqual(y.upstream_arguments("recorder"), y.upstream_arguments("recorder", entry=entry("8.5.0")))
-        for version in ("9.1.0", "9.2.0"):
-            self.assertEqual(y.upstream_arguments("recorder", entry=entry(version))["include_content"], True)
+    def test_legacy_direct_call_contract_is_two_sided(self):
+        # ANSWER 20261122-0755-01 item 2: ``contract_for(None)`` still maps to
+        # the 8.x contract after I2a retired its rows (a possible dead version
+        # branch, kept for follow-up). Pin both sides: a match without content
+        # is accepted, a content-bearing match is refused.
+        contract = y.contract_for(None)
+        self.assertEqual(contract.contract_id, "hamcp162-yaml-read-8x-v1")
+        self.assertEqual(contract.match_keys, frozenset({"file", "yaml_path", "parsed"}))
+        self.assertEqual(y.upstream_arguments("recorder"), {
+            "yaml_path": "recorder", "file": "configuration.yaml",
+            "include_content": False, "include_parsed": True})
+        accepted = y.project_success(result85({"purge_keep_days": 10}), "lamp")
+        self.assertEqual(tuple(accepted.envelope), ENVELOPE_8X)
+        self.assertTrue(accepted.envelope["found"])
+        self.assertEqual(accepted.envelope["value"], {"purge_keep_days": 10})
+        with self.assertRaises(YamlReadRefusal) as caught:
+            y.project_success(result91("initial: !HAMCP319_YAML_TAG_CANARY v\n", {"initial": "v"}), "lamp")
+        self.assertEqual(caught.exception.code, y.IDENTITY_INVALID)
+        assert_clean(self, repr(caught.exception))
+        self.assertIs(y.upstream_arguments("recorder", entry=entry("9.2.0"))["include_content"], True)
 
     def test_unknown_adapter_token_fails_closed(self):
         for restrictions in (("ha-mcp-9.9.9-yaml-fragment-read-v1",), (), (
@@ -741,43 +740,24 @@ class GatewayTests(adm.Harness):
                 self.assertEqual(result["warnings"], [y.K7_WARNING])
                 assert_clean(self, json.dumps(result), *raw_yaml_needles(GROUP_CONTENT))
 
-    async def test_85_yaml_positive(self):
-        for mode in ("A", "B"):
-            with self.subTest(mode=mode):
-                gateway, transport = await self.gateway("8.5.0", mode=mode)
-                self.assertEqual(self.optional(gateway)[TOOL], "admitted")
-                result = await call(gateway, TOOL, {"yaml_path": "recorder"})
-                data = self.assert_success(result)
-                self.assertEqual(transport.sent, [(TOOL, {
-                    "yaml_path": "recorder", "file": "configuration.yaml",
-                    "include_content": False, "include_parsed": True})])
-                self.assertEqual(tuple(data), ENVELOPE_8X)
-                self.assertEqual(data["value"], {"purge_keep_days": 10})
-                self.assertEqual(data["completeness"], "complete")
-
-    # Row 29: 8.5-shaped public calls ({"yaml_path"[, "file"]}) on both releases.
+    # Row 29: 8.5-shaped public calls ({"yaml_path"[, "file"]}) on 9.2.0.
 
     async def _row_29_positive(self, version):
         gateway, transport = await self.gateway(version)
-        transport.respond = lambda args: (
-            result91("initial: !secret lamp_ref\n", {"initial": "!secret lamp_ref"}, args["yaml_path"])
-            if version == "9.2.0" else result85({"initial": "!secret lamp_ref"}, args["yaml_path"]))
+        transport.respond = lambda args: result91(
+            "initial: !secret lamp_ref\n", {"initial": "!secret lamp_ref"}, args["yaml_path"])
         for arguments in ({"yaml_path": "lamp"}, {"yaml_path": "lamp", "file": "configuration.yaml"}):
             transport.sent.clear()
             data = self.assert_success(await call(gateway, TOOL, arguments))
             self.assertTrue(data["found"])
             self.assertIn("lamp_ref", json.dumps(data["value"]))
             self.assertEqual(len(transport.sent), 1)
-            self.assertEqual(transport.sent[0][1]["include_content"], version == "9.2.0")
+            self.assertIs(transport.sent[0][1]["include_content"], True)
         return data
 
     async def test_92_parity_row_29_positive(self):
         data = await self._row_29_positive("9.2.0")
         self.assertEqual(data["tag_completeness"], y.TAG_LOSSLESS)
-
-    async def test_85_parity_row_29_positive(self):
-        data = await self._row_29_positive("8.5.0")
-        self.assertNotIn("tag_completeness", data)
 
     async def _row_29_refusal(self, version):
         gateway, transport = await self.gateway(version)
@@ -810,9 +790,6 @@ class GatewayTests(adm.Harness):
     async def test_92_parity_row_29_refusal(self):
         await self._row_29_refusal("9.2.0")
 
-    async def test_85_parity_row_29_refusal(self):
-        await self._row_29_refusal("8.5.0")
-
     async def _row_29_no_fabricated_fields(self, version):
         gateway, transport = await self.gateway(version)
         transport.respond = lambda args: ok({
@@ -831,10 +808,6 @@ class GatewayTests(adm.Harness):
         self.assertEqual(tuple(data), ENVELOPE_91)
         self.assertEqual((data["tag_completeness"], data["tag_lossy"], data["lossy_tags"]),
                          (y.TAG_NOT_APPLICABLE, None, []))
-
-    async def test_85_parity_row_29_no_fabricated_fields(self):
-        data = await self._row_29_no_fabricated_fields("8.5.0")
-        self.assertEqual(tuple(data), ENVELOPE_8X)
 
     async def _row_29_unavailable(self, version):
         gateway, transport = await self.gateway(version)
@@ -867,9 +840,6 @@ class GatewayTests(adm.Harness):
         data = self.assert_success(await call(gateway, TOOL, {"yaml_path": "input_text"}))
         self.assertEqual((data["tag_lossy"], data["lossy_tags"]), (True, ["!input"]))
         self.assertIn(y.TAG_LOSSY_LIMITATION, data["limitations"])
-
-    async def test_85_parity_row_29_unavailable_disclosure(self):
-        await self._row_29_unavailable("8.5.0")
 
     async def test_91_disabled_tool_is_never_routed(self):
         # Receipt alternate.json /full_disabled_yaml: the disabled tool is
@@ -934,7 +904,6 @@ class GatewayTests(adm.Harness):
         variants = {
             "9.2.0": {"full": wire_catalog_92(), "reader_only": reader_only_92,
                       "component_off": filesystem_off_catalog()},
-            "8.5.0": {"full": adm.captured("8.5.0"), "component_off": adm.stock_catalog("8.5.0")},
         }
         optional_names = set(OPTIONAL_91) | set(adm.OPTIONAL)
         for version, catalogs in variants.items():
@@ -1003,16 +972,6 @@ class GatewayTests(adm.Harness):
             gateway, transport = await self.gateway("9.2.0", tools)
             self.assertTrue(self.optional(gateway)[TOOL].startswith("quarantined:"))
             self.assertFalse(set(OPTIONAL_91) & self.exposed(gateway))
-
-    async def test_85_session_receiving_content_is_refused(self):
-        gateway, transport = await self.gateway("8.5.0")
-        transport.respond = lambda args: result91(
-            "initial: !HAMCP319_YAML_TAG_CANARY v  # HAMCP319_YAML_COMMENT_CANARY\n", {"initial": "v"},
-            args["yaml_path"])
-        result = await call(gateway, TOOL, {"yaml_path": "lamp"})
-        refused(self, result, dispatched=True)
-        self.assertEqual(result["error_code"], y.IDENTITY_INVALID)
-        assert_clean(self, json.dumps(result))
 
     async def test_92_every_sink_is_free_of_raw_yaml_and_canaries(self):
         gateway, transport = await self.gateway("9.2.0")
