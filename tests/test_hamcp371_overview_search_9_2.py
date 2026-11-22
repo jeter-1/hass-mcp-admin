@@ -25,7 +25,8 @@ closed key sets (``upstream_reads_9_2_keys.ROWS``); S11 closes the overview's
 * ``ha_get_system_health`` (``tools/tools_system.py:747-751``): Engineering's
   closed health rebuild has no ``ha_mcp_update``; the same injection leaves the
   client result unchanged and raises ``fields_withheld``.
-* 9.1.2: the same overview injection passes whole, as shipped.
+* HAMCP-437: only 9.2.0 is admitted (D1); the 9.1.2 pass-through case is
+  retired.
 
 Receipt payloads are hash-checked through the replay module; injected values
 are synthetic. No endpoint is contacted.
@@ -210,13 +211,6 @@ class Overview(unittest.TestCase):
                 self.assertIn(json.dumps(COMPOSED), json.dumps(out["data"]))
                 for field in replay.COUNT_FIELDS:
                     self.assertEqual(out["data"][field], bare["data"][field])
-
-    def test_9_1_2_passes_the_object_whole(self):
-        outputs = run("9.1.2", [(OVERVIEW, c, r, with_update(sc)) for _s, c, r, sc in self.cases])
-        for (set_name, call, _r, _c), out in zip(self.cases, outputs):
-            with self.subTest(set=set_name, call=call["id"]):
-                self.assertIs(out["success"], True, out.get("details"))
-                self.assertEqual(out["data"]["ha_mcp_update"], {**UPDATE, **UPDATE_DROPS})
 
 
 class Health(unittest.TestCase):

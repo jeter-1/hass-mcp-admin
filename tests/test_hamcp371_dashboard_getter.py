@@ -14,9 +14,10 @@ shared ``upstream_dashboard.py`` getter. These tests cover:
   ``EXACT_GETTER_RELEASES``) a 9.2.0 peer reaches the gate unpatched: the
   peer serves the committed 9.2.0 catalog and the 9.1 reply shape, which the
   byte-identical 9.2.0 getter descriptor (S4 diff) allows;
-* 9.1 behaviour unchanged: on 8.5.0, 9.1.0 and 9.1.2 ``apply`` is never
-  called, and the same injected payload returns no count fields and the
-  shipped warnings.
+* the gate is keyed on the module's ``RELEASES``: with 9.2.0 taken out of
+  it, ``apply`` is never called and the injected payload returns no count
+  fields. HAMCP-437: only 9.2.0 is admitted (D1), so the 9.1.2-patched wiring
+  cases now run on the 9.2.0 peer and the 8.5.0/9.1.x comparison is retired.
 
 Synthetic values only; no endpoint is contacted.
 """
@@ -178,12 +179,11 @@ class GetterGate(dash.Harness):
     }
 
     async def test_gate_adds_counts_and_rule_through_the_getter(self):
-        with patch.object(dash_9_2, "RELEASES", frozenset({"9.1.2"})):
-            got = await self._get(self._peer("9.1.2"))
-            self.assertEqual({k: got.data[k] for k in COUNTS}, dict.fromkeys(COUNTS, 0))
-            self.assertEqual(got.warnings, [])
-            self.assertEqual(got.completeness, "complete")
-            got = await self._get(self._peer("9.1.2", self.INJECTED))
+        got = await self._get(self._peer("9.2.0"))
+        self.assertEqual({k: got.data[k] for k in COUNTS}, dict.fromkeys(COUNTS, 0))
+        self.assertEqual(got.warnings, [])
+        self.assertEqual(got.completeness, "complete")
+        got = await self._get(self._peer("9.2.0", self.INJECTED))
         self.assertEqual(got.data["fields_withheld"], 3)
         self.assertEqual(got.data["fields_dropped_by_policy"], 0)
         self.assertEqual(got.data["upstream_warnings_replaced"], 1)
@@ -221,28 +221,25 @@ class GetterGate(dash.Harness):
     async def test_gate_still_fails_closed_on_size(self):
         big = {"title": "Before", "views": [{"title": "Home", "cards": [
             {"type": "markdown", "content": "x" * 1500} for _ in range(30)]}]}
-        peer = self._peer("9.1.2")
+        peer = self._peer("9.2.0")
         peer.configuration = big
-        with patch.object(dash_9_2, "RELEASES", frozenset({"9.1.2"})):
-            provider = self.provider(peer)
-            with self.assertRaises(upstream_dashboard.DashboardProviderError) as raised:
-                await provider.get_dashboard_config(
-                    url_path=dash.URL_PATH, force_reload=True, response_limit=20_000)
+        provider = self.provider(peer)
+        with self.assertRaises(upstream_dashboard.DashboardProviderError) as raised:
+            await provider.get_dashboard_config(
+                url_path=dash.URL_PATH, force_reload=True, response_limit=20_000)
         self.assertEqual(raised.exception.code.value, "upstream_dashboard_response_too_large")
         self.assertIs(raised.exception.details["configuration_returned"], False)
 
-    async def test_9_1_and_8_5_never_call_the_module(self):
-        for version in ("8.5.0", "9.1.0", "9.1.2"):
-            with self.subTest(version=version), patch.object(
-                    dash_9_2, "apply", side_effect=AssertionError("9.2.0 only")) as spy:
-                got = await self._get(self._peer(version, self.INJECTED))
-                spy.assert_not_called()
-                self.assertFalse(set(COUNTS) & set(got.data))
-                # Shipped behaviour: the upstream text passes after sanitizing.
-                self.assertEqual(got.warnings, [FALLBACK, "hamcp371 unreviewed upstream warning",
-                                                HINT])
-                self.assertEqual(got.completeness, "complete")
-                self.assertNotIn("hamcp371_top", json.dumps(got.data))
+    async def test_a_release_outside_the_module_set_never_calls_it(self):
+        with patch.object(dash_9_2, "RELEASES", frozenset()), patch.object(
+                dash_9_2, "apply", side_effect=AssertionError("9.2.0 only")) as spy:
+            got = await self._get(self._peer("9.2.0", self.INJECTED))
+            spy.assert_not_called()
+        self.assertFalse(set(COUNTS) & set(got.data))
+        # Without the module the upstream text passes after sanitizing.
+        self.assertEqual(got.warnings, [FALLBACK, "hamcp371 unreviewed upstream warning", HINT])
+        self.assertEqual(got.completeness, "complete")
+        self.assertNotIn("hamcp371_top", json.dumps(got.data))
 
 
 if __name__ == "__main__":

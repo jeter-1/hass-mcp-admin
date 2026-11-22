@@ -30,6 +30,7 @@ from ha_mcp_engineering.compatibility_family import (  # noqa: E402
     PROVIDER_SURFACES,
 )
 from ha_mcp_engineering.providers import operational_backup  # noqa: E402
+from ha_mcp_engineering.providers import operational_lifecycle  # noqa: E402
 from ha_mcp_engineering.providers.operational_backup import (  # noqa: E402
     OperationalBackupProviderError,
     ReviewedOperationalBackupProvider,
@@ -171,7 +172,15 @@ class CompiledRegistryDispositionTests(unittest.TestCase):
 
 class AccessorFailClosedTests(unittest.TestCase):
     def setUp(self):
-        self.release = load_reviewed_upstream_release_registry().by_version["7.14.2"]
+        # HAMCP-437: the admitted 9.2.0 row with every surface set admitted, so
+        # each absent or forged surface is observed turning from admitted to held.
+        release = load_reviewed_upstream_release_registry().by_version["9.2.0"]
+        self.release = replace(
+            release,
+            provider_dispositions=tuple((surface, "admitted") for surface in sorted(PROVIDER_SURFACES)),
+        )
+        for surface in PROVIDER_SURFACES:
+            self.assertEqual(self.release.provider_disposition(surface), "admitted")
 
     def test_absent_dispositions_are_held_for_every_surface(self):
         stripped = replace(self.release, provider_dispositions=())
@@ -223,7 +232,11 @@ class LoaderRefusalTests(unittest.TestCase):
         load_reviewed_upstream_release_registry(fixture.path)
 
     def test_absent_dispositions_refused_for_every_entry(self):
-        for index, version in enumerate(EFFECTIVE_AFTER):
+        fixture = RegistryFixture()
+        self.addCleanup(fixture.close)
+        versions = [entry["version"] for entry in fixture.value()["releases"]]
+        self.assertIn("9.2.0", versions)
+        for index, version in enumerate(versions):
             with self.subTest(version=version):
                 self._refuses(
                     lambda value, index=index: value["releases"][index].pop("provider_dispositions"),
@@ -278,6 +291,45 @@ class ProviderGateRefusalTests(unittest.TestCase):
         with self.assertRaises(OperationalBackupProviderError) as later:
             ReviewedOperationalBackupProvider()._validate_catalog(catalog)
         self.assertNotEqual(later.exception.category, "upstream_version_mismatch")
+
+
+class LifecycleGateRefusalTests(unittest.TestCase):
+    """HAMCP-437: the lifecycle gate on the admitted 9.2.0 row.
+
+    9.2.0 lifecycle is admitted (HAMCP-401 Phase 1). Stripping its
+    dispositions makes the provider refuse before dispatch; the unmodified
+    row passes the gate and fails later only on the empty synthetic catalog.
+    """
+
+    def test_lifecycle_provider_refuses_absent_disposition_before_dispatch(self):
+        registry = load_reviewed_upstream_release_registry()
+        self.assertEqual(registry.by_version["9.2.0"].provider_disposition("lifecycle"), "admitted")
+        stripped = replace(
+            registry,
+            releases=tuple(
+                replace(item, provider_dispositions=()) if item.version == "9.2.0" else item
+                for item in registry.releases
+            ),
+        )
+        for operation in ("controlled_reload", "restart_addon", "restart_home_assistant"):
+            required = ReviewedOperationalLifecycleProvider._required_tools(operation)
+            with self.subTest(operation=operation):
+                self.assertTrue(required)
+                with patch.object(
+                    operational_lifecycle, "load_reviewed_upstream_release_registry", return_value=stripped
+                ):
+                    with self.assertRaises(OperationalLifecycleProviderError) as raised:
+                        ReviewedOperationalLifecycleProvider()._validate_catalog(
+                            _catalog("9.2.0"), required, operation=operation
+                        )
+                self.assertEqual(raised.exception.category, "provider_held")
+                self.assertFalse(raised.exception.dispatched)
+                with self.assertRaises(OperationalLifecycleProviderError) as later:
+                    ReviewedOperationalLifecycleProvider()._validate_catalog(
+                        _catalog("9.2.0"), required, operation=operation
+                    )
+                self.assertNotIn(later.exception.category, {"provider_held", "upstream_version_mismatch"})
+                self.assertFalse(later.exception.dispatched)
 
 
 def _catalog(version: str) -> McpReadCatalog:

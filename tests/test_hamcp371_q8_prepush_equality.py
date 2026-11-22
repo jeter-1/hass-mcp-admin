@@ -4,6 +4,11 @@ Q8 ruling (07:40, amended): "At S13, before SR, add a check that the 9.2.0
 registry row and attestation equal 9.1.2's in disposition and attestation
 state. No quarantined 9.2.0 state may reach the S16 push."
 
+HAMCP-437: only 9.2.0 is admitted (D1) and the 9.1.2 row goes in I2a-D, so the
+check no longer reads 9.1.2. It compares 9.2.0 with the 9.1.2 values frozen
+below, copied from the committed registry and attestation documents at
+release/2.9.0 d24f0ec3, where 9.2.0 met this check.
+
 The check reads the committed JSON documents directly, so a hand edit that
 the loader would still accept cannot pass unseen:
 
@@ -30,7 +35,19 @@ PACKAGE = ROOT / "hass_mcp_engineering_beta" / "ha_mcp_engineering"
 REGISTRY_PATH = PACKAGE / "upstream_release_registry.json"
 ATTESTATIONS_PATH = PACKAGE / "providers" / "contracts" / "upstream_dashboard_builtin_attestations.json"
 
-BASE, CANDIDATE = "9.1.2", "9.2.0"
+CANDIDATE = "9.2.0"
+# The 9.1.2 values Q8 compared against, frozen at d24f0ec3.
+BASE_DISPOSITIONS = {"backup": "held", "dashboard": "admitted", "lifecycle": "held", "read_gateway": "admitted"}
+BASE_STATUS = "reviewed"
+BASE_ATTESTATION = {
+    "contract_family": "ha_mcp_dashboard_read_v3",
+    "input_contract_fingerprint": "1ea37859cf37426edf61bbe5987b1f144af74f1e6f2da8c43a02de1b06e24bc6",
+    "output_contract_fingerprint": "9db14b83579f9ec897cc6d97640a3ad67899055b57d18c815c4119192a04dbb7",
+    "raw_input_schema_fingerprint": "3d5eb7f07319fc0007f535ef316091a11c15863262f3cb6b03ae279474dfdca7",
+    "runtime_contract_fingerprint": "78b74a6c193af3de32730c878e094250ad3ec5a304724529d917d1195e8783d9",
+    "security_contract_fingerprint": "e9770b0461efed6a85e0527fc301578ec0d3069f3725b9884373d4216d119cd7",
+    "revoked": False,
+}
 # HAMCP-401 Phase 1: the only 9.2.0 disposition that differs from 9.1.2's.
 CANDIDATE_DISPOSITION_OVERRIDES = {"lifecycle": "admitted"}
 ATTESTATION_EQUAL_FIELDS = (
@@ -58,30 +75,25 @@ def q8_problems(registry: dict, attestations: dict) -> list[str]:
     problems: list[str] = []
     rows = {r.get("version"): r for r in registry.get("releases", ())}
     entries = {e.get("upstream_version"): e for e in attestations.get("entries", ())}
-    for version in (BASE, CANDIDATE):
-        if version not in rows:
-            problems.append(f"registry row {version} missing")
-        if version not in entries:
-            problems.append(f"attestation entry {version} missing")
+    if CANDIDATE not in rows:
+        problems.append(f"registry row {CANDIDATE} missing")
+    if CANDIDATE not in entries:
+        problems.append(f"attestation entry {CANDIDATE} missing")
     if problems:
         return problems
-    base, candidate = rows[BASE], rows[CANDIDATE]
-    expected_dispositions = {
-        **(base.get("provider_dispositions") or {}),
-        **CANDIDATE_DISPOSITION_OVERRIDES,
-    }
+    candidate = rows[CANDIDATE]
+    expected_dispositions = {**BASE_DISPOSITIONS, **CANDIDATE_DISPOSITION_OVERRIDES}
     if candidate.get("provider_dispositions") != expected_dispositions:
         problems.append("provider_dispositions differ from 9.1.2")
-    base_status = (base.get("dashboard_attestation") or {}).get("status")
     status = (candidate.get("dashboard_attestation") or {}).get("status")
-    if status != base_status:
-        problems.append(f"dashboard_attestation.status {status!r} is not 9.1.2's {base_status!r}")
+    if status != BASE_STATUS:
+        problems.append(f"dashboard_attestation.status {status!r} is not 9.1.2's {BASE_STATUS!r}")
     if status != "reviewed":
         problems.append(f"dashboard_attestation.status {status!r} is not 'reviewed'")
     if (candidate.get("dashboard_attestation") or {}).get("entry_id") != entries[CANDIDATE].get("entry_id"):
         problems.append("registry attestation entry_id does not name the built-in 9.2.0 entry")
     for field in ATTESTATION_EQUAL_FIELDS:
-        if entries[CANDIDATE].get(field) != entries[BASE].get(field):
+        if entries[CANDIDATE].get(field) != BASE_ATTESTATION[field]:
             problems.append(f"attestation {field} differs from 9.1.2")
     if _contains(candidate, "quarantined"):
         problems.append("9.2.0 registry row holds a quarantined value")

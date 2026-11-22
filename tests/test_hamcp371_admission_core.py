@@ -3,8 +3,8 @@
 These tests pin the S8 admission core:
 
 * the exact reviewed 9.2.0 identity (index, per-platform manifests, image
-  revision, source commit, entry id), with 9.1.2's provider dispositions and
-  every other registry entry unchanged;
+  revision, source commit, entry id), with its exact provider dispositions
+  (backup held) and every other registry entry unchanged;
 * the 9.2.0 dashboard is "admitted" with a reviewed attestation (Q8 ruling;
   quarantined at S8, reviewed at SB): the provider authority admits 9.2.0, and
   a quarantined attestation, a changed setter descriptor or an unreviewed
@@ -138,13 +138,10 @@ class RegistryIdentityTests(unittest.TestCase):
         # The release set enumerates 9.2.0 beside the kept 9.1 releases.
         self.assertEqual(USED_TOOL_ADMISSION_RELEASES, frozenset({"9.1.0", "9.1.2", "9.2.0"}))
 
-    def test_provider_dispositions_equal_912(self):
-        # HAMCP-401 Phase 1 admits 9.2.0 lifecycle; every other surface stays
-        # equal to 9.1.2's, and backup stays held until HAMCP-381.
+    def test_920_provider_dispositions(self):
+        # HAMCP-401 Phase 1 admits 9.2.0 lifecycle; backup stays held until
+        # HAMCP-381. HAMCP-437 dropped the comparison with 9.1.2's dispositions.
         candidate = dict(REGISTRY.by_version["9.2.0"].provider_dispositions)
-        base = dict(REGISTRY.by_version["9.1.2"].provider_dispositions)
-        self.assertEqual({k: v for k, v in candidate.items() if k != "lifecycle"},
-                         {k: v for k, v in base.items() if k != "lifecycle"})
         self.assertEqual(candidate, {
             "backup": "held", "dashboard": "admitted", "lifecycle": "admitted",
             "read_gateway": "admitted"})
@@ -190,10 +187,6 @@ class DashboardAdmissionTests(unittest.TestCase):
         self.assertEqual(authority["source_commit"], SOURCE_920)
         self.assertEqual(provider._optional_dashboard_provider_authority(self._handshake()),
                          authority)
-        # 9.1.2 still admits, under its own authority.
-        reviewed = provider._dashboard_provider_authority(self._handshake("9.1.2"))
-        self.assertEqual(reviewed["upstream_version"], "9.1.2")
-        self.assertNotEqual(reviewed["evidence_hash"], authority["evidence_hash"])
 
     def test_920_quarantined_attestation_still_refuses(self):
         release = REGISTRY.by_version["9.2.0"]
@@ -452,7 +445,7 @@ class GatewaySurfaceTests(unittest.TestCase):
         self.assertLessEqual(_delegated("9.2.0") - {yaml_reader.TOOL_NAME}, surfaces["9.2.0"])
 
     def test_920_delegated_read_dispatches_through_the_92_module(self):
-        case = useful.NoRedirectUseful._delegated_read_case(None, "9.1.0")
+        case = useful.NoRedirectUseful._delegated_read_case(None, "9.2.0")
 
         def handler(name, arguments):
             self.assertEqual((name, arguments), case.upstream)

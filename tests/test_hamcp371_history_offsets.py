@@ -11,7 +11,8 @@ gateway path:
   invalid_request and the fixed failure_category history_time_offset_required
   (R1, item 5); unparseable times keep the generic invalid_request
   (argument_validation, 22:59 record item 7);
-* 9.1.2 forwards the same inputs unchanged (byte-identical 9.1 behaviour);
+* HAMCP-437: only 9.2.0 is admitted (D1); the 9.1.2 pass-through case is
+  retired;
 * the history-slices route keeps working on 9.2.0;
 * unknown keys are withheld and counted, not a whole-response refusal (item
   7); policy drops are counted apart (item 10); an unreviewed upstream warning
@@ -166,14 +167,6 @@ class GatewayTimeRefusal(unittest.TestCase):
                 _out, sent = _call({"entity_ids": ENTITY, "start_time": value}, result=receipt)
                 self.assertEqual(len(sent), 1)
                 self.assertEqual(sent[0][0], TOOL)
-                self.assertEqual(sent[0][1]["start_time"], value)
-
-    def test_9_1_2_forwards_the_same_inputs_unchanged(self):
-        receipt = next(r for _s, c, r in real._cases_920(("A/9.2.0",)) if c["id"] == "r16-history")
-        for value in ("2026-11-10T08:00:00", "2026-11-10", "2026-11-10T08:00:00-06:00"):
-            with self.subTest(value=value):
-                _out, sent = _call({"entity_ids": ENTITY, "start_time": value}, "9.1.2", receipt)
-                self.assertEqual(len(sent), 1)
                 self.assertEqual(sent[0][1]["start_time"], value)
 
     def test_the_category_is_registered_only_for_the_9_2_module(self):

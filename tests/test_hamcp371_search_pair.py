@@ -98,7 +98,7 @@ def _search_content():
 
 
 SEARCH_CONTENT = _search_content()
-SIBLING = useful.NoRedirectUseful._delegated_read_case(None, "9.1.0")
+SIBLING = useful.NoRedirectUseful._delegated_read_case(None, "9.2.0")
 
 
 def handler(name, arguments):
