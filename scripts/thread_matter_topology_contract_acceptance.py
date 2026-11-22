@@ -31,6 +31,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
+# harness_send sits next to this file (HAMCP-363).
+if str(ROOT / "scripts") not in sys.path:
+    sys.path.insert(0, str(ROOT / "scripts"))
+from harness_send import harness_url  # noqa: E402
 import aiohttp
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from alarmo_inspection_contract_acceptance import close_disposable_authority
@@ -151,7 +155,7 @@ class RawCore:
         # frame sent is the command that was checked. The target is read then
         # too, so a class with no Core to name refuses before a session exists.
         checked = copy.deepcopy(payload)
-        target = type(self).core_url
+        target = harness_url(type(self).core_url)
         timeout = aiohttp.ClientTimeout(total=60)
         async with lane_session(timeout=timeout) as session:
             async with session.ws_connect(target, max_msg_size=HARNESS_FRAME_BYTES) as ws:

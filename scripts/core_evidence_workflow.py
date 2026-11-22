@@ -113,6 +113,16 @@ def matrix_row(ctx, name):
             "alarmo": True, "context_sha256": digest(canonical(ctx))}
 
 
+def group_matrix(rows, withhold):
+    """D1: one lane-groups row per case and lane group, in groups.json order, carrying its lanes row's
+    exact context binding. An owner-withheld group gets no row, so it has no producer."""
+    names = [name for name in groups() if name in LANE_GROUPS and name not in withhold]
+    return json.dumps({"include": [{"case": row["case"], "group": name, "context_sha256": row["context_sha256"],
+                                    "core_source_commit": row["core_source_commit"],
+                                    "core_source_sha256": row["core_source_sha256"]}
+                                   for row in rows for name in names]})
+
+
 def attempt_releases(artifacts, jobs):
     prefix = "core-release-attempt-"
     return {item["name"][len(prefix):] for item in [*artifacts, *jobs]
@@ -209,6 +219,17 @@ def discover_releases(entries, requested):
     raise ValueError("release discovery did not reach the signed predecessor within the page bound")
 
 
+# The workflow_dispatch withhold_groups input (HAMCP-443 part C): exactly these values, nothing parsed.
+WITHHOLD_INPUTS = {"": [], "marketplace_read": ["marketplace_read"]}
+
+
+def withhold_input(value):
+    """The dispatch input as prepare's withhold list; any other value refuses."""
+    if value not in WITHHOLD_INPUTS:
+        raise ValueError("withhold_groups must be '' or 'marketplace_read'")
+    return list(WITHHOLD_INPUTS[value])
+
+
 def admit_withhold(withhold, acceptance, requested):
     """D6: an owner withhold is a manual dispatch for one named production release only."""
     withhold = list(withhold)
@@ -255,19 +276,20 @@ def prepare(directory, acceptance, requested, withhold=()):
         write(directory / "baseline.json", target)
         write(directory / "state.json", {"registry_exists": False, "acceptance": True, "withhold": []})
         rows = [matrix_row(ctx, "coverage"), matrix_row(fixture_ctx, "fixture")]
-        output(refused=False, run=True, release="2026.11.0", matrix=json.dumps({"include": rows}), registry_exists=False)
+        output(refused=False, run=True, release="2026.11.0", matrix=json.dumps({"include": rows}),
+               groups=group_matrix(rows, []), registry_exists=False)
         return
     releases = discover_releases(entries, requested)
     newest = select_release(releases, {e["version"] for e in entries}, [], requested)
     if newest is None:
         summary("No newer eligible stable Core release.")
-        output(refused=False, run=False, release="none", matrix='{"include":[]}', registry_exists=exists)
+        output(refused=False, run=False, release="none", matrix='{"include":[]}', groups='{"include":[]}', registry_exists=exists)
         return
     release_metadata = next(r for r in releases if r["tag_name"] == newest)
     # Candidate branches are a durable successful-assembly marker after artifact expiry.
     if github(f"repos/{REPOSITORY}/git/ref/heads/registry-candidates/{newest}", optional=True) is not None:
         summary("Candidate branch already exists; no repeated dispatch. Inspect its original run for recovery.")
-        output(refused=False, run=False, release="none", matrix='{"include":[]}', registry_exists=exists)
+        output(refused=False, run=False, release="none", matrix='{"include":[]}', groups='{"include":[]}', registry_exists=exists)
         return
     runs = []
     for page in range(1, 11):
@@ -298,7 +320,7 @@ def prepare(directory, acceptance, requested, withhold=()):
                                             and requested == newest), withhold=withhold)
     if version is None:
         summary("No eligible stable release (already published, pending, succeeded or terminally refused).")
-        output(refused=False, run=False, release="none", matrix='{"include":[]} ', registry_exists=exists)
+        output(refused=False, run=False, release="none", matrix='{"include":[]} ', groups='{"include":[]}', registry_exists=exists)
         return
     candidates = [e for e in entries if version_key(e["version"]) < version_key(version)]
     if not candidates:
@@ -312,7 +334,7 @@ def prepare(directory, acceptance, requested, withhold=()):
     write(directory / "comparison.json", proof)
     if not proof["inherited"]:
         summary(refusal_message(proof))
-        output(refused=True, run=False, release=version, matrix='{"include":[]}', registry_exists=exists)
+        output(refused=True, run=False, release=version, matrix='{"include":[]}', groups='{"include":[]}', registry_exists=exists)
         return
     index, platforms, receipts = image_provenance(version, after["commit"])
     provenance = {"entry_id": "core-" + version + "-" + index[7:15], "server_name": "home-assistant-core",
@@ -327,7 +349,9 @@ def prepare(directory, acceptance, requested, withhold=()):
     if withhold:
         summary(withhold_consequence(withhold))
     summary("O3 inherits " + predecessor["version"] + " → " + version + ("; pre-cutover: artifact only" if not exists else ""))
-    output(refused=False, run=True, release=version, matrix=json.dumps({"include": [matrix_row(ctx, "release")]}), registry_exists=exists)
+    row = matrix_row(ctx, "release")
+    output(refused=False, run=True, release=version, matrix=json.dumps({"include": [row]}),
+           groups=group_matrix([row], withhold), registry_exists=exists)
 
 
 def producer_name(case, group):
@@ -339,14 +363,14 @@ def owned_names(value):
             and all(isinstance(v, str) and v for v in value))
 
 
-def group_receipt_paths(receipts, case):
+def group_receipt_paths(receipts, case, withhold):
     """D8's fixed producer map. The seven lane groups come only from their own lane-groups
     artifact (exactly <group>.json and cleanup-<group>.json); the other groups only from this
     lanes run's top level. A wrong producer, a duplicate or any stray entry refuses.
 
-    A lane group whose artifact is absent is not passed, as at the base: no workflow job
-    produces these artifacts yet. HAMCP-443 part C adds that job and, with it, makes an
-    absent artifact refuse."""
+    Every lane group's artifact must be present, in every mode (HAMCP-443 part C). The one
+    exception is an owner-withheld group: prepare gives it no lane-groups row, so its artifact
+    must be absent, and one that is present refuses."""
     run_groups = [name for name in groups() if name not in LANE_GROUPS]
     producers = {producer_name(case, name): name for name in LANE_GROUPS}
     allowed = {"cleanup.json"} | {name + ".json" for name in run_groups} | set(producers)
@@ -357,8 +381,12 @@ def group_receipt_paths(receipts, case):
     for directory, name in producers.items():
         folder = receipts / directory
         paths[name] = folder / (name + ".json")
-        if directory not in present:
+        if name in withhold:
+            if directory in present:
+                raise ValueError("withheld lane group has an artifact: " + name)
             continue  # assemble records the group as not passed
+        if directory not in present:
+            raise ValueError("lane-groups artifact missing: " + name)
         if not folder.is_dir() or folder.is_symlink() or {e.name for e in folder.iterdir()} != {
                 name + ".json", "cleanup-" + name + ".json"}:
             raise ValueError("lane-groups artifact contents mismatch: " + name)
@@ -392,7 +420,7 @@ def assemble(directory, receipts, case):
     if set(state) != {"registry_exists", "acceptance", "withhold"}:
         raise ValueError("preparation state mismatch")
     withhold = owner_withhold(state)
-    paths, cleanups = group_receipt_paths(receipts, case)
+    paths, cleanups = group_receipt_paths(receipts, case, withhold)
     cleanup = read_json(receipts / "cleanup.json")
     if cleanup != {"clean": True, "run": ctx["run"], "context_sha256": sha}:
         raise ValueError("cleanup proof mismatch")
@@ -465,12 +493,12 @@ if __name__ == "__main__":
     parser.add_argument("--release", default="")
     parser.add_argument("--receipts", type=Path)
     parser.add_argument("--case", default="release")
-    parser.add_argument("--withhold", action="append", default=[])
+    parser.add_argument("--withhold-groups", default=None)
     args = parser.parse_args()
-    if args.withhold and args.command != "prepare":
-        parser.error("--withhold is a prepare input; assemble reads it from state.json")
+    if args.withhold_groups is not None and args.command != "prepare":
+        parser.error("--withhold-groups is a prepare input; assemble reads it from state.json")
     if args.command == "prepare":
-        prepare(args.directory, args.acceptance, args.release or None, args.withhold)
+        prepare(args.directory, args.acceptance, args.release or None, withhold_input(args.withhold_groups or ""))
     elif args.command == "refuse":
         fail_refusal(args.directory)
     else:

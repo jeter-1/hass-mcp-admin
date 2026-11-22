@@ -154,6 +154,7 @@ class RefusalLifecycle(unittest.TestCase):
                 values=dict(line.split('=',1) for line in (d/'outputs').read_text().splitlines())
                 self.assertEqual(values['refused'],'true');self.assertEqual(values['run'],'false')
                 self.assertEqual(values['release'],'2026.11.99');self.assertFalse((d/'release.json').exists())
+                self.assertEqual(values['groups'],'{"include":[]}')
                 proof=e.read_json(d/'comparison.json')
                 result=subprocess.run([sys.executable,str(ROOT/'scripts/core_evidence_workflow.py'),'refuse','--directory',tmp],capture_output=True,text=True,timeout=10,
                                       env={**os.environ,'GITHUB_STEP_SUMMARY':str(d/'final-summary')})
@@ -170,6 +171,7 @@ class RefusalLifecycle(unittest.TestCase):
                 self.assertEqual(values['refused'],str(retries).lower())
                 self.assertEqual(calls,2 if retries else 0)
                 self.assertEqual(values['release'],'2026.11.99' if retries else 'none')
+                self.assertEqual(values['groups'],'{"include":[]}')
 
     def test_api_tag_and_provenance_errors_do_not_record_refusal(self):
         for error in ('api','tag','provenance'):
@@ -844,8 +846,8 @@ class AssemblyProducerMap(unittest.TestCase):
                 self.refuse('unmapped producer: ' + name, change)
 
     def test_missing_run_receipt_is_false(self):
-        # An absent lane-groups artifact is likewise not passed (#472 correction batch, option (a));
-        # AssemblyOwnerOverrideAndRetry proves that against a baseline holding the lane profiles.
+        # An absent lane-groups artifact refuses instead (HAMCP-443 part C):
+        # test_a_missing_lane_artifact_refuses here, and in production mode in AssemblyOwnerOverrideAndRetry.
         import core_evidence_workflow as w
         with tempfile.TemporaryDirectory() as tmp:
             prepared, receipts, env, _ = assembly_inputs(Path(tmp), ctx('main'), 'coverage')
@@ -853,9 +855,22 @@ class AssemblyProducerMap(unittest.TestCase):
             with patch.dict(os.environ, env, clear=True), self.assertRaisesRegex(ValueError, 'acceptance requires'):
                 w.assemble(prepared, receipts, 'coverage')
 
+    def test_a_missing_lane_artifact_refuses(self):
+        # HAMCP-443 part C, item 2: every lane group's artifact is required, in both acceptance cases.
+        import shutil
+        import core_evidence_workflow as w
+        for case in ('coverage', 'fixture'):
+            for name in e.LANE_GROUPS:
+                with self.subTest(case=case, name=name):
+                    self.refuse('lane-groups artifact missing: ' + name,
+                                lambda r, s, n=name, c=case: shutil.rmtree(self.lane(r, n, c)), case)
+            with self.subTest(case=case, name='all'):
+                self.refuse('lane-groups artifact missing: helper_value',
+                            lambda r, s, c=case: [shutil.rmtree(r / w.producer_name(c, n)) for n in e.LANE_GROUPS], case)
+
     def test_a_missing_artifact_loosens_no_other_producer_check(self):
         # With helper_value's artifact absent, the wrong-producer, duplicate, stray and
-        # contents-mismatch refusals still refuse.
+        # contents-mismatch refusals still refuse; the missing artifact refuses after them.
         import shutil
         def wrong_producer(r, s):
             (self.lane(r) / 'helper_value.json').rename(r / 'helper_value.json'); shutil.rmtree(self.lane(r))
@@ -867,7 +882,7 @@ class AssemblyProducerMap(unittest.TestCase):
         def other_case(r, s):
             self.lane(r).rename(r / 'core-evidence-group-fixture-helper_value')
         def contents(r, s):
-            shutil.rmtree(self.lane(r)); (self.lane(r, 'marketplace_read') / 'extra.json').write_text('{}')
+            shutil.rmtree(self.lane(r, 'thread_matter_topology')); (self.lane(r, 'marketplace_read') / 'extra.json').write_text('{}')
         def emptied(r, s):
             shutil.rmtree(self.lane(r)); self.lane(r).mkdir()
         for pattern, change in (('unmapped producer: helper_value.json', wrong_producer),
@@ -878,6 +893,12 @@ class AssemblyProducerMap(unittest.TestCase):
                                 ('lane-groups artifact contents mismatch: helper_value', emptied)):
             with self.subTest(change.__name__):
                 self.refuse(pattern, change)
+
+    def test_a_withheld_group_is_never_admitted_outside_production(self):
+        # Acceptance state carries no withhold, so a withheld-shaped run (marketplace_read absent) refuses.
+        import shutil
+        self.refuse('lane-groups artifact missing: marketplace_read',
+                    lambda r, s: shutil.rmtree(self.lane(r, 'marketplace_read')))
 
     def test_lane_artifact_must_hold_exactly_its_receipt_and_cleanup(self):
         import shutil
@@ -1017,8 +1038,14 @@ class AssemblyOwnerOverrideAndRetry(unittest.TestCase):
         self.assertIsNone(e.select_release(releases, {'2026.11.0'}, w.observed_attempts(
             {'status': 'completed', 'conclusion': 'failure'}, [], refused)))
 
+    def withheld(self, receipts, sha):
+        # A withheld group has no lane-groups row (group_matrix), so no artifact.
+        import shutil
+        import core_evidence_workflow as w
+        shutil.rmtree(receipts / w.producer_name('release', 'marketplace_read'))
+
     def test_owner_withhold_removes_marketplace_and_states_the_consequence(self):
-        receipts, messages, run = self.run_assemble(self.production(['marketplace_read']))
+        receipts, messages, run = self.run_assemble(self.production(['marketplace_read']), self.withheld)
         evidence = e.read_json(receipts / 'candidate/core-review-evidence.json')
         entry = e.read_json(receipts / 'candidate/entry.json')
         self.assertEqual(evidence['owner_withheld'], ['marketplace_read'])
@@ -1030,16 +1057,24 @@ class AssemblyOwnerOverrideAndRetry(unittest.TestCase):
                        'and every later automated candidate will lack it too, because automated evidence never adds a '
                        'profile back. Only a manual signing restores it.'), messages)
 
-    def test_owner_withhold_absorbs_only_its_own_unavailable_group(self):
-        receipts, messages, _ = self.run_assemble(self.production(['marketplace_read']), self.unavailable())
-        self.assertEqual(e.read_json(receipts / 'candidate/core-review-evidence.json')['withheld'], ['core.marketplace_read'])
+    def test_owner_withhold_absorbs_no_other_unavailable_group(self):
+        def both(receipts, sha):
+            self.withheld(receipts, sha); self.unavailable('thread_matter_topology')(receipts, sha)
         with self.assertRaisesRegex(ValueError, 'external dependency unavailable: thread_matter_topology'):
-            self.run_assemble(self.production(['marketplace_read']), self.unavailable('thread_matter_topology'))
+            self.run_assemble(self.production(['marketplace_read']), both)
+        self.assertFalse((Path(self.tmp.name) / 'receipts/candidate').exists())
 
-    def test_absent_lane_artifacts_are_not_passed_with_no_refusal(self):
-        # #472 correction batch, option (a): CI at this head has no lane-groups job, so every
-        # lane group's artifact is absent; each such group is withheld, as at the base.
-        # HAMCP-443 part C adds the job and makes an absent artifact refuse.
+    def test_withheld_group_with_an_artifact_refuses(self):
+        # HAMCP-443 part C: a withheld group has no producer, so an artifact for it is a wrong producer,
+        # whether it passed or reported its external store unavailable.
+        for change in (lambda r, s: None, self.unavailable()):
+            with self.subTest(), self.assertRaisesRegex(ValueError, 'withheld lane group has an artifact: marketplace_read'):
+                self.run_assemble(self.production(['marketplace_read']), change)
+            self.assertFalse((Path(self.tmp.name) / 'receipts/candidate').exists())
+
+    def test_absent_lane_artifacts_refuse_in_production(self):
+        # HAMCP-443 part C, item 2: an absent lane-groups artifact refuses unconditionally;
+        # only an owner withhold (its group has no lane-groups row) may lack one.
         import shutil
         import core_evidence_workflow as w
         for absent in [(name,) for name in e.LANE_GROUPS] + [e.LANE_GROUPS]:
@@ -1047,23 +1082,21 @@ class AssemblyOwnerOverrideAndRetry(unittest.TestCase):
                 def change(receipts, sha):
                     for name in absent:
                         shutil.rmtree(receipts / w.producer_name('release', name))
-                receipts, messages, run = self.run_assemble(self.production(), change)
-                evidence = e.read_json(receipts / 'candidate/core-review-evidence.json')
-                self.assertEqual({n for n, v in evidence['lane_groups'].items() if v is not True}, set(absent))
-                self.assertFalse(set(absent) & set(evidence['receipt_sha256']))
-                ids = {i for name in absent for i in e.groups()[name]}
-                self.assertEqual(evidence['withheld'], [p['capability_id'] for p in evidence['previous_capabilities']
-                                                        if p['capability_id'] in ids])
-                self.assertEqual(evidence['owner_withheld'], []); run.assert_called_once()
+                with self.assertRaisesRegex(ValueError, 'lane-groups artifact missing: ' + absent[0]):
+                    self.run_assemble(self.production(), change)
+                self.assertFalse((Path(self.tmp.name) / 'receipts/candidate').exists())
+        with self.assertRaisesRegex(ValueError, 'lane-groups artifact missing: helper_value'):
+            self.run_assemble(self.production(['marketplace_read']),
+                              lambda r, s: [shutil.rmtree(r / w.producer_name('release', n)) for n in e.LANE_GROUPS])
 
     def test_withheld_group_with_no_artifact_stays_withheld(self):
-        import shutil
-        import core_evidence_workflow as w
-        receipts, messages, _ = self.run_assemble(self.production(['marketplace_read']),
-                                                  lambda r, s: shutil.rmtree(r / w.producer_name('release', 'marketplace_read')))
+        receipts, messages, _ = self.run_assemble(self.production(['marketplace_read']), self.withheld)
         evidence = e.read_json(receipts / 'candidate/core-review-evidence.json')
         self.assertEqual(evidence['owner_withheld'], ['marketplace_read'])
         self.assertEqual(evidence['withheld'], ['core.marketplace_read'])
+        self.assertIs(evidence['lane_groups']['marketplace_read'], False)
+        self.assertNotIn('marketplace_read', evidence['receipt_sha256'])
+        self.assertEqual({n for n, v in evidence['lane_groups'].items() if v is not True}, {'marketplace_read'})
 
     def test_invalid_state_or_withhold_refuses(self):
         states = [{'acceptance': False, 'registry_exists': True},
@@ -1129,6 +1162,15 @@ class PrepareWithhold(unittest.TestCase):
                                  {'registry_exists': True, 'acceptance': False, 'withhold': withhold})
                 self.assertEqual(select.call_args_list[-1].kwargs['withhold'], withhold)
                 self.assertEqual('OWNER OVERRIDE: withheld marketplace_read' in (directory / 'summary').read_text(), bool(withhold))
+                # HAMCP-443 part C: the withheld group gets no lane-groups row; every other row binds the release row.
+                values = dict(line.split('=', 1) for line in (directory / 'outputs').read_text().splitlines())
+                row, = json.loads(values['matrix'])['include']
+                groups = json.loads(values['groups'])['include']
+                self.assertEqual([g['group'] for g in groups],
+                                 [n for n in e.groups() if n in e.LANE_GROUPS and n not in withhold])
+                self.assertTrue(all(g['case'] == 'release' and g['context_sha256'] == row['context_sha256']
+                                    and g['core_source_commit'] == row['core_source_commit']
+                                    and g['core_source_sha256'] == row['core_source_sha256'] for g in groups))
 
     def test_select_release_withhold_never_changes_selection(self):
         releases = [{'tag_name': '2026.12.0'}, {'tag_name': '2026.12.1'}]
@@ -1140,9 +1182,76 @@ class PrepareWithhold(unittest.TestCase):
                 e.select_release(releases, {'2026.11.0'}, [], requested, withhold=withhold)
 
     def test_cli_withhold_is_a_prepare_input_only(self):
-        result = subprocess.run([sys.executable, str(ROOT / 'scripts/core_evidence_workflow.py'), 'assemble', '--directory', '.',
-                                 '--withhold', 'marketplace_read'], capture_output=True, text=True, timeout=10)
-        self.assertEqual(result.returncode, 2); self.assertIn('--withhold is a prepare input', result.stderr)
+        for command in ('assemble', 'refuse'):
+            with self.subTest(command):
+                result = subprocess.run([sys.executable, str(ROOT / 'scripts/core_evidence_workflow.py'), command, '--directory', '.',
+                                         '--withhold-groups', 'marketplace_read'], capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 2); self.assertIn('--withhold-groups is a prepare input', result.stderr)
+
+    def test_withhold_input_admits_exactly_two_values(self):
+        # HAMCP-443 part C, 1c: the dispatch input is '' (the default) or 'marketplace_read'; nothing is parsed.
+        import core_evidence_workflow as w
+        self.assertEqual(w.withhold_input(''), [])
+        self.assertEqual(w.withhold_input('marketplace_read'), ['marketplace_read'])
+        w.withhold_input('marketplace_read').append('helper_value')
+        self.assertEqual(w.withhold_input('marketplace_read'), ['marketplace_read'])
+        for value in (' marketplace_read', 'marketplace_read ', 'MARKETPLACE_READ', 'marketplace_read,helper_value',
+                      'helper_value', 'thread_matter_topology', '[]', 'none', ' ', None, ['marketplace_read']):
+            with self.subTest(value=value), self.assertRaisesRegex((ValueError, TypeError), "withhold_groups must be|unhashable"):
+                w.withhold_input(value)
+
+    def test_cli_refuses_a_bad_withhold_before_any_input(self):
+        with tempfile.TemporaryDirectory(dir=ROOT / '.artifacts') as tmp:
+            directory = Path(tmp) / 'prepared'
+            env = {k: v for k, v in os.environ.items() if not k.startswith('GITHUB_')}
+            env.update(RUN, GITHUB_EVENT_NAME='workflow_dispatch', GITHUB_OUTPUT=str(Path(tmp) / 'outputs'))
+            for value in ('helper_value', 'marketplace_read,helper_value', 'Marketplace_read'):
+                with self.subTest(value=value):
+                    result = subprocess.run([sys.executable, str(ROOT / 'scripts/core_evidence_workflow.py'), 'prepare', '--directory',
+                                             str(directory), '--release', '2026.12.0', '--withhold-groups', value],
+                                            capture_output=True, text=True, timeout=30, env=env)
+                    self.assertNotEqual(result.returncode, 0); self.assertIn("withhold_groups must be", result.stderr)
+                    self.assertFalse(directory.exists()); self.assertFalse((Path(tmp) / 'outputs').exists())
+
+    def test_group_matrix_is_cases_by_lane_groups_with_each_rows_binding(self):
+        import core_evidence_workflow as w
+        rows = [{'case': case, 'lane': 'x', 'context_sha256': case[0] * 64, 'core_source_commit': case[0] * 40,
+                 'core_source_sha256': case[1] * 64, 'ha_version': '2026.11.0'} for case in ('coverage', 'fixture')]
+        order = [name for name in e.groups() if name in e.LANE_GROUPS]
+        self.assertEqual(sorted(order), sorted(e.LANE_GROUPS))
+        value = json.loads(w.group_matrix(rows, []))
+        self.assertEqual(list(value), ['include'])
+        self.assertEqual(value['include'], [{'case': row['case'], 'group': name, 'context_sha256': row['context_sha256'],
+                                             'core_source_commit': row['core_source_commit'],
+                                             'core_source_sha256': row['core_source_sha256']}
+                                            for row in rows for name in order])
+        self.assertEqual(len(value['include']), 14)
+        withheld = json.loads(w.group_matrix(rows[:1], ['marketplace_read']))['include']
+        self.assertEqual([r['group'] for r in withheld], [n for n in order if n != 'marketplace_read'])
+        self.assertTrue(all(r['context_sha256'] == 'c' * 64 for r in withheld))
+        self.assertEqual(json.loads(w.group_matrix([], [])), {'include': []})
+
+    def test_acceptance_prepare_outputs_fourteen_lane_group_rows(self):
+        import core_evidence_workflow as w
+        def source(version, *args):
+            return e.read_json(ROOT / 'docs/evidence/hamcp315/core-sources' / (version + '.json'))
+        with tempfile.TemporaryDirectory(dir=ROOT / '.artifacts') as tmp:
+            root = Path(tmp)
+            env = {**RUN, 'GITHUB_EVENT_NAME': 'pull_request', 'GITHUB_OUTPUT': str(root / 'out'),
+                   'GITHUB_STEP_SUMMARY': str(root / 'summary')}
+            with patch.dict(os.environ, env, clear=True), patch.object(w, 'source', side_effect=source):
+                w.prepare(root / 'prepared', True, None, w.withhold_input(''))
+            values = dict(line.split('=', 1) for line in (root / 'out').read_text().splitlines())
+            matrix, groups = json.loads(values['matrix'])['include'], json.loads(values['groups'])['include']
+            self.assertEqual([r['case'] for r in matrix], ['coverage', 'fixture'])
+            self.assertEqual(len(groups), 14)
+            for row in matrix:
+                mine = [g for g in groups if g['case'] == row['case']]
+                self.assertEqual(sorted(g['group'] for g in mine), sorted(e.LANE_GROUPS))
+                for g in mine:
+                    self.assertEqual({k: g[k] for k in ('context_sha256', 'core_source_commit', 'core_source_sha256')},
+                                     {k: row[k] for k in ('context_sha256', 'core_source_commit', 'core_source_sha256')})
+                self.assertEqual(row['context_sha256'], e.digest((root / 'prepared' / (row['case'] + '.json')).read_bytes()))
 
 
 class ManifestAndWorkflow(unittest.TestCase):
@@ -1166,6 +1275,9 @@ class ManifestAndWorkflow(unittest.TestCase):
         self.assertEqual(w['permissions'],{'contents':'read'})
         self.assertEqual(w['jobs']['prepare']['permissions'],{'contents':'read','actions':'read'})
         self.assertEqual(w['jobs']['lanes']['permissions'],{'contents':'read'})
+        # HAMCP-443 part C: a same-run artifact download needs no actions: read, and the row has no token.
+        self.assertEqual(w['jobs']['lane-groups']['permissions'],{'contents':'read'})
+        self.assertNotIn('github.token',json.dumps(w['jobs']['lane-groups']))
         self.assertEqual(w['jobs']['handoff']['permissions'],{'contents':'write','actions':'write'})
         for name,job in w['jobs'].items():
             self.assertNotIn('environment',job);self.assertEqual(job['runs-on'],'ubuntu-24.04')
@@ -1179,6 +1291,73 @@ class ManifestAndWorkflow(unittest.TestCase):
         self.assertEqual(job['env']['REAL_HA_SEQ13_LANES'],'enabled')
         cleanup=[s for s in job['steps'] if 'cleanup' in s.get('name','').lower() or 'removed' in s.get('name','')]
         self.assertTrue(cleanup);self.assertTrue(all(s['if']=='always()' for s in cleanup))
+    def test_lane_groups_rows_bind_their_case_and_feed_that_cases_assembly(self):
+        # HAMCP-443 part C item 1: prepare's computed matrix, the lanes row's same-run context, the
+        # group's CI entry point, and one artifact per row that lanes downloads before it assembles.
+        import yaml
+        text=(ROOT/'.github/workflows/core-release-evidence.yml').read_text()
+        w=yaml.safe_load(text);jobs=w['jobs'];job=jobs['lane-groups']
+        self.assertNotIn('sudo',text)  # The D6a metadata block runs Python-side (core_lane_host.block_metadata).
+        self.assertEqual(jobs['prepare']['outputs']['groups'],'${{ steps.prepare.outputs.groups }}')
+        self.assertEqual((job['needs'],job['if'],job['timeout-minutes']),('prepare',"needs.prepare.outputs.run == 'true'",30))
+        self.assertEqual(job['strategy'],{'fail-fast':False,'matrix':'${{ fromJSON(needs.prepare.outputs.groups) }}'})
+        self.assertEqual(job['env'],{'CASE':'${{ matrix.case }}','GROUP':'${{ matrix.group }}',
+                                     'CORE_EVIDENCE_CONTEXT_SHA256':'${{ matrix.context_sha256 }}',
+                                     'CORE_SOURCE_COMMIT':'${{ matrix.core_source_commit }}',
+                                     'CORE_SOURCE_SHA256':'${{ matrix.core_source_sha256 }}','PYTHONDONTWRITEBYTECODE':'1'})
+        self.assertNotIn('PYTHONDONTWRITEBYTECODE',jobs['lanes']['env'])
+        steps=job['steps'];lane_steps=jobs['lanes']['steps']
+        named={s.get('name'):s for s in steps}
+        self.assertEqual(named['Download same-run binding package'],lane_steps[1])
+        self.assertEqual(named['Bind exact context path']['run'].splitlines()[:2],lane_steps[2]['run'].splitlines()[:2])
+        self.assertIn('CORE_EVIDENCE_CONTEXT=$RUNNER_TEMP/core-evidence-input/${CASE}.json',named['Bind exact context path']['run'])
+        self.assertIn('CORE_EVIDENCE_RESULTS=$RUNNER_TEMP/core-evidence-group-results',named['Bind exact context path']['run'])
+        archive=named["Download the release's exact Core source archive"]['run']
+        for line in ('for form in legacy.tar.gz tar.gz; do','sha256sum --check --strict --status','test -n "$matched"',
+                     '"https://codeload.github.com/home-assistant/core/$form/$CORE_SOURCE_COMMIT"'):
+            self.assertIn(line,archive)
+        self.assertEqual(named['Run the lane group and record its D6a proof']['run'],
+                         'python -B scripts/core_evidence_lane_group.py "$GROUP" --source-archive "$CORE_SOURCE_ARCHIVE"')
+        upload=steps[-1]
+        self.assertEqual(upload['if'],'always()')
+        self.assertEqual(upload['with'],{'name':'core-evidence-group-${{ matrix.case }}-${{ matrix.group }}',
+                                         'path':'${{ runner.temp }}/core-evidence-group-results/${{ matrix.group }}.json\n'
+                                                '${{ runner.temp }}/core-evidence-group-results/cleanup-${{ matrix.group }}.json\n',
+                                         'if-no-files-found':'error','retention-days':14})
+        self.assertEqual(jobs['lanes']['needs'],['prepare','lane-groups'])
+        index=next(i for i,s in enumerate(lane_steps) if s.get('id')=='candidate')
+        self.assertEqual(lane_steps[index-1],{'name':"Download this case's lane-groups artifacts",
+                                              'uses':'actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131',
+                                              'with':{'pattern':'core-evidence-group-${{ matrix.case }}-*',
+                                                      'path':'${{ runner.temp }}/core-evidence-results','merge-multiple':False}})
+        self.assertEqual(sum('download-artifact' in s.get('uses','') for s in lane_steps),2)
+    def test_withhold_input_is_dispatch_only_and_reaches_prepare(self):
+        import yaml
+        w=yaml.safe_load((ROOT/'.github/workflows/core-release-evidence.yml').read_text())
+        on=w.get('on',w.get(True))
+        self.assertEqual({k:v for k,v in on['workflow_dispatch']['inputs']['withhold_groups'].items() if k!='description'},
+                         {'type':'string','default':''})
+        self.assertNotIn('inputs',on['pull_request']);self.assertEqual(set(on['schedule'][0]),{'cron'})
+        step=next(s for s in w['jobs']['prepare']['steps'] if s.get('id')=='prepare')
+        self.assertEqual(step['env']['WITHHOLD_GROUPS'],'${{ inputs.withhold_groups }}')
+        self.assertIn('--withhold-groups "$WITHHOLD_GROUPS"',step['run'])
+    def test_pull_request_paths_cover_the_lane_group_sources(self):
+        import yaml
+        w=yaml.safe_load((ROOT/'.github/workflows/core-release-evidence.yml').read_text())
+        paths=w.get('on',w.get(True))['pull_request']['paths']
+        wanted=[*(f'scripts/{n}_contract_acceptance.py' for n in ('helper_value','marketplace_read','security_metadata',
+                                                               'device_configuration','created_object','thread_matter_topology')),
+                *(f'scripts/core_{n}_local.py' for n in ('created_object','device_configuration','helper_value','marketplace_read',
+                                                         'read_replay_capture','security_metadata','thread_matter_topology_a2',
+                                                         'thread_matter_topology')),
+                'scripts/core_lane_host.py','scripts/core_evidence_lane_group.py','scripts/harness_send.py',
+                'tests/fixtures/hamcp297_matter_server_stub/**','tests/fixtures/hamcp366_device_configuration_lane/**',
+                'tests/fixtures/core_2026_11_0_lane_provenance.json','tests/test_core_lane_read_list.py']
+        self.assertEqual([p for p in wanted if p not in paths],[])
+        self.assertEqual(len(paths),len(set(paths)))
+        for path in wanted:
+            if '*' not in path:self.assertTrue((ROOT/path).is_file(),path)
+            else:self.assertTrue((ROOT/path[:-3]).is_dir(),path)
 
 
 if __name__=='__main__':unittest.main()

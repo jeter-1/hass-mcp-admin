@@ -255,6 +255,140 @@ class MetadataBlock(unittest.TestCase):
         self.assertEqual(str(caught.exception), "host_command_failed")
 
 
+def attached(mode="lane-net", networks=("lane-net",)):
+    """A lane container's inspect data: its network mode and the networks it is attached to."""
+    return {"HostConfig": {"NetworkMode": mode}, "NetworkSettings": {"Networks": {n: {} for n in networks}}}
+
+
+class D6aProof(unittest.TestCase):
+    """Item 3 (HAMCP-443 part C): D6a proved from inside every lane container; any miss refuses."""
+    NETWORK = "lane-net"
+
+    def prove(self, *, internal=False, network=Ellipsis, containers=None, outputs=None, failing=None):
+        network = {"Driver": "bridge", "Internal": internal} if network is Ellipsis else network
+        containers = {"core": attached(), "stub": attached()} if containers is None else containers
+        calls, result = [], {"mode": "ci"}
+
+        def inspect(kind, name, run_id):
+            self.assertEqual(run_id, "run")
+            return network if kind == "network" else containers[name]
+
+        def command(*args, **_kwargs):
+            calls.append(args)
+            if failing:
+                raise helper.Refusal(failing)
+            return mock.Mock(returncode=0, stdout=(outputs or {}).get((args[2], args[-1]), b"blocked 110\n"))
+        with mock.patch.object(helper, "inspect_owned", side_effect=inspect), \
+                mock.patch.object(helper, "command", side_effect=command):
+            try:
+                helper.LANE_HOST.d6a_proof(result, ("core", "stub"), self.NETWORK, "run", internal=internal)
+            except helper.Refusal as exc:
+                return str(exc), result["d6a"], calls
+        return None, result["d6a"], calls
+
+    def probe(self, name, probe):
+        return ("docker", "exec", name, "python3", "-I", "-c", probe)
+
+    def test_a_bridge_lane_is_proved_from_inside_each_container(self):
+        refused, proof, calls = self.prove()
+        self.assertIsNone(refused)
+        seen = {"network_mode": "lane-net", "networks": ["lane-net"], "metadata": "blocked 110"}
+        self.assertEqual(proof, {"proved": True, "network": "lane-net", "internal": False,
+                                 "containers": {"core": seen, "stub": seen}})
+        self.assertEqual(calls, [self.probe("core", lane_host.METADATA_PROBE),
+                                 self.probe("stub", lane_host.METADATA_PROBE)])
+
+    def test_an_internal_lane_also_proves_its_egress_blocked(self):
+        refused, proof, calls = self.prove(internal=True)
+        self.assertIsNone(refused)
+        self.assertEqual((proof["proved"], proof["internal"], proof["containers"]["stub"]["egress"]),
+                         (True, True, "blocked 110"))
+        self.assertEqual(calls, [self.probe(name, probe) for name in ("core", "stub")
+                                 for probe in (lane_host.METADATA_PROBE, lane_host.EGRESS_PROBE)])
+
+    def test_every_miss_refuses_and_keeps_what_it_saw(self):
+        reachable = b"reachable\n"
+        for label, kwargs in (
+                ("metadata reachable", {"outputs": {("stub", lane_host.METADATA_PROBE): reachable}}),
+                ("metadata unclassified", {"outputs": {("core", lane_host.METADATA_PROBE): b""}}),
+                ("egress reachable", {"internal": True, "outputs": {("core", lane_host.EGRESS_PROBE): reachable}}),
+                ("host network", {"containers": {"core": attached("host", ("host",)), "stub": attached()}}),
+                ("extra network", {"containers": {"core": attached(), "stub": attached(networks=("lane-net", "bridge"))}}),
+                ("another network", {"containers": {"core": attached("other", ("other",)), "stub": attached()}}),
+                ("container gone", {"containers": {"core": None, "stub": attached()}}),
+                ("bridge internal", {"network": {"Driver": "bridge", "Internal": True}}),
+                ("internal not internal", {"internal": True, "network": {"Driver": "bridge", "Internal": False}}),
+                ("internal unread", {"network": {"Driver": "bridge"}}),
+                ("network gone", {"network": None}),
+                ("not a bridge", {"network": {"Driver": "host", "Internal": False}})):
+            with self.subTest(label):
+                refused, proof, _ = self.prove(**kwargs)
+                self.assertEqual(refused, "d6a_proof_failed")
+                self.assertIs(proof["proved"], False)
+                self.assertEqual(sorted(proof["containers"]), ["core", "stub"])
+
+    def test_a_probe_that_cannot_run_refuses(self):
+        refused, proof, _ = self.prove(failing="host_command_failed")
+        self.assertEqual(refused, "host_command_failed")
+        self.assertIs(proof["proved"], False)
+
+    def test_the_probes_connect_to_the_metadata_and_an_outside_address_only(self):
+        for probe, target in ((lane_host.METADATA_PROBE, ("169.254.169.254", 80)),
+                              (lane_host.EGRESS_PROBE, ("1.1.1.1", 443))):
+            for outcome, printed in ((mock.Mock(), "reachable"), (OSError(errno.ETIMEDOUT, "t"), "blocked 110"),
+                                     (TimeoutError(), "blocked None")):
+                with self.subTest(target=target, printed=printed), \
+                        mock.patch("socket.create_connection", side_effect=[outcome]) as connect, \
+                        contextlib.redirect_stdout(io.StringIO()) as out:
+                    exec(compile(probe, "probe", "exec"), {})
+                connect.assert_called_once_with(target, 3)
+                self.assertEqual(out.getvalue(), printed + "\n")
+
+    def run_execute(self, mode, proof=None):
+        order = []
+
+        def body():
+            order.append("body")
+            result["result"] = "PASS"
+
+        def d6a(*args, **kwargs):
+            order.append(("d6a", args[1:], kwargs))
+            if proof:
+                raise helper.Refusal(proof)
+        result = {"mode": mode, "result": "WITHHELD", "started_utc": "t"}
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(helper.LANE_HOST, "d6a_proof", side_effect=d6a), \
+                mock.patch.object(helper, "inspect_owned", side_effect=lambda *a: order.append(a[:2]) and None), \
+                mock.patch.object(helper, "command", side_effect=Reached), \
+                mock.patch.object(lane_host.host, "local_remove"), \
+                contextlib.redirect_stdout(io.StringIO()):
+            code = helper.LANE_HOST.execute(result, "r.json", body, run_dir=Path(tmp), run_id="run",
+                                            owned=Path(tmp) / "owned", network="lane-net", remove=("b", "a"),
+                                            containers=("a", "b"), fixture_memory="128m")
+            receipt = json.loads((Path(tmp) / "r.json").read_text())
+        return code, receipt, order
+
+    def test_ci_mode_proves_d6a_after_the_body_while_the_containers_run(self):
+        code, receipt, order = self.run_execute("ci")
+        self.assertEqual(code, 0)
+        self.assertEqual(receipt["result"], "PASS")
+        self.assertEqual(order[:3], ["body", ("d6a", (("a", "b"), "lane-net", "run"), {"internal": False}),
+                                     ("container", "b")])
+
+    def test_a_failed_proof_withholds_the_lane(self):
+        code, receipt, order = self.run_execute("ci", proof="d6a_proof_failed")
+        self.assertEqual(code, 1)
+        self.assertEqual((receipt["result"], receipt["failure_type"], receipt["cleanup"]["clean"]),
+                         ("WITHHELD", "Refusal", True))
+
+    def test_local_mode_has_no_proof(self):
+        code, receipt, order = self.run_execute("local")
+        self.assertEqual(code, 0)
+        self.assertEqual(order[0], "body")
+        self.assertFalse([step for step in order if step[0] == "d6a"])
+        self.assertNotIn("d6a", receipt)
+
+
 class CiClaim(unittest.TestCase):
     def setUp(self):
         self.temp = Path(tempfile.mkdtemp()).resolve()
@@ -550,12 +684,14 @@ class CiExercisesTheReleaseCore(unittest.TestCase):
                                  ("2026.11.1", "ci", "2026.11.1"))
                 self.assertEqual(seen["args"][index], CORE_IMAGE)
 
-    def a2_run(self, probe, network=None):
+    def a2_run(self, probe, network=None, outcome=None, proof=None):
         seen, self.commands = {}, []
 
         async def exercise(*args, **kwargs):
             seen.update(args=args, kwargs=kwargs, expected=os.environ["REAL_HA_EXPECTED_VERSION"])
-            raise Reached
+            if outcome is None:
+                raise Reached
+            return outcome
 
         def command(*args, **_kwargs):
             self.commands.append(args)
@@ -582,12 +718,15 @@ class CiExercisesTheReleaseCore(unittest.TestCase):
                 mock.patch.object(a2, "hand_over_core", return_value=("http://172.30.0.2:8123",
                                                                       {"subnet": "172.30.0.0/24"})), \
                 mock.patch.object(a2, "stub_origin", return_value="http://172.30.0.3:5580"), \
-                mock.patch.object(a2.host, "local_remove"), \
+                mock.patch.object(a2.host, "local_remove",
+                                  side_effect=lambda namespace, *_: shutil.rmtree(namespace.directory)), \
+                mock.patch.object(a1.LANE_HOST, "d6a_proof", side_effect=proof) as d6a, \
                 mock.patch.object(a2, "exercise", side_effect=exercise):
             with contextlib.redirect_stdout(io.StringIO()):
                 code = a2._main(argv)
             receipt = (Path(tmp) / a2.RECEIPT).read_text()
         metadata.assert_called_once_with()
+        seen["d6a"] = d6a.call_args_list
         return code, receipt, seen
 
     def test_a2_exercises_the_release_version_image_and_anchor_behind_its_blocked_egress(self):
@@ -602,14 +741,40 @@ class CiExercisesTheReleaseCore(unittest.TestCase):
         code, receipt, seen = self.a2_run(b"reachable")
         self.assertEqual(code, 1)
         self.assertIn('"failure_type":"Refusal"', receipt)
-        self.assertEqual(seen, {})
+        self.assertEqual(seen, {"d6a": []})
 
     def test_a2_network_that_does_not_read_back_internal_refuses_before_the_stub_runs(self):
         code, receipt, seen = self.a2_run(b"blocked: timeout", network={"Driver": "bridge", "Internal": False})
         self.assertEqual(code, 1)
         self.assertIn('"failure_type":"Refusal"', receipt)
-        self.assertEqual(seen, {})
+        self.assertEqual(seen, {"d6a": []})
         self.assertFalse([c for c in self.commands if c[:2] == ("docker", "run")])
+
+    def test_a2_proves_d6a_internal_from_core_and_stub_once_its_profile_matches(self):
+        # HAMCP-443 part C item 3: the A2 network must read back internal from inside both containers.
+        outcome = {"result": "PASS", "profile": {"contract_fingerprint": "f"}}
+        code, receipt, seen = self.a2_run(b"blocked: timeout", outcome=outcome)
+        self.assertEqual(code, 0)
+        self.assertIn('"result":"PASS"', receipt)
+        self.assertEqual(len(seen["d6a"]), 1)
+        args, kwargs = seen["d6a"][0]
+        self.assertEqual((args[1:], kwargs), (((a2.CORE, a2.STUB), a2.NETWORK, mock.ANY), {"internal": True}))
+        self.assertIs(args[0]["result"], "PASS")
+
+    def test_a2_with_a_failed_d6a_proof_withholds_its_receipt(self):
+        outcome = {"result": "PASS", "profile": {"contract_fingerprint": "f"}}
+        code, receipt, seen = self.a2_run(b"blocked: timeout", outcome=outcome,
+                                          proof=a2.Refusal("d6a_proof_failed"))
+        self.assertEqual(code, 1)
+        self.assertIn('"result":"WITHHELD"', receipt)
+        self.assertIn('"failure_type":"Refusal"', receipt)
+        self.assertEqual(len(seen["d6a"]), 1)
+
+    def test_a2_with_a_mismatched_profile_never_reaches_its_proof(self):
+        code, receipt, seen = self.a2_run(b"blocked: timeout", outcome={"result": "PASS", "profile": {}})
+        self.assertEqual(code, 1)
+        self.assertIn('"failure_type":"Refusal"', receipt)
+        self.assertEqual(seen["d6a"], [])
 
 
 class RunningReleaseVersion(unittest.IsolatedAsyncioTestCase):

@@ -25,6 +25,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
+# harness_send sits next to this file (HAMCP-363).
+if str(ROOT / "scripts") not in sys.path:
+    sys.path.insert(0, str(ROOT / "scripts"))
+from harness_send import harness_url  # noqa: E402
 import aiohttp
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from alarmo_inspection_contract_acceptance import close_disposable_authority
@@ -169,7 +173,7 @@ class RawCore:
             raise ValueError(RAW_COMMAND_REFUSED)
         timeout = aiohttp.ClientTimeout(total=seconds)
         async with lane_session(timeout=timeout) as session:
-            async with session.ws_connect(RAW_CORE_URL, max_msg_size=HARNESS_FRAME_BYTES) as ws:
+            async with session.ws_connect(harness_url(RAW_CORE_URL), max_msg_size=HARNESS_FRAME_BYTES) as ws:
                 assert (await ws.receive_json())["type"] == "auth_required"
                 await ws.send_json({"type": "auth", "access_token": self.token})
                 assert (await ws.receive_json())["type"] == "auth_ok"

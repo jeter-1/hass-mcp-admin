@@ -3,7 +3,8 @@
 Runs the group's harness(es) with ``--mode ci`` against the run's verified context, the same
 ``context()`` binding the twelve run_specialized groups use, then writes ``<group>.json``
 (core-evidence-group-v1) and ``cleanup-<group>.json`` into CORE_EVIDENCE_RESULTS for the
-lane-groups artifact. Nothing here reads or keeps a raw or container log.
+lane-groups artifact, and each process's D6a proof lines into the job summary; a failed proof
+exits non-zero. Nothing here reads or keeps a raw or container log.
 """
 import argparse
 import os
@@ -61,6 +62,11 @@ def runtime_tree():
                           capture_output=True, timeout=30).stdout.decode().strip()
 
 
+def process_dir(group, index):
+    """The run directory of the group's index-th process, directly under the runner's temporary directory."""
+    return Path(os.environ["RUNNER_TEMP"]) / ("lane-group-" + group + "-" + str(index))
+
+
 def run_harness(argv, timeout):
     process = subprocess.Popen(argv, env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
     try:
@@ -97,7 +103,7 @@ def run_group(group, archive, ctx, tree, *, run=None, clock=time.monotonic):
     run = run or run_harness
     deadline, receipts, failure = clock() + GROUP_TIMEOUT, {}, None
     for index, (module, extra, receipt_name, _, _) in enumerate(lanes(group)):
-        run_dir = Path(os.environ["RUNNER_TEMP"]) / ("lane-group-" + group + "-" + str(index))
+        run_dir = process_dir(group, index)
         argv = [sys.executable, "-B", str(ROOT / "scripts" / (module.__name__ + ".py")), *extra,
                 "--mode", "ci", "--pull", "digest", "--source-archive", str(archive), "--run-dir", str(run_dir)]
         try:
@@ -119,6 +125,41 @@ def run_group(group, archive, ctx, tree, *, run=None, clock=time.monotonic):
             # No exception text, endpoint, token, household or raw log in the receipt.
             failure = failure or type(exc).__name__
     return (False, {"failure_type": failure}) if failure is not None else (True, receipts)
+
+
+def d6a(group):
+    """Item 3 (HAMCP-443 part C): each process's D6a proof, read from its own receipt, as summary lines,
+    and whether the row stands. A recorded proof that failed fails the row, and so does a PASS without
+    a proved one. A lane that failed before its proof ran has no proof and is already not passed (D4)."""
+    lines, stands = [], True
+    for index, (_, _, receipt_name, _, _) in enumerate(lanes(group)):
+        name, path = receipt_name[:-len(".json")], process_dir(group, index) / receipt_name
+        try:
+            receipt = read_json(path) if path.is_file() and not path.is_symlink() else {}
+        except ValueError:
+            receipt = {}
+        receipt = receipt if isinstance(receipt, dict) else {}
+        proof = receipt.get("d6a")
+        if not isinstance(proof, dict):
+            stands = stands and receipt.get("result") != "PASS"
+            lines.append("D6a " + name + ": not reached; the lane failed before its proof and is not passed")
+            continue
+        stands = stands and proof.get("proved") is True
+        lines.append(f"D6a {name}: network {proof.get('network')} internal={proof.get('internal')} "
+                     f"proved={proof.get('proved')}")
+        for container, seen in sorted((proof.get("containers") or {}).items()):
+            lines.append(f"D6a {name}: {container} network_mode={seen.get('network_mode')} "
+                         f"networks={','.join(seen.get('networks') or [])} "
+                         f"metadata 169.254.169.254:80 {str(seen.get('metadata'))[:40]}"
+                         + (f"; egress 1.1.1.1:443 {str(seen['egress'])[:40]}" if "egress" in seen else ""))
+    return lines, stands
+
+
+def summary(line):
+    print(line, flush=True)
+    if os.environ.get("GITHUB_STEP_SUMMARY"):
+        with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as file:
+            file.write(line + "\n")
 
 
 def owned_absent(group):
@@ -150,8 +191,12 @@ def main(argv=None):
     (output_dir() / ("cleanup-" + args.group + ".json")).write_bytes(canonical({
         "clean": True, "run": ctx["run"], "context_sha256": os.environ["CORE_EVIDENCE_CONTEXT_SHA256"],
         "group": args.group, "owned": owned}))
+    lines, stands = d6a(args.group)
+    for line in lines:
+        summary(line)
     print(("PASS: " if passed else "WITHHELD: ") + args.group, flush=True)
-    return 0
+    # Fail closed: a failed D6a proof fails the row, so lanes never assembles from it.
+    return 0 if stands else 1
 
 
 if __name__ == "__main__":
