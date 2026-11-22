@@ -668,11 +668,10 @@ class Parity92Tests(ParityBase):
 # ---------------------------------------------------------------------------
 class EntitiesPending91Tests(ParityBase):
     """Shipped 9.1.0 cases kept unedited on their 9.1.0 templates (ANSWER
-    20261121-2318-01 item 4; inbox item 20261122-0118-01). On 9.2.0 the
-    entity-envelope ``warnings`` key is outside the reviewed key set (S10 E1/E1-R
-    ruling), so it is withheld and counted and the read reports complete
-    where 9.1.0 reported partial; the overview's upstream-warnings
-    disclosure is lost the same way."""
+    20261121-2318-01 item 4; inbox item 20261122-0118-01). On 9.2.0 these
+    rows admit the top-level ``warnings`` key with no reviewed text
+    (HAMCP-464, ruling 0132-01); EntitiesUpstreamWarnings92Tests restates
+    them there."""
 
     version = '9.1.0'
 
@@ -707,68 +706,94 @@ class EntitiesPending91Tests(ParityBase):
 
 
 # ---------------------------------------------------------------------------
-# 9.2.0 known gap HAMCP-464 (ANSWER 20261122-0118-01)
+# 9.2.0 upstream warnings, HAMCP-464 (ruling 0132-01)
 # ---------------------------------------------------------------------------
-class EntitiesKnownGap92Tests(ParityBase):
-    """The four EntitiesPending91Tests outcomes restated on 9.2.0. Each pins a
-    known result-truthfulness gap in the key layer, not accepted behaviour:
-    upstream writes a top-level ``warnings`` the reviewed key set does not
-    admit, so it is withheld and counted and completeness() never sees it."""
+class EntitiesUpstreamWarnings92Tests(ParityBase):
+    """The four EntitiesPending91Tests outcomes restated on 9.2.0, plus
+    single-read state and a warnings-only overview. These rows admit a
+    top-level ``warnings`` with no reviewed text (ruling 0132-01): every
+    upstream warning is replaced by the fixed code and counted, and the read
+    reports partial with the upstream-warnings disclosure."""
 
     version = '9.2.0'
+    REPLACED = NONE_WITHHELD | {'upstream_warnings_replaced': 1}
 
-    async def test_row17_overview_services_warning_withheld_stays_partial(self):
-        """Known gap HAMCP-464: the upstream `warnings` key is withheld and the read reports complete. The fix flips this to partial with a disclosure.
+    def assert_replaced(self, result, *hidden):
+        self.assertEqual(result['data']['warnings'], [keys.REPLACED_WARNING])
+        text = json.dumps(result)
+        for upstream in hidden:
+            self.assertNotIn(upstream, text)
 
-        Here upstream ``partial`` is admitted, so the read stays partial; only
-        the upstream-warnings disclosure is missing."""
+    async def test_row17_overview_services_warning_replaced_stays_partial(self):
         template = V92['ha_get_overview']['services_unavailable_partial']
         result = await self.call('ha_get_overview', {}, wrap(template))
         self.assert_success(result, 'ha_get_overview', partial=True,
-                            counts=NONE_WITHHELD | {'fields_withheld': 1, 'fields_dropped_by_policy': 3})
+                            counts=self.REPLACED | {'fields_dropped_by_policy': 3})
         self.assert_sent('ha_get_overview', {})
-        self.assertEqual(result['warnings'], [ent.VISIBLE_SCOPE, ent.UPSTREAM_PARTIAL])
-        self.assertNotIn(ent.UPSTREAM_WARNINGS, result['warnings'])
-        self.assertNotIn('warnings', result['data'])
+        self.assertEqual(result['warnings'], [ent.VISIBLE_SCOPE, ent.UPSTREAM_PARTIAL,
+                                              ent.UPSTREAM_WARNINGS, keys.REPLACED_PARTIAL])
         self.assertTrue(result['data']['partial'])
         self.assertEqual(result['data']['system_summary'], template['system_summary'])
-        self.assertNotIn('Services unavailable', json.dumps(result))
+        self.assert_replaced(result, 'Services unavailable')
 
-    async def test_row20_todo_unavailable_warning_withheld_reports_complete(self):
-        """Known gap HAMCP-464: the upstream `warnings` key is withheld and the read reports complete. The fix flips this to partial with a disclosure."""
+    async def test_row17_overview_warnings_only_reports_partial(self):
+        # In-memory derivation: upstream warns without setting partial
+        # (search/overview.py:239 at 51e3aac7).
+        template = {**V92['ha_get_overview']['minimal'],
+                    'warnings': ['notifications omitted: include_notifications=False']}
+        self.assertNotIn('partial', template)
+        result = await self.call('ha_get_overview', {}, wrap(template))
+        self.assert_success(result, 'ha_get_overview', partial=True,
+                            counts=self.REPLACED | {'fields_dropped_by_policy': 3})
+        self.assertEqual(result['warnings'], [ent.VISIBLE_SCOPE, ent.UPSTREAM_WARNINGS,
+                                              keys.REPLACED_PARTIAL])
+        self.assertNotIn('partial', result['data'])
+        self.assert_replaced(result, 'notifications omitted')
+
+    async def test_row19_state_single_warning_reports_partial(self):
+        # In-memory derivation: single-read state warns beside data and
+        # metadata (search/state.py:138,144 at 51e3aac7).
+        args = {'entity_id': 'light.synthetic_lamp'}
+        template = {**V92['ha_get_state']['single'],
+                    'warnings': ["attribute_keys was ignored because 'attributes' is not in fields="]}
+        result = await self.call('ha_get_state', args, wrap(template))
+        self.assert_success(result, 'ha_get_state', partial=True, counts=self.REPLACED)
+        self.assert_sent('ha_get_state', args)
+        self.assertEqual(result['warnings'], [ent.UPSTREAM_WARNINGS, keys.REPLACED_PARTIAL])
+        self.assertEqual(result['data']['data'], template['data'])
+        self.assert_replaced(result, 'attribute_keys was ignored')
+
+    async def test_row20_todo_unavailable_warning_reports_partial(self):
         args = {'entity_id': 'todo.synthetic_list'}
         template = V92['ha_get_todo']['unavailable_items']
         result = await self.call('ha_get_todo', args, wrap(template))
-        self.assert_success(result, 'ha_get_todo', counts=NONE_WITHHELD | {'fields_withheld': 1})
+        self.assert_success(result, 'ha_get_todo', partial=True, counts=self.REPLACED)
         self.assert_sent('ha_get_todo', args)
-        self.assertEqual(result['warnings'], [])
-        self.assertEqual(result['data'], {k: v for k, v in template.items() if k != 'warnings'})
-        self.assertNotIn('is unavailable', json.dumps(result))
+        self.assertEqual(result['warnings'], [ent.UPSTREAM_WARNINGS, keys.REPLACED_PARTIAL])
+        self.assertEqual(result['data'], {**template, 'warnings': [keys.REPLACED_WARNING]})
+        self.assert_replaced(result, 'is unavailable')
 
-    async def test_row21_zone_gaps_warning_withheld_reports_complete(self):
-        """Known gap HAMCP-464: the upstream `warnings` key is withheld and the read reports complete. The fix flips this to partial with a disclosure."""
+    async def test_row21_zone_gaps_warning_reports_partial(self):
         template = V92['ha_get_zone']['list_with_gaps']
         result = await self.call('ha_get_zone', {}, wrap(template))
-        self.assert_success(result, 'ha_get_zone', counts=NONE_WITHHELD | {'fields_withheld': 1})
+        self.assert_success(result, 'ha_get_zone', partial=True, counts=self.REPLACED)
         self.assert_sent('ha_get_zone', {})
-        self.assertEqual(result['warnings'], [])
-        self.assertNotIn('warnings', result['data'])
+        self.assertEqual(result['warnings'], [ent.UPSTREAM_WARNINGS, keys.REPLACED_PARTIAL])
         self.assertEqual(result['data']['zones'],
                          [{**row, 'friendly_name': row['name']} for row in template['zones']])
         # No occupancy rows came back, so only the icon note applies.
         self.assertEqual(result['data'][ent_92.NOTES], [ent_92.ZONE_ICON_NOTE])
-        self.assertNotIn('persons) is missing', json.dumps(result))
+        self.assert_replaced(result, 'persons) is missing')
 
-    async def test_row22_floors_area_fields_warning_withheld_reports_complete(self):
-        """Known gap HAMCP-464: the upstream `warnings` key is withheld and the read reports complete. The fix flips this to partial with a disclosure."""
+    async def test_row22_floors_area_fields_warning_reports_partial(self):
         args = {'area_fields': ['synthetic_typo']}
         template = V92['ha_list_floors_areas']['area_fields_unmatched']
         result = await self.call('ha_list_floors_areas', args, wrap(template))
-        self.assert_success(result, 'ha_list_floors_areas', counts=NONE_WITHHELD | {'fields_withheld': 1})
+        self.assert_success(result, 'ha_list_floors_areas', partial=True, counts=self.REPLACED)
         self.assert_sent('ha_list_floors_areas', args)
-        self.assertEqual(result['warnings'], [])
-        self.assertEqual(result['data'], {k: v for k, v in template.items() if k != 'warnings'})
-        self.assertNotIn('matched no record keys', json.dumps(result))
+        self.assertEqual(result['warnings'], [ent.UPSTREAM_WARNINGS, keys.REPLACED_PARTIAL])
+        self.assertEqual(result['data'], {**template, 'warnings': [keys.REPLACED_WARNING]})
+        self.assert_replaced(result, 'matched no record keys')
 
 
 # ---------------------------------------------------------------------------
