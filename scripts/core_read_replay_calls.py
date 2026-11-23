@@ -220,6 +220,9 @@ def resolve(value: Any, seed: dict[str, Any]) -> Any:
     return value
 
 
+HISTORY_REFUSAL = "history_time_offset_required"
+
+
 def policy_entries(version: str) -> dict[str, Any]:
     """Reviewed policy entries of one admitted version, by Engineering name."""
     from ha_mcp_engineering import upstream_tool_policy
@@ -235,15 +238,24 @@ def wire_call(entry: Any, arguments: dict[str, Any]) -> tuple[str, dict[str, Any
     """Upstream tool name and arguments for one public call.
 
     Mirrors the dispatch path (``upstream_read_gateway.py``, "dispatch_arguments"):
-    the 8.6 and 9.1 read adapters, then the blueprint and platform adapters.
+    the 8.6 read adapter, then the 9.x module the gateway's ``_reads`` selects
+    (9.2 for an entry naming a 9.2.0 adapter token, else 9.1), then the
+    blueprint and platform adapters. HAMCP-437 I2a-D: 9.2.0 is the only
+    reviewed row, so the 9.2 selection is what dispatch now uses.
     """
     from ha_mcp_engineering.providers import upstream_blueprint, upstream_platform_reads
     from ha_mcp_engineering.providers import upstream_reads_8_6, upstream_reads_9_1
+    from ha_mcp_engineering.providers import upstream_reads_9_2
 
     if entry.classification == "unsupported":
         raise CallsError("tool_not_dispatched")
-    built = upstream_reads_9_1.read_arguments(
-        entry, upstream_reads_8_6.read_arguments(entry, arguments))
+    if upstream_reads_9_2.names_adapter(entry) is None:
+        reads = upstream_reads_9_1
+    elif upstream_reads_9_1.names_adapter(entry) is not None:
+        raise CallsError("read_adapter_release_ambiguous")
+    else:
+        reads = upstream_reads_9_2
+    built = reads.read_arguments(entry, upstream_reads_8_6.read_arguments(entry, arguments))
     if upstream_blueprint.is_blueprint_adapter(entry):
         built = upstream_blueprint.read_arguments(arguments)
     if upstream_platform_reads.is_platform_adapter(entry):
@@ -266,6 +278,8 @@ def yaml_wire_call(version: str, arguments: dict[str, Any]) -> tuple[str, dict[s
 
 def plan(policy_version: str, groups: list[str], seed: dict[str, Any]) -> list[dict[str, Any]]:
     """Every selected case with its resolved public and wire arguments."""
+    from ha_mcp_engineering.providers.upstream_history_9_2 import HistoryTimeOffsetRequired
+
     entries = policy_entries(policy_version)
     planned = []
     for case in CASES:
@@ -273,11 +287,24 @@ def plan(policy_version: str, groups: list[str], seed: dict[str, Any]) -> list[d
             continue
         arguments = resolve(case["arguments"], seed)
         kind = case.get("kind", "public")
+        built_by = ("harness, sent as written" if kind == "upstream"
+                    else "adapter code, policy " + policy_version)
         if kind == "public":
             entry = entries.get(case["tool"])
             if entry is None:
                 raise CallsError("tool_not_in_reviewed_policy")
-            upstream_tool, wire = wire_call(entry, arguments)
+            try:
+                upstream_tool, wire = wire_call(entry, arguments)
+            except HistoryTimeOffsetRequired:
+                # HAMCP-437 I2a-D: Engineering refuses this time before dispatch
+                # on 9.2.0 (HAMCP-371 S9). The raw capture still records what
+                # upstream does with it, using the unchecked 9.1 row that 9.2.0
+                # runs after its time check (upstream_history_9_2.py
+                # dispatch_arguments), as the committed s6 receipts were built.
+                from ha_mcp_engineering.providers import upstream_history_9_1
+                upstream_tool = entry.upstream_name
+                wire = upstream_history_9_1.dispatch_arguments(arguments)
+                built_by += "; refused before dispatch by Engineering " + HISTORY_REFUSAL
         elif kind == "yaml":
             upstream_tool, wire = yaml_wire_call(policy_version, arguments)
         else:
@@ -285,8 +312,7 @@ def plan(policy_version: str, groups: list[str], seed: dict[str, Any]) -> list[d
         planned.append({"id": case["id"], "group": case["group"], "kind": kind,
                         "public_tool": case["tool"], "public_arguments": arguments,
                         "upstream_tool": upstream_tool, "wire_arguments": wire,
-                        "arguments_built_by": ("harness, sent as written" if kind == "upstream"
-                                               else "adapter code, policy " + policy_version),
+                        "arguments_built_by": built_by,
                         "new_session": bool(case.get("new_session")),
                         "idle": bool(case.get("idle"))})
     return planned

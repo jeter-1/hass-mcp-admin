@@ -44,13 +44,13 @@ counted in `fields_withheld` (S10 README, sections E1 and E1-R). The E1-R item
 | `ha_config_list_groups` | `all` | withheld and counted; Engineering's recomputed `unavailable_fields` reports `all` | contract row; `test_hamcp371_key_sets.py` `RowsEqualTheContract.test_rows` |
 | `ha_config_list_groups` | `unavailable_fields` (upstream) | withheld and counted; Engineering recomputes its own | same |
 | `ha_eval_template` | `unavailable_fields` (upstream) | withheld and counted; Engineering recomputes its own | same |
-| `ha_get_entity`, `ha_get_entity_exposure`, `ha_get_todo`, `ha_get_zone`, `ha_list_floors_areas` | `warnings`, `partial` | withheld and counted; no longer marks the read partial | same |
-| `ha_get_overview` | `warnings` | withheld and counted | same |
-| `ha_get_state` | `warnings` | withheld and counted; the 9.1 visibility completeness rule cannot fire | same; `test_state_warnings_are_withheld_not_reviewed` |
+| `ha_get_entity`, `ha_get_entity_exposure` | `warnings`, `partial` | withheld and counted; no longer marks the read partial | same |
+| `ha_get_todo`, `ha_get_zone`, `ha_list_floors_areas` | `partial` | withheld and counted | same |
+| `ha_get_todo`, `ha_get_zone`, `ha_list_floors_areas`, `ha_get_overview`, `ha_get_state` | `warnings` | HAMCP-464 (ruling 0132-01): admitted with no reviewed text; each upstream text is replaced with the fixed code and counted in `upstream_warnings_replaced`, and the read reports partial with `UPSTREAM_WARNINGS` | same; `test_hamcp464_warnings_are_replaced_not_withheld`; `test_hamcp319_parity_entities.py` `EntitiesUpstreamWarnings92Tests` |
 | `ha_list_services` | `partial` | withheld and counted | same |
 | `ha_get_overview` | `ha_mcp_update.python_required`, `ha_mcp_update.upgrade_command` | dropped by policy and counted in `fields_dropped_by_policy` (ruling 2d) | `test_hamcp371_overview_search_9_2.py` (S11 README) |
 
-Only the `ha_get_state` row has a direct behaviour test; the others are
+Only the HAMCP-464 `warnings` row has direct behaviour tests; the others are
 pinned through the contract by `test_rows` and the generator `--check`.
 
 Not losses, recorded for completeness:

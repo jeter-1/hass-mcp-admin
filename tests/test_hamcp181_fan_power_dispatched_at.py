@@ -93,7 +93,7 @@ class FanKind(_Kind):
         return Transport()
 
     def service(self, test):
-        provider = FanProvider(test.transport, lambda: test.transport.authority)
+        provider = FanProvider(test.transport, lambda *_: test.transport.authority)
         return FanService(test.tmp.name, provider, FanCoreAuthority(test.core),
                           now=test.clock, sleep=test.clock.sleep, audit=test.audit)
 
@@ -114,7 +114,7 @@ class PowerKind(_Kind):
     name = "power"
 
     def transport(self):
-        return PowerTransport("8.5.0")
+        return PowerTransport("9.2.0")
 
     def service(self, test):
         provider = PowerProvider(test.transport, lambda *args: test.transport.authority)

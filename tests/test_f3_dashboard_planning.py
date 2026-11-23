@@ -25,19 +25,15 @@ from ha_mcp_engineering.f3_dashboard.planning import (  # noqa: E402
 )
 from ha_mcp_engineering.f3_dashboard.provider import EXACT_CONTRACTS  # noqa: E402
 from ha_mcp_engineering.f3_dashboard.raw_evidence import build_raw_dashboard_evidence  # noqa: E402
+from ha_mcp_engineering.upstream_tool_policy import load_reviewed_upstream_release_registry  # noqa: E402
 from f3_dashboard_support import FakeExactReader, load_dashboard, make_preread, make_proposal  # noqa: E402
 
 
 class RawDashboardEvidenceTests(unittest.TestCase):
     def test_exact_storage_prereads_are_accepted_for_reviewed_releases(self):
-        for version in (
-            "7.14.2",
-            "8.0.0",
-            "8.1.1",
-            "8.2.0",
-            "8.4.1",
-            "8.4.3",
-        ):
+        # HAMCP-437 I2a-D: every release the shipped registry reviews (9.2.0
+        # only; the 7.14.2-8.4.3 rows are retired).
+        for version in load_reviewed_upstream_release_registry().by_version:
             with self.subTest(version=version):
                 source = make_preread(version=version)
                 evidence = build_raw_dashboard_evidence(
@@ -122,7 +118,7 @@ class DashboardPlanningTests(unittest.IsolatedAsyncioTestCase):
         for configuration, operation, expected_count in cases:
             with self.subTest(operation=operation["operation_id"]):
                 metrics = DashboardWriteObservability()
-                reader = FakeExactReader(make_preread(configuration, version="8.5.0"))
+                reader = FakeExactReader(make_preread(configuration, version="9.2.0"))
                 with self.assertRaises(PatchCompilationError):
                     await create_dashboard_update_plan(
                         reader=reader, url_path="synthetic-dashboard",
@@ -186,7 +182,7 @@ class DashboardPlanningTests(unittest.IsolatedAsyncioTestCase):
             description="No raw data.",
             expiration_minutes=30,
             requested_by="test.operator",
-            provider_evidence=EXACT_CONTRACTS["8.1.1"],
+            provider_evidence=EXACT_CONTRACTS["9.2.0"],
             authoritative_provider_slug="ha_mcp",
             now=datetime(2026, 8, 4, 12, 5, tzinfo=timezone.utc),
             plan_id="plan000000000002",
@@ -251,7 +247,7 @@ class DashboardPlanningTests(unittest.IsolatedAsyncioTestCase):
                     description="Synthetic",
                     expiration_minutes=30,
                     requested_by="test.operator",
-                    provider_evidence=EXACT_CONTRACTS["8.1.1"],
+                    provider_evidence=EXACT_CONTRACTS["9.2.0"],
                     authoritative_provider_slug="ha_mcp",
                     plan_id=f"plan00000000{index + 10:04d}",
                 )
@@ -268,7 +264,7 @@ class DashboardPlanningTests(unittest.IsolatedAsyncioTestCase):
                 description="Synthetic",
                 expiration_minutes=30,
                 requested_by="test.operator",
-                provider_evidence=EXACT_CONTRACTS["8.1.1"],
+                provider_evidence=EXACT_CONTRACTS["9.2.0"],
                 authoritative_provider_slug="ha_mcp",
             )
         self.assertEqual(reader.preread_count, 0)
@@ -292,7 +288,7 @@ class DashboardPlanningTests(unittest.IsolatedAsyncioTestCase):
             description="Synthetic",
             expiration_minutes=30,
             requested_by="test.operator",
-            provider_evidence=EXACT_CONTRACTS["8.1.1"],
+            provider_evidence=EXACT_CONTRACTS["9.2.0"],
             authoritative_provider_slug="ha_mcp",
             observability=metrics,
             now=datetime(2026, 8, 4, 12, 5, tzinfo=timezone.utc),

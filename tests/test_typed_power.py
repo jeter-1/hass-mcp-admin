@@ -77,7 +77,7 @@ class PowerTransport:
 
 
 class PowerTests(unittest.IsolatedAsyncioTestCase):
-    version = '8.5.0'
+    version = '9.2.0'
 
     async def asyncSetUp(self):
         self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
@@ -189,7 +189,7 @@ class PowerTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_provider_identity_or_descriptor_drift_refuses(self):
         original = self.transport.catalog
-        for change in [{'server_name':'other'}, {'server_version':'8.5.1'}, {'catalog_complete':False},
+        for change in [{'server_name':'other'}, {'server_version':'9.2.1'}, {'catalog_complete':False},
                        {'protocol_version':'2025-11-25'}, {'tools':[]}]:
             self.transport.catalog = replace(original, **change)
             with self.assertRaises(PowerRefusal): await self.call(self.request())
@@ -332,10 +332,6 @@ class PowerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.transport.writes, 1); self.settled()
 
 
-class Power843Tests(PowerTests):
-    version = '8.4.3'
-
-
 class PowerBoundaryTests(unittest.TestCase):
     def test_closed_request_rejects_other_domains_bulk_toggle_and_service_data(self):
         valid = dict(entity_id='light.synthetic', action='turn_on', operation_id='1789552800-'+'a'*32)
@@ -356,12 +352,12 @@ class PowerBoundaryTests(unittest.TestCase):
         from ha_mcp_engineering.providers.upstream_read_gateway import UpstreamReadGateway
         from tests.test_readonly_upstream_gateway import settings
         gateway = UpstreamReadGateway(); gateway.configure(settings())
-        for version in ['8.4.3','8.5.0']:
+        for version in ['9.2.0']:
             self.assertNotEqual(gateway.fan_provider_authority_token(version),gateway.power_provider_authority_token(version))
         gateway._readmission_selector = SimpleNamespace(select=lambda **kw:SimpleNamespace(
             authority=SimpleNamespace(decisions=[SimpleNamespace(status=SimpleNamespace(value='deny_only'))])))
-        with self.assertRaisesRegex(PowerRefusal, 'denied'): gateway.power_provider_authority_token('8.5.0')
-        with self.assertRaises(PowerRefusal): gateway.power_provider_authority_token('8.5.1')
+        with self.assertRaisesRegex(PowerRefusal, 'denied'): gateway.power_provider_authority_token('9.2.0')
+        with self.assertRaises(PowerRefusal): gateway.power_provider_authority_token('9.2.1')
 
     def test_descriptor_routing_and_metadata_agree(self):
         from ha_mcp_engineering.tools.registry import get_registered_server, ENGINEERING_STATIC_TOOL_COUNT
@@ -389,7 +385,7 @@ class PowerGatewayTests(unittest.TestCase):
         from ha_mcp_engineering.audit import AuditLogger
         with tempfile.TemporaryDirectory() as directory:
             settings = settings_for(directory); clock, core = Clock(), Core()
-            transport = PowerTransport('8.5.0'); audit = AuditLogger(settings.audit_path, SECRET)
+            transport = PowerTransport('9.2.0'); audit = AuditLogger(settings.audit_path, SECRET)
             service = PowerService(directory, PowerProvider(transport, lambda *args:transport.authority),
                                    PowerCoreAuthority(core), now=clock, sleep=clock.sleep, audit=audit)
             server = create_mcp_server(settings); server.tool()(control_power)

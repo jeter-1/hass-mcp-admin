@@ -1,7 +1,7 @@
 # HAMCP-189 PR A — Core authority before "already satisfied", R6, durable cancel
 
 Status: design note, written before any protected-path change (owner decision
-O8). Authoritative inputs: `docs/HAMCP_189_TRIAGE.md` (PR #265 head
+O8). Authoritative inputs: `docs/HAMCP_189_TRIAGE.md` (deleted by HAMCP-437; PR #265 head
 `60112a8fcff5ec1a65f51e2bbab2d7a5e2e32c96`) and Josh's 2026-10-16 decisions
 O1–O9 on register row HAMCP-189. Base: `origin/main`
 `06d555523eae8343605c0d3605f3177231d50b25` (Engineering `2.4.1-beta.13`).
@@ -42,8 +42,8 @@ Explicitly not changed:
 New non-protected files:
 - `tests/test_hamcp189_authority_cancel.py`
 - this note
-- `docs/V2_4_1_BETA14_ACCEPTANCE.md`
-- `docs/V2_4_1_BETA14_RELEASE_NOTES.md`
+- `docs/V2_4_1_BETA14_ACCEPTANCE.md` (deleted by HAMCP-437)
+- `docs/V2_4_1_BETA14_RELEASE_NOTES.md` (deleted by HAMCP-437)
 
 HAMCP-162 overlap: none. HAMCP-162 Part 2 touches `upstream_read_gateway.py`,
 `coordinator.py`, `models.py` and `routes.py`. This PR edits none of them and

@@ -13,14 +13,11 @@ The production journal is verified read-only; synthetic test keys stay in memory
 import argparse
 import asyncio
 from dataclasses import replace
-from datetime import datetime, timezone
 import hashlib
 import json
 import os
 from pathlib import Path
-import shutil
 import signal
-import socket
 import subprocess
 import sys
 import tarfile
@@ -29,11 +26,13 @@ from uuid import uuid4
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import core_evidence_host as host
+import core_lane_host
 import core_local_resources as resources
 import lane_failure_diagnostics as diagnostics
 from core_lane_bindings import REVIEWED_CORE_BINDINGS
-from core_release_evidence import canonical, read_json
+from core_release_evidence import read_json
 
+# signal, subprocess, resources and REVIEWED_CORE_BINDINGS stay reachable here: the lane's tests use them through it.
 VERSION = "2026.11.0"
 JOURNAL_SHA256 = "3f79fce76484ff9f9a9c070defe4d1d13865ccbfd24fda0ab8724515c8cc6a5d"
 MANIFEST = ROOT / "ci/core-contract-read-files.json"
@@ -55,24 +54,8 @@ NETWORK_POSTURE = {"driver": "bridge", "host_bind_address": "127.0.0.1", "egress
 LABEL = "org.hamcp.lane"
 PORTS = (18123,)
 CORE_MEMORY = "2g"
-# The two yaml members exist only so a created scene has real entities to store.
-CONFIG = """default_config:
-homeassistant:
-  name: HAMCP disposable created-object evidence
-  time_zone: UTC
-http:
-  server_port: 8123
-automation: !include automations.yaml
-script: !include scripts.yaml
-scene: !include scenes.yaml
-input_boolean:
-  hamcp_g4_lamp:
-    name: HAMCP G4 lamp
-  hamcp_g4_strip:
-    name: HAMCP G4 strip
-input_number: {}
-"""
-INCLUDED = ("automations.yaml", "scripts.yaml", "scenes.yaml")
+CONFIG = core_lane_host.CONFIGS["created_object"]
+INCLUDED = core_lane_host.INCLUDES["created_object"]
 
 
 def resource_names(group):
@@ -84,25 +67,13 @@ class Refusal(Exception):
     pass
 
 
-def utc():
-    return datetime.now(timezone.utc).isoformat()
-
-
-def command(*args, check=True):
-    host.require_memory(args)
-    result = subprocess.run(args, cwd=ROOT, capture_output=True, timeout=120)
-    if check and result.returncode:
-        # Never include Docker output, synthetic credentials or arbitrary upstream text.
-        raise Refusal("host_command_failed")
-    return result
-
-
-def sha256(path):
-    value = hashlib.sha256()
-    with Path(path).open("rb") as source:
-        for block in iter(lambda: source.read(1024 * 1024), b""):
-            value.update(block)
-    return value.hexdigest()
+LANE_HOST = core_lane_host.Lane(sys.modules[__name__])
+utc = core_lane_host.utc
+sha256 = core_lane_host.sha256
+command = LANE_HOST.command
+cached_image = LANE_HOST.cached_image
+require_free_ports = LANE_HOST.require_free_ports
+inspect_owned = LANE_HOST.inspect_owned
 
 
 def compiled_reference(group):
@@ -111,8 +82,9 @@ def compiled_reference(group):
 
 
 @diagnostics.checked("image_verify", "journal_inputs")
-def source_manifest(group, archive_path, provenance):
-    """Bind the manifest profile, committed source hashes and exact archive."""
+def source_manifest(group, archive_path, provenance, *, release_commit=None):
+    """Bind the manifest profile, committed source hashes and exact archive. CI mode reads the release's
+    archive (``release_commit``) against the anchor's committed hashes, so any drift refuses."""
     capability = LANES[group][0]
     profile = read_json(MANIFEST).get("profiles", {}).get(capability)
     if not profile or not SOURCE_HASHES.is_file() or read_json(GROUPS).get(group) != [capability]:
@@ -125,7 +97,8 @@ def source_manifest(group, archive_path, provenance):
     if len(set(profile)) != len(profile) or not set(profile) <= set(record["hashes"]):
         raise Refusal("created_object_manifest_mismatch")
     rows = {path: record["hashes"][path] for path in profile}
-    prefix, observed = "core-" + provenance["source_commit"] + "/", {}
+    commit = provenance["source_commit"] if release_commit is None else release_commit
+    prefix, observed = "core-" + commit + "/", {}
     with tarfile.open(archive_path, "r:gz") as tar:
         for member in tar:
             name = member.name[len(prefix):] if member.name.startswith(prefix) else None
@@ -141,7 +114,7 @@ def source_manifest(group, archive_path, provenance):
 def inputs(group, journal_path, archive_path):
     from core_registry_one_tap import load_public_key
     from prepare_core_release_registry import parse_journal, require_known_contracts
-    provenance = read_json(ROOT / "tests/fixtures/core_2026_11_0_lane_provenance.json")
+    provenance = read_json(core_lane_host.LANE_PROVENANCE)
     if (sha256(journal_path) != JOURNAL_SHA256
             or sha256(archive_path) != provenance["source_archive_sha256"]):
         raise Refusal("input_hash_mismatch")
@@ -169,58 +142,31 @@ def inputs(group, journal_path, archive_path):
     return entry, reference, sources
 
 
+@diagnostics.checked("image_verify", "journal_inputs")
+def ci_inputs(group, ctx, archive_path):
+    """CI mode's inputs: the release's signed entry and exact archive, and the reviewed profile and
+    source hashes of the context's anchor (D5)."""
+    entry = LANE_HOST.ci_entry(ctx, archive_path)
+    capability, fingerprint, _ = LANES[group]
+    reference = compiled_reference(group)
+    if reference.get("capability_id") != capability or reference.get("contract_fingerprint") != fingerprint:
+        raise Refusal("profile_fingerprint_mismatch")
+    sources = source_manifest(group, archive_path, read_json(core_lane_host.LANE_PROVENANCE),
+                              release_commit=ctx["provenance"]["source_commit"])
+    return entry, reference, sources
+
+
 def images():
-    binding = REVIEWED_CORE_BINDINGS[VERSION]
-    return (f"ghcr.io/home-assistant/home-assistant:{VERSION}@{binding.image_index_digest}",
-            host.FIXTURE_IMAGE)
+    return LANE_HOST.images(upstream=False)
 
 
-@diagnostics.checked("image_verify", "cached_image_digest")
-def cached_image(image):
-    result = command("docker", "image", "inspect", image)
-    value, = json.loads(result.stdout)
-    if image.rsplit("@", 1)[1] not in {d.rsplit("@", 1)[1] for d in value.get("RepoDigests", [])}:
-        raise Refusal("cached_image_digest_mismatch")
-    return value["Id"]
-
-
-def require_free_ports():
-    for port in PORTS:
-        with socket.socket() as sock:
-            sock.bind(("127.0.0.1", port))
-
-
-def inspect_owned(kind, name, run_id):
-    value = command("docker", kind, "inspect", name, check=False)
-    if value.returncode:
-        # A daemon error is not proof of absence. Enumerate and require success.
-        listed = command("docker", kind, "ls", *( ["-a"] if kind == "container" else []),
-                         "--format", "{{.Names}}" if kind == "container" else "{{.Name}}")
-        if name in listed.stdout.decode().splitlines():
-            raise Refusal("owned_resource_inspection_failed")
-        return None
-    data, = json.loads(value.stdout)
-    labels = data.get("Config", {}).get("Labels") if kind == "container" else data.get("Labels")
-    if (labels or {}).get(LABEL) != run_id:
-        raise Refusal("resource_ownership_mismatch")
-    return data
-
-
-@diagnostics.checked("container_start", "port_mapping")
 def verify_port_mapping(name, network, container_port, host_port, run_id):
-    """Require actual Docker bindings, not merely requested HostConfig bindings."""
-    data = inspect_owned("container", name, run_id)
-    settings = (data or {}).get("NetworkSettings", {})
-    ports = settings.get("Ports") or {}
-    expected = [{"HostIp": "127.0.0.1", "HostPort": str(host_port)}]
-    if (set(settings.get("Networks") or {}) != {network}
-            or ports.get(f"{container_port}/tcp") != expected
-            or any(bindings for port, bindings in ports.items() if port != f"{container_port}/tcp")):
-        raise Refusal("Local container loopback port mapping is missing or unsafe")
+    """Each group owns its own network, so the check names it."""
+    return LANE_HOST.verify_port_mapping(name, container_port, host_port, run_id, network=network)
 
 
 @diagnostics.checked("helper_setup", "helper_contract")
-async def exercise(group, run_dir, entry, core_image, run_id, core_memory):
+async def exercise(group, run_dir, entry, core_image, run_id, core_memory, *, version=VERSION, mode="local"):
     # Import only after the closed disposable endpoints have been set.
     import real_ha_contract_tests as harness
     from created_object_contract_acceptance import run
@@ -234,7 +180,7 @@ async def exercise(group, run_dir, entry, core_image, run_id, core_memory):
     with diagnostics.check("core_boot", "runtime_ready"):
         observed = await harness.wait_for_runtime_ready(HomeAssistantRestClient(configured))
     with diagnostics.check("image_verify", "running_identity"):
-        if observed.get("version") != VERSION:
+        if observed.get("version") != version:
             raise Refusal("running_core_version_mismatch")
         data = inspect_owned("container", core, run_id)
         if data is None or data["Image"] != cached_image(core_image) or data["Config"]["Image"] != core_image:
@@ -243,7 +189,7 @@ async def exercise(group, run_dir, entry, core_image, run_id, core_memory):
             raise Refusal("running_container_memory_mismatch")
         identities = {core: {"image": core_image, "config_digest": data["Image"],
                              "memory_bytes": data["HostConfig"]["Memory"]}}
-    return {**await run(group, configured, entry, run_dir), "images": identities}
+    return {**await run(group, configured, entry, run_dir, mode=mode), "images": identities}
 
 
 @diagnostics.checked("admission", "preflight")
@@ -252,72 +198,48 @@ def _main(argv=None):
         raise Refusal("assertions_required")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--lane", choices=tuple(LANES), required=True)
-    parser.add_argument("--mode", choices=("local",), required=True)
-    parser.add_argument("--pull", choices=("never",), required=True)
-    parser.add_argument("--journal", type=Path, required=True)
+    parser.add_argument("--mode", choices=("local", "ci"), required=True)
+    parser.add_argument("--pull", choices=("never", "digest"), required=True)
+    parser.add_argument("--journal", type=Path, help="local mode only")
     parser.add_argument("--source-archive", type=Path, required=True)
     parser.add_argument("--run-dir", type=Path, required=True)
     parser.add_argument("--core-memory", default=CORE_MEMORY, help="Core Docker limit (default: 2g)")
     parser.add_argument("--fixture-memory", default=host.FIXTURE_MEMORY, help="cleanup Docker limit (default: 128m)")
     args = parser.parse_args(argv)
+    core_lane_host.require_mode_arguments(parser, args)
     group, (core_name, network_name), lane_name = args.lane, resource_names(args.lane), LANES[args.lane][2]
     receipt = group + ".json"
     limits = {"core": args.core_memory, "fixture": args.fixture_memory}
     for memory in limits.values():
         host.memory_bytes(memory)
-    if os.environ.get("GITHUB_ACTIONS") == "true" or os.environ.get("CORE_EVIDENCE_CONTEXT"):
-        raise Refusal("local_only_closed_lane")
-    # No ignored inputs may supply code/config; only committed files plus hash-bound inputs.
-    if command("git", "status", "--porcelain", "--untracked-files=normal").stdout.strip():
-        raise Refusal("clean_committed_checkout_required")
-    revision = command("git", "rev-parse", "HEAD").stdout.decode().strip()
-    entry, reference, sources = inputs(group, args.journal, args.source_archive)
-    core_image, fixture_image = images()
-    for image in (core_image, fixture_image):
-        cached_image(image)
-    # Refuse names or occupied ports before claiming anything; never remove prior runs.
-    for kind, names in (("container", (core_name,)), ("network", (network_name,))):
-        for name in names:
-            if command("docker", kind, "inspect", name, check=False).returncode == 0:
-                raise Refusal("disposable_name_already_exists")
-    require_free_ports()
-    run_dir = args.run_dir.absolute()
-    if run_dir.resolve() != run_dir or ROOT / ".artifacts" not in run_dir.parents:
-        raise Refusal("new_task_artifact_directory_required")
-    run_dir.mkdir(mode=0o700)  # Exclusive: never overwrite evidence or reuse a prior fixture.
-    try:
-        with diagnostics.check("admission", "host_resources"):
-            admission = resources.wait_for_admission(run_dir / "resource-admission.json")
-    except resources.Refusal as exc:
-        result = {"result": "WITHHELD", "reason": str(exc), "source_commit": revision,
-                  "network_posture": NETWORK_POSTURE,
-                  "execution_started": False, "cleanup": {"clean": True, "resources_created": False},
-                  "failure": diagnostics.failure(exc)}
-        (run_dir / receipt).write_bytes(canonical(result))
-        print(json.dumps(result))
-        return 1
-    # Recheck identity/names/ports after a potentially hour-long wait.
-    if command("git", "rev-parse", "HEAD").stdout.decode().strip() != revision or command(
-            "git", "status", "--porcelain", "--untracked-files=normal").stdout.strip():
-        raise Refusal("checkout_changed_during_admission")
-    for kind, names in (("container", (core_name,)), ("network", (network_name,))):
-        for name in names:
-            if command("docker", kind, "inspect", name, check=False).returncode == 0:
-                raise Refusal("disposable_name_already_exists")
-    require_free_ports()
+    if args.mode == "ci":
+        ctx, revision, (entry, reference, sources), (core_image, fixture_image), run_dir = LANE_HOST.ci_admission(
+            args.run_dir, lambda ctx: ci_inputs(group, ctx, args.source_archive),
+            upstream=False, containers=(core_name,), network=network_name)
+        admission, version = None, ctx["provenance"]["version"]
+    else:
+        if os.environ.get("GITHUB_ACTIONS") == "true" or os.environ.get("CORE_EVIDENCE_CONTEXT"):
+            raise Refusal("local_only_closed_lane")
+        revision = LANE_HOST.clean_revision()
+        entry, reference, sources = inputs(group, args.journal, args.source_archive)
+        core_image, fixture_image = images()
+        for image in (core_image, fixture_image):
+            cached_image(image)
+        LANE_HOST.require_unclaimed((core_name,), network_name)
+        run_dir = LANE_HOST.claim(args.run_dir)
+        admission = LANE_HOST.admit(run_dir, receipt, revision, (core_name,), network_name)
+        if admission is None:
+            return 1
+        version = VERSION
     run_id = uuid4().hex
-    owned = run_dir / core_name
-    owned.mkdir(mode=0o700)
+    owned = LANE_HOST.configuration(run_dir, core_name, CONFIG, includes=INCLUDED)
     # Engineering plan, audit and synthetic-registry state of the run; removed with the fixture.
     state = run_dir / "engineering-state"
     state.mkdir(mode=0o700)
-    (owned / "configuration.yaml").write_text(CONFIG)
-    for name in INCLUDED:
-        (owned / name).write_text("")
-    os.environ.update(CORE_EVIDENCE_HOST_MODE="local", RUNNER_TEMP=str(run_dir),
+    os.environ.update(CORE_EVIDENCE_HOST_MODE="actions" if args.mode == "ci" else "local", RUNNER_TEMP=str(run_dir),
         HA_CONTRACT_LANE=lane_name, HA_FIXTURE_WRITER_IMAGE=fixture_image,
         HA_CONTRACT_CONTAINER=core_name, HA_CONTRACT_NETWORK=network_name,
-        REAL_HA_URL="http://127.0.0.1:18123", REAL_HA_EXPECTED_VERSION=VERSION)
+        REAL_HA_URL="http://127.0.0.1:18123", REAL_HA_EXPECTED_VERSION=version)
     for name in ("REAL_HA_UPSTREAM_IMAGE", "REAL_HA_UPSTREAM_VERSION",
                  "REAL_HA_UPSTREAM_CONTAINER", "REAL_HA_UPSTREAM_PORT"):
         os.environ.pop(name, None)
@@ -327,69 +249,23 @@ def _main(argv=None):
               "profile_reference": reference, "contract_fingerprint": reference["contract_fingerprint"],
               **sources, "host_admission": admission, "container_memory": limits,
               "network_posture": NETWORK_POSTURE, "mode": "local", "pull": "never", "cleanup": {"clean": False}}
-    def interrupted(_signum, _frame):
-        raise Refusal("lane_interrupted")
-    previous_handler = signal.signal(signal.SIGTERM, interrupted)
-    try:
-        with diagnostics.check("container_start", "network_create"):
-            command("docker", "network", "create", "--driver", "bridge", "--label", LABEL + "=" + run_id, network_name)
-            network = inspect_owned("network", network_name, run_id)
-            if network is None or network.get("Driver") != "bridge" or network.get("Internal") is not False:
-                raise Refusal("Local lane requires a dedicated non-internal bridge")
-        with diagnostics.check("container_start", "core_start"):
-            command("docker", "run", "--detach", "--pull", "never", "--name", core_name,
-                    "--label", LABEL + "=" + run_id, "--network", network_name, "--memory", args.core_memory,
-                    "--publish", "127.0.0.1:18123:8123", "--security-opt", "no-new-privileges",
-                    "--mount", f"type=bind,source={owned},target=/config", core_image)
+    if args.mode == "ci":
+        result.update(LANE_HOST.ci_fields(ctx))
+    def body():
+        LANE_HOST.create_bridge(network_name, run_id)
+        LANE_HOST.start_core(core_name, network_name, run_id, args.core_memory, owned, core_image,
+                             "--publish", "127.0.0.1:18123:8123")
         verify_port_mapping(core_name, network_name, 8123, 18123, run_id)
         async def bounded():
             async with asyncio.timeout(1800):
-                return await exercise(group, state, entry, core_image, run_id, args.core_memory)
+                return await exercise(group, state, entry, core_image, run_id, args.core_memory,
+                                      version=version, mode=args.mode)
         result.update(asyncio.run(bounded()))
         if result.get("profile") != reference:
             raise Refusal("receipt_profile_mismatch")
-    except BaseException as exc:
-        result.update(result="WITHHELD", failure_type=type(exc).__name__,
-                      failure=diagnostics.failure(exc, extra=lambda stream: local_failure_logs(stream, core_name, run_id)))
-    finally:
-        try:
-            with diagnostics.check("cleanup", "container_remove"):
-                if inspect_owned("container", core_name, run_id) is not None:
-                    command("docker", "rm", "-f", core_name)
-            with diagnostics.check("cleanup", "network_remove"):
-                if inspect_owned("network", network_name, run_id) is not None:
-                    command("docker", "network", "rm", network_name)
-            with diagnostics.check("cleanup", "configuration_remove"):
-                shutil.rmtree(state)
-                host.local_remove(argparse.Namespace(directory=str(owned), memory=args.fixture_memory, owner=run_id), os.environ, subprocess.run)
-            with diagnostics.check("cleanup", "cleanup_absence"):
-                assert not owned.exists() and not state.exists()
-                assert inspect_owned("container", core_name, run_id) is None
-                assert inspect_owned("network", network_name, run_id) is None
-            result["cleanup"] = {"clean": True, "containers_absent": True, "network_absent": True,
-                                 "configuration_absent": True}
-        except BaseException as exc:
-            cleanup_failure = diagnostics.failure(exc)
-            result.setdefault("failure", cleanup_failure)
-            result.update(result="WITHHELD", cleanup={"clean": False, "failure_type": type(exc).__name__,
-                                                    "failure": cleanup_failure})
-        result["ended_utc"] = utc()
-        (run_dir / receipt).write_bytes(canonical(result))
-        signal.signal(signal.SIGTERM, previous_handler)
-    print(json.dumps({key: result[key] for key in ("result", "started_utc", "ended_utc", "cleanup")}))
-    return 0 if result["result"] == "PASS" and result["cleanup"]["clean"] else 1
-
-
-def local_failure_logs(stream, core, run_id):
-    """Only owned disposable logs; never stdout, receipts or upload artifacts."""
-    data = inspect_owned("container", core, run_id)
-    if data is not None:
-        stream.write("\nOwned container " + core + "\n")
-        stream.write(json.dumps({key: data.get("State", {}).get(key)
-                                for key in ("Status", "ExitCode", "OOMKilled")}))
-        output = subprocess.run(["docker", "logs", "--tail", "200", core],
-                                capture_output=True, timeout=10)
-        stream.write("\n" + (output.stdout + output.stderr)[-262144:].decode("utf-8", errors="replace"))
+    return LANE_HOST.execute(result, receipt, body, run_dir=run_dir, run_id=run_id, owned=owned,
+                             network=network_name, remove=(core_name,), containers=(core_name,),
+                             fixture_memory=args.fixture_memory, scratch=(state,))
 
 
 def main(argv=None):

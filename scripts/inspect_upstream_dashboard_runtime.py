@@ -14,6 +14,10 @@ from mcp.client.streamable_http import streamablehttp_client
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
+SCRIPTS = Path(__file__).resolve().parent
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
+from harness_send import harness_url  # noqa: E402
 
 from ha_mcp_engineering.clients.mcp import (  # noqa: E402
     REQUIRED_DASHBOARD_TOOL,
@@ -30,7 +34,7 @@ from ha_mcp_engineering.providers.upstream_dashboard import (  # noqa: E402
 
 
 async def inspect(endpoint: str, version: str) -> dict:
-    async with streamablehttp_client(endpoint) as (read_stream, write_stream, _session_id):
+    async with streamablehttp_client(harness_url(endpoint)) as (read_stream, write_stream, _session_id):
         async with ClientSession(read_stream, write_stream) as session:
             initialized = await session.initialize()
             listed = await session.list_tools()

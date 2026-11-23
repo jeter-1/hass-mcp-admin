@@ -20,7 +20,7 @@ The version is materialized at the base of `release/2.8.0` (`main` at
 
 Every item has landed in `release/2.8.0` and is listed by its pull request.
 
-- **HAMCP-401 Phase 1, with HAMCP-400** (#445, reviewed head ae9c637b,
+- **HAMCP-401 Phase 1, with HAMCP-400** (#445, accepted head 3d6feb1b, merged head ae9c637b,
   merged as 6587849d). Governed lifecycle on ha-mcp 9.2.0.
   - **Admitted on 9.2.0:** the governed reload of automations, scripts,
     `input_boolean` and `input_number`; the governed app (add-on) restart;
@@ -80,7 +80,7 @@ Every item has landed in `release/2.8.0` and is listed by its pull request.
     `partial`. An emptied collection no longer reads as complete.
   - No persisted format, public input schema or tool registration changes.
 
-- **HAMCP-411 bundle** (#447, reviewed head d19aac9b, merged as 8f7e2a70).
+- **HAMCP-411 bundle** (#447, accepted head 767ac19d, merged head d19aac9b, merged as 8f7e2a70).
   Truthfulness fixes.
   - **HAMCP-411 (E041): bounded `get_history`.** A single-entity history over
     the size budget returns a time-ordered prefix of whole rows, marked
@@ -107,7 +107,7 @@ Every item has landed in `release/2.8.0` and is listed by its pull request.
     `available` while delegated ha-mcp reads are admitted.
   - No public input schema or tool registration changes.
 
-- **HAMCP-417 (E049) and HAMCP-419 (E052)** (#450, reviewed head 40b1b5ef,
+- **HAMCP-417 (E049) and HAMCP-419 (E052)** (#450, accepted head 6901fa55, merged head 40b1b5ef,
   merged as 3fb1dd83).
   - **E049: `created_identity` after readback.** `get_execution_task` shows,
     for each child, `created_identity_capture` and `created_identity`
@@ -169,11 +169,15 @@ the release head's.
   without it.
 - **CI did not record the 9.2.0 Engineering count or connector total;
   installed acceptance section 4 step 3 records them.**
-- **Live expectation.** The 27 above is the CI reference, with the
-  filesystem flag off. The house runs with the flag on, so the live
-  expectation is the beta.9 live baseline: Engineering 86, delegated 28,
-  total 114, with `ha_config_get_yaml` admitted. CI's strict-admission case
-  records 28 dynamically exposed tools.
+- **CI reference (lane value).** The 27 above is the CI lane value. It is
+  not a flag-off value: the 9.2.0 parity case in run 44196696582 admits
+  `ha_config_get_yaml` and still records 27. The cause of 27 in CI against
+  28 live is not established. One unverified possibility is that the CI
+  lanes have no Supervisor, which may withhold a Supervisor-dependent read.
+- **Live expectation.** The beta.9 live baseline: Engineering 86, delegated
+  28, total 114, with `ha_config_get_yaml` admitted. The live stop
+  condition (28) is unaffected. CI's strict-admission case records 28
+  dynamically exposed tools.
 
 Clients should refresh their tool list after deploying.
 

@@ -75,15 +75,15 @@ def pin(version):
             "image_index_digest": core_lane_bindings.reviewed_lane_binding(version).image_index_digest}
 
 
-# (a) Rotation among reviewed Cores: 2026.10.1 deployed, 2026.10.0 rolled back,
-# no candidate under evaluation. Only the window changes.
-ROTATED = {"current": pin("2026.10.1"), "candidate": None, "rollback": pin("2026.10.0")}
-# Finding 1: the committed window with no Core candidate.
-NULL_CANDIDATE = {"current": COMMITTED["core"]["current"], "candidate": None,
-                  "rollback": COMMITTED["core"]["rollback"]}
+# (a) Rotation among reviewed Cores: a roll back to 2026.10.3, with 2026.11.0 as
+# the rollback slot and no candidate under evaluation. Only the window changes.
+ROTATED = {"current": pin("2026.10.3"), "candidate": None, "rollback": pin("2026.11.0")}
+# Finding 1: the committed current with no Core candidate. HAMCP-406 empties the
+# committed rollback, so this case pins a reviewed one to keep a two-slot window.
+NULL_CANDIDATE = {"current": COMMITTED["core"]["current"], "candidate": None, "rollback": pin("2026.10.3")}
 # (b)/(c): a brand-new Core as candidate.
-WITH_NEW = {"current": pin("2026.10.0"), "candidate": {"version": NEW_VERSION, "image_index_digest": NEW_DIGEST},
-            "rollback": pin("2026.9.4")}
+WITH_NEW = {"current": pin("2026.11.0"), "candidate": {"version": NEW_VERSION, "image_index_digest": NEW_DIGEST},
+            "rollback": pin("2026.10.3")}
 
 
 @contextmanager
@@ -159,8 +159,7 @@ class ConsolidatedListTests(unittest.TestCase):
                         if isinstance(node, ast.Constant) and isinstance(node.value, str)
                         and node.value in core_lane_bindings.REVIEWED_CORE_BINDINGS]
             with self.subTest(script=name):
-                # The lane helper keeps only its historical 2026.9.2 keyword default.
-                self.assertEqual(literals, ["2026.9.2"] if name == "core_registry_contract_lane.py" else [])
+                self.assertEqual(literals, [])
         for retired in ("CORE_2026_9_VERSIONS", "CORE_2026_10_VERSIONS", "CORE_CHILD_CONTRACT_VERSIONS",
                         "CORE_TEST_AUTHORITY_VERSIONS", "CORE_UPSTREAM_850_VERSIONS"):
             self.assertFalse(hasattr(contract, retired), retired)
@@ -191,11 +190,14 @@ class ConsolidatedListTests(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertIsNone(core_lane_bindings.reviewed_core_binding(value))
                 self.assertIsNone(core_lane_bindings.reviewed_lane_binding(value))
+        # HAMCP-437 (I2b): the child consumers are exactly ha-mcp 8.5.0 and 9.2.0. 8.4.3
+        # was retired with the 2026.9.0-9.2 bindings and must stay refused.
+        self.assertEqual(core_lane_bindings.CHILD_CONSUMERS, frozenset({"8.5.0", "9.2.0"}))
         for field, value in (("device_registry", "child_devices_v3"), ("child_consumer", "8.6.0"),
-                             ("typed_operations", 1)):
+                             ("child_consumer", "8.4.3"), ("typed_operations", 1)):
             malformed = dataclasses.replace(NEW_BINDING, **{field: value})
-            with self.subTest(field=field), patch.dict(core_lane_bindings.REVIEWED_CORE_BINDINGS,
-                                                       {NEW_VERSION: malformed}):
+            with self.subTest(field=field, value=value), patch.dict(core_lane_bindings.REVIEWED_CORE_BINDINGS,
+                                                                    {NEW_VERSION: malformed}):
                 with self.assertRaisesRegex(ValueError, "^malformed reviewed Core binding$"):
                     core_lane_bindings.reviewed_core_binding(NEW_VERSION)
                 with self.assertRaisesRegex(ValueError, "^malformed reviewed Core binding$"):
@@ -333,12 +335,14 @@ class ExecutablePathTests(unittest.IsolatedAsyncioTestCase):
         before = dict(core_lane_bindings.REVIEWED_CORE_BINDINGS)
         with window(ROTATED):
             await self.assert_window_executes(("current", "rollback"))
-            self.assertEqual(alarmo.slot_binding("2026.10.1")["slot"], "current")
-            self.assertEqual(alarmo.slot_binding("2026.10.0")["slot"], "rollback")
-            # 2026.9.4 left the window: no Alarmo binding or requirement remains.
-            with self.assertRaisesRegex(ValueError, "exact support-window Core slot"):
-                alarmo.slot_binding("2026.9.4")
-            self.assertIs(contract._alarmo_slot_required("2026.9.4"), False)
+            self.assertEqual(alarmo.slot_binding("2026.10.3")["slot"], "current")
+            self.assertEqual(alarmo.slot_binding("2026.11.0")["slot"], "rollback")
+            # A reviewed Core outside the window (synthetic, as a dropped rollback
+            # would be): no Alarmo binding or requirement remains.
+            with patch.dict(core_lane_bindings.REVIEWED_CORE_BINDINGS, {NEW_VERSION: NEW_BINDING}):
+                with self.assertRaisesRegex(ValueError, "exact support-window Core slot"):
+                    alarmo.slot_binding(NEW_VERSION)
+                self.assertIs(contract._alarmo_slot_required(NEW_VERSION), False)
         self.assertEqual(core_lane_bindings.REVIEWED_CORE_BINDINGS, before)
 
     async def test_b_unreviewed_core_is_refused_and_never_dispatched(self):
@@ -346,7 +350,7 @@ class ExecutablePathTests(unittest.IsolatedAsyncioTestCase):
         with window(WITH_NEW):
             with self.assertRaisesRegex(support_window.Refusal, "^core_candidate_binding_unreviewed$"):
                 support_window.load()
-            for version in (NEW_VERSION, "2026.10.0", "2026.9.4"):
+            for version in (NEW_VERSION, "2026.11.0", "2026.10.3"):
                 with self.subTest(version=version):
                     with self.assertRaisesRegex(ValueError, "exact support-window Core slot"):
                         alarmo.slot_binding(version)
@@ -436,7 +440,7 @@ class ReviewedBindingAdditionTests(unittest.IsolatedAsyncioTestCase):
                 loaded = support_window.load()
                 rows = support_window.real_ha_matrix(loaded, "pr")["include"]
                 self.assertEqual([(r["support_slot"], r["ha_version"], r["alarmo"]) for r in rows],
-                                 [("current", "2026.10.0", True), ("candidate", NEW_VERSION, True)])
+                                 [("current", "2026.11.0", True), ("candidate", NEW_VERSION, True)])
                 self.assertEqual(alarmo.slot_binding(NEW_VERSION)["slot"], "candidate")
                 self.assertEqual(await dispatch(NEW_VERSION), contract.CHILD_CONTRACT_PHASE)
                 self.assertEqual(dispatch.calls, (1, 0))
@@ -475,7 +479,7 @@ class ReviewedBindingAdditionTests(unittest.IsolatedAsyncioTestCase):
             outputs = dict(line.split("=", 1) for line in output.read_text(encoding="utf-8").splitlines())
             rows = json.loads(outputs["real_ha"])["include"]
             self.assertEqual([(r["support_slot"], r["ha_version"], r["alarmo"]) for r in rows],
-                             [("current", "2026.10.0", True), ("candidate", NEW_VERSION, True)])
+                             [("current", "2026.11.0", True), ("candidate", NEW_VERSION, True)])
             self.assertEqual(rows[1]["ha_image"], "ghcr.io/home-assistant/home-assistant:" + NEW_VERSION + "@" + NEW_DIGEST)
             # Removed: the committed list again; refused before any output.
             bindings.write_text(source, encoding="utf-8")
@@ -561,8 +565,7 @@ class HttpStorageBindingTests(unittest.IsolatedAsyncioTestCase):
             await contract._assert_http_configuration_contract()
 
     async def test_exact_http_storage_versions_and_cross_version_refusal(self):
-        versions = {"2026.8.0": 2, "2026.8.1": 2,
-                    **{v: 2 for v in core_lane_bindings.REVIEWED_CORE_BINDINGS}, "2026.11.0": 3}
+        versions = {**{v: 2 for v in core_lane_bindings.REVIEWED_CORE_BINDINGS}, "2026.11.0": 3}
         for version, expected in versions.items():
             projection = {"version": expected, "has_yaml_migration_done": True,
                           "yaml_migration_done": True, "has_pending": True, "pending": None,
@@ -571,6 +574,16 @@ class HttpStorageBindingTests(unittest.IsolatedAsyncioTestCase):
                 await self.check_store(version, projection)
                 with self.assertRaises(AssertionError):
                     await self.check_store(version, {**projection, "version": 2 if expected == 3 else 3})
+        # HAMCP-437 (I2b): the retired 2026.8.x Cores have no binding and are now
+        # refused for every storage version, as is any other unbound Core.
+        for version in ("2026.8.0", "2026.8.1", "2099.1.0"):
+            for stored_version in (1, 2, 3):
+                projection = {"version": stored_version, "has_yaml_migration_done": True,
+                              "yaml_migration_done": True, "has_pending": True, "pending": None,
+                              "has_stable": True, "stable_server_port": 8123, "stable_error": None}
+                with self.subTest(version=version, stored=stored_version), \
+                        self.assertRaises(AssertionError):
+                    await self.check_store(version, projection)
 
     async def test_new_version_preserves_every_other_migration_assertion(self):
         projection = {"version": 3, "has_yaml_migration_done": True,

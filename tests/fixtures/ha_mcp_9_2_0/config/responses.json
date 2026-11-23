@@ -1,0 +1,122 @@
+{
+  "success": {
+    "row_1_automation": {
+      "arguments": {"identifier": "automation.gateway_fixture"},
+      "structuredContent": {
+        "success": true, "action": "get", "automation_id": "automation.gateway_fixture",
+        "config": {"id": "gateway_fixture", "alias": "Gateway Fixture", "description": "Synthetic read-only acceptance automation.", "mode": "single", "triggers": [], "conditions": [], "actions": []},
+        "config_hash": "da82af80ccf890c5",
+        "entity": {"entity_id": "automation.gateway_fixture", "unique_id": "gateway_fixture", "platform": "automation", "categories": {}},
+        "validation": null,
+        "references": {"entities": [], "devices": [], "areas": []}
+      }
+    },
+    "row_2_calendar": {
+      "arguments": {"entity_id": "calendar.fixture", "start": "2026-07-21T00:00:00+00:00", "end": "2026-07-22T00:00:00+00:00", "max_results": 5},
+      "structuredContent": {
+        "success": true, "entity_id": "calendar.fixture",
+        "events": [{"summary": "Synthetic calendar event", "start": {"dateTime": "2026-07-21T12:00:00+00:00"}, "end": {"dateTime": "2026-07-21T13:00:00+00:00"}}],
+        "count": 1, "total_available": 1,
+        "time_range": {"start": "2026-07-21T00:00:00+00:00", "end": "2026-07-22T00:00:00+00:00"},
+        "message": "Retrieved 1 event(s) from calendar.fixture"
+      }
+    },
+    "row_3_category_list": {
+      "arguments": {"scope": "automation"},
+      "structuredContent": {"success": true, "count": 1, "categories": [{"category_id": "01SYNTHETIC", "name": "Synthetic", "icon": null}], "scope": "automation", "message": "Found 1 category(ies) for scope 'automation'"}
+    },
+    "row_3_category_get": {
+      "arguments": {"scope": "automation", "category_id": "01SYNTHETIC"},
+      "structuredContent": {"success": true, "category_id": "01SYNTHETIC", "category": {"category_id": "01SYNTHETIC", "name": "Synthetic", "icon": null}, "scope": "automation", "message": "Found category: Synthetic"}
+    },
+    "row_4_label_list": {
+      "arguments": {},
+      "structuredContent": {"success": true, "count": 1, "labels": [{"label_id": "synthetic", "name": "Synthetic", "color": null, "icon": null, "description": null}], "message": "Found 1 label(s)"}
+    },
+    "row_4_label_get": {
+      "arguments": {"label_id": "synthetic"},
+      "structuredContent": {"success": true, "label_id": "synthetic", "label": {"label_id": "synthetic", "name": "Synthetic", "color": null, "icon": null, "description": null}, "message": "Found label: Synthetic"}
+    },
+    "row_5_scene": {
+      "arguments": {"scene_id": "gateway_fixture"},
+      "structuredContent": {"success": true, "action": "get", "scene_id": "gateway_fixture", "config": {"id": "gateway_fixture", "name": "Gateway Fixture Scene", "entities": {"sun.sun": {"state": "above_horizon"}}}, "config_hash": "e270a63268f99339", "category": "01SYNTHETIC"}
+    },
+    "row_6_script": {
+      "arguments": {"script_id": "gateway_fixture"},
+      "structuredContent": {"success": true, "action": "get", "script_id": "gateway_fixture", "config": {"alias": "Gateway Fixture Script", "description": "Synthetic read-only acceptance script.", "mode": "single", "sequence": [], "category": "01SYNTHETIC"}, "config_hash": "69cdb2b38b8ec66a"}
+    },
+    "row_7_resources": {
+      "arguments": {"limit": 1},
+      "structuredContent": {
+        "success": true, "action": "list",
+        "resources": [{"id": "synthetic_resource", "type": "module", "url": "/local/synthetic-card.js"}],
+        "total_count": 2, "offset": 0, "limit": 1, "count": 1, "has_more": true, "next_offset": 1,
+        "inline_count": 0, "by_type": {"module": 1, "css": 1}
+      }
+    },
+    "row_8_groups": {
+      "arguments": {"limit": 5},
+      "structuredContent": {
+        "success": true,
+        "groups": [
+          {"friendly_name": "Synthetic Group", "icon": null, "auto": false, "order": 1, "entity_id": "group.synthetic", "state": "on", "last_changed": "2026-07-21T12:00:00+00:00", "last_updated": "2026-07-21T12:00:00+00:00", "object_id": "synthetic", "entity_ids": ["light.synthetic"]},
+          {"friendly_name": "Synthetic All", "icon": null, "auto": false, "all": true, "order": 2, "entity_id": "group.synthetic_all", "state": "off", "last_changed": "2026-07-21T12:00:00+00:00", "last_updated": "2026-07-21T12:00:00+00:00", "object_id": "synthetic_all", "entity_ids": []}
+        ],
+        "total_count": 2, "offset": 0, "limit": 5, "count": 2, "has_more": false, "next_offset": null,
+        "message": "Found 2 group(s)"
+      }
+    },
+    "row_9_helpers": {
+      "arguments": {"helper_type": "input_boolean", "limit": 5},
+      "structuredContent": {
+        "success": true, "helper_type": "input_boolean", "count": 1,
+        "helpers": [{"id": "synthetic_toggle", "name": "Synthetic Toggle", "entity_id": "input_boolean.synthetic_toggle"}],
+        "message": "Found 1 input_boolean helper(s)",
+        "total_count": 1, "offset": 0, "limit": 5, "has_more": false, "next_offset": null
+      }
+    },
+    "row_10_template": {
+      "arguments": {"template": "{{ 1 + 1 }}"},
+      "structuredContent": {"success": true, "template": "{{ 1 + 1 }}", "result": "2", "listeners": {}}
+    },
+    "row_11_traces_list": {
+      "arguments": {"automation_id": "automation.gateway_fixture", "limit": 5},
+      "structuredContent": {
+        "success": true, "automation_id": "automation.gateway_fixture", "trace_count": 1, "total_available": 1,
+        "offset": 0, "order": "newest", "has_more": false,
+        "traces": [{"run_id": "fixture-trace", "timestamp": "2026-07-21T12:00:00+00:00", "state": "stopped", "trigger": "synthetic"}],
+        "hint": "Use run_id with this tool to get detailed trace information"
+      }
+    },
+    "row_11_traces_detail": {
+      "arguments": {"automation_id": "automation.gateway_fixture", "run_id": "fixture-trace"},
+      "structuredContent": {"success": true, "automation_id": "automation.gateway_fixture", "run_id": "fixture-trace", "timestamp": {"start": "2026-07-21T12:00:00+00:00", "finish": "2026-07-21T12:00:01+00:00"}, "state": "stopped", "script_execution": "finished"}
+    }
+  },
+  "errors": {
+    "row_1_missing_automation": {
+      "tool": "ha_config_get_automation",
+      "arguments": {"identifier": "automation.missing_fixture"},
+      "error": {"success": false, "error": {"code": "RESOURCE_NOT_FOUND", "message": "Automation not found: automation.missing_fixture"}, "automation_id": "automation.missing_fixture", "action": "get"},
+      "public_outcome": "automation_not_found"
+    },
+    "row_6_missing_script": {
+      "tool": "ha_config_get_script",
+      "arguments": {"script_id": "missing_fixture"},
+      "error": {"success": false, "error": {"code": "RESOURCE_NOT_FOUND", "message": "Script not found: missing_fixture", "suggestion": "Use ha_search(domain_filter='script') to find existing scripts"}, "script_id": "missing_fixture", "available_script_ids": ["gateway_fixture"]},
+      "public_outcome": "resource_not_found"
+    },
+    "row_10_template_validation_failed": {
+      "tool": "ha_eval_template",
+      "arguments": {"template": "{{ synthetic_undefined_filter | nope }}"},
+      "error": {"success": false, "error": {"code": "VALIDATION_FAILED", "message": "TemplateSyntaxError: synthetic"}, "template": "{{ synthetic_undefined_filter | nope }}"},
+      "public_outcome": "invalid_request"
+    },
+    "row_10_template_timeout": {
+      "tool": "ha_eval_template",
+      "arguments": {"template": "{{ synthetic_slow }}", "timeout": 1},
+      "error": {"success": false, "error": {"code": "TIMEOUT_OPERATION", "message": "Template rendering timed out"}, "template": "{{ synthetic_slow }}"},
+      "public_outcome": "provider_timeout", "failure_category": "timeout"
+    }
+  }
+}

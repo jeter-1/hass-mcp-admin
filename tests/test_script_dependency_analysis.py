@@ -25,6 +25,7 @@ from ha_mcp_engineering.request_context import begin_request, end_request, curre
 from ha_mcp_engineering.upstream_tool_policy import load_reviewed_upstream_release_registry
 from tests import test_entity_dependency_analysis as dependency_fixtures
 from tests.test_entity_dependency_analysis import FakeProvider, finding, scan
+from tests.support import ha_mcp_920_receipts
 from tests.test_readonly_upstream_gateway import (
     CompositeCoreRuntime, FakeTransport, catalog_tool, initialize, policy_entry, schema, settings,
 )
@@ -40,12 +41,12 @@ def config(target="light.fixture"):
 
 def response(key="original", body=None):
     return {"success": True, "data": {"success": True, "script_id": key, "config": config() if body is None else body},
-            "metadata": {"provider": "upstream_read_gateway", "upstream_version": "8.5.0",
+            "metadata": {"provider": "upstream_read_gateway", "upstream_version": "9.2.0",
                          "completeness": "complete", "fallback_occurred": False}}
 
 
 class Reader:
-    provenance = "ha-mcp 8.5.0; synthetic reviewed contract; identity inventory direct_ha_api; no fallback"
+    provenance = "ha-mcp 9.2.0; synthetic reviewed contract; identity inventory direct_ha_api; no fallback"
 
     def __init__(self, values=None):
         self.active = True
@@ -92,7 +93,7 @@ class ScriptCollectionTests(unittest.IsolatedAsyncioTestCase):
                          ("original", "script.renamed", "light.fixture"))
         self.assertEqual(item.config_path, "$.sequence[0].target.entity_id")
         self.assertEqual(result.coverage.provider, "upstream_read_gateway")
-        self.assertIn("8.5.0", result.coverage.policy)
+        self.assertIn("9.2.0", result.coverage.policy)
         self.assertEqual(result.coverage.completeness, "partial")
         self.assertFalse(result.coverage.fallback_occurred)
 
@@ -518,23 +519,34 @@ class ScriptGatewayTests(unittest.IsolatedAsyncioTestCase):
     async def test_unconfigured_gateway_never_supplies_a_reader(self):
         self.assertIsNone(UpstreamReadGateway().script_dependency_reader())
 
-    async def test_actual_reviewed_850_catalog_and_contract_supply_internal_read(self):
+    async def test_actual_reviewed_920_catalog_and_contract_supply_internal_read(self):
         compiled = load_reviewed_upstream_release_registry()
-        release = compiled.by_version["8.5.0"]
+        release = compiled.by_version["9.2.0"]
         capture = json.loads((ROOT / release.capture_resource).read_text())
-        review = json.loads((ROOT / "docs/evidence/upstream-read-compatibility/ha-mcp-8.5.0-contract-review.json").read_text())
+        review = json.loads((ROOT / "docs/evidence/upstream-read-compatibility/ha-mcp-9.2.0-contract-review.json").read_text())
         by_name = {item["name"]: item for item in capture["tools"]}
         tools = [by_name[name] for name in review["runtime_catalog"]["runtime_tool_order"]]
-        transport = FakeTransport(tools, version="8.5.0",
-                                  result={"structuredContent": response()["data"], "isError": False})
+        # 9.2.0 rebuilds reads from its reviewed output-key contract, so the
+        # upstream answer is the committed HAMCP-371 ha_config_get_script
+        # receipt carrying this module's synthetic script body.
+        script = ha_mcp_920_receipts.result("r06-script")
+        content = dict(script["structuredContent"], **response()["data"])
+        transport = FakeTransport(tools, version="9.2.0",
+                                  result=ha_mcp_920_receipts.with_content(script, content))
+        # The shared fixture host "upstream" is a known secret, and the 9.2.0
+        # rebuild adds the "upstream_warnings_replaced" counter, so an
+        # unmodified-script read under that host fails closed on redaction.
+        # This case uses a fixture host that no read field contains.
+        fixture_settings = replace(settings(), upstream_dashboard_mcp_url=(
+            "http://synthetic-ha-mcp-host:9583/synthetic-upstream-secret/mcp"))
         gateway = UpstreamReadGateway()
-        gateway.configure(settings(), release_registry=compiled, transport=transport)
-        await gateway.initialize(FastMCP("script-850-fixture"))
+        gateway.configure(fixture_settings, release_registry=compiled, transport=transport)
+        await gateway.initialize(FastMCP("script-920-fixture"))
         reader = gateway.script_dependency_reader()
         self.assertIsNotNone(reader)
         result = await reader.read("script.renamed")
-        self.assertTrue(result["success"])
-        self.assertEqual(result["metadata"]["upstream_version"], "8.5.0")
+        self.assertTrue(result["success"], result)
+        self.assertEqual(result["metadata"]["upstream_version"], "9.2.0")
         self.assertEqual([call[0] for call in transport.calls], ["ha_config_get_script"])
 
     async def test_audit_failure_restores_request_context_and_settles_core(self):

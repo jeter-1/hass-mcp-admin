@@ -1,0 +1,9 @@
+{
+  "command": "python tests/fixtures/hamcp319/generate_ent_public_surface.py --repo <checkout of 310c6a0e>",
+  "decision": "ANSWER 20261122-0931-01 case 2 (HAMCP-437 I2a-D)",
+  "fixture": "tests/fixtures/hamcp319/ent-public-surface-8.5.0.json",
+  "generator": "tests/fixtures/hamcp319/generate_ent_public_surface.py",
+  "label": "Engineering-published surface generated from the 8.5.0 row at 310c6a0e; not upstream evidence",
+  "sha256": "ab51a089bc0770dc41bf168215c54135fef69185f1a7cb2d605731949ffd33ac",
+  "source_commit": "310c6a0e6b5b0abf9ea20d849d97ddaaf14c7933"
+}

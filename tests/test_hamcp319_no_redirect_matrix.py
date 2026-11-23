@@ -16,7 +16,8 @@ structure and latch tests:
   reconnection (the fence answers a local 405 or bounds the POST stream, so
   the origin receives zero GETs and no latch is set).
 - The section 8.1 guard, budget, structure, latch and analysis fence latch
-  tests, the operator message test and the 8.5 ``legacy`` behavior change.
+  tests, the operator message test and the same-origin redirect the SDK
+  default would follow (on 9.2.0; HAMCP-437 retired the 8.5.0 ``legacy`` peer).
 
 Peers are loopback servers with separate origin and destination counters; no
 network, Docker or Home Assistant. Secrets and canaries are synthetic.
@@ -459,8 +460,8 @@ class NoRedirectGuardBudgetStructure(part1._NoRedirectAssertions, unittest.TestC
 
         async def unit(kind, status):
             peer = RedirectPeer(
-                version="8.5.0",
-                form="legacy",
+                version="9.2.0",
+                form="strict_full",
                 inject=Injection("initialize", status, kind),
             )
             with peer.serve():
@@ -492,7 +493,7 @@ class NoRedirectGuardBudgetStructure(part1._NoRedirectAssertions, unittest.TestC
                 return build
 
             peer = RedirectPeer(
-                version="9.1.0",
+                version="9.2.0",
                 form="strict_full",
                 inject=Injection("initialize", status, kind),
                 tool_names=READ_TOOLS,
@@ -533,7 +534,7 @@ class NoRedirectGuardBudgetStructure(part1._NoRedirectAssertions, unittest.TestC
         async def scenario(kind, status, method):
             request_type = "initialize" if method == "POST" else "get_stream"
             peer = RedirectPeer(
-                version="9.1.0",
+                version="9.2.0",
                 form="strict_full",
                 inject=Injection(request_type, status, kind),
             )
@@ -991,7 +992,7 @@ class NoRedirectLatchLinearization(part1._NoRedirectAssertions, unittest.TestCas
             case = NoRedirectUseful()._delegated_read_case(version)
             peer = ConcurrentGetPeer(
                 version=version,
-                form="strict_full" if version == "9.1.0" else "legacy",
+                form="strict_full",
                 tools=tuple(reviewed_catalog(version)),
                 call_handler=lambda _name, _arguments: case.structured,
             )
@@ -1007,7 +1008,7 @@ class NoRedirectLatchLinearization(part1._NoRedirectAssertions, unittest.TestCas
                 health = gateway.health_snapshot()
             return peer, result, health
 
-        for version in ("8.5.0", "9.1.0"):
+        for version in ("9.2.0",):
             with self.subTest(version=version):
                 holds.clear()
                 with part1.capture_all_logs() as capture:
@@ -1352,7 +1353,7 @@ class NoRedirectAnalysisProviderReason(part1._NoRedirectAssertions, unittest.Tes
         self.assertNotIn("operator_remediation", error.details)
 
 
-# -- operator message and the 8.5 legacy behavior change -------------------------
+# -- operator message and the redirect the SDK default follows -------------------
 
 
 class NoRedirectOperatorAndLegacy(part1._NoRedirectAssertions, unittest.TestCase):
@@ -1440,13 +1441,17 @@ class NoRedirectOperatorAndLegacy(part1._NoRedirectAssertions, unittest.TestCase
                         url=peer.url, location=peer.location_for(kind),
                     )
 
-    def test_85_legacy_value_redirect_refused(self):
-        """[JD-DCL1] An 8.5 legacy value that today's SDK default would follow
-        through a same-origin 307 is refused, with zero destination requests."""
+    def test_strict_value_redirect_refused_where_sdk_default_follows(self):
+        """[JD-DCL1] A 9.2.0 strict value that today's SDK default would follow
+        through a same-origin 307 is refused, with zero destination requests.
+
+        HAMCP-437 moved this from the retired 8.5.0 legacy value; on 9.2.0 a
+        legacy value is refused by the selector before ``tools/list``.
+        """
 
         async def cell(client, kind, request_type):
             builder, client_kind, _r, _f = CLIENTS[client]
-            peer = RedirectPeer(version="8.5.0", form="legacy",
+            peer = RedirectPeer(version="9.2.0", form="strict_full",
                                 inject=Injection(request_type, 307, kind),
                                 tool_names=DASHBOARD_TOOLS if client_kind != "read" else READ_TOOLS)
             with peer.serve():
@@ -1464,7 +1469,7 @@ class NoRedirectOperatorAndLegacy(part1._NoRedirectAssertions, unittest.TestCase
 
         # Control: the SDK default factory follows exactly this redirect.
         async def sdk_default(kind):
-            peer = RedirectPeer(version="8.5.0", form="legacy",
+            peer = RedirectPeer(version="9.2.0", form="strict_full",
                                 inject=Injection("initialize", 307, kind))
             with peer.serve():
                 client = create_mcp_http_client(headers=_headers())

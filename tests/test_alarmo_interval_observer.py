@@ -44,14 +44,21 @@ WINDOW = support_window.load(ROOT)
 ALARMO_SLOTS = support_window.core_slots(WINDOW, support_window.ALARMO_SLOTS)
 SLOT_VERSIONS = {slot: WINDOW["core"][slot]["version"] for slot in ALARMO_SLOTS}
 SLOT_OF = {version: slot for slot, version in SLOT_VERSIONS.items()}
-# Single-slot checks use the rollback slot explicitly (Core 2026.9.4 today).
-CORE = WINDOW["core"]["rollback"]["version"]
-OTHER_CORE = WINDOW["core"]["current"]["version"]
+# Single-slot checks use the current slot (Core 2026.11.0 today).
+CORE = WINDOW["core"]["current"]["version"]
+# HAMCP-406 empties the Core rollback, so the window holds one Alarmo slot and
+# no second in-window binding exists. Substitution checks use an exact Core
+# outside the window with a well-formed binding of its own (a former slot, a
+# distinct digest and the empty slot's name); every verifier must refuse it.
+OTHER_CORE = "2026.10.3"
+OTHER_BINDING = {"slot": "rollback", "version": OTHER_CORE, "lane": "ha-" + OTHER_CORE.replace(".", "-"),
+                 "image": f"{support_window.CORE_IMAGE}:{OTHER_CORE}@sha256:{'1' * 64}",
+                 "image_index_digest": "sha256:" + "1" * 64}
 CI = ROOT / ".github/workflows/ci.yml"
 BETA23 = ROOT / "tests/fixtures/real_ha_device_migration/custom_components/beta23_device_fixture"
-NOT_SLOTS = ("2026.9.3", "2026.9.2", "2026.11.0", "2026.10", "2026.10.", "2026.10.*", "2026.9", "2026.9.*",
-             "", " 2026.10.0", "2026.10.0 ", "2026.10.0\n", "v2026.10.0", "2026.10.00")
-NOT_STRINGS = (None, 2026.9, 2026, b"2026.10.0", ["2026.10.0"], {"version": "2026.10.0"})
+NOT_SLOTS = ("2026.9.3", "2026.9.2", OTHER_CORE, "2026.10.0", "2026.11", "2026.11.", "2026.11.*", "2026.10",
+             "2026.10.*", "2026.9.*", "", " 2026.11.0", "2026.11.0 ", "2026.11.0\n", "v2026.11.0", "2026.11.00")
+NOT_STRINGS = (None, 2026.11, 2026, b"2026.11.0", ["2026.11.0"], {"version": "2026.11.0"})
 
 
 def receipt(commands=(), core_version=CORE):
@@ -1875,8 +1882,12 @@ class PublicationCleanupTests(unittest.TestCase):
                 with self.subTest(unknown=unknown), patch("subprocess.run") as run, self.assertRaises(ValueError):
                     acceptance.verify_disposable_cleanup(source, output, unknown)
                 run.assert_not_called()
-            other_image = acceptance.slot_binding(OTHER_CORE)["image"]
-            for mutate in (lambda v: v.update(support_slot="current"), lambda v: v.pop("support_slot"),
+            # The substitute Core is outside the window and has no binding there.
+            self.assertNotIn(OTHER_CORE, SLOT_VERSIONS.values())
+            with self.assertRaises(ValueError):
+                acceptance.slot_binding(OTHER_CORE)
+            other_image = OTHER_BINDING["image"]
+            for mutate in (lambda v: v.update(support_slot=OTHER_BINDING["slot"]), lambda v: v.pop("support_slot"),
                            lambda v: v.update(core_image=other_image), lambda v: v.pop("core_image"),
                            lambda v: v.update(core=OTHER_CORE),
                            lambda v: v["interval_observation"].update(core_version=OTHER_CORE),
@@ -2021,7 +2032,7 @@ class PublicationCleanupTests(unittest.TestCase):
         arm64 = json.dumps({"os": "linux", "architecture": "arm64"}).encode()
         with tempfile.TemporaryDirectory() as directory:
             root = window_root(directory)
-            case = self.publication(root, "rollback", oci_config=AMD64_CONFIG)
+            case = self.publication(root, "current", oci_config=AMD64_CONFIG)
 
             def top(**change):
                 value = json.loads(oci_export(case)[0][3][1])
@@ -2068,14 +2079,14 @@ class PublicationCleanupTests(unittest.TestCase):
                 self.assertEqual(self.calls, 5)
                 self.assertFalse((root / "image.json").exists())
             # A configuration for the wrong platform refuses.
-            case = self.publication(root, "rollback", oci_config=arm64)
+            case = self.publication(root, "current", oci_config=arm64)
             with self.assertRaisesRegex(ValueError, "Local configuration platform mismatch"):
                 self.publish(root, case, export=oci_export(case))
 
     def test_index_identity_refuses_container_change_platform_or_mixed_identity(self):
         with tempfile.TemporaryDirectory() as directory:
             root = window_root(directory)
-            case = self.publication(root, "rollback", oci_config=AMD64_CONFIG)
+            case = self.publication(root, "current", oci_config=AMD64_CONFIG)
             identity = case.outputs[2]
             config_identity = b"synthetic-container " + case.config_digest.encode()
             for name, i, wrong in (
@@ -2123,18 +2134,15 @@ class PublicationCleanupTests(unittest.TestCase):
     def test_publication_refuses_other_slot_container_image_or_unknown_core(self):
         with tempfile.TemporaryDirectory() as directory:
             root = window_root(directory)
-            case = self.publication(root, "rollback")
-            others = [slot for slot in ALARMO_SLOTS if slot != "rollback"]
-            self.assertTrue(others)
-            for other in others:
-                version = WINDOW["core"][other]["version"]
-                other_image = f"ghcr.io/home-assistant/home-assistant:{version}@{WINDOW['core'][other]['image_index_digest']}"
-                for kwargs in ({"container": "beta25-real-ha-ha-" + version.replace(".", "-")},
-                               {"image": other_image},
-                               {"version": version}):
-                    with self.subTest(other=other, kwargs=kwargs), self.assertRaises(ValueError):
-                        self.publish(root, case, **kwargs)
-                    self.assertEqual(self.calls, 0)
+            case = self.publication(root, "current")
+            # HAMCP-406: the one-slot window has no second in-window binding, so the
+            # substitution uses OTHER_BINDING, a well-formed Core outside the window.
+            for kwargs in ({"container": "beta25-real-ha-" + OTHER_BINDING["lane"]},
+                           {"image": OTHER_BINDING["image"]},
+                           {"version": OTHER_CORE}):
+                with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
+                    self.publish(root, case, **kwargs)
+                self.assertEqual(self.calls, 0)
             for container in ("beta25-real-ha-ha-2026-9-3", "beta25-real-ha-writer-" + "ha-" + CORE.replace(".", "-"),
                               "beta25-real-ha-" + CORE, ""):
                 with self.subTest(container=container), self.assertRaises(ValueError):
@@ -2156,7 +2164,7 @@ class PublicationCleanupTests(unittest.TestCase):
     def test_publication_refuses_provenance_that_disagrees_with_the_window(self):
         with tempfile.TemporaryDirectory() as directory:
             root = window_root(directory)
-            case = self.publication(root, "rollback")
+            case = self.publication(root, "current")
             fixture = provenance_path(root, case.version)
             entry = json.loads(fixture.read_text())
             entry["image_index_digest"] = "sha256:" + "0" * 64
@@ -2179,7 +2187,7 @@ class PublicationCleanupTests(unittest.TestCase):
         for options in ({"files": partial}, {"roots": ("core-a", "core-b")}):
             with self.subTest(options=options), tempfile.TemporaryDirectory() as directory:
                 root = window_root(directory)
-                case = self.publication(root, "rollback", **options)
+                case = self.publication(root, "current", **options)
                 with self.assertRaises(ValueError):
                     self.publish(root, case)
                 self.assertFalse((root / "image.json").exists())
@@ -2216,7 +2224,8 @@ class SlotBindingTests(unittest.TestCase):
         # Derived from the committed window's non-empty slots (an empty Core
         # candidate has no binding and no Alarmo job).
         self.assertEqual(ALARMO_SLOTS, support_window.core_slots(WINDOW, support_window.SLOTS))
-        self.assertEqual({"current", "rollback"} - set(ALARMO_SLOTS), set())
+        # HAMCP-406: the Core candidate and rollback are empty; current always binds.
+        self.assertEqual(ALARMO_SLOTS, ("current",))
         self.assertIn(CORE, SLOT_VERSIONS.values())
         for slot, version in SLOT_VERSIONS.items():
             provenance = json.loads(provenance_path(ROOT, version).read_text(encoding="utf-8"))
@@ -2241,17 +2250,17 @@ class SlotBindingTests(unittest.TestCase):
     def test_binding_follows_a_rotated_window_without_code_edits(self):
         with tempfile.TemporaryDirectory() as directory:
             root = window_root(directory)
-            # Rotation among reviewed Cores (amendment 2026-10-11): 2026.10.1 is
-            # deployed, 2026.10.0 becomes rollback, 2026.9.4 leaves the window and
-            # no candidate is under evaluation. Only the window changes.
+            # Rotation among reviewed Cores (amendment 2026-10-11): a roll back to
+            # 2026.10.3 with 2026.11.0 as rollback, no candidate under evaluation;
+            # the reviewed 2026.9.4 stays outside the window. Only the window changes.
             pins = {version: {"version": version, "image_index_digest":
                               core_lane_bindings.reviewed_lane_binding(version).image_index_digest}
-                    for version in ("2026.10.1", "2026.10.0")}
-            edit_window(root, lambda w: w["core"].update(current=pins["2026.10.1"], rollback=pins["2026.10.0"],
+                    for version in ("2026.10.3", "2026.11.0")}
+            edit_window(root, lambda w: w["core"].update(current=pins["2026.10.3"], rollback=pins["2026.11.0"],
                                                          candidate=None))
             with bound_window(root):
-                self.assertEqual(acceptance.slot_binding("2026.10.1")["slot"], "current")
-                self.assertEqual(acceptance.slot_binding("2026.10.0")["slot"], "rollback")
+                self.assertEqual(acceptance.slot_binding("2026.10.3")["slot"], "current")
+                self.assertEqual(acceptance.slot_binding("2026.11.0")["slot"], "rollback")
                 with self.assertRaisesRegex(ValueError, "exact support-window Core slot"):
                     acceptance.slot_binding("2026.9.4")
                 with tempfile.TemporaryDirectory() as scratch, patch("subprocess.run") as run, self.assertRaises(ValueError):
@@ -2442,11 +2451,6 @@ SEQ13_UPLOAD_IF = "always() && " + SEQ13_STAGE_IF
 SEQ13_STAGE = "Stage seq-13 contract evidence paths"
 SEQ13_UPLOAD = "Upload bounded seq-13 label and availability/exposure contract evidence"
 SEQ13_DELETE_UPLOAD = "Upload bounded seq-13 configuration delete contract evidence"
-# HAMCP-269: exact-release gates apply to both reviewed October releases.
-SEQ15_STAGE_IF = "matrix.alarmo && contains(fromJSON('[\"2026.10.1\",\"2026.10.3\"]'), matrix.ha_version) && env.REAL_HA_SEQ15_LANES == 'enabled'"
-SEQ15_UPLOAD_IF = "always() && " + SEQ15_STAGE_IF
-SEQ15_STAGE = "Stage seq-15 contract evidence paths"
-SEQ15_UPLOAD = "Upload bounded seq-15 five-capability contract evidence"
 
 
 class WorkflowBindingTests(unittest.TestCase):
@@ -2475,18 +2479,13 @@ class WorkflowBindingTests(unittest.TestCase):
             SEQ13_STAGE: SEQ13_STAGE_IF,
             SEQ13_UPLOAD: SEQ13_UPLOAD_IF,
             SEQ13_DELETE_UPLOAD: SEQ13_UPLOAD_IF,
-            # The five-profile batch adds an isolated seed, stage and upload.
-            "Seed seq-15 disposable scene configuration": SEQ15_STAGE_IF,
-            SEQ15_STAGE: SEQ15_STAGE_IF,
-            SEQ15_UPLOAD: SEQ15_UPLOAD_IF,
         })
         for step in self.steps:
             text = json.dumps(step)
             if "alarmo" in text.lower():
                 with self.subTest(step=step.get("name")):
                     self.assertIn(step.get("if"), ("matrix.alarmo", "always() && matrix.alarmo",
-                                                   SEQ13_STAGE_IF, SEQ13_UPLOAD_IF, SEQ15_STAGE_IF,
-                                                   SEQ15_UPLOAD_IF))
+                                                   SEQ13_STAGE_IF, SEQ13_UPLOAD_IF))
                     self.assertNotIn("2026.9.4", text)
                     self.assertNotIn("2026-9-4", text)
                     self.assertNotIn("matrix.ha_version ==", text)
@@ -2505,8 +2504,6 @@ class WorkflowBindingTests(unittest.TestCase):
         self.assertLess(names.index("Upload bounded entity metadata contract evidence"),
                         names.index(SEQ13_UPLOAD))
         self.assertLess(names.index(SEQ13_UPLOAD), names.index(SEQ13_DELETE_UPLOAD))
-        self.assertTrue(names.index(SEQ13_STAGE) < names.index(SEQ15_STAGE) < run)
-        self.assertLess(names.index(SEQ13_DELETE_UPLOAD), names.index(SEQ15_UPLOAD))
         self.assertIn("--verify-publication", self.steps[bind]["run"])
         self.assertIn("--verify-cleanup", self.steps[cleanup]["run"])
 
@@ -2538,42 +2535,24 @@ class WorkflowBindingTests(unittest.TestCase):
         self.assertEqual(delete_upload["with"]["if-no-files-found"], "error")
         self.assertEqual(delete_upload["with"]["retention-days"], 14)
 
-    def test_seq15_lanes_cover_all_five_profiles_on_exact_releases(self):
-        # All five receipts are required for both exact-release jobs.
-        workflow = yaml.safe_load(CI.read_text(encoding="utf-8"))
-        job = workflow["jobs"]["real-ha-contract-tests"]
-        self.assertEqual(job["env"]["REAL_HA_SEQ15_LANES"], "enabled")
-        self.assertEqual(CI.read_text(encoding="utf-8").count("REAL_HA_SEQ15_LANES: "), 1)
-        users = [step["name"] for step in self.steps if "REAL_HA_SEQ15_LANES" in json.dumps(step)]
-        self.assertEqual(users, ["Seed seq-15 disposable scene configuration", SEQ15_STAGE, SEQ15_UPLOAD])
-        stage = self.step(SEQ15_STAGE)
-        self.assertEqual(re.findall(r"printf '([A-Z_]+)=", stage["run"]),
-                         ["REAL_HA_HELPER_OPTIONS_RESULT", "REAL_HA_INPUT_SELECT_OPTION_RESULT",
-                          "REAL_HA_SCRIPT_TRACES_RESULT", "REAL_HA_DASHBOARD_METADATA_RESULT",
-                          "REAL_HA_SCENE_CONFIGURATION_RESULT"])
+    def test_seq15_lanes_are_not_wired_into_ci(self):
+        # HAMCP-437 (I2b): the Core matrix is 2026.11.0 only and the seq-15 lanes
+        # run only on their two exact October releases, so ci.yml carries no
+        # seq-15 step, flag or evidence path. The harness hook and the lane
+        # script stay for HAMCP-367.
+        text = CI.read_text(encoding="utf-8")
+        self.assertNotIn("REAL_HA_SEQ15_LANES", text)
+        self.assertNotRegex(text.lower(), r"seq-?15")
+        self.assertNotIn("scenes.yaml", text)
         import seq15_contract_acceptance as seq15
-        # Every defined lane is wired into the evidence batch.
-        self.assertEqual(seq15.WORKFLOW_PENDING_LANES, frozenset())
-        self.assertTrue(seq15.WORKFLOW_PENDING_LANES <= set(seq15.LANES))
-        wired = [lane for key, lane in seq15.LANES.items() if key not in seq15.WORKFLOW_PENDING_LANES]
-        self.assertEqual(sorted(lane["output_env"] for lane in wired),
-                         sorted(re.findall(r"printf '([A-Z_]+)=", stage["run"])))
-        for key in seq15.WORKFLOW_PENDING_LANES:
-            self.assertNotIn(seq15.LANES[key]["output_env"], CI.read_text(encoding="utf-8"))
-        upload = self.step(SEQ15_UPLOAD)
-        self.assertEqual(upload["uses"], self.step(SEQ13_UPLOAD)["uses"])
-        self.assertEqual(upload["with"]["name"], "seq15-contracts-core-${{ matrix.ha_version }}"
-                         "-${{ matrix.support_slot }}-${{ matrix.lane }}")
-        self.assertEqual(upload["with"]["path"].splitlines(), [
-            "${{ runner.temp }}/seq15-helper-options-${{ matrix.lane }}.json",
-            "${{ runner.temp }}/seq15-input-select-option-${{ matrix.lane }}.json",
-            "${{ runner.temp }}/seq15-script-traces-${{ matrix.lane }}.json",
-            "${{ runner.temp }}/seq15-dashboard-metadata-${{ matrix.lane }}.json",
-            "${{ runner.temp }}/seq15-scene-configuration-${{ matrix.lane }}.json"])
-        self.assertEqual(upload["with"]["if-no-files-found"], "error")
-        self.assertEqual(upload["with"]["retention-days"], 14)
-        # Rotation cannot silently broaden the two exact releases.
-        self.assertEqual({SLOT_VERSIONS["candidate"], SLOT_VERSIONS["current"]}, seq15.TARGET_CORES)
+        self.assertEqual(len(seq15.LANES), 5)
+        for key in seq15.LANES:
+            with self.subTest(lane=key):
+                self.assertNotIn(seq15.LANES[key]["output_env"], text)
+        # Rotation cannot silently broaden the two exact releases, and neither
+        # is in the one-slot window, so no window row could run the lanes.
+        self.assertEqual(seq15.TARGET_CORES, {"2026.10.1", "2026.10.3"})
+        self.assertTrue(seq15.TARGET_CORES.isdisjoint(SLOT_VERSIONS.values()))
 
     def test_core_archive_uses_only_fixed_codeload_forms_and_exact_digest(self):
         step = self.step("Stage exact Alarmo and independent interval observer for the Core slot")

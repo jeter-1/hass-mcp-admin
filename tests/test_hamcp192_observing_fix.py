@@ -101,7 +101,7 @@ class ObservingFixture(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(self.tmp.cleanup)
         self.clock, self.core = Clock(), Core()
         self.transport = SlowFanTransport(self.clock, self.delay)
-        self.provider = FanProvider(self.transport, lambda: self.transport.authority)
+        self.provider = FanProvider(self.transport, lambda *_: self.transport.authority)
         self.audit = RecordingAudit()
         self.service = self.build()
         self.telemetry, token = begin_request("synthetic-hamcp192")
@@ -1079,7 +1079,7 @@ class PowerInheritanceTests(unittest.IsolatedAsyncioTestCase):
     async def test_power_verifies_a_slow_light_inline_with_the_same_lease(self):
         with tempfile.TemporaryDirectory() as directory:
             clock, core = Clock(), Core()
-            transport = PowerTransport("8.5.0")
+            transport = PowerTransport("9.2.0")
             transport.mode = "ack_only"
             original = transport.execute_read
             dispatched = []

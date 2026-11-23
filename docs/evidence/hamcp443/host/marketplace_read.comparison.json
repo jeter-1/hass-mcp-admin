@@ -1,0 +1,63 @@
+{
+  "committed_receipt": "docs/evidence/hamcp290/lane/marketplace_read.json",
+  "committed_receipt_sha256": "a61da63ccedc9989a8c1a02c3cf4880f3323b3a539898c9aca080b937a781037",
+  "declaration_sha256": "5d0089392a2a8407b4722dcce1d9dd5c2d184062c55b34d8578c1ff7cc0bc792",
+  "differences": [],
+  "equal": true,
+  "excluded_differences": {
+    "host_admission": [
+      {
+        "committed": 0.11572265625,
+        "observed": 2.09619140625,
+        "path": "/host_admission/load1"
+      },
+      {
+        "committed": 13063069696,
+        "observed": 11444404224,
+        "path": "/host_admission/mem_available_bytes"
+      },
+      {
+        "committed": "2026-11-14T03:56:29.449126+00:00",
+        "observed": "2026-11-21T03:52:59.033327+00:00",
+        "path": "/host_admission/utc"
+      }
+    ],
+    "public_store_snapshot": [
+      {
+        "committed": 6415,
+        "observed": 6903,
+        "path": "/store_records"
+      },
+      {
+        "committed": "5566c816804407efa92b1143400078eca9d9866bfa206c4cd830c2a3f8e656a1",
+        "observed": "802ca902f854125745561cee06bc4cd46578562038d129b5d5acdcaef54ebb67",
+        "path": "/store_sha256"
+      }
+    ],
+    "run_identity": [
+      {
+        "committed": "2026-11-14T03:56:52.267548+00:00",
+        "observed": "2026-11-21T03:53:22.042215+00:00",
+        "path": "/ended_utc"
+      },
+      {
+        "committed": "d84d8d9e69c4fff8481b018182a6b43f088aac7d",
+        "observed": "982e2bf36a70d422f2efaf7369876c73bff48c8b",
+        "path": "/source_commit"
+      },
+      {
+        "committed": "2026-11-14T03:56:29.492678+00:00",
+        "observed": "2026-11-21T03:52:59.091994+00:00",
+        "path": "/started_utc"
+      }
+    ]
+  },
+  "excluded_leaves": 10,
+  "expected_changes": [],
+  "harness": "scripts/core_marketplace_read_local.py",
+  "lane": "marketplace_read",
+  "masked_differences": {},
+  "masked_leaves": 0,
+  "model": "hamcp443-receipt-comparison-report-v2",
+  "observed_receipt_sha256": "9ed0792e9649d85a4bbaf09024bebb1f0f95aa52878a264a0da667aa05361522"
+}

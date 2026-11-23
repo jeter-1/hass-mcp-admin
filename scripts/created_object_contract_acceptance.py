@@ -37,6 +37,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from entity_metadata_contract_acceptance import (  # noqa: E402
     REFERENCE_KEYS, RawRefusal, RawWebSocket, engineering_source, load_receipt, receipt_bytes)
+from core_lane_proof import transition  # noqa: E402
 import lane_failure_diagnostics as diagnostics  # noqa: E402
 from lane_session import refuse_redirect  # noqa: E402
 
@@ -726,14 +727,14 @@ def _forward_and_undo(scenarios, forward, undo, writes):
     assert scenarios[undo]["rollback_status"] == "rollback_plan_created"
 
 
-def verify_result(lane, result):
+def verify_result(lane, result, *, core_version=CORE_VERSION, predecessor_count=SIGNED_PREDECESSOR_COUNT):
     """Strict re-check of one serialized lane receipt against current source."""
     spec = LANES[lane]
     scenarios = result["scenarios"]
     assert result["result"] == "PASS" and result["model"] == MODEL and result["lane"] == lane
-    assert result["core"] == CORE_VERSION and result["production_authority"] is False
+    assert result["core"] == core_version and result["production_authority"] is False
     assert result["profile"] == reference(lane) and result["profile"]["contract_fingerprint"] == spec["fingerprint"]
-    assert result["authority_transition"] == [SIGNED_PREDECESSOR_COUNT, SIGNED_PREDECESSOR_COUNT + 1]
+    assert result["authority_transition"] == [predecessor_count, predecessor_count + 1]
     assert result["engineering_source"] == engineering_source()
     assert sorted(scenarios) == sorted(spec["scenarios"])  # A serialized receipt carries no order.
     assert set(result["engineering_write_kinds"]) <= spec["writes"], result["engineering_write_kinds"]
@@ -787,8 +788,11 @@ def verify_result(lane, result):
             "scenarios": list(scenarios), "result": "PASS"}
 
 
-async def run(lane, configured, entry, directory):
+async def run(lane, configured, entry, directory, *, mode):
     """Run one lane against an owned loopback Core; the caller owns start-up, identity and teardown."""
+    # The caller names the mode; nothing here reads the environment to choose one.
+    if mode not in ("local", "ci"):
+        raise ValueError("lane_mode_unknown")
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
     from alarmo_inspection_contract_acceptance import close_disposable_authority
     from prepare_core_release_registry import prepare_candidate, sign_candidate
@@ -812,8 +816,14 @@ async def run(lane, configured, entry, directory):
 
     spec = LANES[lane]
     added = reference(lane)
-    old = entry["capabilities"]
-    if (entry["version"] != CORE_VERSION or len(old) != SIGNED_PREDECESSOR_COUNT
+    if mode == "ci":
+        # D3 rules 1-3: the authenticated baseline minus exactly this lane's group, then its compiled profile.
+        old, _ = transition(entry, lane, [added])
+        version, signed_count = entry["version"], len(old)
+    else:
+        old = entry["capabilities"]
+        version, signed_count = CORE_VERSION, SIGNED_PREDECESSOR_COUNT
+    if (entry["version"] != version or len(old) != signed_count
             or spec["capability"] in {item["capability_id"] for item in old}
             or urlsplit(configured.ha_url).hostname not in {"127.0.0.1", "localhost", "::1"}):
         raise ValueError("Exact owned disposable created-object lane required")
@@ -845,7 +855,7 @@ async def run(lane, configured, entry, directory):
         runtimes.append(runtime)
         runtime.configure(configured, release_registry=registry)
         await runtime.reconcile_once("startup")
-        assert runtime.current_observation.version == CORE_VERSION
+        assert runtime.current_observation.version == version
         assert runtime.health_snapshot()["compatible_count"] == len(references)
         return runtime
 
@@ -1002,7 +1012,7 @@ async def run(lane, configured, entry, directory):
         released = all(item.health_snapshot()[name] == 0 for item in runtimes
                        for name in ("issued_lease_count", "active_commit_count", "fallback_count"))
         result = {
-            "result": "PASS", "model": MODEL, "lane": lane, "core": CORE_VERSION, "profile": added,
+            "result": "PASS", "model": MODEL, "lane": lane, "core": version, "profile": added,
             "engineering_source": engineering_source(),
             "predecessor_capabilities_sha256": hashlib.sha256(canonical_json(old)).hexdigest(),
             "authority_transition": [len(old), len(old) + 1],
@@ -1026,5 +1036,6 @@ async def run(lane, configured, entry, directory):
                     await close_disposable_authority(item)
     result["fixture_absence"] = fixture_absence
     # Verify the serialized evidence through the strict loader, not the in-memory value.
-    result["verification"] = verify_result(lane, load_receipt(receipt_bytes(result)))
+    result["verification"] = verify_result(lane, load_receipt(receipt_bytes(result)), core_version=version,
+                                           predecessor_count=signed_count)
     return result

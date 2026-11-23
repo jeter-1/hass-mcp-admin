@@ -181,7 +181,7 @@ class SeedTests(unittest.TestCase):
         self.assertIs(report["all_steps_ok"], True)
         self.assertEqual(tuple(sorted(values)), tuple(sorted(seed.SEED_KEYS)))
         # Every case of the calls module plans from these values alone.
-        planned = calls.plan("9.1.2", list(calls.GROUPS), dict(values))
+        planned = calls.plan("9.2.0", list(calls.GROUPS), dict(values))  # HAMCP-437 I2a-D
         self.assertEqual(len(planned), len(calls.CASES))
         self.assertEqual(values["helper_entity"], "input_boolean.synthetic")
         self.assertEqual(values["automation_id"], "hamcp371_automation")

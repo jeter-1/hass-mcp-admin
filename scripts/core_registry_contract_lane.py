@@ -76,7 +76,7 @@ async def reconcile_through_gate(runtime, trigger="periodic"):
 
 
 async def configure_with_test_authority(runtime, configured, *, cache_path, expected_image,
-                                       core_version="2026.9.2"):
+                                       core_version):
     """Same executable: absent authority withheld, exact test signature admitted."""
     entry = lane_entry(core_version)
     assert expected_image == (

@@ -2,10 +2,10 @@
 
 Synthetic data only: no production record, no captured device payload, no live
 Home Assistant and no deployed endpoint. Every gateway test runs against an
-exact 8.5.0 peer and an exact 9.1.0 peer (the reviewed tools/list captures)
-through the real ``UpstreamReadGateway`` with in-process mock transports.
+exact 9.2.0 peer (the reviewed tools/list capture; HAMCP-437 I2c-2 retired the
+8.5.0 and 9.1.0 peers with their admissions) through the real ``UpstreamReadGateway`` with in-process mock transports.
 
-Also covers the section 5 Core child-device binding for 9.1.0 and the T2
+Also covers the section 5 Core child-device binding for 9.2.0 and the T2
 ``ha_get_system_health`` radio-section canaries.
 """
 from __future__ import annotations
@@ -43,19 +43,18 @@ from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
     load_reviewed_upstream_release_registry,
 )
 from test_ha_mcp_production_readmission import _GatewayTransport, _settings  # noqa: E402
-from test_upstream_8_5_compatibility import capture  # noqa: E402
+from support.ha_mcp_captures import capture  # noqa: E402  (HAMCP-437)
 
 FIXTURE_DIR = ROOT / "tests/fixtures/ha_mcp_9_1_0/device"
 FIXTURE = json.loads((FIXTURE_DIR / "device-results.json").read_text(encoding="utf-8"))
-VERSIONS = ("8.5.0", "9.1.0")
+VERSIONS = ("9.2.0",)
 DEVICE = "ha_get_device"
 RADIO = "ha_manage_radio"
 CANARY = "CANARY"
-# Legacy URL for 8.5.0; the strict full-catalog URL for 9.1.0. Host and path
-# are synthetic redaction secrets distinct from every code under test.
+# The strict full-catalog URL for 9.2.0. Host and path are synthetic
+# redaction secrets distinct from every code under test.
 URLS = {
-    "8.5.0": "http://synthetic-provider:9583/synthetic-path-credential/mcp",
-    "9.1.0": "http://synthetic-provider:9583/synthetic-path-credential/catalog/full",
+    "9.2.0": "http://synthetic-provider:9583/synthetic-path-credential/catalog/full",
 }
 CODES = projection.CLOSED_WARNING_CODES
 
@@ -274,7 +273,7 @@ def markers_in(value) -> set[str]:
     return found
 
 
-def project(payload, version="9.1.0"):
+def project(payload, version="9.2.0"):
     return projection.project_device_result(deepcopy(payload), upstream_version=version)
 
 
@@ -470,13 +469,6 @@ class CompiledRuleTests(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, "^device_projection_invalid$"):
                         projection.project_device_result(deepcopy(bad), upstream_version=version)
 
-    def test_clean_fixtures_identical_on_both_versions(self):
-        for name, payload in FIXTURE.items():
-            if name == "synthetic":
-                continue
-            with self.subTest(fixture=name):
-                self.assertEqual(project(payload, "8.5.0"), project(payload, "9.1.0"))
-
 
 # ---------------------------------------------------------------------------
 # Gateway tests
@@ -569,11 +561,8 @@ class DeviceProjectionGatewayTests(unittest.IsolatedAsyncioTestCase):
         h.assert_no_side_calls(calls)
         return h
 
-    async def test_device_projection_credential_canaries_85(self):
-        await self._canaries("8.5.0")
-
-    async def test_device_projection_credential_canaries_91(self):
-        await self._canaries("9.1.0")
+    async def test_device_projection_credential_canaries_920(self):
+        await self._canaries("9.2.0")
 
     async def test_device_projection_useful_fields_preserved(self):
         for version in VERSIONS:
@@ -732,11 +721,8 @@ class DeviceProjectionGatewayTests(unittest.IsolatedAsyncioTestCase):
         for discriminator in NEGATIVE_DISCRIMINATORS:
             self.assertNotIn(discriminator, projection.CORE_INTEGRATION_DOMAINS)
 
-    async def test_device_registry_pairs_85(self):
-        await self._pairs("8.5.0")
-
-    async def test_device_registry_pairs_91(self):
-        await self._pairs("9.1.0")
+    async def test_device_registry_pairs_920(self):
+        await self._pairs("9.2.0")
 
     async def _derived(self, version):
         h = await Harness(self, version).start()
@@ -798,11 +784,8 @@ class DeviceProjectionGatewayTests(unittest.IsolatedAsyncioTestCase):
         h.scan(markers)
         h.assert_no_side_calls(calls)
 
-    async def test_device_registry_derived_fields_85(self):
-        await self._derived("8.5.0")
-
-    async def test_device_registry_derived_fields_91(self):
-        await self._derived("9.1.0")
+    async def test_device_registry_derived_fields_920(self):
+        await self._derived("9.2.0")
 
     async def test_device_projection_thread_ip_withheld(self):
         for version in VERSIONS:
@@ -912,11 +895,8 @@ class DeviceProjectionGatewayTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(h.transport.calls, 1)
         h.assert_no_side_calls(1)
 
-    async def test_manage_radio_unreachable_85(self):
-        await self._manage_radio_unreachable("8.5.0")
-
-    async def test_manage_radio_unreachable_91(self):
-        await self._manage_radio_unreachable("9.1.0")
+    async def test_manage_radio_unreachable_920(self):
+        await self._manage_radio_unreachable("9.2.0")
 
 
 # ---------------------------------------------------------------------------
@@ -1015,9 +995,9 @@ class CoreChildDeviceBindingTests(unittest.IsolatedAsyncioTestCase):
                          "sha256:8dad86e454ca58ae558c9229ebd0fd7b748a3a2ff2a9bbb860a1f97a71eaee6b")
         self.assertEqual(CHILD_DEVICE_NAME_PARTS_PROBE_PROFILE.delegated_device_adapters, ("8.5.0",))
         self.assertEqual(CHILD_DEVICE_PROBE_PROFILE.delegated_device_adapters, ("8.4.3",))
-        # 9.1.0 is in neither signed profile: only the binary-owned row admits it.
+        # 9.2.0 is in neither signed profile: only the binary-owned row admits it.
         for profile in self.PROFILES:
-            self.assertNotIn("9.1.0", profile.delegated_device_adapters)
+            self.assertNotIn("9.2.0", profile.delegated_device_adapters)
         for profile in self.PROFILES:
             for tool in sorted(DEVICE_DEPENDENT_DELEGATED_TOOLS):
                 with self.subTest(version=version, profile=profile.profile_id, tool=tool):
@@ -1067,13 +1047,9 @@ class CoreChildDeviceBindingTests(unittest.IsolatedAsyncioTestCase):
         h.assert_no_side_calls(1)
         self.assertEqual(case.core.health_snapshot()["active_commit_count"], 0)
 
-    async def test_91_core_child_device_positive(self):
-        self._binding("9.1.0")
-        await self._gateway("9.1.0")
-
-    async def test_85_core_child_device_positive(self):
-        self._binding("8.5.0")
-        await self._gateway("8.5.0")
+    async def test_920_core_child_device_positive(self):
+        self._binding("9.2.0")
+        await self._gateway("9.2.0")
 
 
 # Section 6.5 optional backstop: the exact key list of the design.

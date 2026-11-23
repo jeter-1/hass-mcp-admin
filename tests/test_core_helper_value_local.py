@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import traceback
 import unittest
 from unittest.mock import AsyncMock, patch
 from types import SimpleNamespace
@@ -320,18 +321,20 @@ class UpstreamStartup(unittest.IsolatedAsyncioTestCase):
 
 
 class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
-    async def test_scenario_orchestration_with_synthetic_transport_is_not_core_evidence(self):
+    async def run_acceptance(self, *, predecessor_available=False):
         """Exercise the script itself; authority/provenance are tested separately.
 
         Real F3 stores and provider decoding, synthetic transport/Core/gateway.
-        This test cannot produce or stand in for a disposable PASS receipt.
+        This cannot produce or stand in for a disposable PASS receipt. With
+        predecessor_available, the first (predecessor) authority also admits the
+        capability. The transport and the authorities built stay on self.
         """
         from tests.test_typed_helper_value import HelperTransport, SignedCore
         from tests.test_typed_fan import Clock
         from datetime import datetime, timezone
         from tests.test_core_release_evidence import refs
         from core_registry_contract_lane import lane_entry, probe_profile_for
-        transport = HelperTransport('8.5.0')
+        transport = HelperTransport('9.2.0')
         transport.states = {key.split('.')[0] + '.hamcp_seq17': {**value,
             'entity_id': key.split('.')[0] + '.hamcp_seq17'}
             for key, value in transport.states.items() if key.endswith('.synthetic')}
@@ -344,8 +347,9 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
         entry = {**lane_entry('2026.11.0'), 'capabilities': refs(), 'evidence_sha256': 'a' * 64,
                  'probe_profile_id': probe.profile_id, 'probe_profile_sha256': probe.contract_fingerprint}
         created = []
+        self.transport, self.created = transport, created
         def runtime():
-            value = SignedCore(signed=bool(created))
+            value = SignedCore(signed=bool(created) or predecessor_available)
             value.version = '2026.11.0'
             value.current_observation = SimpleNamespace(version=value.version)
             value.configure = lambda *a, **kw: None
@@ -376,7 +380,11 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
              patch.object(acceptance, 'HelperService', side_effect=service), \
              patch.object(acceptance, 'close_disposable_authority', new=AsyncMock()), \
              patch.object(acceptance.asyncio, 'sleep', side_effect=yield_only):
-            result = await acceptance.run(SimpleNamespace(), entry, Path(directory))
+            result = await acceptance.run(SimpleNamespace(), entry, Path(directory), mode="local")
+        return result
+
+    async def test_scenario_orchestration_with_synthetic_transport_is_not_core_evidence(self):
+        result = await self.run_acceptance()
         self.assertEqual(result['result'], 'PASS')
         self.assertTrue(result['reopened_recovery_read_only'])
         self.assertTrue(result['unverifiable_effect_not_success'])
@@ -384,6 +392,21 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
         # HAMCP-327: the lane has no dependency analysis, so every dispatching
         # call first asked (no dispatch) and proceeded only once confirmed.
         self.assertGreater(result['evidence_unavailable_confirmations'], 0)
+
+    async def test_an_admitting_predecessor_fails_the_lane_before_any_write(self):
+        # D3 rule 4 (Cursor HAMCP443B-R4, #472): the predecessor authority must
+        # refuse the capability. One that admits it fails the lane at that
+        # assert, before any write and before the extended authority is built.
+        try:
+            await self.run_acceptance(predecessor_available=True)
+        except AssertionError as error:  # assertRaises would drop the traceback
+            frame = traceback.extract_tb(error.__traceback__)[-1]
+        else:
+            self.fail("the lane passed with a predecessor that admits the capability")
+        self.assertEqual((frame.name, frame.line),
+                         ("run", 'assert not before.route_status((CAPABILITY,))["available"]'))
+        self.assertEqual(self.transport.writes, 0)
+        self.assertEqual(len(self.created), 1)  # the predecessor only; no extended authority
 
 
 if __name__ == '__main__': unittest.main()

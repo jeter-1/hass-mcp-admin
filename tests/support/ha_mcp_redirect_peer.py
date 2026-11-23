@@ -60,7 +60,8 @@ LOCATION_KINDS = (
     "cross_origin",
 )
 
-PEER_VERSIONS = ("8.5.0", "9.1.0")
+# HAMCP-437: the 8.5.0 and 9.1.0 peers are retired; 9.2.0 is the admitted release.
+PEER_VERSIONS = ("9.2.0",)
 
 
 @dataclass(frozen=True)
@@ -155,9 +156,6 @@ class RedirectPeer:
     # -- configuration -------------------------------------------------
     def _bound_path_for(self, form: str) -> str:
         if form == "strict_full":
-            return f"/private_{URL_PATH_CANARY}/catalog/full"
-        if form == "strict_full_like_85":
-            # A strict-form value served by an 8.5 peer.
             return f"/private_{URL_PATH_CANARY}/catalog/full"
         if form == "legacy":
             return f"/private_{URL_PATH_CANARY}/mcp"
@@ -441,9 +439,13 @@ class RedirectPeer:
 
 
 def peer_configurations() -> tuple[tuple[str, str], ...]:
-    """(version, form) pairs: 8.5 on legacy and strict form, 9.1 on strict."""
+    """(version, form) pairs: 9.2.0 on the strict form, its only admitted form.
 
-    return (("8.5.0", "legacy"), ("8.5.0", "strict_full"), ("9.1.0", "strict_full"))
+    HAMCP-437 retired the 8.5.0 legacy and strict cells (8.5.0 admission) and
+    moved the 9.1.0 strict cell to 9.2.0, which shares its selector rule.
+    """
+
+    return (("9.2.0", "strict_full"),)
 
 
 def matrix_cells(request_types: tuple[str, ...], *, full_locations: bool = True):

@@ -1,0 +1,590 @@
+{
+  "core_helper_schemas": {
+    "counter": {
+      "create": [
+        {
+          "name": "name",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "icon",
+          "type": "icon"
+        },
+        {
+          "default": 0,
+          "name": "initial",
+          "type": "positive_int"
+        },
+        {
+          "default": 1,
+          "name": "step",
+          "type": "positive_int"
+        },
+        {
+          "name": "minimum",
+          "type": "integer"
+        },
+        {
+          "name": "maximum",
+          "type": "integer"
+        },
+        {
+          "default": true,
+          "name": "restore",
+          "type": "boolean"
+        }
+      ],
+      "update": []
+    },
+    "input_boolean": {
+      "create": [
+        {
+          "name": "name",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "icon",
+          "type": "icon"
+        },
+        {
+          "name": "initial",
+          "type": "boolean"
+        }
+      ],
+      "update": []
+    },
+    "input_button": {
+      "create": [
+        {
+          "name": "name",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "icon",
+          "type": "icon"
+        }
+      ],
+      "update": []
+    },
+    "input_datetime": {
+      "create": [
+        {
+          "name": "name",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "default": false,
+          "name": "has_date",
+          "type": "boolean"
+        },
+        {
+          "default": false,
+          "name": "has_time",
+          "type": "boolean"
+        },
+        {
+          "name": "initial",
+          "type": "string"
+        }
+      ],
+      "update": []
+    },
+    "input_number": {
+      "create": [
+        {
+          "name": "name",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "min",
+          "required": true,
+          "type": "float"
+        },
+        {
+          "name": "max",
+          "required": true,
+          "type": "float"
+        },
+        {
+          "default": 1,
+          "name": "step",
+          "type": "float"
+        },
+        {
+          "default": "slider",
+          "name": "mode",
+          "options": [
+            "box",
+            "slider"
+          ]
+        },
+        {
+          "name": "unit_of_measurement",
+          "type": "string"
+        }
+      ],
+      "update": []
+    },
+    "input_select": {
+      "create": [
+        {
+          "name": "name",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "options",
+          "required": true,
+          "type": "string_list"
+        },
+        {
+          "name": "initial",
+          "type": "string"
+        }
+      ],
+      "update": []
+    },
+    "input_text": {
+      "create": [
+        {
+          "name": "name",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "default": 0,
+          "name": "min",
+          "type": "positive_int"
+        },
+        {
+          "default": 100,
+          "name": "max",
+          "type": "positive_int"
+        },
+        {
+          "default": "text",
+          "name": "mode",
+          "options": [
+            [
+              "text",
+              "Text"
+            ],
+            [
+              "password",
+              "Password"
+            ]
+          ]
+        },
+        {
+          "name": "pattern",
+          "type": "string"
+        }
+      ],
+      "update": []
+    },
+    "person": {
+      "create": [
+        {
+          "name": "name",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "user_id",
+          "type": "string"
+        },
+        {
+          "name": "device_trackers",
+          "type": "entity_id_list"
+        }
+      ],
+      "update": []
+    },
+    "schedule": {
+      "create": [
+        {
+          "name": "name",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "monday",
+          "type": "time_ranges"
+        },
+        {
+          "name": "tuesday",
+          "type": "time_ranges"
+        }
+      ],
+      "update": []
+    },
+    "tag": {
+      "create": [
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "tag_id",
+          "type": "string"
+        }
+      ],
+      "update": []
+    },
+    "timer": {
+      "create": [
+        {
+          "name": "name",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "default": "0:00:00",
+          "name": "duration",
+          "type": "time_period"
+        },
+        {
+          "default": false,
+          "name": "restore",
+          "type": "boolean"
+        }
+      ],
+      "update": []
+    },
+    "zone": {
+      "create": [
+        {
+          "name": "name",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "latitude",
+          "required": true,
+          "type": "latitude"
+        },
+        {
+          "name": "longitude",
+          "required": true,
+          "type": "longitude"
+        },
+        {
+          "default": 100,
+          "name": "radius",
+          "type": "float"
+        },
+        {
+          "default": false,
+          "name": "passive",
+          "type": "boolean"
+        },
+        {
+          "name": "unit",
+          "options": [
+            "unit_00",
+            "unit_01",
+            "unit_02",
+            "unit_03",
+            "unit_04",
+            "unit_05",
+            "unit_06",
+            "unit_07",
+            "unit_08",
+            "unit_09",
+            "unit_10",
+            "unit_11",
+            "unit_12",
+            "unit_13"
+          ]
+        }
+      ],
+      "update": []
+    }
+  },
+  "descriptor": {
+    "_meta": {
+      "fastmcp": {
+        "tags": [
+          "Helper Entities"
+        ]
+      }
+    },
+    "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Create or Update Helper"
+    },
+    "description": "Create or update Home Assistant helpers: storage types, every helper\nflow HA lists, and config subentries.\n\nMUST call ha_get_skill_guide OR refer to your locally installed skills first.\n``helper-selection.md`` ships under ``skill_content`` by default.\n\nSIMPLE types, written in one call: input_boolean, input_button,\ninput_select, input_number, input_text, input_datetime, counter, timer, schedule,\nzone, person, tag.\n\nFLOW types: every helper flow Home Assistant lists, read from it at\ncall time \u2014 template, group, utility_meter, derivative, min_max,\nthreshold, integration, statistics, trend, ... and custom helper\nintegrations. Creating one runs its config flow; `helper_id` (the\nconfig entry id) runs its options flow instead.\nDo not create `otp` here although Home Assistant lists it: the user sets\nit up in the HA UI, since its secret is a credential they enroll in an\nauthenticator app.\n\nCONFIG_SUBENTRY type: pass `entry_id` and `subentry_type`; with\n`subentry_id` the subentry's reconfigure flow runs, without it its\ncreate flow.\n\nFlows, one step per call, as the HA UI runs them: a call answers the\nstep the flow is at and returns Home Assistant's next answer. A form\ncomes back with its fields (type, default, current value, Home\nAssistant's help text) and flow_id; a menu with menu_options. Answer\nwith flow_id and config (a form) or menu_choice (a menu); flow_id alone\nreturns the step again, and flow_id with abort=True ends the flow.\nWithout flow_id a new flow starts: menu_choice answers its opening\nmenu and config the form after it, so a one-form helper is created or\nupdated in one call; without config the call returns the form, and\nits later_forms when the helper has more than one (statistics,\nhistory_stats, generic_thermostat, ...). With a config list the call\nanswers form after form and returns at the first one Home Assistant\nrejects, or once the answers run out. A rejected form is an error\nwith Core's text, and the flow stays open to correct it. Nothing is\nsaved until the flow finishes.\n\nWHEN NOT TO USE:\n- An integration that is not a helper: ha_set_integration.\n- Removing a helper: ha_remove_helpers_integrations.\n- Renaming a flow helper's entity, or its registry settings alone:\n  ha_set_entity.\n\nBehavior:\n- A SIMPLE update preserves type-specific fields not re-passed (a rename\n  never wipes initial/icon/etc.).\n- Omitted `action`: update when `helper_id` (for a config subentry,\n  `subentry_id`) is given, else create.\n- area_id, labels, category and icon are applied to a flow helper's\n  entities by the call that finishes the flow.\n- A progress step (Home Assistant working in the background) is waited\n  out for up to 120 s. When Home Assistant does not answer a submit,\n  the error carries status applied_but_unverified: check the helper\n  before retrying.\n\nEXAMPLES:\n- input_number: ha_config_set_helper(helper_type=\"input_number\", name=\"Target\", config={\"min\": 0, \"max\": 100, \"step\": 5})\n- template sensor: ha_config_set_helper(helper_type=\"template\", menu_choice=\"sensor\", config={\"name\": \"Room Temp\", \"state\": \"{{ states('sensor.x')|float }}\", \"unit_of_measurement\": \"\u00b0C\"})\n- group: ha_config_set_helper(helper_type=\"group\", menu_choice=\"light\", config={\"name\": \"Kitchen Lights\", \"entities\": [\"light.a\", \"light.b\"]})\n- see a form first: ha_config_set_helper(helper_type=\"statistics\"), then answer it: ha_config_set_helper(helper_type=\"statistics\", flow_id=\"...\", config={...})\n- several forms in one call: ha_config_set_helper(helper_type=\"statistics\", config=[{\"name\": \"Temp Mean\", \"entity_id\": \"sensor.temp\"}, {\"state_characteristic\": \"mean\"}, {\"sampling_size\": 20}])\n- update one option: ha_config_set_helper(helper_type=\"group\", helper_id=\"01HXYZ...\", config={\"hide_members\": true})\n- config subentry: ha_config_set_helper(helper_type=\"config_subentry\", entry_id=\"01HXYZ...\", subentry_type=\"conversation\", config={\"name\": \"Local agent\", \"model\": \"gemma3:27b\"})\n\nIf a Claude Desktop user gets a 4-minute timeout with no result on this call, read the target back before repeating it, and tell them to wait a few seconds before clicking the manual-approve button, as clicking it too quickly is known to cause hangs in Claude Desktop. This workaround is specific to Claude Desktop.\n\ncreate update new add helper input_boolean input_button input_number input_text input_datetime input_select counter timer schedule zone person tag template group utility_meter derivative min_max threshold integration statistics trend random filter tod generic_thermostat switch_as_x generic_hygrostat history_stats mold_indicator",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "BestPracticeKey": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Read-receipt for the home-assistant-best-practices skill; required when strict best-practices mode is enabled. Not a secret or credential: the current value is an attestation phrase published openly at the top of the skill content served by ha_get_skill_guide. Read that content, then pass the value back verbatim \u2014 this round-trip is the server's designed protocol confirming the practices were read before writing."
+        },
+        "MandatoryBPS": {
+          "default": true,
+          "type": "boolean"
+        },
+        "abort": {
+          "default": false,
+          "description": "With flow_id: end the open flow without saving.",
+          "type": "boolean"
+        },
+        "action": {
+          "anyOf": [
+            {
+              "enum": [
+                "create",
+                "update"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Explicit intent: 'create' a new helper or 'update' an existing one. Pass it so a helper_id typo fails as 'helper not found' instead of creating a helper."
+        },
+        "area_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Area ID for the helper; '' or ' ' clears it"
+        },
+        "category": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Category ID for this helper (ha_config_get_category(scope='helpers') lists them, ha_config_set_category() creates one); '' or ' ' clears it."
+        },
+        "config": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Type-specific fields. On update it is a patch: a field you omit keeps its current value, and a SIMPLE type's field set to null is removed. SIMPLE types take these keys: counter: initial (positive_int, default 0), maximum (integer), minimum (integer), restore (boolean, default True), step (positive_int, default 1). input_boolean: initial (boolean). input_datetime: has_date (boolean, default False), has_time (boolean, default False), initial (string). input_number: max (float, required), min (float, required), mode (box|slider, default slider), step (float, default 1), unit_of_measurement (string). input_select: options (string_list, required), initial (string). input_text: max (positive_int, default 100), min (positive_int, default 0), mode (text|password, default text), pattern (string). person: device_trackers (entity_id_list), user_id (string). schedule: monday (time_ranges), tuesday (time_ranges). tag: tag_id (string). timer: duration (time_period, default 0:00:00), restore (boolean, default False). zone: latitude (latitude, required), longitude (longitude, required), passive (boolean, default False), radius (float, default 100), unit (one of 14 choices). ha_config_list_helpers(helper_type, describe=True) lists a type's fields with every choice. FLOW types and config_subentry: the answers to the form the flow is at, under the form's own field names (a section's fields nested under the section's name). On an update a field you omit is sent as the form shows it (its `current` value); a field set to null is left empty. Home Assistant validates the answer. A list answers several forms: one object per form, in the order Home Assistant asks for them."
+        },
+        "entry_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Parent config entry ID when helper_type='config_subentry'. Use ha_get_integration() to find entry IDs."
+        },
+        "flow_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Continue an open flow: the flow_id a previous call returned, with the same helper_type and helper_id (or entry_id, subentry_type and subentry_id)."
+        },
+        "helper_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The helper's storage id ('my_button'), not the name of its entity, or its full entity_id ('input_button.my_button'); for a FLOW helper its config entry id. Omit to create a new helper."
+        },
+        "helper_type": {
+          "anyOf": [
+            {
+              "enum": [
+                "input_button",
+                "input_boolean",
+                "input_select",
+                "input_number",
+                "input_text",
+                "input_datetime",
+                "counter",
+                "timer",
+                "schedule",
+                "zone",
+                "person",
+                "tag"
+              ],
+              "type": "string"
+            },
+            {
+              "const": "config_subentry",
+              "type": "string"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "description": "Type of helper to create or update."
+        },
+        "icon": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Material Design Icon (e.g., 'mdi:bell'); '' or ' ' clears it, except a zone's stored icon, which Home Assistant keeps on update as the zone dialog does: it can be changed but not removed. A storage helper's icon goes into its stored config when Home Assistant's schema for the type has an icon field, as the helper's own dialog stores it, and the entity registry is left alone; otherwise (person, tag, or another type without the ha_mcp_tools component) it goes into the entity registry. An icon override in the entity registry is set or cleared with ha_set_entity. Restoring a storage helper's automatic backup also puts back its registry icon, unless the backup predates registry icons being recorded; a flow helper's backup holds no icon, so its restore does not set one"
+        },
+        "labels": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Labels to categorize the helper"
+        },
+        "menu_choice": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "FLOW types and config_subentry: the option to pick at a menu step (template and group open with one)."
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Display name. Home Assistant decides which SIMPLE helper types need one to be created; optional on an update. Creating a FLOW helper, it answers the form's `name` field when the form has one and config sets none; a FLOW update does not use it (rename the entity with ha_set_entity). Not used by config_subentry."
+        },
+        "show_advanced_options": {
+          "default": false,
+          "description": "When helper_type='config_subentry', ask older Home Assistant versions to expose advanced flow options. No-op on HA 2026.6+; pending removal before HA 2027.6.",
+          "type": "boolean"
+        },
+        "subentry_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Existing config subentry ID to reconfigure when helper_type='config_subentry'."
+        },
+        "subentry_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Integration-defined subentry type when helper_type='config_subentry'."
+        },
+        "wait": {
+          "default": true,
+          "description": "Wait for helper entity to be queryable before returning. Set to False for bulk operations.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "helper_type"
+      ],
+      "type": "object"
+    },
+    "name": "ha_config_set_helper",
+    "outputSchema": {
+      "additionalProperties": true,
+      "type": "object"
+    },
+    "title": "Create or Update Helper"
+  },
+  "provenance": {
+    "generator": "scripts/generate_hamcp436_component_helper_fixture.py",
+    "generator_python": "3.13.5",
+    "generator_sha256": "8805a85b9f9bdc3df9d7925bcd09dede9a19db4bd7176395d5d5179970071839",
+    "stock_descriptor_sha256": "17d0466e941cdc831dd32dd4e4ae63be112fc42d0e377d353145207545da0d25",
+    "stock_descriptor_source": "docs/evidence/upstream-read-compatibility/ha-mcp-9.2.0.json",
+    "synthetic_inputs": "Core helper schemas are synthetic (CORE_HELPER_SCHEMAS in the generator); the component capability probe and schema fetch are replaced by synthetic answers. No Home Assistant was contacted.",
+    "task": "HAMCP-436",
+    "upstream_repository": "homeassistant-ai/ha-mcp",
+    "upstream_source_commit": "51e3aac788482a081807591cd5d58d07dc4e540b",
+    "upstream_transform_class": "ComponentHelperSchemaTransform",
+    "upstream_transform_path": "src/ha_mcp/transforms/component_helpers.py",
+    "upstream_transform_sha256": "39c6f44e0d33dca6b128ff4fc607974989f430816cf7801e757bde48f8026061"
+  },
+  "schema_version": 1
+}

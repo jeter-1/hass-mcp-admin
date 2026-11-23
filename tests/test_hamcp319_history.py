@@ -1,12 +1,17 @@
-"""HAMCP-319 section 7 ledger row 16 (``ha_get_history``) for ha-mcp 9.1.0. Offline.
+"""HAMCP-319 section 7 ledger row 16 (``ha_get_history``), re-pinned to ha-mcp 9.2.0. Offline.
 
 Section 6.1 statistics projection ``ha-mcp-9.1.0-history-statistics-v1`` and
 section 1.2 rule 3 state rows, through the real upstream read gateway with a
 fake transport, plus the history-slices 9.1 parser row. Every call is an
-8.5-shaped public call; each scenario is driven against the 8.5.0 and the
-9.1.0 gateway. The fixtures are class S
-(``tests/fixtures/ha_mcp_9_1_0/history/provenance.json``). Synthetic data and
-credentials only; no live Home Assistant, no network.
+8.5-shaped public call. HAMCP-437: each scenario is driven against the 9.2.0
+gateway, whose ``upstream_history_9_2`` runs the unedited 9.1 projection on
+the 9.1 shapes (equal in every real-Core 9.2.0 receipt,
+``docs/evidence/hamcp371/s6``) and adds three counts. The shipped 8.5 public
+result each 9.2.0 result must reach is the committed 8.5.0 side of the same
+scenario, which the 8.5 gateway passed through unchanged. The fixtures are
+class S (``tests/fixtures/ha_mcp_9_2_0/history/provenance.json``, cited at
+ha-mcp 9.2.0 ``51e3aac7``; the 8.5.0 sides keep their 8.5.0 citations). Synthetic
+data and credentials only; no live Home Assistant, no network.
 """
 from __future__ import annotations
 
@@ -30,17 +35,18 @@ from ha_mcp_engineering.history_slices import contracts as c  # noqa: E402
 from ha_mcp_engineering.history_slices import service as service_module  # noqa: E402
 from ha_mcp_engineering.history_slices.service import HistorySliceService  # noqa: E402
 from ha_mcp_engineering.providers import upstream_history_9_1 as history  # noqa: E402
+from ha_mcp_engineering.providers import upstream_history_9_2 as history_9_2  # noqa: E402
 from ha_mcp_engineering.providers import upstream_reads_9_1  # noqa: E402
 from ha_mcp_engineering.providers.upstream_read_gateway import UpstreamReadGateway  # noqa: E402
 from ha_mcp_engineering.request_context import begin_request, end_request  # noqa: E402
 from test_ha_mcp_production_readmission import _GatewayTransport, _settings  # noqa: E402
-from test_upstream_8_5_compatibility import capture  # noqa: E402
+from support.ha_mcp_captures import capture  # noqa: E402  (HAMCP-437)
 
 FIXTURES = json.loads(
-    (ROOT / "tests/fixtures/ha_mcp_9_1_0/history/responses.json").read_text("utf-8")
+    (ROOT / "tests/fixtures/ha_mcp_9_2_0/history/responses.json").read_text("utf-8")
 )
 PROVENANCE = json.loads(
-    (ROOT / "tests/fixtures/ha_mcp_9_1_0/history/provenance.json").read_text("utf-8")
+    (ROOT / "tests/fixtures/ha_mcp_9_2_0/history/provenance.json").read_text("utf-8")
 )
 SCENARIOS = FIXTURES["scenarios"]
 TOOL = "ha_get_history"
@@ -58,6 +64,12 @@ DROPPED_91_KEYS = {"end", "unit_source", "unit_reason", "statistics_metadata", "
 CHICAGO = timezone(timedelta(hours=-5))
 NOW_MS = us("2026-10-19T13:30:00") // 1000
 SLICE_ENTITY = "climate.mudroom_thermostat"
+# HAMCP-437: the release the gateway cases drive, and its three count fields.
+CURRENT = "9.2.0"
+COUNTS = ("fields_withheld", "fields_dropped_by_policy", "upstream_warnings_replaced")
+# A peer URL whose parts occur in no result (the default host ``upstream``
+# would also redact ``upstream_warnings_replaced``).
+PEER_URL = "http://synthetic-host-319:9583/synthetic-history-secret-319/mcp"
 START, END = "2026-10-19T00:00:00Z", "2026-10-19T12:00:00Z"
 
 
@@ -79,7 +91,20 @@ def error(payload):
 
 def scenario(name, version):
     entry = SCENARIOS[name]
-    return deepcopy(entry["arguments"]), deepcopy(entry["ha_mcp_9_1_0" if version == "9.1.0" else "ha_mcp_8_5_0"])
+    side = "ha_mcp_9_2_0" if version in ("9.1.0", CURRENT) else "ha_mcp_8_5_0"
+    return deepcopy(entry["arguments"]), deepcopy(entry[side])
+
+
+def shipped_85(name):
+    """The shipped 8.5 public result of a scenario (the 8.5 gateway passed it through)."""
+
+    return scenario(name, "8.5.0")[1]
+
+
+def projected(result):
+    """The gateway ``data`` without the three 9.2.0 count fields."""
+
+    return {k: v for k, v in result["data"].items() if k not in COUNTS}
 
 
 def keys_anywhere(value) -> set:
@@ -180,7 +205,8 @@ class _Base(unittest.IsolatedAsyncioTestCase):
         transport = Transport(capture(version)["tools"], version)
         gateway = UpstreamReadGateway()
         gateway.configure(
-            replace(_settings("synthetic-no-key"), ha_mcp_release_registry_enabled=False),
+            replace(_settings("synthetic-no-key"), ha_mcp_release_registry_enabled=False,
+                    upstream_dashboard_mcp_url=PEER_URL),
             transport=transport,
         )
         await gateway.initialize(FastMCP(f"synthetic-hamcp319-hist-{version}"))
@@ -206,7 +232,7 @@ class _Base(unittest.IsolatedAsyncioTestCase):
 
     @staticmethod
     def wire(version, arguments):
-        if version != "9.1.0":
+        if version not in ("9.1.0", CURRENT):
             return arguments
         out = {**arguments, **PINS}
         if out.get("source") == "statistics" and "statistic_types" in out:
@@ -222,100 +248,91 @@ class _Base(unittest.IsolatedAsyncioTestCase):
 
 
 class Row16HistoryParityTests(_Base):
-    """Rule 3 state rows: 9.1 rows reach the shipped 8.5 public result."""
+    """Rule 3 state rows: 9.2.0 (9.1-shaped) rows reach the shipped 8.5 public result."""
 
-    async def test_91_parity_row_16_history_states(self):
+    def assert_counts(self, result, *, withheld=0, replaced=0):
+        self.assertEqual(set(result["data"]), {"data", "metadata", *COUNTS})
+        self.assertEqual(result["data"]["fields_withheld"], withheld)
+        self.assertEqual(result["data"]["upstream_warnings_replaced"], replaced)
+
+    async def test_92_parity_row_16_history_states(self):
         for name in HISTORY_SCENARIOS:
             with self.subTest(name=name):
-                r85 = await self.run_scenario(name, "8.5.0")
-                r91 = await self.run_scenario(name, "9.1.0")
-                self.assertEqual(r91["data"], r85["data"])
-                self.assertEqual(set(r91["data"]), {"data", "metadata"})
-                self.assertEqual(r91["metadata"]["completeness"], "complete", r91)
-                self.assertEqual(r91["warnings"], r85["warnings"])
+                r92 = await self.run_scenario(name, CURRENT)
+                payload85 = shipped_85(name)
+                self.assertEqual(projected(r92), payload85)
+                self.assert_counts(r92)
+                self.assertEqual(r92["metadata"]["completeness"], "complete", r92)
+                self.assertEqual(r92["warnings"], [])
                 # Field order is the 8.5 order, not 9.1's.
-                for e91, e85 in zip(body(r91).get("entities", []), body(r85).get("entities", [])):
-                    self.assertEqual(list(e91), list(e85))
-                    for s91, s85 in zip(e91["states"], e85["states"]):
-                        self.assertEqual(list(s91), list(s85))
-                self.assertNotIn("summary", keys_anywhere(body(r91)))
-                self.assertNotIn("summary", json.dumps(body(r91).get("query_params", {})))
+                for e92, e85 in zip(body(r92).get("entities", []), payload85["data"].get("entities", [])):
+                    self.assertEqual(list(e92), list(e85))
+                    for s92, s85 in zip(e92["states"], e85["states"]):
+                        self.assertEqual(list(s92), list(s85))
+                self.assertNotIn("summary", keys_anywhere(body(r92)))
+                self.assertNotIn("summary", json.dumps(body(r92).get("query_params", {})))
 
-    async def test_85_parity_row_16_history_states(self):
-        for name in HISTORY_SCENARIOS:
-            with self.subTest(name=name):
-                arguments, payload = scenario(name, "8.5.0")
-                result = await self.run_scenario(name, "8.5.0")
-                # 8.5 is unchanged: the shipped result is passed through.
-                self.assertEqual(result["data"], payload)
-                self.assertEqual(result["metadata"]["completeness"], "complete")
-                self.assertNotIn("summary", arguments)
+    async def test_92_parity_row_16_timezone_failure_restores_8_5_metadata(self):
+        r92 = await self.run_scenario("history_timezone_failed", CURRENT)
+        payload85 = shipped_85("history_timezone_failed")
+        self.assertEqual(body(r92)["entities"][0]["states"], payload85["data"]["entities"][0]["states"])
+        self.assertEqual(meta(r92), payload85["metadata"])
+        self.assertEqual(meta(r92)["note"], "Could not fetch Home Assistant timezone — timestamps are in UTC.")
+        self.assertNotIn("Could not fetch Home Assistant timezone; timezone context", json.dumps(r92))
 
-    async def test_91_parity_row_16_timezone_failure_restores_8_5_metadata(self):
-        r91 = await self.run_scenario("history_timezone_failed", "9.1.0")
-        _, payload85 = scenario("history_timezone_failed", "8.5.0")
-        self.assertEqual(body(r91)["entities"][0]["states"], payload85["data"]["entities"][0]["states"])
-        self.assertEqual(meta(r91), payload85["metadata"])
-        self.assertEqual(meta(r91)["note"], "Could not fetch Home Assistant timezone — timestamps are in UTC.")
-        self.assertNotIn("Could not fetch Home Assistant timezone; timezone context", json.dumps(r91))
-
-    async def test_91_parity_row_16_absent_attributes_disclosed_not_fabricated(self):
-        r85 = await self.run_scenario("history_attributes_absent", "8.5.0")
-        r91 = await self.run_scenario("history_attributes_absent", "9.1.0")
-        rows91 = body(r91)["entities"][0]["states"]
-        rows85 = body(r85)["entities"][0]["states"]
+    async def test_92_parity_row_16_absent_attributes_disclosed_not_fabricated(self):
+        r92 = await self.run_scenario("history_attributes_absent", CURRENT)
+        data85 = shipped_85("history_attributes_absent")["data"]
+        rows92 = body(r92)["entities"][0]["states"]
+        rows85 = data85["entities"][0]["states"]
         self.assertEqual(rows85[1]["attributes"], {})  # 8.5 fabricated an empty mapping
-        self.assertNotIn("attributes", rows91[1])  # 9.1: absent stays absent, never {}
-        self.assertEqual(rows91[0], rows85[0])
-        self.assertEqual({k: v for k, v in rows85[1].items() if k != "attributes"}, rows91[1])
+        self.assertNotIn("attributes", rows92[1])  # 9.1 rows on 9.2.0: absent stays absent, never {}
+        self.assertEqual(rows92[0], rows85[0])
+        self.assertEqual({k: v for k, v in rows85[1].items() if k != "attributes"}, rows92[1])
         marker = ("sensor.synthetic_temperature: attributes unavailable for 1 of 2 returned states; "
                   "they were not reported, and they are not shown as empty.")
-        self.assertEqual(body(r91)["warnings"], [marker])
-        self.assertNotEqual(r91["metadata"]["completeness"], "complete")
-        self.assertIn(history.ATTRIBUTES_UNAVAILABLE_WARNING, r91["warnings"])
-        rest91 = {k: v for k, v in body(r91).items() if k not in {"entities", "warnings"}}
-        rest85 = {k: v for k, v in body(r85).items() if k != "entities"}
-        self.assertEqual(rest91, rest85)
-
-    async def test_85_parity_row_16_absent_attributes_baseline(self):
-        r85 = await self.run_scenario("history_attributes_absent", "8.5.0")
-        self.assertEqual(r85["metadata"]["completeness"], "complete")
-        self.assertNotIn("warnings", body(r85))
+        self.assertEqual(body(r92)["warnings"], [marker])
+        self.assertNotEqual(r92["metadata"]["completeness"], "complete")
+        self.assertIn(history.ATTRIBUTES_UNAVAILABLE_WARNING, r92["warnings"])
+        rest92 = {k: v for k, v in body(r92).items() if k not in {"entities", "warnings"}}
+        rest85 = {k: v for k, v in data85.items() if k != "entities"}
+        self.assertEqual(rest92, rest85)
 
 
 class Row16StatisticsParityTests(_Base):
-    """Section 6.1 ``ha-mcp-9.1.0-history-statistics-v1``."""
+    """Section 6.1 ``ha-mcp-9.1.0-history-statistics-v1``, run by the 9.2.0 history row."""
 
     def expected_from_85(self, name, data85):
         """The 8.5 result with the section 6.1 unit difference applied."""
 
         expected = deepcopy(data85)
-        payload91 = scenario(name, "9.1.0")[1]
-        for entity, upstream in zip(expected["entities"], payload91["data"]["entities"]):
+        payload = scenario(name, CURRENT)[1]
+        for entity, upstream in zip(expected["entities"], payload["data"]["entities"]):
             entity["unit_of_measurement"] = upstream["unit_of_measurement"]
         return expected
 
-    async def test_91_parity_row_16_statistics_projection(self):
+    async def test_92_parity_row_16_statistics_projection(self):
         for name in STATISTICS_SCENARIOS:
             with self.subTest(name=name):
-                r85 = await self.run_scenario(name, "8.5.0")
-                r91 = await self.run_scenario(name, "9.1.0")
-                data91 = deepcopy(body(r91))
-                data85 = deepcopy(body(r85))
-                data91.pop("warnings", None)
+                r92 = await self.run_scenario(name, CURRENT)
+                payload85 = shipped_85(name)
+                data92 = deepcopy(body(r92))
+                data85 = deepcopy(payload85["data"])
+                data92.pop("warnings", None)
                 data85.pop("warnings", None)
-                self.assertEqual(data91, self.expected_from_85(name, data85))
-                self.assertEqual(meta(r91), meta(r85))
+                self.assertEqual(data92, self.expected_from_85(name, data85))
+                self.assertEqual(meta(r92), payload85["metadata"])
+                self.assertEqual(r92["data"]["fields_withheld"], 0)
                 # 9.1 entity/row additions are dropped (time_range keeps 8.5's own end).
-                self.assertFalse(DROPPED_91_KEYS & keys_anywhere(body(r91)["entities"]), body(r91))
-                for e91, e85 in zip(body(r91)["entities"], body(r85)["entities"]):
-                    self.assertEqual(list(e91), list(e85))
-                    for s91, s85 in zip(e91["statistics"], e85["statistics"]):
-                        self.assertEqual(list(s91), list(s85))
+                self.assertFalse(DROPPED_91_KEYS & keys_anywhere(body(r92)["entities"]), body(r92))
+                for e92, e85 in zip(body(r92)["entities"], payload85["data"]["entities"]):
+                    self.assertEqual(list(e92), list(e85))
+                    for s92, s85 in zip(e92["statistics"], e85["statistics"]):
+                        self.assertEqual(list(s92), list(s85))
 
-    async def test_91_parity_row_16_statistics_types_order_and_units(self):
-        r91 = await self.run_scenario("statistics_default_types", "9.1.0")
-        data = body(r91)
+    async def test_92_parity_row_16_statistics_types_order_and_units(self):
+        r92 = await self.run_scenario("statistics_default_types", CURRENT)
+        data = body(r92)
         self.assertEqual(data["statistic_types"], list(history.DEFAULT_STATISTIC_TYPES))
         self.assertEqual(data["query_params"]["statistic_types"], None)
         entity = data["entities"][0]
@@ -324,13 +341,12 @@ class Row16StatisticsParityTests(_Base):
             # Defaults in 8.5 order, taken only when present; 9.1 ``end`` dropped.
             self.assertEqual(list(row), ["start", "mean", "min", "max"])
             self.assertEqual(type(row["start"]), float)
-        self.assertEqual(r91["metadata"]["completeness"], "complete")
+        self.assertEqual(r92["metadata"]["completeness"], "complete")
         self.assertNotIn("warnings", data)
 
-    async def test_91_parity_row_16_statistics_requested_missing_types_and_unknown_units(self):
-        r85 = await self.run_scenario("statistics_requested_units_unknown_and_empty", "8.5.0")
-        r91 = await self.run_scenario("statistics_requested_units_unknown_and_empty", "9.1.0")
-        data = body(r91)
+    async def test_92_parity_row_16_statistics_requested_missing_types_and_unknown_units(self):
+        r92 = await self.run_scenario("statistics_requested_units_unknown_and_empty", CURRENT)
+        data = body(r92)
         self.assertEqual(data["statistic_types"], ["sum", "change"])
         energy, missing = data["entities"]
         for row in energy["statistics"]:
@@ -340,7 +356,7 @@ class Row16StatisticsParityTests(_Base):
         self.assertEqual(missing["statistics"], [])
         empty = ("No statistics found for: sensor.synthetic_missing. These entities may not have "
                  "state_class attribute or may not have recorded data yet.")
-        self.assertEqual(body(r85)["warnings"], [empty])
+        self.assertEqual(shipped_85("statistics_requested_units_unknown_and_empty")["data"]["warnings"], [empty])
         self.assertEqual(data["warnings"], [
             "sensor.synthetic_energy: statistics output unit is unknown (statistics_metadata_missing); "
             "do not infer it from current state attributes.",
@@ -349,21 +365,22 @@ class Row16StatisticsParityTests(_Base):
             empty,
         ])
         # Unknown units are an unavailable disclosure; the reset warning is withheld.
-        self.assertNotEqual(r91["metadata"]["completeness"], "complete")
-        self.assertIn(history.UNITS_UNKNOWN_WARNING, r91["warnings"])
-        self.assertNotIn("last_reset", json.dumps(r91))
+        self.assertNotEqual(r92["metadata"]["completeness"], "complete")
+        self.assertIn(history.UNITS_UNKNOWN_WARNING, r92["warnings"])
+        self.assertNotIn("last_reset", json.dumps(r92))
+        self.assertEqual(r92["data"]["upstream_warnings_replaced"], 0)
 
-    async def test_91_parity_row_16_statistics_offset_and_pagination(self):
-        arguments, payload = scenario("statistics_default_types", "9.1.0")
+    async def test_92_parity_row_16_statistics_offset_and_pagination(self):
+        arguments, payload = scenario("statistics_default_types", CURRENT)
         arguments.update(offset=1, limit=1)
         entity = payload["data"]["entities"][0]
         entity["statistics"] = entity["statistics"][1:2]
-        entity.update(total_count=len(scenario("statistics_default_types", "9.1.0")[1]["data"]["entities"][0]["statistics"]),
+        entity.update(total_count=len(scenario("statistics_default_types", CURRENT)[1]["data"]["entities"][0]["statistics"]),
                       offset=1, limit=1, count=1)
         entity["has_more"] = entity["total_count"] > 2
         entity["next_offset"] = 2 if entity["has_more"] else None
         payload["data"]["query_params"].update(offset=1, limit=1)
-        result, transport = await self.call("9.1.0", arguments, ok(payload))
+        result, transport = await self.call(CURRENT, arguments, ok(payload))
         self.assertIs(result["success"], True, result)
         out = body(result)["entities"][0]
         self.assertEqual((out["offset"], out["limit"], out["count"], out["total_count"]),
@@ -371,83 +388,73 @@ class Row16StatisticsParityTests(_Base):
         self.assertEqual(body(result)["query_params"], {"statistic_types": None, "limit": 1, "offset": 1})
         self.assertEqual(transport.sent[0][1]["offset"], 1)
 
-    async def test_85_parity_row_16_statistics_projection(self):
-        for name in STATISTICS_SCENARIOS:
-            with self.subTest(name=name):
-                _, payload = scenario(name, "8.5.0")
-                result = await self.run_scenario(name, "8.5.0")
-                self.assertEqual(result["data"], payload)
-                for entity in body(result)["entities"]:
-                    self.assertIsNone(entity["unit_of_measurement"])
-
-    async def test_91_parity_row_16_unitless_timezone_failure(self):
-        r85 = await self.run_scenario("statistics_unitless_timezone_failed", "8.5.0")
-        r91 = await self.run_scenario("statistics_unitless_timezone_failed", "9.1.0")
-        self.assertIsNone(body(r91)["entities"][0]["unit_of_measurement"])
-        self.assertEqual(body(r91)["statistic_types"], ["state", "mean"])
-        self.assertEqual(r91["metadata"]["completeness"], "complete")
-        self.assertEqual(r91["data"], r85["data"])
+    async def test_92_parity_row_16_unitless_timezone_failure(self):
+        r92 = await self.run_scenario("statistics_unitless_timezone_failed", CURRENT)
+        self.assertIsNone(body(r92)["entities"][0]["unit_of_measurement"])
+        self.assertEqual(body(r92)["statistic_types"], ["state", "mean"])
+        self.assertEqual(r92["metadata"]["completeness"], "complete")
+        self.assertEqual(projected(r92), shipped_85("statistics_unitless_timezone_failed"))
 
 
 class Row16RefusalTests(_Base):
     """Pre-dispatch refusals (zero peer calls) and fail-closed shapes."""
 
-    async def test_91_parity_row_16_invalid_period_refused_before_dispatch(self):
+    async def test_92_parity_row_16_invalid_period_refused_before_dispatch(self):
         arguments = deepcopy(FIXTURES["refusals_8_5_0"]["statistics_invalid_period"]["arguments"])
-        result, transport = await self.call("9.1.0", arguments, ok({"data": {CANARY: True}}))
+        result, transport = await self.call(CURRENT, arguments, ok({"data": {CANARY: True}}))
         self.refused(result, transport, dispatched=False, category="argument_validation")
         self.assertEqual(transport.sent, [])
 
-    async def test_91_parity_row_16_unsupported_statistic_types_refused_before_dispatch(self):
-        base = scenario("statistics_default_types", "9.1.0")[0]
+    async def test_92_parity_row_16_unsupported_statistic_types_refused_before_dispatch(self):
+        base = scenario("statistics_default_types", CURRENT)[0]
         for value in ("", "bogus", "mean,bogus", ["mean", "last_reset"], [], "[]", "[\"bogus\"]"):
             with self.subTest(value=value):
                 result, transport = await self.call(
-                    "9.1.0", {**base, "statistic_types": value}, ok({"data": {CANARY: True}}),
+                    CURRENT, {**base, "statistic_types": value}, ok({"data": {CANARY: True}}),
                 )
                 self.refused(result, transport, dispatched=False, category="argument_validation")
                 self.assertEqual(transport.sent, [])
 
-    async def test_91_parity_row_16_history_source_pins_without_statistics_checks(self):
-        arguments, payload = scenario("history_minimal", "9.1.0")
-        result, transport = await self.call("9.1.0", {**arguments, "period": "fortnight"}, ok(payload))
+    async def test_92_parity_row_16_history_source_pins_without_statistics_checks(self):
+        arguments, payload = scenario("history_minimal", CURRENT)
+        result, transport = await self.call(CURRENT, {**arguments, "period": "fortnight"}, ok(payload))
         self.assertIs(result["success"], True, result)
         self.assertEqual(transport.sent[0][1], {**arguments, "period": "fortnight", **PINS})
 
-    async def test_85_parity_row_16_invalid_period_refused_upstream(self):
-        entry = deepcopy(FIXTURES["refusals_8_5_0"]["statistics_invalid_period"])
-        result, transport = await self.call("8.5.0", entry["arguments"], error(entry["error"]))
-        self.assertIs(result.get("success"), False, result)
-        # 8.5 refused in its own client-side check, after Engineering dispatched.
-        self.assertIs(result["metadata"]["upstream_dispatch_occurred"], True, result)
-        self.assertEqual(transport.sent, [(TOOL, entry["arguments"])])
-
     async def assert_invalid_response(self, name, mutate):
-        arguments, payload = scenario(name, "9.1.0")
+        arguments, payload = scenario(name, CURRENT)
         mutate(payload)
-        result, transport = await self.call("9.1.0", arguments, ok(payload))
+        result, transport = await self.call(CURRENT, arguments, ok(payload))
         self.refused(result, transport, dispatched=True, category="invalid_response")
         return result
 
-    async def test_91_parity_row_16_unrecognized_history_shape_fails_closed(self):
+    async def assert_withheld(self, name, mutate, absent):
+        """9.2.0 (S9 item 7): an unreviewed key is withheld and counted, not a whole-read refusal."""
+
+        arguments, payload = scenario(name, CURRENT)
+        mutate(payload)
+        result, transport = await self.call(CURRENT, arguments, ok(payload))
+        self.assertIs(result.get("success"), True, result)
+        self.assertGreaterEqual(result["data"]["fields_withheld"], 1, result)
+        self.assertFalse(absent & keys_anywhere(result["data"]), result)
+        self.assertNotIn(CANARY, json.dumps(result))
+        self.assertEqual(len([s for s in transport.sent if s[0] == TOOL]), 1)
+        return result
+
+    async def test_92_parity_row_16_unrecognized_history_shape_fails_closed(self):
         def entity(payload):
             return payload["data"]["entities"][0]
 
         cases = {
             "summary_entity": lambda p: entity(p).update(summary={"state_changes": 2}),
-            "compressed_row_key": lambda p: entity(p)["states"][0].update(lu=1.0),
-            "unknown_row_key": lambda p: entity(p)["states"][0].update(last_reported=CANARY),
             "naive_timestamp": lambda p: entity(p)["states"][0].update(last_updated="2026-10-19T05:30:00"),
             "attributes_not_mapping": lambda p: entity(p)["states"][0].update(attributes=[CANARY]),
             "attributes_null": lambda p: entity(p)["states"][1].update(attributes=None),
-            "unknown_warning": lambda p: p.update(warnings=[CANARY]),
             "empty_warnings": lambda p: p.update(warnings=[]),
             "summary_true": lambda p: p["data"]["query_params"].update(summary=True),
             "summary_missing": lambda p: p["data"]["query_params"].pop("summary"),
             "metadata_note_changed": lambda p: p["metadata"].update(note=CANARY),
             "metadata_missing": lambda p: p.pop("metadata"),
-            "extra_top_level": lambda p: p.update(schema={CANARY: 1}),
-            "extra_data_key": lambda p: p["data"].update(summary_mode=CANARY),
             "wrong_entity": lambda p: entity(p).update(entity_id="sensor.synthetic_other"),
             "count_mismatch": lambda p: entity(p).update(count=7),
             "success_false": lambda p: p["data"].update(success=False),
@@ -457,7 +464,33 @@ class Row16RefusalTests(_Base):
             with self.subTest(case=label):
                 await self.assert_invalid_response("history_attributes_absent", mutate)
 
-    async def test_91_parity_row_16_unrecognized_statistics_shape_fails_closed(self):
+    async def test_92_unreviewed_history_keys_withheld_and_counted(self):
+        def entity(payload):
+            return payload["data"]["entities"][0]
+
+        # These four refused the whole 9.1 read; 9.2.0 withholds the key.
+        cases = {
+            "compressed_row_key": (lambda p: entity(p)["states"][0].update(lu=1.0), {"lu"}),
+            "unknown_row_key": (lambda p: entity(p)["states"][0].update(last_reported=CANARY),
+                                {"last_reported"}),
+            "extra_top_level": (lambda p: p.update(schema={CANARY: 1}), {"schema"}),
+            "extra_data_key": (lambda p: p["data"].update(summary_mode=CANARY), {"summary_mode"}),
+        }
+        for label, (mutate, absent) in cases.items():
+            with self.subTest(case=label):
+                await self.assert_withheld("history_attributes_absent", mutate, absent)
+
+    async def test_92_unreviewed_history_warning_replaced_and_unverified(self):
+        arguments, payload = scenario("history_attributes_absent", CURRENT)
+        payload["warnings"] = [CANARY]
+        result, transport = await self.call(CURRENT, arguments, ok(payload))
+        self.assertIs(result.get("success"), True, result)
+        self.assertEqual(result["data"]["upstream_warnings_replaced"], 1)
+        self.assertNotEqual(result["metadata"]["completeness"], "complete")
+        self.assertIn(history.UNVERIFIED_WARNING, result["warnings"])
+        self.assertNotIn(CANARY, json.dumps(result))
+
+    async def test_92_parity_row_16_unrecognized_statistics_shape_fails_closed(self):
         def entity(payload):
             return payload["data"]["entities"][0]
 
@@ -477,25 +510,34 @@ class Row16RefusalTests(_Base):
                 "No statistics found for: sensor.synthetic_temperature. These entities may not have "
                 "state_class attribute or may not have recorded data yet."]),
             "query_types_mismatch": lambda p: p["data"]["query_params"].update(statistic_types=["mean"]),
-            "core_options_echo": lambda p: p["data"]["query_params"].update(core_options={"units": {}}),
             "entity_missing": lambda p: p["data"].update(entities=[]),
         }
         for label, mutate in cases.items():
             with self.subTest(case=label):
                 await self.assert_invalid_response("statistics_default_types", mutate)
 
-    async def test_91_parity_row_16_unknown_unit_requires_matching_warning(self):
+    async def test_92_core_options_echo_withheld_and_counted(self):
+        # 9.1 refused the echoed core_options; 9.2.0 withholds and counts it.
+        await self.assert_withheld(
+            "statistics_default_types",
+            lambda p: p["data"]["query_params"].update(core_options={"units": {}}), {"core_options"})
+
+    async def test_92_parity_row_16_unknown_unit_requires_matching_warning(self):
         def drop_unit_warning(payload):
             payload["warnings"] = [w for w in payload["warnings"] if "sensor.synthetic_energy: statistics" not in w]
 
         await self.assert_invalid_response("statistics_requested_units_unknown_and_empty", drop_unit_warning)
 
-    async def test_91_parity_row_16_typo_must_be_reported(self):
+    async def test_92_parity_row_16_typo_must_be_reported(self):
         await self.assert_invalid_response("history_fields_typo", lambda p: p.pop("warnings"))
 
     def test_91_parity_row_16_projection_registered_and_dispatch_pins(self):
         self.assertIs(upstream_reads_9_1._projector_tables()[TOOL][0], history.project)
         self.assertEqual(history.PROJECTION_ID, "ha-mcp-9.1.0-history-statistics-v1")
+        # The 9.2.0 row runs its own time check and key filter, then the 9.1 projection.
+        self.assertIs(history_9_2.PROJECTIONS[TOOL][0], history_9_2.project)
+        self.assertEqual(history_9_2.dispatch_arguments({"entity_ids": "sensor.a"}),
+                         {"entity_ids": "sensor.a", **PINS})
         self.assertEqual(history.dispatch_arguments({"entity_ids": "sensor.a"}),
                          {"entity_ids": "sensor.a", **PINS})
         # A caller value never overrides a pin.
@@ -514,16 +556,16 @@ class Row16RefusalTests(_Base):
             with self.subTest(payload=payload):
                 self.assertEqual(history.completeness(payload), (True, [history.UNVERIFIED_WARNING]))
 
-    def test_91_parity_row_16_fixture_provenance_covers_every_fixture(self):
+    def test_92_parity_row_16_fixture_provenance_covers_every_fixture(self):
         named = set(PROVENANCE["fixtures"])
-        expected = {f"scenarios/{name}/{side}" for name in SCENARIOS for side in ("ha_mcp_9_1_0", "ha_mcp_8_5_0")}
+        expected = {f"scenarios/{name}/{side}" for name in SCENARIOS for side in ("ha_mcp_9_2_0", "ha_mcp_8_5_0")}
         expected.add("refusals_8_5_0/statistics_invalid_period")
         self.assertEqual(named, expected)
         self.assertEqual({entry["class"] for entry in PROVENANCE["fixtures"].values()}, {"S"})
 
 
 class HistorySlicesRowTests(_Base):
-    """Rule 3: the history-slices 9.1 parser row beside the retained 8.5/8.6 rows."""
+    """Rule 3: the history-slices parser row the 9.2.0 session maps through (the 9.1 row)."""
 
     async def slices_case(self, version):
         recorder = Recorder()
@@ -531,7 +573,7 @@ class HistorySlicesRowTests(_Base):
         recorder.add(at("01:00:00"), "idle")
         recorder.add(at("07:00:00"), "heat")
         gateway, transport = await self.gateway(version)
-        build = upstream_9_1 if version == "9.1.0" else upstream_8_5
+        build = upstream_9_1 if version in ("9.1.0", CURRENT) else upstream_8_5
         transport.responder = lambda tool, arguments: ok(build(recorder, arguments))
         audit = Mock()
         reader = gateway.history_reader(audit=audit)
@@ -556,7 +598,7 @@ class HistorySlicesRowTests(_Base):
         fixed = {"entity_ids", "start_time", "end_time", "limit", "offset", "order", "source",
                  "minimal_response", "significant_changes_only"}
         for arguments in sent:
-            if version == "9.1.0":
+            if version in ("9.1.0", CURRENT):
                 self.assertEqual(set(arguments), fixed | set(PINS))
                 self.assertEqual({k: arguments[k] for k in PINS}, PINS)
             else:
@@ -568,20 +610,19 @@ class HistorySlicesRowTests(_Base):
         self.assertFalse(any(e["fallback_occurred"] for e in events))
         return page, rest
 
-    async def test_91_history_slices_positive(self):
-        await self.slices_case("9.1.0")
+    async def test_92_history_slices_positive(self):
+        await self.slices_case(CURRENT)
 
-    async def test_85_history_slices_positive(self):
-        await self.slices_case("8.5.0")
-
-    async def test_91_history_slices_unrecognized_shape_fails_closed(self):
+    async def test_92_history_slices_unrecognized_shape_fails_closed(self):
         recorder = Recorder()
         recorder.add(at("01:00:00"), "idle")
-        gateway, transport = await self.gateway("9.1.0")
+        gateway, transport = await self.gateway(CURRENT)
 
         def responder(tool, arguments):
             payload = upstream_9_1(recorder, arguments)
-            payload["data"]["entities"][0]["states"][0]["lu"] = CANARY
+            # 9.2.0 withholds an unknown key, so the refused shape is a naive time.
+            row = payload["data"]["entities"][0]["states"][0]
+            row["last_updated"] = CANARY + "-2026-10-19T05:30:00"
             return ok(payload)
 
         transport.responder = responder
@@ -604,33 +645,32 @@ class HistorySlicesRowTests(_Base):
 
     def test_history_slices_parser_rows_match_reviewed_versions(self):
         self.assertEqual(set(service_module._PARSERS), set(c.REVIEWED_VERSIONS))
-        self.assertIn("9.1.0", c.REVIEWED_VERSIONS)
-        self.assertIs(service_module._PARSERS["8.5.0"], service_module._parse)
-        self.assertIs(service_module._PARSERS["9.1.0"], service_module._parse_9_1)
+        self.assertIn(CURRENT, c.REVIEWED_VERSIONS)
+        self.assertIs(service_module._PARSERS[CURRENT], service_module._parse_9_2_0)
 
     @staticmethod
-    def envelope(states, *, version="9.1.0", completeness="complete"):
+    def envelope(states, *, version=CURRENT, completeness="complete"):
         result = history_result("sensor.synthetic_temperature", [], total=len(states), offset=0, limit=10)
         body(result)["entities"][0].update(states=states, count=len(states))
         result["metadata"].update(upstream_version=version, completeness=completeness)
         return result
 
-    def test_91_history_slices_parser_expanded_rows(self):
+    def test_92_history_slices_parser_expanded_rows(self):
         rows = [
             {"state": "21.5", "last_changed": "2026-10-19T05:30:00-05:00",
              "last_updated": "2026-10-19T05:30:00-05:00", "attributes": {"friendly_name": "Synthetic"}},
             {"state": "20.0", "last_changed": "2026-10-18T19:00:00-05:00",
              "last_updated": "2026-10-19T01:00:00-05:00"},
         ]
-        parsed = service_module._parse_9_1(self.envelope(rows), "sensor.synthetic_temperature", 0)
+        parsed = service_module._parse_9_2_0(self.envelope(rows), "sensor.synthetic_temperature", 0)
         self.assertEqual(parsed, ([(us("2026-10-19T10:30:00"), "21.5"), (us("2026-10-19T06:00:00"), "20.0")],
                                   2, False))
         # Without attributes on every row; offset-aware localized times.
         bare = [{k: v for k, v in row.items() if k != "attributes"} for row in rows]
-        self.assertEqual(service_module._parse_9_1(self.envelope(bare), "sensor.synthetic_temperature", 0)[0],
+        self.assertEqual(service_module._parse_9_2_0(self.envelope(bare), "sensor.synthetic_temperature", 0)[0],
                          parsed[0])
 
-    def test_91_history_slices_parser_refusals(self):
+    def test_92_history_slices_parser_refusals(self):
         good = {"state": "on", "last_changed": "2026-10-19T05:30:00-05:00",
                 "last_updated": "2026-10-19T05:30:00-05:00"}
         entity = "sensor.synthetic_temperature"
@@ -645,20 +685,20 @@ class HistorySlicesRowTests(_Base):
         }
         for label, row in cases.items():
             with self.subTest(case=label):
-                self.assertEqual(service_module._parse_9_1(self.envelope([row]), entity, 0),
+                self.assertEqual(service_module._parse_9_2_0(self.envelope([row]), entity, 0),
                                  "representation_invalid")
-        # An 8.5/8.6 session never maps through the 9.1 row.
-        for version in ("8.5.0", "8.6.0", None):
+        # A session attributed to any other release never maps through the 9.2.0 row.
+        for version in ("8.5.0", "8.6.0", "9.1.0", "9.1.2", None):
             with self.subTest(version=version):
                 raw = self.envelope([good], version=version)
-                self.assertEqual(service_module._parse_9_1(raw, entity, 0), "representation_invalid")
-        self.assertEqual(service_module._parse_9_1([], entity, 0), "representation_invalid")
+                self.assertEqual(service_module._parse_9_2_0(raw, entity, 0), "representation_invalid")
+        self.assertEqual(service_module._parse_9_2_0([], entity, 0), "representation_invalid")
         failure = {"success": False, "details": {"failure_category": "transport_timeout"}}
-        self.assertEqual(service_module._parse_9_1(failure, entity, 0), "upstream_transport_timeout")
+        self.assertEqual(service_module._parse_9_2_0(failure, entity, 0), "upstream_transport_timeout")
 
     async def test_history_slices_version_without_parser_refused_with_zero_calls(self):
         for version, parsers in (("9.9.9", service_module._PARSERS),
-                                 ("9.1.0", {k: v for k, v in service_module._PARSERS.items() if k != "9.1.0"})):
+                                 (CURRENT, {k: v for k, v in service_module._PARSERS.items() if k != CURRENT})):
             with self.subTest(version=version):
                 recorder = Recorder()
                 recorder.add(at("01:00:00"), "idle")

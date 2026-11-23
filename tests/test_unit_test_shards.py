@@ -151,12 +151,13 @@ class ShardFixture(unittest.TestCase):
                               env=env or cls.env, cwd=str(root or cls.root), capture_output=True,
                               text=True, timeout=120)
 
-    def aggregate(self, manifests, env=None, root=None):
+    def aggregate(self, manifests, env=None, root=None, binding=None):
         directory = Path(tempfile.mkdtemp(dir=self.temp.name))
         for index, manifest in enumerate(manifests):
             (directory / f"shard-{index}").mkdir()
             (directory / f"shard-{index}" / "manifest.json").write_text(json.dumps(manifest))
-        return self.cli("aggregate", "--manifests", str(directory), env=env, root=root)
+        binding_args = ("--binding", binding) if binding else ()
+        return self.cli("aggregate", "--manifests", str(directory), *binding_args, env=env, root=root)
 
     def assertRefused(self, result, category):
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
@@ -307,6 +308,86 @@ class UnitTestShardTests(ShardFixture):
     def test_missing_run_identity_is_refused(self):
         env = {k: v for k, v in self.env.items() if k != "GITHUB_RUN_ID"}
         self.assertRefused(self.aggregate(self.copies(), env=env), "invalid_run_identity")
+
+    def clone_with_commit(self, name, *paths):
+        clone = Path(self.temp.name) / name
+        shutil.copytree(self.root, clone)
+        for path in paths:
+            (clone / path).write_text("synthetic non-test file\n")
+            subprocess.check_call(["git", "-C", str(clone), "add", path], stdout=subprocess.DEVNULL)
+        subprocess.check_call(["git", "-C", str(clone), "commit", "--allow-empty", "-qm", name],
+                              stdout=subprocess.DEVNULL)
+        return clone
+
+    def test_manifests_name_the_tested_tree(self):
+        tree = self.git("rev-parse", "HEAD^{tree}")
+        self.assertEqual({manifest["source_tree"] for manifest in self.manifests.values()}, {tree})
+
+    def test_tree_binding_accepts_the_same_tree_under_another_commit(self):
+        # HAMCP-365: a pull-request run tests GitHub's merge commit, whose tree equals the head's.
+        tree = self.git("rev-parse", "HEAD^{tree}")
+        clone = self.clone_with_commit("same-tree")
+        self.assertNotEqual(subprocess.check_output(["git", "-C", str(clone), "rev-parse", "HEAD"], text=True).strip(),
+                            self.head)
+        for root in (self.root, clone):
+            with self.subTest(root=root.name):
+                result = self.aggregate(self.copies(), root=root, binding="tree")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                summary = json.loads(result.stdout)
+                self.assertEqual(summary["binding"], "tree")
+                self.assertEqual(summary["ci_source_sha"], self.head)
+                self.assertEqual(summary["source_tree"], tree)
+                self.assertNotIn("source_sha", summary)
+                self.assertEqual(summary["outcomes"], {"expected_failure": 0, "skipped": 1, "success": 6})
+                self.assertEqual((summary["run_id"], summary["run_attempt"]), ("1001", "1"))
+        # The default commit binding, which CI uses, still refuses the other commit.
+        self.assertRefused(self.aggregate(self.copies(), root=clone), "shard_source_mismatch")
+
+    def test_tree_binding_refuses_another_tree_or_a_manifest_without_one(self):
+        # notes.txt changes neither discovery nor the plan, only the tree.
+        clone = self.clone_with_commit("other-tree", "notes.txt")
+        self.assertRefused(self.aggregate(self.copies(), root=clone, binding="tree"), "shard_source_tree_mismatch")
+        manifests = self.copies()
+        del manifests[1]["source_tree"]
+        self.assertRefused(self.aggregate(manifests, binding="tree"), "shard_source_tree_missing")
+        manifests = self.copies()
+        manifests[1]["source_tree"] = None
+        self.assertRefused(self.aggregate(manifests, binding="tree"), "shard_source_tree_mismatch")
+
+    def test_tree_binding_refuses_an_invalid_or_mixed_ci_commit(self):
+        for value in ("x", None, 40, "0" * 39, "A" * 40, self.head + "\n"):
+            with self.subTest(source_sha=value):
+                manifests = self.copies()
+                manifests[2]["source_sha"] = value
+                self.assertRefused(self.aggregate(manifests, binding="tree"), "shard_source_invalid")
+        manifests = self.copies()
+        manifests[2]["source_sha"] = "0" * 40
+        self.assertRefused(self.aggregate(manifests, binding="tree"), "shard_source_mixed")
+
+    def test_tree_binding_keeps_every_completeness_check(self):
+        self.assertRefused(self.aggregate(self.copies()[:2], binding="tree"), "shard_manifest_count_mismatch")
+        self.assertRefused(self.aggregate(self.copies(), env={**self.env, "GITHUB_RUN_ATTEMPT": "2"}, binding="tree"),
+                           "shard_run_mismatch")
+        manifests = self.copies()
+        manifests[0]["executed"].pop()
+        self.assertRefused(self.aggregate(manifests, binding="tree"), "shard_execution_incomplete_or_extra")
+        manifests = self.copies()
+        manifests[0]["plan_sha256"] = "0" * 64
+        self.assertRefused(self.aggregate(manifests, binding="tree"), "shard_discovery_or_plan_mismatch")
+        manifests = self.copies()
+        manifests[1]["executed"][0][1] = "failure"
+        self.assertRefused(self.aggregate(manifests, binding="tree"), "test_did_not_succeed")
+        manifests = self.copies()
+        manifests[1]["was_successful"] = False
+        self.assertRefused(self.aggregate(manifests, binding="tree"), "shard_did_not_succeed")
+
+    def test_unknown_binding_is_refused(self):
+        # Rejected before any discovery, so this stays in-process.
+        with self.assertRaisesRegex(shards.Refusal, "^invalid_binding$"):
+            shards.verify(self.root, [], self.env, binding="merge")
+        result = self.cli("aggregate", "--manifests", str(self.out("absent")), "--binding", "merge")
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("invalid choice", result.stderr)
 
 
 class SplitModuleShardTests(ShardFixture):

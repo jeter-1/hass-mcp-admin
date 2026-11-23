@@ -1,7 +1,8 @@
 """HAMCP-129: delegated platform health, installed-app and config-entry reads.
 
-Synthetic transports only. Every group runs for the exact 8.4.3, 8.5.0 and
-8.6.0 bindings; no live Home Assistant or deployed endpoint is contacted.
+Synthetic transports only. Every group runs for the exact 9.2.0 binding
+(HAMCP-437: re-pinned from 8.4.3, 8.5.0 and 8.6.0, whose registry rows are
+removed); no live Home Assistant or deployed endpoint is contacted.
 """
 import asyncio
 from copy import deepcopy
@@ -37,21 +38,43 @@ from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
     validate_reviewed_release_catalog,
     validate_reviewed_release_evidence,
 )
-from test_beta58_ha_mcp_8_4_3_continuity import EXACT_READS  # noqa: E402
+from support.shipped_920_reads import READS_920 as EXACT_READS  # noqa: E402  (HAMCP-437 A3.4)
 from test_ha_mcp_production_readmission import _GatewayTransport, _settings  # noqa: E402
-from test_upstream_8_5_compatibility import capture  # noqa: E402
+from support.ha_mcp_captures import capture  # noqa: E402  (HAMCP-437)
+from support.ha_mcp_920_receipts import receipt  # noqa: E402  (HAMCP-437)
 
 HEALTH, APP, INTEGRATION = platform.HEALTH, platform.APP, platform.INTEGRATION
 TOOLS = (HEALTH, APP, INTEGRATION)
-VERSIONS = ("8.4.3", "8.5.0", "8.6.0")
-# 9.1.0 bindings are checked here; 9.1.0 gateway behavior is covered by
-# test_hamcp319_parity_entities.ParityPlatformRowsTests (ledger rows 26-28,
-# class S: 8.6.0 replays, since the 9.1.0 input schemas equal 8.6.0).
-# HAMCP-351: exact 9.1.2 binds its own tokens; ha_get_integration re-binds to
-# the 9.1.2 wire fingerprint (82aec3a9), health and apps equal 9.1.0.
+VERSIONS = ("9.2.0",)
 # HAMCP-371: exact 9.2.0 binds its own tokens (upstream_platform_reads.py
 # ADAPTER_BINDINGS, from the S8 9.2.0 registry capture ha-mcp-9.2.0.json).
-BINDING_VERSIONS = VERSIONS + ("9.1.0", "9.1.2", "9.2.0")
+# HAMCP-437: the 9.2.0 bindings are exactly the three tools.
+BINDING_VERSIONS = VERSIONS
+# HAMCP-437 I2a-D (ANSWER 20261122-0305-01 B): the bindings of the removed
+# rows stay in upstream_platform_reads.py as possible dead branches. No
+# reviewed row admits them, so they are listed here rather than checked against
+# a policy; a new binding for an unreviewed release fails the test.
+RETIRED_BINDING_VERSIONS = ("8.4.3", "8.5.0", "8.6.0", "9.1.0", "9.1.2")
+# A token of a release other than 9.2.0, refused under the 9.2.0 policy.
+OTHER_RELEASE = "9.1.2"
+# The releases whose generated fixtures (tests/fixtures/hamcp129) exist. Their
+# rows are removed (HAMCP-437 I2a-D), so the fixtures are frozen inputs that
+# replay through the shipped 9.2.0 binding.
+GENERATED_FIXTURE_VERSIONS = ("8.4.3", "8.5.0", "8.6.0")
+# The 28 reviewed reads of 8.4.3 to 8.6.0 less the retired ha_get_hacs_info.
+EXACT_READ_COUNT = 27
+# HAMCP-371 D5: the 9.2.0 platform reads add three counts to the rebuild and
+# replace every upstream warning with one code.
+COUNT_KEYS_920 = {"fields_withheld", "fields_dropped_by_policy", "upstream_warnings_replaced"}
+REPLACED_WARNING_920 = "upstream_warning_replaced"
+
+
+def assert_counts_920(test, data):
+    """The synthetic payloads carry unreviewed keys and no upstream warning."""
+
+    test.assertGreater(data["fields_withheld"], 0)
+    test.assertEqual(data["fields_dropped_by_policy"], 0)
+    test.assertEqual(data["upstream_warnings_replaced"], 0)
 CANARY = "CANARY"
 REFUSED = {"argument_validation", "invalid_arguments"}
 POLICY = ROOT / "hass_mcp_engineering_beta/ha_mcp_engineering"
@@ -322,7 +345,7 @@ def policy_entry(version: str, tool: str):
     return load_reviewed_upstream_release_registry().by_version[version].policy.by_name[tool]
 
 
-async def make_gateway(version="8.5.0", tools=None, core_runtime=None):
+async def make_gateway(version="9.2.0", tools=None, core_runtime=None):
     transport = Transport(capture(version)["tools"] if tools is None else tools, version)
     gateway = UpstreamReadGateway()
     kwargs = {"core_runtime": core_runtime} if core_runtime is not None else {}
@@ -434,11 +457,18 @@ class ModuleTests(unittest.TestCase):
     """Adapter module behaviour, independent of the published JSON schema."""
 
     def test_bindings_cover_exactly_three_tools_at_each_version(self):
-        self.assertEqual(len(platform.ADAPTER_BINDINGS), 3 * len(BINDING_VERSIONS))
+        reviewed = load_reviewed_upstream_release_registry().by_version
+        for version in BINDING_VERSIONS:
+            tools = sorted(tool for tool, bound, _s, _f in platform.ADAPTER_BINDINGS.values() if bound == version)
+            self.assertEqual(tools, sorted(TOOLS))
+        bound = {version for _tool, version, _s, _f in platform.ADAPTER_BINDINGS.values()}
+        self.assertEqual(bound - set(reviewed), set(RETIRED_BINDING_VERSIONS))
         for token, (tool, version, source, fingerprint) in platform.ADAPTER_BINDINGS.items():
             with self.subTest(token=token):
                 self.assertEqual(token, f"ha-mcp-{version}-platform-{TOKEN_KIND[tool].replace('health', 'health')}-v1")
                 self.assertEqual(source, SOURCES[version][1])
+                if version in RETIRED_BINDING_VERSIONS:
+                    continue
                 entry = policy_entry(version, tool)
                 self.assertEqual(entry.argument_restrictions, (token,))
                 self.assertEqual(entry.input_schema_fingerprint, fingerprint)
@@ -485,13 +515,14 @@ class ModuleTests(unittest.TestCase):
                         with self.assertRaises(ValueError):
                             platform.read_arguments(entry, arguments)
         with self.assertRaises(ValueError):
-            platform.read_arguments(policy_entry("8.5.0", HEALTH), None)
+            platform.read_arguments(policy_entry("9.2.0", HEALTH), None)
 
     def test_unbound_entries_never_build_arguments_or_project(self):
-        entry = policy_entry("8.5.0", HEALTH)
+        entry = policy_entry("9.2.0", HEALTH)
         for change in (
-            {"argument_restrictions": ("ha-mcp-8.6.0-platform-health-v1",)},
-            {"argument_restrictions": ("ha-mcp-8.5.0-platform-apps-v1",)},
+            # HAMCP-437: another tool's 9.2.0 token, and an unreleased version's.
+            {"argument_restrictions": ("ha-mcp-9.2.0-platform-apps-v1",)},
+            {"argument_restrictions": ("ha-mcp-9.2.1-platform-health-v1",)},
             {"argument_restrictions": ()},
             {"exposed_name": "ha_get_system_health_raw"},
             {"classification": "automatic_read"},
@@ -563,7 +594,7 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
                 # HAMCP-290: the retired delegated ha_get_hacs_info is withheld
                 # on every reviewed release (Josh decision 2026-11-08).
                 self.assertEqual(set(tools), EXACT_READS - RETIRED_DELEGATED_READS, g.health_snapshot())
-                self.assertEqual(len(tools), 28 - len(RETIRED_DELEGATED_READS))
+                self.assertEqual(len(tools), EXACT_READ_COUNT)
                 upstream = {item["name"]: item for item in capture(version)["tools"]}
                 for name in TOOLS:
                     self.assertEqual(tools[name].parameters, platform.PUBLIC_SCHEMAS[name])
@@ -604,7 +635,7 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
         # Defence in depth: a widened schema still cannot forward a field.
         open_schema = {"type": "object", "properties": {}, "additionalProperties": True}
         with patch.dict(platform.PUBLIC_SCHEMAS, {tool: open_schema for tool in TOOLS}):
-            g, t = await make_gateway("8.5.0")
+            g, t = await make_gateway("9.2.0")
             for tool in TOOLS:
                 for arguments in ({"diagnostics": True}, {"include_options": True},
                                   {"source": "available"}, {"slug": "../x"}):
@@ -621,7 +652,8 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
                 self.assertNotIn(CANARY, json.dumps(result))
                 data = result["data"]
                 self.assertEqual(set(data), {"success", "baseline_available", "platform", "sections",
-                                             "warnings", "completeness"})
+                                             "warnings", "completeness"} | COUNT_KEYS_920)
+                assert_counts_920(self, data)
                 for domain, keys in PLATFORM_KEYS.items():
                     self.assertEqual(set(data["platform"][domain]), keys, domain)
                 self.assertEqual(data["platform"]["hassio"]["host_connectivity"], "pending")
@@ -649,6 +681,7 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
                 for item in result["data"]["apps"]:
                     self.assertEqual(set(item), APP_KEYS | {"stats"})
                     self.assertEqual(set(item["stats"]), STATS_KEYS)
+                assert_counts_920(self, result["data"])
                 self.assertEqual(result["data"]["summary"], {
                     "total_installed": 2, "running": 1, "stopped": 1, "updates_available": 0})
             with self.subTest(version=version, tool=INTEGRATION):
@@ -657,10 +690,11 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
                 self.assertNotIn(CANARY, json.dumps(result))
                 for item in result["data"]["entries"]:
                     self.assertEqual(set(item), ENTRY_KEYS)
+                assert_counts_920(self, result["data"])
                 self.assertEqual(result["data"]["state_summary"], {"loaded": 2})
 
     async def test_email_like_titles_are_masked_before_output_and_filtering(self):
-        g, t = await make_gateway("8.6.0")
+        g, t = await make_gateway("9.2.0")
         t.respond = lambda tool, args: ok(entries_payload([
             config_entry(1, title="Calendar alice@example.com"),
             config_entry(2, domain="mqtt", title="Broker mqtt.local"),
@@ -732,22 +766,26 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual(len(t.sent), 1)
 
     async def test_requested_sections_must_match_returned_sections(self):
-        g, t = await make_gateway("8.5.0")
+        g, t = await make_gateway("9.2.0")
         t.respond = lambda tool, args: ok(health_payload(["repairs"]))
         refused(self, await call(g, HEALTH, {"sections": ["repairs", "themes"]}),
                 dispatched=True, category="invalid_response")
         refused(self, await call(g, HEALTH, {}), dispatched=True, category="invalid_response")
 
     async def test_upstream_error_text_never_passes_through(self):
-        g, t = await make_gateway("8.5.0")
+        g, t = await make_gateway("9.2.0")
         t.respond = lambda tool, args: ok(health_payload(["zha_network"]) | {
             "zha_network": {"error": f"{CANARY} stack trace"}, "warnings": [f"{CANARY} warning"]})
         result = await call(g, HEALTH, {"sections": ["zha_network"]})
         self.assertTrue(result["success"], result)
         self.assertNotIn(CANARY, json.dumps(result))
         self.assertEqual(result["data"]["sections"]["zha_network"], {"error": "section_unavailable"})
-        self.assertEqual(result["data"]["warnings"], ["upstream_warnings_withheld"])
-        self.assertEqual(result["data"]["completeness"]["reasons"], ["section_unavailable:zha_network"])
+        # HAMCP-371 D5: on 9.2.0 every upstream warning is replaced and counted,
+        # and the read becomes partial.
+        self.assertEqual(result["data"]["warnings"], [REPLACED_WARNING_920])
+        self.assertEqual(result["data"]["upstream_warnings_replaced"], 1)
+        self.assertEqual(result["data"]["completeness"]["reasons"],
+                         ["section_unavailable:zha_network", "upstream_warnings_replaced"])
         self.assertEqual(result["metadata"]["completeness"], "partial")
         t.respond = lambda tool, args: ok(health_payload(baseline=False))
         result = await call(g, HEALTH, {})
@@ -760,13 +798,15 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
         result = await call(g, INTEGRATION, {})
         self.assertTrue(result["success"], result)
         self.assertNotIn(CANARY, json.dumps(result))
-        self.assertEqual(result["data"]["warnings"], ["upstream_warnings_withheld"])
+        self.assertEqual(result["data"]["warnings"], [REPLACED_WARNING_920])
+        self.assertEqual(result["data"]["completeness"]["reasons"], ["upstream_warnings_replaced"])
         t.respond = lambda tool, args: ok(apps_payload([app("core_synthetic")]) | {
             "warnings": [f"{CANARY} app warning"]})
         result = await call(g, APP, {})
         self.assertTrue(result["success"], result)
         self.assertNotIn(CANARY, json.dumps(result))
-        self.assertEqual(result["data"]["warnings"], ["upstream_warnings_withheld"])
+        self.assertEqual(result["data"]["warnings"], [REPLACED_WARNING_920])
+        self.assertEqual(result["data"]["completeness"]["reasons"], ["upstream_warnings_replaced"])
         t.respond = lambda tool, args: {"isError": True, "content": [{"type": "text", "text": json.dumps(
             {"success": False, "error": {"code": "INTERNAL", "message": f"{CANARY} upstream"}})}]}
         for tool in TOOLS:
@@ -836,7 +876,7 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(all(len(item["title"]) == 120 for item in result["data"]["entries"]))
 
     async def test_oversized_strings_fail_closed_rather_than_truncate_silently(self):
-        g, t = await make_gateway("8.5.0")
+        g, t = await make_gateway("9.2.0")
         t.respond = lambda tool, args: ok(apps_payload([
             app(f"addon_{i:03d}", state="stopped", **{k: "x" * 500 for k in ("name", "description", "version", "repository")})
             for i in range(100)]))
@@ -1127,24 +1167,42 @@ class FixtureReplayTests(unittest.IsolatedAsyncioTestCase):
         return fixture, t.sent, result
 
     async def test_exact_upstream_outputs_project_through_the_allowlists(self):
-        for version in VERSIONS:
-            cases = json.loads((FIXTURES / f"results-{version}.json").read_text(encoding="utf-8"))
+        # HAMCP-437: the generated fixtures exist for 8.4.3, 8.5.0 and 8.6.0
+        # only; there is no generated 9.2.0 fixture (reported, not invented).
+        # I2a-D removed those rows, so each committed, unedited fixture is a
+        # frozen input replayed through the shipped 9.2.0 binding (ANSWER
+        # 20261122-0005-01). This asserts Engineering's 9.2.0 projection of
+        # that input shape, not that 9.2.0 upstream emits it. The committed
+        # 9.2.0 receipts replay in the next test.
+        for fixture_version in GENERATED_FIXTURE_VERSIONS:
+            cases = json.loads((FIXTURES / f"results-{fixture_version}.json").read_text(encoding="utf-8"))
             self.assertEqual(set(cases), {name + mode for name in FIXTURE_PUBLIC
                                           for mode in ("", "@core_ws_proxy")
                                           if name + mode in cases})
             for case in sorted(cases):
-                with self.subTest(version=version, case=case):
-                    fixture, sent, result = await self._replay(version, case, cases)
+                with self.subTest(fixture=fixture_version, case=case):
+                    fixture, sent, result = await self._replay("9.2.0", case, cases)
                     self.assertTrue(result["success"], result)
                     self.assertEqual(sent[-1], (fixture["tool"], fixture["arguments"]))
                     text = json.dumps(result)
                     for canary in FIXTURE_CANARIES:
                         self.assertNotIn(canary, text)
                     status, reasons = FIXTURE_COMPLETENESS[case.split("@")[0]]
-                    self.assertEqual(result["data"]["completeness"], {"status": status, "reasons": reasons})
                     data = result["data"]
+                    # HAMCP-371 D5: 9.2.0 replaces every upstream warning with
+                    # one code and discloses it in completeness.
+                    upstream_warnings = fixture["result"].get("warnings") or []
+                    if upstream_warnings:
+                        reasons = sorted([*reasons, "upstream_warnings_replaced"])
+                        self.assertIn(REPLACED_WARNING_920, data["warnings"])
+                        for warning in upstream_warnings:
+                            self.assertNotIn(warning, text)
+                    self.assertEqual(data["completeness"], {"status": status, "reasons": reasons})
+                    self.assertGreater(data["fields_withheld"], 0)
+                    self.assertEqual(data["fields_dropped_by_policy"], 0)
+                    self.assertEqual(data["upstream_warnings_replaced"], len(upstream_warnings))
                     if case.split("@")[0] == "apps_installed_stats":
-                        self.assertEqual(data["warnings"], ["stats_unavailable:synthetic_beta"])
+                        self.assertEqual(data["warnings"], ["stats_unavailable:synthetic_beta", REPLACED_WARNING_920])
                     if fixture["tool"] == HEALTH:
                         for domain, keys in PLATFORM_KEYS.items():
                             self.assertLessEqual(set(data["platform"].get(domain, {})), keys)
@@ -1172,12 +1230,50 @@ class FixtureReplayTests(unittest.IsolatedAsyncioTestCase):
                         self.assertTrue(data["entries"])
                         _keys_within(self, data["entries"], ENTRY_KEYS, "entries")
 
+    async def test_committed_920_receipts_project_through_the_allowlists(self):
+        # HAMCP-437: the exact 9.2.0 upstream results of the HAMCP-371 receipt
+        # sets. ha_get_app has no successful 9.2.0 receipt (no Supervisor in
+        # the local lane): r27 is an upstream error and must fail closed
+        # without passing its text through.
+        for set_name in ("A/9.2.0", "B/9.2.0"):
+            for call_id, tool in (("r20-system-health", HEALTH), ("r26-integrations", INTEGRATION),
+                                  ("r27-apps", APP)):
+                with self.subTest(set=set_name, call=call_id):
+                    public, raw = receipt(call_id, set_name)
+                    g, t = await make_gateway("9.2.0")
+                    t.respond = lambda name, args, raw=raw: deepcopy(raw)
+                    result = await call(g, tool, public)
+                    self.assertEqual(len(t.sent), 1)
+                    self.assertEqual(t.sent[0][0], tool)
+                    if tool == APP:
+                        refused(self, result, dispatched=True)
+                        self.assertNotIn("Unknown command", json.dumps(result))
+                        continue
+                    self.assertTrue(result["success"], result)
+                    data = result["data"]
+                    self.assertEqual(data["completeness"], {"status": "complete", "reasons": []})
+                    self.assertGreater(data["fields_withheld"], 0)
+                    self.assertEqual(data["fields_dropped_by_policy"], 0)
+                    self.assertEqual(data["upstream_warnings_replaced"], 0)
+                    if tool == HEALTH:
+                        for domain, keys in PLATFORM_KEYS.items():
+                            self.assertLessEqual(set(data["platform"].get(domain, {})), keys)
+                        self.assertTrue(data["platform"]["homeassistant"])
+                        self.assertEqual(data["sections"], {})
+                    else:
+                        self.assertEqual(len(data["entries"]), public["limit"])
+                        _keys_within(self, data["entries"], ENTRY_KEYS, "entries")
+                        upstream = json.dumps(raw)
+                        for name in ("created_at", "modified_at", "num_subentries"):
+                            self.assertIn(name, upstream)
+                            self.assertNotIn(name, json.dumps(result))
+
     async def test_exact_upstream_email_titles_are_masked(self):
         cases = json.loads((FIXTURES / "results-8.6.0.json").read_text(encoding="utf-8"))
-        _, _, result = await self._replay("8.6.0", "integrations_list", cases)
+        _, _, result = await self._replay("9.2.0", "integrations_list", cases)
         titles = [entry["title"] for entry in result["data"]["entries"]]
         self.assertTrue(any(platform.EMAIL_MASK in title for title in titles), titles)
-        _, _, result = await self._replay("8.6.0", "health_all_sections", cases)
+        _, _, result = await self._replay("9.2.0", "health_all_sections", cases)
         self.assertIn(platform.EMAIL_MASK, result["data"]["sections"]["matter_network"]["title"])
 
 
@@ -1225,7 +1321,7 @@ class AdmissionTests(unittest.IsolatedAsyncioTestCase):
             policy = load_upstream_tool_policy(path, **binding)
             for tool in TOOLS:
                 self.assertTrue(policy.by_name[tool].is_read_route)
-            other = next(v for v in VERSIONS if v != version)
+            other = OTHER_RELEASE
             uncompiled = "policy_uncompiled_platform_adapter"
             changes = (
                 (HEALTH, {"argument_restrictions": [f"ha-mcp-{other}-platform-health-v1"]}, uncompiled),
@@ -1258,8 +1354,10 @@ class AdmissionTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(version=version):
                 release = registry.by_version[version]
                 reads = {e.exposed_name for e in release.policy.tools if e.is_read_route}
-                self.assertEqual(reads, EXACT_READS)
-                self.assertEqual(release.policy.classification_counts["automatic_read"], 28)
+                # HAMCP-437: 9.2.0 classifies the retired ha_get_hacs_info
+                # unsupported, so it is no read route at all.
+                self.assertEqual(reads, EXACT_READS - RETIRED_DELEGATED_READS)
+                self.assertEqual(release.policy.classification_counts["automatic_read"], EXACT_READ_COUNT)
                 result = validate_reviewed_release_catalog(
                     release, observed_server_name="ha-mcp", observed_upstream_version=version,
                     observed_protocol_version="2025-03-26", tools=capture(version)["tools"])
@@ -1368,10 +1466,10 @@ class CatalogMetadataTests(unittest.TestCase):
     def test_signed_core_registry_is_read_only_and_covers_supported_cores(self):
         registry = json.loads((ROOT / "upstream-trust/ha-core-release-registry.json").read_text())
         tip = registry["envelopes"][-1]
-        self.assertEqual(tip["sequence"], 15)
+        self.assertEqual(tip["sequence"], 18)
         entries = {entry["version"]: entry for entry in tip["entries"]}
-        self.assertEqual(sorted(entries), ["2026.10.0", "2026.10.1", "2026.10.3"])
-        for version in ("2026.10.0", "2026.10.1", "2026.10.3"):
+        self.assertEqual(sorted(entries), ["2026.10.0", "2026.10.1", "2026.10.3", "2026.11.0"])
+        for version in ("2026.10.0", "2026.10.1", "2026.10.3", "2026.11.0"):
             with self.subTest(version=version):
                 capabilities = {item["capability_id"] for item in entries[version]["capabilities"]}
                 self.assertTrue({"core.basic_websocket_read", "core.basic_rest_read"} <= capabilities)
@@ -1392,19 +1490,19 @@ class CoreRouteTests(unittest.IsolatedAsyncioTestCase):
     async def test_unknown_core_withholds_all_three_without_dispatch(self):
         core, _ = await self.runtime("2026.9.3")
         self.assert_admitted(core, 0)
-        g, t = await make_gateway("8.5.0", core_runtime=core)
+        g, t = await make_gateway("9.2.0", core_runtime=core)
         exposed = set(g._registered_tool_registry.snapshot())
         self.assertFalse(set(TOOLS) & exposed)
         health = g.health_snapshot()
         self.assertTrue(set(TOOLS) <= {item["tool"] for item in health["core_withheld_tools"]})
-        self.assertEqual(health["core_withheld_read_count"], 28)
+        self.assertEqual(health["core_withheld_read_count"], EXACT_READ_COUNT)
         self.assertFalse(health["core_withheld_truncated"])
         self.assertEqual(t.sent, [])
 
     async def test_withheld_list_reports_truncation(self):
         core, _ = await self.runtime("2026.9.3")
         with patch.object(gateway_module, "MAX_QUARANTINE_RECORDS", 4):
-            g, _ = await make_gateway("8.5.0", core_runtime=core)
+            g, _ = await make_gateway("9.2.0", core_runtime=core)
             health = g.health_snapshot()
         self.assertEqual(len(health["core_withheld_tools"]), 4)
         self.assertTrue(health["core_withheld_truncated"])
@@ -1415,7 +1513,7 @@ class CoreRouteTests(unittest.IsolatedAsyncioTestCase):
             item for item in entry["capabilities"] if item["capability_id"] != "core.basic_websocket_read"]
         self.raw = self.signer.journal_raw(entries=[entry])
         core, _ = await self.runtime()
-        g, t = await make_gateway("8.5.0", core_runtime=core)
+        g, t = await make_gateway("9.2.0", core_runtime=core)
         exposed = set(g._registered_tool_registry.snapshot())
         self.assertFalse(set(TOOLS) & exposed, g.health_snapshot())
         self.assertIn("ha_get_skill_guide", exposed)
@@ -1424,7 +1522,7 @@ class CoreRouteTests(unittest.IsolatedAsyncioTestCase):
     async def test_admitted_core_leases_each_dispatch_and_releases(self):
         core, _ = await self.runtime()
         self.assert_admitted(core)
-        g, t = await make_gateway("8.5.0", core_runtime=core)
+        g, t = await make_gateway("9.2.0", core_runtime=core)
         self.assertTrue(set(TOOLS) <= set(g._registered_tool_registry.snapshot()))
         active = []
 

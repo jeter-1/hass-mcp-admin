@@ -31,6 +31,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
+from harness_send import harness_url  # noqa: E402
 from entity_metadata_contract_acceptance import (  # noqa: E402
     REFERENCE_KEYS, RawRefusal, RawWebSocket, engineering_source, load_receipt, receipt_bytes)
 from seq13_contract_acceptance import NOVEMBER_DORMANT, SIGNED_ONLY_DORMANT  # noqa: E402
@@ -452,7 +453,7 @@ class LaneRaw(RawWebSocket):
         super().__init__(configured)
         self.api_url = configured.api_url.rstrip("/")
         self.token = configured.ha_token
-        if urlsplit(self.api_url).hostname not in {"127.0.0.1", "localhost", "::1"}:
+        if urlsplit(self.api_url).hostname not in {"127.0.0.1", "::1"}:
             raise ValueError("Seq-15 routes go only to a loopback Core")
 
     async def status(self, method, path, body=None):
@@ -460,7 +461,7 @@ class LaneRaw(RawWebSocket):
         if RAW_ROUTE.fullmatch(path) is None:
             raise ValueError("Not a seq-15 lane route")
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
-            async with session.request(method, self.api_url + path, json=body, allow_redirects=False,
+            async with session.request(method, harness_url(self.api_url, path), json=body, allow_redirects=False,
                                        headers={"Authorization": "Bearer " + self.token}) as response:
                 return response.status, (await response.json() if response.status < 300 else None)
 

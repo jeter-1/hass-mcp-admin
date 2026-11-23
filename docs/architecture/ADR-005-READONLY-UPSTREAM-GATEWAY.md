@@ -47,12 +47,14 @@ tools, but clients caching an earlier list must re-list or reconnect. This
 decision does not claim `tools/list_changed` notification delivery.
 
 The committed machine-readable inventory is
-[`upstream_tool_policy.json`](../../hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy.json).
-It is the complete classification table for the 78-tool stock fixture reviewed
-from `ha-mcp` 7.14.1 source tag `v7.14.1`, commit
-`255acec1affa6528004a122eb83e30aee9c77713`. The loader requires all entries to
-be sorted, unique, bounded, and from that exact source revision. Production
-catalog visibility may be a subset or superset of that stock fixture. Exact
+[`upstream_tool_policy_9_2_0.json`](../../hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_9_2_0.json).
+It is the complete classification table for the 77-tool stock fixture reviewed
+from `ha-mcp` 9.2.0 source tag `v9.2.0`, commit
+`51e3aac788482a081807591cd5d58d07dc4e540b`. 9.2.0 is the only reviewed release
+and the loader's default source. The loader requires all entries to be sorted,
+unique, bounded, and from that exact source revision. HAMCP-437 removed the
+earlier 7.14.1 inventory, `upstream_tool_policy.json`, with its registry row.
+Production catalog visibility may be a subset or superset of that stock fixture. Exact
 matching reviewed reads in a partial catalog remain safely exposed while
 reconciliation continues toward the 26-read recovery target. An advertised
 tool is not callable merely because it exists upstream, and exact stock-catalog

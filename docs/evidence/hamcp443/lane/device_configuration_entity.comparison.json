@@ -1,0 +1,835 @@
+{
+  "committed_receipt": "docs/evidence/hamcp366/device_configuration_entity.json",
+  "committed_receipt_sha256": "710a6aa172ded0dd168eef8b9784456081db0f3f888985ba17a742bc1071f5dc",
+  "declaration_sha256": "5d0089392a2a8407b4722dcce1d9dd5c2d184062c55b34d8578c1ff7cc0bc792",
+  "differences": [],
+  "equal": true,
+  "excluded_differences": {
+    "core_run_ids": [
+      {
+        "committed": "01M7C39RYMP6X0AE4HWPCMQRAT",
+        "observed": "01M7XQR3G3GEA80NYRY5CMGEV0",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/number.aqara_door_and_window_sensor_p2_sensitivity/fields/context_id/after"
+      },
+      {
+        "committed": "01M7C39ECM4F2GXTC5C89Z9TSH",
+        "observed": "01M7XQQRY9QG2MPEAG9YZT7P69",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/number.aqara_door_and_window_sensor_p2_sensitivity/fields/context_id/before"
+      },
+      {
+        "committed": "2f237306906584dec76e07941d02a3f3",
+        "observed": "7a976d124eb62e6de82f4ce268c2b58c",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/number.aqara_door_and_window_sensor_p2_sensitivity/fields/device.id/after"
+      },
+      {
+        "committed": "2f237306906584dec76e07941d02a3f3",
+        "observed": "7a976d124eb62e6de82f4ce268c2b58c",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/number.aqara_door_and_window_sensor_p2_sensitivity/fields/device.id/before"
+      },
+      {
+        "committed": "01M7C398MPYVHQPA19WNKV0MAQ",
+        "observed": "01M7XQQK61PYRAR289GY4S84WK",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/number.aqara_door_and_window_sensor_p2_sensitivity/fields/device.primary_config_entry/after"
+      },
+      {
+        "committed": "01M7C398MPYVHQPA19WNKV0MAQ",
+        "observed": "01M7XQQK61PYRAR289GY4S84WK",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/number.aqara_door_and_window_sensor_p2_sensitivity/fields/device.primary_config_entry/before"
+      },
+      {
+        "committed": "01M7C398MPYVHQPA19WNKV0MAQ",
+        "observed": "01M7XQQK61PYRAR289GY4S84WK",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/number.aqara_door_and_window_sensor_p2_sensitivity/fields/registry.config_entry_id/after"
+      },
+      {
+        "committed": "01M7C398MPYVHQPA19WNKV0MAQ",
+        "observed": "01M7XQQK61PYRAR289GY4S84WK",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/number.aqara_door_and_window_sensor_p2_sensitivity/fields/registry.config_entry_id/before"
+      },
+      {
+        "committed": "2f237306906584dec76e07941d02a3f3",
+        "observed": "7a976d124eb62e6de82f4ce268c2b58c",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/number.aqara_door_and_window_sensor_p2_sensitivity/fields/registry.device_id/after"
+      },
+      {
+        "committed": "2f237306906584dec76e07941d02a3f3",
+        "observed": "7a976d124eb62e6de82f4ce268c2b58c",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/number.aqara_door_and_window_sensor_p2_sensitivity/fields/registry.device_id/before"
+      },
+      {
+        "committed": "f2bb2684982dbafa7b95fca679b86918",
+        "observed": "455b16bbf6af6dfeb9921a6283c86150",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/number.aqara_door_and_window_sensor_p2_sensitivity/fields/registry.id/after"
+      },
+      {
+        "committed": "f2bb2684982dbafa7b95fca679b86918",
+        "observed": "455b16bbf6af6dfeb9921a6283c86150",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/number.aqara_door_and_window_sensor_p2_sensitivity/fields/registry.id/before"
+      },
+      {
+        "committed": "01M7C398MPYVHQPA19WNKV0MAQ",
+        "observed": "01M7XQQK61PYRAR289GY4S84WK",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/number.aqara_door_and_window_sensor_p2_sensitivity/registry_level/config_entry_id/after"
+      },
+      {
+        "committed": "01M7C398MPYVHQPA19WNKV0MAQ",
+        "observed": "01M7XQQK61PYRAR289GY4S84WK",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/number.aqara_door_and_window_sensor_p2_sensitivity/registry_level/config_entry_id/before"
+      },
+      {
+        "committed": "2f237306906584dec76e07941d02a3f3",
+        "observed": "7a976d124eb62e6de82f4ce268c2b58c",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/number.aqara_door_and_window_sensor_p2_sensitivity/registry_level/device_id/after"
+      },
+      {
+        "committed": "2f237306906584dec76e07941d02a3f3",
+        "observed": "7a976d124eb62e6de82f4ce268c2b58c",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/number.aqara_door_and_window_sensor_p2_sensitivity/registry_level/device_id/before"
+      },
+      {
+        "committed": "f2bb2684982dbafa7b95fca679b86918",
+        "observed": "455b16bbf6af6dfeb9921a6283c86150",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/number.aqara_door_and_window_sensor_p2_sensitivity/registry_level/id/after"
+      },
+      {
+        "committed": "f2bb2684982dbafa7b95fca679b86918",
+        "observed": "455b16bbf6af6dfeb9921a6283c86150",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/number.aqara_door_and_window_sensor_p2_sensitivity/registry_level/id/before"
+      },
+      {
+        "committed": "01M7C39RY980N8V3KF4WVYZNTK",
+        "observed": "01M7XQR3FM3VTFE8RFRQKJQAHK",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/switch.eve_energy_20ecn4101_child_lock_top/fields/context_id/after"
+      },
+      {
+        "committed": "01M7C39QATH3962S0MAS54ZYGX",
+        "observed": "01M7XQR1VA7QN6EC1XVMW28ZF1",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/switch.eve_energy_20ecn4101_child_lock_top/fields/context_id/before"
+      },
+      {
+        "committed": "a85cd26c44b4d9372deb97660440228c",
+        "observed": "608b40a1003a9b01576cf6f0ab9e3027",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/switch.eve_energy_20ecn4101_child_lock_top/fields/device.id/after"
+      },
+      {
+        "committed": "a85cd26c44b4d9372deb97660440228c",
+        "observed": "608b40a1003a9b01576cf6f0ab9e3027",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/switch.eve_energy_20ecn4101_child_lock_top/fields/device.id/before"
+      },
+      {
+        "committed": "01M7C398MPYVHQPA19WNKV0MAQ",
+        "observed": "01M7XQQK61PYRAR289GY4S84WK",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/switch.eve_energy_20ecn4101_child_lock_top/fields/device.primary_config_entry/after"
+      },
+      {
+        "committed": "01M7C398MPYVHQPA19WNKV0MAQ",
+        "observed": "01M7XQQK61PYRAR289GY4S84WK",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/switch.eve_energy_20ecn4101_child_lock_top/fields/device.primary_config_entry/before"
+      },
+      {
+        "committed": "01M7C398MPYVHQPA19WNKV0MAQ",
+        "observed": "01M7XQQK61PYRAR289GY4S84WK",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/switch.eve_energy_20ecn4101_child_lock_top/fields/registry.config_entry_id/after"
+      },
+      {
+        "committed": "01M7C398MPYVHQPA19WNKV0MAQ",
+        "observed": "01M7XQQK61PYRAR289GY4S84WK",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/switch.eve_energy_20ecn4101_child_lock_top/fields/registry.config_entry_id/before"
+      },
+      {
+        "committed": "a85cd26c44b4d9372deb97660440228c",
+        "observed": "608b40a1003a9b01576cf6f0ab9e3027",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/switch.eve_energy_20ecn4101_child_lock_top/fields/registry.device_id/after"
+      },
+      {
+        "committed": "a85cd26c44b4d9372deb97660440228c",
+        "observed": "608b40a1003a9b01576cf6f0ab9e3027",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/switch.eve_energy_20ecn4101_child_lock_top/fields/registry.device_id/before"
+      },
+      {
+        "committed": "c850814672d4f6157bcb792d6aaee427",
+        "observed": "41603e7d094c33fed76227af836f353a",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/switch.eve_energy_20ecn4101_child_lock_top/fields/registry.id/after"
+      },
+      {
+        "committed": "c850814672d4f6157bcb792d6aaee427",
+        "observed": "41603e7d094c33fed76227af836f353a",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/switch.eve_energy_20ecn4101_child_lock_top/fields/registry.id/before"
+      },
+      {
+        "committed": "01M7C398MPYVHQPA19WNKV0MAQ",
+        "observed": "01M7XQQK61PYRAR289GY4S84WK",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/switch.eve_energy_20ecn4101_child_lock_top/registry_level/config_entry_id/after"
+      },
+      {
+        "committed": "01M7C398MPYVHQPA19WNKV0MAQ",
+        "observed": "01M7XQQK61PYRAR289GY4S84WK",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/switch.eve_energy_20ecn4101_child_lock_top/registry_level/config_entry_id/before"
+      },
+      {
+        "committed": "a85cd26c44b4d9372deb97660440228c",
+        "observed": "608b40a1003a9b01576cf6f0ab9e3027",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/switch.eve_energy_20ecn4101_child_lock_top/registry_level/device_id/after"
+      },
+      {
+        "committed": "a85cd26c44b4d9372deb97660440228c",
+        "observed": "608b40a1003a9b01576cf6f0ab9e3027",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/switch.eve_energy_20ecn4101_child_lock_top/registry_level/device_id/before"
+      },
+      {
+        "committed": "c850814672d4f6157bcb792d6aaee427",
+        "observed": "41603e7d094c33fed76227af836f353a",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/switch.eve_energy_20ecn4101_child_lock_top/registry_level/id/after"
+      },
+      {
+        "committed": "c850814672d4f6157bcb792d6aaee427",
+        "observed": "41603e7d094c33fed76227af836f353a",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/switch.eve_energy_20ecn4101_child_lock_top/registry_level/id/before"
+      },
+      {
+        "committed": "01M7C39RYFQ7HBC6H86Y0D9325",
+        "observed": "01M7XQR3FWX588Q5G949FNDSNP",
+        "path": "/observations/reregistration_fingerprint/remove_then_reload/targets/select.eve_energy_plug_power_on_behavior/fields/context_id/after"
+      },
+      {
+        "committed": "01M7C39R04N8VNM216T9JWAZ2K",
+        "observed": "01M7XQR2GS0AG1H55G2P1SZ5ZF",
+        "path": "/observations/reregistration_fingerprint/remove_then_reload/targets/select.eve_energy_plug_power_on_behavior/fields/context_id/before"
+      },
+      {
+        "committed": "baa050c39bdfc28bc851806fcd675f12",
+        "observed": "a13916e52a5a7246758d6c6d0e25f484",
+        "path": "/observations/reregistration_fingerprint/remove_then_reload/targets/select.eve_energy_plug_power_on_behavior/fields/device.id/after"
+      },
+      {
+        "committed": "baa050c39bdfc28bc851806fcd675f12",
+        "observed": "a13916e52a5a7246758d6c6d0e25f484",
+        "path": "/observations/reregistration_fingerprint/remove_then_reload/targets/select.eve_energy_plug_power_on_behavior/fields/device.id/before"
+      },
+      {
+        "committed": "01M7C398MPYVHQPA19WNKV0MAQ",
+        "observed": "01M7XQQK61PYRAR289GY4S84WK",
+        "path": "/observations/reregistration_fingerprint/remove_then_reload/targets/select.eve_energy_plug_power_on_behavior/fields/device.primary_config_entry/after"
+      },
+      {
+        "committed": "01M7C398MPYVHQPA19WNKV0MAQ",
+        "observed": "01M7XQQK61PYRAR289GY4S84WK",
+        "path": "/observations/reregistration_fingerprint/remove_then_reload/targets/select.eve_energy_plug_power_on_behavior/fields/device.primary_config_entry/before"
+      },
+      {
+        "committed": "01M7C398MPYVHQPA19WNKV0MAQ",
+        "observed": "01M7XQQK61PYRAR289GY4S84WK",
+        "path": "/observations/reregistration_fingerprint/remove_then_reload/targets/select.eve_energy_plug_power_on_behavior/fields/registry.config_entry_id/after"
+      },
+      {
+        "committed": "01M7C398MPYVHQPA19WNKV0MAQ",
+        "observed": "01M7XQQK61PYRAR289GY4S84WK",
+        "path": "/observations/reregistration_fingerprint/remove_then_reload/targets/select.eve_energy_plug_power_on_behavior/fields/registry.config_entry_id/before"
+      },
+      {
+        "committed": "baa050c39bdfc28bc851806fcd675f12",
+        "observed": "a13916e52a5a7246758d6c6d0e25f484",
+        "path": "/observations/reregistration_fingerprint/remove_then_reload/targets/select.eve_energy_plug_power_on_behavior/fields/registry.device_id/after"
+      },
+      {
+        "committed": "baa050c39bdfc28bc851806fcd675f12",
+        "observed": "a13916e52a5a7246758d6c6d0e25f484",
+        "path": "/observations/reregistration_fingerprint/remove_then_reload/targets/select.eve_energy_plug_power_on_behavior/fields/registry.device_id/before"
+      },
+      {
+        "committed": "3fb7dd0754d6f8c45e48557831399dce",
+        "observed": "2bc2d95b7b7088cb94eb7ae3b77dc48d",
+        "path": "/observations/reregistration_fingerprint/remove_then_reload/targets/select.eve_energy_plug_power_on_behavior/fields/registry.id/after"
+      },
+      {
+        "committed": "3fb7dd0754d6f8c45e48557831399dce",
+        "observed": "2bc2d95b7b7088cb94eb7ae3b77dc48d",
+        "path": "/observations/reregistration_fingerprint/remove_then_reload/targets/select.eve_energy_plug_power_on_behavior/fields/registry.id/before"
+      },
+      {
+        "committed": "01M7C398MPYVHQPA19WNKV0MAQ",
+        "observed": "01M7XQQK61PYRAR289GY4S84WK",
+        "path": "/observations/reregistration_fingerprint/remove_then_reload/targets/select.eve_energy_plug_power_on_behavior/registry_level/config_entry_id/after"
+      },
+      {
+        "committed": "01M7C398MPYVHQPA19WNKV0MAQ",
+        "observed": "01M7XQQK61PYRAR289GY4S84WK",
+        "path": "/observations/reregistration_fingerprint/remove_then_reload/targets/select.eve_energy_plug_power_on_behavior/registry_level/config_entry_id/before"
+      },
+      {
+        "committed": "baa050c39bdfc28bc851806fcd675f12",
+        "observed": "a13916e52a5a7246758d6c6d0e25f484",
+        "path": "/observations/reregistration_fingerprint/remove_then_reload/targets/select.eve_energy_plug_power_on_behavior/registry_level/device_id/after"
+      },
+      {
+        "committed": "baa050c39bdfc28bc851806fcd675f12",
+        "observed": "a13916e52a5a7246758d6c6d0e25f484",
+        "path": "/observations/reregistration_fingerprint/remove_then_reload/targets/select.eve_energy_plug_power_on_behavior/registry_level/device_id/before"
+      },
+      {
+        "committed": "3fb7dd0754d6f8c45e48557831399dce",
+        "observed": "2bc2d95b7b7088cb94eb7ae3b77dc48d",
+        "path": "/observations/reregistration_fingerprint/remove_then_reload/targets/select.eve_energy_plug_power_on_behavior/registry_level/id/after"
+      },
+      {
+        "committed": "3fb7dd0754d6f8c45e48557831399dce",
+        "observed": "2bc2d95b7b7088cb94eb7ae3b77dc48d",
+        "path": "/observations/reregistration_fingerprint/remove_then_reload/targets/select.eve_energy_plug_power_on_behavior/registry_level/id/before"
+      }
+    ],
+    "core_timestamps": [
+      {
+        "committed": 1794628690.639363,
+        "observed": 1795220557.047095,
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/number.aqara_door_and_window_sensor_p2_sensitivity/fields/device.created_at/after"
+      },
+      {
+        "committed": 1794628690.639363,
+        "observed": 1795220557.047095,
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/number.aqara_door_and_window_sensor_p2_sensitivity/fields/device.created_at/before"
+      },
+      {
+        "committed": "2026-11-14T03:58:27.284639+00:00",
+        "observed": "2026-11-21T00:22:53.699056+00:00",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/number.aqara_door_and_window_sensor_p2_sensitivity/fields/last_changed/after"
+      },
+      {
+        "committed": "2026-11-14T03:58:16.469877+00:00",
+        "observed": "2026-11-21T00:22:42.891034+00:00",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/number.aqara_door_and_window_sensor_p2_sensitivity/fields/last_changed/before"
+      },
+      {
+        "committed": "2026-11-14T03:58:27.284639+00:00",
+        "observed": "2026-11-21T00:22:53.699056+00:00",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/number.aqara_door_and_window_sensor_p2_sensitivity/fields/last_updated/after"
+      },
+      {
+        "committed": "2026-11-14T03:58:16.469877+00:00",
+        "observed": "2026-11-21T00:22:42.891034+00:00",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/number.aqara_door_and_window_sensor_p2_sensitivity/fields/last_updated/before"
+      },
+      {
+        "committed": 1794628690.64415,
+        "observed": 1795220557.051,
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/number.aqara_door_and_window_sensor_p2_sensitivity/fields/registry.created_at/after"
+      },
+      {
+        "committed": 1794628690.64415,
+        "observed": 1795220557.051,
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/number.aqara_door_and_window_sensor_p2_sensitivity/fields/registry.created_at/before"
+      },
+      {
+        "committed": 1794628690.644381,
+        "observed": 1795220557.051163,
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/number.aqara_door_and_window_sensor_p2_sensitivity/fields/registry.modified_at/after"
+      },
+      {
+        "committed": 1794628690.644381,
+        "observed": 1795220557.051163,
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/number.aqara_door_and_window_sensor_p2_sensitivity/fields/registry.modified_at/before"
+      },
+      {
+        "committed": 1794628690.64415,
+        "observed": 1795220557.051,
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/number.aqara_door_and_window_sensor_p2_sensitivity/registry_level/created_at/after"
+      },
+      {
+        "committed": 1794628690.64415,
+        "observed": 1795220557.051,
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/number.aqara_door_and_window_sensor_p2_sensitivity/registry_level/created_at/before"
+      },
+      {
+        "committed": 1794628690.644381,
+        "observed": 1795220557.051163,
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/number.aqara_door_and_window_sensor_p2_sensitivity/registry_level/modified_at/after"
+      },
+      {
+        "committed": 1794628690.644381,
+        "observed": 1795220557.051163,
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/number.aqara_door_and_window_sensor_p2_sensitivity/registry_level/modified_at/before"
+      },
+      {
+        "committed": 1794628690.618201,
+        "observed": 1795220557.028251,
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/switch.eve_energy_20ecn4101_child_lock_top/fields/device.created_at/after"
+      },
+      {
+        "committed": 1794628690.618201,
+        "observed": 1795220557.028251,
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/switch.eve_energy_20ecn4101_child_lock_top/fields/device.created_at/before"
+      },
+      {
+        "committed": "2026-11-14T03:58:27.273597+00:00",
+        "observed": "2026-11-21T00:22:53.684591+00:00",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/switch.eve_energy_20ecn4101_child_lock_top/fields/last_changed/after"
+      },
+      {
+        "committed": "2026-11-14T03:58:25.627924+00:00",
+        "observed": "2026-11-21T00:22:52.011892+00:00",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/switch.eve_energy_20ecn4101_child_lock_top/fields/last_changed/before"
+      },
+      {
+        "committed": "2026-11-14T03:58:27.273597+00:00",
+        "observed": "2026-11-21T00:22:53.684591+00:00",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/switch.eve_energy_20ecn4101_child_lock_top/fields/last_updated/after"
+      },
+      {
+        "committed": "2026-11-14T03:58:25.627924+00:00",
+        "observed": "2026-11-21T00:22:52.011892+00:00",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/switch.eve_energy_20ecn4101_child_lock_top/fields/last_updated/before"
+      },
+      {
+        "committed": 1794628690.628189,
+        "observed": 1795220557.03678,
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/switch.eve_energy_20ecn4101_child_lock_top/fields/registry.created_at/after"
+      },
+      {
+        "committed": 1794628690.628189,
+        "observed": 1795220557.03678,
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/switch.eve_energy_20ecn4101_child_lock_top/fields/registry.created_at/before"
+      },
+      {
+        "committed": 1794628690.628357,
+        "observed": 1795220557.036947,
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/switch.eve_energy_20ecn4101_child_lock_top/fields/registry.modified_at/after"
+      },
+      {
+        "committed": 1794628690.628357,
+        "observed": 1795220557.036947,
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/switch.eve_energy_20ecn4101_child_lock_top/fields/registry.modified_at/before"
+      },
+      {
+        "committed": 1794628690.628189,
+        "observed": 1795220557.03678,
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/switch.eve_energy_20ecn4101_child_lock_top/registry_level/created_at/after"
+      },
+      {
+        "committed": 1794628690.628189,
+        "observed": 1795220557.03678,
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/switch.eve_energy_20ecn4101_child_lock_top/registry_level/created_at/before"
+      },
+      {
+        "committed": 1794628690.628357,
+        "observed": 1795220557.036947,
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/switch.eve_energy_20ecn4101_child_lock_top/registry_level/modified_at/after"
+      },
+      {
+        "committed": 1794628690.628357,
+        "observed": 1795220557.036947,
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/switch.eve_energy_20ecn4101_child_lock_top/registry_level/modified_at/before"
+      },
+      {
+        "committed": 1794628690.630463,
+        "observed": 1795220557.038787,
+        "path": "/observations/reregistration_fingerprint/remove_then_reload/targets/select.eve_energy_plug_power_on_behavior/fields/device.created_at/after"
+      },
+      {
+        "committed": 1794628690.630463,
+        "observed": 1795220557.038787,
+        "path": "/observations/reregistration_fingerprint/remove_then_reload/targets/select.eve_energy_plug_power_on_behavior/fields/device.created_at/before"
+      },
+      {
+        "committed": "2026-11-14T03:58:27.279291+00:00",
+        "observed": "2026-11-21T00:22:53.692940+00:00",
+        "path": "/observations/reregistration_fingerprint/remove_then_reload/targets/select.eve_energy_plug_power_on_behavior/fields/last_changed/after"
+      },
+      {
+        "committed": "2026-11-14T03:58:26.310095+00:00",
+        "observed": "2026-11-21T00:22:52.698937+00:00",
+        "path": "/observations/reregistration_fingerprint/remove_then_reload/targets/select.eve_energy_plug_power_on_behavior/fields/last_changed/before"
+      },
+      {
+        "committed": "2026-11-14T03:58:27.279291+00:00",
+        "observed": "2026-11-21T00:22:53.692940+00:00",
+        "path": "/observations/reregistration_fingerprint/remove_then_reload/targets/select.eve_energy_plug_power_on_behavior/fields/last_updated/after"
+      },
+      {
+        "committed": "2026-11-14T03:58:26.310095+00:00",
+        "observed": "2026-11-21T00:22:52.698937+00:00",
+        "path": "/observations/reregistration_fingerprint/remove_then_reload/targets/select.eve_energy_plug_power_on_behavior/fields/last_updated/before"
+      },
+      {
+        "committed": 1794628690.635789,
+        "observed": 1795220557.043328,
+        "path": "/observations/reregistration_fingerprint/remove_then_reload/targets/select.eve_energy_plug_power_on_behavior/fields/registry.created_at/after"
+      },
+      {
+        "committed": 1794628690.635789,
+        "observed": 1795220557.043328,
+        "path": "/observations/reregistration_fingerprint/remove_then_reload/targets/select.eve_energy_plug_power_on_behavior/fields/registry.created_at/before"
+      },
+      {
+        "committed": 1794628707.279192,
+        "observed": 1795220573.692833,
+        "path": "/observations/reregistration_fingerprint/remove_then_reload/targets/select.eve_energy_plug_power_on_behavior/fields/registry.modified_at/after"
+      },
+      {
+        "committed": 1794628690.635947,
+        "observed": 1795220557.043543,
+        "path": "/observations/reregistration_fingerprint/remove_then_reload/targets/select.eve_energy_plug_power_on_behavior/fields/registry.modified_at/before"
+      },
+      {
+        "committed": 1794628690.635789,
+        "observed": 1795220557.043328,
+        "path": "/observations/reregistration_fingerprint/remove_then_reload/targets/select.eve_energy_plug_power_on_behavior/registry_level/created_at/after"
+      },
+      {
+        "committed": 1794628690.635789,
+        "observed": 1795220557.043328,
+        "path": "/observations/reregistration_fingerprint/remove_then_reload/targets/select.eve_energy_plug_power_on_behavior/registry_level/created_at/before"
+      },
+      {
+        "committed": 1794628707.279192,
+        "observed": 1795220573.692833,
+        "path": "/observations/reregistration_fingerprint/remove_then_reload/targets/select.eve_energy_plug_power_on_behavior/registry_level/modified_at/after"
+      },
+      {
+        "committed": 1794628690.635947,
+        "observed": 1795220557.043543,
+        "path": "/observations/reregistration_fingerprint/remove_then_reload/targets/select.eve_energy_plug_power_on_behavior/registry_level/modified_at/before"
+      }
+    ],
+    "derived_from_run_values": [
+      {
+        "committed": "f88d7ce211717e431131e8bed6f88316315b9dfa00dea487cc7092c5bd614e20",
+        "observed": "b7d6da65dac404309fd1c3b920a7d8dc3ec797826af7860e4bcd55ea82f84c0f",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/number.aqara_door_and_window_sensor_p2_sensitivity/fingerprint_after"
+      },
+      {
+        "committed": "2e76e251a812bf62c308efc73d237f8579487be205394a3bc194fca451f12f4d",
+        "observed": "d768f5b76871581e05cf5d6885ccf94b1eb721c950ca410745c9f53b256504e1",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/number.aqara_door_and_window_sensor_p2_sensitivity/fingerprint_before"
+      },
+      {
+        "committed": "f0c3612d206931049c215c5b62418415cb21278606d2539c73a384f79a49db9b",
+        "observed": "a3d96c69e880b749f34aa03d80a360e94cf3d584f8d0dad45d242cd0eb4cee2b",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/switch.eve_energy_20ecn4101_child_lock_top/fingerprint_after"
+      },
+      {
+        "committed": "dbbacd763fb952e4fc0d40f75f418f3466c93b5da587f6a51b0fb427fb0f5e75",
+        "observed": "cd430c55679903baa88fd41706e5a9466854d66b165cb4e13cbf14bc225aa554",
+        "path": "/observations/reregistration_fingerprint/reload_only/targets/switch.eve_energy_20ecn4101_child_lock_top/fingerprint_before"
+      },
+      {
+        "committed": "8e90e8edfc8b752e04319fe8b59aa885146c77e52dedbe233ff497420e1fb3ac",
+        "observed": "57fc009c13016db9c08de57667da4b9cebd0c77e5d1fdedd96c30085a87f4a61",
+        "path": "/observations/reregistration_fingerprint/remove_then_reload/targets/select.eve_energy_plug_power_on_behavior/fingerprint_after"
+      },
+      {
+        "committed": "b1eaf7a37d0aa24a69082fc0ce1d85272638c4db29cbad8d032af96b14deb5a3",
+        "observed": "d31043717d63961664676cf8754044bc83bdd55f1db77915391117d5975267bc",
+        "path": "/observations/reregistration_fingerprint/remove_then_reload/targets/select.eve_energy_plug_power_on_behavior/fingerprint_before"
+      },
+      {
+        "committed": "59a3c134dff68aeabf3e8644da9ab46b6cec42fd88ff7393a576704bd77c2beb",
+        "observed": "109377bee2c4e4e8700e8044ec89740a30ea146e0b70b44fbba6d954b8e4de57",
+        "path": "/operations/number_forward/verification/evidence_hash"
+      },
+      {
+        "committed": "59a3c134dff68aeabf3e8644da9ab46b6cec42fd88ff7393a576704bd77c2beb",
+        "observed": "109377bee2c4e4e8700e8044ec89740a30ea146e0b70b44fbba6d954b8e4de57",
+        "path": "/operations/number_forward/verification/resulting_state_fingerprint"
+      },
+      {
+        "committed": "3c7250b3cdcebd0e3c8914bdab18af8b501f362edc8392be5a7339bab2f5f6a3",
+        "observed": "7b4cca0c9b08724eb031842d1537b6cb8a52df5696c5b1195f65019129c8e0bc",
+        "path": "/operations/number_stored_value_mismatch/verification/evidence_hash"
+      },
+      {
+        "committed": "3c7250b3cdcebd0e3c8914bdab18af8b501f362edc8392be5a7339bab2f5f6a3",
+        "observed": "7b4cca0c9b08724eb031842d1537b6cb8a52df5696c5b1195f65019129c8e0bc",
+        "path": "/operations/number_stored_value_mismatch/verification/resulting_state_fingerprint"
+      },
+      {
+        "committed": "2e76e251a812bf62c308efc73d237f8579487be205394a3bc194fca451f12f4d",
+        "observed": "d768f5b76871581e05cf5d6885ccf94b1eb721c950ca410745c9f53b256504e1",
+        "path": "/operations/number_undo/verification/evidence_hash"
+      },
+      {
+        "committed": "2e76e251a812bf62c308efc73d237f8579487be205394a3bc194fca451f12f4d",
+        "observed": "d768f5b76871581e05cf5d6885ccf94b1eb721c950ca410745c9f53b256504e1",
+        "path": "/operations/number_undo/verification/resulting_state_fingerprint"
+      },
+      {
+        "committed": "b1eaf7a37d0aa24a69082fc0ce1d85272638c4db29cbad8d032af96b14deb5a3",
+        "observed": "d31043717d63961664676cf8754044bc83bdd55f1db77915391117d5975267bc",
+        "path": "/operations/select_before_reregistration/verification/evidence_hash"
+      },
+      {
+        "committed": "b1eaf7a37d0aa24a69082fc0ce1d85272638c4db29cbad8d032af96b14deb5a3",
+        "observed": "d31043717d63961664676cf8754044bc83bdd55f1db77915391117d5975267bc",
+        "path": "/operations/select_before_reregistration/verification/resulting_state_fingerprint"
+      },
+      {
+        "committed": "6d1aa684715c0b493748df7c6cb64c01ae938a495a4a433ffbfe9060bad43c95",
+        "observed": "3e6bade4c9df5ad5658ad9bf661b46e43f625b4e43997615f76bf64fca08cfa9",
+        "path": "/operations/select_delayed/verification/evidence_hash"
+      },
+      {
+        "committed": "6d1aa684715c0b493748df7c6cb64c01ae938a495a4a433ffbfe9060bad43c95",
+        "observed": "3e6bade4c9df5ad5658ad9bf661b46e43f625b4e43997615f76bf64fca08cfa9",
+        "path": "/operations/select_delayed/verification/resulting_state_fingerprint"
+      },
+      {
+        "committed": "bfb66e3fee638e95bc53bae109e6c77f1fd3bd2a6752755bba109ad7994cd3c7",
+        "observed": "6ec0edcfc33a2f9a17c242c97e51efd5680a83df351acc49de23fb04be8cf3dd",
+        "path": "/operations/select_forward/verification/evidence_hash"
+      },
+      {
+        "committed": "bfb66e3fee638e95bc53bae109e6c77f1fd3bd2a6752755bba109ad7994cd3c7",
+        "observed": "6ec0edcfc33a2f9a17c242c97e51efd5680a83df351acc49de23fb04be8cf3dd",
+        "path": "/operations/select_forward/verification/resulting_state_fingerprint"
+      },
+      {
+        "committed": "8e90e8edfc8b752e04319fe8b59aa885146c77e52dedbe233ff497420e1fb3ac",
+        "observed": "57fc009c13016db9c08de57667da4b9cebd0c77e5d1fdedd96c30085a87f4a61",
+        "path": "/operations/select_rejected_write/verification/evidence_hash"
+      },
+      {
+        "committed": "8e90e8edfc8b752e04319fe8b59aa885146c77e52dedbe233ff497420e1fb3ac",
+        "observed": "57fc009c13016db9c08de57667da4b9cebd0c77e5d1fdedd96c30085a87f4a61",
+        "path": "/operations/select_rejected_write/verification/resulting_state_fingerprint"
+      },
+      {
+        "committed": "d789a0e904770b3b02fcca21a3a08ce908dd38b50053393956d16f4cc4ef169e",
+        "observed": "de50f582d8f4a958e8df636daf91439ec1f2ee88e3c36f0ed89322d3dbad25d1",
+        "path": "/operations/select_undo/verification/evidence_hash"
+      },
+      {
+        "committed": "d789a0e904770b3b02fcca21a3a08ce908dd38b50053393956d16f4cc4ef169e",
+        "observed": "de50f582d8f4a958e8df636daf91439ec1f2ee88e3c36f0ed89322d3dbad25d1",
+        "path": "/operations/select_undo/verification/resulting_state_fingerprint"
+      },
+      {
+        "committed": "b84d4efc7cdb97e50bf2ccd4121972a532b4e811aeb8cd84e5cfaf7414e6eeea",
+        "observed": "4a54ca04d7a122f4fbef21a4afe6eba01dd9bfd5a1787497528319ffb6d470b4",
+        "path": "/operations/switch_before_drift/verification/evidence_hash"
+      },
+      {
+        "committed": "b84d4efc7cdb97e50bf2ccd4121972a532b4e811aeb8cd84e5cfaf7414e6eeea",
+        "observed": "4a54ca04d7a122f4fbef21a4afe6eba01dd9bfd5a1787497528319ffb6d470b4",
+        "path": "/operations/switch_before_drift/verification/resulting_state_fingerprint"
+      },
+      {
+        "committed": "dbbacd763fb952e4fc0d40f75f418f3466c93b5da587f6a51b0fb427fb0f5e75",
+        "observed": "cd430c55679903baa88fd41706e5a9466854d66b165cb4e13cbf14bc225aa554",
+        "path": "/operations/switch_before_reload/verification/evidence_hash"
+      },
+      {
+        "committed": "dbbacd763fb952e4fc0d40f75f418f3466c93b5da587f6a51b0fb427fb0f5e75",
+        "observed": "cd430c55679903baa88fd41706e5a9466854d66b165cb4e13cbf14bc225aa554",
+        "path": "/operations/switch_before_reload/verification/resulting_state_fingerprint"
+      },
+      {
+        "committed": "d968164fdc4b7d62c5ae14a9e74cd312f97e582602455baa581e5b30bb77e433",
+        "observed": "5b679dc9ed8a4e06211059cc64da33c83726a3a6aebd7fa9526494f67b344220",
+        "path": "/operations/switch_forward_off/verification/evidence_hash"
+      },
+      {
+        "committed": "d968164fdc4b7d62c5ae14a9e74cd312f97e582602455baa581e5b30bb77e433",
+        "observed": "5b679dc9ed8a4e06211059cc64da33c83726a3a6aebd7fa9526494f67b344220",
+        "path": "/operations/switch_forward_off/verification/resulting_state_fingerprint"
+      },
+      {
+        "committed": "0ffe2543fac2e5c86709a065bf9278398f938324fc1afc1b1d81941e2546e61d",
+        "observed": "c6dbdc5dcf8711035baf69575efe7dbe86913630e7874bf1d5d252ef843d32e9",
+        "path": "/operations/switch_forward_on/verification/evidence_hash"
+      },
+      {
+        "committed": "0ffe2543fac2e5c86709a065bf9278398f938324fc1afc1b1d81941e2546e61d",
+        "observed": "c6dbdc5dcf8711035baf69575efe7dbe86913630e7874bf1d5d252ef843d32e9",
+        "path": "/operations/switch_forward_on/verification/resulting_state_fingerprint"
+      },
+      {
+        "committed": "4a3183e40a3d0e8a7c3962cb620d8bffdf1524963d9f576c4350c7c36fbcf07f",
+        "observed": "5354c79261d271b1d02652351b5c18b022c2dff7ad647396a1ed419704bef3e5",
+        "path": "/operations/switch_stalled_write/final/verification/evidence_hash"
+      },
+      {
+        "committed": "4a3183e40a3d0e8a7c3962cb620d8bffdf1524963d9f576c4350c7c36fbcf07f",
+        "observed": "5354c79261d271b1d02652351b5c18b022c2dff7ad647396a1ed419704bef3e5",
+        "path": "/operations/switch_stalled_write/final/verification/resulting_state_fingerprint"
+      },
+      {
+        "committed": "aa3565457fa95271dfe674c731ff0ab3711d20d10017d5431ebd558bfc82b332",
+        "observed": "5ed81aadb64bc13fbba46598367f284b58748489c3657d83843836c6fb99267b",
+        "path": "/operations/switch_stalled_write/verification/evidence_hash"
+      },
+      {
+        "committed": "aa3565457fa95271dfe674c731ff0ab3711d20d10017d5431ebd558bfc82b332",
+        "observed": "5ed81aadb64bc13fbba46598367f284b58748489c3657d83843836c6fb99267b",
+        "path": "/operations/switch_stalled_write/verification/resulting_state_fingerprint"
+      },
+      {
+        "committed": "cdb8a0625bc32bc01773bf36648599203b87f95383e8274bcc002c5c8f92ce98",
+        "observed": "a106c325e6c40e01a38d0434105b267a8579edd8d3791311b325332fb909336b",
+        "path": "/operations/switch_undo/verification/evidence_hash"
+      },
+      {
+        "committed": "cdb8a0625bc32bc01773bf36648599203b87f95383e8274bcc002c5c8f92ce98",
+        "observed": "a106c325e6c40e01a38d0434105b267a8579edd8d3791311b325332fb909336b",
+        "path": "/operations/switch_undo/verification/resulting_state_fingerprint"
+      }
+    ],
+    "engineering_task_ids": [
+      {
+        "committed": "55782c4928a5cf2cc1b46373974441e7",
+        "observed": "c6898194f4b2a5a9b7c9553936bcaa53",
+        "path": "/operations/number_forward/task_id"
+      },
+      {
+        "committed": "a172663cdb963e13ccd95ad033b1995a",
+        "observed": "92c7e0e5d913deede407608587d424e3",
+        "path": "/operations/number_stored_value_mismatch/final/task_id"
+      },
+      {
+        "committed": "a172663cdb963e13ccd95ad033b1995a",
+        "observed": "92c7e0e5d913deede407608587d424e3",
+        "path": "/operations/number_stored_value_mismatch/task_id"
+      },
+      {
+        "committed": "3e97dfbcc8294a1796c4b39ec615d0b0",
+        "observed": "0cf061f10d9d48b8a24f1cc03747196c",
+        "path": "/operations/number_undo/task_id"
+      },
+      {
+        "committed": "55782c4928a5cf2cc1b46373974441e7",
+        "observed": "c6898194f4b2a5a9b7c9553936bcaa53",
+        "path": "/operations/number_undo/undo_of"
+      },
+      {
+        "committed": "3c02c94eee54ff9203bb1850d985d837",
+        "observed": "5c2e7e6d8b8927ccdb1a5a1a7b2cd088",
+        "path": "/operations/select_before_reregistration/task_id"
+      },
+      {
+        "committed": "e37cc3acb2bfd010768ab453b76c155e",
+        "observed": "fc1cbb9508148b50b57b3a8deca56f51",
+        "path": "/operations/select_delayed/task_id"
+      },
+      {
+        "committed": "2e5a55f922104224c4abb174abc32173",
+        "observed": "7ccdb3dc3a2fe983ee5309ae798b1ab3",
+        "path": "/operations/select_forward/task_id"
+      },
+      {
+        "committed": "05fbf201f36690838633701f4d4f8053",
+        "observed": "c984a28b38acfefd87998821b8a2504c",
+        "path": "/operations/select_rejected_write/final/task_id"
+      },
+      {
+        "committed": "05fbf201f36690838633701f4d4f8053",
+        "observed": "c984a28b38acfefd87998821b8a2504c",
+        "path": "/operations/select_rejected_write/task_id"
+      },
+      {
+        "committed": "258d4d4e2bae08f53a15ee72ca2fa33e",
+        "observed": "3468a618a7b1b89b9a7194aa3fb0426f",
+        "path": "/operations/select_undo/task_id"
+      },
+      {
+        "committed": "2e5a55f922104224c4abb174abc32173",
+        "observed": "7ccdb3dc3a2fe983ee5309ae798b1ab3",
+        "path": "/operations/select_undo/undo_of"
+      },
+      {
+        "committed": "690767f73588e1d908b3dad1cd5549c6",
+        "observed": "7cbcbe8f3843dd74e1019800bbde6b0f",
+        "path": "/operations/switch_before_drift/task_id"
+      },
+      {
+        "committed": "b611c866b521ece671f6788d17d08fa8",
+        "observed": "8989dc9ba8156d9e24be2a80b2d03f67",
+        "path": "/operations/switch_before_reload/task_id"
+      },
+      {
+        "committed": "a3dd1276f0f81471e33a63e649861dec",
+        "observed": "dd87193f0212a2365c706c3b136737a3",
+        "path": "/operations/switch_forward_off/task_id"
+      },
+      {
+        "committed": "87d59b0285ba24a98580f67d13f650f2",
+        "observed": "650fa66b4876f280ef850ddd104f8f32",
+        "path": "/operations/switch_forward_on/task_id"
+      },
+      {
+        "committed": "39fcbd1c50fd3ca3da77c7a36da6fc9c",
+        "observed": "3693a3a10ad490fd9ad12110115dfba9",
+        "path": "/operations/switch_stalled_write/final/task_id"
+      },
+      {
+        "committed": "39fcbd1c50fd3ca3da77c7a36da6fc9c",
+        "observed": "3693a3a10ad490fd9ad12110115dfba9",
+        "path": "/operations/switch_stalled_write/task_id"
+      },
+      {
+        "committed": "64955763be29a23fd88ef9be09bc90e6",
+        "observed": "d51d2fbe257629871b52d2de947fe85d",
+        "path": "/operations/switch_undo/task_id"
+      },
+      {
+        "committed": "a3dd1276f0f81471e33a63e649861dec",
+        "observed": "dd87193f0212a2365c706c3b136737a3",
+        "path": "/operations/switch_undo/undo_of"
+      }
+    ],
+    "host_admission": [
+      {
+        "committed": 0.44580078125,
+        "observed": 0.1640625,
+        "path": "/host_admission/load1"
+      },
+      {
+        "committed": 13067366400,
+        "observed": 11895779328,
+        "path": "/host_admission/mem_available_bytes"
+      },
+      {
+        "committed": "2026-11-14T03:57:54.915246+00:00",
+        "observed": "2026-11-21T00:22:20.766453+00:00",
+        "path": "/host_admission/utc"
+      }
+    ],
+    "run_identity": [
+      {
+        "committed": "2026-11-14T04:02:18.267539+00:00",
+        "observed": "2026-11-21T00:26:44.855919+00:00",
+        "path": "/ended_utc"
+      },
+      {
+        "committed": "d84d8d9e69c4fff8481b018182a6b43f088aac7d",
+        "observed": "c94d66ce0e2fa776eb8f0d720b350ad90646e8bf",
+        "path": "/source_commit"
+      },
+      {
+        "committed": "2026-11-14T03:57:54.993691+00:00",
+        "observed": "2026-11-21T00:22:20.842040+00:00",
+        "path": "/started_utc"
+      }
+    ],
+    "timing": [
+      {
+        "committed": 9.2,
+        "observed": 9.3,
+        "path": "/operations/number_stored_value_mismatch/seconds"
+      }
+    ]
+  },
+  "excluded_leaves": 189,
+  "expected_changes": [
+    {
+      "applied": true,
+      "path": "/images/beta25-real-ha-upstream-ha-2026-11-0-device-configuration/image"
+    },
+    {
+      "applied": true,
+      "path": "/images/beta25-real-ha-upstream-ha-2026-11-0-device-configuration/config_digest"
+    }
+  ],
+  "harness": "scripts/core_device_configuration_local.py",
+  "lane": "device_configuration_entity",
+  "masked_differences": {},
+  "masked_leaves": 0,
+  "model": "hamcp443-receipt-comparison-report-v2",
+  "observed_receipt_sha256": "8a82f59203371cab270bff52d6be2be4973a553eb5d77d78c62be81a64450ac2"
+}

@@ -1,15 +1,16 @@
-"""HAMCP-319 Phase 2: governed dashboard surfaces at 9.1.0 parity with 8.5.0.
+"""HAMCP-319 Phase 2: governed dashboard surfaces at 9.2.0 parity with 8.5.0.
 
 Design sections 6.3 (F4 dashboard model), 7 (governed dashboard surfaces),
 7.1 (internal dashboard-guide read) and 8.1 item 4 ("No config found" fails
 closed). The real pinned MCP ClientSession runs over in-memory streams against
 a synthetic peer, behind the real dashboard provider, gateway, governance
-service and F3 runtime. The 9.1 peer answers with structured-content shapes
-transcribed from the pinned 9.1.0 source (see
-tests/fixtures/ha_mcp_9_1_0/dashboard/provenance.json); the 8.5 peer answers
-with the shapes the retained 8.5 tests already use. No endpoint is contacted:
-the 9.1 transport is configured with a synthetic strict_full value only so
-that endpoint admission takes its 9.1 path, and the SDK HTTP transport is
+service and F3 runtime. The 9.2 peer answers with structured-content shapes
+from the pinned 9.2.0 source (see
+tests/fixtures/ha_mcp_9_2_0/dashboard/provenance.json; HAMCP-437 re-bound the
+9.1.0 transcription by source identity); the 8.5 peer answers with the shapes
+the retained 8.5 tests already use. No endpoint is contacted: the 9.2
+transport is configured with a synthetic strict_full value only so that
+endpoint admission takes its 9.1+ path, and the SDK HTTP transport is
 replaced.
 """
 import asyncio
@@ -34,7 +35,7 @@ sys.path[:0] = [str(ROOT / 'hass_mcp_engineering_beta'), str(ROOT / 'tests')]
 from ha_mcp_engineering.audit import AuditLogger
 from ha_mcp_engineering.clients import mcp as mcp_client
 from ha_mcp_engineering.clients.mcp import (
-    BEST_PRACTICES_GUIDE_ARGUMENTS, MAX_UPSTREAM_CONTENT_CHARS,
+    MAX_UPSTREAM_CONTENT_CHARS,
     DashboardTransportError, McpDashboardTransport,
 )
 from ha_mcp_engineering.dashboard_analysis import contracts as analysis_contracts
@@ -55,7 +56,7 @@ GETTER, GUIDE, SETTER = (
 URL_PATH = 'operations'
 SKILL = 'home-assistant-best-practices'
 GUIDE_FILE = 'references/dashboard-guide.md'
-FIXTURES = ROOT / 'tests/fixtures/ha_mcp_9_1_0/dashboard'
+FIXTURES = ROOT / 'tests/fixtures/ha_mcp_9_2_0/dashboard'
 ENVELOPES = json.loads((FIXTURES / 'envelopes.json').read_text(encoding='utf-8'))
 GUIDE_BYTES = (FIXTURES / 'dashboard-guide.md').read_bytes()
 GUIDE_SHA256 = 'b4d42e9383fe929ecc87fb52150ceb3222173b528b1cf9f8663218c65544d293'
@@ -66,17 +67,17 @@ STRICT_URL = 'http://synthetic.invalid/base/catalog/full'
 # the 9.1 peer shapes below serve both (tests/test_hamcp319_used_tool_exact_admission).
 NINE_ONE = ('9.1.0', '9.1.2')
 URLS = {'9.1.0': STRICT_URL, '9.1.2': STRICT_URL, '8.5.0': ''}
-# HAMCP-371 (SB used-tool ruling): a 9.2.0 peer row, additive only; VERSIONS
-# below is unchanged, so this module's own tests run as before.
+# HAMCP-371 (SB used-tool ruling): a 9.2.0 peer row. HAMCP-437: VERSIONS
+# below now runs this module's own tests on 9.2.0 instead of 9.1.0.
 # - Descriptors: the used-tool module serves the committed 9.2.0 standalone
 #   filesystem-on tools/list (docs/evidence/hamcp371/s8/profiles-2/out/
 #   standalone-9.2.0-fs-on/observation.json, 82 tools). catalog() below keeps
 #   the reviewed 9.2.0 capture's runtime order (77 tools), which other modules
 #   use; its getter, guide and setter descriptors equal the wire capture's.
 # - Reply envelopes: the seven source files in
-#   tests/fixtures/ha_mcp_9_1_0/dashboard/provenance.json have the same sha256
+#   tests/fixtures/ha_mcp_9_2_0/dashboard/provenance.json have the same sha256
 #   at v9.2.0 (51e3aac7) as at v9.1.0 (source review, HAMCP-371 SB README), so
-#   the transcribed envelopes describe 9.2.0 by source identity.
+#   the 9.1.0 transcription describes 9.2.0 by source identity (HAMCP-437).
 # - Guide: docs/evidence/hamcp371/s4/ha-mcp-9.2.0/image-resources.json records
 #   the 9.2.0 image's dashboard-guide.md sha256 as GUIDE_SHA256.
 NINE_TWO = ('9.2.0',)
@@ -85,7 +86,10 @@ URLS['9.2.0'] = STRICT_URL
 KEY_PATTERN = re.compile(r'I-HAVE-READ-THE-BEST-PRACTICES-GUIDE-[0-9a-f]{8}')
 KEY_91 = 'I-HAVE-READ-THE-BEST-PRACTICES-GUIDE-9a1b2c3d'
 KEY_85 = 'I-HAVE-READ-THE-BEST-PRACTICES-GUIDE-0123abcd'
-VERSIONS = ('9.1.0', '8.5.0')
+# HAMCP-437 I2a-D: the 8.5.0 row is retired; its version-specific twins
+# (8.5 guide arguments, "No config found." tool error, absent-flag analysis)
+# are removed and the shared cases run on the reviewed 9.2.0 release only.
+VERSIONS = ('9.2.0',)
 
 
 def catalog(version):
@@ -345,8 +349,8 @@ class InternalGuideRead(Harness):
         self.assertEqual(blob, GUIDE_GIT_BLOB)
         self.assertNotIn(b'\r', GUIDE_BYTES)
 
-    async def test_91_dashboard_guide_internal_read(self):
-        peer = DashboardPeer('9.1.0')
+    async def test_92_dashboard_guide_internal_read(self):
+        peer = DashboardPeer('9.2.0')
         provider = self.provider(peer)
         exchange = await provider._transport.execute_best_practices_read(
             provider._validate_write_handshake)
@@ -372,14 +376,14 @@ class InternalGuideRead(Harness):
         self.assertEqual(await provider.best_practices_acknowledgement_key(), peer.key)
         self.assertEqual(peer.args_for(GUIDE), [{'file': GUIDE_FILE}] * 2)
         # ... and a governed dashboard write proceeds with that receipt.
-        write_peer = DashboardPeer('9.1.0')
+        write_peer = DashboardPeer('9.2.0')
         _s, _r, _c, result = await self.governed_update(write_peer, TITLE_PATCH, 'guide-91')
         self.assertEqual(result['task_state'], 'succeeded_verified', result)
         self.assertEqual(write_peer.args_for(SETTER)[0]['BestPracticeKey'], write_peer.key)
         self.assertEqual(write_peer.args_for(GUIDE), [{'file': GUIDE_FILE}])
         self.balanced()
 
-    async def test_91_dashboard_guide_rejects_other_arguments(self):
+    async def test_92_dashboard_guide_rejects_other_arguments(self):
         cases = (
             {},
             {'file': GUIDE_FILE},
@@ -393,7 +397,7 @@ class InternalGuideRead(Harness):
         )
         for arguments in cases:
             with self.subTest(arguments=arguments):
-                peer = DashboardPeer('9.1.0')
+                peer = DashboardPeer('9.2.0')
                 provider = self.provider(peer)
                 with self.assertRaises(DashboardTransportError) as caught:
                     await provider._transport._run(
@@ -403,34 +407,24 @@ class InternalGuideRead(Harness):
                 self.assertEqual(peer.calls, [])
         self.balanced()
 
-    async def test_85_dashboard_guide_read_unchanged(self):
-        peer = DashboardPeer('8.5.0')
-        provider = self.provider(peer)
-        self.assertEqual(await provider.best_practices_acknowledgement_key(), peer.key)
-        self.assertEqual(peer.calls, [(GUIDE, dict(BEST_PRACTICES_GUIDE_ARGUMENTS))])
-        self.assertEqual(peer.calls, [(GUIDE, {'skill': SKILL, 'file': GUIDE_FILE})])
-        # No 9.1 rewrite row is consulted for an 8.5 session.
-        self.assertNotIn(('8.5.0', GUIDE), mcp_client._BEST_PRACTICES_ARGUMENT_REWRITES)
-        self.balanced()
-
-    async def test_91_skill_guide_internal_rewrite_positive(self):
-        # The compiled (9.1.0, ha_get_skill_guide) row turns the fixed internal
-        # arguments into the exact file-only form the 9.1 schema admits; the
+    async def test_92_skill_guide_internal_rewrite_positive(self):
+        # The compiled (9.2.0, ha_get_skill_guide) row turns the fixed internal
+        # arguments into the exact file-only form the 9.1+ schema admits; the
         # peer enforces that schema, so without the row the read fails.
-        peer = DashboardPeer('9.1.0')
+        peer = DashboardPeer('9.2.0')
         provider = self.provider(peer)
         self.assertEqual(await provider.best_practices_acknowledgement_key(), peer.key)
         self.assertEqual(peer.calls, [(GUIDE, {'file': GUIDE_FILE})])
         self.assertEqual(
-            mcp_client._BEST_PRACTICES_ARGUMENT_REWRITES[('9.1.0', GUIDE)],
+            mcp_client._BEST_PRACTICES_ARGUMENT_REWRITES[('9.2.0', GUIDE)],
             (('file', GUIDE_FILE),))
         health = provider.health_snapshot()
         self.assertIsNone(health['last_failure_category'])
         self.assertEqual(health['contract_status'], 'valid')
         self.balanced()
 
-    async def test_91_guide_without_receipt_fails_closed(self):
-        peer = DashboardPeer('9.1.0')
+    async def test_92_guide_without_receipt_fails_closed(self):
+        peer = DashboardPeer('9.2.0')
         peer.key = 'no-receipt-published'
         provider = self.provider(peer)
         with self.assertRaises(DashboardProviderError):
@@ -470,40 +464,29 @@ class GovernedPositive(Harness):
                 self.assertLessEqual(set(peer.names()), {GETTER, GUIDE, SETTER})
                 self.balanced()
 
-    async def test_91_dashboard_positive(self):
-        await self._positive('9.1.0')
+    async def test_92_dashboard_positive(self):
+        await self._positive('9.2.0')
         # The native-path 9.1 success (write_committed true plus attached
         # verification fields) is also accepted, still with readback.
-        peer = DashboardPeer('9.1.0')
+        peer = DashboardPeer('9.2.0')
         peer.native_write = True
         _s, _r, _c, result = await self.governed_update(peer, TITLE_PATCH, 'ok-91-native')
         self.assertEqual(result['task_state'], 'succeeded_verified', result)
         self.assertEqual(peer.names().count(SETTER), 1)
 
-    async def test_85_dashboard_positive(self):
-        await self._positive('8.5.0')
-
-    async def test_85_dashboard_positive_on_strict_form(self):
-        # The design keeps 8.5 useful on both accepted URL forms.
-        peer = DashboardPeer('8.5.0')
-        with patch.dict(URLS, {'8.5.0': STRICT_URL}):
-            _s, _r, _c, result = await self.governed_update(peer, TITLE_PATCH, 'ok-85-strict')
-        self.assertEqual(result['task_state'], 'succeeded_verified', result)
-        self.assertEqual(peer.args_for(GUIDE), [{'skill': SKILL, 'file': GUIDE_FILE}])
-
-    def test_91_analysis_accepts_stored_config(self):
+    def test_92_analysis_accepts_stored_config(self):
         config = {'title': 'Before', 'views': []}
         payload = fill(ENVELOPES['get_stored_config'], config=config,
                        config_hash=compute_config_hash_91(config),
                        config_size_bytes=len(json.dumps(config)))
         decoded = upstream_dashboard._analysis_configuration(
-            text_result(payload), URL_PATH, upstream_version='9.1.0')
+            text_result(payload), URL_PATH, upstream_version='9.2.0')
         self.assertEqual(decoded['configuration'], config)
         self.assertEqual(decoded['config_hash'], compute_config_hash_91(config))
 
 
 # ---------------------------------------------------------------------------
-# Section 8.1 item 4: "No config found" fails closed, on 9.1 and 8.5.
+# Section 8.1 item 4: "No config found" fails closed, on 9.2.
 # ---------------------------------------------------------------------------
 def _configuration_shaped(value):
     return value is None or value == {} or (isinstance(value, dict) and (
@@ -514,13 +497,7 @@ def no_config_91(args):
     return fill(ENVELOPES['get_no_stored_config']) | {'url_path': args['url_path']}, False
 
 
-def no_config_85(args):
-    # 8.5.0 surfaces Home Assistant's "No config found." as a tool error.
-    return error_envelope('SERVICE_CALL_FAILED', 'No config found.',
-                          action='get', url_path=args['url_path']), True
-
-
-NO_CONFIG = {'9.1.0': no_config_91, '8.5.0': no_config_85}
+NO_CONFIG = {'9.2.0': no_config_91}
 
 
 class NoConfigFailsClosed(Harness):
@@ -552,8 +529,8 @@ class NoConfigFailsClosed(Harness):
         self.assertNotEqual(details['failure_category'], 'dashboard_not_found')
         return details
 
-    async def test_91_no_stored_config_fails_closed(self):
-        peer = DashboardPeer('9.1.0')
+    async def test_92_no_stored_config_fails_closed(self):
+        peer = DashboardPeer('9.2.0')
         peer.get_payload = no_config_91
         details = await self._refused_get(peer, expected_code='upstream_error')
         self.assertEqual(details['saved_configuration'], 'unavailable')
@@ -565,38 +542,21 @@ class NoConfigFailsClosed(Harness):
         self.assertEqual(health['last_failure_category'], 'upstream_error')
         await self.assert_refused_everywhere(peer, 'nc-91')
 
-    async def test_85_no_config_found_fails_closed(self):
-        peer = DashboardPeer('8.5.0')
-        peer.get_payload = no_config_85
-        details = await self._refused_get(peer, expected_code='upstream_error')
-        self.assertEqual(details.get('upstream_error_code'), 'SERVICE_CALL_FAILED')
-        await self.assert_refused_everywhere(peer, 'nc-85')
-
-    async def test_91_recovery_mode_and_missing_yaml_fail_closed(self):
+    async def test_92_recovery_mode_and_missing_yaml_fail_closed(self):
         # 9.1.0 reports both through the same stored_config:false envelope
         # (dashboard_read_errors.py NO_STORED_CONFIG_MESSAGES); a YAML-mode
         # listed row does not change that.
         for mode in ('storage', 'yaml'):
             with self.subTest(mode=mode):
-                peer = DashboardPeer('9.1.0')
+                peer = DashboardPeer('9.2.0')
                 peer.rows = [listed(mode=mode)]
                 peer.get_payload = no_config_91
                 await self._refused_get(peer, expected_code='upstream_error')
                 await self.assert_refused_everywhere(peer, f'rec-91-{mode}')
 
-    async def test_85_recovery_mode_and_missing_yaml_fail_closed(self):
-        for message in ('No config found.', 'Configuration not found', 'Recovery mode'):
-            with self.subTest(message=message):
-                peer = DashboardPeer('8.5.0')
-                peer.rows = [listed(mode='yaml')]
-                peer.get_payload = lambda args, m=message: (error_envelope(
-                    'SERVICE_CALL_FAILED', m, action='get', url_path=args['url_path']), True)
-                await self._refused_get(peer, expected_code='upstream_error')
-                await self.assert_refused_everywhere(peer, f'rec-85-{len(message)}')
-
     async def test_empty_dict_config_without_stored_config_is_never_readable(self):
         cases = {
-            '9.1.0': [
+            '9.2.0': [
                 # stored_config false with a synthesized empty dict.
                 lambda a: (fill(ENVELOPES['get_no_stored_config'], ) | {
                     'url_path': a['url_path'], 'config': {}, 'config_hash':
@@ -610,14 +570,6 @@ class NoConfigFailsClosed(Harness):
                                 config_size_bytes=2) | {'url_path': a['url_path'],
                                                         'stored_config': 'yes'}, False),
             ],
-            '8.5.0': [
-                lambda a: ({'success': True, 'action': 'get', 'url_path': a['url_path'],
-                            'config': {}, 'config_hash': compute_config_hash_91({}),
-                            'stored_config': False}, False),
-                # config None (never coerced to {}).
-                lambda a: ({'success': True, 'action': 'get', 'url_path': a['url_path'],
-                            'config': None, 'config_hash': None}, False),
-            ],
         }
         for version, payloads in cases.items():
             for index, payload in enumerate(payloads):
@@ -627,8 +579,8 @@ class NoConfigFailsClosed(Harness):
                     await self._refused_get(peer)
                     await self.assert_refused_everywhere(peer, f'empty-{version}-{index}')
 
-    async def test_91_config_none_with_stored_config_true_fails_closed(self):
-        peer = DashboardPeer('9.1.0')
+    async def test_92_config_none_with_stored_config_true_fails_closed(self):
+        peer = DashboardPeer('9.2.0')
         peer.get_payload = lambda a: (fill(ENVELOPES['get_stored_config'], config=None,
                                            config_hash=None, config_size_bytes=0) | {
                                                'url_path': a['url_path']}, False)
@@ -650,14 +602,10 @@ class NoConfigFailsClosed(Harness):
                 peer.rows = []
                 provider = self.provider(peer)
                 listing = await provider.list_dashboards(limit=200, response_limit=60_000)
-                if version == '9.1.0':
-                    # 9.1.0 collapses a failed registry read to [] (`or []`).
-                    self.assertEqual(listing.completeness, 'partial')
-                    self.assertTrue(any('absence is unavailable' in warning
-                                        for warning in listing.warnings))
-                else:
-                    # Retained 8.5 inventory semantics are unchanged.
-                    self.assertEqual(listing.completeness, 'complete')
+                # 9.1.0 collapses a failed registry read to [] (`or []`).
+                self.assertEqual(listing.completeness, 'partial')
+                self.assertTrue(any('absence is unavailable' in warning
+                                    for warning in listing.warnings))
                 await self.assert_refused_everywhere(peer, f'empty-list-{version}')
 
     async def test_none_fetch_collapsed_to_empty_list_is_refused(self):
@@ -711,7 +659,7 @@ class NoConfigFailsClosed(Harness):
                     await self.assert_refused_everywhere(peer, f'alias-{version}-{label}')
 
     async def test_alias_no_config_does_not_claim_identity(self):
-        peer = DashboardPeer('9.1.0')
+        peer = DashboardPeer('9.2.0')
         peer.get_payload = lambda a: (fill(ENVELOPES['get_no_stored_config']) | {
             'url_path': 'dashboard-operations', 'resolved_from': a['url_path']}, False)
         details = await self._refused_get(peer, expected_code='upstream_error')
@@ -750,12 +698,12 @@ class NoConfigFailsClosed(Harness):
                 self.assertEqual(peer.names().count(SETTER), 1)
                 self.balanced()
 
-    async def test_91_write_outcome_unknown_is_uncertain_and_not_retried(self):
+    async def test_92_write_outcome_unknown_is_uncertain_and_not_retried(self):
         # write_committed None is "outcome uncertain": never a success by
         # itself and never redispatched. Only the exact readback decides.
         for applied in (False, True):
             with self.subTest(save_applied=applied):
-                peer = DashboardPeer('9.1.0')
+                peer = DashboardPeer('9.2.0')
 
                 def outcome_unknown(args, peer=peer, applied=applied):
                     if applied:
@@ -777,7 +725,7 @@ class NoConfigFailsClosed(Harness):
                     self.assertEqual(peer.configuration['title'], 'Before')
                 self.balanced()
 
-    def test_91_analysis_rejects_no_stored_config(self):
+    def test_92_analysis_rejects_no_stored_config(self):
         for payload in (
                 fill(ENVELOPES['get_no_stored_config']),
                 fill(ENVELOPES['get_no_stored_config']) | {
@@ -793,7 +741,7 @@ class NoConfigFailsClosed(Harness):
             with self.subTest(payload=payload.get('stored_config', 'absent')):
                 with self.assertRaises(analysis_contracts.AnalysisError) as caught:
                     upstream_dashboard._analysis_configuration(
-                        text_result(payload), URL_PATH, upstream_version='9.1.0')
+                        text_result(payload), URL_PATH, upstream_version='9.2.0')
                 self.assertEqual(caught.exception.reason, 'source_rejected')
 
 
@@ -870,10 +818,10 @@ class AnalysisOperatorRemediation(unittest.IsolatedAsyncioTestCase):
 
 class AnalysisStoredConfigReleaseGate(unittest.IsolatedAsyncioTestCase):
     """HAMCP-319 (Codex F3 on PR #406): dashboard analysis decodes with the
-    admitted release. On 9.1.0, whose get mode always reports stored_config,
-    anything but literal ``stored_config: true`` is refused before any
-    configuration or hash work, matching the governed getter. 8.5.0 omits the
-    flag and stays analyzable. The real provider admission runs over a
+    admitted release. On 9.2.0 (as on 9.1.0), whose get mode always reports
+    stored_config, anything but literal ``stored_config: true`` is refused
+    before any configuration or hash work, matching the governed getter. 8.5.0
+    omits the flag and stays analyzable. The real provider admission runs over a
     synthetic handshake; no endpoint is contacted."""
 
     REFUSED_91 = (('missing', None), ('false', False), ('null', None),
@@ -929,44 +877,26 @@ class AnalysisStoredConfigReleaseGate(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(exchanges), 1)
         return outcome, hashing, peer
 
-    async def test_91_without_literal_true_refused_before_hash_work(self):
+    async def test_92_without_literal_true_refused_before_hash_work(self):
         for label, value in self.REFUSED_91:
             with self.subTest(stored_config=label):
                 flag = 'missing' if label == 'missing' else 'set'
                 (state, reason, data, metadata), hashing, _peer = await self.analyse(
-                    '9.1.0', flag, value)
+                    '9.2.0', flag, value)
                 self.assertEqual((state, reason), ('refused', 'source_rejected'))
                 self.assertIsNone(data)
                 self.assertIsNone(metadata)
                 self.assertEqual(hashing, [])
 
-    async def test_91_literal_true_accepted(self):
+    async def test_92_literal_true_accepted(self):
         (state, reason, data, metadata), hashing, peer = await self.analyse(
-            '9.1.0', 'unchanged')
+            '9.2.0', 'unchanged')
         self.assertEqual((state, reason), ('accepted', None))
         self.assertEqual(data['configuration'], peer.configuration)
         self.assertEqual(data['config_hash'], compute_config_hash_91(peer.configuration))
-        self.assertEqual(metadata['upstream_version'], '9.1.0')
+        self.assertEqual(metadata['upstream_version'], '9.2.0')
         self.assertEqual(hashing, ['upstream', 'engineering'])
 
-    async def test_85_absent_flag_accepted(self):
-        (state, reason, data, metadata), hashing, peer = await self.analyse(
-            '8.5.0', 'missing')
-        self.assertEqual((state, reason), ('accepted', None))
-        self.assertEqual(data['configuration'], peer.configuration)
-        self.assertEqual(metadata['upstream_version'], '8.5.0')
-        self.assertEqual(hashing, ['upstream', 'engineering'])
-
-    async def test_85_present_flag_keeps_presence_rule(self):
-        (state, _r, _d, _m), _h, _p = await self.analyse('8.5.0', 'set', True)
-        self.assertEqual(state, 'accepted')
-        for label, value in (('false', False), ('null', None), ('string_true', 'true')):
-            with self.subTest(stored_config=label):
-                (state, reason, data, _m), hashing, _p = await self.analyse(
-                    '8.5.0', 'set', value)
-                self.assertEqual((state, reason), ('refused', 'source_rejected'))
-                self.assertIsNone(data)
-                self.assertEqual(hashing, [])
 
 
 if __name__ == '__main__':

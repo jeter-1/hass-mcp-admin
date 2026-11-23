@@ -1,6 +1,6 @@
 # HAMCP-189 PR B + C — design note
 
-Scope: R1, R2-telemetry, O9, R8, L1 and L2 from `docs/HAMCP_189_TRIAGE.md`
+Scope: R1, R2-telemetry, O9, R8, L1 and L2 from `docs/HAMCP_189_TRIAGE.md` (deleted by HAMCP-437)
 (draft PR #265, not yet on `main`), under Josh's decisions O1–O9 on
 register row HAMCP-189 (O6 amended: PR C rides with PR B in one PR). Base:
 `main` at `bdb5af8` (2.4.1-beta.14, PR A merged).
@@ -417,7 +417,7 @@ never appears in the app logs, the SDK logs or the audit.
 
 ## 6. L2 — beta.13 release-notes correction
 
-`docs/V2_4_1_BETA13_RELEASE_NOTES.md` gains a dated correction:
+`docs/V2_4_1_BETA13_RELEASE_NOTES.md` (deleted by HAMCP-437) gains a dated correction:
 - three of the "local state only" tools (`get_execution_task`,
   `cancel_execution_task` and `approve_change_plan`) are not purely local;
 - `rollback_change` planning read without Core authority (fixed by R1).
@@ -447,7 +447,7 @@ It was staged in `.release/next-version`, then materialized by one
 owner-authorized run of `scripts/promote_next_release.py --apply`, which wrote
 `config.yaml`, `version.py` and `validate_addon_metadata.py` and consumed the
 declaration. `scripts/codex-context.py` resolves
-`docs/V2_4_1_BETA15_ACCEPTANCE.md` and `docs/V2_4_1_BETA15_RELEASE_NOTES.md`
+`docs/V2_4_1_BETA15_ACCEPTANCE.md` and `docs/V2_4_1_BETA15_RELEASE_NOTES.md` (both deleted by HAMCP-437)
 exactly. If HAMCP-162 merges first and takes beta.15, this PR merges `main`,
 restages and rematerializes the next beta, and renames both documents.
 

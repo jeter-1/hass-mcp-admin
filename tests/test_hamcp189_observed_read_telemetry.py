@@ -27,9 +27,14 @@ from ha_mcp_engineering.request_context import (  # noqa: E402
 )
 
 from tests.test_2_1a_beta2_operational_lifecycle import (  # noqa: E402
-    FakeMcpTransport,
     UPSTREAM_ADDON_SLUG,
     lifecycle_settings,
+)
+
+# HAMCP-437: the reads run against the reviewed 9.2.0 peer (app tool names,
+# structured envelope) instead of the retired 7.14.2 fake.
+from tests.test_hamcp401_lifecycle_9_2_0 import (  # noqa: E402
+    Transport920 as FakeMcpTransport,
 )
 
 
@@ -39,6 +44,15 @@ ENDPOINT = "http://abcdef12-ha-mcp:9583/synthetic-upstream-secret/mcp"
 def provider_with(transport):
     provider = ReviewedOperationalLifecycleProvider()
     provider.configure(lifecycle_settings(ENDPOINT), transport=transport)
+    return provider
+
+
+async def probed_provider_with(transport):
+    # HAMCP-437: on 9.2.0 the app read tool is selected by an admitted probe;
+    # an unprobed read is catalog_mismatch (HAMCP-401). The probe runs outside
+    # the measured request and dispatches no tool call.
+    provider = provider_with(transport)
+    await provider.probe("restart_addon")
     return provider
 
 
@@ -62,7 +76,7 @@ class ObservedReadTelemetryTests(unittest.IsolatedAsyncioTestCase):
     async def test_refused_read_reports_zero_upstream_attempts(self):
         transport = FakeMcpTransport()
         telemetry, error = await self.get_addon(
-            provider_with(transport), lambda: False, "r2-refused"
+            await probed_provider_with(transport), lambda: False, "r2-refused"
         )
         self.assertIsNotNone(error)
         self.assertEqual(error.category, "provider_unavailable")
@@ -77,7 +91,7 @@ class ObservedReadTelemetryTests(unittest.IsolatedAsyncioTestCase):
         transport = FakeMcpTransport()
         admitted = iter((True,))
         telemetry, error = await self.get_addon(
-            provider_with(transport),
+            await probed_provider_with(transport),
             lambda: next(admitted, False),
             "r2-retired",
         )
@@ -93,7 +107,7 @@ class ObservedReadTelemetryTests(unittest.IsolatedAsyncioTestCase):
         # Preservation: an admitted request counts each dispatched read once.
         transport = FakeMcpTransport()
         telemetry, error = await self.get_addon(
-            provider_with(transport), lambda: True, "r2-admitted"
+            await probed_provider_with(transport), lambda: True, "r2-admitted"
         )
         self.assertIsNone(error)
         self.assertEqual(len(transport.calls), 2)

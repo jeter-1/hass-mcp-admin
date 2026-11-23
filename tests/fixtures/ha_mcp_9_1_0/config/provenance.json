@@ -186,9 +186,6 @@
           "9.1.0": "25"
         },
         "loaded_by": {
-          "tests/test_hamcp319_side_by_side.py": [
-            "S (8.6 replay), never C"
-          ],
           "tests/test_hamcp319_parity_config.py": [
             "S (8.6 replay): 8.6.0 records fed to the 8.5.0 policy"
           ],
@@ -274,9 +271,6 @@
         "loaded_by": {
           "tests/test_hamcp319_parity_entities.py": [
             "8.5.0 rows 26-28 are C"
-          ],
-          "tests/test_hamcp319_side_by_side.py": [
-            "Rows 26-28 (8.5.0, class C)"
           ]
         },
         "canonical_sha256": "018156726706462114607f171a40bdaf7d499699006717c1a98902208f0106d5"

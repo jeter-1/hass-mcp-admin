@@ -23,7 +23,11 @@ from ha_mcp_engineering.signed_registry import canonical_json, RegistryValidatio
 from ha_mcp_engineering.signed_registry.canonical import sha256_digest
 from core_registry_fixtures import CoreSigner, ProjectedCoreSource, core_entry, core_revocation, NOW
 from support import core_bindings
+from support import ha_mcp_920_receipts
 from support.core_gate import reconcile_through_gate
+
+STATE_RECEIPT = "r19-state"
+STATE_ARGUMENTS = ha_mcp_920_receipts.receipt(STATE_RECEIPT)[0]
 
 
 class CoreContinuityTests(unittest.IsolatedAsyncioTestCase):
@@ -131,21 +135,27 @@ class CoreContinuityTests(unittest.IsolatedAsyncioTestCase):
         sys.path.insert(0, str(ROOT / "scripts"))
         from core_registry_contract_lane import configure_with_test_authority
         from tests.test_ha_core_2026_9_integration import settings
+        # HAMCP-437 (I2b): the only untyped lane binding (2026.9.2) is retired, so
+        # the harness runs on the reviewed 2026.10.3 lane and its typed profiles.
+        version = "2026.10.3"
+        records = json.loads((ROOT / "tests/fixtures/core_2026_10_device_registry/records.json").read_text())
         runtime = CoreRuntime()
         configure = runtime.configure
 
         def synthetic_transport(configured, *, release_registry):
-            configure(configured, release_registry=release_registry,
-                      source=ProjectedCoreSource(release_registry))
+            source = ProjectedCoreSource(release_registry, version, typed_operations=True)
+            source.fixture = deepcopy(records)
+            configure(configured, release_registry=release_registry, source=source)
 
-        image = "ghcr.io/home-assistant/home-assistant:2026.9.2@sha256:a1bc133af84ee6505fe2c266d9805b7c75b780dfdc188edfee3b11e8f3cd8efe"
+        image = ("ghcr.io/home-assistant/home-assistant:2026.10.3@"
+                 "sha256:407b89cd11a8cb67d388d21739a226c74acbbebe1ac59e3b83b11b43ce76b98f")
         with patch.object(runtime, "configure", side_effect=synthetic_transport):
             await configure_with_test_authority(runtime, settings(), cache_path=self.cache,
-                                                expected_image=image)
-        self.assert_admitted(runtime)
+                                                expected_image=image, core_version=version)
+        self.assert_admitted(runtime, 20)
         with self.assertRaises(AssertionError):
             await configure_with_test_authority(runtime, settings(), cache_path=self.cache,
-                                                expected_image="unbound")
+                                                expected_image="unbound", core_version=version)
 
     async def test_unknown_release_stays_withheld_without_signed_authority(self):
         runtime, _ = await self.runtime("2026.9.3")
@@ -159,7 +169,8 @@ class CoreContinuityTests(unittest.IsolatedAsyncioTestCase):
         sys.path.insert(0, str(ROOT / "scripts"))
         from core_registry_contract_lane import configure_with_test_authority, lane_entry
         from tests.test_ha_core_2026_9_integration import settings
-        for version in ("2026.9.3", "2026.9.4"):
+        # HAMCP-437 (I2b): 2026.9.3 is retired; 2026.9.4 stays test-only (HAMCP-444).
+        for version in ("2026.9.4",):
             with self.subTest(version=version):
                 runtime = CoreRuntime()
                 configure = runtime.configure
@@ -187,8 +198,8 @@ class CoreContinuityTests(unittest.IsolatedAsyncioTestCase):
         from tests.test_ha_core_2026_9_integration import settings
         records = json.loads((ROOT / "tests/fixtures/core_2026_10_device_registry/records.json").read_text())
         expected_digests = {
-            "2026.10.0": "sha256:1b64d38f38d922bf9d59336451fd6453e1d614f934456af4ee3d2a51061be3a4",
-            "2026.10.1": "sha256:130241f28d01fa80dfa3b44f7d89781c188d8642ecab9024f079f19f9f82baa0",
+            "2026.10.3": "sha256:407b89cd11a8cb67d388d21739a226c74acbbebe1ac59e3b83b11b43ce76b98f",
+            "2026.11.0": "sha256:c6c1ca9931036bf3a2c4cc088d8db25dfea3b33935a5ecc83c40349462e2f69e",
         }
         for version, digest in expected_digests.items():
             with self.subTest(version=version):
@@ -329,9 +340,9 @@ class CoreContinuityTests(unittest.IsolatedAsyncioTestCase):
     async def test_future_device_routes_keep_exact_corrected_upstream_adapter(self):
         runtime, _ = await self.runtime()
         requirement = ("core.delegated_device_effective_area",)
-        self.assertFalse(runtime.delegated_tool_available("ha_get_device", requirement, adapter_version="8.4.1"))
-        self.assertIsNone(runtime.acquire(requirement, delegated_tool="ha_get_entity", delegated_adapter_version="8.4.1"))
-        lease = runtime.acquire(requirement, delegated_tool="ha_get_device", delegated_adapter_version="8.4.3")
+        self.assertFalse(runtime.delegated_tool_available("ha_get_device", requirement, adapter_version="9.2.1"))
+        self.assertIsNone(runtime.acquire(requirement, delegated_tool="ha_get_entity", delegated_adapter_version="9.2.1"))
+        lease = runtime.acquire(requirement, delegated_tool="ha_get_device", delegated_adapter_version="9.2.0")
         self.assertIsNotNone(lease)
         commits = runtime.consume(lease)
         self.assertTrue(runtime.revalidate(lease, commits))
@@ -535,11 +546,14 @@ class CoreContinuityTests(unittest.IsolatedAsyncioTestCase):
         from tests.test_ha_core_2026_9_integration import FakeTransport, settings, _capture_for_release
 
         releases = load_reviewed_upstream_release_registry()
-        release = releases.by_version["8.4.3"]
+        release = releases.by_version["9.2.0"]
         capture = _capture_for_release(release)
         review = json.loads((ROOT / release.artifact_evidence_resource).read_text())
         descriptors = {item["name"]: item for item in capture["tools"]}
-        transport = FakeTransport([descriptors[name] for name in review["runtime_catalog"]["runtime_tool_order"]], version="8.4.3")
+        # 9.2.0 rebuilds reads from its reviewed output-key contract, so the
+        # read result is the committed HAMCP-371 ha_get_state receipt.
+        transport = FakeTransport([descriptors[name] for name in review["runtime_catalog"]["runtime_tool_order"]], version="9.2.0",
+                                  result=ha_mcp_920_receipts.result(STATE_RECEIPT))
         gateway = UpstreamReadGateway()
         gateway.configure(settings(), transport=transport, release_registry=releases, core_runtime=runtime)
         server = FastMCP("synthetic-core-continuity")
@@ -557,7 +571,7 @@ class CoreContinuityTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("ha_get_hacs_info", tools)
         self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(tools), 113)  # HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
         self.assertNotIn("ha_get_operation_status", tools)
-        result = json.loads(await tools["ha_get_state"].run({"entity_id": "sensor.synthetic"}))
+        result = json.loads(await tools["ha_get_state"].run(dict(STATE_ARGUMENTS)))
         self.assertTrue(result["success"])
         self.assertEqual(len(transport.calls), 1)
         self.clock += timedelta(days=2)
@@ -585,7 +599,7 @@ class CoreContinuityTests(unittest.IsolatedAsyncioTestCase):
 
         with patch.object(transport, "execute_read", side_effect=cross_publication):
             result = json.loads(await registered_tools(server)["ha_get_state"].run(
-                {"entity_id": "sensor.synthetic"}
+                dict(STATE_ARGUMENTS)
             ))
         self.assertFalse(result["success"])
         self.assertEqual(len(transport.attempts), 1)

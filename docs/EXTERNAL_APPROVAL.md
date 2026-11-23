@@ -17,7 +17,7 @@ determined, requires plan approval followed by a per-object
 `safety_critical_acknowledgement` instead (see
 **Safety-critical acknowledgement** below). A `prohibited` plan creates no
 actionable challenge. See ADR-012 in the architecture decision records and the
-active [`V2_2_0_BETA15_ACCEPTANCE.md`](V2_2_0_BETA15_ACCEPTANCE.md).
+active `V2_2_0_BETA15_ACCEPTANCE.md` (deleted by HAMCP-437).
 
 The Beta 7 correction makes that non-actionability consistent across legacy
 compatibility fields and health. A prohibited F2 record remains visible as
@@ -513,7 +513,7 @@ validation cannot change the deployed add-on route.
 
 The procedure below records the earlier RC2 authority-version-2 acceptance and
 does not authorize current Beta 10 deployment. Use
-[`V2_2_0_BETA10_ACCEPTANCE.md`](V2_2_0_BETA10_ACCEPTANCE.md) for the current
+`V2_2_0_BETA10_ACCEPTANCE.md` (deleted by HAMCP-437) for the current
 source and later operator-controlled acceptance boundary. Implementation and CI
 must not access the deployed environment.
 

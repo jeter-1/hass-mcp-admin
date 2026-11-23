@@ -252,7 +252,7 @@ class DelegatedFamilyTests(FamilyAssertions, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.collisions(), before)
 
     async def test_held_read_canary_reports_redaction_as_partial(self):
-        from tests.test_held_read_canary import ENTRY_ID, captured_tools
+        from tests.test_held_read_canary import CURRENT_ENTRY_ID, CURRENT_VERSION, captured_tools
         from tests.test_readonly_upstream_gateway import SECRET, FakeTransport, settings
 
         needle = syn.needle("hamcp191 canary needle")
@@ -262,7 +262,7 @@ class DelegatedFamilyTests(FamilyAssertions, unittest.IsolatedAsyncioTestCase):
             )}],
             "isError": False,
         }
-        transport = FakeTransport(captured_tools("8.1.1"), version="8.1.1", result=raw)
+        transport = FakeTransport(captured_tools(CURRENT_VERSION), version=CURRENT_VERSION, result=raw)
         gateway = UpstreamReadGateway()
         gateway.configure(
             settings(),
@@ -274,7 +274,7 @@ class DelegatedFamilyTests(FamilyAssertions, unittest.IsolatedAsyncioTestCase):
         before = self.collisions()
         result = json.loads(await gateway.run_held_read_canary(
             upstream_tool_name="ha_get_operation_status",
-            expected_compatibility_entry_id=ENTRY_ID,
+            expected_compatibility_entry_id=CURRENT_ENTRY_ID,
             arguments={"operation_id": "synthetic-operation"},
         ))
         self.assertTrue(result["success"])
@@ -288,21 +288,21 @@ class DelegatedFamilyTests(FamilyAssertions, unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(redaction["marker_collision_count"], 2)
 
     async def canary(self, value, *, response_size_limit=60_000):
-        from tests.test_held_read_canary import ENTRY_ID, captured_tools
+        from tests.test_held_read_canary import CURRENT_ENTRY_ID, CURRENT_VERSION, captured_tools
         from tests.test_readonly_upstream_gateway import FakeTransport, settings
 
         raw = {"content": [{"type": "text", "text": json.dumps(value)}], "isError": False}
         gateway = UpstreamReadGateway()
         gateway.configure(
             settings(response_size_limit),
-            transport=FakeTransport(captured_tools("8.1.1"), version="8.1.1", result=raw),
+            transport=FakeTransport(captured_tools(CURRENT_VERSION), version=CURRENT_VERSION, result=raw),
             release_registry=load_reviewed_upstream_release_registry(),
             admission_validator=lambda _catalog: None,
         )
         await gateway.initialize(FastMCP("hamcp191-canary"))
         return json.loads(await gateway.run_held_read_canary(
             upstream_tool_name="ha_get_operation_status",
-            expected_compatibility_entry_id=ENTRY_ID,
+            expected_compatibility_entry_id=CURRENT_ENTRY_ID,
             arguments={"operation_id": "synthetic-operation"},
         ))
 
@@ -423,6 +423,16 @@ class AnalysisFamilyTests(FamilyAssertions, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(copied.value["evidence"], COLLISION)
 
 
+DASHBOARD_VERSION = "9.2.0"
+REPLACED_WARNING = "upstream_warning_replaced"
+REVIEWED_GET_WARNING = (
+    "Strategy dashboard views are generated at runtime; only the dashboard base render path is available.")
+REVIEWED_GET_HINT = (
+    "Large config (12,345 bytes). Pass view_path=... to fetch a single view, or use "
+    "ha_config_get_dashboard(entity_id=...) to find card positions, then "
+    "ha_config_set_dashboard(python_transform=...) instead of full config replacement.")
+
+
 class DashboardFamilyTests(FamilyAssertions, unittest.IsolatedAsyncioTestCase):
     FAMILY = "dashboard"
 
@@ -439,9 +449,13 @@ class DashboardFamilyTests(FamilyAssertions, unittest.IsolatedAsyncioTestCase):
 
     async def configure(self, payload):
         from ha_mcp_engineering.providers.upstream_dashboard import UPSTREAM_DASHBOARD
-        from tests.test_rc3a_dashboard_provider import FakeTransport, settings
+        from tests.test_hamcp319_dashboard import catalog
+        from tests.test_rc3a_dashboard_provider import FakeTransport, handshake, settings
 
-        UPSTREAM_DASHBOARD.configure(settings(), transport=FakeTransport(payload=payload))
+        # HAMCP-437: the peer is the reviewed ha-mcp 9.2.0 dashboard catalog.
+        UPSTREAM_DASHBOARD.configure(settings(), transport=FakeTransport(
+            handshake_value=handshake(tools=catalog(DASHBOARD_VERSION), version=DASHBOARD_VERSION),
+            payload=payload))
 
     @staticmethod
     def entry(identifier, title):
@@ -491,7 +505,7 @@ class DashboardFamilyTests(FamilyAssertions, unittest.IsolatedAsyncioTestCase):
             "title": ORDINARY,
             "views": [{"cards": [{"content": p1(HA_TOKEN)}, {"content": p2(needle)}]}],
         }
-        await self.configure({"success": True, "action": "get", "url_path": "inj-dash", "config": config})
+        await self.configure(self.get_payload(config))
         before = self.collisions()
         result = json.loads(await tools.get_dashboard_config("inj-dash"))
         self.assert_injected(result, secrets=(HA_TOKEN, needle), before=before)
@@ -503,7 +517,17 @@ class DashboardFamilyTests(FamilyAssertions, unittest.IsolatedAsyncioTestCase):
         if action == "list":
             return {"success": True, "action": "list", "dashboards": [self.entry("safe-dashboard", "Kitchen")],
                     "count": 1, **extra}
-        return {"success": True, "action": "get", "url_path": "inj-dash", "config": {"title": ORDINARY}, **extra}
+        return {**self.get_payload({"title": ORDINARY}), **extra}
+
+    @staticmethod
+    def get_payload(config):
+        # The reviewed ha-mcp 9.1/9.2 stored-config get envelope (HAMCP-371:
+        # same source at 9.2.0 as at 9.1.0).
+        from tests.test_hamcp319_dashboard import ENVELOPES, compute_config_hash_91, fill
+
+        return fill(ENVELOPES["get_stored_config"], config=config,
+                    config_hash=compute_config_hash_91(config),
+                    config_size_bytes=len(json.dumps(config))) | {"url_path": "inj-dash"}
 
     async def call(self, action):
         from ha_mcp_engineering.tools import dashboard as tools
@@ -524,19 +548,43 @@ class DashboardFamilyTests(FamilyAssertions, unittest.IsolatedAsyncioTestCase):
                     result = await self.call(action)
                     self.assertTrue(result["success"], result)
                     self.assertNotIn(needle, json.dumps(result))
-                    self.assertIn(COLLISION, result["warnings"])
+                    # HAMCP-437: the ha-mcp 9.2.0 get keeps only reviewed
+                    # warning texts; any other is replaced, never passed on.
+                    self.assertIn(COLLISION if action == "list" else REPLACED_WARNING, result["warnings"])
                     self.assertEqual(result["metadata"]["completeness"], "partial")
-                    self.assertGreaterEqual(result["metadata"]["redaction"]["marker_collision_count"], 1)
+                    if action == "list":
+                        self.assertGreaterEqual(result["metadata"]["redaction"]["marker_collision_count"], 1)
+                    else:
+                        self.assertEqual(result["data"]["upstream_warnings_replaced"], 1)
 
     async def test_ordinary_warning_and_hint_stay_complete(self):
-        for action in ("list", "get"):
+        # List passes ordinary texts on; the 9.2.0 get passes only the
+        # reviewed texts (upstream_reads_9_2_dashboard.REVIEWED_WARNINGS).
+        cases = {
+            "list": ("Ordinary note", "Ordinary hint"),
+            "get": (REVIEWED_GET_WARNING, REVIEWED_GET_HINT),
+        }
+        for action, (warning, hint) in cases.items():
             with self.subTest(action=action):
-                await self.configure(self.payload(action, warnings=["Ordinary note"], hint="Ordinary hint"))
+                await self.configure(self.payload(action, warnings=[warning], hint=hint))
                 result = await self.call(action)
                 self.assertEqual(result["metadata"]["completeness"], "complete")
                 self.assertNotIn("redaction", result["metadata"])
-                self.assertIn("Ordinary note", result["warnings"])
-                self.assertIn("Ordinary hint", result["warnings"])
+                self.assertIn(warning, result["warnings"])
+                self.assertIn(hint, result["warnings"])
+                self.assertNotIn(REPLACED_WARNING, result["warnings"])
+
+    async def test_unreviewed_get_warning_and_hint_are_replaced(self):
+        # HAMCP-437 (9.2.0): an ordinary but unreviewed get warning or hint is
+        # replaced by the bounded marker and the read is partial.
+        await self.configure(self.payload("get", warnings=["Ordinary note"], hint="Ordinary hint"))
+        result = await self.call("get")
+        self.assertTrue(result["success"], result)
+        self.assertNotIn("Ordinary note", json.dumps(result))
+        self.assertNotIn("Ordinary hint", json.dumps(result))
+        self.assertIn(REPLACED_WARNING, result["warnings"])
+        self.assertEqual(result["data"]["upstream_warnings_replaced"], 2)
+        self.assertEqual(result["metadata"]["completeness"], "partial")
 
 
 # ---------------------------------------------------------------------------

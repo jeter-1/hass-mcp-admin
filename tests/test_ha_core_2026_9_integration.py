@@ -94,6 +94,8 @@ from tests.test_ha_core_capability_auto_readmission import (  # noqa: E402
     _evidence,
     _snapshot,
 )
+from tests.support import frozen_signed_reuse  # noqa: E402
+from tests.support.shipped_920_reads import READS_920  # noqa: E402
 from tests.support.core_gate import reconcile_through_gate  # noqa: E402
 from tests.f3_synthetic_adapter import (  # noqa: E402
     prepared_dashboard_operation,
@@ -1987,7 +1989,8 @@ class Core20269SourceTests(unittest.IsolatedAsyncioTestCase):
         window_module = loaded_support_window()
         window = window_module.load(ROOT)
         filled = window_module.core_slots(window, window_module.SLOTS)
-        self.assertTrue({"current", "rollback"}.issubset(filled))
+        # HAMCP-406: current is required; the rollback may be empty.
+        self.assertEqual(filled[0], "current")
         self.assertEqual([row["support_slot"] for row in matrix], list(filled))
         self.assertEqual([row["support_slot"] for row in pr], [s for s in filled if s != "rollback"])
         self.assertEqual(len({row["ha_version"] for row in matrix}), len(matrix))
@@ -2004,7 +2007,7 @@ class Core20269SourceTests(unittest.IsolatedAsyncioTestCase):
                                      + provenance["image_index_digest"])
                     self.assertEqual(lane["core_source_commit"], provenance["source_commit"])
                     self.assertEqual(lane["core_source_sha256"], provenance["source_archive_sha256"])
-                    self.assertEqual(lane["ha_mcp_version"], "8.5.0")
+                    self.assertEqual(lane["ha_mcp_version"], "9.2.0")  # HAMCP-437: ha_mcp.current
                     self.assertEqual(lane_entry(version), provenance)
         self.assertEqual(job["timeout-minutes"], 50)
         steps = job["steps"]
@@ -2033,7 +2036,10 @@ class Core20269SourceTests(unittest.IsolatedAsyncioTestCase):
     def test_disposable_lane_is_immutable_bounded_and_nonproduction(self):
         lane = _fixture(LANE_FIXTURE)
         registry = load_reviewed_upstream_release_registry()
-        release = registry.by_version["8.4.3"]
+        # HAMCP-437 I2a-D: the lane declares the shipped ha-mcp 9.2.0 image,
+        # which the real-HA matrix runs as ha_mcp.current.
+        release = registry.by_version["9.2.0"]
+        self.assertEqual(lane["ha_mcp_version"], release.version)
         self.assertEqual(
             lane["home_assistant_images"],
             {
@@ -2049,7 +2055,7 @@ class Core20269SourceTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             lane["ha_mcp_image"],
-            "ghcr.io/homeassistant-ai/ha-mcp:8.4.3@"
+            "ghcr.io/homeassistant-ai/ha-mcp:9.2.0@"
             + release.image_index_digest,
         )
         self.assertFalse(lane["production_credentials_allowed"])
@@ -3023,10 +3029,11 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
 
     def test_current_tool_accounting_and_core_requirements_are_exact(self):
         registry = load_reviewed_upstream_release_registry()
-        policy = registry.by_version["8.4.3"].policy
+        # HAMCP-437 I2a-D: the shipped registry holds only ha-mcp 9.2.0.
+        policy = registry.by_version["9.2.0"].policy
         counts = policy.classification_counts
         self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 86)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
-        self.assertEqual(counts["automatic_read"], 28)
+        self.assertEqual(counts["automatic_read"], 27)
         self.assertEqual(counts["held_for_canary"], 1)
         self.assertEqual(
             {
@@ -3036,33 +3043,23 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
             },
             {"ha_get_operation_status"},
         )
-        # HAMCP-290: the reviewed policy still classifies ha_get_hacs_info as
-        # an automatic read; Engineering retires it (Josh, 2026-11-08), so
-        # one matched read is never exposed (85 + 28 - 1 = 112 with HAMCP-134 and HAMCP-297).
+        # HAMCP-290: Engineering retires ha_get_hacs_info (Josh, 2026-11-08);
+        # the 9.2.0 policy already classifies it unsupported, so no matched
+        # read is withheld for retirement (86 + 27 - 0 = 113).
         retired = {
             item.upstream_name
             for item in policy.tools
             if item.classification == "automatic_read"
         } & RETIRED_DELEGATED_READS
-        self.assertEqual(retired, {"ha_get_hacs_info"})
+        self.assertEqual(retired, set())
         self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + counts["automatic_read"] - len(retired), 113)  # HAMCP-231: + thread/matter topology
         # HAMCP-162: the optional ha_config_get_yaml route is mapped but is
         # never a stock policy entry; HAMCP-290 retired ha_get_hacs_info
-        # from the mapping (31 -> 30).
+        # from the mapping (31 -> 30). The ha_manage_blueprints mapping
+        # serves only releases before 8.5.0 and is kept (ANSWER 0305-01 B).
         self.assertEqual(len(DELEGATED_CORE_REQUIREMENTS), 30)
         self.assertEqual(
-            {
-                item.upstream_name
-                for item in policy.tools
-                if item.is_read_route or item.classification == "held_for_canary"
-            }
-            - RETIRED_DELEGATED_READS,
-            set(DELEGATED_CORE_REQUIREMENTS)
-            - {"ha_manage_blueprints", "ha_config_get_yaml"},
-        )
-        current = registry.by_version["8.5.0"].policy
-        self.assertEqual(
-            {item.upstream_name for item in current.tools
+            {item.upstream_name for item in policy.tools
              if item.is_read_route or item.classification == "held_for_canary"}
             - RETIRED_DELEGATED_READS,
             set(DELEGATED_CORE_REQUIREMENTS)
@@ -3136,7 +3133,7 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
             _snapshot("2026.9.0", evidence=evidence)
         )
         registry = load_reviewed_upstream_release_registry()
-        release = registry.by_version["8.4.3"]
+        release = registry.by_version["9.2.0"]
         capture = _capture_for_release(release)
         review = _fixture(ROOT / release.artifact_evidence_resource)
         captured_by_name = {item["name"]: item for item in capture["tools"]}
@@ -3147,7 +3144,7 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         gateway = UpstreamReadGateway()
         gateway.configure(
             settings(),
-            transport=FakeTransport(tools, version="8.4.3"),
+            transport=FakeTransport(tools, version="9.2.0"),
             release_registry=registry,
             core_runtime=runtime,
         )
@@ -3155,17 +3152,18 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
 
         health = await gateway.initialize(server)
 
-        # HAMCP-290: the retired delegated read is withheld beside the Core
-        # withholding (Josh decision 2026-11-08).
+        # HAMCP-437 I2a-D: 9.2.0 marks the retired ha_get_hacs_info
+        # unsupported (HAMCP-290), so only the dashboard read is withheld.
+        self.assertNotIn("ha_get_hacs_info", READS_920)
         self.assertEqual(
             len(registered_tools(server)),
-            27 - len(RETIRED_DELEGATED_READS),
+            len(READS_920) - 1,
             msg=json.dumps(health, sort_keys=True),
         )
         self.assertIsNone(
             registered_tools(server).get("ha_config_list_dashboard_resources")
         )
-        self.assertEqual(health["core_withheld_read_count"], 1 + len(RETIRED_DELEGATED_READS))
+        self.assertEqual(health["core_withheld_read_count"], 1)
         self.assertEqual(health["last_discovery_failure_category"], None)
         self.assertEqual(health["fallback_count"], 0)
 
@@ -3173,16 +3171,25 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         runtime, _source = await Core20269RuntimeTests()._runtime(
             _core_2026_9_snapshot()
         )
-        registry = load_reviewed_upstream_release_registry()
-        release = registry.by_version["8.4.1"]
-        capture = _capture_for_release(release)
+        # HAMCP-437 I2a-D: the legacy side is the frozen 8.2.0 row (ANSWER
+        # 20261122-0005-01), a reviewed release without a corrected device
+        # adapter, as 8.4.1 was; the corrected side is the shipped 9.2.0 row.
+        # The two rows are joined in a test-only registry; the shipped
+        # registry is never replaced.
+        shipped = load_reviewed_upstream_release_registry()
+        legacy = frozen_signed_reuse.registry().by_version[frozen_signed_reuse.VERSION]
+        registry = replace(
+            shipped, releases=(legacy, shipped.by_version["9.2.0"])
+        )
+        release = registry.by_version[legacy.version]
+        capture = frozen_signed_reuse.capture(release)
         review = _fixture(ROOT / release.artifact_evidence_resource)
         captured_by_name = {item["name"]: item for item in capture["tools"]}
         tools = [
             captured_by_name[name]
             for name in review["runtime_catalog"]["runtime_tool_order"]
         ]
-        transport = FakeTransport(tools, version="8.4.1")
+        transport = FakeTransport(tools, version=release.version)
         gateway = UpstreamReadGateway()
         gateway.configure(
             settings(),
@@ -3222,13 +3229,13 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         )
         upstream_generation = gateway._admission_generation
 
-        release = registry.by_version["8.4.3"]
+        release = registry.by_version["9.2.0"]
         capture = _capture_for_release(release)
         review = _fixture(ROOT / release.artifact_evidence_resource)
         captured_by_name = {item["name"]: item for item in capture["tools"]}
         transport.catalog = replace(
             transport.catalog,
-            server_version="8.4.3",
+            server_version="9.2.0",
             tools=tuple(
                 captured_by_name[name]
                 for name in review["runtime_catalog"]["runtime_tool_order"]
@@ -3242,7 +3249,9 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(registered_tools(server).get("ha_get_device"))
         self.assertEqual(
             gateway.health_snapshot()["dynamically_exposed_count"],
-            28 - len(RETIRED_DELEGATED_READS),  # HAMCP-290
+            # HAMCP-437 I2a-D: 9.2.0 marks ha_get_hacs_info unsupported, so
+            # its whole shipped read set is exposed.
+            len(READS_920),
         )
         self.assertGreater(gateway._admission_generation, upstream_generation)
         counters = runtime.health_snapshot()["counters"]
@@ -3270,16 +3279,19 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
             authority_provider=lambda _version: positive_authority,
         )
         await runtime.reconcile_once("startup")
-        registry = load_reviewed_upstream_release_registry()
-        release = registry.by_version["8.4.1"]
-        capture = _capture_for_release(release)
+        # HAMCP-437 I2a-D: the shipped registry holds only 9.2.0, whose device
+        # adapter is bound. The frozen 8.2.0 row (ANSWER 20261122-0005-01) is
+        # a reviewed release without a corrected device adapter, as 8.4.1 was.
+        registry = frozen_signed_reuse.registry()
+        release = registry.by_version[frozen_signed_reuse.VERSION]
+        capture = frozen_signed_reuse.capture(release)
         review = _fixture(ROOT / release.artifact_evidence_resource)
         captured_by_name = {item["name"]: item for item in capture["tools"]}
         tools = [
             captured_by_name[name]
             for name in review["runtime_catalog"]["runtime_tool_order"]
         ]
-        transport = FakeTransport(tools, version="8.4.1")
+        transport = FakeTransport(tools, version=release.version)
         gateway = UpstreamReadGateway()
         gateway.configure(
             settings(),
@@ -3298,6 +3310,18 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
             },
             set(DEVICE_DEPENDENT_DELEGATED_TOOLS) | RETIRED_DELEGATED_READS,  # HAMCP-290
         )
+        # HAMCP-437 I2a-D: the same reason code as the 8.4.1 row gave (0305-01 A).
+        self.assertEqual(
+            {
+                item["tool"]: item["reason_codes"]
+                for item in gateway.health_snapshot()["core_withheld_tools"]
+                if item["tool"] in DEVICE_DEPENDENT_DELEGATED_TOOLS
+            },
+            {
+                tool: ["ha_mcp_child_device_contract_unproven"]
+                for tool in DEVICE_DEPENDENT_DELEGATED_TOOLS
+            },
+        )
         self.assertEqual(runtime.health_snapshot()["counters"]["catalog_withdrawals"], 5)  # HAMCP-290
         self.assertEqual(transport.calls, [])
         self.assertEqual(gateway.health_snapshot()["fallback_count"], 0)
@@ -3307,7 +3331,7 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
             _core_2026_9_snapshot()
         )
         registry = load_reviewed_upstream_release_registry()
-        release = registry.by_version["8.4.3"]
+        release = registry.by_version["9.2.0"]
         capture = _capture_for_release(release)
         review = _fixture(ROOT / release.artifact_evidence_resource)
         captured_by_name = {item["name"]: item for item in capture["tools"]}
@@ -3315,7 +3339,7 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
             captured_by_name[name]
             for name in review["runtime_catalog"]["runtime_tool_order"]
         ]
-        transport = FakeTransport(tools, version="8.4.3")
+        transport = FakeTransport(tools, version="9.2.0")
         gateway = UpstreamReadGateway()
         gateway.configure(
             settings(),
@@ -3345,7 +3369,7 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
             _core_2026_9_snapshot()
         )
         registry = load_reviewed_upstream_release_registry()
-        release = registry.by_version["8.4.3"]
+        release = registry.by_version["9.2.0"]
         capture = _capture_for_release(release)
         review = _fixture(ROOT / release.artifact_evidence_resource)
         captured_by_name = {item["name"]: item for item in capture["tools"]}
@@ -3353,7 +3377,7 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
             captured_by_name[name]
             for name in review["runtime_catalog"]["runtime_tool_order"]
         ]
-        transport = FakeTransport(tools, version="8.4.3")
+        transport = FakeTransport(tools, version="9.2.0")
         gateway = UpstreamReadGateway()
         gateway.configure(
             settings(),
@@ -3364,87 +3388,40 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         server = FastMCP("core-2026-9-device-consumer-test")
         await gateway.initialize(server)
 
-        child = "synthetic-child-device"
-        parent = "synthetic-parent-device"
-        entity = "switch.synthetic-child"
-        area = "synthetic-effective-area"
-        cases = {
-            "ha_get_device": {
-                "arguments": {"device_id": child},
-                "payload": {
-                    "success": True,
-                    "device": {
-                        "device_id": child,
-                        "parent_device_id": parent,
-                        "area_id": area,
-                    },
-                    "entities": [{"entity_id": entity, "device_id": child}],
-                },
-            },
-            "ha_get_overview": {
-                "arguments": {"detail_level": "full", "domains": ["switch"]},
-                "payload": {
-                    "success": True,
-                    "area_analysis": {
-                        area: [{"entity_id": entity, "device_id": child}]
-                    },
-                },
-            },
-            "ha_search": {
-                "arguments": {
-                    "query": entity,
-                    "domain_filter": "switch",
-                    "exact_match": True,
-                    "result_fields": ["entity_id", "area"],
-                    "limit": 20,
-                },
-                "payload": {
-                    "success": True,
-                    "partial": False,
-                    "entities": [
-                        {"entity_id": entity, "device_id": child, "area_id": area}
-                    ],
-                },
-            },
-            "ha_get_entity": {
-                "arguments": {"entity_id": entity},
-                "payload": {
-                    "success": True,
-                    "entities": [
-                        {"entity_id": entity, "device_id": child, "area_id": area}
-                    ],
-                },
-            },
-            "ha_get_entity_exposure": {
-                "arguments": {"entity_id": entity},
-                "payload": {
-                    "success": True,
-                    "entity_id": entity,
-                    "device_id": child,
-                    "effective_area_id": area,
-                    "exposed_to": [],
-                },
-            },
-        }
-        for name, case in cases.items():
+        # HAMCP-437 I2a-D: 9.2.0 rebuilds each read from its reviewed
+        # output-key contract, so each consumer answers with its committed
+        # 9.2.0 receipt (the I2a-T rc3 cases). Only ha_get_device and
+        # ha_get_entity project the child device and its effective area;
+        # 9.2.0 withholds device_id from the overview, search and exposure
+        # projections, so those prove useful success only. Imported here
+        # because the rc3 module imports this one.
+        from tests import test_rc3_postcore_regressions as rc3
+
+        cases = rc3.DEVICE_READ_CASES
+        self.assertEqual(set(cases), set(DEVICE_DEPENDENT_DELEGATED_TOOLS))
+        for name, (arguments, _receipt, _change) in cases.items():
             with self.subTest(tool=name):
                 validate(
-                    instance=case["arguments"],
+                    instance=arguments,
                     schema=captured_by_name[name]["inputSchema"],
                 )
-                transport.result = {
-                    "content": [
-                        {"type": "text", "text": json.dumps(case["payload"])}
-                    ],
-                    "isError": False,
-                }
+                transport.result = rc3.device_read_result(name)
                 tool = registered_tools(server).get(name)
                 self.assertIsNotNone(tool)
-                value = json.loads(await tool.run(case["arguments"]))
-                self.assertTrue(value["success"])
-                self.assertTrue(_contains_projection(value["data"], entity))
-                self.assertTrue(_contains_projection(value["data"], child))
-                self.assertTrue(_contains_projection(value["data"], area))
+                value = json.loads(await tool.run(dict(arguments)))
+                self.assertTrue(value["success"], value)
+                self.assertEqual(transport.calls[-1][0], name)
+                if name in rc3.DEVICE_PROJECTION_TOOLS:
+                    self.assertTrue(_contains_projection(value["data"], "child-door"))
+                    self.assertTrue(_contains_projection(value["data"], "garage"))
+                if name == "ha_get_device":
+                    self.assertTrue(_contains_projection(value["data"], "parent-garage"))
+                if name in {"ha_get_entity", "ha_get_entity_exposure"}:
+                    self.assertTrue(
+                        _contains_projection(
+                            value["data"], "cover.synthetic_garage_door"
+                        )
+                    )
 
         self.assertEqual(len(transport.calls), len(cases))
         self.assertEqual(gateway.health_snapshot()["fallback_count"], 0)
@@ -4038,7 +4015,7 @@ class Core20269StaticRouteTests(unittest.IsolatedAsyncioTestCase):
             _snapshot("2026.9.2", evidence=_evidence())
         )
         registry = load_reviewed_upstream_release_registry()
-        release = registry.by_version["8.4.3"]
+        release = registry.by_version["9.2.0"]
         capture = _capture_for_release(release)
         review = _fixture(ROOT / release.artifact_evidence_resource)
         captured_by_name = {item["name"]: item for item in capture["tools"]}
@@ -4046,7 +4023,7 @@ class Core20269StaticRouteTests(unittest.IsolatedAsyncioTestCase):
             captured_by_name[name]
             for name in review["runtime_catalog"]["runtime_tool_order"]
         ]
-        transport = FakeTransport(tools, version="8.4.3")
+        transport = FakeTransport(tools, version="9.2.0")
         gateway = UpstreamReadGateway()
         gateway.configure(
             settings(),

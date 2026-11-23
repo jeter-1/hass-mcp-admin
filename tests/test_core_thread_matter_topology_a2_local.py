@@ -498,7 +498,7 @@ class TopologySuccessTests(unittest.TestCase):
         self.kept = kept_raw()
         self.reply = stub_reply(self.values, self.kept)
         self.result = projected(deepcopy(self.reply))
-        self.devices = a2.registry_node_devices(registry())
+        self.devices = a2.registry_node_devices(registry(), anchor="2026.11.0")
 
     def check(self, section=None, reply=None, devices=None, kept=None):
         return a2.check_topology_success(self.result[tm.TOPOLOGY] if section is None else section,
@@ -509,7 +509,17 @@ class TopologySuccessTests(unittest.TestCase):
     def test_registry_maps_node_devices_only(self):
         self.assertEqual(self.devices, {61: device_id(61), 91: device_id(91), 199: device_id(199)})
         with self.assertRaises(AssertionError):
-            a2.registry_node_devices(registry() + registry()[:1])
+            a2.registry_node_devices(registry() + registry()[:1], anchor="2026.11.0")
+
+    def test_an_unreviewed_anchor_refuses_before_reading_the_registry(self):
+        # The identifier pattern is the anchor's (HAMCP-443 D5): no reviewed pattern, no mapping.
+        self.assertEqual(set(a2.NODE_DEVICE_IDENTIFIER), {"2026.11.0"})
+        for anchor in ("2026.12.0", "2026.11", " 2026.11.0", "2026.11.0 ", "", None, b"2026.11.0", 2026):
+            with self.subTest(anchor=anchor), self.assertRaises(ValueError) as caught:
+                a2.registry_node_devices(iter(()), anchor=anchor)
+            self.assertEqual(str(caught.exception), "lane_anchor_unreviewed")
+        with self.assertRaises(TypeError):
+            a2.registry_node_devices(registry())
 
     def test_stub_shaped_reply_passes_with_opaque_ids_kept_raw_values_and_no_canary(self):
         summary = self.check()

@@ -23,6 +23,8 @@ from mcp import types as mcp_types
 ROOT = Path(__file__).resolve().parents[1]
 BETA_DIR = ROOT / "hass_mcp_engineering_beta"
 sys.path.insert(0, str(BETA_DIR))
+if str(ROOT / "tests") not in sys.path:
+    sys.path.append(str(ROOT / "tests"))
 
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
 from ha_mcp_engineering.clients.upstream_read import (  # noqa: E402
@@ -51,6 +53,7 @@ from ha_mcp_engineering.governance.storage import (  # noqa: E402
     ChangePlanRepository,
     ChangePlanStorageError,
 )
+from support import synthetic_backup_admission  # noqa: E402
 from ha_mcp_engineering.providers.operational_backup import (  # noqa: E402
     OperationalBackupProviderError,
     ReviewedOperationalBackupProvider,
@@ -58,9 +61,6 @@ from ha_mcp_engineering.providers.operational_backup import (  # noqa: E402
 from ha_mcp_engineering.request_context import begin_request, end_request  # noqa: E402
 from ha_mcp_engineering.tools.governance import (  # noqa: E402
     apply_change_plan as public_apply_change_plan,
-)
-from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
-    load_reviewed_upstream_release_registry,
 )
 
 
@@ -156,13 +156,15 @@ def initialize_exact_2_0_1_service_storage(repository, now: datetime) -> None:
     repository.recover_incomplete(now.isoformat())
 
 
-def provider_evidence(version: str = "7.14.2") -> dict:
-    release = load_reviewed_upstream_release_registry().by_version[version]
+def provider_evidence() -> dict:
+    # HAMCP-437 (I2a-D ruling 1, group A): a synthetic evidence dict from the
+    # test-only old-contract admission; the shipped 9.2.0 backup is held.
+    release = synthetic_backup_admission.release()
     contract = release.tool_contracts_by_name["ha_manage_backup"]
     return {
         "provider": "upstream_operational_backup",
         "server_name": "ha-mcp",
-        "server_version": version,
+        "server_version": release.version,
         "protocol_version": "2025-03-26",
         "compatibility_entry_id": release.entry_id,
         "reviewed_source_commit": release.source_commit,
@@ -1502,33 +1504,40 @@ class FakeTransport:
         )
 
 
-def exact_catalog(version: str) -> McpReadCatalog:
-    release = load_reviewed_upstream_release_registry().by_version[version]
-    capture = json.loads(
-        (ROOT / release.capture_resource).read_text(encoding="utf-8")
-    )
-    return McpReadCatalog(
-        protocol_version="2025-03-26",
-        server_name="ha-mcp",
-        server_version=version,
-        tools=tuple(capture["tools"]),
-        connection_latency_ms=1.0,
-    )
+def exact_catalog() -> McpReadCatalog:
+    return synthetic_backup_admission.catalog()
 
 
 class OperationalProviderContractTests(unittest.IsolatedAsyncioTestCase):
-    async def test_exact_8_0_0_probe_uses_release_runtime_model(self):
-        transport = FakeTransport(exact_catalog("8.0.0"))
+    """Version-agnostic backup provider properties (I2a-D ruling 1, group B).
+
+    They run on the test-only synthetic admission
+    ``synthetic_backup_admission.VERSION`` carrying the old tool contract; the
+    shipped 9.2.0 backup is held. Shipped (held) dispatch shape until HAMCP-381
+    Phase 2 replaces it.
+    """
+
+    def setUp(self):
+        registry_patch = synthetic_backup_admission.patch_backup_registry()
+        registry_patch.start()
+        self.addCleanup(registry_patch.stop)
+
+    async def test_exact_probe_uses_release_runtime_model(self):
+        transport = FakeTransport(exact_catalog())
         provider = ReviewedOperationalBackupProvider()
         provider._transport = transport
         provider._state.configured = True
 
         evidence = await provider.probe()
 
-        release = load_reviewed_upstream_release_registry().by_version[
-            "8.0.0"
-        ]
-        self.assertEqual(evidence.server_version, "8.0.0")
+        release = synthetic_backup_admission.release()
+        self.assertEqual(
+            release.runtime_contract_fingerprint_model,
+            "ha-mcp-operational-tool-descriptor-v2",
+        )
+        self.assertEqual(
+            evidence.server_version, synthetic_backup_admission.VERSION
+        )
         self.assertEqual(
             evidence.tool_contract_fingerprint,
             release.tool_contracts_by_name[
@@ -1541,7 +1550,7 @@ class OperationalProviderContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(health["fallback_count"], 0)
 
     async def test_real_transport_preserves_call_time_catalog_drift(self):
-        drift = exact_catalog("7.14.2")
+        drift = exact_catalog()
         tools = [deepcopy(item) for item in drift.tools]
         target = next(
             item for item in tools if item["name"] == "ha_manage_backup"
@@ -1634,7 +1643,7 @@ class OperationalProviderContractTests(unittest.IsolatedAsyncioTestCase):
         )
         for drift_kind, expected_category in cases:
             with self.subTest(drift_kind=drift_kind):
-                exact = exact_catalog("7.14.2")
+                exact = exact_catalog()
                 tools = [deepcopy(item) for item in exact.tools]
                 target = next(
                     item
@@ -1642,12 +1651,17 @@ class OperationalProviderContractTests(unittest.IsolatedAsyncioTestCase):
                     if item["name"] == "ha_manage_backup"
                 )
                 if drift_kind == "catalog_mismatch":
+                    # HAMCP-436: the reviewed name set is a whole-catalog
+                    # gate; descriptor drift on a tool backup never
+                    # dispatches is recorded, not rejected.
                     other = next(
                         item
                         for item in tools
                         if item["name"] == "ha_get_state"
                     )
-                    other["description"] = "Unreviewed catalog drift."
+                    tools.append(
+                        {**deepcopy(other), "name": "ha_unreviewed_extra"}
+                    )
                 elif drift_kind == "tool_removed":
                     tools.remove(target)
                 elif drift_kind == "input_changed":
@@ -1946,10 +1960,11 @@ class OperationalProviderContractTests(unittest.IsolatedAsyncioTestCase):
                         json.dumps(audit_records),
                     )
 
-    async def test_both_reviewed_releases_admit_only_constructed_create(self):
-        for version in ("7.14.1", "7.14.2"):
+    async def test_old_contract_admits_only_constructed_create(self):
+        # Shipped (held) dispatch shape until HAMCP-381 Phase 2 replaces it.
+        for version in (synthetic_backup_admission.VERSION,):
             with self.subTest(version=version):
-                transport = FakeTransport(exact_catalog(version))
+                transport = FakeTransport(exact_catalog())
                 provider = ReviewedOperationalBackupProvider()
                 provider._transport = transport
                 provider._state.configured = True
@@ -1981,7 +1996,7 @@ class OperationalProviderContractTests(unittest.IsolatedAsyncioTestCase):
                 )
 
     async def test_unknown_version_and_contract_drift_fail_closed(self):
-        unknown = exact_catalog("7.14.2")
+        unknown = exact_catalog()
         unknown = McpReadCatalog(
             **{**unknown.__dict__, "server_version": "7.14.99"}
         )
@@ -1994,7 +2009,7 @@ class OperationalProviderContractTests(unittest.IsolatedAsyncioTestCase):
             "upstream_version_mismatch",
         )
 
-        drift = exact_catalog("7.14.2")
+        drift = exact_catalog()
         tools = [deepcopy(item) for item in drift.tools]
         target = next(
             item for item in tools if item["name"] == "ha_manage_backup"
@@ -2069,7 +2084,7 @@ class OperationalProviderContractTests(unittest.IsolatedAsyncioTestCase):
                 raise AssertionError("provider call must remain unreachable")
 
         provider = ReviewedOperationalBackupProvider()
-        provider._transport = FailingTransport(exact_catalog("7.14.2"))
+        provider._transport = FailingTransport(exact_catalog())
 
         async def before_dispatch():
             raise local_failure
@@ -2082,7 +2097,7 @@ class OperationalProviderContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(provider.health_snapshot()["dispatch_count"], 0)
 
     async def test_provider_health_separates_probes_dispatches_and_operation_failures(self):
-        transport = FakeTransport(exact_catalog("7.14.2"))
+        transport = FakeTransport(exact_catalog())
         provider = ReviewedOperationalBackupProvider()
         provider._transport = transport
         provider._state.configured = True

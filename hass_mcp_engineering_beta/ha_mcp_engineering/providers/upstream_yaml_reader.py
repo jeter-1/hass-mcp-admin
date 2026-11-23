@@ -68,14 +68,12 @@ from ..sanitization import (
 
 TOOL_NAME = "ha_config_get_yaml"
 TITLE = "Read YAML Config Fragment"
-# The prohibited file siblings: the 8.x catalogs carry two; the 9.1.0 catalog
-# carries four, including the write and delete tools (HAMCP-319 section 6.4).
+# The prohibited file siblings: the legacy direct call accounts for two; the
+# 9.2.0 catalog carries four, including the write and delete tools (HAMCP-319
+# section 6.4; HAMCP-437 I2a retired the 8.x and 9.1 rows).
 # None is ever routed; captured descriptors never grant sibling reachability.
 SIBLING_TOOLS = ("ha_list_files", "ha_read_file")
 _SIBLING_TOOLS_BY_VERSION: dict[str, tuple[str, ...]] = {
-    "9.1.0": ("ha_delete_file", "ha_list_files", "ha_read_file", "ha_write_file"),
-    # HAMCP-351: exact 9.1.2 carries the same four, all still prohibited.
-    "9.1.2": ("ha_delete_file", "ha_list_files", "ha_read_file", "ha_write_file"),
     # HAMCP-371: exact 9.2.0 carries the same four, all still prohibited.
     "9.2.0": ("ha_delete_file", "ha_list_files", "ha_read_file", "ha_write_file"),
 }
@@ -345,11 +343,6 @@ _CONTRACT_9_1 = YamlReadContract(
 # never admitted (``withheld_reason``) and a route entry for it never
 # dispatches (``contract_for``).
 YAML_READ_CONTRACTS: dict[str, YamlReadContract] = {
-    "8.4.3": _CONTRACT_8,
-    "8.5.0": _CONTRACT_8,
-    "9.1.0": _CONTRACT_9_1,
-    # HAMCP-351: tools_yaml_read.py is unchanged at bab615df.
-    "9.1.2": _CONTRACT_9_1,
     # HAMCP-371 SY (docs/evidence/hamcp371/sy-yaml-read-path.md):
     # tools_yaml_read.py is byte-identical at 51e3aac7 and the tools_filesystem
     # functions it imports are unchanged by AST hash.
@@ -1997,11 +1990,6 @@ INPUT_SCHEMA_FINGERPRINT_9_1 = (
     "870b75b78aca0c16c9bde227c4c8d21f27f4e71963f73c9538ed911c836e37d6"
 )
 _GET_YAML_RUNTIME_BY_VERSION = {
-    "8.4.3": _GET_YAML_RUNTIME,
-    "8.5.0": _GET_YAML_RUNTIME,
-    "9.1.0": "e5100d0819eab49dfe9cf56335bd3544694de420c2cfe29a8578c77d58e0f3d1",
-    # HAMCP-351: the 9.1.2 descriptor is byte-identical to 9.1.0.
-    "9.1.2": "e5100d0819eab49dfe9cf56335bd3544694de420c2cfe29a8578c77d58e0f3d1",
     # HAMCP-371: computed from the 9.2.0 filesystem-on capture below; the
     # descriptor is byte-identical to 9.1.2.
     "9.2.0": "e5100d0819eab49dfe9cf56335bd3544694de420c2cfe29a8578c77d58e0f3d1",
@@ -2046,10 +2034,6 @@ _GET_YAML_DIAGNOSTICS_9_1 = {
     "/title": _TITLE_FP,
 }
 _GET_YAML_DIAGNOSTICS_BY_VERSION = {
-    "8.4.3": _GET_YAML_DIAGNOSTICS,
-    "8.5.0": _GET_YAML_DIAGNOSTICS,
-    "9.1.0": _GET_YAML_DIAGNOSTICS_9_1,
-    "9.1.2": _GET_YAML_DIAGNOSTICS_9_1,
     "9.2.0": _GET_YAML_DIAGNOSTICS_9_1,
 }
 DIAGNOSTIC_POINTERS = tuple(sorted(_GET_YAML_DIAGNOSTICS))
@@ -2092,28 +2076,6 @@ class OptionalToolBinding:
 
 
 _CAPTURES = {
-    "8.4.3": (
-        "eac7a3aa7063432e9af17e7d7726040e909c7b8f",
-        "docs/evidence/hamcp162/captures/catalog-8.4.3-A.json",
-        "d5d6a5393dae9ed420d906e6b7e63be5ade7ca3ceed56e64f7f63aec50210303",
-    ),
-    "8.5.0": (
-        "311d6dc273fb4e9a5b8cde0de15f69472a64fe44",
-        "docs/evidence/hamcp162/captures/catalog-8.5.0-A.json",
-        "4321a9e0f609084d7e1fe9885a767907c5ad3bfea0712186b4a4585eeb3d31f1",
-    ),
-    # HAMCP-319 Phase 1 capture (SHA256SUMS.json entry catalogs/full-1.json).
-    "9.1.0": (
-        "d2e3f4b0647d815fb32d530fed15a6a99b1d4b33",
-        "docs/evidence/hamcp319/phase1/catalogs/full-1.json",
-        "c4d051537fc590b74e0f98b7339eeedfadc22d81756615c6b7d54804bf5e9f94",
-    ),
-    # HAMCP-351: exact standalone 9.1.2 filesystem-on wire capture.
-    "9.1.2": (
-        "bab615dfc90cc510f5e19a9118707d0fae03a37c",
-        "docs/evidence/hamcp351/catalogs/standalone-fs-on-tools-response.json",
-        "340f3baa402ef3646b0289d26a72ec6f5662f6f0414e2366617490145f9e6ae9",
-    ),
     # HAMCP-371 S8 profiles-2: exact standalone 9.2.0 filesystem-on capture
     # (SHA256SUMS entries out/standalone-9.2.0-fs-on/capture-1.json and -2).
     "9.2.0": (
@@ -2123,21 +2085,6 @@ _CAPTURES = {
     ),
 }
 _SIBLING_RUNTIME = {
-    ("8.4.3", "ha_list_files"): "71e51bafd62d0837b7f2056b7a8bd007aa20b0c8c42c169981a8af1796c0e083",
-    ("8.5.0", "ha_list_files"): "71e51bafd62d0837b7f2056b7a8bd007aa20b0c8c42c169981a8af1796c0e083",
-    ("8.4.3", "ha_read_file"): "97459dd33eca15079f42cce074485c821752fad85c0c6a3f545544e42adecae1",
-    ("8.5.0", "ha_read_file"): "7627857f25d581e75c41bed2cad2ddf9b41839b69b8942c033c150c17cbf92a6",
-    # HAMCP-319: the four 9.1.0 siblings stay prohibited; these bindings only
-    # account and report drift and never route.
-    ("9.1.0", "ha_delete_file"): "be5ce90da53a6261268888fe5905fb3658141a066c4ae827f93b1e4e667ae7e2",
-    ("9.1.0", "ha_list_files"): "3067d3b409433dffe271d029290a982bc83822e8c93a2d50ec928fd8015a9368",
-    ("9.1.0", "ha_read_file"): "23be6da4beb909264997d88911624318a3ef80077943b26e20c3e6c6a2b66534",
-    ("9.1.0", "ha_write_file"): "0f638d1b0f3795e12ebada76456605192c28704a3222060c6d121842ab5bdffe",
-    # HAMCP-351: the 9.1.2 siblings are byte-identical and stay prohibited.
-    ("9.1.2", "ha_delete_file"): "be5ce90da53a6261268888fe5905fb3658141a066c4ae827f93b1e4e667ae7e2",
-    ("9.1.2", "ha_list_files"): "3067d3b409433dffe271d029290a982bc83822e8c93a2d50ec928fd8015a9368",
-    ("9.1.2", "ha_read_file"): "23be6da4beb909264997d88911624318a3ef80077943b26e20c3e6c6a2b66534",
-    ("9.1.2", "ha_write_file"): "0f638d1b0f3795e12ebada76456605192c28704a3222060c6d121842ab5bdffe",
     # HAMCP-371: three 9.2.0 siblings are byte-identical to 9.1.2; the write
     # tool's descriptor changed. All four stay prohibited and never route.
     ("9.2.0", "ha_delete_file"): "be5ce90da53a6261268888fe5905fb3658141a066c4ae827f93b1e4e667ae7e2",
@@ -2146,13 +2093,9 @@ _SIBLING_RUNTIME = {
     ("9.2.0", "ha_write_file"): "bff12e49d5942240622b584f73c77401bb9eafe66c5f0136cdbb871af98a1a2f",
 }
 _INPUT_SCHEMA_BY_VERSION = {
-    "9.1.0": INPUT_SCHEMA_FINGERPRINT_9_1,
-    "9.1.2": INPUT_SCHEMA_FINGERPRINT_9_1,
     "9.2.0": INPUT_SCHEMA_FINGERPRINT_9_1,
 }
 _ARGUMENT_CONSTRAINTS_BY_VERSION = {
-    "9.1.0": ARGUMENT_CONSTRAINTS_ID_9_1,
-    "9.1.2": ARGUMENT_CONSTRAINTS_ID_9_1,
     "9.2.0": ARGUMENT_CONSTRAINTS_ID_9_1,
 }
 
@@ -2201,22 +2144,9 @@ ADAPTER_TOKENS = {
 }
 # One explicit disposition for every registry version (HAMCP-184 rule): no
 # default exists, and a disposition is never inferred from provider
-# dispositions. 8.6.0 stays held until its HOLD lifts (D7). 9.1.0 is admitted
-# by HAMCP-319 section 6.4 under its own read contract.
+# dispositions. HAMCP-437 I2a: 9.2.0 is the only registry version; every
+# older release is refused through the unknown-version path.
 OPTIONAL_TOOL_DISPOSITIONS: dict[str, str] = {
-    "7.14.1": "held",
-    "7.14.2": "held",
-    "8.0.0": "held",
-    "8.1.0": "held",
-    "8.1.1": "held",
-    "8.2.0": "held",
-    "8.4.1": "held",
-    "8.4.3": "admitted",
-    "8.5.0": "admitted",
-    "8.6.0": "held",
-    "9.1.0": "admitted",
-    # HAMCP-351: admitted under the unchanged 9.1 read contract.
-    "9.1.2": "admitted",
     # HAMCP-371 N29: admitted under the unchanged 9.1 read contract; the
     # replay conditions are tests/test_hamcp371_real_core_replay.py.
     "9.2.0": "admitted",

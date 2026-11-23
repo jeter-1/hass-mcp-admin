@@ -19,7 +19,7 @@ registry entry ``ha-mcp-v9.2.0-9de5bf6c`` and source commit ``51e3aac7``.
 * Refusals on 9.2.0, each before any task with zero ``tools/call``: a drifted
   required descriptor; the 9.2.0 row removed (the provider unbound, as on
   ``main``); an unreviewed 9.2.1 peer; the legacy endpoint form.
-* 9.1.2 binds exactly as shipped.
+* HAMCP-437: only 9.2.0 is admitted (D1); the 9.1.2 binding case is retired.
 
 No endpoint, household target or production material is used.
 """
@@ -77,7 +77,7 @@ class Peer920(h175.MemoryPeer):
     @asynccontextmanager
     async def connect(self, url, **kwargs):
         assert url == self.url, url
-        async with h175.MemoryPeer.connect(self, "", **kwargs) as streams:
+        async with h175.MemoryPeer.connect(self, url, **kwargs) as streams:
             yield streams
 
 
@@ -104,12 +104,6 @@ class ReleaseRows(unittest.TestCase):
             with self.subTest(kind=kind):
                 version, contract, authority = provider_type(None, lambda *a: "a").validate_catalog(catalog())
                 self.assertEqual((version, contract, authority), (VERSION, ROWS[kind][VERSION][2], "a"))
-
-    def test_912_binds_as_shipped(self):
-        for kind, provider_type in PROVIDERS.items():
-            with self.subTest(kind=kind):
-                version, contract, _ = provider_type(None, lambda *a: "a").validate_catalog(catalog("9.1.2"))
-                self.assertEqual((version, contract), ("9.1.2", ROWS[kind]["9.1.2"][2]))
 
     def test_unbound_or_unreviewed_920_refuses_at_admission(self):
         for kind, provider_type in PROVIDERS.items():

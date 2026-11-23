@@ -35,9 +35,14 @@ from ha_mcp_engineering.clients import (  # noqa: E402
     HomeAssistantWebSocketClient,
 )
 from ha_mcp_engineering.clients.paths import rest_path  # noqa: E402
+from ha_mcp_engineering.clients.ha_mcp_endpoint import (  # noqa: E402
+    EXPECTED_SELECTOR_SUFFIX,
+    STRICT_FULL_SELECTOR_RELEASES,
+)
 if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
 from harness_routes import harness_request  # noqa: E402
+from harness_send import harness_url, register_lane_origin  # noqa: E402
 import lane_failure_diagnostics as lane_diagnostics  # noqa: E402
 from lane_session import lane_session, refuse_redirect  # noqa: E402
 from ha_mcp_engineering.dependency.index import DependencyIndex  # noqa: E402
@@ -98,7 +103,6 @@ from ha_mcp_engineering.request_context import (  # noqa: E402
 )
 from ha_mcp_engineering.trace_normalization import fetch_normalized_trace_list  # noqa: E402
 from ha_mcp_engineering.ha_core_readmission import CoreRuntime  # noqa: E402
-from ha_mcp_engineering.ha_core_readmission.routes import RETIRED_DELEGATED_READ_TOOLS  # noqa: E402
 from ha_mcp_engineering.ha_core_readmission.device_registry import (  # noqa: E402
     DeviceRegistrySchema,
     assess_device_registry,
@@ -182,6 +186,8 @@ def use_internal_lane_core(origin, subnet):
         raise ValueError(LANE_SUBNET_REFUSED)
     if address not in network or address in (network.network_address, network.broadcast_address):
         raise ValueError(LANE_CORE_OUTSIDE)
+    # The verified origin is this harness's only off-loopback send target (HAMCP-363).
+    register_lane_origin(origin)
     HA_URL, CLIENT_ID, _lane_core = origin, f"{origin}/", origin
     return origin
 
@@ -781,7 +787,7 @@ async def _json_request(session, method, path, *, json_body=None, data=None, tok
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     async with session.request(
         method,
-        f"{HA_URL}{path}",
+        harness_url(HA_URL, path),
         json=json_body,
         data=data,
         headers=headers,
@@ -805,7 +811,8 @@ async def bootstrap_disposable_admin() -> str:
         with lane_diagnostics.check("core_boot", "onboarding_ready"):
             for _ in range(120):
                 try:
-                    async with session.get(f"{HA_URL}/api/onboarding", allow_redirects=False) as response:
+                    async with session.get(harness_url(HA_URL, "/api/onboarding"),
+                                           allow_redirects=False) as response:
                         refuse_redirect(response.status)
                         if response.status == 200:
                             break
@@ -888,11 +895,23 @@ def settings(token: str) -> Settings:
         destructive_services=frozenset(),
         ha_timeout_seconds=30,
         upstream_dashboard_mcp_url=(
-            f"http://127.0.0.1:{UPSTREAM_PORT}{UPSTREAM_SECRET_PATH}"
-            if UPSTREAM_IMAGE
-            else ""
+            upstream_gateway_url(UPSTREAM_VERSION) if UPSTREAM_IMAGE else ""
         ),
     )
+
+
+def upstream_gateway_url(version: str) -> str:
+    """Return the upstream URL form Engineering admits for this release.
+
+    Engineering refuses the short form for its strict-full releases before
+    tools/list (``require_selector_agreement``), so those get the full-catalog
+    selector. Both values come from Engineering, never a local copy.
+    """
+
+    base = f"http://127.0.0.1:{UPSTREAM_PORT}{UPSTREAM_SECRET_PATH}"
+    if version in STRICT_FULL_SELECTOR_RELEASES:
+        return base + EXPECTED_SELECTOR_SUFFIX
+    return base
 
 
 @lane_diagnostics.checked("core_boot", "runtime_ready")
@@ -2541,9 +2560,11 @@ async def _assert_http_configuration_contract() -> None:
         assert stored.get("has_pending") is False
         assert stored.get("has_stable") is False
         return
-    assert EXPECTED_HA_VERSION in {"2026.8.0", "2026.8.1"} or _core_binding(EXPECTED_HA_VERSION) is not None
+    # HAMCP-437 (I2b): every Core other than the 2026.7.2 fixture writer needs a
+    # reviewed binding; the retired 2026.8.x storage arm is gone.
     binding = _core_binding(EXPECTED_HA_VERSION)
-    expected_storage_version = binding.http_storage_version if binding is not None else 2
+    assert binding is not None
+    expected_storage_version = binding.http_storage_version
     assert stored.get("version") == expected_storage_version
     assert stored.get("has_yaml_migration_done") is True
     assert stored.get("yaml_migration_done") is True
@@ -2671,11 +2692,12 @@ async def _start_exact_upstream(token: str, *, pull_policy=None, labels=(), envi
         verify_started()
 
     timeout = aiohttp.ClientTimeout(total=2)
+    health = harness_url(f"http://127.0.0.1:{UPSTREAM_PORT}/healthz")
     for _ in range(60):
         try:
             async with lane_session(timeout=timeout) as session:
                 async with session.get(
-                    f"http://127.0.0.1:{UPSTREAM_PORT}/healthz",
+                    health,
                     allow_redirects=False,
                 ) as response:
                     refuse_redirect(response.status)
@@ -2706,7 +2728,7 @@ async def _call_exact_upstream_tool(
 ) -> dict[str, Any]:
     """Call one exact public ha-mcp tool through the disposable transport."""
 
-    endpoint = f"http://127.0.0.1:{UPSTREAM_PORT}{UPSTREAM_SECRET_PATH}"
+    endpoint = harness_url(f"http://127.0.0.1:{UPSTREAM_PORT}", UPSTREAM_SECRET_PATH)
     for _ in range(60):
         try:
             async with streamablehttp_client(endpoint) as (
@@ -2980,66 +3002,10 @@ async def _run_device_migration_contract(
             "registry_shape",
         )
     else:
-        _assert_device_contract(
-            EXPECTED_HA_VERSION in {"2026.8.0", "2026.8.1"},
-            "split_projection",
-        )
-        _assert_device_contract(
-            not any(
-                isinstance(item, dict) and item.get("id") == old_device_id
-                for item in devices
-            ),
-            "split_projection",
-        )
-        composite_splits = await websocket.command(
-            {"type": "config/device_registry/list_composite_splits"}
-        )
-        split_contract = composite_splits.get(old_device_id)
-        _assert_device_contract(
-            isinstance(split_contract, dict), "split_projection"
-        )
-        expected_device_ids = {
-            str(item) for item in split_contract.get("split_ids", ())
-        }
-        _assert_device_contract(
-            len(expected_device_ids) == 2, "split_projection"
-        )
-        splits = [
-            item
-            for item in devices
-            if isinstance(item, dict)
-            and item.get("id") in expected_device_ids
-        ]
-        _assert_device_contract(len(splits) == 2, "split_projection")
-        _assert_device_contract(
-            {str(item.get("config_entry_id")) for item in splits}
-            == config_entry_ids,
-            "split_projection",
-        )
-        _assert_device_contract(
-            all(
-                set(item.get("config_entries", ()))
-                == {item.get("config_entry_id")}
-                for item in splits
-            ),
-            "split_projection",
-        )
-        _assert_device_contract(
-            {str(item["id"]) for item in splits} == expected_device_ids,
-            "split_projection",
-        )
-        expected_primary_id = next(
-            (
-                item["id"]
-                for item in splits
-                if item.get("config_entry_id") == primary_config_entry_id
-            ),
-            None,
-        )
-        _assert_device_contract(
-            split_contract.get("primary_id") == expected_primary_id,
-            "split_projection",
-        )
+        # HAMCP-437 (I2b): the 2026.8.x split-projection arm is retired. The
+        # migration contract has no reviewed shape for any other Core without a
+        # binding, so it refuses here.
+        _assert_device_contract(False, "split_projection")
     _assert_device_contract(
         {str(item.get("device_id")) for item in fixture_entities}
         == expected_device_ids,
@@ -3492,32 +3458,129 @@ async def _run_script_dependency_contract(configured, core_runtime, read_gateway
         service = runtime.require()
         service.index.provider.script_reader_factory = read_gateway.script_dependency_reader
         with patch.object(read_gateway._transport, "execute_read", capture.execute_read):
-            stage = "useful_script_analysis"
-            result = await service.analyze(entity_id=target, source_types=["automation", "blueprint", "script"], detail_level="evidence")
-            findings = result.data["findings"]
-            for key in keys:
-                path = "$.use_blueprint.input.target" if key == keys[3] else "$.sequence[0].entity_id"
-                assert any(item["source_id"] == key and item["source_entity_id"] == identities[key]
-                           and item["config_path"] == path for item in findings), key
-            assert not any(item["source_id"] == package_key for item in findings)
-            diagnostic = service.index.snapshot.script_diagnostics
-            assert any(item.source_id == keys[4] for item in diagnostic.dynamic_references)
-            coverage = script_coverage(result)
-            assert coverage["provider"] == "upstream_read_gateway"
-            assert coverage["completeness"] == "partial" and not coverage["fallback_occurred"]
-            assert coverage["failed_item_count"] >= 2  # package read gap + unexpanded blueprint
-            assert "script_blueprint_body_unresolved: 1" in coverage["warnings"]
-            assert next(row for row in result.data["source_coverage"] if row["source_type"] == "blueprint")["evidence_count"] == 0
-            assert ("upstream", "ha_config_get_script", identities[package_key]) in capture.calls
-            stage = "script_call_paths"
-            graph = await service.analyze(entity_id=target, source_types=["script"],
-                                          include_indirect=True, max_depth=3, detail_level="evidence")
-            assert any(item["source_id"] == keys[0] and item["depth"] == 2
-                       and not item["direct"] for item in graph.data["findings"])
-            assert any(item["source_id"] == keys[4] and item["depth"] == 3
-                       and len(item["evidence_path"]) == 3 for item in graph.data["findings"])
-            assert graph.partial and graph.data["index"]["cache_hit"]
-            assert graph.data["script_call_graph"]["fallback_occurred"] is False
+            # The failure reporter never prints assertion text, so a failing check
+            # below carries a bounded contract_diagnostic instead: its name plus
+            # counts, booleans, coverage identifiers and fixture keys only.
+            check, result, graph = "analyze", None, None
+            label = r"[a-z0-9_+.-]{1,96}"
+
+            def observed():
+                view = {"script_check": check}
+                try:
+                    view["violations"] = len(capture.violations)
+                    view["upstream_reads"] = sum(1 for call in capture.calls if call[0] == "upstream")
+                    view["package_read_call"] = (
+                        ("upstream", "ha_config_get_script", identities.get(package_key)) in capture.calls)
+                    if result is not None:
+                        rows = result.data.get("findings", [])
+                        view["findings_total"] = len(rows)
+                        # Per fixture key: [findings, identity matches, full matches].
+                        view["findings"] = {
+                            key.removeprefix(prefix): [
+                                sum(1 for item in rows if item.get("source_id") == key),
+                                sum(1 for item in rows if item.get("source_id") == key
+                                    and item.get("source_entity_id") == identities.get(key)),
+                                sum(1 for item in rows if item.get("source_id") == key
+                                    and item.get("source_entity_id") == identities.get(key)
+                                    and item.get("config_path") == ("$.use_blueprint.input.target"
+                                                                    if key == keys[3] else "$.sequence[0].entity_id")),
+                            ] for key in (*keys, package_key)}
+                        for row in result.data.get("source_coverage", []):
+                            if row.get("source_type") not in {"script", "blueprint"}:
+                                continue
+                            policy = row.get("policy") if isinstance(row.get("policy"), str) else ""
+                            counts = re.search(r"loaded=(\d{1,6}); stored=(\d{1,6})", policy)
+                            view["coverage_" + row["source_type"]] = {
+                                "provider": row.get("provider") if re.fullmatch(label, str(row.get("provider"))) else "other",
+                                "completeness": row.get("completeness") if re.fullmatch(label, str(row.get("completeness"))) else "other",
+                                "fallback_occurred": row.get("fallback_occurred") is True,
+                                "failed_item_count": int(row.get("failed_item_count", -1)),
+                                "evidence_count": int(row.get("evidence_count", -1)),
+                                "public_warnings": len(row.get("warnings", [])),
+                                **({"loaded": int(counts[1]), "stored": int(counts[2])} if counts else {}),
+                                "stored_fallback_reasons": dict(
+                                    (name, int(count)) for name, count in
+                                    re.findall(r"([a-z0-9_]{1,64})=(\d{1,6})", policy.partition("stored fallback reasons:")[2])[:8]),
+                            }
+                    scripts = service.index.snapshot.script_diagnostics if service.index.snapshot else None
+                    if scripts is not None:
+                        view["dynamic_template"] = any(item.source_id == keys[4] for item in scripts.dynamic_references)
+                        # Internal warnings, unbounded by the public 10-entry cut.
+                        view["warning_keys"] = dict(
+                            (match[1], int(match[2])) for match in (
+                                re.fullmatch(r"([a-z0-9_]{1,64}): (\d{1,9})", text) for text in scripts.coverage.warnings)
+                            if match)
+                        view["call_gap_keys"] = dict(
+                            (match[1], int(match[2])) for match in (
+                                re.fullmatch(r"([a-z0-9_]{1,64}): (\d{1,9})", text) for text in scripts.call_gaps)
+                            if match)
+                        view["source_providers"] = {
+                            key.removeprefix(prefix): provider if re.fullmatch(label, str(provider)) else "other"
+                            for key, provider in scripts.source_providers if key in all_keys}
+                    if graph is not None:
+                        rows = graph.data.get("findings", [])
+                        view["graph"] = {
+                            "partial": bool(graph.partial),
+                            "cache_hit": graph.data.get("index", {}).get("cache_hit") is True,
+                            "fallback_occurred": (lambda value: value if isinstance(value, bool) else "other")(
+                                graph.data.get("script_call_graph", {}).get("fallback_occurred")),
+                            # Per fixture key: up to four [depth, direct, evidence_path length].
+                            **{key.removeprefix(prefix): [
+                                [int(item.get("depth", -1)), item.get("direct") is True, len(item.get("evidence_path", []))]
+                                for item in rows if item.get("source_id") == key][:4] for key in keys},
+                        }
+                except Exception as error:
+                    view["observation_failure"] = type(error).__name__
+                for optional in ("call_gap_keys", "warning_keys", "graph", "findings"):
+                    if len(json.dumps(view, separators=(",", ":"))) <= 2000:
+                        break
+                    view.pop(optional, None)
+                return view
+
+            try:
+                stage = "useful_script_analysis"
+                result = await service.analyze(entity_id=target, source_types=["automation", "blueprint", "script"], detail_level="evidence")
+                findings = result.data["findings"]
+                for key in keys:
+                    check = "finding_" + key.removeprefix(prefix)
+                    path = "$.use_blueprint.input.target" if key == keys[3] else "$.sequence[0].entity_id"
+                    assert any(item["source_id"] == key and item["source_entity_id"] == identities[key]
+                               and item["config_path"] == path for item in findings), key
+                check = "package_not_found"
+                assert not any(item["source_id"] == package_key for item in findings)
+                diagnostic = service.index.snapshot.script_diagnostics
+                check = "dynamic_template_reference"
+                assert any(item.source_id == keys[4] for item in diagnostic.dynamic_references)
+                coverage = script_coverage(result)
+                check = "coverage_provider"
+                assert coverage["provider"] == "upstream_read_gateway"
+                check = "coverage_partial_no_fallback"
+                assert coverage["completeness"] == "partial" and not coverage["fallback_occurred"]
+                check = "coverage_failed_items"
+                assert coverage["failed_item_count"] >= 2  # package read gap + unexpanded blueprint
+                check = "blueprint_body_warning"
+                assert "script_blueprint_body_unresolved: 1" in coverage["warnings"]
+                check = "blueprint_evidence_zero"
+                assert next(row for row in result.data["source_coverage"] if row["source_type"] == "blueprint")["evidence_count"] == 0
+                check = "package_read_call"
+                assert ("upstream", "ha_config_get_script", identities[package_key]) in capture.calls
+                stage = "script_call_paths"
+                check = "graph_analyze"
+                graph = await service.analyze(entity_id=target, source_types=["script"],
+                                              include_indirect=True, max_depth=3, detail_level="evidence")
+                check = "graph_indirect_normal"
+                assert any(item["source_id"] == keys[0] and item["depth"] == 2
+                           and not item["direct"] for item in graph.data["findings"])
+                check = "graph_depth3_template"
+                assert any(item["source_id"] == keys[4] and item["depth"] == 3
+                           and len(item["evidence_path"]) == 3 for item in graph.data["findings"])
+                check = "graph_partial_cache_hit"
+                assert graph.partial and graph.data["index"]["cache_hit"]
+                check = "graph_no_fallback"
+                assert graph.data["script_call_graph"]["fallback_occurred"] is False
+            except AssertionError as error:
+                setattr(error, "contract_diagnostic", observed())
+                raise
             shared_findings = tuple(service.index.snapshot.findings)
             shared_obligations = tuple(service.index.snapshot.obligations)
 
@@ -3863,7 +3926,7 @@ async def _run_core_2026_9_child_contract(
         )
         server = FastMCP("rc2-core-2026-9-disposable")
         await read_gateway.reconcile_until_initialized(server)
-        if binding.child_consumer == "8.5.0":
+        if binding.child_consumer in {"8.5.0", "9.2.0"}:
             await _run_script_dependency_contract(configured, core_runtime, read_gateway)
         if _core_test_authority(EXPECTED_HA_VERSION):
             await _run_typed_fan_contract(configured, core_runtime, read_gateway)
@@ -3880,10 +3943,11 @@ async def _run_core_2026_9_child_contract(
             for item in core_assessment["authority_profiles"]
             if not str(item["disposition"]).startswith("admitted")
         ]
-        # HAMCP-290: the retired delegated ha_get_hacs_info is matched but
-        # never exposed (28 matched automatic reads expose 27).
+        # HAMCP-437: ha-mcp 9.2.0 exposes its 27 exact-matched automatic reads;
+        # the retired delegated ha_get_hacs_info (HAMCP-290) is unsupported on
+        # 9.2.0 and never matched.
         _assert_device_contract(
-            len(tools) == 28 - len(RETIRED_DELEGATED_READ_TOOLS),
+            len(tools) == 27,
             "child_consumer_catalog",
             missing_key="delegated_tool_count",
             diagnostic={
@@ -3971,6 +4035,7 @@ async def _run_core_2026_9_child_contract(
             )
             assert isinstance(data, dict)
             results[name] = data
+        projects_child_entity: dict[str, bool] = {}
         for name, result in results.items():
             consumer_scenario = f"child_consumer_{name}"
             _assert_device_contract(
@@ -3983,10 +4048,40 @@ async def _run_core_2026_9_child_contract(
                 consumer_scenario,
                 missing_key="zero_fallback",
             )
-            _assert_device_contract(
-                _contains_exact_projection(result, child_entity_id),
-                "child_entity",
+            projects_child_entity[name] = _contains_exact_projection(
+                result, child_entity_id
             )
+        # One assertion over every consumer, so a single run names each one
+        # that omits the child entity.  Tool and key names and booleans only.
+        child_entity_diagnostic: dict[str, object] = {
+            "missing_consumers": [
+                name for name, found in projects_child_entity.items() if not found
+            ],
+            "result_top_level_keys": {
+                name: sorted(
+                    token
+                    for key in result
+                    if key not in (child_id, child_entity_id, parent_id)
+                    and (
+                        token := _bounded_diagnostic_token(
+                            key, maximum=64, punctuation="_"
+                        )
+                    )
+                )[:20]
+                for name, result in results.items()
+            },
+            "contains_child_device_id": {
+                name: _contains_exact_projection(result, child_id)
+                for name, result in results.items()
+            },
+        }
+        if len(json.dumps(child_entity_diagnostic, separators=(",", ":"))) > 2000:
+            child_entity_diagnostic.pop("result_top_level_keys")
+        _assert_device_contract(
+            all(projects_child_entity.values()),
+            "child_entity",
+            diagnostic=child_entity_diagnostic,
+        )
         device_result = results["ha_get_device"]
         _assert_device_contract(
             _contains_exact_projection(device_result, child_id),

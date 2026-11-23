@@ -169,7 +169,7 @@ class _PlanOnlyHarness(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
-        self.dashboard = _DashboardGateway(version="8.5.0")
+        self.dashboard = _DashboardGateway(version="9.2.0")  # HAMCP-437
         self.repository = ChangePlanRepository(self.root / "plans")
         self.service = ChangeGovernanceService(
             self.repository,

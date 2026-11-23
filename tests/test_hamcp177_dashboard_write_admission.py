@@ -48,18 +48,26 @@ from ha_mcp_engineering.upstream_tool_policy import (
 from test_dashboard_update_mvp import (
     _UnusedConfigurationGateway, _unrelated_lifecycle_provider_identity,
 )
+# HAMCP-437: the reviewed ha-mcp 9.1/9.2 dashboard reply envelopes (same
+# source at 9.2.0 as at 9.1.0; see test_hamcp319_dashboard NINE_TWO).
+from test_hamcp319_dashboard import (
+    ENVELOPES, GUIDE_BYTES, GUIDE_FILE, SKILL, STRICT_URL, ack_line, compute_config_hash_91,
+    error_envelope, fill,
+)
 
 GETTER, GUIDE, SETTER = (
     'ha_config_get_dashboard', 'ha_get_skill_guide', 'ha_config_set_dashboard')
 EXTRAS = ('ha_config_get_yaml', 'ha_list_files', 'ha_read_file')
 COMPONENTS = ('inputSchema', 'description', 'annotations', 'outputSchema', 'title')
-VERSIONS = ('8.5.0', '8.6.0')
+# HAMCP-437: the reviewed release that keeps dashboard admission.
+CURRENT = '9.2.0'
+VERSIONS = (CURRENT,)
 SECRET = 'synthetic-private-exception-text'
 KEY = 'I-HAVE-READ-THE-BEST-PRACTICES-GUIDE-0123abcd'
 URL_PATH = 'operations'
 
 
-def catalog(extra_names=(), *, version='8.5.0'):
+def catalog(extra_names=(), *, version=CURRENT):
     folder = ROOT / 'docs/evidence/upstream-read-compatibility'
     raw = json.loads((folder / f'ha-mcp-{version}.json').read_text())
     review = json.loads((folder / f'ha-mcp-{version}-contract-review.json').read_text())
@@ -90,7 +98,7 @@ def drifted(tools, name, component):
     return tools
 
 
-def handshake(tools, *, version='8.5.0', protocol='2025-03-26'):
+def handshake(tools, *, version=CURRENT, protocol='2025-03-26'):
     return McpDashboardHandshake(protocol, 'ha-mcp', version, tuple(tools), 1.0)
 
 
@@ -101,7 +109,7 @@ def text_result(value, *, is_error=False):
 class DashboardPeer:
     """Synthetic ha-mcp peer; actual ClientSession framing and task-group teardown."""
 
-    def __init__(self, tools, *, version='8.5.0', protocol='2025-03-26'):
+    def __init__(self, tools, *, version=CURRENT, protocol='2025-03-26'):
         self.tools, self.version, self.protocol = tools, version, protocol
         self.events, self.calls = [], []
         self.configuration = {'title': 'Before', 'views': []}
@@ -110,6 +118,9 @@ class DashboardPeer:
         self.drop = set()  # apply the call, then close without a response
         self.tools_after_guide = None
         self.reject_write = False
+        self.closed = 0  # HAMCP-437: owned sessions torn down
+        self.guide_result = None  # HAMCP-437: replaces the reviewed guide reply
+        self.setter_reply = None  # HAMCP-437: commit, then reply with setter_reply(args)
 
     def names(self):
         return [name for name, _ in self.calls]
@@ -135,33 +146,42 @@ class DashboardPeer:
                     if name in self.hang:
                         await anyio.sleep_forever()
                     if name == GETTER and args.get('list_only') is True:
-                        result = text_result({'success': True, 'action': 'list', 'count': 1,
-                                              'dashboards': [{'id': URL_PATH, 'url_path': URL_PATH,
-                                                              'mode': 'storage', 'title': 'Operations'}]})
+                        rows = [{'id': URL_PATH, 'url_path': URL_PATH, 'mode': 'storage',
+                                 'title': 'Operations'}]
+                        result = text_result(fill(ENVELOPES['list'], rows=rows, count=1))
                     elif name == GETTER:
-                        result = text_result({'success': True, 'action': 'get', 'url_path': args['url_path'],
-                                              'config': deepcopy(self.configuration),
-                                              'config_hash': upstream_config_hash(self.configuration)})
+                        config = deepcopy(self.configuration)
+                        result = text_result(fill(
+                            ENVELOPES['get_stored_config'], config=config,
+                            config_hash=compute_config_hash_91(config),
+                            config_size_bytes=len(json.dumps(config))) | {'url_path': args['url_path']})
                     elif name == GUIDE:
-                        guide = '# Dashboard guide\n' + KEY
                         # The reviewed guide declares an object output schema;
                         # the pinned SDK enforces it on the client side.
-                        result = {'content': [{'type': 'text', 'text': guide}],
-                                  'structuredContent': {'success': True, 'content': guide},
-                                  'isError': False}
+                        structured = fill(ENVELOPES['skill_guide_reference_file'])
+                        structured['content'] = ack_line(KEY) + '\n\n' + GUIDE_BYTES.decode('utf-8')
+                        result = {'content': [{'type': 'text', 'text': json.dumps(structured)}],
+                                  'structuredContent': structured, 'isError': False}
+                        if self.guide_result is not None:
+                            result = deepcopy(self.guide_result)
                         if self.tools_after_guide is not None:
                             self.tools = self.tools_after_guide
                     elif name == SETTER:
                         if self.reject_write:
-                            result = text_result({'success': False, 'error': 'synthetic rejection'},
-                                                 is_error=True)
+                            result = text_result(error_envelope(
+                                'VALIDATION_FAILED', 'synthetic rejection', action='set'), is_error=True)
                         else:
                             self.configuration = deepcopy(args['config'])
                             if name in self.drop:
                                 return
-                            result = text_result({'success': True, 'action': 'update',
-                                                  'url_path': args['url_path'], 'dashboard_created': False,
-                                                  'config_updated': True, 'metadata_updated': False})
+                            if self.setter_reply is not None:
+                                result = self.setter_reply(args)
+                                await outgoing.send(SessionMessage(types.JSONRPCMessage(
+                                    types.JSONRPCResponse(jsonrpc='2.0', id=request.id,
+                                                          result=result))))
+                                continue
+                            result = text_result(fill(ENVELOPES['set_update']) | {
+                                'url_path': args['url_path'], 'dashboard_id': args['url_path']})
                     else:
                         raise AssertionError('Unexpected synthetic dispatch')
                 else:
@@ -171,7 +191,9 @@ class DashboardPeer:
 
     @asynccontextmanager
     async def connect(self, unused, **kwargs):
-        assert unused == ''  # no endpoint supplied; external transport is replaced
+        # HAMCP-437: 9.x requires the strict full-catalog endpoint; the
+        # external transport is still replaced.
+        assert unused == STRICT_URL
         send_to_client, read = anyio.create_memory_object_stream(10)
         write, read_from_client = anyio.create_memory_object_stream(10)
         async with anyio.create_task_group() as group:
@@ -180,6 +202,7 @@ class DashboardPeer:
                 yield read, write, lambda: 'synthetic-session'
             finally:
                 group.cancel_scope.cancel()
+                self.closed += 1
 
 
 # HAMCP-177 R1 display fields for a proven unsent setter after saved intent.
@@ -207,7 +230,7 @@ class Harness(unittest.IsolatedAsyncioTestCase):
 
     def provider(self, peer):
         provider = UpstreamDashboardProvider()
-        provider._transport = McpDashboardTransport('', timeout_seconds=3,
+        provider._transport = McpDashboardTransport(STRICT_URL, timeout_seconds=3,
                                                     client_version='synthetic')
         self.enterContext(patch.object(mcp_client, 'streamablehttp_client', peer.connect))
         return provider
@@ -341,12 +364,12 @@ class DependencyScopedAdmission(Harness):
                 upstream_dashboard.ensure_dashboard_tool_allowed(name)
 
     def test_whole_catalog_validator_is_unchanged_and_no_longer_gates_dashboard_writes(self):
-        release = load_reviewed_upstream_release_registry().by_version['8.5.0']
+        release = load_reviewed_upstream_release_registry().by_version[CURRENT]
         provider = UpstreamDashboardProvider()
         for extras in ((), EXTRAS, (EXTRAS[0],)):
             tools = catalog(extras)
             result = validate_reviewed_release_catalog(
-                release, observed_server_name='ha-mcp', observed_upstream_version='8.5.0',
+                release, observed_server_name='ha-mcp', observed_upstream_version=CURRENT,
                 observed_protocol_version='2025-03-26', tools=tools)
             self.assertEqual(result.valid, not extras)
             authority = provider._dashboard_provider_authority(handshake(tools))
@@ -356,11 +379,11 @@ class DependencyScopedAdmission(Harness):
 
 class AdmissionRefusals(Harness):
     def assert_write_refuses(self, tools, category='reviewed_contract_mismatch', *,
-                             version='8.5.0', protocol='2025-03-26', expected=None):
+                             version=CURRENT, protocol='2025-03-26', expected=None):
         provider = UpstreamDashboardProvider()
         if expected is None:
             expected = provider._dashboard_provider_authority(
-                handshake(catalog(version='8.5.0')))['evidence_hash']
+                handshake(catalog(version=CURRENT)))['evidence_hash']
         with self.assertRaises(DashboardTransportError) as caught:
             provider._validate_write_handshake(
                 handshake(tools, version=version, protocol=protocol),
@@ -404,7 +427,7 @@ class AdmissionRefusals(Harness):
 
     def test_version_protocol_hold_and_revocation_refuse(self):
         registry = load_reviewed_upstream_release_registry()
-        release = registry.by_version['8.5.0']
+        release = registry.by_version[CURRENT]
         held = replace(registry, releases=tuple(
             replace(item, provider_dispositions=tuple(
                 (provider, 'held' if provider == 'dashboard' else state)
@@ -417,15 +440,18 @@ class AdmissionRefusals(Harness):
         with self.subTest(change='unreviewed version'), self.assertRaises(DashboardTransportError) as caught:
             provider._dashboard_provider_authority(handshake(catalog(EXTRAS), version='8.9.9'))
         self.assertEqual(caught.exception.category, 'upstream_version_mismatch')
-        with self.subTest(change='other reviewed version'):
+        # HAMCP-437: with one reviewed release, cross-release confusion is the
+        # reviewed version presenting another release's captured catalog, and
+        # a planned authority that this handshake does not reproduce.
+        with self.subTest(change='catalog of another release'):
             with self.assertRaises(DashboardTransportError) as caught:
-                provider._dashboard_provider_authority(handshake(catalog(EXTRAS), version='8.4.3'))
+                provider._dashboard_provider_authority(handshake(catalog(EXTRAS, version='8.4.3')))
             self.assertEqual(caught.exception.category, 'reviewed_contract_mismatch')
-        with self.subTest(change='authority from another version'):
+        with self.subTest(change='authority not reproduced'):
             with self.assertRaises(DashboardTransportError) as caught:
                 provider._validate_write_handshake(
-                    handshake(catalog(EXTRAS, version='8.6.0'), version='8.6.0'),
-                    expected_provider_authority_evidence_hash=expected)
+                    handshake(catalog(EXTRAS)),
+                    expected_provider_authority_evidence_hash='0' * 64)
             self.assertEqual(caught.exception.category, 'reviewed_contract_mismatch')
         with self.subTest(change='protocol'), self.assertRaises(DashboardTransportError):
             provider._validate_write_handshake(
@@ -433,7 +459,7 @@ class AdmissionRefusals(Harness):
                 expected_provider_authority_evidence_hash=expected)
         for change, value in (('hold', held), ('revocation', revoked)):
             with self.subTest(change=change):
-                changed = next(item for item in value.releases if item.version == '8.5.0')
+                changed = next(item for item in value.releases if item.version == CURRENT)
                 self.assertEqual((changed.provider_disposition('dashboard'), changed.revoked),
                                  ('held', False) if change == 'hold' else ('admitted', True))
                 with patch.object(upstream_dashboard, 'load_reviewed_upstream_release_registry',
@@ -536,7 +562,7 @@ class GovernedFlowRefusals(Harness):
             index = next(i for i, tool in enumerate(tools) if tool['name'] == name)
             changes[f'missing-{name}'] = {'tools': tools[:index] + tools[index + 1:]}
             changes[f'duplicate-{name}'] = {'tools': tools + [deepcopy(tools[index])]}
-        changes['other-reviewed-version'] = {'version': '8.4.3'}
+        changes['other-release-catalog'] = {'tools': catalog(EXTRAS, version='8.4.3')}
         changes['unreviewed-version'] = {'version': '8.9.9'}
         changes['protocol'] = {'protocol': '2024-11-05'}
         for label, change in changes.items():
@@ -550,7 +576,7 @@ class GovernedFlowRefusals(Harness):
 
     async def test_hold_or_revocation_after_planning_refuses_before_dispatch(self):
         registry = load_reviewed_upstream_release_registry()
-        release = registry.by_version['8.5.0']
+        release = registry.by_version[CURRENT]
         held = replace(registry, releases=tuple(
             replace(item, provider_dispositions=tuple(
                 (provider, 'held' if provider == 'dashboard' else state)
@@ -758,12 +784,59 @@ class ExistingSemanticsWith80Tools(Harness):
         self.assertEqual(peer.names().count(SETTER), 1)
         self.assert_no_call_fields_absent(service, result, 'plans', caught.exception.details)
 
+    async def test_committed_but_failed_response_never_retries(self):
+        # HAMCP-437: retired 8.5 guard on 9.2.0; the write lands, the reply says it failed.
+        peer = DashboardPeer(catalog(EXTRAS))
+        _p, service, runtime, created = await self.planned(peer)
+        peer.setter_reply = lambda args: text_result(error_envelope(
+            'VALIDATION_FAILED', 'synthetic committed failure', action='set'), is_error=True)
+        result = await service.apply(created['plan_id'], created['plan_hash'])
+        # Engineering's exact read-back, not the provider reply, decides the outcome.
+        self.assertEqual(result['task_state'], 'succeeded_verified', result)
+        diagnostics = self.diagnostics(self.child(runtime, result['task_id']))
+        self.assertTrue({'structured_provider_rejection_received', 'readback_only_recovery',
+                         'exact_readback_verified'} <= diagnostics, diagnostics)
+        self.assertEqual(peer.names().count(SETTER), 1)
+        self.assertIs(result['provider_dispatch_occurred'], True)
+        try:
+            await service.apply(created['plan_id'], created['plan_hash'])
+        except GovernanceError:
+            pass
+        self.assertEqual(peer.names().count(SETTER), 1)
+        self.balanced()
+
+    async def test_partial_acknowledgement_never_retries(self):
+        # HAMCP-437: retired 8.5 guard on 9.2.0; a reply without config_updated is not success.
+        peer = DashboardPeer(catalog(EXTRAS))
+        _p, service, runtime, created = await self.planned(peer)
+
+        def partial(args):
+            reply = fill(ENVELOPES['set_update']) | {'url_path': args['url_path'],
+                                                      'dashboard_id': args['url_path']}
+            reply.pop('config_updated')
+            return text_result(reply)
+        peer.setter_reply = partial
+        result = await service.apply(created['plan_id'], created['plan_hash'])
+        # Engineering's exact read-back, not the provider reply, decides the outcome.
+        self.assertEqual(result['task_state'], 'succeeded_verified', result)
+        diagnostics = self.diagnostics(self.child(runtime, result['task_id']))
+        self.assertTrue({'other_protocol_or_transport_failure', 'readback_only_recovery',
+                         'exact_readback_verified'} <= diagnostics, diagnostics)
+        self.assertEqual(peer.names().count(SETTER), 1)
+        self.assertIs(result['provider_dispatch_occurred'], True)
+        try:
+            await service.apply(created['plan_id'], created['plan_hash'])
+        except GovernanceError:
+            pass
+        self.assertEqual(peer.names().count(SETTER), 1)
+        self.balanced()
+
     async def test_transport_failure_after_the_setter_call_keeps_existing_fields(self):
         # Control: the setter request is sent and its exchange then fails;
         # nothing proves it was not sent, so no no-call field appears.
         peer = DashboardPeer(catalog(EXTRAS))
         provider, service, runtime, created = await self.planned(peer)
-        provider._transport = McpDashboardTransport('', timeout_seconds=0.5,
+        provider._transport = McpDashboardTransport(STRICT_URL, timeout_seconds=0.5,
                                                     client_version='synthetic')
         peer.hang.add(SETTER)
         result = await service.apply(created['plan_id'], created['plan_hash'])
@@ -940,6 +1013,10 @@ class TruthfulRefusal(Harness):
                 task.cancel()
                 with self.assertRaises(asyncio.CancelledError):
                     await task
+                # HAMCP-437 (from the retired 8.6 guide-wire case): no retry,
+                # and the owned session is closed.
+                self.assertEqual(peer.names().count(stage), 1)
+                self.assertGreaterEqual(peer.closed, 1)
                 self.balanced()
 
     async def test_cancelled_governed_setter_keeps_its_saved_intent_for_recovery(self):
@@ -966,3 +1043,87 @@ class TruthfulRefusal(Harness):
 
 if __name__ == '__main__':
     unittest.main()
+
+class GuideWire920(Harness):
+    """HAMCP-437: the retired 8.6 guide-wire guards on the 9.2.0 strict guide.
+
+    The caller cannot choose the guide read, and only a successful reply that
+    carries the rotating key yields one: no retry, no manufactured key.
+    """
+
+    async def key(self, peer):
+        provider = self.provider(peer)
+        authority = provider._dashboard_provider_authority(handshake(catalog()))['evidence_hash']
+        return await provider.best_practices_acknowledgement_key(
+            expected_provider_authority_evidence_hash=authority)
+
+    def guide_reply(self, text, *, is_error=False):
+        structured = fill(ENVELOPES['skill_guide_reference_file'])
+        structured['content'] = text
+        return {'content': [{'type': 'text', 'text': json.dumps(structured)}],
+                'structuredContent': structured, 'isError': is_error}
+
+    async def test_reviewed_guide_reply_yields_its_key_once(self):
+        peer = DashboardPeer(catalog(EXTRAS))
+        self.assertEqual(await self.key(peer), KEY)
+        # The fixed internal {skill, file} read is rewritten to the exact 9.2.0
+        # file-only descriptor; only the reviewed file is sent.
+        self.assertEqual(peer.calls, [(GUIDE, {'file': GUIDE_FILE})])
+        self.balanced()
+
+    async def test_caller_cannot_change_internal_file_or_arguments(self):
+        # Only the fixed internal pair is rewritten; even the upstream
+        # file-only shape is refused when a caller supplies it.
+        for arguments in ({'file': 'SKILL.md'}, {'file': GUIDE_FILE},
+                          {'skill': 'other', 'file': GUIDE_FILE}, {},
+                          {'skill': SKILL, 'file': '../dashboard-guide.md'},
+                          {'skill': SKILL, 'file': GUIDE_FILE, 'extra': True}):
+            with self.subTest(arguments=arguments):
+                peer = DashboardPeer(catalog(EXTRAS))
+                provider = self.provider(peer)
+                with self.assertRaises(DashboardTransportError) as caught:
+                    await provider._transport._run(
+                        tool_name=GUIDE, arguments=deepcopy(arguments),
+                        capability_validator=provider._validate_write_handshake)
+                self.assertEqual(caught.exception.category, 'prohibited_argument')
+                self.assertEqual(peer.calls, [])
+        self.balanced()
+
+    async def test_error_response_cannot_supply_a_key(self):
+        peer = DashboardPeer(catalog(EXTRAS))
+        peer.guide_result = self.guide_reply(ack_line(KEY), is_error=True)
+        with self.assertRaises(DashboardProviderError) as caught:
+            await self.key(peer)
+        self.assertEqual(caught.exception.details['failure_category'], 'upstream_error')
+        self.assertEqual(peer.names(), [GUIDE])
+        self.assertGreaterEqual(peer.closed, 1)
+        self.balanced()
+
+    async def test_missing_key_is_not_manufactured(self):
+        peer = DashboardPeer(catalog(EXTRAS))
+        peer.guide_result = self.guide_reply('Guide with no acknowledgement.')
+        with self.assertRaises(DashboardProviderError) as caught:
+            await self.key(peer)
+        self.assertEqual(caught.exception.details['failure_category'], 'invalid_response')
+        self.assertEqual(peer.names(), [GUIDE])
+        self.balanced()
+
+    async def test_oversized_response_remains_bounded(self):
+        peer = DashboardPeer(catalog(EXTRAS))
+        peer.guide_result = self.guide_reply(
+            ack_line(KEY) + 'x' * mcp_client.MAX_UPSTREAM_CONTENT_CHARS)
+        with self.assertRaises(DashboardProviderError) as caught:
+            await self.key(peer)
+        self.assertEqual(caught.exception.details['failure_category'], 'response_too_large')
+        self.assertEqual(peer.names(), [GUIDE])
+        self.balanced()
+
+    async def test_transport_timeout_has_no_retry_and_closes_session(self):
+        peer = DashboardPeer(catalog(EXTRAS))
+        peer.hang.add(GUIDE)
+        with self.assertRaises(DashboardProviderError) as caught:
+            await self.key(peer)
+        self.assertEqual(caught.exception.details['failure_category'], 'timeout')
+        self.assertEqual(peer.names(), [GUIDE])
+        self.assertGreaterEqual(peer.closed, 1)
+        self.balanced()

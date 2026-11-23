@@ -1,0 +1,13 @@
+{
+  "purpose": "The 8.5.0 control row for the HAMCP-371 SR live-replay lane's control_binding test (HAMCP-437 I2a-D, ANSWER 20261122-0005-01). The shipped registry holds only 9.2.0.",
+  "source_commit": "0f1adcb56b080c74ababfea84cf9892479a3b1cc",
+  "files": {
+    "upstream_release_registry.json": {
+      "source_path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_release_registry.json",
+      "generation": "the releases[] row with version 8.5.0 copied unchanged from <source_commit>; registry_format_version copied; default_version set to 8.5.0; written with json.dumps(indent=2) and a trailing newline",
+      "entry_id": "ha-mcp-v8.5.0-e1538bcd",
+      "sha256": "sha256:a8d7dc74e833837c2d57f4c7f27af8920cb7805f76dc13c6ac74fe919277ec8e"
+    }
+  },
+  "scope": "Registry row only. control_binding reads only the JSON releases[] rows, so the 8.5.0 policy file is not copied and the file is not loaded as a compiled registry."
+}

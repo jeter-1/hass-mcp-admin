@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import core_marketplace_read_local as lane
 import marketplace_read_contract_acceptance as acceptance
-from core_release_evidence import groups, manifest, passing_subset
+from core_release_evidence import EXTERNAL_DEPENDENCY, groups, manifest, passing_subset
 from ha_mcp_engineering.configuration import Settings
 from ha_mcp_engineering.marketplace_inventory import (
     HACS_LIST_COMMAND, MARKETPLACE_LIST_COMMAND, MarketplaceError)
@@ -585,7 +585,8 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
     async def run_acceptance(self, *, predecessor_available=False, reply_version="2026.11.0", fallback=False,
                              github_connected=False, install_success=True, installs=True, project=None,
                              inject=None, health_fallback_count=0, theme=acceptance.INSTALL_CANDIDATES[0],
-                             theme_id="200", configured=None, socket=False, stray=None):
+                             theme_id="200", configured=None, socket=False, stray=None, mode="local",
+                             stage="running", listed=True):
         # socket=True: RawCore.command is the real one, over a fake aiohttp session
         # (self.raw_events); otherwise RawCore.command itself is replaced.
         # inject=(n, written): the n-th reader call also admits (and, if written,
@@ -663,7 +664,7 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
             kind = payload["type"]
             raw_sent.append(kind)
             if kind == "marketplace/info":
-                answer = {"stage": "running"}
+                answer = {"stage": stage}
                 if github_connected is not ABSENT:
                     answer["github_connected"] = github_connected
                 return {"success": True, "result": answer}
@@ -679,6 +680,8 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
             if kind == MARKETPLACE_LIST_COMMAND:
                 if state["disabled"]:
                     return {"success": False, "error": {"code": "not_loaded"}}
+                if not listed:
+                    return {"success": True, "result": []}
                 return {"success": True, "result": store(state["installed"], theme=theme, theme_id=theme_id)}
             if kind == "config_entries/get":
                 return {"success": True, "result": [{"entry_id": "synthetic-entry"}]}
@@ -708,9 +711,10 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
                 patch.object(acceptance.MarketplaceReader, "read", new=read), \
                 transport, \
                 patch.object(acceptance.asyncio, "sleep", new=AsyncMock()), \
+                patch.object(acceptance, "transition", return_value=(refs, None)), \
                 patch.object(acceptance, "close_disposable_authority", new=AsyncMock()) as close:
             result = await acceptance.run(configured, {"version": "2026.11.0", "capabilities": refs},
-                                          Path(directory))
+                                          Path(directory), mode=mode)
         self.assertEqual(close.await_count, 2)
         return result, sent_frames
 
@@ -747,6 +751,39 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((canary["field"], canary["completeness"], canary["leaked"]),
                          ("description", "partial", False))
         self.assertIn("sanitized_text", canary["partial_reasons"])
+
+    async def test_a_store_that_never_fetches_is_a_retry_only_in_ci_mode(self):
+        # D6b: in CI mode the first store fetch timing out is the one code-owned
+        # external_dependency_unavailable signal, before any install. Local mode keeps
+        # its ordinary RuntimeError, so a local lane never reports a retry.
+        # Never running, or running while the first fetch lists no repository.
+        for stage, listed in (("starting", True), ("running", False)):
+            with self.subTest(stage=stage, listed=listed):
+                with self.assertRaises(acceptance.ExternalDependencyUnavailable) as caught:
+                    await self.run_acceptance(mode="ci", stage=stage, listed=listed)
+                self.assertEqual(caught.exception.args, (EXTERNAL_DEPENDENCY,))
+                self.assertEqual(type(caught.exception).__name__, "ExternalDependencyUnavailable")
+                self.assertFalse(set(acceptance.INSTALL_COMMANDS) & set(self.raw_sent))
+                with self.assertRaises(RuntimeError) as local:
+                    await self.run_acceptance(mode="local", stage=stage, listed=listed)
+                self.assertNotIsInstance(local.exception, acceptance.ExternalDependencyUnavailable)
+                self.assertEqual(str(local.exception), "Disposable Marketplace store did not finish its first fetch")
+                self.assertFalse(set(acceptance.INSTALL_COMMANDS) & set(self.raw_sent))
+
+    async def test_ci_install_failures_stay_ordinary_failures(self):
+        # Only the first fetch is the external dependency: a failed or missing install is
+        # the lane's own failure, never a retry, in CI mode too.
+        for kwargs, reason in (({"install_success": False}, "install_failed"),
+                               ({"installs": False}, "installed_record_missing")):
+            with self.subTest(reason=reason):
+                with self.assertRaises(acceptance.FixtureError) as caught:
+                    await self.run_acceptance(mode="ci", **kwargs)
+                self.assertEqual(caught.exception.reason, reason)
+                self.assertNotIsInstance(caught.exception, acceptance.ExternalDependencyUnavailable)
+
+    async def test_ci_mode_passes_through_the_proved_transition(self):
+        result, _ = await self.run_acceptance(mode="ci")
+        self.assertEqual(result["result"], "PASS")
 
     async def test_connected_github_account_refuses_before_install(self):
         with self.assertRaises(acceptance.FixtureError) as caught:

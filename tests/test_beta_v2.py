@@ -64,7 +64,6 @@ from ha_mcp_engineering.clients.mcp import (  # noqa: E402
     REQUIRED_DASHBOARD_TOOL,
 )
 from ha_mcp_engineering.clients.upstream_read import (  # noqa: E402
-    McpReadCatalog,
     McpReadResult,
 )
 from ha_mcp_engineering.providers.upstream_dashboard import (  # noqa: E402
@@ -76,6 +75,7 @@ from ha_mcp_engineering.governance.operational_lifecycle import (  # noqa: E402
     OperationalLifecycleGateway,
 )
 from ha_mcp_engineering.providers.operational_lifecycle import (  # noqa: E402
+    APP_READ_TOOL,
     ReviewedOperationalLifecycleProvider,
 )
 from ha_mcp_engineering.providers.supervisor_self import (  # noqa: E402
@@ -1690,24 +1690,24 @@ class BetaApplicationTests(unittest.TestCase):
         self.assertEqual(plan_read["properties"]["page_size"]["maximum"], 100)
 
     def test_missing_addon_proposal_audit_is_bounded_domain_outcome(self):
+        # HAMCP-437 I2a-D: the reviewed 9.2.0 catalog (the 7.14.2 row is
+        # retired); the empty inventory carries the structured envelope.
+        from tests.test_hamcp401_lifecycle_9_2_0 import catalog_920
+
+        inventory = {
+            "success": True,
+            "addons": [],
+            "summary": {
+                "total_installed": 0,
+                "running": 0,
+                "stopped": 0,
+                "updates_available": 0,
+            },
+        }
+
         class MissingAddonTransport:
             def __init__(self):
-                capture = json.loads(
-                    (
-                        ROOT
-                        / "docs"
-                        / "evidence"
-                        / "upstream-read-compatibility"
-                        / "ha-mcp-7.14.2.json"
-                    ).read_text(encoding="utf-8")
-                )
-                self.catalog = McpReadCatalog(
-                    protocol_version=capture["protocol_version"],
-                    server_name=capture["server_name"],
-                    server_version=capture["server_version"],
-                    tools=tuple(capture["tools"]),
-                    connection_latency_ms=1.0,
-                )
+                self.catalog = catalog_920()
                 self.calls = []
 
             async def discover(self):
@@ -1735,22 +1735,9 @@ class BetaApplicationTests(unittest.TestCase):
                     server_version=self.catalog.server_version,
                     call_result={
                         "content": [
-                            {
-                                "type": "text",
-                                "text": json.dumps(
-                                    {
-                                        "success": True,
-                                        "addons": [],
-                                        "summary": {
-                                            "total_installed": 0,
-                                            "running": 0,
-                                            "stopped": 0,
-                                            "updates_available": 0,
-                                        },
-                                    }
-                                ),
-                            }
+                            {"type": "text", "text": json.dumps(inventory)}
                         ],
+                        "structuredContent": copy.deepcopy(inventory),
                         "isError": False,
                     },
                     connection_latency_ms=1.0,
@@ -1871,7 +1858,7 @@ class BetaApplicationTests(unittest.TestCase):
             transport.calls,
             [
                 (
-                    "ha_get_addon",
+                    APP_READ_TOOL,
                     {"source": "installed", "include_stats": False},
                 )
             ],

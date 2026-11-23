@@ -1838,14 +1838,14 @@ async def serve_through_gateway(arguments, yaml_values=None, core_values=None, *
     return response.text, json.loads(response.json()["result"]["content"][0]["text"]), audit
 
 
-import test_hamcp162_yaml_admission as yaml_admission  # noqa: E402
+from support import ha_mcp_920_yaml as yaml920  # noqa: E402  (HAMCP-437)
 
 
-class DefinitionReaderPurposeTests(yaml_admission.Harness):
+class DefinitionReaderPurposeTests(yaml920.Harness):
     """The gateway's ``configuration_definitions`` YAML purpose: its own fixed paths only."""
 
     async def test_purpose_dispatches_only_its_paths(self):
-        for version in yaml_admission.VERSIONS:
+        for version in (yaml920.VERSION,):
             with self.subTest(version=version):
                 gateway, transport = await self.gateway(version)
                 audit = Mock()

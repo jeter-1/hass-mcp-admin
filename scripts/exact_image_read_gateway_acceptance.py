@@ -18,7 +18,7 @@ from pathlib import Path
 import sys
 import tempfile
 from types import MappingProxyType
-from typing import Any, Mapping, NamedTuple
+from typing import Any, NamedTuple
 from urllib.error import HTTPError
 from urllib.parse import urlsplit, urlunsplit
 from urllib.request import urlopen
@@ -30,6 +30,10 @@ from mcp.client.streamable_http import streamablehttp_client
 ROOT = Path(__file__).resolve().parents[1]
 BETA = ROOT / "hass_mcp_engineering_beta"
 sys.path.insert(0, str(BETA))
+if str(ROOT / "scripts") not in sys.path:
+    sys.path.insert(0, str(ROOT / "scripts"))
+
+from harness_send import harness_url  # noqa: E402
 
 from ha_mcp_engineering.tools import (  # noqa: E402
     ENGINEERING_STATIC_TOOL_COUNT,
@@ -98,297 +102,17 @@ from ha_mcp_engineering.request_context import current_request_id  # noqa: E402
 
 EXPECTED_ENGINEERING_BASELINE_COUNT = ENGINEERING_STATIC_TOOL_COUNT
 # HAMCP-319: the Engineering expectation is bound to the image under test,
-# selected by the image's self-reported get_server_health server.version. The
-# current source's expectation applies only to SERVER_VERSION. The side_by_side
-# rollback stage runs the previous published release (2.4.2-beta.7 since
-# HAMCP-377; PREVIOUS_RELEASE_* below). The 2.4.2-beta.6 expectation, which the
-# stage ran before HAMCP-377, stays reviewed: that release predates HAMCP-290
-# (no get_marketplace_inventory; ha_get_hacs_info still delegated, nothing
-# retired, core_withheld_read_count 0). Any other version fails closed.
-BETA6_ENGINEERING_VERSION = "2.4.2-beta.6"
-# Provenance: tag v2.4.2-beta.6, commit af5ec8375401276f910804843c2ddb9180533c77
-# (the published rollback image ghcr.io/jeter-1/hass-mcp-engineering-beta@sha256:
-# 9284290132d1d4f06195f5ee5bb27797238b86d8a250db13c6c78f2171059f6a). Derived by
-# `git archive af5ec837 hass_mcp_engineering_beta`, importing that tree's
-# ha_mcp_engineering.tools and listing registered_tools(get_registered_server())
-# (81 names; its ENGINEERING_STATIC_TOOL_COUNT is 81). That tree has no
-# RETIRED_DELEGATED_READS or retired_delegated_read disposition.
-BETA6_STATIC_TOOL_NAMES = frozenset(
-    {
-        "apply_change_plan",
-        "approve_change_plan",
-        "automation_reliability_analysis",
-        "call_service",
-        "cancel_execution_task",
-        "capture_automation_baseline",
-        "capture_automation_trace",
-        "change_impact_analysis",
-        "check_config",
-        "compare_automation_baselines",
-        "configuration_integrity_analysis",
-        "control_fan",
-        "control_helper",
-        "control_power",
-        "create_addon_restart_plan",
-        "create_backup_plan",
-        "create_change_plan",
-        "create_configuration_delete_plan",
-        "create_configuration_plan",
-        "create_dashboard_metadata_plan",
-        "create_dashboard_update_plan",
-        "create_entity_availability_exposure_plan",
-        "create_entity_metadata_plan",
-        "create_helper_options_plan",
-        "create_helper_state_plan",
-        "create_home_assistant_restart_plan",
-        "create_input_select_option_plan",
-        "create_label_plan",
-        "create_reload_plan",
-        "create_scene_configuration_plan",
-        "dashboard_integrity_analysis",
-        "delete_automation",
-        "entity_dependency_analysis",
-        "get_audit_log",
-        "get_automation_config",
-        "get_automation_trace",
-        "get_backup_inventory",
-        "get_blueprint",
-        "get_change_plan",
-        "get_configuration_definitions",
-        "get_core_log_history",
-        "get_dashboard_config",
-        "get_entity",
-        "get_error_log",
-        "get_execution_task",
-        "get_history",
-        "get_history_slices",
-        "get_incident_logs",
-        "get_integration_inspection",
-        "get_logbook",
-        "get_recorder_settings",
-        "get_script_trace",
-        "get_server_health",
-        "get_trace_snapshot",
-        "get_unregistered_entities",
-        "handoff_generation",
-        "incident_correlation",
-        "inspect_governance_record",
-        "list_areas",
-        "list_automation_traces",
-        "list_automations",
-        "list_blueprints",
-        "list_capabilities",
-        "list_change_plans",
-        "list_dashboards",
-        "list_devices",
-        "list_entity_registry",
-        "list_execution_tasks",
-        "list_script_traces",
-        "list_services",
-        "list_trace_snapshots",
-        "reload_domain",
-        "render_template",
-        "reverify_configuration_task",
-        "rollback_change",
-        "run_held_read_canary",
-        "search_entities",
-        "search_services",
-        "server_info",
-        "set_automation_trace_watch",
-        "upsert_automation",
-    }
-)
-BETA6_RETIRED_DELEGATED_READS: frozenset[str] = frozenset()
-# The beta.6 tree's own reviewed 8.5.0 delegated read routes (same derivation:
-# that tree's load_reviewed_upstream_release_registry().by_version["8.5.0"]).
-# Before HAMCP-377 the rollback stage ran beta.6, against 8.5.0 only. A beta.6
-# image against any other upstream version has no reviewed expectation and fails
-# closed. With nothing retired, beta.6's expected core_withheld_read_count is
-# len(retired) == 0.
-BETA6_DELEGATED_READS_BY_UPSTREAM_VERSION: Mapping[str, frozenset[str]] = (
-    MappingProxyType(
-        {
-            "8.5.0": frozenset(
-                {
-                "ha_config_get_automation",
-                "ha_config_get_calendar_events",
-                "ha_config_get_category",
-                "ha_config_get_label",
-                "ha_config_get_scene",
-                "ha_config_get_script",
-                "ha_config_list_dashboard_resources",
-                "ha_config_list_groups",
-                "ha_config_list_helpers",
-                "ha_eval_template",
-                "ha_get_app",
-                "ha_get_automation_traces",
-                "ha_get_blueprint",
-                "ha_get_device",
-                "ha_get_entity",
-                "ha_get_entity_exposure",
-                "ha_get_hacs_info",
-                "ha_get_history",
-                "ha_get_integration",
-                "ha_get_overview",
-                "ha_get_skill_guide",
-                "ha_get_state",
-                "ha_get_system_health",
-                "ha_get_todo",
-                "ha_get_zone",
-                "ha_list_floors_areas",
-                "ha_list_services",
-                "ha_search",
-                }
-            ),
-        }
-    )
-)
-
-# HAMCP-377: the release the rollback stage runs. The workflow's
-# ROLLBACK_ENGINEERING_VERSION is 2.4.2-beta.7 (ruling 32; it was 2.4.2-beta.6).
-# Provenance: tag v2.4.2-beta.7, commit b614be43f8c56ae06fdec0ac0bcb479b9da39715.
-# Derived the same way, from `git archive b614be43 hass_mcp_engineering_beta`:
-# 82 registered names (its ENGINEERING_STATIC_TOOL_COUNT is 82, with
-# get_marketplace_inventory) and RETIRED_DELEGATED_READS {"ha_get_hacs_info"}
-# (HAMCP-290), so its expected core_withheld_read_count is len(retired) == 1.
-PREVIOUS_RELEASE_ENGINEERING_VERSION = "2.4.2-beta.7"
-PREVIOUS_RELEASE_STATIC_TOOL_NAMES = frozenset(
-    {
-        "apply_change_plan",
-        "approve_change_plan",
-        "automation_reliability_analysis",
-        "call_service",
-        "cancel_execution_task",
-        "capture_automation_baseline",
-        "capture_automation_trace",
-        "change_impact_analysis",
-        "check_config",
-        "compare_automation_baselines",
-        "configuration_integrity_analysis",
-        "control_fan",
-        "control_helper",
-        "control_power",
-        "create_addon_restart_plan",
-        "create_backup_plan",
-        "create_change_plan",
-        "create_configuration_delete_plan",
-        "create_configuration_plan",
-        "create_dashboard_metadata_plan",
-        "create_dashboard_update_plan",
-        "create_entity_availability_exposure_plan",
-        "create_entity_metadata_plan",
-        "create_helper_options_plan",
-        "create_helper_state_plan",
-        "create_home_assistant_restart_plan",
-        "create_input_select_option_plan",
-        "create_label_plan",
-        "create_reload_plan",
-        "create_scene_configuration_plan",
-        "dashboard_integrity_analysis",
-        "delete_automation",
-        "entity_dependency_analysis",
-        "get_audit_log",
-        "get_automation_config",
-        "get_automation_trace",
-        "get_backup_inventory",
-        "get_blueprint",
-        "get_change_plan",
-        "get_configuration_definitions",
-        "get_core_log_history",
-        "get_dashboard_config",
-        "get_entity",
-        "get_error_log",
-        "get_execution_task",
-        "get_history",
-        "get_history_slices",
-        "get_incident_logs",
-        "get_integration_inspection",
-        "get_logbook",
-        "get_marketplace_inventory",
-        "get_recorder_settings",
-        "get_script_trace",
-        "get_server_health",
-        "get_trace_snapshot",
-        "get_unregistered_entities",
-        "handoff_generation",
-        "incident_correlation",
-        "inspect_governance_record",
-        "list_areas",
-        "list_automation_traces",
-        "list_automations",
-        "list_blueprints",
-        "list_capabilities",
-        "list_change_plans",
-        "list_dashboards",
-        "list_devices",
-        "list_entity_registry",
-        "list_execution_tasks",
-        "list_script_traces",
-        "list_services",
-        "list_trace_snapshots",
-        "reload_domain",
-        "render_template",
-        "reverify_configuration_task",
-        "rollback_change",
-        "run_held_read_canary",
-        "search_entities",
-        "search_services",
-        "server_info",
-        "set_automation_trace_watch",
-        "upsert_automation",
-    }
-)
-PREVIOUS_RELEASE_RETIRED_DELEGATED_READS: frozenset[str] = frozenset(
-    {"ha_get_hacs_info"}
-)
-# The reads that tree delegates for 8.5.0: its reviewed read routes less the
-# retired one (27). Any other upstream version has no reviewed expectation for
-# this release and fails closed.
-PREVIOUS_RELEASE_DELEGATED_READS_BY_UPSTREAM_VERSION: Mapping[str, frozenset[str]] = (
-    MappingProxyType(
-        {
-            "8.5.0": frozenset(
-                {
-                "ha_config_get_automation",
-                "ha_config_get_calendar_events",
-                "ha_config_get_category",
-                "ha_config_get_label",
-                "ha_config_get_scene",
-                "ha_config_get_script",
-                "ha_config_list_dashboard_resources",
-                "ha_config_list_groups",
-                "ha_config_list_helpers",
-                "ha_eval_template",
-                "ha_get_app",
-                "ha_get_automation_traces",
-                "ha_get_blueprint",
-                "ha_get_device",
-                "ha_get_entity",
-                "ha_get_entity_exposure",
-                "ha_get_history",
-                "ha_get_integration",
-                "ha_get_overview",
-                "ha_get_skill_guide",
-                "ha_get_state",
-                "ha_get_system_health",
-                "ha_get_todo",
-                "ha_get_zone",
-                "ha_list_floors_areas",
-                "ha_list_services",
-                "ha_search",
-                }
-            ),
-        }
-    )
-)
+# selected by the image's self-reported get_server_health server.version. Only
+# the current source's expectation (SERVER_VERSION) is reviewed; any other
+# version fails closed. HAMCP-437 (release 2.9.0) retired the 2.4.2-beta.6 and
+# 2.4.2-beta.7 expectations with the in-place rollback stage they served
+# (HAMCP-405).
 
 
 class EngineeringExpectation(NamedTuple):
     version: str
     static_names: frozenset[str]
     retired_upstream: frozenset[str]
-    # None: derived from the current reviewed policy (current source image).
-    delegated_reads_by_upstream_version: Mapping[str, frozenset[str]] | None = None
 
 
 def reported_engineering_version(health: dict[str, Any]) -> Any:
@@ -410,26 +134,6 @@ def engineering_expectation(
             frozenset(current_static_names),
             frozenset(RETIRED_DELEGATED_READS),
         )
-    if (
-        isinstance(reported_version, str)
-        and reported_version == BETA6_ENGINEERING_VERSION
-    ):
-        return EngineeringExpectation(
-            BETA6_ENGINEERING_VERSION,
-            BETA6_STATIC_TOOL_NAMES,
-            BETA6_RETIRED_DELEGATED_READS,
-            BETA6_DELEGATED_READS_BY_UPSTREAM_VERSION,
-        )
-    if (
-        isinstance(reported_version, str)
-        and reported_version == PREVIOUS_RELEASE_ENGINEERING_VERSION
-    ):
-        return EngineeringExpectation(
-            PREVIOUS_RELEASE_ENGINEERING_VERSION,
-            PREVIOUS_RELEASE_STATIC_TOOL_NAMES,
-            PREVIOUS_RELEASE_RETIRED_DELEGATED_READS,
-            PREVIOUS_RELEASE_DELEGATED_READS_BY_UPSTREAM_VERSION,
-        )
     raise AcceptanceFailure(
         "The Engineering image reported an unreviewed Engineering version.",
         diagnostics={
@@ -438,13 +142,7 @@ def engineering_expectation(
                 if isinstance(reported_version, str)
                 else type(reported_version).__name__
             ),
-            "reviewed_engineering_versions": sorted(
-                {
-                    SERVER_VERSION,
-                    BETA6_ENGINEERING_VERSION,
-                    PREVIOUS_RELEASE_ENGINEERING_VERSION,
-                }
-            ),
+            "reviewed_engineering_versions": [SERVER_VERSION],
         },
     )
 
@@ -1498,7 +1196,7 @@ def engineering_readiness(endpoint: str) -> dict[str, Any]:
     parts = urlsplit(endpoint)
     ready_url = urlunsplit((parts.scheme, parts.netloc, "/ready", "", ""))
     try:
-        with urlopen(ready_url, timeout=5) as response:  # noqa: S310 - fixed CI endpoint
+        with urlopen(harness_url(ready_url), timeout=5) as response:  # noqa: S310 - fixed CI endpoint
             status = response.status
             raw = response.read(1024)
     except HTTPError as exc:
@@ -1724,7 +1422,7 @@ def bounded_audit_outcome_diagnostics(
 
 
 def fixture_stats(url: str) -> dict[str, Any]:
-    with urlopen(url, timeout=5) as response:  # noqa: S310 - fixed CI fixture URL
+    with urlopen(harness_url(url), timeout=5) as response:  # noqa: S310 - fixed CI fixture URL
         return json.load(response)
 
 
@@ -1746,7 +1444,7 @@ async def inspect_upstream(
     expected_upstream_version: str,
 ) -> tuple[list[dict[str, Any]], str, dict[str, dict[str, Any]]]:
     error_envelopes: dict[str, dict[str, Any]] = {}
-    async with streamablehttp_client(endpoint) as (read, write, _session_id):
+    async with streamablehttp_client(harness_url(endpoint)) as (read, write, _session_id):
         async with ClientSession(read, write) as session:
             initialized = await session.initialize()
             require(initialized.serverInfo.name == "ha-mcp", "upstream name mismatch")
@@ -1838,6 +1536,7 @@ async def inspect_engineering(
     expected_upstream_version: str,
     policy: Any,
     release: Any,
+    reviewed_supported_versions: frozenset[str],
     optional_exposed: frozenset[str] = frozenset(),
     prohibited_optional: frozenset[str] = frozenset(),
     stock_wire: bool = True,
@@ -1858,7 +1557,7 @@ async def inspect_engineering(
             f"{EXPECTED_ENGINEERING_BASELINE_COUNT} tools"
         ),
     )
-    async with streamablehttp_client(endpoint) as (read, write, _session_id):
+    async with streamablehttp_client(harness_url(endpoint)) as (read, write, _session_id):
         async with ClientSession(read, write) as session:
             initialized = await session.initialize()
             require(
@@ -1897,31 +1596,9 @@ async def inspect_engineering(
             }
             # HAMCP-290: Engineering retired these reviewed reads (Josh, 2026-11-08);
             # the gateway withholds them on every release, never aliased, delegated
-            # or dispatched, whether or not a native route is registered. The retired
-            # set is the one of the image under test (empty for 2.4.2-beta.6,
-            # the HAMCP-290 set for 2.4.2-beta.7).
+            # or dispatched, whether or not a native route is registered.
             retired = retired_exposed_names(policy, expectation.retired_upstream)
             automatic -= retired
-            if expectation.delegated_reads_by_upstream_version is not None:
-                pinned_reads = expectation.delegated_reads_by_upstream_version.get(
-                    expected_upstream_version
-                )
-                if pinned_reads is None:
-                    raise AcceptanceFailure(
-                        "The Engineering image has no reviewed expectation for "
-                        "this upstream version.",
-                        diagnostics={
-                            "observed_engineering_version": expectation.version,
-                            "expected_upstream_version": str(
-                                expected_upstream_version
-                            )[:64],
-                        },
-                    )
-                require(
-                    automatic == pinned_reads,
-                    "the reviewed delegated read set differs from the "
-                    "Engineering image's own source",
-                )
             held = {
                 entry.exposed_name
                 for entry in policy.tools
@@ -2505,9 +2182,13 @@ async def inspect_engineering(
                 gateway_state.get("core_withheld_read_count") == len(retired),
                 "a retired delegated read was not withheld",
             )
+            # HAMCP-437 I2a-D: the diagnostics equal the shipped registry.
+            reported_versions = set(
+                gateway_state.get("reviewed_supported_versions") or ()
+            )
             require(
-                set(gateway_state.get("reviewed_supported_versions") or ())
-                >= {"7.14.1", "7.14.2"},
+                reported_versions == reviewed_supported_versions
+                and expected_upstream_version in reported_versions,
                 "compiled reviewed-version diagnostics are incomplete",
             )
             require(
@@ -2661,7 +2342,7 @@ async def inspect_operational_backup(
     )
     before = fixture_stats(fixture_stats_url)
     creates_before = len(before.get("operational_backup_creates") or [])
-    async with streamablehttp_client(engineering_endpoint) as (
+    async with streamablehttp_client(harness_url(engineering_endpoint)) as (
         read,
         write,
         _session_id,
@@ -3039,7 +2720,7 @@ async def inspect_approval_notification(
         "actions": [],
         "mode": "single",
     }
-    async with streamablehttp_client(engineering_endpoint) as (
+    async with streamablehttp_client(harness_url(engineering_endpoint)) as (
         read,
         write,
         _session_id,
@@ -3397,6 +3078,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         expected_upstream_version=args.expected_upstream_version,
         policy=policy,
         release=release,
+        reviewed_supported_versions=frozenset(registry.supported_versions),
         optional_exposed=optional_exposed,
         prohibited_optional=optional_on_wire - optional_exposed,
         stock_wire=not optional_on_wire,

@@ -115,7 +115,7 @@ are not expanded. The subsequent approved [script-call increment](SCRIPT_CALL_DE
 adds literal invocation edges and bounded transitive paths in this diagnostic
 partition, using registry storage-key mappings rather than treating service names
 as generic entity references. No script is run by analysis. The original
-[beta.1 acceptance](V2_4_0_BETA1_ACCEPTANCE.md) remains historical; the new contract
+beta.1 acceptance (`V2_4_0_BETA1_ACCEPTANCE.md`, deleted by HAMCP-437) remains historical; the new contract
 defines additional source/disposable and separately authorized installed checks.
 
 ### Scene, group and dashboard diagnostics — HAMCP-227 (2.4.1-beta.55)

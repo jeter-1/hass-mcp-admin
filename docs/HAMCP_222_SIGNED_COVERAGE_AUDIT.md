@@ -162,7 +162,7 @@ PR #297 is **merged** (merge `b8e6c36`, head `f204e16`, shipped inactive as
     unexpose on a disposable Core in each slot, with readback and cleanup;
   - receipts from the main full-tier CI run.
 - **Effort and risk:** S beyond the shared evidence work. Live canaries are
-  deferred until after the signing (`docs/V2_4_1_BETA31_ACCEPTANCE.md:185-188`).
+  deferred until after the signing (`docs/V2_4_1_BETA31_ACCEPTANCE.md:185-188`, deleted by HAMCP-437).
 
 ### 3.2 HAMCP-165: label create/update and device/area assignment
 

@@ -73,7 +73,8 @@ class TypedCoreContinuityTests(unittest.IsolatedAsyncioTestCase):
         self.raw = self.signer.journal_raw(envelopes=[*previous['envelopes'], envelope])
         self.assertTrue(await self.registry.refresh())
 
-    def operation(self, family='fan', provider_version='8.5.0', action='turn_on'):
+    # HAMCP-437: the reviewed provider is ha-mcp 9.2.0 (was 8.5.0).
+    def operation(self, family='fan', provider_version='9.2.0', action='turn_on'):
         if family == 'fan':
             transport = Transport()
             transport.catalog = PowerTransport(provider_version).catalog
@@ -105,7 +106,9 @@ class TypedCoreContinuityTests(unittest.IsolatedAsyncioTestCase):
             self.source.version = version
             await self.runtime()
             self.assertEqual(self.core.health_snapshot()['compatible_count'], 20)  # + HAMCP-311: typed entries sign all three typed profiles
-            for provider_version in ('8.4.3', '8.5.0'):
+            # HAMCP-437: 9.2.0 is the one reviewed provider; the retired 8.4.3
+            # and 8.5.0 subcases were admission of old releases.
+            for provider_version in ('9.2.0',):
                 for family in ('fan', 'light', 'switch'):
                     with self.subTest(core=version, provider=provider_version, family=family):
                         service, transport, request = self.operation(family, provider_version)

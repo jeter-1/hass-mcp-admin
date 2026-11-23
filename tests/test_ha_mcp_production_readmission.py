@@ -50,6 +50,10 @@ from ha_mcp_engineering.ha_mcp_readmission import (  # noqa: E402
     UpstreamSurface,
     classify_registry_refresh,
 )
+from ha_mcp_engineering.ha_mcp_readmission.ha_mcp import (  # noqa: E402
+    HaMcpAuthorityError,
+    HaMcpAuthoritySelector,
+)
 from ha_mcp_engineering.ha_mcp_readmission.registry import (  # noqa: E402
     MAX_CACHE_BYTES,
     MAX_DENIAL_JOURNALS,
@@ -94,6 +98,7 @@ from signed_registry_fixtures import (  # noqa: E402
     reviewed_entry,
     revocation,
 )
+from support import frozen_signed_reuse  # noqa: E402
 from support.automatic_readmission import (  # noqa: E402
     OfflineUpdateHarness as ReferenceHarness,
     ReferenceContractAdapter,
@@ -2574,10 +2579,18 @@ class _GatewayTransport:
 class SignedGatewayReadmissionTests(
     unittest.IsolatedAsyncioTestCase
 ):
+    """Dormant signed-reuse mechanism coverage until HAMCP-156/424 redesign.
+
+    HAMCP-437 I2a-D ruling 2: the shipped registry admits only 9.2.0, which
+    cannot be reused, so these tests run on the frozen 8.2.0 fixture
+    (tests/support/frozen_signed_reuse.py) injected through
+    ``release_registry=``. SignedReuseDormancyTests pins the shipped outcome.
+    """
+
     def setUp(self):
-        self.compiled = load_reviewed_upstream_release_registry()
+        self.compiled = frozen_signed_reuse.registry()
         self.release = self.compiled.by_version["8.2.0"]
-        self.capture = _capture_for_release(self.release)
+        self.capture = frozen_signed_reuse.capture(self.release)
         self.signer = RegistrySigner(key_id=TRUST_ANCHOR_KEY_ID)
         self.now = datetime(2026, 8, 27, 12, tzinfo=timezone.utc)
         self.temporary = tempfile.TemporaryDirectory()
@@ -2837,37 +2850,6 @@ class SignedGatewayReadmissionTests(
             second_snapshot = await gateway.initialize(server)
         self.assertEqual(second_snapshot["dynamically_exposed_count"], 25 - RETIRED_COUNT)  # HAMCP-290
         self.assertEqual(len(responses), 0)
-        self.assertEqual(transport.calls, 0)
-
-    async def test_disabled_registry_preserves_beta54_compiled_exact_behavior(self):
-        transport = _GatewayTransport(
-            self.capture["tools"],
-            version="8.2.0",
-        )
-        gateway = UpstreamReadGateway()
-        gateway.configure(
-            replace(
-                _settings(self.signer.public_key_base64),
-                ha_mcp_release_registry_enabled=False,
-                ha_mcp_release_registry_public_key="",
-            ),
-            transport=transport,
-            release_registry=self.compiled,
-        )
-        server = FastMCP("compiled-exact-feature-disabled")
-        snapshot = await gateway.initialize(server)
-        self.assertEqual(snapshot["dynamically_exposed_count"], 25 - RETIRED_COUNT)  # HAMCP-290
-        self.assertEqual(snapshot["held_tools"], ["ha_get_operation_status"])
-        self.assertNotIn(
-            "ha_get_operation_status",
-            gateway._registered_tool_registry.snapshot(),
-        )
-        self.assertNotIn("automatic_readmission", snapshot)
-        self.assertNotIn("automatic_readmission_registry", snapshot)
-        self.assertNotIn("readmission_authority_source", snapshot)
-        self.assertIsNone(gateway._readmission_selector)
-        self.assertIsNone(gateway._readmission_coordinator)
-        self.assertEqual(gateway.readmission_audit_snapshot(), ())
         self.assertEqual(transport.calls, 0)
 
     async def test_changed_signed_read_is_quarantined_but_siblings_return(self):
@@ -3150,103 +3132,6 @@ class SignedGatewayReadmissionTests(
                     expected,
                 )
                 self.assertEqual(transport.calls, 0)
-
-    async def test_signed_revocation_retires_existing_routes(self):
-        signed_revocation = {
-            "entry_id": self.release.entry_id,
-            "server_name": "ha-mcp",
-            "version": "8.2.0",
-            "image_index_digest": self.release.image_index_digest,
-            "revoked_at": (
-                self.now - timedelta(minutes=1)
-            ).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "reason": "Synthetic exact release revocation.",
-        }
-        _gateway, transport, snapshot = await self._initialize(
-            raw=self._raw(
-                entry=None,
-                revocations=[signed_revocation],
-            ),
-            version="8.2.0",
-        )
-        self.assertEqual(snapshot["dynamically_exposed_count"], 0)
-        self.assertEqual(
-            snapshot["automatic_readmission"]["surface"]["disposition"],
-            "quarantined",
-        )
-        self.assertEqual(transport.calls, 0)
-
-    async def test_verified_revocation_blocks_active_route_when_cache_fails(self):
-        first = self.signer.raw(
-            sequence=1,
-            generated_at=self.now - timedelta(minutes=2),
-            expires_at=self.now + timedelta(days=1),
-            entries=[],
-            revocations=[],
-        )
-        first_digest = RegistryEnvelope.from_bytes(first).content_digest
-        signed_revocation = {
-            "entry_id": self.release.entry_id,
-            "server_name": "ha-mcp",
-            "version": "8.2.0",
-            "image_index_digest": self.release.image_index_digest,
-            "revoked_at": (self.now - timedelta(minutes=1)).strftime(
-                "%Y-%m-%dT%H:%M:%SZ"
-            ),
-            "reason": "Synthetic exact release revocation.",
-        }
-        second = self.signer.raw(
-            sequence=2,
-            previous_registry_sha256=first_digest,
-            generated_at=self.now - timedelta(minutes=1),
-            expires_at=self.now + timedelta(days=1),
-            entries=[],
-            revocations=[signed_revocation],
-        )
-        responses = [
-            self.signer.journal_raw(envelopes=[first]),
-            self.signer.journal_raw(envelopes=[first, second]),
-        ]
-
-        async def fetcher(_url, _maximum):
-            return responses.pop(0)
-
-        registry = SignedReleaseRegistry(
-            enabled=True,
-            public_key=self.signer.public_key_base64,
-            cache_path=Path(self.temporary.name) / "revocation-cache.json",
-            fetcher=fetcher,
-            now=lambda: self.now,
-        )
-        transport = _GatewayTransport(
-            self.capture["tools"], version="8.2.0"
-        )
-        gateway = UpstreamReadGateway()
-        gateway.configure(
-            _settings(self.signer.public_key_base64),
-            transport=transport,
-            release_registry=self.compiled,
-            signed_release_registry=registry,
-        )
-        server = FastMCP("signed-revocation-cache-failure")
-        first_snapshot = await gateway.initialize(server)
-        self.assertEqual(first_snapshot["dynamically_exposed_count"], 25 - RETIRED_COUNT)  # HAMCP-290
-        old_tool = gateway._registered_tool_registry.snapshot()[
-            "ha_list_services"
-        ]
-        with patch.object(
-            registry,
-            "_write_cache",
-            side_effect=ReleaseRegistryOperationalError(
-                "registry_cache_write_failed"
-            ),
-        ):
-            self.assertFalse(await registry.refresh())
-        self.assertTrue(registry.authority().revoked("ha-mcp", "8.2.0"))
-        result = json.loads(await old_tool.run({}))
-        self.assertFalse(result["success"])
-        self.assertEqual(transport.calls, 0)
-        self.assertEqual(gateway._registered_tool_registry.snapshot(), {})
 
     async def test_revocation_source_capacity_retires_route_before_dispatch(self):
         version = "8.2.1"
@@ -3617,172 +3502,6 @@ class SignedGatewayReadmissionTests(
         )
         self.assertEqual(restarted_transport.calls, 0)
 
-    async def test_bootstrap_revocation_failure_never_publishes_provider_routes(self):
-        signed_revocation = {
-            "entry_id": self.release.entry_id,
-            "server_name": "ha-mcp",
-            "version": "8.2.0",
-            "image_index_digest": self.release.image_index_digest,
-            "revoked_at": (self.now - timedelta(minutes=1)).strftime(
-                "%Y-%m-%dT%H:%M:%SZ"
-            ),
-            "reason": "Synthetic exact release revocation.",
-        }
-        raw = self._raw(entry=None, revocations=[signed_revocation])
-        fetched = False
-
-        async def fetcher(_url, _maximum):
-            nonlocal fetched
-            fetched = True
-            return raw
-
-        original_temporary = tempfile.NamedTemporaryFile
-
-        def fail_candidate_storage(*args, **kwargs):
-            if fetched and ".pending." in kwargs.get("prefix", ""):
-                raise OSError("synthetic cache volume outage")
-            return original_temporary(*args, **kwargs)
-
-        cache = Path(self.temporary.name) / "bootstrap-denial.json"
-        registry = SignedReleaseRegistry(
-            enabled=True,
-            public_key=self.signer.public_key_base64,
-            cache_path=cache,
-            fetcher=fetcher,
-            now=lambda: self.now,
-        )
-        transport = _GatewayTransport(self.capture["tools"], version="8.2.0")
-        gateway = UpstreamReadGateway()
-        gateway.configure(
-            _settings(self.signer.public_key_base64),
-            transport=transport,
-            release_registry=self.compiled,
-            signed_release_registry=registry,
-        )
-        with patch(
-            "ha_mcp_engineering.ha_mcp_readmission.registry."
-            "tempfile.NamedTemporaryFile",
-            side_effect=fail_candidate_storage,
-        ):
-            snapshot = await gateway.initialize(
-                FastMCP("signed-bootstrap-denial")
-            )
-        self.assertEqual(snapshot["dynamically_exposed_count"], 0)
-        self.assertEqual(gateway._registered_tool_registry.snapshot(), {})
-        self.assertEqual(transport.calls, 0)
-
-        async def unavailable(_url, _maximum):
-            raise OSError("synthetic registry outage")
-
-        restarted_registry = SignedReleaseRegistry(
-            enabled=True,
-            public_key=self.signer.public_key_base64,
-            cache_path=cache,
-            fetcher=unavailable,
-            now=lambda: self.now,
-        )
-        restarted_transport = _GatewayTransport(
-            self.capture["tools"], version="8.2.0"
-        )
-        restarted_gateway = UpstreamReadGateway()
-        restarted_gateway.configure(
-            _settings(self.signer.public_key_base64),
-            transport=restarted_transport,
-            release_registry=self.compiled,
-            signed_release_registry=restarted_registry,
-        )
-        restarted_snapshot = await restarted_gateway.initialize(
-            FastMCP("signed-bootstrap-denial-restart")
-        )
-        self.assertEqual(
-            restarted_snapshot["dynamically_exposed_count"], 0
-        )
-        self.assertEqual(
-            restarted_gateway._registered_tool_registry.snapshot(), {}
-        )
-        self.assertEqual(restarted_transport.calls, 0)
-
-    async def test_missing_signed_cache_never_republishes_revoked_routes(self):
-        signed_revocation = {
-            "entry_id": self.release.entry_id,
-            "server_name": "ha-mcp",
-            "version": "8.2.0",
-            "image_index_digest": self.release.image_index_digest,
-            "revoked_at": (self.now - timedelta(minutes=1)).strftime(
-                "%Y-%m-%dT%H:%M:%SZ"
-            ),
-            "reason": "Synthetic exact release revocation.",
-        }
-        raw = self._raw(entry=None, revocations=[signed_revocation])
-        cache = Path(self.temporary.name) / "missing-main-cache.json"
-
-        async def fetcher(_url, _maximum):
-            return raw
-
-        registry = SignedReleaseRegistry(
-            enabled=True,
-            public_key=self.signer.public_key_base64,
-            cache_path=cache,
-            fetcher=fetcher,
-            now=lambda: self.now,
-        )
-        self.assertTrue(await registry.refresh())
-        self.assertTrue(cache.exists())
-        cache.unlink()
-
-        async def unavailable(_url, _maximum):
-            raise OSError("synthetic registry outage")
-
-        restarted_registry = SignedReleaseRegistry(
-            enabled=True,
-            public_key=self.signer.public_key_base64,
-            cache_path=cache,
-            fetcher=unavailable,
-            now=lambda: self.now,
-        )
-        transport = _GatewayTransport(self.capture["tools"], version="8.2.0")
-        gateway = UpstreamReadGateway()
-        gateway.configure(
-            _settings(self.signer.public_key_base64),
-            transport=transport,
-            release_registry=self.compiled,
-            signed_release_registry=restarted_registry,
-        )
-        snapshot = await gateway.initialize(
-            FastMCP("signed-missing-main-cache")
-        )
-        self.assertEqual(snapshot["dynamically_exposed_count"], 0)
-        self.assertEqual(gateway._registered_tool_registry.snapshot(), {})
-        self.assertEqual(transport.calls, 0)
-
-    async def test_initial_registry_outage_preserves_compiled_exact_routes(self):
-        async def unavailable(_url, _maximum):
-            raise OSError("synthetic registry outage")
-
-        cache = Path(self.temporary.name) / "initial-outage.json"
-        registry = SignedReleaseRegistry(
-            enabled=True,
-            public_key=self.signer.public_key_base64,
-            cache_path=cache,
-            fetcher=unavailable,
-            now=lambda: self.now,
-        )
-        transport = _GatewayTransport(self.capture["tools"], version="8.2.0")
-        gateway = UpstreamReadGateway()
-        gateway.configure(
-            _settings(self.signer.public_key_base64),
-            transport=transport,
-            release_registry=self.compiled,
-            signed_release_registry=registry,
-        )
-        snapshot = await gateway.initialize(
-            FastMCP("signed-initial-outage")
-        )
-        self.assertEqual(snapshot["dynamically_exposed_count"], 25 - RETIRED_COUNT)  # HAMCP-290
-        self.assertFalse(registry.authority().surface_denied)
-        self.assertTrue(registry._lifecycle_witness_path().exists())
-        self.assertEqual(transport.calls, 0)
-
     async def test_stale_pending_never_republishes_provider_routes(self):
         version = "8.2.1"
         entry = _signed_entry_for(self.release, version=version)
@@ -4072,79 +3791,6 @@ class SignedGatewayReadmissionTests(
         self.assertEqual(
             len(gateway._registered_tool_registry.snapshot()), 25 - RETIRED_COUNT  # HAMCP-290
         )
-        self.assertEqual(transport.calls, 0)
-
-    async def test_corrupt_retained_cache_denies_compiled_exact_on_restart(self):
-        signed_revocation = {
-            "entry_id": self.release.entry_id,
-            "server_name": "ha-mcp",
-            "version": "8.2.0",
-            "image_index_digest": self.release.image_index_digest,
-            "revoked_at": (self.now - timedelta(minutes=1)).strftime(
-                "%Y-%m-%dT%H:%M:%SZ"
-            ),
-            "reason": "Synthetic exact release revocation.",
-        }
-        cache = Path(self.temporary.name) / "corrupt-revocation-cache.json"
-        valid = SignedReleaseRegistry(
-            enabled=True,
-            public_key=self.signer.public_key_base64,
-            cache_path=cache,
-            fetcher=lambda _url, _maximum: None,
-            now=lambda: self.now,
-        )
-
-        async def valid_fetcher(_url, _maximum):
-            return self._raw(entry=None, revocations=[signed_revocation])
-
-        valid._fetcher = valid_fetcher
-        self.assertTrue(await valid.refresh())
-        cache.write_bytes(b'{"schema_version":2,"accepted_registry":')
-
-        async def unavailable(_url, _maximum):
-            raise OSError("synthetic registry outage")
-
-        restarted = SignedReleaseRegistry(
-            enabled=True,
-            public_key=self.signer.public_key_base64,
-            cache_path=cache,
-            fetcher=unavailable,
-            now=lambda: self.now,
-        )
-        transport = _GatewayTransport(
-            self.capture["tools"], version="8.2.0"
-        )
-        gateway = UpstreamReadGateway()
-        gateway.configure(
-            _settings(self.signer.public_key_base64),
-            transport=transport,
-            release_registry=self.compiled,
-            signed_release_registry=restarted,
-        )
-        snapshot = await gateway.initialize(
-            FastMCP("corrupt-cache-denies-compiled-exact")
-        )
-        self.assertEqual(snapshot["dynamically_exposed_count"], 0)
-        self.assertTrue(
-            snapshot["automatic_readmission_registry"]["surface_denied"]
-        )
-        self.assertEqual(
-            snapshot["last_discovery_failure_category"],
-            "upstream_version_mismatch",
-        )
-        self.assertNotEqual(
-            snapshot["last_discovery_failure_category"],
-            "internal_error",
-        )
-        self.assertEqual(transport.calls, 0)
-
-    async def test_transport_restoration_has_no_unsigned_authority(self):
-        _gateway, transport, snapshot = await self._initialize(
-            raw=self._raw(entry=None),
-            version="8.2.1",
-        )
-        self.assertEqual(snapshot["dynamically_exposed_count"], 0)
-        self.assertEqual(snapshot["fallback_count"], 0)
         self.assertEqual(transport.calls, 0)
 
     async def test_unexpired_signed_cache_survives_restart_fetch_failure(self):
@@ -4449,6 +4095,507 @@ class SignedGatewayReadmissionTests(
             "8.2.0",
             json.dumps(compiled_telemetry.audit_context, sort_keys=True),
         )
+
+
+
+class HaMcp920SignedReuseTests(unittest.IsolatedAsyncioTestCase):
+    """HAMCP-437: 9.2.0 binds mixed read routes, so a signed entry never reuses
+    its policy for another version; the compiled 9.2.0 exact route still admits."""
+
+    _raw = SignedGatewayReadmissionTests._raw
+    _registry = SignedGatewayReadmissionTests._registry
+    _initialize = SignedGatewayReadmissionTests._initialize
+
+    def setUp(self):
+        self.compiled = load_reviewed_upstream_release_registry()
+        self.release = self.compiled.by_version["9.2.0"]
+        self.capture = _capture_for_release(self.release)
+        self.signer = RegistrySigner(key_id=TRUST_ANCHOR_KEY_ID)
+        self.now = datetime(2026, 11, 19, 12, tzinfo=timezone.utc)
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.automatic = sum(
+            1
+            for item in self.release.policy.tools
+            if item.classification == "automatic_read" or item.is_read_route
+        )
+
+    def test_release_binds_mixed_read_routes(self):
+        self.assertTrue(
+            any(
+                item.is_read_route
+                and item.classification != "automatic_read"
+                for item in self.release.policy.tools
+            )
+        )
+
+    async def test_compiled_exact_release_admits_its_reads(self):
+        entry = _signed_entry_for(self.release, version="9.2.1")
+        gateway, _transport, snapshot = await self._initialize(
+            raw=self._raw(entry=entry), version="9.2.0"
+        )
+        self.assertEqual(snapshot["admission_status"], "admitted_exact")
+        self.assertEqual(
+            snapshot["readmission_authority_source"], "compiled_exact"
+        )
+        self.assertGreater(self.automatic, 0)
+        self.assertEqual(snapshot["dynamically_exposed_count"], self.automatic)
+        self.assertTrue(gateway._exposed)
+
+    async def test_signed_entry_for_other_version_fails_closed(self):
+        entry = _signed_entry_for(self.release, version="9.2.1")
+        gateway, transport, snapshot = await self._initialize(
+            raw=self._raw(entry=entry), version="9.2.1"
+        )
+        self.assertEqual(
+            snapshot["admission_status"], "blocked_incompatible_upstream"
+        )
+        self.assertEqual(snapshot["version_status"], "rejected_unreviewed")
+        self.assertEqual(snapshot["dynamically_exposed_count"], 0)
+        self.assertFalse(snapshot["admission_complete"])
+        self.assertEqual(gateway._exposed, {})
+        self.assertEqual(transport.calls, 0)
+
+
+class CompiledExact920SignedRegistryTests(unittest.IsolatedAsyncioTestCase):
+    """HAMCP-437 I2a-D ruling 2: the shipped 9.2.0 compiled row under signed
+    revocation, registry outage or a disabled registry (re-pinned from 8.2.0)."""
+
+    _raw = SignedGatewayReadmissionTests._raw
+    _registry = SignedGatewayReadmissionTests._registry
+    _initialize = SignedGatewayReadmissionTests._initialize
+    setUp = HaMcp920SignedReuseTests.setUp
+
+    async def test_disabled_registry_preserves_compiled_exact_behavior(self):
+        transport = _GatewayTransport(
+            self.capture["tools"],
+            version="9.2.0",
+        )
+        gateway = UpstreamReadGateway()
+        gateway.configure(
+            replace(
+                _settings(self.signer.public_key_base64),
+                ha_mcp_release_registry_enabled=False,
+                ha_mcp_release_registry_public_key="",
+            ),
+            transport=transport,
+            release_registry=self.compiled,
+        )
+        server = FastMCP("compiled-exact-feature-disabled")
+        snapshot = await gateway.initialize(server)
+        # 9.2.0 policy: 27 automatic or read-route entries, one held tool.
+        self.assertEqual(self.automatic, 27)
+        self.assertEqual(snapshot["dynamically_exposed_count"], self.automatic)
+        self.assertEqual(snapshot["held_tools"], ["ha_get_operation_status"])
+        self.assertNotIn(
+            "ha_get_operation_status",
+            gateway._registered_tool_registry.snapshot(),
+        )
+        self.assertNotIn("automatic_readmission", snapshot)
+        self.assertNotIn("automatic_readmission_registry", snapshot)
+        self.assertNotIn("readmission_authority_source", snapshot)
+        self.assertIsNone(gateway._readmission_selector)
+        self.assertIsNone(gateway._readmission_coordinator)
+        self.assertEqual(gateway.readmission_audit_snapshot(), ())
+        self.assertEqual(transport.calls, 0)
+
+    async def test_signed_revocation_retires_existing_routes(self):
+        signed_revocation = {
+            "entry_id": self.release.entry_id,
+            "server_name": "ha-mcp",
+            "version": "9.2.0",
+            "image_index_digest": self.release.image_index_digest,
+            "revoked_at": (
+                self.now - timedelta(minutes=1)
+            ).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "reason": "Synthetic exact release revocation.",
+        }
+        _gateway, transport, snapshot = await self._initialize(
+            raw=self._raw(
+                entry=None,
+                revocations=[signed_revocation],
+            ),
+            version="9.2.0",
+        )
+        self.assertEqual(snapshot["dynamically_exposed_count"], 0)
+        self.assertEqual(
+            snapshot["automatic_readmission"]["surface"]["disposition"],
+            "quarantined",
+        )
+        self.assertEqual(transport.calls, 0)
+
+    async def test_verified_revocation_blocks_active_route_when_cache_fails(self):
+        first = self.signer.raw(
+            sequence=1,
+            generated_at=self.now - timedelta(minutes=2),
+            expires_at=self.now + timedelta(days=1),
+            entries=[],
+            revocations=[],
+        )
+        first_digest = RegistryEnvelope.from_bytes(first).content_digest
+        signed_revocation = {
+            "entry_id": self.release.entry_id,
+            "server_name": "ha-mcp",
+            "version": "9.2.0",
+            "image_index_digest": self.release.image_index_digest,
+            "revoked_at": (self.now - timedelta(minutes=1)).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            ),
+            "reason": "Synthetic exact release revocation.",
+        }
+        second = self.signer.raw(
+            sequence=2,
+            previous_registry_sha256=first_digest,
+            generated_at=self.now - timedelta(minutes=1),
+            expires_at=self.now + timedelta(days=1),
+            entries=[],
+            revocations=[signed_revocation],
+        )
+        responses = [
+            self.signer.journal_raw(envelopes=[first]),
+            self.signer.journal_raw(envelopes=[first, second]),
+        ]
+
+        async def fetcher(_url, _maximum):
+            return responses.pop(0)
+
+        registry = SignedReleaseRegistry(
+            enabled=True,
+            public_key=self.signer.public_key_base64,
+            cache_path=Path(self.temporary.name) / "revocation-cache.json",
+            fetcher=fetcher,
+            now=lambda: self.now,
+        )
+        transport = _GatewayTransport(
+            self.capture["tools"], version="9.2.0"
+        )
+        gateway = UpstreamReadGateway()
+        gateway.configure(
+            _settings(self.signer.public_key_base64),
+            transport=transport,
+            release_registry=self.compiled,
+            signed_release_registry=registry,
+        )
+        server = FastMCP("signed-revocation-cache-failure")
+        first_snapshot = await gateway.initialize(server)
+        self.assertEqual(first_snapshot["dynamically_exposed_count"], self.automatic)
+        old_tool = gateway._registered_tool_registry.snapshot()[
+            "ha_list_services"
+        ]
+        with patch.object(
+            registry,
+            "_write_cache",
+            side_effect=ReleaseRegistryOperationalError(
+                "registry_cache_write_failed"
+            ),
+        ):
+            self.assertFalse(await registry.refresh())
+        self.assertTrue(registry.authority().revoked("ha-mcp", "9.2.0"))
+        result = json.loads(await old_tool.run({}))
+        self.assertFalse(result["success"])
+        self.assertEqual(transport.calls, 0)
+        self.assertEqual(gateway._registered_tool_registry.snapshot(), {})
+
+    async def test_bootstrap_revocation_failure_never_publishes_provider_routes(self):
+        signed_revocation = {
+            "entry_id": self.release.entry_id,
+            "server_name": "ha-mcp",
+            "version": "9.2.0",
+            "image_index_digest": self.release.image_index_digest,
+            "revoked_at": (self.now - timedelta(minutes=1)).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            ),
+            "reason": "Synthetic exact release revocation.",
+        }
+        raw = self._raw(entry=None, revocations=[signed_revocation])
+        fetched = False
+
+        async def fetcher(_url, _maximum):
+            nonlocal fetched
+            fetched = True
+            return raw
+
+        original_temporary = tempfile.NamedTemporaryFile
+
+        def fail_candidate_storage(*args, **kwargs):
+            if fetched and ".pending." in kwargs.get("prefix", ""):
+                raise OSError("synthetic cache volume outage")
+            return original_temporary(*args, **kwargs)
+
+        cache = Path(self.temporary.name) / "bootstrap-denial.json"
+        registry = SignedReleaseRegistry(
+            enabled=True,
+            public_key=self.signer.public_key_base64,
+            cache_path=cache,
+            fetcher=fetcher,
+            now=lambda: self.now,
+        )
+        transport = _GatewayTransport(self.capture["tools"], version="9.2.0")
+        gateway = UpstreamReadGateway()
+        gateway.configure(
+            _settings(self.signer.public_key_base64),
+            transport=transport,
+            release_registry=self.compiled,
+            signed_release_registry=registry,
+        )
+        with patch(
+            "ha_mcp_engineering.ha_mcp_readmission.registry."
+            "tempfile.NamedTemporaryFile",
+            side_effect=fail_candidate_storage,
+        ):
+            snapshot = await gateway.initialize(
+                FastMCP("signed-bootstrap-denial")
+            )
+        self.assertEqual(snapshot["dynamically_exposed_count"], 0)
+        self.assertEqual(gateway._registered_tool_registry.snapshot(), {})
+        self.assertEqual(transport.calls, 0)
+
+        async def unavailable(_url, _maximum):
+            raise OSError("synthetic registry outage")
+
+        restarted_registry = SignedReleaseRegistry(
+            enabled=True,
+            public_key=self.signer.public_key_base64,
+            cache_path=cache,
+            fetcher=unavailable,
+            now=lambda: self.now,
+        )
+        restarted_transport = _GatewayTransport(
+            self.capture["tools"], version="9.2.0"
+        )
+        restarted_gateway = UpstreamReadGateway()
+        restarted_gateway.configure(
+            _settings(self.signer.public_key_base64),
+            transport=restarted_transport,
+            release_registry=self.compiled,
+            signed_release_registry=restarted_registry,
+        )
+        restarted_snapshot = await restarted_gateway.initialize(
+            FastMCP("signed-bootstrap-denial-restart")
+        )
+        self.assertEqual(
+            restarted_snapshot["dynamically_exposed_count"], 0
+        )
+        self.assertEqual(
+            restarted_gateway._registered_tool_registry.snapshot(), {}
+        )
+        self.assertEqual(restarted_transport.calls, 0)
+
+    async def test_missing_signed_cache_never_republishes_revoked_routes(self):
+        signed_revocation = {
+            "entry_id": self.release.entry_id,
+            "server_name": "ha-mcp",
+            "version": "9.2.0",
+            "image_index_digest": self.release.image_index_digest,
+            "revoked_at": (self.now - timedelta(minutes=1)).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            ),
+            "reason": "Synthetic exact release revocation.",
+        }
+        raw = self._raw(entry=None, revocations=[signed_revocation])
+        cache = Path(self.temporary.name) / "missing-main-cache.json"
+
+        async def fetcher(_url, _maximum):
+            return raw
+
+        registry = SignedReleaseRegistry(
+            enabled=True,
+            public_key=self.signer.public_key_base64,
+            cache_path=cache,
+            fetcher=fetcher,
+            now=lambda: self.now,
+        )
+        self.assertTrue(await registry.refresh())
+        self.assertTrue(cache.exists())
+        cache.unlink()
+
+        async def unavailable(_url, _maximum):
+            raise OSError("synthetic registry outage")
+
+        restarted_registry = SignedReleaseRegistry(
+            enabled=True,
+            public_key=self.signer.public_key_base64,
+            cache_path=cache,
+            fetcher=unavailable,
+            now=lambda: self.now,
+        )
+        transport = _GatewayTransport(self.capture["tools"], version="9.2.0")
+        gateway = UpstreamReadGateway()
+        gateway.configure(
+            _settings(self.signer.public_key_base64),
+            transport=transport,
+            release_registry=self.compiled,
+            signed_release_registry=restarted_registry,
+        )
+        snapshot = await gateway.initialize(
+            FastMCP("signed-missing-main-cache")
+        )
+        self.assertEqual(snapshot["dynamically_exposed_count"], 0)
+        self.assertEqual(gateway._registered_tool_registry.snapshot(), {})
+        self.assertEqual(transport.calls, 0)
+
+    async def test_initial_registry_outage_preserves_compiled_exact_routes(self):
+        async def unavailable(_url, _maximum):
+            raise OSError("synthetic registry outage")
+
+        cache = Path(self.temporary.name) / "initial-outage.json"
+        registry = SignedReleaseRegistry(
+            enabled=True,
+            public_key=self.signer.public_key_base64,
+            cache_path=cache,
+            fetcher=unavailable,
+            now=lambda: self.now,
+        )
+        transport = _GatewayTransport(self.capture["tools"], version="9.2.0")
+        gateway = UpstreamReadGateway()
+        gateway.configure(
+            _settings(self.signer.public_key_base64),
+            transport=transport,
+            release_registry=self.compiled,
+            signed_release_registry=registry,
+        )
+        snapshot = await gateway.initialize(
+            FastMCP("signed-initial-outage")
+        )
+        self.assertEqual(snapshot["dynamically_exposed_count"], self.automatic)
+        self.assertFalse(registry.authority().surface_denied)
+        self.assertTrue(registry._lifecycle_witness_path().exists())
+        self.assertEqual(transport.calls, 0)
+
+    async def test_corrupt_retained_cache_denies_compiled_exact_on_restart(self):
+        signed_revocation = {
+            "entry_id": self.release.entry_id,
+            "server_name": "ha-mcp",
+            "version": "9.2.0",
+            "image_index_digest": self.release.image_index_digest,
+            "revoked_at": (self.now - timedelta(minutes=1)).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            ),
+            "reason": "Synthetic exact release revocation.",
+        }
+        cache = Path(self.temporary.name) / "corrupt-revocation-cache.json"
+        valid = SignedReleaseRegistry(
+            enabled=True,
+            public_key=self.signer.public_key_base64,
+            cache_path=cache,
+            fetcher=lambda _url, _maximum: None,
+            now=lambda: self.now,
+        )
+
+        async def valid_fetcher(_url, _maximum):
+            return self._raw(entry=None, revocations=[signed_revocation])
+
+        valid._fetcher = valid_fetcher
+        self.assertTrue(await valid.refresh())
+        cache.write_bytes(b'{"schema_version":2,"accepted_registry":')
+
+        async def unavailable(_url, _maximum):
+            raise OSError("synthetic registry outage")
+
+        restarted = SignedReleaseRegistry(
+            enabled=True,
+            public_key=self.signer.public_key_base64,
+            cache_path=cache,
+            fetcher=unavailable,
+            now=lambda: self.now,
+        )
+        transport = _GatewayTransport(
+            self.capture["tools"], version="9.2.0"
+        )
+        gateway = UpstreamReadGateway()
+        gateway.configure(
+            _settings(self.signer.public_key_base64),
+            transport=transport,
+            release_registry=self.compiled,
+            signed_release_registry=restarted,
+        )
+        snapshot = await gateway.initialize(
+            FastMCP("corrupt-cache-denies-compiled-exact")
+        )
+        self.assertEqual(snapshot["dynamically_exposed_count"], 0)
+        self.assertTrue(
+            snapshot["automatic_readmission_registry"]["surface_denied"]
+        )
+        self.assertEqual(
+            snapshot["last_discovery_failure_category"],
+            "upstream_version_mismatch",
+        )
+        self.assertNotEqual(
+            snapshot["last_discovery_failure_category"],
+            "internal_error",
+        )
+        self.assertEqual(transport.calls, 0)
+
+    async def test_transport_restoration_has_no_unsigned_authority(self):
+        _gateway, transport, snapshot = await self._initialize(
+            raw=self._raw(entry=None),
+            version="9.2.1",
+        )
+        self.assertEqual(snapshot["dynamically_exposed_count"], 0)
+        self.assertEqual(snapshot["fallback_count"], 0)
+        self.assertEqual(transport.calls, 0)
+
+
+class SignedReuseDormancyTests(unittest.IsolatedAsyncioTestCase):
+    """HAMCP-437 I2a-D ruling 2: on the shipped compiled registry no signed
+    entry gains positive authority, whatever version it names."""
+
+    _raw = SignedGatewayReadmissionTests._raw
+    _registry = SignedGatewayReadmissionTests._registry
+
+    def setUp(self):
+        self.shipped = load_reviewed_upstream_release_registry()
+        self.frozen = frozen_signed_reuse.registry()
+        self.signer = RegistrySigner(key_id=TRUST_ANCHOR_KEY_ID)
+        self.now = datetime(2026, 11, 22, 12, tzinfo=timezone.utc)
+
+    async def _select(self, compiled, entry):
+        # A fresh cache per selection: every journal here is sequence 1.
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        registry = self._registry(self._raw(entry=entry))
+        self.assertTrue(await registry.refresh())
+        selector = HaMcpAuthoritySelector(compiled, registry)
+        return selector.select(
+            server_name="ha-mcp",
+            version=entry["version"],
+            protocol_version=entry["allowed_protocol_versions"][0],
+            evaluated_at=self.now,
+        )
+
+    async def test_signed_entry_for_any_version_lacks_positive_authority(self):
+        self.assertEqual(list(self.shipped.by_version), ["9.2.0"])
+        shipped_920 = self.shipped.by_version["9.2.0"]
+        frozen_820 = self.frozen.by_version["8.2.0"]
+        cases = (
+            # The shipped 9.2.0 policy binds mixed read routes, so no reuse.
+            (shipped_920, "9.2.1"),
+            (shipped_920, "9.3.0"),
+            (shipped_920, "8.2.1"),
+            # A retired release's policy binding is not in the shipped registry.
+            (frozen_820, "8.2.0"),
+            (frozen_820, "8.2.1"),
+        )
+        for release, version in cases:
+            with self.subTest(policy=release.version, version=version):
+                entry = _signed_entry_for(release, version=version)
+                with self.assertRaises(HaMcpAuthorityError) as raised:
+                    await self._select(self.shipped, entry)
+                self.assertEqual(
+                    str(raised.exception), "positive_authority_missing"
+                )
+
+    async def test_frozen_fixture_still_reaches_positive_reuse(self):
+        # Control: the same 8.2.1 entry gains signed authority only when the
+        # frozen 8.2.0 row is the compiled registry.
+        entry = _signed_entry_for(
+            self.frozen.by_version["8.2.0"], version="8.2.1"
+        )
+        selection = await self._select(self.frozen, entry)
+        self.assertIs(
+            selection.authority_source, AuthoritySource.SIGNED_REGISTRY
+        )
+        self.assertEqual(selection.observed_version, "8.2.1")
 
 
 if __name__ == "__main__":

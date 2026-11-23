@@ -3,7 +3,7 @@
 Status: implementation notes for the `2.4.1-beta.30` Engineering pull request.
 These notes describe source behavior at exact pins and the reviewed read
 contract. They are not deployment evidence; the live check is in
-[`V2_4_1_BETA30_ACCEPTANCE.md`](V2_4_1_BETA30_ACCEPTANCE.md).
+`V2_4_1_BETA30_ACCEPTANCE.md` (deleted by HAMCP-437).
 
 ## Scope
 

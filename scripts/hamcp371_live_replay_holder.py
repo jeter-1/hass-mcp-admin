@@ -34,10 +34,12 @@ import sys
 import threading
 import time
 from typing import Any
+from urllib.parse import urlsplit
 
 SCRIPTS = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPTS))
 import core_read_replay_calls as calls  # noqa: E402
+from harness_send import HarnessRouteError, harness_url  # noqa: E402
 
 RECORD_FORMAT_VERSION = 1
 # Hop-by-hop headers are the connection's own and are not forwarded.
@@ -158,9 +160,17 @@ def handler_for(recorder):
                       **request_summary(body)}
             digest, total, outcome = hashlib.sha256(), 0, "complete"
             try:
-                upstream = http.client.HTTPConnection("127.0.0.1", recorder.target_port,
+                checked = urlsplit(harness_url(f"http://127.0.0.1:{recorder.target_port}", self.path))
+            except HarnessRouteError:
+                # A path off the harness routes is never relayed (HAMCP-363).
+                record.update(outcome="route_refused", status=None)
+                recorder.write(stem + ".json", json.dumps(record, sort_keys=True).encode())
+                self.send_error(502)
+                return
+            try:
+                upstream = http.client.HTTPConnection(checked.hostname, checked.port,
                                                       timeout=UPSTREAM_SECONDS)
-                upstream.request(self.command, self.path, body=body or None,
+                upstream.request(self.command, checked.path, body=body or None,
                                  headers={name: value for name, value in self.headers.items()
                                           if name.lower() not in HOP_HEADERS})
                 response = upstream.getresponse()

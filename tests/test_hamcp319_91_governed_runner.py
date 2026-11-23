@@ -132,7 +132,7 @@ class Harness(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         sw = support_window()
-        cls.matrix = sw.admission_matrix(sw.load(ROOT), registry_matrix())
+        cls.matrix = sw.strict_full_matrix(sw.load(ROOT), "pr", registry_matrix())
         cls.core_version = __import__("exact_image_admission_91_typed").core_image()["version"]
 
     def setUp(self):
@@ -161,15 +161,11 @@ class Harness(unittest.TestCase):
         return run
 
     def command(self, evidence: dict, cases: Path, *, configuration="91_only", architecture="amd64",
-                raise_exc=None, argv_extra=(), rollback=True) -> int:
+                raise_exc=None, argv_extra=()) -> int:
         row = self.row(configuration, architecture)
         argv = ["--peers", json.dumps(row["peers"]), "--architecture", architecture, "--cases-dir", str(cases),
                 "--configuration", configuration, "--expected-engineering-version", ev.ENGINEERING_VERSION,
                 "--work-dir", str(self.base / "work"), *argv_extra]
-        if configuration == "side_by_side" and rollback:
-            path = self.base / f"rollback-identity-{architecture}.json"
-            path.write_text(json.dumps(ev.rollback_identity(architecture)))
-            argv += ["--rollback-identity", str(path)]
         with redirect_stdout(io.StringIO()):
             return governed.main(argv, runner=self.runner(evidence, raise_exc), environ={})
 
@@ -188,9 +184,6 @@ class Harness(unittest.TestCase):
             if isinstance(ident, dict) and ident.get("architecture") == ev.ARCHITECTURE \
                     and row["architecture"] != ev.ARCHITECTURE:
                 ident["architecture"] = row["architecture"]
-                if isinstance(ident.get("rollback_identity"), dict) \
-                        and ident["rollback_identity"].get("architecture") == ev.ARCHITECTURE:
-                    ident["rollback_identity"] = ev.rollback_identity(row["architecture"])
         return evidence
 
     def pipeline(self, evidence: dict, *, configuration="91_only", forge=None) -> dict:
@@ -245,19 +238,11 @@ class Harness(unittest.TestCase):
         self.assertEqual(result["gate"]["acceptance"][configuration], "NOT ACCEPTED")
         self.assertNotEqual(result["gate_code"], 0)
 
-    def assert_only_stage_rejected(self, result: dict, stage: str, fragment: str):
-        for case in STAGE[stage].cases:
-            self.assert_rejected(result, case, fragment)
-        for case in SBS_CASES:
-            if case not in STAGE[stage].cases:
-                self.assertEqual(result["cases"][case]["status"], "passed", result["cases"][case]["reason"])
-
 
 class PositiveTests(Harness):
     def test_every_required_operation_verified_is_accepted_end_to_end(self):
         result = self.pipeline(self.good())
         self.assertEqual(result["codes"], {"91_only-amd64": 0, "91_only-arm64": 0})
-        self.assertEqual(result["gate"]["acceptance"]["side_by_side"], "ACCEPTED")
         for case in governed.CASES:
             self.assertEqual(result["cases"][case]["status"], "passed", result["cases"][case]["reason"])
             self.assertEqual(result["cases"][case]["endpoint_form"], "strict_full")
@@ -403,17 +388,20 @@ class BindingNegativeTests(Harness):
         self.assert_rejected(result, TYPED, "disposable Core version")
 
     def test_typed_wrong_provider_contract_duplicate_or_extra_dispatch_fails(self):
-        breaks = {
-            "provider": ("upstream_read_gateway", "reviewed 9.2.0 provider"),
-            "provider_contract": (governed.PROVIDER_CONTRACTS["8.5.0"]["control_power"], "reviewed 9.2.0 provider"),
-            "provider_attempt_count": (2, "single recorded attempt"),
-            "upstream_dispatches": (2, "exactly one ha_call_service"),
-            "duplicate_dispatches": (1, "duplicate request"),
-            "duplicate_same": (False, "duplicate request"),
-            "arguments": ({"entity_id": "light.other", "action": "turn_on"}, "public tool or arguments"),
-        }
-        for field, (value, fragment) in breaks.items():
-            with self.subTest(field=field):
+        breaks = (
+            ("provider", "upstream_read_gateway", "reviewed 9.2.0 provider"),
+            # HAMCP-437: the 8.5.0 contract left the reviewed set; its literal and another tool's
+            # 9.2.0 contract both stay refused.
+            ("provider_contract", "ha-mcp-8.5.0-single-power-v2", "reviewed 9.2.0 provider"),
+            ("provider_contract", governed.PROVIDER_CONTRACTS["9.2.0"]["control_fan"], "reviewed 9.2.0 provider"),
+            ("provider_attempt_count", 2, "single recorded attempt"),
+            ("upstream_dispatches", 2, "exactly one ha_call_service"),
+            ("duplicate_dispatches", 1, "duplicate request"),
+            ("duplicate_same", False, "duplicate request"),
+            ("arguments", {"entity_id": "light.other", "action": "turn_on"}, "public tool or arguments"),
+        )
+        for field, value, fragment in breaks:
+            with self.subTest(field=field, value=value):
                 self.setUp()
                 try:
                     specs = ev.specs_for(TYPED, self.core_version)
@@ -634,13 +622,57 @@ class ProxyLogTests(unittest.TestCase):
             port = proxy.server.server_address[1]
             payload = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
                 "name": governed.GUIDE_TOOL, "arguments": dict(governed.GUIDE_ARGUMENTS)}}).encode()
-            request = urllib.request.Request(f"http://127.0.0.1:{port}/x", data=payload, method="POST",
+            request = urllib.request.Request(f"http://127.0.0.1:{port}{governed.SECRET_PATH}", data=payload,
+                                             method="POST",
                                              headers={"Content-Type": "application/json"})
             with urllib.request.urlopen(request, timeout=10) as response:  # noqa: S310 - loopback
                 self.assertIn(ev.RECEIPT, response.read().decode())
             self.assertEqual(proxy.forwarded, 1)
             self.assertEqual(governed.calls(proxy.since(0), governed.GUIDE_TOOL), 1)
             self.assertEqual(proxy.since(0)[0]["receipt_sha256"], [ev.RECEIPT_SHA256])
+        finally:
+            proxy.stop()
+            peer.shutdown()
+            peer.server_close()
+
+    def test_recording_proxy_refuses_a_path_off_the_harness_routes_without_forwarding(self):
+        import threading
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        import urllib.error
+        import urllib.request
+
+        reached = []
+
+        class Peer(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                return
+
+            def do_POST(self):
+                reached.append(self.path)
+                self.send_response(200)
+                self.end_headers()
+
+            do_GET = do_DELETE = do_POST
+
+        peer = ThreadingHTTPServer(("127.0.0.1", 0), Peer)
+        threading.Thread(target=peer.serve_forever, daemon=True).start()
+        proxy = governed.RecordingProxy(0, peer.server_address[1])
+        proxy.start()
+        try:
+            port = proxy.server.server_address[1]
+            for method, path in (("POST", "/x"), ("GET", "/api/hassio/addons"),
+                                 ("DELETE", governed.SECRET_PATH + "/../../api/config"),
+                                 ("POST", governed.SECRET_PATH + "?token=synthetic")):
+                request = urllib.request.Request(f"http://127.0.0.1:{port}{path}", data=b"{}" if method == "POST"
+                                                 else None, method=method)
+                with self.subTest(method=method, path=path):
+                    with self.assertRaises(urllib.error.HTTPError) as caught:
+                        urllib.request.urlopen(request, timeout=10)  # noqa: S310 - loopback
+                    self.assertEqual(caught.exception.code, 502)
+                    caught.exception.close()
+            self.assertEqual(reached, [])
+            self.assertEqual(proxy.forwarded, 0)
+            self.assertEqual(proxy.since(0), [])
         finally:
             proxy.stop()
             peer.shutdown()
@@ -663,7 +695,7 @@ class WorkflowStepTests(unittest.TestCase):
         return matches[0]
 
     def test_governed_step_runs_only_active_91_only_with_the_lane_image(self):
-        step = self.step("Cases 9.1 governed dashboard and public typed controls")
+        step = self.step("Cases governed dashboard and public typed controls")
         self.assertEqual(step["if"], "${{ !cancelled() && matrix.state == 'active' && "
                                      "matrix.configuration == '91_only' }}")
         self.assertEqual(step["timeout-minutes"], 20)
@@ -689,337 +721,113 @@ class WorkflowStepTests(unittest.TestCase):
         self.assertNotIn("dashboard gateway acceptance", text)
         self.assertNotIn("91_parity_dashboard_gateway_acceptance", lanes.case_names("91_only"))
 
-SBS = "side_by_side"
-SBS_CASES = governed.CASES_BY_CONFIGURATION[SBS]
+    def test_retired_side_by_side_stages_have_no_step(self):
+        # HAMCP-437: the side_by_side stages retired with the beta.7 in-place rollback (HAMCP-405).
+        text = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        for fragment in ("side_by_side", "side-by-side", "--rollback-identity", "beta.7 rollback"):
+            self.assertNotIn(fragment, text)
+
+
 STAGE = {s.key: s for s in governed.STAGES}
-ROLLBACK_CASES = STAGE["rollback"].cases
+OTHER_IMAGE = "ghcr.io/example/engineering@sha256:" + "0" * 64
 
 
-class SideBySideStageTests(Harness):
-    """Stage A, the beta.7 rollback and stage A again, each on the 8.5.0 peer's legacy value."""
+class StageIdentityTests(Harness):
+    """The 91_only stage runs the lane-built image at the expected version against the strict 9.2.0 peer."""
 
-    def sbs(self, **changes) -> dict:
-        return self.pipeline(self.good(SBS, **changes), configuration=SBS)
+    def identity_break(self, mutate) -> dict:
+        return self.pipeline(self.good(identities={"91_only": mutate(ev.identity_for(STAGE["91_only"]))}))
 
-    def sbs_break(self, case: str, operations: list[dict]) -> dict:
-        return self.sbs(operations={case: operations})
-
-    def test_every_stage_verified_is_accepted_end_to_end(self):
-        result = self.sbs()
-        self.assertEqual(result["codes"], {"side_by_side-amd64": 0, "side_by_side-arm64": 0})
-        for case in SBS_CASES:
-            with self.subTest(case=case):
-                file = result["cases"][case]
-                self.assertEqual(file["status"], "passed", file["reason"])
-                self.assertEqual(file["endpoint_form"], "legacy")
-                stage = governed.CASE_STAGE[case]
-                self.assertEqual(file["observed"]["stage"]["key"], stage.key)
-                self.assertEqual(file["observed"]["upstream_version"], "8.5.0")
-                self.assertEqual(file["observed"]["endpoint_path"], governed.SECRET_PATH)
-                entry = next(c for c in result["manifest"]["cases"] if c["name"] == case)
-                self.assertEqual([o["id"] for o in entry["operations"]], list(governed.REQUIRED_OPERATIONS[case]))
-                self.assertTrue(all(o["verified"] for o in entry["operations"]))
-        self.assertEqual(result["manifest"]["result"], "PASS")
-        self.assertEqual(result["gate"]["errors"], [])
-        self.assertEqual(set(result["gate"]["acceptance"].values()), {"ACCEPTED"})
-
-    def test_stage_table_covers_stage_a_previous_release_rollback_and_stage_a_again(self):
-        stages = governed.STAGES_BY_CONFIGURATION[SBS]
-        self.assertEqual([s.key for s in stages], ["stage_a", "rollback", "stage_a_again"])
-        self.assertEqual([s.rollback for s in stages], [False, True, False])
-        self.assertTrue(all(s.upstream_version == "8.5.0" and s.endpoint_form == "legacy" for s in stages))
-        self.assertEqual(governed.ROLLBACK_VERSION, "2.4.2-beta.7")
-        plan = governed.Plan("amd64", {}, {}, governed.LANE_IMAGE, "x", self.base, "governed91-1-amd64",
-                             configuration=SBS)
-        self.assertEqual(governed.stage_image(plan, STAGE["rollback"]), governed.runners.ROLLBACK_ENGINEERING_IMAGE)
-        self.assertEqual(governed.stage_image(plan, STAGE["stage_a"]), governed.LANE_IMAGE)
-        with self.assertRaises(governed.LaneFailure):
-            # A stage of another configuration never runs in this lane.
-            governed.stage_image(plan, STAGE["91_only"])
-        names = lanes.case_names(SBS)
-        for case in SBS_CASES:
-            self.assertIn(case, names)
-            self.assertEqual(lanes.case_form(SBS, case), "legacy")
-            self.assertNotIn(case, lanes.case_names("91_only"))
-            self.assertNotIn(case, lanes.case_names("85_only"))
+    def test_stage_table_is_the_strict_9_2_0_stage_only(self):
+        self.assertEqual([s.key for s in governed.STAGES], ["91_only"])
+        self.assertEqual(governed.CONFIGURATIONS, ("91_only",))
+        stage = STAGE["91_only"]
+        self.assertEqual((stage.configuration, stage.upstream_version, stage.endpoint_form),
+                         ("91_only", "9.2.0", "strict_full"))
+        self.assertEqual(stage.cases, (DASH, TYPED))
         self.assertEqual(set(governed.REQUIRED_OPERATIONS), set(governed.ALL_CASES))
-
-    def test_each_omitted_failed_or_mismatched_operation_fails_its_case_and_the_gate(self):
-        for case in SBS_CASES:
-            for op in governed.REQUIRED_OPERATIONS[case]:
-                for label, broken, fragment in (
-                        ("omitted", omitted(case, op, self.core_version), f"operation {op} was not executed"),
-                        ("failed", failed(case, op, self.core_version), f"operation {op}:"),
-                        ("mismatch", mismatched(case, op, self.core_version), f"operation {op}:")):
-                    with self.subTest(case=case, op=op, kind=label):
-                        self.setUp()
-                        try:
-                            result = self.sbs_break(case, broken)
-                            self.assert_rejected(result, case, fragment)
-                            for other in SBS_CASES:
-                                if other != case:
-                                    self.assertEqual(result["cases"][other]["status"], "passed")
-                        finally:
-                            self.tearDown()
-
-    def test_missing_guide_read_fails_every_sbs_dashboard_case(self):
-        for stage in governed.STAGES_BY_CONFIGURATION[SBS]:
-            case = stage.dashboard_case
-            for label, log, fragment in (("absent", {}, "missing guide read"),
-                                         ("key not the receipt", {"key": "f" * 64}, "BestPracticeKey")):
-                with self.subTest(case=case, variant=label):
-                    self.setUp()
-                    try:
-                        result = self.sbs_break(case, no_guide(self.core_version, case, **log))
-                        self.assert_rejected(result, case, fragment)
-                    finally:
-                        self.tearDown()
-
-    def test_9_1_guide_read_or_contract_on_the_8_5_peer_fails(self):
-        for stage in governed.STAGES_BY_CONFIGURATION[SBS]:
-            with self.subTest(stage=stage.key, kind="guide"):
-                self.setUp()
-                try:
-                    result = self.sbs_break(stage.dashboard_case,
-                                            no_guide(self.core_version, stage.dashboard_case,
-                                                     arguments=governed.GUIDE_ARGUMENTS_BY_VERSION["9.2.0"]))
-                    self.assert_rejected(result, stage.dashboard_case, "guide read arguments")
-                finally:
-                    self.tearDown()
-            with self.subTest(stage=stage.key, kind="contract"):
-                self.setUp()
-                try:
-                    specs = ev.typed_specs(self.core_version, "9.2.0")
-                    result = self.sbs_break(stage.typed_case, rebuild(stage.typed_case, specs, self.core_version))
-                    self.assert_rejected(result, stage.typed_case, "reviewed 8.5.0 provider")
-                finally:
-                    self.tearDown()
-        # And the reverse: an 8.5.0 guide read or contract does not satisfy the 9.1 stage.
-        self.setUp()
-        result = self.pipeline(self.good(dashboard=no_guide(self.core_version, DASH,
-                                                             arguments=governed.GUIDE_ARGUMENTS_BY_VERSION["8.5.0"])))
-        self.assert_rejected(result, DASH, "guide read arguments")
-        self.tearDown()
-        self.setUp()
-        result = self.pipeline(self.good(typed=rebuild(TYPED, ev.typed_specs(self.core_version, "8.5.0"),
-                                                       self.core_version)))
-        self.assert_rejected(result, TYPED, "reviewed 9.2.0 provider")
-
-    def test_a_release_without_a_reviewed_guide_read_is_not_accepted(self):
-        # Neither an unknown release nor an empty compiled read falls back to another release's guide read.
-        evidence = self.good(SBS)
-        tables = {"unknown release": {k: v for k, v in governed.GUIDE_ARGUMENTS_BY_VERSION.items() if k != "8.5.0"},
-                  "empty compiled read": dict(governed.GUIDE_ARGUMENTS_BY_VERSION, **{"8.5.0": {}})}
-        for label, table in tables.items():
-            with self.subTest(variant=label):
-                self.setUp()
-                try:
-                    with unittest.mock.patch.dict(governed.GUIDE_ARGUMENTS_BY_VERSION, table, clear=True):
-                        result = self.pipeline(evidence, configuration=SBS)
-                    for stage in governed.STAGES_BY_CONFIGURATION[SBS]:
-                        self.assert_rejected(result, stage.dashboard_case, "no reviewed guide read")
-                        self.assertEqual(result["cases"][stage.typed_case]["status"], "passed")
-                finally:
-                    self.tearDown()
-
-    def identity_break(self, stage: str, mutate) -> dict:
-        ident = ev.identity_for(STAGE[stage])
-        ident = mutate(ident)
-        return self.sbs(identities={stage: ident})
-
-    def test_rollback_stage_must_run_the_pinned_previous_release_with_verified_identity(self):
-        breaks = {
-            "lane image instead": (lambda i: dict(i, engineering_image=governed.LANE_IMAGE),
-                                   "did not run the pinned 2.4.2-beta.7"),
-            "lane version instead": (lambda i: dict(i, engineering_version=ev.ENGINEERING_VERSION),
-                                     "did not run the pinned 2.4.2-beta.7"),
-            "identity missing": (lambda i: {k: v for k, v in i.items() if k != "rollback_identity"},
-                                 "rollback identity: rollback_identity_not_verified"),
-            "identity not passed": (lambda i: dict(i, rollback_identity=dict(i["rollback_identity"],
-                                                                            status="failed")),
-                                    "rollback identity: rollback_identity_not_verified"),
-            "identity digest mismatch": (lambda i: dict(i, rollback_identity=dict(
-                i["rollback_identity"], manifest_digest="sha256:" + "0" * 64)),
-                "rollback identity: rollback_identity_mismatch"),
-            "identity of another architecture": (lambda i: dict(i, rollback_identity=ev.rollback_identity("arm64")),
-                                                 "verified for another architecture"),
-        }
-        for label, (mutate, fragment) in breaks.items():
-            with self.subTest(case=label):
-                self.setUp()
-                try:
-                    self.assert_only_stage_rejected(self.identity_break("rollback", mutate), "rollback", fragment)
-                finally:
-                    self.tearDown()
-
-    def test_current_build_stages_must_run_the_lane_image_at_the_expected_version(self):
-        for stage in ("stage_a", "stage_a_again"):
-            breaks = {
-                "previous release image": (lambda i: dict(i, engineering_image=governed.ROLLBACK_IMAGE),
-                                "did not run the lane-built Engineering image"),
-                "previous release version": (lambda i: dict(i, engineering_version=governed.ROLLBACK_VERSION),
-                                  "not the lane build's expected version"),
-                "other version": (lambda i: dict(i, engineering_version="2.4.2-beta.5"),
-                                  "not the lane build's expected version"),
-                "no version": (lambda i: {k: v for k, v in i.items() if k != "engineering_version"},
-                               "not the lane build's expected version"),
-            }
-            for label, (mutate, fragment) in breaks.items():
-                with self.subTest(stage=stage, case=label):
-                    self.setUp()
-                    try:
-                        self.assert_only_stage_rejected(self.identity_break(stage, mutate), stage, fragment)
-                    finally:
-                        self.tearDown()
-
-    def test_stage_identity_must_name_its_own_stage_peer_endpoint_and_architecture(self):
-        breaks = {
-            "missing": (lambda i: None, "stage identity was not recorded"),
-            "other stage": (lambda i: dict(i, key="91_only" if i["key"] != "91_only" else "stage_a"),
-                            "evidence belongs to another stage"),
-            "9.1 peer": (lambda i: dict(i, upstream_version="9.2.0"), "stage peer is not ha-mcp 8.5.0"),
-            "strict endpoint": (lambda i: dict(i, endpoint_path=governed.STRICT_PATH),
-                                "stage endpoint is not the legacy value"),
-            "other architecture": (lambda i: dict(i, architecture="arm64"), "stage architecture"),
-        }
-        for stage in ("stage_a", "rollback", "stage_a_again"):
-            for label, (mutate, fragment) in breaks.items():
-                with self.subTest(stage=stage, case=label):
-                    self.setUp()
-                    try:
-                        self.assert_only_stage_rejected(self.identity_break(stage, mutate), stage, fragment)
-                    finally:
-                        self.tearDown()
+        plan = governed.Plan("amd64", {}, {}, governed.LANE_IMAGE, "x", self.base, "governed91-1-amd64")
+        self.assertEqual(governed.stage_image(plan, stage), governed.LANE_IMAGE)
+        with self.assertRaises(governed.LaneFailure):
+            governed.stage_image(governed.Plan("amd64", {}, {}, OTHER_IMAGE, "x", self.base,
+                                               "governed91-1-amd64"), stage)
 
     def test_91_only_identity_must_name_the_strict_9_1_stage(self):
         for label, mutate, fragment in (
+                ("missing", lambda i: None, "stage identity was not recorded"),
+                ("other stage", lambda i: dict(i, key="stage_a"), "evidence belongs to another stage"),
                 ("legacy endpoint", lambda i: dict(i, endpoint_path=governed.SECRET_PATH), "strict_full value"),
                 ("8.5 peer", lambda i: dict(i, upstream_version="8.5.0"), "stage peer is not ha-mcp 9.2.0"),
-                ("rollback image", lambda i: dict(i, engineering_image=governed.ROLLBACK_IMAGE), "lane-built")):
+                ("other architecture", lambda i: dict(i, architecture="arm64"), "stage architecture"),
+                ("other image", lambda i: dict(i, engineering_image=OTHER_IMAGE), "lane-built"),
+                ("other version", lambda i: dict(i, engineering_version="2.4.2-beta.5"),
+                 "not the lane build's expected version"),
+                ("no version", lambda i: {k: v for k, v in i.items() if k != "engineering_version"},
+                 "not the lane build's expected version")):
             with self.subTest(case=label):
                 self.setUp()
                 try:
-                    ident = mutate(ev.identity_for(STAGE["91_only"]))
-                    result = self.pipeline(self.good(identities={"91_only": ident}))
+                    result = self.identity_break(mutate)
                     for case in governed.CASES:
                         self.assert_rejected(result, case, fragment)
                 finally:
                     self.tearDown()
 
-    def test_a_stage_failure_fails_only_that_stage(self):
-        evidence = self.good(SBS)
-        evidence["stages"]["rollback"]["failure"] = "engineering_version_mismatch"
-        result = self.pipeline(evidence, configuration=SBS)
-        self.assert_only_stage_rejected(result, "rollback", "stage refused: engineering_version_mismatch")
-        for case in STAGE["rollback"].cases:
-            self.assertEqual(result["cases"][case]["observed"]["stage_failure"], "engineering_version_mismatch")
-            self.assertEqual(result["cases"][case]["reason"], "stage refused: engineering_version_mismatch")
-            # The stored case also names the stage refusal it carries, not only the re-derived reason.
-            self.assertEqual(result["cases"][case]["observed"].get("failure"),
-                             "stage refused: engineering_version_mismatch")
+    def test_a_stage_failure_fails_both_cases(self):
+        evidence = self.good()
+        evidence["stages"]["91_only"]["failure"] = "engineering_version_mismatch"
+        result = self.pipeline(evidence)
+        for case in governed.CASES:
+            self.assert_rejected(result, case, "stage refused: engineering_version_mismatch")
 
-    def test_forged_passed_case_of_a_refused_stage_is_flipped_by_the_manifest_writer(self):
-        def forge(cases):
-            for case in STAGE["rollback"].cases:
-                path = cases / f"{case}.json"
-                value = json.loads(path.read_text())
-                value["observed"]["stage_failure"] = "engineering_version_mismatch"
-                value.update(status="passed", reason="")
-                path.write_text(json.dumps(value))
-        result = self.pipeline(self.good(SBS), configuration=SBS, forge=forge)
-        for case in SBS_CASES:
-            entry = next(c for c in result["manifest"]["cases"] if c["name"] == case)
-            if case in STAGE["rollback"].cases:
-                self.assertEqual(entry["status"], "failed")
-                self.assertIn("stage refused: engineering_version_mismatch", entry["reason"])
-            else:
-                self.assertEqual(entry["status"], "passed", entry.get("reason"))
-        self.assertEqual(result["manifest"]["result"], "FAIL")
-        self.assertEqual(result["gate"]["acceptance"][SBS], "NOT ACCEPTED")
-        self.assertNotEqual(result["gate_code"], 0)
-
-    def test_stage_peer_log_disagreement_fails_only_that_stage(self):
-        evidence = self.good(SBS)
-        evidence["stages"]["stage_a_again"]["peer_log"] = {"forwarded": 12, "peer_posts": 11}
-        self.assert_only_stage_rejected(self.pipeline(evidence, configuration=SBS), "stage_a_again",
-                                        "peer access log")
-
-    def test_lane_failure_fails_every_sbs_case(self):
+    def test_retired_configuration_is_refused(self):
+        self.assertNotIn("side_by_side", governed.STAGES_BY_CONFIGURATION)
         cases = self.base / "cases"
-        code = self.command(self.good(SBS), cases, configuration=SBS,
-                            raise_exc=governed.LaneFailure("peer_role_unexpected"))
-        self.assertEqual(code, 1)
-        for case in SBS_CASES:
-            value = json.loads((cases / f"{case}.json").read_text())
-            self.assertEqual(value["status"], "failed")
-            self.assertEqual(value["endpoint_form"], "legacy")
-            self.assertIn("peer_role_unexpected", value["reason"])
-
-    def test_sbs_command_writes_exactly_its_six_cases(self):
-        cases = self.base / "cases"
-        self.command({}, cases, configuration=SBS)
-        self.assertEqual(sorted(p.stem for p in cases.glob("*.json")), sorted(SBS_CASES))
-        for case in SBS_CASES:
-            self.assertEqual(json.loads((cases / f"{case}.json").read_text())["status"], "failed")
-
-    def test_lane_image_claiming_the_rollback_version_is_refused(self):
-        cases = self.base / "cases"
-        argv = ["--peers", json.dumps(self.row(SBS)["peers"]), "--architecture", "amd64", "--cases-dir", str(cases),
-                "--configuration", SBS, "--expected-engineering-version", governed.ROLLBACK_VERSION]
-        with redirect_stdout(io.StringIO()):
-            code = governed.main(argv, runner=self.runner(self.good(SBS, engineering_version=governed.ROLLBACK_VERSION)),
-                                 environ={})
-        self.assertEqual(code, 1)
-        for case in SBS_CASES:
-            self.assertIn("engineering_version_is_the_rollback_release",
-                          json.loads((cases / f"{case}.json").read_text())["reason"])
-
-    def test_rollback_stage_refuses_to_start_without_a_verified_identity(self):
-        lane = unittest.mock.MagicMock()
-        for identity, fragment in ((None, "rollback_identity_not_verified"),
-                                   (dict(ev.rollback_identity(), status="failed"), "rollback_identity_not_verified"),
-                                   (ev.rollback_identity("arm64"), "rollback_identity_architecture_mismatch")):
-            with self.subTest(identity=identity and identity.get("status")):
-                plan = governed.Plan("amd64", {}, {}, governed.LANE_IMAGE, ev.ENGINEERING_VERSION, self.base,
-                                     "governed91-1-amd64", governed.empty_evidence(SBS), SBS, identity)
-                with unittest.mock.patch.object(governed, "docker", side_effect=AssertionError("docker reached")):
-                    with self.assertRaises(governed.LaneFailure) as raised:
-                        __import__("asyncio").run(governed.run_stage(plan, STAGE["rollback"], lane))
-                self.assertIn(fragment, str(raised.exception))
-                self.assertEqual(plan.evidence["stages"]["rollback"]["identity"], {})
+        cases.mkdir()
+        row = self.row()
+        argv = ["--peers", json.dumps(row["peers"]), "--architecture", "amd64", "--cases-dir", str(cases),
+                "--configuration", "side_by_side", "--expected-engineering-version", ev.ENGINEERING_VERSION,
+                "--work-dir", str(self.base / "work")]
+        with redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            try:
+                code = governed.main(argv, runner=self.runner(self.good()), environ={})
+            except SystemExit as exit_:
+                code = exit_.code
+        self.assertNotEqual(code, 0)
+        self.assertEqual([p.name for p in cases.glob("*.json") if json.loads(p.read_text())["status"] == "passed"],
+                         [])
 
 
-class SideBySideSourceBindingTests(unittest.TestCase):
-    def test_peer_selection_is_the_reviewed_row_for_each_configuration(self):
+class PeerSourceBindingTests(unittest.TestCase):
+    def test_peer_selection_is_the_reviewed_9_2_0_row(self):
         sw = support_window()
-        matrix = sw.admission_matrix(sw.load(ROOT), registry_matrix())
+        matrix = sw.strict_full_matrix(sw.load(ROOT), "pr", registry_matrix())
         typed = __import__("exact_image_admission_91_typed")
-        for configuration, role, version in ((SBS, "baseline", "8.5.0"), ("91_only", "candidate", "9.2.0")):
-            row = next(r for r in matrix["include"] if r["configuration"] == configuration)
-            peer = governed.select_peer(row["peers"], configuration, "amd64", typed.reviewed_release)
-            self.assertEqual((peer["role"], peer["version"]), (role, version))
-            self.assertEqual(peer["image"], row["peers"][role]["upstream_image"])
-            with self.assertRaises(governed.LaneFailure):
-                bad = copy.deepcopy(row["peers"])
-                bad[role]["image_index_digest"] = "sha256:" + "0" * 64
-                governed.select_peer(bad, configuration, "amd64", typed.reviewed_release)
+        row = next(r for r in matrix["include"] if r["configuration"] == "91_only")
+        peer = governed.select_peer(row["peers"], "91_only", "amd64", typed.reviewed_release)
+        self.assertEqual((peer["role"], peer["version"]), ("candidate", "9.2.0"))
+        self.assertEqual(peer["image"], row["peers"]["candidate"]["upstream_image"])
         with self.assertRaises(governed.LaneFailure):
-            row = next(r for r in matrix["include"] if r["configuration"] == "91_only")
-            governed.select_peer(row["peers"], SBS, "amd64", typed.reviewed_release)
+            bad = copy.deepcopy(row["peers"])
+            bad["candidate"]["image_index_digest"] = "sha256:" + "0" * 64
+            governed.select_peer(bad, "91_only", "amd64", typed.reviewed_release)
+        with self.assertRaises(governed.LaneFailure):
+            bad = copy.deepcopy(row["peers"])
+            bad["candidate"]["upstream_version"] = "8.5.0"
+            governed.select_peer(bad, "91_only", "amd64", typed.reviewed_release)
 
     def test_version_bound_guide_reads_and_contracts_equal_the_runtime_source(self):
         from ha_mcp_engineering.clients import mcp as client
         from ha_mcp_engineering.fan.contracts import FAN_SEMANTIC_CONTRACTS
         from ha_mcp_engineering.helper_value.contracts import HELPER_SEMANTIC_CONTRACTS
         from ha_mcp_engineering.power.contracts import POWER_SEMANTIC_CONTRACTS
-        self.assertEqual(governed.GUIDE_ARGUMENTS_BY_VERSION["8.5.0"], dict(client.BEST_PRACTICES_GUIDE_ARGUMENTS))
-        self.assertNotIn(("8.5.0", governed.GUIDE_TOOL), client._BEST_PRACTICES_ARGUMENT_REWRITES)
+        self.assertEqual(set(governed.GUIDE_ARGUMENTS_BY_VERSION), {"9.2.0"})
         self.assertEqual(governed.GUIDE_ARGUMENTS_BY_VERSION["9.2.0"],
                          dict(client._BEST_PRACTICES_ARGUMENT_REWRITES[("9.2.0", governed.GUIDE_TOOL)]))
-        for version in ("8.5.0", "9.2.0"):
-            self.assertEqual(governed.PROVIDER_CONTRACTS[version], {
-                "control_power": POWER_SEMANTIC_CONTRACTS[version], "control_fan": FAN_SEMANTIC_CONTRACTS[version],
-                "control_helper": HELPER_SEMANTIC_CONTRACTS[version]})
+        self.assertEqual(set(governed.PROVIDER_CONTRACTS), {"9.2.0"})
+        self.assertEqual(governed.PROVIDER_CONTRACTS["9.2.0"], {
+            "control_power": POWER_SEMANTIC_CONTRACTS["9.2.0"], "control_fan": FAN_SEMANTIC_CONTRACTS["9.2.0"],
+            "control_helper": HELPER_SEMANTIC_CONTRACTS["9.2.0"]})
 
     def test_peer_access_log_pattern_matches_only_the_stage_endpoint(self):
         legacy = governed.peer_post_pattern(governed.SECRET_PATH)
@@ -1030,35 +838,6 @@ class SideBySideSourceBindingTests(unittest.TestCase):
         self.assertFalse(legacy.search(line.format(governed.STRICT_PATH)))
         self.assertTrue(strict.search(line.format(governed.STRICT_PATH)))
         self.assertFalse(strict.search(line.format(governed.SECRET_PATH)))
-
-    def test_side_by_side_workflow_step_runs_after_stage_a_again_with_the_rollback_identity(self):
-        import yaml
-        steps = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))[
-            "jobs"]["exact-image-admission-lanes"]["steps"]
-        names = [str(s.get("name", "")) for s in steps]
-        index = names.index("Cases side-by-side governed dashboard and public typed controls "
-                            "(stage A, beta.7 rollback, stage A again)")
-        step = steps[index]
-        self.assertGreater(index, names.index("Case side-by-side stage A again, current build with 8.5 on the "
-                                              "legacy value"))
-        self.assertGreater(index, names.index("Verify the previous Engineering release by digest"))
-        self.assertLess(index, names.index("Write section 5.1 acceptance manifest"))
-        self.assertEqual(step["if"], "${{ !cancelled() && matrix.state == 'active' && "
-                                     "matrix.configuration == 'side_by_side' }}")
-        self.assertEqual(step["timeout-minutes"], 20)
-        for key in ("uses", "env", "continue-on-error"):
-            self.assertNotIn(key, step)
-        run = step["run"]
-        for fragment in ("--configuration side_by_side", "--engineering-image engineering-admission-lane:test",
-                         '--rollback-identity "$RUNNER_TEMP/admission-rollback-identity.json"',
-                         '--expected-engineering-version "$ENGINEERING_LANE_VERSION"'):
-            self.assertIn(fragment, run)
-        self.assertNotIn("|| true", run)
-        self.assertNotIn("secrets.", run)
-        ninety_one = steps[names.index("Cases 9.1 governed dashboard and public typed controls through the built "
-                                       "image")]
-        self.assertIn("--configuration 91_only", ninety_one["run"])
-        self.assertNotIn("--rollback-identity", ninety_one["run"])
 
 
 import asyncio  # noqa: E402
@@ -1077,7 +856,6 @@ import mcp.client.streamable_http as mcp_transport  # noqa: E402
 # command -> case file -> manifest -> gate pipeline.
 # --------------------------------------------------------------------------
 
-ROLLBACK_STAGE = governed.STAGES[2]
 NINETY_ONE_STAGE = governed.STAGES[0]
 
 
@@ -1306,9 +1084,12 @@ class FlowHarness(Harness):
 
 
 class EnvelopeFlowTests(FlowHarness):
-    """Codex's 10 F2 demonstrations + 4 positive controls, through the real flows and pipeline."""
+    """Codex's F2 demonstrations and positive controls on 91_only, through the real flows and pipeline.
 
-    # -- Codex's 8 dashboard demonstrations: {task, config, both, plan_status} x {91_only, rollback}
+    HAMCP-437: the beta.7 rollback-stage variants retired with that stage (HAMCP-405).
+    """
+
+    # -- Codex's dashboard demonstrations: {task, config, both, plan_status}
     def test_codex_dashboard_task_error_91_only_not_accepted(self):
         result, evidence, session = self.run_dashboard(NINETY_ONE_STAGE, "task")
         self.assert_error_refused(result, evidence, session, DASH, "dashboard_verify", "task_read_ok",
@@ -1329,43 +1110,13 @@ class EnvelopeFlowTests(FlowHarness):
         self.assert_error_refused(result, evidence, session, DASH, "dashboard_plan", "plan_read_ok",
                                   where="readback", fragment="get_change_plan")
 
-    def test_codex_dashboard_task_error_rollback_not_accepted(self):
-        stage = ROLLBACK_STAGE
-        result, evidence, session = self.run_dashboard(stage, "task")
-        self.assert_error_refused(result, evidence, session, stage.dashboard_case, "dashboard_verify",
-                                  "task_read_ok", fragment="error-free")
-
-    def test_codex_dashboard_config_error_rollback_not_accepted(self):
-        stage = ROLLBACK_STAGE
-        result, evidence, session = self.run_dashboard(stage, "config")
-        self.assert_error_refused(result, evidence, session, stage.dashboard_case, "dashboard_verify",
-                                  "config_read_ok", fragment="error-free")
-
-    def test_codex_dashboard_both_error_rollback_not_accepted(self):
-        stage = ROLLBACK_STAGE
-        result, evidence, session = self.run_dashboard(stage, "both")
-        self.assert_error_refused(result, evidence, session, stage.dashboard_case, "dashboard_verify",
-                                  "config_read_ok", fragment="error-free")
-
-    def test_codex_dashboard_plan_status_error_rollback_not_accepted(self):
-        stage = ROLLBACK_STAGE
-        result, evidence, session = self.run_dashboard(stage, "plan_status")
-        self.assert_error_refused(result, evidence, session, stage.dashboard_case, "dashboard_plan",
-                                  "plan_read_ok", where="readback", fragment="get_change_plan")
-
-    # -- Codex's 2 typed demonstrations: duplicate_MCP_error x {91_only, rollback}
+    # -- Codex's typed demonstration: duplicate_MCP_error
     def test_codex_typed_duplicate_error_91_only_not_accepted(self):
         result, evidence, session = self.run_typed(NINETY_ONE_STAGE, "duplicate")
         self.assert_error_refused(result, evidence, session, TYPED, governed.TYPED_OPERATIONS[0],
                                   "duplicate_read_ok", fragment="error-free")
 
-    def test_codex_typed_duplicate_error_rollback_not_accepted(self):
-        stage = ROLLBACK_STAGE
-        result, evidence, session = self.run_typed(stage, "duplicate")
-        self.assert_error_refused(result, evidence, session, stage.typed_case, governed.TYPED_OPERATIONS[0],
-                                  "duplicate_read_ok", fragment="error-free")
-
-    # -- Codex's 4 positive controls: error-free envelopes stay ACCEPTED
+    # -- Codex's positive controls: error-free envelopes stay ACCEPTED
     def test_control_dashboard_no_error_91_only_accepted(self):
         result, evidence, session = self.run_dashboard(NINETY_ONE_STAGE)
         self.assertEqual(session.errors, [])
@@ -1377,20 +1128,10 @@ class EnvelopeFlowTests(FlowHarness):
         # ... while its plan-status readback came from an error-free read.
         self.assertIs(refused["readback"].get("plan_read_ok"), True)
 
-    def test_control_dashboard_no_error_rollback_accepted(self):
-        result, _evidence, session = self.run_dashboard(ROLLBACK_STAGE)
-        self.assertEqual(session.errors, [])
-        self.assert_accepted(result, ROLLBACK_STAGE.dashboard_case)
-
     def test_control_typed_positive_91_only_accepted(self):
         result, _evidence, session = self.run_typed(NINETY_ONE_STAGE)
         self.assertEqual(session.errors, [])
         self.assert_accepted(result, TYPED)
-
-    def test_control_typed_positive_rollback_accepted(self):
-        result, _evidence, session = self.run_typed(ROLLBACK_STAGE)
-        self.assertEqual(session.errors, [])
-        self.assert_accepted(result, ROLLBACK_STAGE.typed_case)
 
     # -- Every other required public read, and every poll
     def test_dashboard_list_error_not_accepted(self):
@@ -1404,7 +1145,7 @@ class EnvelopeFlowTests(FlowHarness):
                                   fragment="bound configuration")
 
     def test_refused_apply_plan_status_must_come_from_an_error_free_read(self):
-        for stage in (NINETY_ONE_STAGE, ROLLBACK_STAGE):
+        for stage in (NINETY_ONE_STAGE,):
             with self.subTest(stage=stage.key):
                 self.setUp()
                 try:
@@ -1417,7 +1158,7 @@ class EnvelopeFlowTests(FlowHarness):
                     self.tearDown()
 
     def test_dashboard_poll_error_is_a_failure_not_retried_into_success(self):
-        for stage in (NINETY_ONE_STAGE, ROLLBACK_STAGE):
+        for stage in (NINETY_ONE_STAGE,):
             with self.subTest(stage=stage.key):
                 self.setUp()
                 try:
@@ -1436,7 +1177,7 @@ class EnvelopeFlowTests(FlowHarness):
         self.assertIs(apply["facts"].get("poll_reads_ok"), True)
 
     def test_typed_poll_error_not_accepted(self):
-        for stage in (NINETY_ONE_STAGE, ROLLBACK_STAGE):
+        for stage in (NINETY_ONE_STAGE,):
             with self.subTest(stage=stage.key):
                 self.setUp()
                 try:
@@ -1574,7 +1315,7 @@ class ContradictoryEnvelopeFlowTests(FlowHarness):
 
     def dashboard_variant(self, bad):
         _bad, op, where, flag, fragment, accepted = next(v for v in CONTRADICTORY_DASHBOARD if v[0] == bad)
-        for stage in (NINETY_ONE_STAGE, ROLLBACK_STAGE):
+        for stage in (NINETY_ONE_STAGE,):
             for field in CONTRADICTORY_FIELDS:
                 with self.subTest(stage=stage.key, field=field):
                     self.setUp()
@@ -1588,7 +1329,7 @@ class ContradictoryEnvelopeFlowTests(FlowHarness):
 
     def typed_variant(self, bad):
         flag = dict(CONTRADICTORY_TYPED)[bad]
-        for stage in (NINETY_ONE_STAGE, ROLLBACK_STAGE):
+        for stage in (NINETY_ONE_STAGE,):
             for field in CONTRADICTORY_FIELDS:
                 with self.subTest(stage=stage.key, field=field):
                     self.setUp()
@@ -1601,7 +1342,7 @@ class ContradictoryEnvelopeFlowTests(FlowHarness):
                         self.tearDown()
 
     # Codex's ten error-bearing variants: {task, config, both, plan_status} dashboard and the typed
-    # duplicate, each on 9.1 and the beta.7 rollback, with every contradictory field.
+    # duplicate, on 9.2.0, with every contradictory field.
     def test_contradictory_dashboard_task_read_not_accepted(self):
         self.dashboard_variant("task")
 
@@ -1647,15 +1388,15 @@ class ContradictoryEnvelopeFlowTests(FlowHarness):
             return plain(payload, is_error)
 
         with unittest.mock.patch.object(sys.modules[__name__], "mcp_result", with_empty_error_fields):
-            result, evidence, session = self.run_dashboard(ROLLBACK_STAGE, accepted=True)
+            result, evidence, session = self.run_dashboard(NINETY_ONE_STAGE, accepted=True)
             self.assertEqual(session.errors, [])
-            self.assert_accepted(result, ROLLBACK_STAGE.dashboard_case)
+            self.assert_accepted(result, NINETY_ONE_STAGE.dashboard_case)
             dashboard_served = len(served)
             self.assertGreater(dashboard_served, 0)
             self.setUp()
-            result, evidence, session = self.run_typed(ROLLBACK_STAGE, polled=True)
+            result, evidence, session = self.run_typed(NINETY_ONE_STAGE, polled=True)
             self.assertEqual(session.errors, [])
-            self.assert_accepted(result, ROLLBACK_STAGE.typed_case)
+            self.assert_accepted(result, NINETY_ONE_STAGE.typed_case)
             self.assertGreater(len(served), dashboard_served)
 
     def test_envelope_ok_refuses_nonempty_application_error_fields(self):
@@ -1734,18 +1475,16 @@ class StageHealthTests(Harness):
 
     def run_stages(self, configuration, bad_stage=None, health="ok"):
         stages = governed.STAGES_BY_CONFIGURATION[configuration]
-        rollback = ev.rollback_identity() if configuration == SBS else None
         plan = governed.Plan("amd64", {}, {"version": self.core_version}, governed.LANE_IMAGE,
                              ev.ENGINEERING_VERSION, self.base / "work", "governed91-health-amd64",
-                             governed.empty_evidence(configuration), configuration, rollback)
+                             governed.empty_evidence(configuration), configuration)
         proxy = StageProxy()
         sessions, order = [], list(stages)
         (self.base / "work").mkdir()
 
         def client_session(*_args, **_kwargs):
             stage = order.pop(0)
-            version = governed.ROLLBACK_VERSION if stage.rollback else ev.ENGINEERING_VERSION
-            session = FakeStageSession(proxy, stage, self.core_version, version,
+            session = FakeStageSession(proxy, stage, self.core_version, ev.ENGINEERING_VERSION,
                                        health if stage.key == bad_stage else "ok")
             sessions.append(session)
             return session
@@ -1792,7 +1531,7 @@ class StageHealthTests(Harness):
         return plan.evidence, {s.stage.key: s for s in sessions}
 
     def test_control_healthy_stage_reads_are_accepted(self):
-        for configuration in ("91_only", SBS):
+        for configuration in ("91_only",):
             with self.subTest(configuration=configuration):
                 self.setUp()
                 try:
@@ -1825,11 +1564,8 @@ class StageHealthTests(Harness):
                     self.assertEqual(staged.get("failure"), "engineering_health_read_failed")
                     self.assertNotIn("engineering_version", staged["identity"])
                     fragment = "stage refused: engineering_health_read_failed"
-                    if configuration == SBS:
-                        self.assert_only_stage_rejected(result, stage_key, fragment)
-                    else:
-                        for case in STAGE[stage_key].cases:
-                            self.assert_rejected(result, case, fragment)
+                    for case in STAGE[stage_key].cases:
+                        self.assert_rejected(result, case, fragment)
                     for case in STAGE[stage_key].cases:
                         self.assertEqual(result["cases"][case]["observed"]["stage_failure"],
                                          "engineering_health_read_failed")
@@ -1840,13 +1576,6 @@ class StageHealthTests(Harness):
 
     def test_errored_health_read_on_the_current_9_1_stage_is_not_accepted(self):
         self.assert_health_refused("91_only", "91_only")
-
-    def test_errored_health_read_on_the_previous_release_rollback_stage_is_not_accepted(self):
-        self.assert_health_refused(SBS, "rollback")
-
-    def test_errored_health_read_on_stage_a_fails_only_stage_a(self):
-        self.assert_health_refused(SBS, "stage_a")
-
 
 if __name__ == "__main__":
     unittest.main()

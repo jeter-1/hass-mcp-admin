@@ -273,14 +273,14 @@ class StartupChecks(unittest.IsolatedAsyncioTestCase):
             def request(self, *args, **kwargs): return Response()
         with diagnostics.lane('helper_value'):
             with self.assertRaises(RuntimeError) as caught:
-                await harness._json_request(Session(), 'POST', '/synthetic')
+                await harness._json_request(Session(), 'POST', '/api/onboarding/users')
         self.assertEqual(caught.exception._local_lane_check, ('auth', 'bootstrap_http'))
 
     async def test_actual_helper_setup_failure_is_identified(self):
         import helper_value_contract_acceptance as acceptance
         with diagnostics.lane('helper_value'):
             with self.assertRaises(AssertionError) as caught:
-                await acceptance.run(None, {'capabilities': []}, Path('.'))
+                await acceptance.run(None, {'capabilities': []}, Path('.'), mode='local')
         self.assertEqual(caught.exception._local_lane_check, ('helper_setup', 'helper_contract'))
 
     async def test_instrumentation_inert_outside_local_scope(self):

@@ -589,7 +589,7 @@ The gateway code is not changed. This change makes no changes to:
     `scripts/alarmo_inspection_contract_acceptance.py`,
     `scripts/entity_metadata_contract_acceptance.py` and
     `scripts/automation_baseline_contract_acceptance.py`.
-- `docs/evidence/hamcp215-mutations/run_mutations.py` (45 mutations, 45 killed;
+- `docs/evidence/hamcp215-mutations/run_mutations.py` (deleted by HAMCP-437; 45 mutations, 45 killed;
   results in `results.json`) must fail on each of these:
   - no recovery loop. Without the paced loop, the retirement's own reprobe
     hint re-wakes the supervisor immediately: 12,557 attempts in 15 s were

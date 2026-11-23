@@ -37,7 +37,7 @@ class DisposableWebsocketsProbeTests(unittest.TestCase):
             return result, evidence
 
     def test_each_reviewed_provider_preserves_shared_distribution(self):
-        for upstream, vendor in (("8.2.0", "17.0.1"), ("8.4.3", "17.0.1"), ("8.5.0", "17.1")):
+        for upstream, vendor in (("9.2.0", "17.4"),):
             with self.subTest(upstream=upstream):
                 result, evidence = self.probe(upstream, upstream, vendor)
                 self.assertEqual(result.returncode, 0, result.stderr)
@@ -48,10 +48,13 @@ class DisposableWebsocketsProbeTests(unittest.TestCase):
 
     def test_changed_vendor_and_wrong_source_refuse_without_success_evidence(self):
         for requested, source, vendor in (
-            ("8.5.0", "8.5.0", "17.0.1"),
-            ("8.4.3", "8.4.3", "17.1"),
-            ("8.5.0", "8.4.3", "17.1"),
-            ("8.5.1", "8.5.1", "17.1"),
+            ("9.2.0", "9.2.0", "17.1"),
+            ("9.2.0", "9.2.0", "17.4.1"),
+            ("9.2.0", "9.1.2", "17.4"),
+            # Retired releases are no longer reviewed (HAMCP-437).
+            ("8.5.0", "8.5.0", "17.1"),
+            ("9.1.2", "9.1.2", "17.4"),
+            ("9.2.1", "9.2.1", "17.4"),
         ):
             with self.subTest(requested=requested, source=source, vendor=vendor):
                 result, evidence = self.probe(requested, source, vendor)
@@ -59,7 +62,7 @@ class DisposableWebsocketsProbeTests(unittest.TestCase):
                 self.assertIsNone(evidence)
 
     def test_shared_package_import_still_refuses(self):
-        result, evidence = self.probe("8.5.0", "8.5.0", "17.1", import_shared=True)
+        result, evidence = self.probe("9.2.0", "9.2.0", "17.4", import_shared=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("vendored import loaded shared websockets", result.stderr)
         self.assertIsNone(evidence)

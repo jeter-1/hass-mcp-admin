@@ -132,32 +132,6 @@ class JournalOwnershipTests(unittest.TestCase):
                 self.assertEqual(result.errors, [])
                 self.assertEqual(list(Path(directory).iterdir()), [])
 
-    def test_downgrade_setup_failure_runs_module_cleanup(self):
-        program = """
-import importlib, pathlib, tempfile, unittest
-from unittest.mock import patch
-for name, commit_name in (("beta8", "BETA8_COMMIT"), ("beta36", "BETA36_COMMIT")):
-    module = importlib.import_module("test_hamcp181_" + name + "_downgrade")
-    def git(*args, **kwargs):
-        return getattr(module, commit_name) if args[0] == "rev-parse" else None
-    with tempfile.TemporaryDirectory() as directory, patch.object(tempfile, "tempdir", directory), \
-            patch.object(module, "_git", git), patch.object(module, "verified_provenance", return_value={}), \
-            patch.object(module.shutil, "which", return_value="git"):
-        try:
-            module.setUpModule()
-        except AssertionError as exc:
-            assert "git archive" in str(exc), str(exc)
-        else:
-            raise AssertionError("setup did not fail")
-        assert list(pathlib.Path(directory).iterdir()), "fixture was never created"
-        unittest.doModuleCleanups()
-        assert not list(pathlib.Path(directory).iterdir()), "failed setup leaked scratch"
-"""
-        result = subprocess.run([sys.executable, "-c", program], cwd=ROOT,
-                                env={**os.environ, "PYTHONPATH": str(ROOT / "tests")},
-                                capture_output=True, text=True, timeout=30)
-        self.assertEqual(result.returncode, 0, result.stderr)
-
 
 class BoundedEvidenceTests(unittest.TestCase):
     def setUp(self):

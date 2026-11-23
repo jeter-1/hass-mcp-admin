@@ -67,48 +67,10 @@
   },
   "recovered_names": {
    "8.5.0": {
-    "blocked_count": 49,
-    "catalog": "docs/evidence/hamcp371/sr/run-b-2/8.5.0/out/catalog/peer.json",
-    "catalog_tools": 80,
-    "collision_count": 0,
-    "exposed_count": 28,
-    "exposed_tools": [
-     "ha_config_get_automation",
-     "ha_config_get_calendar_events",
-     "ha_config_get_category",
-     "ha_config_get_label",
-     "ha_config_get_scene",
-     "ha_config_get_script",
-     "ha_config_get_yaml",
-     "ha_config_list_dashboard_resources",
-     "ha_config_list_groups",
-     "ha_config_list_helpers",
-     "ha_eval_template",
-     "ha_get_app",
-     "ha_get_automation_traces",
-     "ha_get_blueprint",
-     "ha_get_device",
-     "ha_get_entity",
-     "ha_get_entity_exposure",
-     "ha_get_history",
-     "ha_get_integration",
-     "ha_get_overview",
-     "ha_get_skill_guide",
-     "ha_get_state",
-     "ha_get_system_health",
-     "ha_get_todo",
-     "ha_get_zone",
-     "ha_list_floors_areas",
-     "ha_list_services",
-     "ha_search"
-    ],
-    "fingerprint": "825a6365b8bc36fae6aad5d902bccb53c4c21a18e6465b9cf730ffeed8d6963d",
-    "fingerprint_matches_lane": true,
-    "held_tools": [
-     "ha_get_operation_status"
-    ],
     "lane_fingerprint": "825a6365b8bc36fae6aad5d902bccb53c4c21a18e6465b9cf730ffeed8d6963d",
-    "peer_tool_calls": 0
+    "last_recomputed_and_matched_at": "901482d14b7d91f5a99d3b00d57446e9a87aa09c",
+    "reason": "8.5.0 is not in the shipped registry after HAMCP-437; in-process recovery needs an admitted 8.5.0 row and an 8.5.0 YAML read contract",
+    "status": "not_recomputed_at_head"
    },
    "9.2.0": {
     "blocked_count": 50,
@@ -154,7 +116,7 @@
     "lane_fingerprint": "d5b633667620e0baf2471a77ce1be732c9a4b61b5a7a09ff343d029f602ca202",
     "peer_tool_calls": 0
    },
-   "method": "in-process: Engineering UpstreamReadGateway at the branch head admits the committed out/catalog/peer.json tools from a loopback peer (tests/test_hamcp371_admission_core._gateway); no launch; not receipts-only"
+   "method": "in-process, 9.2.0 only: Engineering UpstreamReadGateway at the branch head admits the committed out/catalog/peer.json tools from a loopback peer (tests/test_hamcp371_admission_core._gateway); no launch; not receipts-only"
   },
   "recovered_names_equal_p1": true,
   "sha256": "d3210d6d8e04cd7aa906ba6a7913c5dc47270356905d2d40fd795c67d3b958ef"
@@ -163,7 +125,7 @@
   "receipt_sha256": "cb01661a395d9da36eb041dc23457ecc513e5f3f5888c0983bc6cc97d56269f0",
   "run": "docs/evidence/hamcp371/sr/run-b-2",
   "s7_walk": "docs/evidence/hamcp371/s7/generate_output_key_contract.py",
-  "s7_walk_sha256": "9ef30d2179727e29b58c624f6386218fe6720eb60a5f48b92763d95c1ffd80ce",
+  "s7_walk_sha256": "88e342dc40d9646b5783f3e5826389779f73aef17d5c648e36aad94bae33bc56",
   "sha256sums_sha256": "9b891e2c6f78bcfb89ce18a63cede38ddf501dc042d58150f4aba531987a7382"
  },
  "reads": [

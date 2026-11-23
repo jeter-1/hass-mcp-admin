@@ -677,6 +677,13 @@ class RecordedOrderRegressionTests(unittest.TestCase):
     errors=1 at ``fcd6973f``); 229 then 350 showed the same leak there, mixed
     with the two health errors. This order has no health consumer, so a
     failure names this leak alone.
+
+    Module 234 ``sys.path`` leak (HAMCP-241): ``ServedSchemaTests`` imports
+    ``tests.test_beta_v2`` in ``setUpClass`` in the same way. HAMCP-362 moved
+    its ``restore_after_class`` before that import, but no order covered it:
+    module 234 also imports the guard inside ``setUpClass``, so it passes
+    alone with the import first again. After ``test_git_identity_guard`` it
+    fails at ``tearDownModule`` with the same ``sys.path`` error.
     """
 
     PAIR = ("tests.test_beta_v2.BetaApplicationTests", "tests.test_hamcp200_path_safety.ToolRefusalTests")
@@ -705,6 +712,10 @@ class RecordedOrderRegressionTests(unittest.TestCase):
         "tests.test_git_identity_guard",
         "tests.test_hamcp229_reliability_batch",
     )
+    SERVED_SCHEMA_PATH_LEAK_ORDER = (
+        "tests.test_git_identity_guard",
+        "tests.test_hamcp234_step2_journal_relaxation",
+    )
 
     def run_order(self, names):
         env = {key: value for key, value in os.environ.items() if key != SYNTHETIC_ENV}
@@ -730,6 +741,10 @@ class RecordedOrderRegressionTests(unittest.TestCase):
 
     def test_identity_guard_then_reliability_batch_passes_in_one_process(self):
         result = self.run_order(self.PATH_LEAK_ORDER)
+        self.assertNotIn("sys.path: added", result.stderr)
+
+    def test_identity_guard_then_served_schema_passes_in_one_process(self):
+        result = self.run_order(self.SERVED_SCHEMA_PATH_LEAK_ORDER)
         self.assertNotIn("sys.path: added", result.stderr)
 
     def test_each_application_builder_then_health_consumer_passes_in_one_process(self):

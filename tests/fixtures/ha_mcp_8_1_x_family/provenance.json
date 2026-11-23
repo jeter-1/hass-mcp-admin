@@ -1,0 +1,42 @@
+{
+  "purpose": "Dormant compatibility-family engine coverage (beta23) until the HAMCP-465 decision: retire, or rebaseline on 9.2.0 (HAMCP-437 I2a-D, ANSWERs 20261122-0755-01 item 4.2 and 20261122-0817-01 section 3).",
+  "source_commit": "0f1adcb56b080c74ababfea84cf9892479a3b1cc",
+  "repository_resources": "captures, contract-review artifact evidence and the 8.1.1 family decision resolve from the committed docs/evidence/upstream-read-compatibility files through repository_root",
+  "files": {
+    "upstream_tool_policy_8_1_0.json": {
+      "source_path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_8_1_0.json",
+      "generation": "git show <source_commit>:<source_path> (byte copy)",
+      "sha256": "sha256:9f361b08393361facf68348009d463837a547973d0a38e35d31899ff4e21cfb2"
+    },
+    "upstream_tool_policy_8_1_1.json": {
+      "source_path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_8_1_1.json",
+      "generation": "git show <source_commit>:<source_path> (byte copy)",
+      "sha256": "sha256:df4f812d6606a9bc5dd7afda46580757cfc5b1f0c624684d7d180648d6778eec"
+    },
+    "upstream_tool_policy_8_2_0.json": {
+      "source_path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_8_2_0.json",
+      "generation": "git show <source_commit>:<source_path> (byte copy)",
+      "sha256": "sha256:ab3fa7390e16a4097bf2e7cddba8ecc25860eb20cf2a185e04993a634f098920"
+    },
+    "upstream_compatibility_families.json": {
+      "source_path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_compatibility_families.json",
+      "generation": "git show <source_commit>:<source_path> (byte copy)",
+      "sha256": "sha256:2b6b0525996a6c12d108ae7ee73b9ce9dc01731304b7e96adaa6c69ada8e0819"
+    },
+    "upstream_dashboard_builtin_attestations.json": {
+      "source_path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/contracts/upstream_dashboard_builtin_attestations.json",
+      "generation": "git show <source_commit>:<source_path> (byte copy)",
+      "sha256": "sha256:86eb44cc49574e896e4c2d9288af3630109e827113c2bfdf0c69d0f9540accda"
+    },
+    "upstream_release_registry.json": {
+      "source_path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_release_registry.json",
+      "generation": "the releases[] rows with versions 8.1.0, 8.1.1 and 8.2.0 copied unchanged from <source_commit>; registry_format_version copied; default_version set to 8.2.0; written with json.dumps(indent=2) and a trailing newline",
+      "entry_ids": [
+        "ha-mcp-v8.1.0-4c07e625",
+        "ha-mcp-v8.1.1-e1d76a6e",
+        "ha-mcp-v8.2.0-dbcfc0ee"
+      ],
+      "sha256": "sha256:c1f36ced30e43be2de8013900628f46ef4b49dbb95f4844cb8710c89c716e348"
+    }
+  }
+}

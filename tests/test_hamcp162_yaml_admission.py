@@ -2,7 +2,10 @@
 
 Design ``docs/HAMCP_162_YAML_READER_DESIGN.md`` §8.1 groups 10-13: R4
 descriptor binding, R5 generation and lease, unchanged stock invariants, and
-the Core mapping. Catalogs are the D1 captures (``docs/evidence/hamcp162``).
+the Core mapping. The 8.x catalogs are the D1 captures
+(``docs/evidence/hamcp162``). For 9.2.0 (HAMCP-437), "A" is the exact
+filesystem-on capture the reader binds (``y._CAPTURES``, 82 tools) and "OFF"
+is the reviewed stock 77-tool catalog; single-version cases run on 9.2.0.
 
 Both admission modes are exercised:
 - Mode A, the production default: the signed release registry is disabled
@@ -73,22 +76,74 @@ import tests.test_core_2026_10_device_registry as october  # noqa: E402
 from core_registry_fixtures import core_entry, core_revocation  # noqa: E402
 
 EVIDENCE = ROOT / "docs/evidence/hamcp162"
-VERSIONS = ("8.4.3", "8.5.0")
+VERSIONS = ("9.2.0",)  # HAMCP-437 I2a retired the 8.4.3 and 8.5.0 rows
+PRIMARY = "9.2.0"  # HAMCP-437: the version single-version cases run on
 TOOL = y.TOOL_NAME
 OPTIONAL = (TOOL,) + y.SIBLING_TOOLS
 SESSION = "synthetic-ha-mcp-session"
-STOCK_UPSTREAM = {"8.4.3": 78, "8.5.0": 77}  # K9 stock reviewed catalogs
+STOCK_UPSTREAM = {"9.2.0": 77}  # K9 stock reviewed catalogs
+# The 9.2.0 S8 profiles-2 SHA256SUMS: both captures of the exact
+# filesystem-on catalog; one is committed (as capture.json) with the
+# observation that records the wire order.
+S8 = ROOT / "docs/evidence/hamcp371/s8/profiles-2"
+S8_SUMS = S8 / "SHA256SUMS"
+S8_CAPTURES = ("out/standalone-9.2.0-fs-on/capture-1.json", "out/standalone-9.2.0-fs-on/capture-2.json")
+S8_OBSERVATION = "out/standalone-9.2.0-fs-on/observation.json"
 STOCK_PUBLIC = 113  # + HAMCP-106, + HAMCP-071, + HAMCP-253, + HAMCP-311, + HAMCP-229, + HAMCP-134; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
 
 
 def captured(version, label="A"):
+    if version == "9.2.0":
+        from support import ha_mcp_920_receipts, ha_mcp_captures
+
+        if label == "A":
+            # capture.json lists the tools sorted; order them as the
+            # SHA256SUMS-pinned observation saw them on the wire.
+            tools = {t["name"]: t for t in ha_mcp_920_receipts.yaml_catalog(version)}
+            raw = (S8 / S8_OBSERVATION).read_bytes()
+            if f"{sha256(raw).hexdigest()}  {S8_OBSERVATION}" not in S8_SUMS.read_text().splitlines():
+                raise AssertionError(f"observation hash drift: {S8_OBSERVATION}")
+            order = json.loads(raw)["tool_names_in_wire_order"]
+            if sorted(order) != sorted(tools):
+                raise AssertionError("observation and capture name different tools")
+            return [tools[name] for name in order]
+        if label == "OFF":
+            return ha_mcp_captures.capture(version)["tools"]
+        raise KeyError((version, label))
     return json.loads((EVIDENCE / f"captures/catalog-{version}-{label}.json").read_text())["tools"]
 
 
 def stock_catalog(version):
-    """The D1 capture with the component off: the stock 78/77 tools."""
+    """The capture with the component off: the stock 78/77 tools."""
 
     return captured(version, "OFF")
+
+
+def repeat_labels(version):
+    """Labels of the later captures of the same catalog (D1; 9.2.0: S8_SUMS)."""
+
+    return ("A",) if version == "9.2.0" else ("A", "A2", "B", "S", "S2")
+
+
+def sent_arguments(path, version):
+    """The exact upstream call: the 9.x contract asks for node text."""
+
+    return {"yaml_path": path, "file": "configuration.yaml",
+            "include_content": version == "9.2.0", "include_parsed": True}
+
+
+def optional_states(version, reader="admitted"):
+    return {TOOL: reader, **{name: "prohibited_withheld" for name in y.sibling_tools(version)}}
+
+
+def reply(path, version):
+    """The synthetic peer's YAML reply; 9.2.0 replies carry each match's node text."""
+
+    if version == "9.2.0":
+        from support import ha_mcp_920_yaml
+
+        return ha_mcp_920_yaml.yaml_response(path)
+    return yaml_response(path)
 
 
 def descriptor(tools):
@@ -147,7 +202,7 @@ class RaceTransport(signed._GatewayTransport):
         if hook is not None:
             await hook()
         response = (
-            yaml_response(arguments.get("yaml_path", "recorder"))
+            reply(arguments.get("yaml_path", "recorder"), self.catalog.server_version)
             if tool_name == TOOL else default_response(tool_name, arguments)
         )
         return McpReadResult(
@@ -194,7 +249,7 @@ class Harness(unittest.IsolatedAsyncioTestCase):
             fetcher=fetcher, now=lambda: self.now,
         )
 
-    async def gateway(self, version="8.5.0", tools=None, *, mode="A", revoked=(), core_runtime=None):
+    async def gateway(self, version=PRIMARY, tools=None, *, mode="A", revoked=(), core_runtime=None):
         transport = RaceTransport(captured(version) if tools is None else tools, version)
         gateway = UpstreamReadGateway()
         kwargs = {"core_runtime": core_runtime} if core_runtime is not None else {}
@@ -226,7 +281,7 @@ class Harness(unittest.IsolatedAsyncioTestCase):
         names = self.exposed(gateway)
         self.assertEqual(self.optional(gateway)[TOOL], state, gateway.health_snapshot())
         self.assertNotIn(TOOL, names)
-        self.assertFalse(set(y.SIBLING_TOOLS) & names)
+        self.assertFalse(set(y.ALL_SIBLING_TOOLS) & names)
         self.assertEqual(names, stock)
         self.assertEqual(transport.sent, [])
 
@@ -257,8 +312,8 @@ class AccountingCheckTests(unittest.TestCase):
     """
 
     def setUp(self):
-        self.release = load_reviewed_upstream_release_registry().by_version["8.5.0"]
-        self.tools = captured("8.5.0")
+        self.release = load_reviewed_upstream_release_registry().by_version[PRIMARY]
+        self.tools = captured(PRIMARY)
 
     def valid(self, tools=None, *, missing=(), unreviewed=(), drift=(), states=None):
         tools = self.tools if tools is None else tools
@@ -275,16 +330,13 @@ class AccountingCheckTests(unittest.TestCase):
         return list(y.evaluate_optional(self.tools, self.release).tools)
 
     def test_live_and_stock_shapes_pass_every_check(self):
-        # 80 advertised = 77 policy + 3 optional; reader admitted, both
+        # 82 advertised = 77 policy + 5 optional; reader admitted, all four
         # siblings prohibited_withheld.
-        self.assertEqual(len(self.tools), 80)
+        self.assertEqual(len(self.tools), 82)
         self.assertEqual(len(self.release.policy.tools), 77)
-        self.assertEqual(dict(self.live_states()), {
-            TOOL: "admitted", "ha_list_files": "prohibited_withheld",
-            "ha_read_file": "prohibited_withheld",
-        })
+        self.assertEqual(dict(self.live_states()), optional_states(PRIMARY))
         self.assertTrue(self.valid())
-        self.assertTrue(self.valid(stock_catalog("8.5.0")))
+        self.assertTrue(self.valid(stock_catalog(PRIMARY)))
 
     def test_recognized_withheld_reader_states_stay_valid(self):
         for state in ("held", "withheld:core_unavailable", "quarantined:optional_descriptor_changed"):
@@ -318,7 +370,7 @@ class AccountingCheckTests(unittest.TestCase):
             self.assertFalse(self.valid(self.tools + [extra]))
 
     def test_sibling_drift_check(self):
-        for sibling in y.SIBLING_TOOLS:
+        for sibling in y.sibling_tools(PRIMARY):
             with self.subTest(sibling=sibling):
                 self.assertFalse(self.valid(drift=((sibling, "optional_descriptor_fields_changed"),)))
 
@@ -370,8 +422,8 @@ class ReviewedAccountingGatewayTests(Harness):
             "missing_non_read": ([t for t in base if t.get("name") != "ha_bulk_control"], False),
             "duplicate": (base + [deepcopy(app)], False),
             "unreviewed_extra": (base + [extra], False),
-            "drift_ha_list_files": (_with_description(base, "ha_list_files"), True),
-            "drift_ha_read_file": (_with_description(base, "ha_read_file"), True),
+            **{f"drift_{name}": (_with_description(base, name), True)
+               for name in y.sibling_tools(version)},
         }
 
     def comparable(self, gateway):
@@ -393,7 +445,7 @@ class ReviewedAccountingGatewayTests(Harness):
                         self.assertFalse(health["reviewed_tool_accounting_valid"])
                         self.assertIs(health["optional_reviewed_accounting_valid"], optional_valid)
                         self.assertNotIn("ha_synthetic_unreviewed_read", self.exposed(gateway))
-                        self.assertFalse(set(y.SIBLING_TOOLS) & self.exposed(gateway))
+                        self.assertFalse(set(y.sibling_tools(version)) & self.exposed(gateway))
                         self.assertEqual(transport.sent, [])
                         # The same catalog with the flag forced true publishes
                         # the same health, exposure, admission and counters.
@@ -406,9 +458,9 @@ class ReviewedAccountingGatewayTests(Harness):
     async def test_sibling_drift_keeps_the_reader_callable(self):
         for mode in ("A", "B"):
             with self.subTest(mode=mode):
-                live, _ = await self.gateway("8.5.0", mode=mode)
+                live, _ = await self.gateway(PRIMARY, mode=mode)
                 gateway, transport = await self.gateway(
-                    "8.5.0", _with_description(captured("8.5.0"), "ha_list_files"), mode=mode)
+                    PRIMARY, _with_description(captured(PRIMARY), "ha_list_files"), mode=mode)
                 health = gateway.health_snapshot()
                 self.assertFalse(health["reviewed_tool_accounting_valid"])
                 self.assertEqual([item["tool"] for item in health["optional_sibling_drift"]], ["ha_list_files"])
@@ -416,12 +468,12 @@ class ReviewedAccountingGatewayTests(Harness):
                 self.assertEqual(health["admission_status"], live.health_snapshot()["admission_status"])
                 result = await call(gateway, TOOL, {"yaml_path": "recorder"})
                 self.assertTrue(result["success"], result)
-                self.assertEqual(transport.sent, [(TOOL, y.upstream_arguments("recorder"))])
+                self.assertEqual(transport.sent, [(TOOL, sent_arguments("recorder", PRIMARY))])
 
     async def test_unknown_optional_state_reports_false(self):
         # Fault injection: no normal producer of an unknown state exists.
         original = gw.evaluate_optional
-        for name in OPTIONAL:
+        for name in y.optional_names(PRIMARY):
             def unknown(*args, _name=name, **kwargs):
                 optional = original(*args, **kwargs)
                 return _with_optional_states(optional, [
@@ -430,11 +482,11 @@ class ReviewedAccountingGatewayTests(Harness):
             for mode in ("A", "B"):
                 with self.subTest(tool=name, mode=mode):
                     with patch.object(gw, "evaluate_optional", unknown):
-                        gateway, transport = await self.gateway("8.5.0", mode=mode)
+                        gateway, transport = await self.gateway(PRIMARY, mode=mode)
                     health = gateway.health_snapshot()
                     self.assertEqual(health["optional_tools"][name], "synthetic_unknown")
                     self.assertFalse(health["reviewed_tool_accounting_valid"])
-                    self.assertFalse(set(y.SIBLING_TOOLS) & self.exposed(gateway))
+                    self.assertFalse(set(y.sibling_tools(PRIMARY)) & self.exposed(gateway))
                     self.assertEqual(transport.sent, [])
 
 
@@ -513,7 +565,7 @@ class AdmissionTests(Harness):
                     gateway, transport = await self.gateway(version, stock_catalog(version), mode=mode)
                     health = gateway.health_snapshot()
                     self.assertEqual(health["optional_tools"],
-                                     {name: "optional_absent" for name in OPTIONAL})
+                                     {name: "optional_absent" for name in y.optional_names(version)})
                     self.assertEqual(health["quarantine_reason_counts"], {})
                     self.assertEqual(health["optional_sibling_drift"], [])
                     self.assertEqual(health["upstream_advertised_tool_count"], STOCK_UPSTREAM[version])
@@ -532,15 +584,14 @@ class AdmissionTests(Harness):
                     stock = await self.stock_names(version, mode)
                     gateway, transport = await self.gateway(version, mode=mode)
                     health = gateway.health_snapshot()
-                    self.assertEqual(health["optional_tools"], {
-                        TOOL: "admitted", "ha_list_files": "prohibited_withheld",
-                        "ha_read_file": "prohibited_withheld",
-                    })
+                    self.assertEqual(health["optional_tools"], optional_states(version))
                     self.assertTrue(health["optional_reviewed_accounting_valid"])
-                    # K9: 78 -> 81 (8.4.3) and 77 -> 80 (8.5.0). HAMCP-198
-                    # supersedes D3: the three bound optional names are
-                    # reviewed tools, so the stock flag is true as well.
-                    self.assertEqual(health["upstream_advertised_tool_count"], STOCK_UPSTREAM[version] + 3)
+                    # K9: 78 -> 81 (8.4.3) and 77 -> 80 (8.5.0); 9.2.0 binds
+                    # four siblings, 77 -> 82. HAMCP-198 supersedes D3: the
+                    # bound optional names are reviewed tools, so the stock
+                    # flag is true as well.
+                    self.assertEqual(health["upstream_advertised_tool_count"],
+                                     STOCK_UPSTREAM[version] + len(y.optional_names(version)))
                     self.assertEqual(health["reviewed_policy_entry_count"], STOCK_UPSTREAM[version])
                     self.assertTrue(health["reviewed_tool_accounting_valid"])
                     self.assertEqual(health["optional_sibling_drift"], [])
@@ -550,7 +601,7 @@ class AdmissionTests(Harness):
                     result = await call(gateway, TOOL, {"yaml_path": "recorder"})
                     self.assertTrue(result["success"], result)
                     self.assertEqual(result["data"]["value"], {"purge_keep_days": 10})
-                    self.assertEqual(transport.sent, [(TOOL, y.upstream_arguments("recorder"))])
+                    self.assertEqual(transport.sent, [(TOOL, sent_arguments("recorder", version))])
                     self.assertEqual(transport.sent[0][1]["file"], "configuration.yaml")
 
     async def test_unaccounted_advertised_tool_keeps_accounting_false(self):
@@ -600,10 +651,14 @@ class AdmissionTests(Harness):
                     self.assertEqual(transport.sent, [])
 
     async def test_repeated_captures_reproduce_the_binding(self):
-        # A2, B, S and S2 are later captures of the same versions (D1).
+        # A2, B, S and S2 are later captures of the same versions (D1). The
+        # two 9.2.0 captures are byte-identical (S8_SUMS); one is committed.
+        sums = S8_SUMS.read_text().splitlines()
+        for name in S8_CAPTURES:
+            self.assertIn(f"{y._CAPTURES['9.2.0'][2]}  {name}", sums)
         for version in VERSIONS:
             binding = y.OPTIONAL_TOOL_BINDINGS[(version, TOOL)]
-            for label in ("A", "A2", "B", "S", "S2"):
+            for label in repeat_labels(version):
                 with self.subTest(version=version, capture=label):
                     tool = descriptor(captured(version, label))
                     self.assertEqual(
@@ -627,26 +682,31 @@ class AdmissionTests(Harness):
                     self.assertEqual([tool for tool, _ in transport.sent], [HEALTH])
 
     async def test_descriptor_mutations_quarantine_in_signed_mode(self):
-        stock = await self.stock_names("8.5.0", "B")
+        stock = await self.stock_names(PRIMARY, "B")
         for name, change, reason in DRIFT[::3]:
             with self.subTest(mutation=name):
-                gateway, transport = await self.gateway("8.5.0", with_reader("8.5.0", change), mode="B")
+                gateway, transport = await self.gateway(PRIMARY, with_reader(PRIMARY, change), mode="B")
                 self.assert_reader_only_refused(gateway, transport, stock, f"quarantined:{reason}")
 
     async def test_renamed_reader_is_absent_and_never_dispatched(self):
-        stock = await self.stock_names("8.5.0")
+        stock = await self.stock_names(PRIMARY)
         gateway, transport = await self.gateway(
-            "8.5.0", with_reader("8.5.0", _set(("name",), "ha_config_get_yaml_v2")))
+            PRIMARY, with_reader(PRIMARY, _set(("name",), "ha_config_get_yaml_v2")))
         self.assert_reader_only_refused(gateway, transport, stock, "optional_absent")
         self.assertNotIn("ha_config_get_yaml_v2", self.exposed(gateway))
 
-    async def test_policy_state_within_the_reviewed_shape_does_not_quarantine(self):
+    async def test_a_policy_block_on_the_92_reader_quarantines_it(self):
+        # HAMCP-437 I2a: the in-shape ``_meta.ha_mcp.policy`` variation was
+        # 8.4.3/8.5.0-only (those readers carried the block); both rows are
+        # retired. 9.2.0 has no policy block to vary: adding one is a
+        # descriptor change.
         for version in VERSIONS:
+            self.assertEqual(descriptor(captured(version))["_meta"], {"fastmcp": {"tags": ["System", "beta"]}})
+            stock = await self.stock_names(version)
             for name, change in POLICY_IN_SHAPE:
                 with self.subTest(version=version, state=name):
-                    gateway, _ = await self.gateway(version, with_reader(version, change))
-                    self.assertEqual(self.optional(gateway)[TOOL], "admitted")
-                    self.assertIn(TOOL, self.exposed(gateway))
+                    gateway, transport = await self.gateway(version, with_reader(version, change))
+                    self.assert_reader_only_refused(gateway, transport, stock, "quarantined:optional_meta_changed")
 
     async def test_duplicate_quarantines_only_the_reader(self):
         for version in VERSIONS:
@@ -660,11 +720,11 @@ class AdmissionTests(Harness):
                 self.assertFalse(gateway.health_snapshot()["optional_reviewed_accounting_valid"])
 
     async def test_source_commit_mismatch_withholds_only_the_reader(self):
-        stock = await self.stock_names("8.5.0")
-        binding = y.OPTIONAL_TOOL_BINDINGS[("8.5.0", TOOL)]
+        stock = await self.stock_names(PRIMARY)
+        binding = y.OPTIONAL_TOOL_BINDINGS[(PRIMARY, TOOL)]
         with patch.dict(y.OPTIONAL_TOOL_BINDINGS,
-                        {("8.5.0", TOOL): replace(binding, source_commit="0" * 40)}):
-            gateway, transport = await self.gateway("8.5.0")
+                        {(PRIMARY, TOOL): replace(binding, source_commit="0" * 40)}):
+            gateway, transport = await self.gateway(PRIMARY)
         self.assert_reader_only_refused(gateway, transport, stock,
                                         "withheld:optional_source_commit_mismatch")
 
@@ -694,31 +754,25 @@ class AdmissionTests(Harness):
             self.assertEqual(y.evaluate_optional(captured(version), held).status, "held")
             self.assertEqual(y.withheld_reason(release, signed_selection=True), "optional_signed_selection")
         self.assertEqual(y.withheld_reason(None, signed_selection=False), "optional_binding_absent")
-        for release in self.compiled.releases:
-            # HAMCP-319: 9.1.0 is admitted; tests/test_hamcp319_yaml.py covers it.
-            # HAMCP-351: 9.1.2 is admitted at 9.1.0 parity.
-            # HAMCP-371: 9.2.0 is admitted at 9.1.2 parity (N29).
-            if release.version in VERSIONS or release.version in {"9.1.0", "9.1.2", "9.2.0"}:
-                continue
-            with self.subTest(version=release.version):
-                self.assertEqual(y.OPTIONAL_TOOL_DISPOSITIONS[release.version], "held")
-                self.assertEqual(y.withheld_reason(release, signed_selection=False),
-                                 "optional_disposition_held")
+        # HAMCP-437 I2a: the shipped registry holds only 9.2.0 (admitted,
+        # HAMCP-371 N29); an unlisted version stays held
+        # (test_an_unlisted_version_is_never_default_admitted).
+        self.assertEqual({release.version for release in self.compiled.releases}, set(VERSIONS))
         with patch.dict(y.OPTIONAL_TOOL_BINDINGS):
-            del y.OPTIONAL_TOOL_BINDINGS[("8.5.0", TOOL)]
-            self.assertEqual(y.withheld_reason(self.compiled.by_version["8.5.0"], signed_selection=False),
+            del y.OPTIONAL_TOOL_BINDINGS[(PRIMARY, TOOL)]
+            self.assertEqual(y.withheld_reason(self.compiled.by_version[PRIMARY], signed_selection=False),
                              "optional_binding_absent")
 
     async def test_read_gateway_held_withholds_through_the_gateway(self):
-        release = self.compiled.by_version["8.5.0"]
+        release = self.compiled.by_version[PRIMARY]
         held = replace(release, provider_dispositions=tuple(
             (surface, "held" if surface == "read_gateway" else value)
             for surface, value in release.provider_dispositions))
         registry = replace(self.compiled, releases=tuple(
-            held if item.version == "8.5.0" else item for item in self.compiled.releases))
+            held if item.version == PRIMARY else item for item in self.compiled.releases))
         with patch("ha_mcp_engineering.providers.upstream_read_gateway.load_reviewed_upstream_release_registry",
                    return_value=registry):
-            gateway, transport = await self.gateway("8.5.0")
+            gateway, transport = await self.gateway(PRIMARY)
         self.assertNotIn(TOOL, self.exposed(gateway))
         self.assertEqual(transport.sent, [])
 
@@ -735,25 +789,25 @@ class AdmissionTests(Harness):
     def test_load_assertions_fail_closed(self):
         registry = self.compiled
         y.validate_bindings_against_registry(registry)
-        binding = y.OPTIONAL_TOOL_BINDINGS[("8.5.0", TOOL)]
+        binding = y.OPTIONAL_TOOL_BINDINGS[(PRIMARY, TOOL)]
         cases = (
             ("optional_disposition_versions_mismatch",
-             {"dispositions": {k: v for k, v in y.OPTIONAL_TOOL_DISPOSITIONS.items() if k != "8.6.0"}}),
+             {"dispositions": {k: v for k, v in y.OPTIONAL_TOOL_DISPOSITIONS.items() if k != PRIMARY}}),
             ("optional_disposition_versions_mismatch",
              {"dispositions": {**y.OPTIONAL_TOOL_DISPOSITIONS, "9.9.9": "held"}}),
             ("optional_disposition_invalid",
-             {"dispositions": {**y.OPTIONAL_TOOL_DISPOSITIONS, "8.6.0": "default"}}),
+             {"dispositions": {**y.OPTIONAL_TOOL_DISPOSITIONS, PRIMARY: "default"}}),
             ("optional_binding_version_unknown",
              {"bindings": {("9.9.9", TOOL): replace(binding, version="9.9.9")}}),
             ("optional_binding_version_unknown",
              {"bindings": {("8.4.3", TOOL): binding}}),
             ("optional_binding_model_mismatch",
-             {"bindings": {("8.5.0", TOOL): replace(
+             {"bindings": {(PRIMARY, TOOL): replace(
                  binding, runtime_contract_fingerprint_model="ha-mcp-operational-tool-descriptor-v1")}}),
             ("optional_binding_model_invalid",
-             {"bindings": {("8.5.0", TOOL): replace(binding, binding_model="synthetic-model")}}),
+             {"bindings": {(PRIMARY, TOOL): replace(binding, binding_model="synthetic-model")}}),
             ("optional_admitted_binding_absent",
-             {"dispositions": {**y.OPTIONAL_TOOL_DISPOSITIONS, "8.4.1": "admitted"}}),
+             {"removed_bindings": ((PRIMARY, TOOL),)}),
         )
         for code, change in cases:
             with self.subTest(code=code, change=sorted(change)):
@@ -765,41 +819,44 @@ class AdmissionTests(Harness):
                         load_reviewed_upstream_release_registry(RELEASE_REGISTRY_PATH)
 
     @contextmanager
-    def patched_tables(self, dispositions=None, bindings=None):
+    def patched_tables(self, dispositions=None, bindings=None, removed_bindings=()):
         with patch.dict(y.OPTIONAL_TOOL_DISPOSITIONS, clear=dispositions is not None), \
                 patch.dict(y.OPTIONAL_TOOL_BINDINGS):
             if dispositions is not None:
                 y.OPTIONAL_TOOL_DISPOSITIONS.update(dispositions)
             if bindings is not None:
                 y.OPTIONAL_TOOL_BINDINGS.update(bindings)
+            for key in removed_bindings:
+                del y.OPTIONAL_TOOL_BINDINGS[key]
             yield
 
     def test_an_unlisted_version_is_never_default_admitted(self):
         # HAMCP-184 rule: a version missing from the disposition table is
         # held, even with an otherwise matching binding for it.
-        release = replace(self.compiled.by_version["8.5.0"], version="9.9.9")
-        binding = y.OPTIONAL_TOOL_BINDINGS[("8.5.0", TOOL)]
+        release = replace(self.compiled.by_version[PRIMARY], version="9.9.9")
+        binding = y.OPTIONAL_TOOL_BINDINGS[(PRIMARY, TOOL)]
         with self.patched_tables(bindings={("9.9.9", TOOL): binding}):
             self.assertNotIn("9.9.9", y.OPTIONAL_TOOL_DISPOSITIONS)
             self.assertEqual(y.withheld_reason(release, signed_selection=False),
                              "optional_disposition_held")
-            self.assertEqual(y.evaluate_optional(captured("8.5.0"), release).status, "held")
+            self.assertEqual(y.evaluate_optional(captured(PRIMARY), release).status, "held")
 
     def test_every_registry_version_has_an_explicit_disposition(self):
         self.assertEqual(set(y.OPTIONAL_TOOL_DISPOSITIONS), {r.version for r in self.compiled.releases})
-        self.assertEqual({v for v, d in y.OPTIONAL_TOOL_DISPOSITIONS.items() if d == "admitted"},
-                         set(VERSIONS) | {"9.1.0", "9.1.2", "9.2.0"})
-        self.assertEqual(y.OPTIONAL_TOOL_DISPOSITIONS["8.6.0"], "held")
+        # HAMCP-437 I2a: the 9.1.x rows and the 8.6.0 hold are retired.
+        self.assertEqual(y.OPTIONAL_TOOL_DISPOSITIONS, {version: "admitted" for version in VERSIONS})
 
     def test_captures_are_pinned_with_provenance(self):
         for version in VERSIONS:
-            for tool in OPTIONAL:
+            for tool in y.optional_names(version):
                 binding = y.OPTIONAL_TOOL_BINDINGS[(version, tool)]
                 with self.subTest(version=version, tool=tool):
                     raw = (ROOT / binding.capture_resource).read_bytes()
                     self.assertEqual(sha256(raw).hexdigest(), binding.capture_sha256)
                     self.assertEqual(binding.source_commit, self.compiled.by_version[version].source_commit)
-                    self.assertEqual(json.loads(raw)["initialize_result"]["serverInfo"]["version"], version)
+                    capture = json.loads(raw)
+                    self.assertEqual(capture["server_version"] if version == "9.2.0"
+                                     else capture["initialize_result"]["serverInfo"]["version"], version)
                     observed = next(t for t in json.loads(raw)["tools"] if t["name"] == tool)
                     self.assertEqual(runtime_contract_fingerprint(observed, model=binding.runtime_contract_fingerprint_model),
                                      binding.runtime_contract_fingerprint)
@@ -808,39 +865,44 @@ class AdmissionTests(Harness):
                     self.assertEqual(binding.classification,
                                      "mixed_or_requires_wrapper" if tool == TOOL else "prohibited")
         manifest = (EVIDENCE / "MANIFEST.sha256").read_text()
+        sums = S8_SUMS.read_text().splitlines()
         for version in VERSIONS:
             digest = y.OPTIONAL_TOOL_BINDINGS[(version, TOOL)].capture_sha256
-            self.assertIn(f"{digest}  ./captures/catalog-{version}-A.json", manifest)
+            if version == "9.2.0":
+                self.assertIn(f"{digest}  {S8_CAPTURES[0]}", sums)
+            else:
+                self.assertIn(f"{digest}  ./captures/catalog-{version}-A.json", manifest)
 
     async def test_siblings_are_never_exposed_or_dispatched(self):
-        drifted_siblings = captured("8.5.0")
+        siblings = y.sibling_tools(PRIMARY)
+        drifted_siblings = captured(PRIMARY)
         for item in drifted_siblings:
-            if item["name"] in y.SIBLING_TOOLS:
+            if item["name"] in siblings:
                 item["description"] += " synthetic"
         states = (
-            ("admitted", "A", captured("8.5.0"), ()),
-            ("quarantined", "A", with_reader("8.5.0", _drop("title")), ()),
+            ("admitted", "A", captured(PRIMARY), ()),
+            ("quarantined", "A", with_reader(PRIMARY, _drop("title")), ()),
             ("sibling_drift", "A", drifted_siblings, ()),
-            ("signed", "B", captured("8.5.0"), ("8.5.0",)),
-            ("compiled", "B", captured("8.5.0"), ()),
+            ("signed", "B", captured(PRIMARY), (PRIMARY,)),
+            ("compiled", "B", captured(PRIMARY), ()),
         )
         for name, mode, tools, revoked in states:
             with self.subTest(state=name):
-                gateway, transport = await self.gateway("8.5.0", tools, mode=mode, revoked=revoked)
-                self.assertFalse(set(y.SIBLING_TOOLS) & self.exposed(gateway))
-                for sibling in y.SIBLING_TOOLS:
+                gateway, transport = await self.gateway(PRIMARY, tools, mode=mode, revoked=revoked)
+                self.assertFalse(set(siblings) & self.exposed(gateway))
+                for sibling in siblings:
                     self.assertEqual(self.optional(gateway)[sibling], "prohibited_withheld")
                 self.assertEqual(transport.sent, [])
-        gateway, _ = await self.gateway("8.5.0", drifted_siblings)
+        gateway, _ = await self.gateway(PRIMARY, drifted_siblings)
         self.assertEqual(self.optional(gateway)[TOOL], "admitted")
         self.assertEqual(sorted(tool for tool, _ in gateway.health_snapshot()["optional_sibling_drift"])
                          if gateway.health_snapshot()["optional_sibling_drift"]
                          and isinstance(gateway.health_snapshot()["optional_sibling_drift"][0], (list, tuple))
                          else sorted(item["tool"] for item in gateway.health_snapshot()["optional_sibling_drift"]),
-                         sorted(y.SIBLING_TOOLS))
-        for sibling in y.SIBLING_TOOLS:
+                         sorted(siblings))
+        for sibling in siblings:
             with self.assertRaises(y.OptionalBindingError):
-                y.synthesized_policy_entry(y.OPTIONAL_TOOL_BINDINGS[("8.5.0", sibling)])
+                y.synthesized_policy_entry(y.OPTIONAL_TOOL_BINDINGS[(PRIMARY, sibling)])
 
 
 # ---------------------------------------------------------------------------
@@ -884,7 +946,7 @@ class GenerationLeaseTests(Harness):
                 self.assertTrue(admitted.optional_extension.profile_id.startswith(f"ha-mcp-optional-yaml-{version}-"))
 
     async def test_authority_token_binds_the_extension_itself(self):
-        admitted = await AdmissionTests.selection(self, "8.5.0")
+        admitted = await AdmissionTests.selection(self, PRIMARY)
         extension = admitted.optional_extension
         stock_only = replace(admitted, optional_extension=None)
         # Without an extension the token is the stock material, byte-identical.
@@ -901,16 +963,16 @@ class GenerationLeaseTests(Harness):
 
     async def test_withheld_selections_report_the_reason(self):
         for change, reason in (
-            ({"dispositions": {"8.5.0": "held"}}, "optional_disposition_held"),
+            ({"dispositions": {PRIMARY: "held"}}, "optional_disposition_held"),
             ({"commit": "0" * 40}, "optional_source_commit_mismatch"),
         ):
             with self.subTest(reason=reason):
-                binding = y.OPTIONAL_TOOL_BINDINGS[("8.5.0", TOOL)]
+                binding = y.OPTIONAL_TOOL_BINDINGS[(PRIMARY, TOOL)]
                 with patch.dict(y.OPTIONAL_TOOL_DISPOSITIONS, change.get("dispositions", {})), \
-                        patch.dict(y.OPTIONAL_TOOL_BINDINGS, {("8.5.0", TOOL): replace(
+                        patch.dict(y.OPTIONAL_TOOL_BINDINGS, {(PRIMARY, TOOL): replace(
                             binding, source_commit=change.get("commit", binding.source_commit))}):
-                    selection = await AdmissionTests.selection(self, "8.5.0")
-                    gateway, transport = await self.gateway("8.5.0", mode="B")
+                    selection = await AdmissionTests.selection(self, PRIMARY)
+                    gateway, transport = await self.gateway(PRIMARY, mode="B")
                 self.assertIsNone(selection.optional_extension)
                 self.assertEqual(selection.optional_withheld_reason, reason)
                 self.assertNotIn(TOOL, self.exposed(gateway))
@@ -923,13 +985,13 @@ class GenerationLeaseTests(Harness):
                 self.assertIsNone(gateway._readmission_coordinator.acquire_route(TOOL, session_id=SESSION))
                 self.assertEqual(transport.sent, [])
         # An unknown version is refused as a whole, before any optional state.
-        gateway, transport = await self.gateway("8.5.0", captured("8.5.0"), mode="B")
-        transport.catalog = replace(transport.catalog, server_version="8.5.9")
+        gateway, transport = await self.gateway(PRIMARY, captured(PRIMARY), mode="B")
+        transport.catalog = replace(transport.catalog, server_version="9.2.9")
         await gateway.initialize(gateway.synthetic_server)
         self.assertNotIn(TOOL, self.exposed(gateway))
         self.assertEqual(transport.sent, [])
 
-    async def race(self, mode, hook, *, tool=TOOL, arguments=None, version="8.5.0"):
+    async def race(self, mode, hook, *, tool=TOOL, arguments=None, version=PRIMARY):
         gateway, transport = await self.gateway(version, mode=mode)
         transport.between = lambda: hook(gateway, transport)
         result = await call(gateway, tool, arguments or {"yaml_path": "recorder"})
@@ -943,29 +1005,29 @@ class GenerationLeaseTests(Harness):
         await gateway.initialize(gateway.synthetic_server)
 
     async def test_zero_dispatch_after_changes_between_admission_and_dispatch(self):
-        binding = y.OPTIONAL_TOOL_BINDINGS[("8.5.0", TOOL)]
+        binding = y.OPTIONAL_TOOL_BINDINGS[(PRIMARY, TOOL)]
 
         async def session_change(g, t):
             await self.reinitialize(g, t, session_id="synthetic-ha-mcp-session-2")
 
         async def catalog_refresh_reader_removed(g, t):
-            await self.reinitialize(g, t, stock_catalog("8.5.0"))
+            await self.reinitialize(g, t, stock_catalog(PRIMARY))
 
         async def catalog_refresh_stock_drift(g, t):
-            tools = captured("8.5.0")
+            tools = captured(PRIMARY)
             next(item for item in tools if item["name"] == HEALTH)["description"] += " synthetic"
             await self.reinitialize(g, t, tools)
 
         async def optional_drift(g, t):
-            await self.reinitialize(g, t, with_reader("8.5.0", _drop("title")))
+            await self.reinitialize(g, t, with_reader(PRIMARY, _drop("title")))
 
         async def disposition_change(g, t):
-            with patch.dict(y.OPTIONAL_TOOL_DISPOSITIONS, {"8.5.0": "held"}):
+            with patch.dict(y.OPTIONAL_TOOL_DISPOSITIONS, {PRIMARY: "held"}):
                 await self.reinitialize(g, t)
 
         async def extension_change(g, t):
             with patch.dict(y.OPTIONAL_TOOL_BINDINGS,
-                            {("8.5.0", TOOL): replace(binding, source_commit="0" * 40)}):
+                            {(PRIMARY, TOOL): replace(binding, source_commit="0" * 40)}):
                 await self.reinitialize(g, t)
 
         async def authority_retirement(g, t):
@@ -993,7 +1055,8 @@ class GenerationLeaseTests(Harness):
         # identical catalog, or in Mode A a new session) keeps the in-flight
         # route. The reader gets exactly the stock behaviour, no more.
         async def identical_refresh(g, t):
-            await self.reinitialize(g, t, captured("8.5.0", "A2"))
+            # 9.2.0's second capture is byte-identical to the first (S8_SUMS).
+            await self.reinitialize(g, t, captured(PRIMARY, repeat_labels(PRIMARY)[-1]))
 
         async def session_change(g, t):
             await self.reinitialize(g, t, session_id="synthetic-ha-mcp-session-2")
@@ -1008,7 +1071,7 @@ class GenerationLeaseTests(Harness):
             self.assertEqual(outcomes[0], (True, 1))
 
     async def test_leases_are_single_use_session_bound_and_retired(self):
-        gateway, transport = await self.gateway("8.5.0", mode="B")
+        gateway, transport = await self.gateway(PRIMARY, mode="B")
         coordinator = gateway._readmission_coordinator
         self.assertIsNone(coordinator.acquire_route(TOOL, session_id="synthetic-foreign-session"))
         lease = coordinator.acquire_route(TOOL, session_id=SESSION)
@@ -1020,7 +1083,7 @@ class GenerationLeaseTests(Harness):
         self.assertIsNone(coordinator.commit_route(lease, session_id=SESSION))  # replayed
         self.assertTrue(coordinator.finish_committed(commit))
         retired = coordinator.acquire_route(TOOL, session_id=SESSION)
-        await self.reinitialize(gateway, transport, with_reader("8.5.0", _drop("title")))
+        await self.reinitialize(gateway, transport, with_reader(PRIMARY, _drop("title")))
         self.assertIsNone(coordinator.commit_route(retired, session_id=SESSION))
         self.assertIsNone(coordinator.acquire_route(TOOL, session_id=SESSION))
         self.assertEqual(transport.sent, [])
@@ -1028,10 +1091,10 @@ class GenerationLeaseTests(Harness):
     async def test_result_after_retirement_does_not_readmit_or_reexpose(self):
         for mode in ("A", "B"):
             with self.subTest(mode=mode):
-                gateway, transport = await self.gateway("8.5.0", mode=mode)
+                gateway, transport = await self.gateway(PRIMARY, mode=mode)
 
                 async def drift():
-                    await self.reinitialize(gateway, transport, with_reader("8.5.0", _drop("title")))
+                    await self.reinitialize(gateway, transport, with_reader(PRIMARY, _drop("title")))
 
                 transport.during = drift
                 await call(gateway, TOOL, {"yaml_path": "recorder"})
@@ -1063,7 +1126,7 @@ class GenerationLeaseTests(Harness):
 
     async def test_inflight_stock_lease_across_an_optional_drift_generation(self):
         async def drift(g, t):
-            await self.reinitialize(g, t, with_reader("8.5.0", _drop("title")))
+            await self.reinitialize(g, t, with_reader(PRIMARY, _drop("title")))
 
         gateway, transport, result = await self.race("B", drift, tool=HEALTH,
                                                     arguments={"sections": ["repairs"]})
@@ -1083,7 +1146,7 @@ class InvariantTests(Harness):
         for version in VERSIONS:
             with self.subTest(version=version):
                 stock_order = [t["name"] for t in stock_catalog(version)]
-                exact_order = [t["name"] for t in captured(version) if t["name"] not in OPTIONAL]
+                exact_order = [t["name"] for t in captured(version) if t["name"] not in y.optional_names(version)]
                 self.assertEqual(exact_order, stock_order)
                 self.assertEqual(schema_fingerprint(stock_order), EXACT_RUNTIME_TOOL_ORDER_FINGERPRINTS[version])
                 self.assertNotEqual(schema_fingerprint([t["name"] for t in captured(version)]),
@@ -1091,21 +1154,22 @@ class InvariantTests(Harness):
 
     def test_policy_and_registry_documents_hold_no_optional_name(self):
         registry_text = RELEASE_REGISTRY_PATH.read_text()
-        for name in OPTIONAL:
+        for name in y.ALL_OPTIONAL_NAMES:
             self.assertNotIn(name, registry_text)
         for release in self.compiled.releases:
             with self.subTest(version=release.version):
                 raw = (ROOT / release.policy_resource).read_bytes() if (ROOT / release.policy_resource).exists() \
                     else (RELEASE_REGISTRY_PATH.parent / release.policy_resource).read_bytes()
                 self.assertEqual("sha256:" + sha256(raw).hexdigest(), release.policy_sha256)
-                self.assertFalse(set(OPTIONAL) & set(release.policy.by_name))
-                for name in OPTIONAL:
+                self.assertFalse(set(y.ALL_OPTIONAL_NAMES) & set(release.policy.by_name))
+                for name in y.ALL_OPTIONAL_NAMES:
                     self.assertNotIn(name.encode(), raw)
 
     def test_whole_catalog_validator_still_refuses_the_exact_catalog(self):
         for version in VERSIONS:
             release = self.compiled.by_version[version]
-            for tools, valid, extra in ((stock_catalog(version), True, 0), (captured(version), False, 3)):
+            for tools, valid, extra in ((stock_catalog(version), True, 0),
+                                        (captured(version), False, len(y.optional_names(version)))):
                 with self.subTest(version=version, count=len(tools)):
                     result = validate_reviewed_release_catalog(
                         release, observed_server_name="ha-mcp", observed_upstream_version=version,
@@ -1186,7 +1250,7 @@ class CoreTests(Harness):
         # HAMCP-290: the retired delegated ha_get_hacs_info row is removed.
         self.assertFalse(RETIRED_DELEGATED_READS & set(DELEGATED_CORE_REQUIREMENTS))
         self.assertEqual(len(DELEGATED_CORE_REQUIREMENTS), 31 - len(RETIRED_DELEGATED_READS))
-        for sibling in y.SIBLING_TOOLS:
+        for sibling in y.ALL_SIBLING_TOOLS:
             self.assertNotIn(sibling, DELEGATED_CORE_REQUIREMENTS)
 
     async def october_runtime(self, version):
@@ -1233,7 +1297,7 @@ class CoreTests(Harness):
                 with self.subTest(core=core_version, mode=mode):
                     core = (await self.runtime(core_version))[0] if core_version == "2026.9.2" \
                         else await self.october_runtime(core_version)
-                    gateway, transport = await self.gateway("8.5.0", mode=mode, core_runtime=core)
+                    gateway, transport = await self.gateway(PRIMARY, mode=mode, core_runtime=core)
                     self.assertIn(TOOL, self.exposed(gateway))
                     result = await call(gateway, TOOL, {"yaml_path": "recorder"})
                     self.assertTrue(result["success"], result)
@@ -1245,7 +1309,7 @@ class CoreTests(Harness):
         core, _ = await self.runtime("2026.9.3")
         for mode in ("A", "B"):
             with self.subTest(mode=mode):
-                gateway, transport = await self.gateway("8.5.0", mode=mode, core_runtime=core)
+                gateway, transport = await self.gateway(PRIMARY, mode=mode, core_runtime=core)
                 self.assertNotIn(TOOL, self.exposed(gateway))
                 health = gateway.health_snapshot()
                 self.assertIn(TOOL, {item["tool"] for item in health["core_withheld_tools"]})
@@ -1256,14 +1320,14 @@ class CoreTests(Harness):
         core, _ = await self.runtime()
         with patch.dict(DELEGATED_CORE_REQUIREMENTS):
             del DELEGATED_CORE_REQUIREMENTS[TOOL]
-            gateway, transport = await self.gateway("8.5.0", core_runtime=core)
+            gateway, transport = await self.gateway(PRIMARY, core_runtime=core)
         self.assertNotIn(TOOL, self.exposed(gateway))
         self.assertEqual(self.optional(gateway)[TOOL], "withheld:core_requirement_unmapped")
         self.assertEqual(transport.sent, [])
 
     async def test_core_retirement_before_dispatch_refuses_with_zero_calls(self):
         core, _ = await self.runtime()
-        gateway, transport = await self.gateway("8.5.0", core_runtime=core)
+        gateway, transport = await self.gateway(PRIMARY, core_runtime=core)
         self.assertIn(TOOL, self.exposed(gateway))
 
         async def retire():

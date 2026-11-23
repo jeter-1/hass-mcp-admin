@@ -230,6 +230,8 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
             self.jobs["validate"]["uses"],
             "./.github/workflows/ci.yml",
         )
+        # HAMCP-437: kept from the retired test_publication_ci_event_context.
+        self.assertEqual(self.jobs["validate"]["permissions"], {"contents": "read"})
         self.assertNotIn("needs", self.jobs["detect-release"])
         self.assertEqual(self.jobs["validate"]["needs"], "detect-release")
         self.assertEqual(self.jobs["validate"]["if"],

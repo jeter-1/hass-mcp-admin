@@ -15,7 +15,6 @@ BETA = ROOT / "hass_mcp_engineering_beta"
 sys.path.insert(0, str(BETA))
 if str(ROOT / "tests") not in sys.path:
     sys.path.append(str(ROOT / "tests"))
-from support.support_window_matrix import rows as support_rows  # noqa: E402
 
 from ha_mcp_engineering.clients.upstream_read import McpReadResult  # noqa: E402
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
@@ -35,6 +34,8 @@ from ha_mcp_engineering.providers.operational_lifecycle import (  # noqa: E402
     LIFECYCLE_ADDON_RESPONSE_ENVELOPE_STRUCTURED,
     LIFECYCLE_ADDON_RESPONSE_MODEL_TEXT_V1,
     LIFECYCLE_ADDON_RESPONSE_MODEL_STRUCTURED_V1,
+    APP_ACTION_TOOL,
+    APP_READ_TOOL,
     OperationalLifecycleProviderError,
     ReviewedOperationalLifecycleProvider,
 )
@@ -43,6 +44,7 @@ from ha_mcp_engineering.providers.supervisor_self import (  # noqa: E402
 )
 from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
     catalog_fingerprint,
+    load_reviewed_upstream_release_registry,
 )
 from ha_mcp_engineering.version import SERVER_VERSION  # noqa: E402
 from tests.test_2_1a_beta2_operational_lifecycle import (  # noqa: E402
@@ -54,9 +56,14 @@ from tests.test_2_1a_beta2_operational_lifecycle import (  # noqa: E402
     provider_evidence,
     upstream_addon_identity,
 )
+from tests.test_hamcp401_lifecycle_9_2_0 import (  # noqa: E402
+    Transport920,
+    catalog_920,
+)
 
 
 SOURCE_DERIVED_MINIMUM_DETAIL_BYTES = 71_986
+CATALOG_FINGERPRINT_920 = catalog_fingerprint(list(catalog_920().tools))
 
 
 def live_equivalent_payload() -> dict:
@@ -68,12 +75,17 @@ def live_equivalent_payload() -> dict:
     required identity fields are included. The synthetic filler preserves that
     source-derived lower bound without copying production options or
     configuration.
+
+    HAMCP-437 I2a-D: the shipped registry admits only 9.2.0, so the payload
+    carries the reviewed 9.2.0 version and is served through the 9.2.0 app
+    read tool. The byte bound is still the 8.0.0-derived one; it is not
+    re-derived from 9.2.0 source.
     """
 
     addon = {
         "slug": UPSTREAM_ADDON_SLUG,
         "name": "Home Assistant MCP Server",
-        "version": "8.0.0",
+        "version": "9.2.0",
         "state": "started",
         "repository": "abcdef12",
         "update_available": False,
@@ -130,15 +142,20 @@ def installed_summary(addons: list[dict]) -> dict[str, int]:
     }
 
 
-class DetailTransport(FakeMcpTransport):
+# HAMCP-437 I2a-D: the reviewed 9.2.0 peer (app tool names, structured
+# envelope) replaces the retired 8.0.0 row.
+RESPONSE_KEY_920 = ("ha-mcp-v9.2.0-9de5bf6c", "9.2.0", "2025-03-26")
+
+
+class DetailTransport(Transport920):
     def __init__(
         self,
         detail_result: dict | None = None,
         *,
         inventory_result: dict | None = None,
-        version: str = "8.0.0",
+        catalog=None,
     ) -> None:
-        super().__init__(version)
+        super().__init__(catalog)
         self.detail_result = detail_result or call_result(
             live_equivalent_payload()
         )
@@ -147,7 +164,7 @@ class DetailTransport(FakeMcpTransport):
     async def execute_read(self, tool_name, arguments, **kwargs):
         result = await super().execute_read(tool_name, arguments, **kwargs)
         if (
-            tool_name == "ha_get_addon"
+            tool_name == APP_READ_TOOL
             and arguments.get("source") == "installed"
             and self.inventory_result is not None
         ):
@@ -155,6 +172,46 @@ class DetailTransport(FakeMcpTransport):
                 result,
                 call_result=deepcopy(self.inventory_result),
             )
+        if tool_name == APP_READ_TOOL and "slug" in arguments:
+            return replace(
+                result,
+                call_result=deepcopy(self.detail_result),
+            )
+        return result
+
+
+# HAMCP-437 I2a-D: frozen 8.1.x rows (byte copies at 0f1adcb5, provenance in
+# the fixture directory) for two dormant guards the one-row shipped 9.2.0
+# registry cannot reach: a change between two admitted releases inside one
+# read, and V2 ``_meta.ha_mcp.policy`` normalization (9.2.0 descriptors carry
+# no ``_meta.ha_mcp``). The fixture is injected by patching the provider
+# module's registry loader and never replaces the shipped registry.
+FROZEN_8_1_X_REGISTRY = (
+    ROOT / "tests/fixtures/ha_mcp_8_1_x_family/upstream_release_registry.json"
+)
+
+
+def patch_frozen_8_1_x_registry():
+    return patch.object(
+        lifecycle,
+        "load_reviewed_upstream_release_registry",
+        return_value=load_reviewed_upstream_release_registry(
+            FROZEN_8_1_X_REGISTRY
+        ),
+    )
+
+
+class LegacyDetailTransport(FakeMcpTransport):
+    """A frozen 8.1.x peer serving the legacy ``ha_get_addon`` detail read."""
+
+    def __init__(self, version: str = "8.1.0") -> None:
+        super().__init__(version)
+        payload = live_equivalent_payload()
+        payload["addon"]["version"] = version
+        self.detail_result = call_result(payload)
+
+    async def execute_read(self, tool_name, arguments, **kwargs):
+        result = await super().execute_read(tool_name, arguments, **kwargs)
         if tool_name == "ha_get_addon" and "slug" in arguments:
             return replace(
                 result,
@@ -178,6 +235,9 @@ def configured_provider(
 
 def planning_gateway(
     provider: ReviewedOperationalLifecycleProvider,
+    *,
+    upstream_version: str = "9.2.0",
+    upstream_catalog_fingerprint: str = CATALOG_FINGERPRINT_920,
 ) -> OperationalLifecycleGateway:
     async def self_identity():
         return SupervisorSelfAddonIdentity(
@@ -193,11 +253,9 @@ def planning_gateway(
         None,
         configuration_validator=lambda: None,
         runtime_snapshot=lambda: {
-            "upstream_version": "8.0.0",
+            "upstream_version": upstream_version,
             "upstream_protocol": "2025-03-26",
-            "upstream_catalog_fingerprint": (
-                "c61b0959e766f3900300dd4dd69a6d799fc113186d91983f21be69f1bc6b8768"
-            ),
+            "upstream_catalog_fingerprint": upstream_catalog_fingerprint,
             "upstream_admission_status": "admitted_exact",
             "fallback_count": 0,
         },
@@ -207,48 +265,6 @@ def planning_gateway(
 
 
 class LiveLifecycleAddonResponseTests(unittest.IsolatedAsyncioTestCase):
-    def test_immutable_addon_job_uses_live_equivalent_detail_profile(self):
-        workflow = (ROOT / ".github/workflows/ci.yml").read_text(
-            encoding="utf-8"
-        )
-        fixture = (
-            ROOT / "scripts/fake_ha_read_gateway_contract_server.py"
-        ).read_text(encoding="utf-8")
-        acceptance = (
-            ROOT / "scripts/exact_addon_runtime_acceptance.py"
-        ).read_text(encoding="utf-8")
-
-        # Live-detail lanes derive from ci/support-window.yaml; the retired
-        # live-8.0.0/live-8.1.0 lanes must stay out of CI.
-        self.assertNotIn("addon_detail_profile: live-8.0.0", workflow)
-        self.assertNotIn("addon_detail_profile: live-8.1.0", workflow)
-        self.assertNotIn(
-            "sha256:693ecd5c68f98e64111fbf58e02547a51b2168a942056684dbe262c550aff9cd",
-            workflow,
-        )
-        self.assertIn(
-            '--addon-detail-profile "$ADDON_DETAIL_PROFILE"', workflow
-        )
-        self.assertIn(
-            "ADDON_DETAIL_PROFILE: ${{ matrix.addon_detail_profile }}", workflow
-        )
-        live = [row["addon_detail_profile"] for row in support_rows("addon", "full")
-                if "addon_detail_profile" in row]
-        self.assertEqual(live, ["live-8.4.3"])
-        self.assertIn('"live-8.4.3"', fixture)
-        self.assertIn("SOURCE_DERIVED_MINIMUM_ADDON_DETAIL_BYTES", fixture)
-        self.assertIn('ADDON_DETAIL_PROFILE = "compact"', fixture)
-        self.assertIn(
-            "EXPECTED_SOURCE_DERIVED_MINIMUM_DETAIL_BYTES",
-            acceptance,
-        )
-        self.assertIn(
-            "EXPECTED_LIFECYCLE_ADDON_RESPONSE_MODEL",
-            acceptance,
-        )
-        self.assertIn("immutable_addon_detail_text_bytes", acceptance)
-        self.assertIn("detail_structured_content_present", acceptance)
-
     def test_known_response_mismatch_maps_to_contract_error(self):
         self.assertEqual(
             ChangeGovernanceService._lifecycle_error_code(
@@ -262,6 +278,7 @@ class LiveLifecycleAddonResponseTests(unittest.IsolatedAsyncioTestCase):
         payload = live_equivalent_payload()
         result = call_result(payload)
         provider = configured_provider(DetailTransport(result))
+        await provider.probe("restart_addon")
 
         with self.assertRaises(OperationalLifecycleProviderError) as caught:
             provider._decode(result, dispatched=False)
@@ -271,7 +288,7 @@ class LiveLifecycleAddonResponseTests(unittest.IsolatedAsyncioTestCase):
         addon = await provider.get_addon(UPSTREAM_ADDON_SLUG)
 
         self.assertEqual(addon["slug"], UPSTREAM_ADDON_SLUG)
-        self.assertEqual(addon["version"], "8.0.0")
+        self.assertEqual(addon["version"], "9.2.0")
         self.assertNotIn("translations", addon)
         evidence = addon["provider"]
         self.assertEqual(
@@ -323,7 +340,7 @@ class LiveLifecycleAddonResponseTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(created["proposal_only"])
         self.assertFalse(created["provider_dispatch_occurred"])
         self.assertNotIn(
-            "ha_manage_addon",
+            APP_ACTION_TOOL,
             [tool_name for tool_name, _arguments in transport.calls],
         )
         health = provider.health_snapshot()
@@ -348,12 +365,10 @@ class LiveLifecycleAddonResponseTests(unittest.IsolatedAsyncioTestCase):
         legacy_contract = lifecycle.LifecycleAddonResponseContract(
             model=LIFECYCLE_ADDON_RESPONSE_MODEL_TEXT_V1,
             envelope_variant=LIFECYCLE_ADDON_RESPONSE_ENVELOPE_TEXT,
+            addon_action_tool=APP_ACTION_TOOL,
+            addon_read_tool=APP_READ_TOOL,
         )
-        key = (
-            "ha-mcp-v8.0.0-d65630f6",
-            "8.0.0",
-            "2025-03-26",
-        )
+        key = RESPONSE_KEY_920
         with tempfile.TemporaryDirectory() as directory:
             repository = ChangePlanRepository(Path(directory) / "plans")
             service = ChangeGovernanceService(
@@ -414,53 +429,42 @@ class LiveLifecycleAddonResponseTests(unittest.IsolatedAsyncioTestCase):
             ErrorCode.OPERATIONAL_CONTRACT_MISMATCH,
         )
         self.assertNotIn(
-            "ha_manage_addon",
+            APP_ACTION_TOOL,
             [tool_name for tool_name, _arguments in transport.calls],
         )
         health = provider.health_snapshot()
         self.assertEqual(sum(health["dispatch_counts"].values()), 0)
         self.assertEqual(health["fallback_count"], 0)
 
-    async def test_existing_compact_and_7_14_2_models_remain_accepted(self):
-        for version in ("7.14.2", "8.0.0"):
-            with self.subTest(version=version):
-                transport = FakeMcpTransport(version)
-                provider = configured_provider(transport)
+    async def test_reviewed_compact_structured_model_is_accepted(self):
+        # HAMCP-437 I2a-D: the 7.14.2 TEXT_V1 subtest is retired with its
+        # row; no admitted release maps to the text model now.
+        transport = Transport920()
+        provider = configured_provider(transport)
+        await provider.probe("restart_addon")
 
-                addon = await provider.get_addon(UPSTREAM_ADDON_SLUG)
+        addon = await provider.get_addon(UPSTREAM_ADDON_SLUG)
 
-                self.assertEqual(addon["version"], version)
-                health = provider.health_snapshot()
-                expected_model = (
-                    LIFECYCLE_ADDON_RESPONSE_MODEL_TEXT_V1
-                    if version == "7.14.2"
-                    else LIFECYCLE_ADDON_RESPONSE_MODEL_STRUCTURED_V1
-                )
-                expected_envelope = (
-                    LIFECYCLE_ADDON_RESPONSE_ENVELOPE_TEXT
-                    if version == "7.14.2"
-                    else LIFECYCLE_ADDON_RESPONSE_ENVELOPE_STRUCTURED
-                )
-                self.assertEqual(
-                    health["lifecycle_addon_response_contract_model"],
-                    expected_model,
-                )
-                self.assertEqual(
-                    health["lifecycle_addon_response_envelope_variant"],
-                    expected_envelope,
-                )
-                self.assertEqual(sum(health["dispatch_counts"].values()), 0)
-                self.assertEqual(health["fallback_count"], 0)
+        self.assertEqual(addon["version"], "9.2.0")
+        health = provider.health_snapshot()
+        self.assertEqual(
+            health["lifecycle_addon_response_contract_model"],
+            LIFECYCLE_ADDON_RESPONSE_MODEL_STRUCTURED_V1,
+        )
+        self.assertEqual(
+            health["lifecycle_addon_response_envelope_variant"],
+            LIFECYCLE_ADDON_RESPONSE_ENVELOPE_STRUCTURED,
+        )
+        self.assertEqual(sum(health["dispatch_counts"].values()), 0)
+        self.assertEqual(health["fallback_count"], 0)
 
     async def test_unknown_response_contract_model_fails_closed(self):
-        key = (
-            "ha-mcp-v8.0.0-d65630f6",
-            "8.0.0",
-            "2025-03-26",
-        )
+        key = RESPONSE_KEY_920
         unsupported = lifecycle.LifecycleAddonResponseContract(
             model="unreviewed-lifecycle-response-model",
             envelope_variant=LIFECYCLE_ADDON_RESPONSE_ENVELOPE_STRUCTURED,
+            addon_action_tool=APP_ACTION_TOOL,
+            addon_read_tool=APP_READ_TOOL,
         )
         provider = configured_provider(DetailTransport())
         with patch.dict(
@@ -686,6 +690,7 @@ class LiveLifecycleAddonResponseTests(unittest.IsolatedAsyncioTestCase):
         for name, (result, category) in cases.items():
             with self.subTest(name=name):
                 provider = configured_provider(DetailTransport(result))
+                await provider.probe("restart_addon")
                 with self.assertRaises(
                     OperationalLifecycleProviderError
                 ) as caught:
@@ -889,6 +894,7 @@ class LiveLifecycleAddonResponseTests(unittest.IsolatedAsyncioTestCase):
                     {"success": True, **updates}
                 )
                 provider = configured_provider(transport)
+                await provider.probe("restart_addon")
                 with self.assertRaises(
                     OperationalLifecycleProviderError
                 ) as caught:
@@ -899,7 +905,7 @@ class LiveLifecycleAddonResponseTests(unittest.IsolatedAsyncioTestCase):
                 )
                 self.assertFalse(caught.exception.dispatched)
                 self.assertNotIn(
-                    "ha_manage_addon",
+                    APP_ACTION_TOOL,
                     [tool_name for tool_name, _ in transport.calls],
                 )
                 health = provider.health_snapshot()
@@ -973,6 +979,7 @@ class LiveLifecycleAddonResponseTests(unittest.IsolatedAsyncioTestCase):
                 provider = configured_provider(
                     DetailTransport(inventory_result=result)
                 )
+                await provider.probe("restart_addon")
                 with self.assertRaises(
                     OperationalLifecycleProviderError
                 ) as caught:
@@ -995,6 +1002,7 @@ class LiveLifecycleAddonResponseTests(unittest.IsolatedAsyncioTestCase):
             }
         )
         provider = configured_provider(missing_transport)
+        await provider.probe("restart_addon")
         with self.assertRaises(OperationalLifecycleProviderError) as caught:
             await provider.get_addon(UPSTREAM_ADDON_SLUG)
         self.assertEqual(caught.exception.category, "addon_not_found")
@@ -1010,6 +1018,7 @@ class LiveLifecycleAddonResponseTests(unittest.IsolatedAsyncioTestCase):
             call_result({"success": True})
         )
         provider = configured_provider(missing_detail)
+        await provider.probe("restart_addon")
         with self.assertRaises(OperationalLifecycleProviderError) as caught:
             await provider.get_addon(UPSTREAM_ADDON_SLUG)
         self.assertEqual(
@@ -1031,13 +1040,22 @@ class LiveLifecycleAddonResponseTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(health["fallback_count"], 0)
 
     async def test_text_model_requires_exact_boolean_success(self):
+        # HAMCP-437 I2a-D: no admitted release maps to the shipped TEXT_V1
+        # decoder now (the 7.14.x rows are retired), so the text model is
+        # patched onto the reviewed 9.2.0 key, keeping its app tool names.
+        text_contract = lifecycle.LifecycleAddonResponseContract(
+            model=LIFECYCLE_ADDON_RESPONSE_MODEL_TEXT_V1,
+            envelope_variant=LIFECYCLE_ADDON_RESPONSE_ENVELOPE_TEXT,
+            addon_action_tool=APP_ACTION_TOOL,
+            addon_read_tool=APP_READ_TOOL,
+        )
         for value in (None, 1, "true"):
             with self.subTest(value=value):
                 payload = {
                     "addon": {
                         "slug": UPSTREAM_ADDON_SLUG,
                         "name": "Home Assistant MCP Server",
-                        "version": "7.14.2",
+                        "version": "9.2.0",
                         "state": "started",
                         "repository": "abcdef12",
                         "update_available": False,
@@ -1046,16 +1064,18 @@ class LiveLifecycleAddonResponseTests(unittest.IsolatedAsyncioTestCase):
                 if value is not None:
                     payload["success"] = value
                 provider = configured_provider(
-                    DetailTransport(
-                        call_result(payload),
-                        version="7.14.2",
-                    )
+                    DetailTransport(call_result(payload))
                 )
 
-                with self.assertRaises(
-                    OperationalLifecycleProviderError
-                ) as caught:
-                    await provider.get_addon(UPSTREAM_ADDON_SLUG)
+                with patch.dict(
+                    lifecycle._LIFECYCLE_ADDON_RESPONSE_CONTRACTS,
+                    {RESPONSE_KEY_920: text_contract},
+                ):
+                    await provider.probe("restart_addon")
+                    with self.assertRaises(
+                        OperationalLifecycleProviderError
+                    ) as caught:
+                        await provider.get_addon(UPSTREAM_ADDON_SLUG)
 
                 self.assertEqual(
                     caught.exception.category,
@@ -1099,6 +1119,7 @@ class LiveLifecycleAddonResponseTests(unittest.IsolatedAsyncioTestCase):
                     self.assertIsNotNone(addon)
                     projected.append(addon)
                     provider = configured_provider(transport)
+                    await provider.probe("restart_addon")
                     accepted = await provider.get_addon(
                         UPSTREAM_ADDON_SLUG
                     )
@@ -1137,6 +1158,7 @@ class LiveLifecycleAddonResponseTests(unittest.IsolatedAsyncioTestCase):
                         payload["addon"].pop("repository")
                     transport.detail_result = call_result(payload)
                     provider = configured_provider(transport)
+                    await provider.probe("restart_addon")
 
                     accepted = await provider.get_addon(
                         UPSTREAM_ADDON_SLUG
@@ -1165,6 +1187,11 @@ class LiveLifecycleAddonResponseTests(unittest.IsolatedAsyncioTestCase):
         provider = configured_provider(
             DetailTransport(inventory_result=call_result(payload))
         )
+        # HAMCP-437 I2a-D: the 9.2.0 app read needs the probe, which records
+        # a success first; resource_not_found leaves that status unchanged,
+        # so the guard is that no later success clears the failure.
+        await provider.probe("restart_addon")
+        status_before = provider.health_snapshot()["operational_status"]
 
         with self.assertRaises(OperationalLifecycleProviderError) as caught:
             await provider.get_addon(UPSTREAM_ADDON_SLUG)
@@ -1172,7 +1199,8 @@ class LiveLifecycleAddonResponseTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(caught.exception.category, "resource_not_found")
         self.assertFalse(caught.exception.dispatched)
         health = provider.health_snapshot()
-        self.assertNotEqual(health["operational_status"], "available")
+        self.assertEqual(health["operational_status"], status_before)
+        self.assertEqual(health["last_failure_category"], "resource_not_found")
         self.assertEqual(health["failure_counts"]["resource_not_found"], 1)
         self.assertEqual(
             health["domain_outcome_counts"].get("addon_not_found", 0),
@@ -1335,6 +1363,7 @@ class LiveLifecycleAddonResponseTests(unittest.IsolatedAsyncioTestCase):
                     if addon.get("slug") == UPSTREAM_ADDON_SLUG:
                         addon[field] = credential_value
                 provider = configured_provider(transport)
+                await provider.probe("restart_addon")
 
                 with self.assertRaises(
                     OperationalLifecycleProviderError
@@ -1416,26 +1445,30 @@ class LiveLifecycleAddonResponseTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(sum(health["dispatch_counts"].values()), 0)
                 self.assertEqual(health["fallback_count"], 0)
                 self.assertNotIn(
-                    "ha_manage_addon",
+                    APP_ACTION_TOOL,
                     [tool_name for tool_name, _ in transport.calls],
                 )
 
     async def test_release_change_between_inventory_and_detail_creates_no_plan(
         self,
     ):
-        class AlternatingReleaseTransport(DetailTransport):
+        # Frozen 8.1.x rows: the shipped registry has one admitted release,
+        # so the change runs between the two admitted frozen 8.1.x releases.
+        class AlternatingReleaseTransport(LegacyDetailTransport):
             async def execute_read(self, tool_name, arguments, **kwargs):
                 if tool_name == "ha_get_addon" and "slug" in arguments:
-                    self.catalog = FakeMcpTransport("7.14.2").catalog
+                    self.catalog = FakeMcpTransport("8.1.1").catalog
                 return await super().execute_read(
                     tool_name,
                     arguments,
                     **kwargs,
                 )
 
-        transport = AlternatingReleaseTransport()
+        transport = AlternatingReleaseTransport("8.1.0")
         provider = configured_provider(transport)
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory() as directory, (
+            patch_frozen_8_1_x_registry()
+        ):
             repository = ChangePlanRepository(Path(directory) / "plans")
             service = ChangeGovernanceService(
                 repository,
@@ -1444,7 +1477,13 @@ class LiveLifecycleAddonResponseTests(unittest.IsolatedAsyncioTestCase):
                     str(Path(directory) / "audit.jsonl"),
                     "synthetic-access-secret-value",
                 ),
-                lifecycle_gateway=planning_gateway(provider),
+                lifecycle_gateway=planning_gateway(
+                    provider,
+                    upstream_version="8.1.0",
+                    upstream_catalog_fingerprint=catalog_fingerprint(
+                        list(FakeMcpTransport("8.1.0").catalog.tools)
+                    ),
+                ),
             )
 
             with self.assertRaises(GovernanceError) as caught:
@@ -1468,7 +1507,10 @@ class LiveLifecycleAddonResponseTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(health["fallback_count"], 0)
 
     async def test_raw_policy_drift_between_reads_remains_diagnostic(self):
-        class RawPolicyDriftTransport(DetailTransport):
+        # Frozen 8.1.0 row: dormant V2 dynamic-policy normalization coverage.
+        # 9.2.0 descriptors carry no ``_meta.ha_mcp``; the 9.2.0 counterpart
+        # (``_meta.fastmcp.tags`` drift fails closed) is in test_2_1a.
+        class RawPolicyDriftTransport(LegacyDetailTransport):
             before_raw_fingerprint: str | None = None
             after_raw_fingerprint: str | None = None
 
@@ -1500,12 +1542,13 @@ class LiveLifecycleAddonResponseTests(unittest.IsolatedAsyncioTestCase):
                     **kwargs,
                 )
 
-        transport = RawPolicyDriftTransport()
+        transport = RawPolicyDriftTransport("8.1.0")
         provider = configured_provider(transport)
+        with patch_frozen_8_1_x_registry():
+            await provider.probe("restart_addon")
+            addon = await provider.get_addon(UPSTREAM_ADDON_SLUG)
 
-        addon = await provider.get_addon(UPSTREAM_ADDON_SLUG)
-
-        self.assertEqual(addon["version"], "8.0.0")
+        self.assertEqual(addon["version"], "8.1.0")
         self.assertNotEqual(
             transport.before_raw_fingerprint,
             transport.after_raw_fingerprint,
@@ -1517,6 +1560,7 @@ class LiveLifecycleAddonResponseTests(unittest.IsolatedAsyncioTestCase):
     async def test_wrong_protocol_creates_no_plan(self):
         transport = DetailTransport()
         provider = configured_provider(transport)
+        await provider.probe("restart_addon")
         await provider.get_addon(UPSTREAM_ADDON_SLUG)
         transport.catalog = replace(
             transport.catalog,
@@ -1556,11 +1600,7 @@ class LiveLifecycleAddonResponseTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(health["fallback_count"], 0)
 
     async def test_identity_and_model_failures_create_no_plan(self):
-        response_key = (
-            "ha-mcp-v8.0.0-d65630f6",
-            "8.0.0",
-            "2025-03-26",
-        )
+        response_key = RESPONSE_KEY_920
         for kind in (
             "wrong_endpoint_host",
             "wrong_installed_version",
@@ -1598,6 +1638,8 @@ class LiveLifecycleAddonResponseTests(unittest.IsolatedAsyncioTestCase):
                         envelope_variant=(
                             LIFECYCLE_ADDON_RESPONSE_ENVELOPE_STRUCTURED
                         ),
+                        addon_action_tool=APP_ACTION_TOOL,
+                        addon_read_tool=APP_READ_TOOL,
                     )
                 else:
                     transport.catalog = replace(
@@ -1643,7 +1685,7 @@ class LiveLifecycleAddonResponseTests(unittest.IsolatedAsyncioTestCase):
                     plans = repository.list()
                 self.assertEqual(plans, [])
                 self.assertNotIn(
-                    "ha_manage_addon",
+                    APP_ACTION_TOOL,
                     [tool_name for tool_name, _ in transport.calls],
                 )
                 health = provider.health_snapshot()
@@ -1653,6 +1695,7 @@ class LiveLifecycleAddonResponseTests(unittest.IsolatedAsyncioTestCase):
     async def test_unknown_release_clears_response_model_observability(self):
         transport = DetailTransport()
         provider = configured_provider(transport)
+        await provider.probe("restart_addon")
         await provider.get_addon(UPSTREAM_ADDON_SLUG)
         transport.catalog = replace(
             transport.catalog,
@@ -1729,6 +1772,7 @@ class LiveLifecycleAddonResponseTests(unittest.IsolatedAsyncioTestCase):
                 provider = configured_provider(
                     DetailTransport(call_result(payload))
                 )
+                await provider.probe("restart_addon")
 
                 with self.assertRaises(
                     OperationalLifecycleProviderError
@@ -1759,6 +1803,7 @@ class LiveLifecycleAddonResponseTests(unittest.IsolatedAsyncioTestCase):
         payload["addon"]["state"] = "stopped"
         transport.detail_result = call_result(payload)
         provider = configured_provider(transport)
+        await provider.probe("restart_addon")
 
         addon = await provider.get_addon(UPSTREAM_ADDON_SLUG)
 
@@ -1781,6 +1826,7 @@ class LiveLifecycleAddonResponseTests(unittest.IsolatedAsyncioTestCase):
                 payload["addon"][field] = value
                 transport.detail_result = call_result(payload)
                 provider = configured_provider(transport)
+                await provider.probe("restart_addon")
 
                 with self.assertRaises(
                     OperationalLifecycleProviderError

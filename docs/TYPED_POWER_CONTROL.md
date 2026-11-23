@@ -165,7 +165,7 @@ endpoints or images; cleanup remains bounded and unconditional.
 A unit test of this runner is not a container result. Record actual candidate CI
 execution and artifact identities for all eight combinations. These candidate
 interpreter lanes are distinct from Engineering image and installed acceptance.
-See [beta.3 acceptance](V2_3_0_BETA3_ACCEPTANCE.md).
+See beta.3 acceptance (`V2_3_0_BETA3_ACCEPTANCE.md`, deleted by HAMCP-437).
 
 The candidate adds one descriptor: 53 static plus the unchanged 25 delegated
 reads, totaling 78. Existing descriptors must remain identical. Independent

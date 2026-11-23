@@ -23,6 +23,7 @@ from tests import test_rc3_postcore_regressions as rc3
 from tests import test_dependency_build_authority as dependency_tests
 from tests import test_core_update_continuity as continuity_tests
 import tests.test_hamcp162_yaml_admission as yaml_tests
+from support import ha_mcp_920_yaml as yaml920  # HAMCP-437
 from ha_mcp_engineering.clients.rest import HomeAssistantRestClient
 from ha_mcp_engineering import secret_paths as _hamcp288_secret_paths  # noqa: E402
 from ha_mcp_engineering.clients.websocket import HomeAssistantWebSocketClient
@@ -94,9 +95,18 @@ def _events(records, event):
     return [record for record in records if getattr(record, "event", None) == event]
 
 
-# HAMCP-290: the retired delegated read stays recorded beside the Core
-# withholdings, but it is never a Core catalog withdrawal or restoration.
-RETIRED_COUNT = len(RETIRED_DELEGATED_READS)
+# HAMCP-290: the retired delegated read is never a Core catalog withdrawal or
+# restoration. HAMCP-437: the reviewed 9.2.0 policy blocks it as unsupported,
+# so it is never matched and never recorded beside the 28 Core withholdings.
+CORE_WITHHELD_920 = 28
+
+
+def assert_retired_reads_blocked(case, gateway):
+    blocked = {item["upstream_name"]: item["classification"]
+               for item in gateway.health_snapshot()["blocked_tools"]}
+    for name in RETIRED_DELEGATED_READS:
+        case.assertEqual(blocked.get(name), "unsupported")
+        case.assertNotIn(name, yaml_tests.Harness.exposed(gateway))
 
 
 def _withheld_names(gateway):
@@ -1452,16 +1462,17 @@ class Recovery(unittest.IsolatedAsyncioTestCase):
     async def reproduce_live_incident_state(self, fault):
         """Boot, 25 successful supervisor wakes, then one failed attempt.
 
-        The production delegated catalog (the reviewed ha-mcp 8.5.0 capture,
-        whose Core-dependent tools include ``ha_config_get_yaml``) and the
+        The production delegated catalog (the reviewed ha-mcp 9.2.0
+        filesystem-on capture, whose Core-dependent tools include
+        ``ha_config_get_yaml``; HAMCP-437) and the
         dependency index are attached, as in the add-on. The wakes are
         event-driven, not 300 s intervals: the counters cannot tell the two
         apart, so this reproduces the counters, not the live timing.
         """
         await self.boot()
         yaml_tests.Harness.setUp(self)
-        gateway, transport = await yaml_tests.Harness.gateway(
-            self, "8.5.0", mode="A", core_runtime=self.core)
+        yaml920.patch_replies(self)
+        gateway, transport = await yaml920.gateway(self, mode="A", core_runtime=self.core)
         self.core.register_reconciliation_listener(gateway.request_core_reconciliation)
         dependency = DependencyAnalysisRuntime()
         dependency.configure(HomeAssistantRestClient(self.settings),
@@ -1503,10 +1514,11 @@ class Recovery(unittest.IsolatedAsyncioTestCase):
                         "authority_restorations")},
                     {"verification_attempts": 27, "verification_successes": 26,
                      "verification_failures": 1, "retirements": 1, "reprobes": 26,
-                     "catalog_withdrawals": 29 - RETIRED_COUNT, "catalog_restorations": 0,  # HAMCP-290
+                     "catalog_withdrawals": CORE_WITHHELD_920, "catalog_restorations": 0,  # HAMCP-437
                      "authority_restorations": 0})
                 catalog = gateway.health_snapshot()
-                self.assertEqual(len(catalog["core_withheld_tools"]), 29)  # HAMCP-290: 28 Core + 1 retired
+                self.assertEqual(len(catalog["core_withheld_tools"]), CORE_WITHHELD_920)  # HAMCP-437
+                assert_retired_reads_blocked(self, gateway)
                 self.assertEqual(catalog["optional_tools"][yaml_tests.TOOL],
                                  "withheld:core_unavailable")
                 self.assertEqual(transport.sent, [])
@@ -1524,8 +1536,9 @@ class Recovery(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(self.recovery()["recovery_state"], "restored")
                 self.assertEqual(self.counters()["recovery_confirmations"],
                                  CORE_RECOVERY_CONFIRMATIONS)
-                self.assertEqual(self.counters()["catalog_restorations"], 29 - RETIRED_COUNT)  # HAMCP-290
-                self.assertEqual(_withheld_names(gateway), RETIRED_DELEGATED_READS)  # HAMCP-290
+                self.assertEqual(self.counters()["catalog_restorations"], CORE_WITHHELD_920)  # HAMCP-437
+                self.assertEqual(_withheld_names(gateway), frozenset())  # HAMCP-437
+                assert_retired_reads_blocked(self, gateway)
                 self.assert_authority_round_trip()
 
     async def test_flapping_requires_more_spaced_confirmations_and_does_not_toggle(self):
@@ -1609,8 +1622,8 @@ class Recovery(unittest.IsolatedAsyncioTestCase):
 
     async def test_catalog_and_yaml_reader_resume_after_transient(self):
         await self.admit()
-        gateway, transport = await yaml_tests.Harness.gateway(
-            self, "8.5.0", mode="A", core_runtime=self.core)
+        yaml920.patch_replies(self)
+        gateway, transport = await yaml920.gateway(self, mode="A", core_runtime=self.core)
         server = gateway.synthetic_server
         tool = yaml_tests.TOOL
         self.assertIn(tool, yaml_tests.Harness.exposed(gateway))
@@ -1641,7 +1654,8 @@ class Recovery(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(gateway_wakes), 2)
             await gateway.initialize(server)
         self.assertEqual(set(yaml_tests.Harness.exposed(gateway)), baseline)
-        self.assertEqual(_withheld_names(gateway), RETIRED_DELEGATED_READS)  # HAMCP-290
+        self.assertEqual(_withheld_names(gateway), frozenset())  # HAMCP-437
+        assert_retired_reads_blocked(self, gateway)
         self.assertEqual(self.counters()["catalog_restorations"], withdrawals)
         withdrawn = _events(logs.records, "core_catalog_tools_withdrawn")
         restored = _events(logs.records, "core_catalog_tools_restored")

@@ -8,8 +8,6 @@ import sys
 import tempfile
 import unittest
 
-from awesomeversion import AwesomeVersion
-
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -43,47 +41,6 @@ CONTEXT = load_module(
 
 
 class Rc1ReleaseTransitionTests(unittest.TestCase):
-    def test_repository_rc1_staging_or_materialization_resolves_exactly(self):
-        target = "2.2.0-rc.1"
-        marker = ROOT / PROMOTION.NEXT_VERSION_PATH
-        versions = set(PROMOTION.authoritative_versions(ROOT).values())
-        documents = "\n".join(
-            (ROOT / relative).read_text(encoding="utf-8")
-            for relative in (
-                "docs/V2_2_0_RC1_ACCEPTANCE.md",
-                "docs/V2_2_0_RC1_RELEASE_NOTES.md",
-            )
-        )
-        resolution = CONTEXT.resolve_documents(ROOT, target)
-        self.assertEqual(resolution["resolution_status"], "exact")
-        self.assertEqual(
-            resolution["active_release_notes"],
-            "docs/V2_2_0_RC1_RELEASE_NOTES.md",
-        )
-        self.assertEqual(
-            resolution["active_acceptance_document"],
-            "docs/V2_2_0_RC1_ACCEPTANCE.md",
-        )
-        # A later release's authoring marker does not put historical RC1 back
-        # into its beta.58 staging state.
-        if versions == {"2.2.0-beta.58"}:
-            self.assertTrue(marker.exists())
-            self.assertEqual(versions, {"2.2.0-beta.58"})
-            self.assertEqual(marker.read_text(encoding="utf-8"), target + "\n")
-            self.assertIn("staged source candidate", documents)
-            self.assertIn("advertised Engineering source remains", documents)
-        else:
-            self.assertTrue(
-                versions == {target}
-                or all(
-                    AwesomeVersion(version) > AwesomeVersion(target)
-                    for version in versions
-                )
-            )
-            self.assertIn("materialized source candidate", documents)
-            self.assertIn("advertised Engineering source is", documents)
-            self.assertIn("`.release/next-version` has been consumed", documents)
-
     def test_beta58_to_rc1_is_accepted_by_both_release_consumers(self):
         PROMOTION.validate_sequenced_transition(
             "2.2.0-beta.58",

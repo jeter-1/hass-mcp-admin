@@ -58,6 +58,7 @@ from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
     ReviewedToolAnnotations,
     UpstreamToolPolicy,
     UpstreamToolPolicyEntry,
+    POLICY_PATH,
     UpstreamToolPolicyError,
     load_upstream_tool_policy,
     runtime_annotation_fingerprint,
@@ -1612,24 +1613,26 @@ class GenericReadAuditTests(unittest.IsolatedAsyncioTestCase):
 
 
 class PolicyInventoryTests(unittest.TestCase):
-    def test_reviewed_7141_stock_inventory_is_classified_and_fail_closed(self):
+    def test_reviewed_920_stock_inventory_is_classified_and_fail_closed(self):
+        # HAMCP-437 I2a-D: the default policy is the reviewed 9.2.0 file. Its
+        # 27 read routes are the 23 automatic reads plus the four compiled
+        # wrapper reads (blueprint and platform adapters).
         value = load_upstream_tool_policy()
-        self.assertEqual(len(value.tools), 78)
+        self.assertEqual(len(value.tools), 77)
         self.assertEqual(
             value.classification_counts,
             {
-                "automatic_read": 26,
-                "mixed_or_requires_wrapper": 14,
+                "automatic_read": 27,
+                "held_for_canary": 1,
+                "mixed_or_requires_wrapper": 10,
                 "persistent_write": 32,
                 "physical_or_high_risk_action": 4,
                 "prohibited": 1,
-                "unsupported": 1,
+                "unsupported": 2,
             },
         )
         automatic = {
-            entry.upstream_name
-            for entry in value.tools
-            if entry.classification == "automatic_read"
+            entry.upstream_name for entry in value.tools if entry.is_read_route
         }
         self.assertIn("ha_search", automatic)
         self.assertIn("ha_get_state", automatic)
@@ -1640,20 +1643,18 @@ class PolicyInventoryTests(unittest.TestCase):
         self.assertNotIn("ha_config_get_dashboard", automatic)
         logs = value.by_name["ha_get_logs"]
         self.assertEqual(logs.classification, "mixed_or_requires_wrapper")
-        self.assertIn("confidentiality boundary", logs.reason)
+        self.assertIn("Generic delegation stays unavailable", logs.reason)
 
     def test_exact_runtime_description_authority_covers_only_automatic_reads(self):
         value = load_upstream_tool_policy()
         automatic = {
-            entry.upstream_name
-            for entry in value.tools
-            if entry.classification == "automatic_read"
+            entry.upstream_name for entry in value.tools if entry.is_read_route
         }
         fingerprints = (
             value.reviewed_runtime_description_fingerprints_by_name
         )
         self.assertEqual(set(fingerprints), automatic)
-        self.assertEqual(len(fingerprints), 26)
+        self.assertEqual(len(fingerprints), 27)
         self.assertTrue(
             all(
                 len(fingerprint) == 64
@@ -1665,15 +1666,13 @@ class PolicyInventoryTests(unittest.TestCase):
     def test_exact_runtime_annotation_authority_covers_only_automatic_reads(self):
         value = load_upstream_tool_policy()
         automatic = {
-            entry.upstream_name
-            for entry in value.tools
-            if entry.classification == "automatic_read"
+            entry.upstream_name for entry in value.tools if entry.is_read_route
         }
         fingerprints = (
             value.reviewed_runtime_annotation_fingerprints_by_name
         )
         self.assertEqual(set(fingerprints), automatic)
-        self.assertEqual(len(fingerprints), 26)
+        self.assertEqual(len(fingerprints), 27)
         self.assertTrue(
             all(
                 len(fingerprint) == 64
@@ -1681,10 +1680,8 @@ class PolicyInventoryTests(unittest.TestCase):
                 for fingerprint in fingerprints.values()
             )
         )
-        self.assertNotEqual(
-            fingerprints["ha_get_operation_status"],
-            fingerprints["ha_get_state"],
-        )
+        # 9.2.0 holds ha_get_operation_status for canary: not a read route.
+        self.assertNotIn("ha_get_operation_status", fingerprints)
         self.assertEqual(
             fingerprints["ha_get_skill_guide"],
             fingerprints["ha_get_state"],
@@ -1697,9 +1694,7 @@ class PolicyInventoryTests(unittest.TestCase):
     def test_exact_runtime_output_schema_authority_covers_only_automatic_reads(self):
         value = load_upstream_tool_policy()
         automatic = {
-            entry.upstream_name
-            for entry in value.tools
-            if entry.classification == "automatic_read"
+            entry.upstream_name for entry in value.tools if entry.is_read_route
         }
         fingerprints = (
             value.reviewed_runtime_output_schema_fingerprints_by_name
@@ -1708,7 +1703,7 @@ class PolicyInventoryTests(unittest.TestCase):
             {"additionalProperties": True, "type": "object"}
         )
         self.assertEqual(set(fingerprints), automatic)
-        self.assertEqual(len(fingerprints), 26)
+        self.assertEqual(len(fingerprints), 27)
         self.assertEqual(set(fingerprints.values()), {expected})
 
     def test_runtime_annotation_fingerprint_preserves_presence_and_safety(self):
@@ -1752,11 +1747,7 @@ class PolicyInventoryTests(unittest.TestCase):
                 self.assertIsNone(runtime_annotation_fingerprint(value))
 
     def test_runtime_description_authority_policy_fails_closed(self):
-        policy_path = (
-            BETA
-            / "ha_mcp_engineering"
-            / "upstream_tool_policy.json"
-        )
+        policy_path = POLICY_PATH
         original = json.loads(policy_path.read_text(encoding="utf-8"))
         automatic_name = next(
             entry["upstream_name"]
@@ -1799,11 +1790,7 @@ class PolicyInventoryTests(unittest.TestCase):
                     load_upstream_tool_policy(candidate)
 
     def test_runtime_annotation_authority_policy_fails_closed(self):
-        policy_path = (
-            BETA
-            / "ha_mcp_engineering"
-            / "upstream_tool_policy.json"
-        )
+        policy_path = POLICY_PATH
         original = json.loads(policy_path.read_text(encoding="utf-8"))
         automatic_name = next(
             entry["upstream_name"]
@@ -1846,11 +1833,7 @@ class PolicyInventoryTests(unittest.TestCase):
                     load_upstream_tool_policy(candidate)
 
     def test_runtime_output_schema_authority_policy_fails_closed(self):
-        policy_path = (
-            BETA
-            / "ha_mcp_engineering"
-            / "upstream_tool_policy.json"
-        )
+        policy_path = POLICY_PATH
         original = json.loads(policy_path.read_text(encoding="utf-8"))
         automatic_name = next(
             entry["upstream_name"]
@@ -1903,7 +1886,7 @@ class PolicyInventoryTests(unittest.TestCase):
             for entry in value.tools
             if entry.classification == "automatic_read"
         }
-        self.assertEqual(len(automatic_annotations), 26)
+        self.assertEqual(len(automatic_annotations), 23)
         self.assertTrue(all(item.read_only for item in automatic_annotations.values()))
         self.assertTrue(all(not item.destructive for item in automatic_annotations.values()))
 
@@ -1934,24 +1917,35 @@ class PolicyInventoryTests(unittest.TestCase):
             "len(base_names) == EXPECTED_ENGINEERING_BASELINE_COUNT",
             acceptance,
         )
-        self.assertIn("exact-image-read-gateway:", workflow)
+        # HAMCP-437: the exact-image-read-gateway job is retired; the gateway
+        # acceptance now runs in the strict-full lane on ha_mcp.current.
+        self.assertNotIn("exact-image-read-gateway:", workflow)
+        job = workflow.split("\n  exact-image-admission-lanes:\n", 1)[1].split(
+            "\n  exact-image-admission-manifest-gate:\n", 1
+        )[0]
+        lanes = (ROOT / "scripts" / "exact_image_admission_lanes.py").read_text(
+            encoding="utf-8"
+        )
+        runners = (
+            ROOT / "scripts" / "exact_image_admission_91_runners.py"
+        ).read_text(encoding="utf-8")
         self.assertIn(
             "review_upstream_read_release.py ci-matrix",
             workflow,
         )
         self.assertIn(
-            "fromJSON(needs.prepare_exact_image_matrix.outputs.matrix)",
-            workflow,
+            "fromJSON(needs.prepare_exact_image_matrix.outputs.admission)",
+            job,
         )
-        self.assertIn("EXPECTED_IMAGE_INDEX_DIGEST", workflow)
-        self.assertIn("EXPECTED_IMAGE_REVISION", workflow)
+        self.assertIn("exact_image_admission_lanes.py identity", job)
+        self.assertIn('"identity_index_digest_mismatch"', lanes)
         self.assertIn(
-            "EXPECTED_ARCHITECTURE_IMAGE_DIGESTS", workflow
+            'labels.get("org.opencontainers.image.revision") == row.get("image_revision")',
+            lanes,
         )
-        self.assertIn("org.opencontainers.image.revision", workflow)
         self.assertIn(
-            "docs/evidence/upstream-read-compatibility/ha-mcp-${UPSTREAM_VERSION}.json",
-            workflow,
+            '"upstream-read-compatibility" / f"ha-mcp-{CANDIDATE_VERSION}.json"',
+            runners,
         )
         self.assertNotIn(
             "68f386d9becfcc58476f1881a0025f4c6a3ae5874c15cdd61097b14156886292",
@@ -1961,19 +1955,19 @@ class PolicyInventoryTests(unittest.TestCase):
             "7917b2d385e16e43f45f92fc72a757e5c0aec8d88b3cd69fe64f3b5106cbfe36",
             workflow,
         )
-        self.assertIn("fake_ha_read_gateway_contract_server.py", workflow)
-        self.assertIn("exact_image_read_gateway_acceptance.py", workflow)
-        self.assertIn("--engineering-endpoint", workflow)
+        self.assertIn("fake_ha_read_gateway_contract_server.py", job)
+        self.assertIn("exact_image_read_gateway_acceptance.py", job)
+        self.assertIn("--engineering-endpoint", job)
         self.assertIn(
-            '--upstream-version "$UPSTREAM_VERSION"', workflow
+            '--upstream-version "$CANDIDATE_VERSION"', job
+        )
+        self.assertIn('"--add-host", "abcdef12-ha-mcp:127.0.0.1"', runners)
+        self.assertIn(
+            '--configured-upstream-endpoint "$STRICT_FULL_UPSTREAM_URL"', job
         )
         self.assertIn(
-            "--add-host abcdef12-ha-mcp:127.0.0.1", workflow
-        )
-        self.assertIn(
-            "--configured-upstream-endpoint "
-            "http://abcdef12-ha-mcp:18086/",
-            workflow,
+            "STRICT_FULL_UPSTREAM_URL: http://abcdef12-ha-mcp:18086/",
+            job,
         )
         self.assertIn(
             "inspect_operational_lifecycle", acceptance
@@ -2075,9 +2069,8 @@ class PolicyInventoryTests(unittest.TestCase):
             'INSTALLED_ADDONS[0]["version"] = args.upstream_version',
             fixture,
         )
-        self.assertIn("exact_image_readmission_acceptance.py", workflow)
-        self.assertIn("docker stop --time 10 exact-read-gateway-upstream", workflow)
-        self.assertIn("docker start exact-read-gateway-upstream", workflow)
+        # HAMCP-437: the disconnect and readmission lane retired with the job.
+        self.assertNotIn("exact_image_readmission_acceptance.py", workflow)
 
     def test_application_keeps_dashboard_and_generic_admission_independent(self):
         application = (
@@ -5771,11 +5764,11 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sleeps, [])
 
 
-class Exact860TelemetryTests(unittest.IsolatedAsyncioTestCase):
+class Exact920TelemetryTests(unittest.IsolatedAsyncioTestCase):
     async def test_projection_refusal_success_and_provider_error_balance_attempts(self):
-        from tests.test_upstream_8_6_compatibility import ReadCompatibilityTests
-        helper = ReadCompatibilityTests()
-        gateway, transport = await helper.gateway()
+        # HAMCP-437: re-pinned from the retired 8.6.0 lane to the 9.2.0 receipts.
+        from support import ha_mcp_captures as helper
+        gateway, transport = await helper.gateway_920()
         refused, telemetry = await helper.call(gateway, 'ha_eval_template',
                                               {'template': 'x', 'timeout': 61})
         self.assertFalse(refused['success'])
@@ -5784,7 +5777,7 @@ class Exact860TelemetryTests(unittest.IsolatedAsyncioTestCase):
         for raw in [None, {'isError': True, 'content': [{'type': 'text', 'text': json.dumps(
                 {'success': False, 'error': {'code': 'ENTITY_NOT_FOUND', 'message': 'synthetic'}})}]}]:
             transport.override = raw
-            result, telemetry = await helper.call(gateway, 'ha_get_state', {'entity_id': 'light.fixture'})
+            result, telemetry = await helper.call(gateway, 'ha_get_state', helper.arguments_920('ha_get_state'))
             self.assertEqual(telemetry.upstream_request_count, 1)
             self.assertEqual(telemetry.upstream_active_requests, 0)
             self.assertGreater(telemetry.upstream_duration_ms, 0)

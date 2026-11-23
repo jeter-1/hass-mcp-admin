@@ -1,0 +1,141 @@
+{
+  "committed_receipt": "docs/evidence/hamcp364/lane/created_helper_delete.json",
+  "committed_receipt_sha256": "c54b261f7dd46baa80ee7805c9ec6983e22d5c5ee9202c5a7befc8577cade1bd",
+  "declaration_sha256": "5d0089392a2a8407b4722dcce1d9dd5c2d184062c55b34d8578c1ff7cc0bc792",
+  "differences": [],
+  "equal": true,
+  "excluded_differences": {
+    "derived_from_run_values": [
+      {
+        "committed": "sha256:89887a3490c07f6d5f42e11bfa5c3ca8736e486f0350ea19c161537fdfde4dd1",
+        "observed": "sha256:5f53a9a983b4f1b5531111243ac034a098f533c5c005afa48045d5b89073e8b0",
+        "path": "/scenarios/helper_create_input_boolean/readback_fingerprint"
+      },
+      {
+        "committed": "sha256:dae5f503538f39e6c349253b864404811adef27172ffa738f0e21ecdfa864f7a",
+        "observed": "sha256:fc2c06309b0f0e3b487d81804e3c6603c67d954643417e354402a3655b4f81c1",
+        "path": "/scenarios/helper_create_input_number/readback_fingerprint"
+      },
+      {
+        "committed": "sha256:844b3a0ff25a6040fd7c1005c4b561655d587328f885d96a6d6372ecfbacd9de",
+        "observed": "sha256:ffe2213d3cc23b1d1c2ef1f13183e804865726e2b318347dea88465cf73cd67c",
+        "path": "/scenarios/helper_undo_input_boolean/readback_fingerprint"
+      },
+      {
+        "committed": "sha256:38cf305dc85efbdeca2ec1ebe209b7e6593ae3f96dac5da10c2aaa6c3b5de73c",
+        "observed": "sha256:27dfffabdee9b8be408fe78a5152c1b56d91c8b235c9997cbe3e6b5c15490cc9",
+        "path": "/scenarios/helper_undo_input_number/readback_fingerprint"
+      },
+      {
+        "committed": "sha256:7ab0a55146ea47096a436b6476ec11f996e3f9b973faa6d7fe03006487220b2a",
+        "observed": "sha256:9a0e098b4ffefcf276b90ce80fc00a67abb18fb36fb63fca14944d179f287a25",
+        "path": "/scenarios/mixed_plan_create/readback_fingerprint"
+      },
+      {
+        "committed": "sha256:7e92d181317cb2c32c43d4517bab5ca903054827d56f9615b7b70a0ec53cf1f3",
+        "observed": "sha256:6a84b5ac670e167d5c804e98fa55abeb334d478aa74a78c2bc88bd8d92f9afcb",
+        "path": "/scenarios/mixed_plan_undo/readback_fingerprint"
+      }
+    ],
+    "host_admission": [
+      {
+        "committed": 0.15185546875,
+        "observed": 1.2353515625,
+        "path": "/host_admission/load1"
+      },
+      {
+        "committed": 13062651904,
+        "observed": 11415543808,
+        "path": "/host_admission/mem_available_bytes"
+      },
+      {
+        "committed": "2026-11-14T03:53:43.081168+00:00",
+        "observed": "2026-11-21T04:03:53.291955+00:00",
+        "path": "/host_admission/utc"
+      }
+    ],
+    "run_identity": [
+      {
+        "committed": "2026-11-14T03:54:08.611647+00:00",
+        "observed": "2026-11-21T04:04:19.754803+00:00",
+        "path": "/ended_utc"
+      },
+      {
+        "committed": "d84d8d9e69c4fff8481b018182a6b43f088aac7d",
+        "observed": "982e2bf36a70d422f2efaf7369876c73bff48c8b",
+        "path": "/engineering_source/commit"
+      },
+      {
+        "committed": "d84d8d9e69c4fff8481b018182a6b43f088aac7d",
+        "observed": "982e2bf36a70d422f2efaf7369876c73bff48c8b",
+        "path": "/source_commit"
+      },
+      {
+        "committed": "2026-11-14T03:53:43.125681+00:00",
+        "observed": "2026-11-21T04:03:53.340070+00:00",
+        "path": "/started_utc"
+      }
+    ]
+  },
+  "excluded_leaves": 15,
+  "expected_changes": [
+    {
+      "applied": true,
+      "path": "/engineering_source/runtime_tree"
+    }
+  ],
+  "harness": "scripts/core_created_object_local.py",
+  "lane": "created_helper_delete",
+  "masked_differences": {
+    "lane_suffix": [
+      {
+        "committed": "input_boolean.hamcp_g4_toggle_fe3f9d89",
+        "observed": "input_boolean.hamcp_g4_toggle_aa4f6e54",
+        "path": "/scenarios/helper_create_input_boolean/readback/entity_id"
+      },
+      {
+        "committed": "input_boolean.hamcp_g4_toggle_fe3f9d89",
+        "observed": "input_boolean.hamcp_g4_toggle_aa4f6e54",
+        "path": "/scenarios/helper_create_input_boolean/readback/registry_entity_id"
+      },
+      {
+        "committed": "input_number.hamcp_g4_target_fe3f9d89",
+        "observed": "input_number.hamcp_g4_target_aa4f6e54",
+        "path": "/scenarios/helper_create_input_number/readback/entity_id"
+      },
+      {
+        "committed": "input_number.hamcp_g4_target_fe3f9d89",
+        "observed": "input_number.hamcp_g4_target_aa4f6e54",
+        "path": "/scenarios/helper_create_input_number/readback/registry_entity_id"
+      },
+      {
+        "committed": "input_boolean.hamcp_g4_toggle_fe3f9d89",
+        "observed": "input_boolean.hamcp_g4_toggle_aa4f6e54",
+        "path": "/scenarios/helper_undo_input_boolean/readback/entity_id"
+      },
+      {
+        "committed": "input_number.hamcp_g4_target_fe3f9d89",
+        "observed": "input_number.hamcp_g4_target_aa4f6e54",
+        "path": "/scenarios/helper_undo_input_number/readback/entity_id"
+      },
+      {
+        "committed": "input_boolean.hamcp_g4_mixed_fe3f9d89",
+        "observed": "input_boolean.hamcp_g4_mixed_aa4f6e54",
+        "path": "/scenarios/mixed_plan_create/readback/entity_id"
+      },
+      {
+        "committed": "input_boolean.hamcp_g4_mixed_fe3f9d89",
+        "observed": "input_boolean.hamcp_g4_mixed_aa4f6e54",
+        "path": "/scenarios/mixed_plan_create/readback/registry_entity_id"
+      },
+      {
+        "committed": "input_boolean.hamcp_g4_mixed_fe3f9d89",
+        "observed": "input_boolean.hamcp_g4_mixed_aa4f6e54",
+        "path": "/scenarios/mixed_plan_undo/readback/entity_id"
+      }
+    ]
+  },
+  "masked_leaves": 9,
+  "model": "hamcp443-receipt-comparison-report-v2",
+  "observed_receipt_sha256": "8904c23418745571b721e9ad21d9ba998b8b1f9824535481401f1c4ac00f01b3"
+}

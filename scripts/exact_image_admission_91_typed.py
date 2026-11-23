@@ -46,6 +46,7 @@ for _path in (ROOT / "scripts", ROOT / "hass_mcp_engineering_beta"):
 from exact_image_admission_lanes import (  # noqa: E402
     DIGEST, EXPECTED_PROTOCOL, LaneFailure, bounded, case_result, classify_form, require, write_json,
 )
+from harness_send import harness_url  # noqa: E402
 
 CASE = "91_typed_controls_verified_readback"
 FORM = "strict_full"
@@ -172,8 +173,9 @@ def core_image(window_loader: Callable[[], dict] | None = None) -> dict[str, str
     binding = core_lane_bindings.reviewed_lane_binding(version)
     require(binding is not None and binding.image_index_digest == digest, "core_binding_unreviewed")
     require(binding.typed_operations is True, "core_typed_operations_unbound")
-    admission = window.get("admission") or {}
-    require(admission.get("candidate_version") == UPSTREAM_VERSION, "admission_candidate_not_9_2_0")
+    # HAMCP-437 lane ruling A: the strict-full lane runs on ha_mcp.current.
+    current_ha_mcp = (window.get("ha_mcp") or {}).get("current") or {}
+    require(current_ha_mcp.get("version") == UPSTREAM_VERSION, "ha_mcp_current_not_9_2_0")
     return {"image": f"{CORE_REPOSITORY}:{version}@{digest}", "version": version, "image_index_digest": digest}
 
 
@@ -565,7 +567,7 @@ async def wait_http(url: str, attempts: int = 90) -> int:
     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=2)) as client:
         for _ in range(attempts):
             try:
-                async with client.get(url, allow_redirects=False) as response:
+                async with client.get(harness_url(url), allow_redirects=False) as response:
                     return response.status
             except (aiohttp.ClientError, TimeoutError, OSError):
                 pass

@@ -5,27 +5,28 @@ covers with the production admission code (real ``UpstreamReadGateway``, real
 ``UpstreamDashboardProvider``, real no-redirect transport) against the loopback
 ``RedirectPeer``:
 
-* **Uniform catalog per selector.** The identical 82-tool 9.1.0 catalog that is
+* **Uniform catalog per selector.** The identical 82-tool 9.2.0 catalog that is
   admitted on a ``strict_full`` value is served on every unadmitted selector
   (each accepted ``legacy`` row of the section 3.2 table that a loopback peer
   can serve). Each is still refused with the row's selector code, after
   initialize and before any ``tools/list`` or ``tools/call``.
 * **Order across pages.** The catalog is served in 30-tool cursor pages and its
-  order is taken across those pages: the wire order and the reviewed runtime
-  order are admitted, while a global alphabetical re-sort, a per-page re-sort,
-  a swap across a page boundary, and a missing reviewed tool block admission.
-  A duplicate, changed description, changed annotation or changed input schema
-  of an exposed tool quarantines that tool. 8.5.0 keeps the same behavior on
-  its captured catalog (parity controls).
+  order is taken across those pages. On 9.2.0 the runtime binds each used tool,
+  not the catalog order (Codex F1, PR #406): the capture order, the reviewed
+  runtime order and every re-sort are admitted, and a missing used read is
+  withheld alone. A duplicate name refuses the catalog; a changed description,
+  changed annotation or changed input schema of an exposed tool quarantines
+  that tool. HAMCP-437 retired the 8.5.0 order-gate parity controls (an
+  8.5.0-only gate) and moved the 9.1.0 cases onto 9.2.0.
 
 Catalogs come from committed evidence only (never hand-edited):
 
-* 9.1.0 wire catalog: docs/evidence/hamcp319/phase1/catalogs/full-1.json, the
-  tools of ``pages`` in page order (Phase 1 class C capture).
-* 9.1.0 runtime order: docs/evidence/upstream-read-compatibility/
-  ha-mcp-9.1.0-contract-review.json ``/runtime_catalog/runtime_tool_order``.
-* 8.5.0 catalog: docs/evidence/hamcp162/captures/catalog-8.5.0-A.json
-  ``/tools`` (captured 8.5.0 catalog with the optional reader).
+* 9.2.0 full catalog: docs/evidence/hamcp371/s8/profiles-2/out/
+  standalone-9.2.0-fs-on/capture.json ``/tools`` in committed order (82 tools,
+  filesystem tools enabled, the optional reader included).
+* 9.2.0 runtime order: docs/evidence/upstream-read-compatibility/
+  ha-mcp-9.2.0-contract-review.json ``/runtime_catalog/runtime_tool_order``,
+  descriptors from ``ha-mcp-9.2.0.json``.
 
 Variants are derived in memory by reordering, removing, duplicating or
 changing one field of a copy. Loopback peers only; every secret is synthetic.
@@ -81,14 +82,18 @@ def _load(path: str):
     return json.loads((ROOT / path).read_text(encoding="utf-8"))
 
 
-_FULL = _load("docs/evidence/hamcp319/phase1/catalogs/full-1.json")
-WIRE_91 = tuple(tool for page in _FULL["pages"] for tool in page["tools"])
-_ORDER_91 = _load(
-    "docs/evidence/upstream-read-compatibility/ha-mcp-9.1.0-contract-review.json"
+FULL_92 = tuple(
+    _load("docs/evidence/hamcp371/s8/profiles-2/out/standalone-9.2.0-fs-on/capture.json")["tools"]
+)
+_ORDER_92 = _load(
+    "docs/evidence/upstream-read-compatibility/ha-mcp-9.2.0-contract-review.json"
 )["runtime_catalog"]["runtime_tool_order"]
-RUNTIME_91 = tuple(tool for tool in WIRE_91 if tool["name"] in set(_ORDER_91))
-CATALOG_85 = tuple(_load("docs/evidence/hamcp162/captures/catalog-8.5.0-A.json")["tools"])
-FORMS = {"9.1.0": "strict_full", "8.5.0": "legacy"}
+_STOCK_92 = {
+    tool["name"]: tool
+    for tool in _load("docs/evidence/upstream-read-compatibility/ha-mcp-9.2.0.json")["tools"]
+}
+RUNTIME_92 = tuple(_STOCK_92[name] for name in _ORDER_92)
+FORMS = {"9.2.0": "strict_full"}
 
 
 def _index(tools, name: str) -> int:
@@ -220,17 +225,17 @@ class UniformCatalogPerSelectorTests(unittest.TestCase):
             for canary in CANARIES:
                 self.assertNotIn(canary, sink)
 
-    def test_91_uniform_catalog_admitted_on_strict_full(self):
+    def test_920_uniform_catalog_admitted_on_strict_full(self):
         async def scenario():
             return (
-                await _gateway("9.1.0", WIRE_91),
-                await _dashboard("9.1.0", WIRE_91),
+                await _gateway("9.2.0", FULL_92),
+                await _dashboard("9.2.0", FULL_92),
             )
 
         (health, exposed, counters, _url), (error, _dh, dcounters, _durl) = asyncio.run(
             scenario()
         )
-        self.assertEqual(len(WIRE_91), 82)
+        self.assertEqual(len(FULL_92), 82)
         self.assertEqual(health["admission_status"], "admitted_exact")
         self.assertEqual(health["compatibility_status"], "exact")
         self.assertIn(PROBE_TOOL, exposed)
@@ -239,17 +244,17 @@ class UniformCatalogPerSelectorTests(unittest.TestCase):
         self.assertGreaterEqual(_pages(dcounters), 1)
         self.assertEqual(counters.destination_total() + dcounters.destination_total(), 0)
 
-    def test_91_uniform_catalog_refused_on_each_unadmitted_selector(self):
+    def test_920_uniform_catalog_refused_on_each_unadmitted_selector(self):
         async def scenario():
             outcomes = []
             for row, value, code in LOOPBACK_ROWS:
                 host, suffix = _loopback_suffix(value)
                 kwargs = dict(form="raw", suffix=suffix, host=host)
-                gateway = await _gateway("9.1.0", WIRE_91, **kwargs)
-                dashboard = await _dashboard("9.1.0", WIRE_91, **kwargs)
+                gateway = await _gateway("9.2.0", FULL_92, **kwargs)
+                dashboard = await _dashboard("9.2.0", FULL_92, **kwargs)
                 transports = {
                     client: await _transport(
-                        client, "9.1.0", WIRE_91, suffix=suffix, host=host
+                        client, "9.2.0", FULL_92, suffix=suffix, host=host
                     )
                     for client in SITES
                 }
@@ -345,7 +350,7 @@ class OrderAcrossPagesTests(unittest.TestCase):
             self.assertEqual(counters.executions, 0)
 
     def assert_admitted_as(self, version: str, tools, baseline, *, label: str):
-        """Codex F1 (9.1.0): a reorder or an unused-tool change admits the same reads."""
+        """Codex F1 (9.1.0 onward): a reorder or an unused-tool change admits the same reads."""
         health, exposed, counters, _url = self._run(version, tools)
         with self.subTest(version=version, variant=label):
             self.assertEqual(health["admission_status"], "admitted_exact")
@@ -389,34 +394,34 @@ class OrderAcrossPagesTests(unittest.TestCase):
             self.assertEqual(counters.origin["tools/call"], 0)
             self.assertEqual(counters.executions, 0)
 
-    def test_91_catalog_order_wire_and_runtime_admitted_across_pages(self):
-        wire = self._baseline("9.1.0", WIRE_91)
-        runtime = self._baseline("9.1.0", RUNTIME_91)
-        self.assertEqual(len(RUNTIME_91), len(_ORDER_91))
+    def test_920_catalog_order_wire_and_runtime_admitted_across_pages(self):
+        wire = self._baseline("9.2.0", FULL_92)
+        runtime = self._baseline("9.2.0", RUNTIME_92)
+        self.assertEqual(len(RUNTIME_92), len(_ORDER_92))
         self.assertEqual(runtime, wire - {OPTIONAL_READER})
 
-    def test_91_catalog_order_resorted_pages_admitted(self):
+    def test_920_catalog_order_resorted_pages_admitted(self):
         # Codex F1 (PR #406 verdict 6731785026): the runtime binds each used
         # tool, not the catalog order. The CI lanes keep the strict compare.
-        for tools in (WIRE_91, RUNTIME_91):
+        for tools in (FULL_92, RUNTIME_92):
             n = len(tools)
-            baseline = self._baseline("9.1.0", tools)
+            baseline = self._baseline("9.2.0", tools)
             self.assert_admitted_as(
-                "9.1.0", sorted(tools, key=lambda t: t["name"]), baseline, label=f"alpha{n}"
+                "9.2.0", sorted(tools, key=lambda t: t["name"]), baseline, label=f"alpha{n}"
             )
-            self.assert_admitted_as("9.1.0", _paged_resort(tools), baseline, label=f"per_page{n}")
-            self.assert_admitted_as("9.1.0", _boundary_swap(tools), baseline, label=f"boundary{n}")
-            self.assert_admitted_as("9.1.0", tuple(reversed(tools)), baseline, label=f"reversed{n}")
+            self.assert_admitted_as("9.2.0", _paged_resort(tools), baseline, label=f"per_page{n}")
+            self.assert_admitted_as("9.2.0", _boundary_swap(tools), baseline, label=f"boundary{n}")
+            self.assert_admitted_as("9.2.0", tuple(reversed(tools)), baseline, label=f"reversed{n}")
 
-    def test_91_catalog_missing_used_read_withheld_alone(self):
-        baseline = self._baseline("9.1.0", RUNTIME_91)
-        index = _index(RUNTIME_91, PROBE_TOOL)
+    def test_920_catalog_missing_used_read_withheld_alone(self):
+        baseline = self._baseline("9.2.0", RUNTIME_92)
+        index = _index(RUNTIME_92, PROBE_TOOL)
         self.assert_only_probe_missing(
-            "9.1.0", RUNTIME_91[:index] + RUNTIME_91[index + 1 :], baseline, label="missing"
+            "9.2.0", RUNTIME_92[:index] + RUNTIME_92[index + 1 :], baseline, label="missing"
         )
 
-    def test_91_unused_tool_changes_admitted(self):
-        for version, tools in (("9.1.0", WIRE_91),):
+    def test_920_unused_tool_changes_admitted(self):
+        for version, tools in (("9.2.0", FULL_92),):
             baseline = self._baseline(version, tools)
             index = _index(tools, "ha_restart")
             self.assert_admitted_as(
@@ -433,65 +438,24 @@ class OrderAcrossPagesTests(unittest.TestCase):
                     baseline, label=f"extra_at_{position}",
                 )
 
-    def test_91_catalog_duplicate_and_changed_descriptor_quarantined(self):
-        baseline = self._baseline("9.1.0", WIRE_91)
-        self._quarantine_cases("9.1.0", WIRE_91, baseline)
+    def test_920_catalog_duplicate_and_changed_descriptor_quarantined(self):
+        baseline = self._baseline("9.2.0", FULL_92)
+        self._quarantine_cases("9.2.0", FULL_92, baseline)
 
-    def test_91_catalog_duplicate_name_refused(self):
+    def test_920_catalog_duplicate_name_refused(self):
         # Sections 4 item 3 and 8.2: a strict-full catalog has no duplicate
         # names. A repeated read route or a repeated non-read reviewed name
         # (here the typed-write dependency ha_call_service) blocks every stock
         # read; nothing is called.
         for name in (PROBE_TOOL, "ha_call_service"):
-            index = _index(WIRE_91, name)
+            index = _index(FULL_92, name)
             self.assert_structure_blocked(
-                "9.1.0", tuple(WIRE_91) + (WIRE_91[index],), label=f"duplicate:{name}"
-            )
-
-    def test_85_catalog_order_parity(self):
-        # Architect ruling 2026-11-08 (relayed): the Codex F1 lift is 9.1.0
-        # only. 8.5.0 keeps its pre-existing order gate exactly: a reorder or
-        # an absent reviewed tool, used or unused, still quarantines.
-        baseline = self._baseline("8.5.0", CATALOG_85)
-        self.assert_blocked(
-            "8.5.0", sorted(CATALOG_85, key=lambda t: t["name"]), label="alpha"
-        )
-        self.assert_blocked("8.5.0", _paged_resort(CATALOG_85), label="per_page")
-        self.assert_blocked("8.5.0", tuple(reversed(CATALOG_85)), label="reversed")
-        index = _index(CATALOG_85, PROBE_TOOL)
-        self.assert_blocked(
-            "8.5.0", CATALOG_85[:index] + CATALOG_85[index + 1 :], label="missing"
-        )
-        index = _index(CATALOG_85, "ha_restart")
-        self.assert_blocked(
-            "8.5.0", CATALOG_85[:index] + CATALOG_85[index + 1 :], label="missing_unused"
-        )
-        self._quarantine_cases("8.5.0", CATALOG_85, baseline)
-
-    def test_85_tolerated_unused_changes_unchanged(self):
-        # Pre-existing 8.5.0 behavior, unchanged by #406: a changed unused
-        # descriptor and an unreviewed extra name never entered the order gate.
-        baseline = self._baseline("8.5.0", CATALOG_85)
-        self.assert_admitted_as(
-            "8.5.0", _changed(CATALOG_85, "ha_restart", _append_description), baseline,
-            label="changed_unused",
-        )
-        extra = dict(CATALOG_85[_index(CATALOG_85, PROBE_TOOL)], name="ha_synthetic_unreviewed_extra")
-        for position in (0, PAGE_SIZE, len(CATALOG_85)):
-            self.assert_admitted_as(
-                "8.5.0", tuple(CATALOG_85[:position]) + (extra,) + tuple(CATALOG_85[position:]),
-                baseline, label=f"extra_at_{position}",
+                "9.2.0", tuple(FULL_92) + (FULL_92[index],), label=f"duplicate:{name}"
             )
 
     def _quarantine_cases(self, version, tools, baseline):
-        index = _index(tools, PROBE_TOOL)
-        if version != "9.1.0":
-            # 8.5 keeps its released per-tool duplicate quarantine; 9.1 refuses
-            # the whole catalog (test_91_catalog_duplicate_name_refused).
-            self.assert_tool_quarantined(
-                version, tuple(tools) + (tools[index],), baseline,
-                reason="duplicate_tool_descriptor",
-            )
+        # A duplicate refuses the whole catalog instead
+        # (test_920_catalog_duplicate_name_refused).
         self.assert_tool_quarantined(
             version, _changed(tools, PROBE_TOOL, _append_description), baseline,
             reason="description_semantics_mismatch",
@@ -505,32 +469,22 @@ class OrderAcrossPagesTests(unittest.TestCase):
             reason="input_schema_mismatch",
         )
 
-    def test_dashboard_descriptor_change_refused_both_versions(self):
+    def test_dashboard_descriptor_change_refused(self):
         """The dashboard provider refuses a change to its own reviewed descriptor.
 
-        It does not apply the gateway's global catalog-order check (8.5.0
-        behavior, unchanged); that check lives in the gateway only.
+        It does not apply the gateway's global catalog-order check; that check
+        lives in the gateway only.
         """
 
         def retitle(tool):
             tool["annotations"]["title"] = "Synthetic changed title"
 
         runtime = "upstream_runtime_contract_mismatch"
-        security = "upstream_security_contract_mismatch"
         expected = {
-            "9.1.0": {
+            "9.2.0": {
                 "description": runtime,
                 "read_only": runtime,
                 "input_schema": runtime,
-                "title": runtime,
-            },
-            # 8.5.0's dashboard profile has no title rule; since HAMCP-319's
-            # exact used-tool admission (2026-11-07) the whole-descriptor
-            # release runtime contract refuses it instead of admitting it.
-            "8.5.0": {
-                "description": runtime,
-                "read_only": security,
-                "input_schema": "upstream_input_contract_mismatch",
                 "title": runtime,
             },
         }
@@ -540,7 +494,7 @@ class OrderAcrossPagesTests(unittest.TestCase):
             "input_schema": _extra_property,
             "title": retitle,
         }
-        catalogs = {"9.1.0": WIRE_91, "8.5.0": CATALOG_85}
+        catalogs = {"9.2.0": FULL_92}
         for version, rows in expected.items():
             tools = catalogs[version]
             ok_error, *_ = asyncio.run(_dashboard(version, tools))

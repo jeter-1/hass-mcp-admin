@@ -42,6 +42,20 @@ COMPILED_REGISTRY = (
 POLICY_7142 = (
     BETA / "ha_mcp_engineering" / "upstream_tool_policy_7_14_2.json"
 )
+POLICY_920 = (
+    BETA / "ha_mcp_engineering" / "upstream_tool_policy_9_2_0.json"
+)
+# Compiled-registry provenance that the 9.2.0 entry carries and the signed
+# release model refuses as unknown fields (registry_entry_fields_invalid).
+COMPILED_ONLY_FIELDS_920 = (
+    "addon_artifact_digests",
+    "artifact_evidence_resource",
+    "artifact_evidence_sha256",
+    "source_tag_object",
+    "source_tree",
+    "strict_full_contract_fingerprint",
+    "strict_full_contract_fingerprint_model",
+)
 SIGNED_PACKAGE = (
     BETA / "ha_mcp_engineering" / "signed_registry"
 )
@@ -541,12 +555,13 @@ class StrictModelTests(unittest.TestCase):
     def test_compiled_release_evidence_omits_local_diagnostics_explicitly(self):
         before = COMPILED_REGISTRY.read_bytes()
         compiled = json.loads(before)
+        # HAMCP-437: projected from the reviewed 9.2.0 entry (was 7.14.2).
         release = next(
             item
             for item in compiled["releases"]
-            if item["version"] == "7.14.2"
+            if item["version"] == "9.2.0"
         )
-        policy = json.loads(POLICY_7142.read_text(encoding="utf-8"))
+        policy = json.loads(POLICY_920.read_text(encoding="utf-8"))
         restrictions = {
             item["upstream_name"]: item["argument_restrictions"]
             for item in policy["tools"]
@@ -557,6 +572,8 @@ class StrictModelTests(unittest.TestCase):
         # signed release evidence; every compiled entry declares them
         # (HAMCP-184 F-05).
         projected.pop("provider_dispositions")
+        for field in COMPILED_ONLY_FIELDS_920:
+            projected.pop(field)
         projected["tool_contracts"] = [
             {
                 "tool_name": name,
@@ -604,14 +621,14 @@ class StrictModelTests(unittest.TestCase):
             model.catalog_fingerprint,
             release["catalog_fingerprint"],
         )
-        self.assertEqual(model.advertised_tool_count, 78)
-        self.assertEqual(len(model.tool_contracts), 78)
+        self.assertEqual(model.advertised_tool_count, 77)
+        self.assertEqual(len(model.tool_contracts), 77)
         self.assertEqual(
             sum(
                 item.reviewed_automatic_read
                 for item in model.tool_contracts
             ),
-            26,
+            23,
         )
         self.assertEqual(COMPILED_REGISTRY.read_bytes(), before)
 

@@ -1,0 +1,51 @@
+{
+  "committed_receipt": "docs/evidence/hamcp443/lane/helper_value.json",
+  "committed_receipt_sha256": "ce3a227cf42d66f3843615df9993a77e57aab4f53af859cb0cc79b374adcd814",
+  "declaration_sha256": "5d0089392a2a8407b4722dcce1d9dd5c2d184062c55b34d8578c1ff7cc0bc792",
+  "differences": [],
+  "equal": true,
+  "excluded_differences": {
+    "host_admission": [
+      {
+        "committed": 0.37060546875,
+        "observed": 1.33642578125,
+        "path": "/host_admission/load1"
+      },
+      {
+        "committed": 11920949248,
+        "observed": 11490627584,
+        "path": "/host_admission/mem_available_bytes"
+      },
+      {
+        "committed": "2026-11-21T00:27:25.006275+00:00",
+        "observed": "2026-11-21T03:45:46.122136+00:00",
+        "path": "/host_admission/utc"
+      }
+    ],
+    "run_identity": [
+      {
+        "committed": "2026-11-21T00:28:47.346828+00:00",
+        "observed": "2026-11-21T03:47:11.190867+00:00",
+        "path": "/ended_utc"
+      },
+      {
+        "committed": "c94d66ce0e2fa776eb8f0d720b350ad90646e8bf",
+        "observed": "982e2bf36a70d422f2efaf7369876c73bff48c8b",
+        "path": "/source_commit"
+      },
+      {
+        "committed": "2026-11-21T00:27:25.075141+00:00",
+        "observed": "2026-11-21T03:45:46.187805+00:00",
+        "path": "/started_utc"
+      }
+    ]
+  },
+  "excluded_leaves": 8,
+  "expected_changes": [],
+  "harness": "scripts/core_helper_value_local.py",
+  "lane": "helper_value",
+  "masked_differences": {},
+  "masked_leaves": 0,
+  "model": "hamcp443-receipt-comparison-report-v2",
+  "observed_receipt_sha256": "ba345359934fb286c46178e9cadd474bac29992f1d73c61aecc2286935426413"
+}

@@ -10,9 +10,10 @@ contract generated from them, its provenance and the hashes it binds.
   reproduces the committed contract byte for byte.
 - Contract: Engineering-added names never collide with an upstream key, policy
   drops and unreviewed 9.2.0 keys are never admitted, ruled keys are admitted.
-- 9.1.2 replay: each real-Core receipt replayed through the real gateway on the
-  shipped 9.1.2 route sends the recorded wire arguments and succeeds, except the
-  designed failures, which fail closed without upstream text.
+- HAMCP-437: only 9.2.0 is admitted (D1), so the 9.1.2 replay is retired. Its
+  guards moved to the 9.2.0 replay: both receipt directories (before and after
+  the Core restart), and the designed failures failing closed without upstream
+  text. The 9.1.2 receipts stay as the contract's recorded baseline.
 - 9.2.0 replay (ruling 2, items 7-15, N29): history passes from S9 (an
   offset-free time refuses before dispatch); the other reads fail by design
   until S10 lands their closed key sets (step table S7).
@@ -39,7 +40,7 @@ from ha_mcp_engineering.providers.upstream_reads_9_2_entities import (
 from ha_mcp_engineering.providers import upstream_reads_9_2_blueprint as blueprint_9_2
 from ha_mcp_engineering.request_context import begin_request, end_request
 from test_ha_mcp_production_readmission import _GatewayTransport, _settings
-import test_upstream_8_5_compatibility as previous
+import support.ha_mcp_captures as previous  # HAMCP-437: helpers moved from the retired 8.5 module
 
 FIXTURES = ROOT / 'tests/fixtures/ha_mcp_9_2_0'
 CONTRACT = json.loads((FIXTURES / 'output-key-contract.json').read_text(encoding='utf-8'))
@@ -308,34 +309,6 @@ class OutputKeyContract(unittest.TestCase):
         self.assertIn('light.turn_on', generator.names(payload, 'ha_eval_template'))
 
 
-class RealCoreReplay912(unittest.TestCase):
-
-    def test_receipts_replay_on_the_shipped_route(self):
-        for set_name in ('A/9.1.2', 'B/9.1.2'):
-            for sub in CALL_DIRS:
-                calls = list(public_calls(set_name, sub))
-                outputs = replay('9.1.2', [
-                    (c['public_tool'], c['public_arguments'], r['exchange']['response']['result'])
-                    for c, r in calls
-                ])
-                for (call, rec), (out, sent) in zip(calls, outputs):
-                    with self.subTest(set=set_name, sub=sub, call=call['id']):
-                        self.assertEqual(sent, [(call['upstream_tool'], call['wire_arguments'])])
-                        expected = EXPECTED_FAILURES.get(call['id'])
-                        if expected is None:
-                            self.assertIs(out['success'], True, out.get('details'))
-                        else:
-                            self.assertIs(out['success'], False)
-                            self.assertEqual(out['details']['failure_category'], expected)
-                            error = json.loads(rec['exchange']['response']['result']['content'][0]['text'])['error']
-                            self.assertNotIn(error['message'], json.dumps(out))
-                            self.assertNotIn(error['code'], json.dumps(out))
-
-    def test_every_profile_b_read_has_a_receipt(self):
-        tools = {c['public_tool'] for c, _ in public_calls('B/9.1.2')}
-        self.assertEqual(tools & set(READS), set(READS))
-
-
 # --- 9.2.0: fails by design until S8 (capture, admission) and S10 (key sets) ---
 
 def _withheld_names(row, upstream):
@@ -397,25 +370,34 @@ class RealCoreReplay920(unittest.TestCase):
 
     def test_receipts_replay_with_the_recorded_wire_arguments(self):
         for set_name in ('A/9.2.0', 'B/9.2.0'):
-            calls = list(public_calls(set_name))
-            outputs = replay('9.2.0', [
-                (c['public_tool'], c['public_arguments'], r['exchange']['response']['result'])
-                for c, r in calls
-            ])
-            for (call, _rec), (out, sent) in zip(calls, outputs):
-                with self.subTest(set=set_name, call=call['id']):
-                    refused = REFUSED_BEFORE_DISPATCH_920.get(call['id'])
-                    if refused is not None:
-                        self.assertEqual(sent, [])
-                        self.assertIs(out['success'], False)
-                        self.assertEqual(out['details']['failure_category'], refused)
-                        continue
-                    self.assertEqual(sent, [(call['upstream_tool'], call['wire_arguments'])])
-                    expected = EXPECTED_FAILURES.get(call['id'])
-                    if expected is None:
-                        self.assertIs(out['success'], True, out.get('details'))
-                    else:
-                        self.assertEqual(out['details']['failure_category'], expected)
+            for sub in CALL_DIRS:
+                calls = list(public_calls(set_name, sub))
+                outputs = replay('9.2.0', [
+                    (c['public_tool'], c['public_arguments'], r['exchange']['response']['result'])
+                    for c, r in calls
+                ])
+                for (call, rec), (out, sent) in zip(calls, outputs):
+                    with self.subTest(set=set_name, sub=sub, call=call['id']):
+                        refused = REFUSED_BEFORE_DISPATCH_920.get(call['id'])
+                        if refused is not None:
+                            self.assertEqual(sent, [])
+                            self.assertIs(out['success'], False)
+                            self.assertEqual(out['details']['failure_category'], refused)
+                            continue
+                        self.assertEqual(sent, [(call['upstream_tool'], call['wire_arguments'])])
+                        expected = EXPECTED_FAILURES.get(call['id'])
+                        if expected is None:
+                            self.assertIs(out['success'], True, out.get('details'))
+                        else:
+                            self.assertIs(out['success'], False)
+                            self.assertEqual(out['details']['failure_category'], expected)
+                            error = json.loads(rec['exchange']['response']['result']['content'][0]['text'])['error']
+                            self.assertNotIn(error['message'], json.dumps(out))
+                            self.assertNotIn(error['code'], json.dumps(out))
+
+    def test_every_profile_b_read_has_a_receipt(self):
+        tools = {c['public_tool'] for c, _ in public_calls('B/9.2.0')}
+        self.assertEqual(tools & set(READS), set(READS))
 
     def test_admitted_keys_and_withheld_counts(self):
         cases = list(_cases_920())

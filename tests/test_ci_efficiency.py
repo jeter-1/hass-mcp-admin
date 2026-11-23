@@ -271,9 +271,7 @@ class CIEfficiencyTests(unittest.TestCase):
                 self.assertIsInstance(job.get("timeout-minutes"), int)
                 self.assertGreater(job["timeout-minutes"], 0)
         for name, expected in {"validate": 5, "real-ha-contract-tests": 50,
-                               "unit_test_shards": 30, "validate_source": 15,
-                               "exact-image-read-gateway": 25,
-                               "exact-addon-runtime-acceptance": 20}.items():
+                               "unit_test_shards": 30, "validate_source": 15}.items():
             self.assertEqual(self.jobs[name]["timeout-minutes"], expected)
 
     def test_validation_does_not_add_permissions_or_write_actions(self):
@@ -300,30 +298,26 @@ MATRIX_KEY = re.compile(r"^matrix\.([A-Za-z_][A-Za-z0-9_-]*)$")
 # (generated_runner_labels), not to a declared constant, so an unpinned value
 # in a generated row fails the guard.
 DYNAMIC_RUNNER_SOURCES = {
-    ("ci.yml", "exact-addon-runtime-acceptance"):
-        "${{ fromJSON(needs.prepare_exact_image_matrix.outputs.addon) }}",
     ("ci.yml", "exact-image-admission-lanes"):
         "${{ fromJSON(needs.prepare_exact_image_matrix.outputs.admission) }}",
 }
 
 
-def generated_runner_labels(module, job_name="exact-addon-runtime-acceptance"):
+def generated_runner_labels(module, job_name="exact-image-admission-lanes"):
     """Every ``runner`` value the matrix generator for ``job_name`` emits.
 
-    ``exact-addon-runtime-acceptance`` consumes
-    ``prepare_exact_image_matrix.outputs.addon`` (support_window.addon_matrix,
-    every tier); ``exact-image-admission-lanes`` consumes ``outputs.admission``
-    (support_window.admission_matrix over the reviewed registry, HAMCP-319).
-    Rows without ``runner`` take the job's quoted literal fallback, which the
-    guard resolves separately.
+    ``exact-image-admission-lanes`` consumes
+    ``prepare_exact_image_matrix.outputs.admission`` (the strict-full rows)
+    (support_window.strict_full_matrix over the reviewed registry, every tier;
+    HAMCP-437 retired the add-on runtime lanes). Rows without ``runner`` take
+    the job's quoted literal fallback, which the guard resolves separately.
     """
+    if job_name != "exact-image-admission-lanes":
+        raise KeyError(job_name)
+    from support.support_window_matrix import registry_matrix
     window = module.load(ROOT)
-    if job_name == "exact-image-admission-lanes":
-        from support.support_window_matrix import registry_matrix
-        rows = module.admission_matrix(window, registry_matrix())["include"]
-    else:
-        rows = [row for tier in sorted(module.TIERS)
-                for row in module.addon_matrix(window, tier)["include"]]
+    rows = [row for tier in sorted(module.TIERS)
+            for row in module.strict_full_matrix(window, tier, registry_matrix())["include"]]
     return sorted({row["runner"] for row in rows if "runner" in row})
 
 
@@ -447,30 +441,22 @@ class RunnerImagePinningTests(unittest.TestCase):
             self.assertEqual(job["runs-on"], "${{ matrix.runner || 'ubuntu-24.04' }}")
 
     def test_dynamic_runner_labels_are_the_generated_matrix_values(self):
-        # HAMCP-184 F-06: the matrix-sourced runner at ci.yml
-        # exact-addon-runtime-acceptance resolves only to explicit images that
-        # the committed generator emits from support_window.RUNNERS.
-        from support.support_window_matrix import support_window
+        # HAMCP-184 F-06, HAMCP-319: the matrix-sourced runner at ci.yml
+        # exact-image-admission-lanes resolves only to explicit native images
+        # that the committed generator emits from support_window.RUNNERS,
+        # amd64 and arm64 both (no emulation, no literal fallback).
+        from support.support_window_matrix import registry_matrix, support_window
         module = support_window()
         labels = generated_runner_labels(module)
-        self.assertTrue(labels)
-        self.assertLessEqual(set(labels), set(module.RUNNERS.values()))
+        self.assertEqual(labels, sorted(module.RUNNERS.values()))
         for label in labels:
             self.assertRegex(label, PINNED_RUNNER)
             self.assertNotIn("latest", label.casefold())
         window = module.load(ROOT)
         for tier in sorted(module.TIERS):
-            for row in module.addon_matrix(window, tier)["include"]:
-                with self.subTest(tier=tier, row=row.get("architecture")):
-                    if "runner" in row:
-                        self.assertEqual(row["runner"], module.RUNNERS[row["architecture"]])
-        # HAMCP-319: every admission lane names its native runner explicitly,
-        # amd64 and arm64 both (no emulation, no literal fallback).
-        self.assertEqual(generated_runner_labels(module, "exact-image-admission-lanes"),
-                         sorted(module.RUNNERS.values()))
-        from support.support_window_matrix import registry_matrix
-        for row in module.admission_matrix(window, registry_matrix())["include"]:
-            self.assertEqual(row["runner"], module.RUNNERS[row["architecture"]])
+            for row in module.strict_full_matrix(window, tier, registry_matrix())["include"]:
+                with self.subTest(tier=tier, row=row["architecture"]):
+                    self.assertEqual(row["runner"], module.RUNNERS[row["architecture"]])
 
     def test_unpinned_generated_runner_fails_the_guard(self):
         # Mutation: an unpinned value reaching a generated matrix row must fail
@@ -495,19 +481,18 @@ class RunnerImagePinningTests(unittest.TestCase):
         from unittest.mock import patch
         from support.support_window_matrix import support_window
         module = support_window()
-        original = module.addon_matrix
+        original = module.strict_full_matrix
 
-        def drifted(window, tier):
-            matrix = original(window, tier)
-            return {**matrix, "include": [{**row, "runner": "ubuntu-latest"} if "runner" in row else row
-                                          for row in matrix["include"]]}
+        def drifted(window, tier, registry):
+            matrix = original(window, tier, registry)
+            return {**matrix, "include": [{**row, "runner": "ubuntu-latest"} for row in matrix["include"]]}
 
-        with patch.object(module, "addon_matrix", drifted):
+        with patch.object(module, "strict_full_matrix", drifted):
             labels = generated_runner_labels(module)
         self.assertEqual(labels, ["ubuntu-latest"])
         self.assertTrue(all(PINNED_RUNNER.match(value) for value in module.RUNNERS.values()))
         sources = {key: (expression, labels) for key, expression in DYNAMIC_RUNNER_SOURCES.items()}
-        self.assertIn(("exact-addon-runtime-acceptance", "ubuntu-latest"),
+        self.assertIn(("exact-image-admission-lanes", "ubuntu-latest"),
                       floating_runner_labels("ci.yml", self.workflows["ci.yml"], sources))
 
     def test_guard_refuses_floating_and_unresolvable_runner_labels(self):

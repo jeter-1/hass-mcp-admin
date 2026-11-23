@@ -70,7 +70,6 @@ in the [release index](RELEASES.md); this map lists no per-release history.
 ## Release and publication operations
 
 - [Publication recovery runbook (HAMCP-223)](PUBLICATION_RECOVERY_RUNBOOK.md)
-- [Instruction-guidance reconciliation for RC2](INSTRUCTION_GUIDANCE_RECONCILIATION.md)
 - [Terminal history projection correction](TERMINAL_HISTORY_PROJECTION_CORRECTION.md)
 
 ## Runbooks
@@ -98,7 +97,6 @@ the time; current behavior is in source and the reference documents above.
 
 - [F2 Historical Policy Projection Compatibility](F2_HISTORICAL_POLICY_PROJECTION_COMPATIBILITY.md)
 - [F3-A durable adapter execution and locking core](F3_ADAPTER_LOCK_CORE.md)
-- [F3-B governed storage-dashboard write foundation](F3_B_DASHBOARD_WRITE_FOUNDATION.md)
 - [F3-C1 configuration-adapter conformance](F3_C1_CONFIGURATION_CONFORMANCE.md)
 - [F3 current-state execution inventory](F3_CURRENT_STATE_INVENTORY.md)
 - [Governed existing-dashboard update contract](F3_DASHBOARD_WRITE_CONTRACT.md)
@@ -122,17 +120,14 @@ the time; current behavior is in source and the reference documents above.
 - [HAMCP-162 delegated read-only YAML configuration reader — design](HAMCP_162_YAML_READER_DESIGN.md)
 - [HAMCP-164 — Core Gateway Fails Closed for Unmapped Tools — Design Note](HAMCP_164_CORE_GATE_FAIL_CLOSED_DESIGN.md)
 - [HAMCP-165 governed label create, edit and assignment — design](HAMCP_165_LABELS_DESIGN.md)
-- [HAMCP-171 health and dependency-index performance investigation](HAMCP_171_HEALTH_PERFORMANCE_INVESTIGATION.md)
 - [HAMCP-181 / HAMCP-167 — Truthful F3 Outcome Taxonomy for No-Call and No-Dispatch Results (Design Report)](HAMCP_181_TRUTHFUL_OUTCOMES_DESIGN.md)
 - [HAMCP-184 — Audit Hardening Batch (F-05, F-01, F-02, F-06) — Design Note](HAMCP_184_AUDIT_HARDENING_DESIGN.md)
 - [HAMCP-187: upstream ha-mcp 8.7.0 review](HAMCP_187_HA_MCP_870_REVIEW.md)
 - [HAMCP-189 PR A — Core authority before "already satisfied", R6, durable cancel](HAMCP_189_PR_A_DESIGN.md)
 - [HAMCP-189 PR B + C — design note](HAMCP_189_PR_B_DESIGN.md)
-- [HAMCP-189 — Triage of HAMCP-164 Residuals R1–R8 and Codex Lows L1/L2](HAMCP_189_TRIAGE.md)
 - [HAMCP-191 implementation notes](HAMCP_191_IMPLEMENTATION_NOTES.md)
 - [HAMCP-191: Identity-Only Redaction Markers for Every Tool (Design Sweep)](HAMCP_191_SHARED_SANITIZER_DESIGN.md)
 - [HAMCP-192 — Observing-task fix: design note](HAMCP_192_OBSERVING_FIX_DESIGN.md)
-- [HAMCP-192 — Typed power/fan tasks left "observing" after a slow device report](HAMCP_192_OBSERVING_INVESTIGATION.md)
 - [HAMCP-195 risk-gated fast toggles for input_boolean helpers — design](HAMCP_195_GATED_HELPER_TOGGLE_DESIGN.md)
 - [HAMCP-196: Engineering add-on permissions review (read-only)](HAMCP_196_ADDON_PERMISSIONS_REVIEW.md)
 - [HAMCP-205: shared administrator verification for Ingress approval pages](HAMCP_205_ADMIN_VERIFICATION_DESIGN.md)
@@ -158,7 +153,9 @@ they are never edited or moved.
 
 ## Release history
 
-- [Release index](RELEASES.md): every release's notes and acceptance contract,
-  legacy-named records, release companions and feature acceptance contracts.
-- Historical guidance, not current: [beta deployment](BETA_DEPLOYMENT.md) and
-  the [2.1 roadmap](2_1_ROADMAP.md).
+- [Release index](RELEASES.md): the release notes and acceptance contracts kept
+  in `docs/`, legacy-named records, release companions and feature acceptance
+  contracts.
+- Historical design records, evidence and guidance deleted by HAMCP-437,
+  including the beta deployment guide and the 2.1 roadmap, remain in git
+  history: [`docs/` at `9af0d7dc`](https://github.com/jeter-1/hass-mcp-admin/tree/9af0d7dcce7f17c240917f0bdce576068a565458/docs).

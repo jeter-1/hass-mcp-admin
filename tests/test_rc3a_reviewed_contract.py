@@ -18,16 +18,8 @@ from ha_mcp_engineering.clients.mcp import (  # noqa: E402
 )
 from ha_mcp_engineering.configuration import Settings  # noqa: E402
 from ha_mcp_engineering.errors import ErrorCode, GovernanceError  # noqa: E402
+from ha_mcp_engineering.providers.upstream_contracts import CONTRACT_FAMILY_V3  # noqa: E402
 from ha_mcp_engineering.providers.upstream_dashboard import (  # noqa: E402
-    REVIEWED_ANNOTATIONS,
-    REVIEWED_FIXTURE_RUNTIME_DESCRIPTOR_FINGERPRINT,
-    REVIEWED_PUBLISHED_RUNTIME_DESCRIPTOR_FINGERPRINT,
-    REVIEWED_PROTOCOL_VERSION,
-    REVIEWED_SCHEMA_FINGERPRINT,
-    REVIEWED_SECURITY_CONTRACT_FINGERPRINT,
-    REVIEWED_SERVER_NAME,
-    REVIEWED_SERVER_VERSION,
-    REVIEWED_TRUST_PROFILE,
     TRUST_MODE_CONTRACT_READ_ONLY,
     TRUST_MODE_REVIEWED_ARGUMENT_CONSTRAINED,
     DashboardProviderResult,
@@ -39,35 +31,32 @@ from ha_mcp_engineering.providers.upstream_dashboard import (  # noqa: E402
 )
 
 
-FIXTURE_PATH = (
-    BETA
-    / "ha_mcp_engineering"
-    / "providers"
-    / "contracts"
-    / "ha_mcp_7_13_dashboard_read_v1.json"
-)
-RUNTIME_DELTA_PATH = (
-    BETA
-    / "ha_mcp_engineering"
-    / "providers"
-    / "contracts"
-    / "ha_mcp_7_13_published_runtime_delta.json"
+# HAMCP-437: re-pinned from the RC3A ha-mcp 7.13.0 contract fixture and its
+# published-runtime delta to the exact ha-mcp 9.2.0 getter in the HAMCP-371 S8
+# capture, the only reviewed release after HAMCP-437.
+FIXTURE_PATH = ROOT / "docs" / "evidence" / "upstream-read-compatibility" / "ha-mcp-9.2.0.json"
+REVIEWED_SERVER_NAME = "ha-mcp"
+REVIEWED_SERVER_VERSION = "9.2.0"
+REVIEWED_PROTOCOL_VERSION = "2025-03-26"
+REVIEWED_TRUST_PROFILE = CONTRACT_FAMILY_V3
+# The committed reply envelopes of the dashboard source, which has the same
+# sha256 at v9.2.0 as at v9.1.0 (tests/test_hamcp319_dashboard, HAMCP-371 SB).
+ENVELOPES = json.loads(
+    (ROOT / "tests" / "fixtures" / "ha_mcp_9_1_0" / "dashboard" / "envelopes.json").read_text(
+        encoding="utf-8"
+    )
 )
 SECRET_URL = "http://ha-mcp:9583/synthetic-reviewed-secret/mcp"
 
 
-def fixture_tool():
-    return json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
+def fixture_tool(object_pairs_hook=None):
+    evidence = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"), object_pairs_hook=object_pairs_hook)
+    return next(tool for tool in evidence["tools"] if tool.get("name") == REQUIRED_DASHBOARD_TOOL)
 
 
 def published_runtime_tool():
-    tool = fixture_tool()
-    delta = json.loads(RUNTIME_DELTA_PATH.read_text(encoding="utf-8"))
-    added = delta["descriptor_delta"]["added"]
-    if set(added) != {"/_meta/ha_mcp"}:
-        raise AssertionError("published runtime delta contains an unreviewed path")
-    tool.setdefault("_meta", {})["ha_mcp"] = added["/_meta/ha_mcp"]
-    return tool
+    # The 9.2.0 capture is the published runtime descriptor itself.
+    return fixture_tool()
 
 
 def reviewed_handshake(
@@ -101,6 +90,17 @@ def settings():
     )
 
 
+def get_payload(url_path, config):
+    payload = copy.deepcopy(ENVELOPES["get_stored_config"])
+    payload.update(
+        url_path=url_path,
+        config=config,
+        config_hash=_upstream_config_hash(config),
+        config_size_bytes=len(json.dumps(config)),
+    )
+    return payload
+
+
 def call_result(payload):
     return {
         "content": [{"type": "text", "text": json.dumps(payload)}],
@@ -111,12 +111,7 @@ def call_result(payload):
 class ReviewedFakeTransport:
     def __init__(self, handshake=None, payload=None):
         self.handshake = handshake or reviewed_handshake()
-        self.payload = payload or {
-            "success": True,
-            "action": "list",
-            "dashboards": [],
-            "count": 0,
-        }
+        self.payload = payload or {**ENVELOPES["list"], "dashboards": [], "count": 0}
         self.arguments = []
         self.tool_dispatch_count = 0
 
@@ -157,13 +152,19 @@ class ReviewedIdentityAndVersionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(health["trust_profile"], REVIEWED_TRUST_PROFILE)
         self.assertTrue(health["reviewed_contract_match"])
         self.assertTrue(health["input_schema_match"])
-        self.assertTrue(health["reviewed_security_contract_match"])
-        self.assertFalse(health["runtime_descriptor_match"])
-        self.assertTrue(health["published_runtime_descriptor_match"])
-        self.assertEqual(
-            health["runtime_descriptor_drift"],
-            "none",
-        )
+        # HAMCP-437: 9.2.0 admits on its builtin attestation and the exact
+        # release runtime contract; the RC3A 7.13.0 informational descriptor
+        # fingerprints do not describe it.
+        self.assertEqual(health["admission_status"], "admitted_builtin_attestation")
+        self.assertEqual(health["attested_upstream_version"], REVIEWED_SERVER_VERSION)
+        self.assertTrue(health["release_runtime_contract_match"])
+        for key in (
+            "input_contract_match",
+            "security_contract_match",
+            "output_contract_match",
+            "runtime_contract_match",
+        ):
+            self.assertTrue(health[key], key)
         self.assertTrue(health["required_schema_compatible"])
 
     async def test_different_missing_case_variant_and_alias_names_are_rejected(self):
@@ -185,7 +186,7 @@ class ReviewedIdentityAndVersionTests(unittest.IsolatedAsyncioTestCase):
                 )
 
     async def test_unattested_versions_fail_closed_before_contract_admission(self):
-        for version in ("7.12.3", "7.13.1", "7.14.3", "8.0.1"):
+        for version in ("7.12.3", "7.13.1", "7.14.3", "8.0.1", "9.2.1"):
             with self.subTest(version=version):
                 exc, health = await self._failure(version=version)
                 self.assertEqual(
@@ -243,71 +244,20 @@ class ReviewedIdentityAndVersionTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ReviewedContractTests(unittest.IsolatedAsyncioTestCase):
-    def test_fixture_reproduces_known_runtime_schema_and_security_fingerprints(self):
-        tool = fixture_tool()
-        self.assertEqual(
-            _stable_hash(tool),
-            REVIEWED_FIXTURE_RUNTIME_DESCRIPTOR_FINGERPRINT,
-        )
-        self.assertEqual(
-            _stable_hash(tool["inputSchema"]),
-            REVIEWED_SCHEMA_FINGERPRINT,
-        )
-        self.assertEqual(
-            _stable_hash(_reviewed_security_contract_projection(tool)),
-            REVIEWED_SECURITY_CONTRACT_FINGERPRINT,
-        )
-        self.assertEqual(tool["annotations"], REVIEWED_ANNOTATIONS)
-
-    def test_published_artifact_delta_reproduces_observed_runtime_fingerprint(self):
-        delta = json.loads(RUNTIME_DELTA_PATH.read_text(encoding="utf-8"))
-        tool = published_runtime_tool()
-        self.assertEqual(
-            delta["artifact"]["reviewed_source_revision"],
-            "f4eb53621ccb814cb7123d2811e06eda3577129c",
-        )
-        self.assertEqual(
-            delta["artifact"]["index_digest"],
-            "sha256:f6c0d3379b625687757f55be51e786ecbc46ab7ad96c994208aec9dc2344396a",
-        )
-        self.assertEqual(
-            _stable_hash(tool),
-            REVIEWED_PUBLISHED_RUNTIME_DESCRIPTOR_FINGERPRINT,
-        )
-        self.assertEqual(
-            _stable_hash(tool["inputSchema"]),
-            REVIEWED_SCHEMA_FINGERPRINT,
-        )
-        self.assertEqual(
-            _stable_hash(_reviewed_security_contract_projection(tool)),
-            REVIEWED_SECURITY_CONTRACT_FINGERPRINT,
-        )
-        self.assertEqual(
-            delta["descriptor_delta"],
-            {
-                "added": {
-                    "/_meta/ha_mcp": {
-                        "llm_api_exposed": True,
-                        "pinned": False,
-                    }
-                },
-                "removed": {},
-                "changed": {},
-            },
-        )
+    # HAMCP-437 retired test_fixture_reproduces_known_runtime_schema_and_security_fingerprints
+    # and test_published_artifact_delta_reproduces_observed_runtime_fingerprint:
+    # their subject was the 7.13.0 fixture, its published-artifact delta and the
+    # 7.13.0 fingerprint constants. The 9.2.0 builtin attestation is pinned in
+    # test_rc2dev9_upstream_admission.ContractFamilyTests.
 
     def test_dictionary_and_property_order_do_not_change_fingerprints(self):
-        reordered = json.loads(
-            FIXTURE_PATH.read_text(encoding="utf-8"),
-            object_pairs_hook=lambda pairs: dict(reversed(pairs)),
-        )
-        self.assertEqual(
-            _stable_hash(reordered),
-            REVIEWED_FIXTURE_RUNTIME_DESCRIPTOR_FINGERPRINT,
-        )
+        reordered = fixture_tool(object_pairs_hook=lambda pairs: dict(reversed(pairs)))
+        tool = fixture_tool()
+        self.assertNotEqual(list(reordered), list(tool))
+        self.assertEqual(_stable_hash(reordered), _stable_hash(tool))
         self.assertEqual(
             _stable_hash(_reviewed_security_contract_projection(reordered)),
-            REVIEWED_SECURITY_CONTRACT_FINGERPRINT,
+            _stable_hash(_reviewed_security_contract_projection(tool)),
         )
 
     async def test_fixture_and_published_runtime_both_pass_security_gate(self):
@@ -326,10 +276,14 @@ class ReviewedContractTests(unittest.IsolatedAsyncioTestCase):
                 await provider.refresh_capabilities()
                 health = provider.health_snapshot()
                 self.assertTrue(health["input_schema_match"])
-                self.assertTrue(health["reviewed_security_contract_match"])
+                self.assertTrue(health["security_contract_match"])
+                self.assertTrue(health["release_runtime_contract_match"])
                 self.assertEqual(health["capability_status"], "available")
 
-    async def test_descriptive_and_presentation_drift_is_non_blocking(self):
+    async def test_descriptive_and_presentation_drift_fails_closed_on_the_exact_release(self):
+        # HAMCP-437: RC3A 7.13.0 admitted descriptive drift; on the exact 9.2.0
+        # release the whole getter descriptor is a used-tool contract (HAMCP-319),
+        # so the same drift fails closed before any read is dispatched.
         cases = {}
         description = published_runtime_tool()
         description["description"] = "Reworded operator documentation."
@@ -349,28 +303,17 @@ class ReviewedContractTests(unittest.IsolatedAsyncioTestCase):
 
         for label, tool in cases.items():
             with self.subTest(label=label):
-                self.assertNotEqual(
-                    _stable_hash(tool),
-                    REVIEWED_FIXTURE_RUNTIME_DESCRIPTOR_FINGERPRINT,
-                )
+                self.assertNotEqual(_stable_hash(tool), _stable_hash(fixture_tool()))
                 self.assertEqual(
                     _stable_hash(_reviewed_security_contract_projection(tool)),
-                    REVIEWED_SECURITY_CONTRACT_FINGERPRINT,
+                    _stable_hash(_reviewed_security_contract_projection(fixture_tool())),
                 )
-                provider = UpstreamDashboardProvider()
-                provider.configure(
-                    settings(),
-                    transport=ReviewedFakeTransport(
-                        handshake=reviewed_handshake(tool=tool)
-                    ),
+                exc = await self._assert_contract_failure(
+                    tool, "upstream_runtime_contract_mismatch"
                 )
-                await provider.refresh_capabilities()
-                health = provider.health_snapshot()
-                self.assertTrue(health["reviewed_security_contract_match"])
-                self.assertFalse(health["runtime_descriptor_match"])
                 self.assertEqual(
-                    health["runtime_descriptor_drift"],
-                    "descriptive_metadata_only",
+                    exc.code,
+                    ErrorCode.UPSTREAM_DASHBOARD_REVIEWED_CONTRACT_MISMATCH,
                 )
 
     async def _assert_contract_failure(self, tool, expected_reason):
@@ -410,8 +353,10 @@ class ReviewedContractTests(unittest.IsolatedAsyncioTestCase):
 
         for label, tool in mutations.items():
             with self.subTest(label=label):
+                # HAMCP-437: on 9.2.0 the exact release runtime contract
+                # refuses the drift first (RC3A 7.13.0 reported the input category).
                 exc = await self._assert_contract_failure(
-                    tool, "upstream_input_contract_mismatch"
+                    tool, "upstream_runtime_contract_mismatch"
                 )
                 self.assertEqual(
                     exc.code,
@@ -423,8 +368,10 @@ class ReviewedContractTests(unittest.IsolatedAsyncioTestCase):
             "destructive_true": {"destructiveHint": True},
             "idempotent_false": {"idempotentHint": False},
             "idempotent_missing": {"idempotentHint": None},
-            "open_world_true": {"openWorldHint": True},
+            # HAMCP-437: 9.2.0 declares openWorldHint and readOnlyHint true.
+            "open_world_false": {"openWorldHint": False},
             "read_only_false": {"readOnlyHint": False},
+            "read_only_missing": {"readOnlyHint": None},
             "malformed_type": {"destructiveHint": "false"},
         }
         for label, changes in cases.items():
@@ -435,12 +382,14 @@ class ReviewedContractTests(unittest.IsolatedAsyncioTestCase):
                         tool["annotations"].pop(key, None)
                     else:
                         tool["annotations"][key] = value
+                # HAMCP-437: refused by the exact 9.2.0 runtime contract (RC3A
+                # 7.13.0 reported the security category and annotation code).
                 exc = await self._assert_contract_failure(
-                    tool, "upstream_security_contract_mismatch"
+                    tool, "upstream_runtime_contract_mismatch"
                 )
                 self.assertEqual(
                     exc.code,
-                    ErrorCode.UPSTREAM_DASHBOARD_REVIEWED_ANNOTATION_MISMATCH,
+                    ErrorCode.UPSTREAM_DASHBOARD_REVIEWED_CONTRACT_MISMATCH,
                 )
 
     async def test_output_contract_and_unknown_semantic_metadata_fail_closed(self):
@@ -449,8 +398,9 @@ class ReviewedContractTests(unittest.IsolatedAsyncioTestCase):
             "type": "object",
             "properties": {"config_hash": {"type": "string"}},
         }
+        # HAMCP-437: on 9.2.0 the exact runtime contract refuses it first.
         exc = await self._assert_contract_failure(
-            output, "upstream_output_contract_mismatch"
+            output, "upstream_runtime_contract_mismatch"
         )
         self.assertEqual(
             exc.code,
@@ -458,7 +408,7 @@ class ReviewedContractTests(unittest.IsolatedAsyncioTestCase):
         )
 
         metadata = published_runtime_tool()
-        metadata["_meta"]["ha_mcp"]["future_operation_semantics"] = "changed"
+        metadata["_meta"].setdefault("ha_mcp", {})["future_operation_semantics"] = "changed"
         exc = await self._assert_contract_failure(
             metadata, "upstream_runtime_contract_mismatch"
         )
@@ -477,9 +427,11 @@ class ReviewedContractTests(unittest.IsolatedAsyncioTestCase):
             ErrorCode.UPSTREAM_DASHBOARD_REVIEWED_CONTRACT_MISMATCH,
         )
 
-    async def test_read_only_true_is_contract_drift_and_fails_closed(self):
+    async def test_read_only_false_is_contract_drift_and_fails_closed(self):
+        # HAMCP-437: RC3A 7.13.0 declared readOnlyHint false, so true was the
+        # drift; the reviewed 9.2.0 getter declares true.
         tool = fixture_tool()
-        tool["annotations"]["readOnlyHint"] = True
+        tool["annotations"]["readOnlyHint"] = False
         provider = UpstreamDashboardProvider()
         provider.configure(
             settings(),
@@ -498,7 +450,7 @@ class ReviewedContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(health["reviewed_contract_match"])
         self.assertEqual(
             health["validation_reason"],
-            "upstream_security_contract_mismatch",
+            "upstream_runtime_contract_mismatch",
         )
 
     async def test_renamed_tool_is_rejected(self):
@@ -539,13 +491,7 @@ class ExactInvocationAndBehaviorTests(unittest.IsolatedAsyncioTestCase):
         for force_reload in (True, False):
             with self.subTest(force_reload=force_reload):
                 transport = ReviewedFakeTransport(
-                    payload={
-                        "success": True,
-                        "action": "get",
-                        "url_path": "reviewed-dashboard",
-                        "config": config,
-                        "config_hash": _upstream_config_hash(config),
-                    }
+                    payload=get_payload("reviewed-dashboard", config)
                 )
                 provider = UpstreamDashboardProvider()
                 provider.configure(settings(), transport=transport)
@@ -656,15 +602,7 @@ class ExactInvocationAndBehaviorTests(unittest.IsolatedAsyncioTestCase):
         await provider.list_dashboards(limit=10, response_limit=60_000)
 
         config = {"views": []}
-        exact = BranchingTransport(
-            payload={
-                "success": True,
-                "action": "get",
-                "url_path": "reviewed-dashboard",
-                "config": config,
-                "config_hash": _upstream_config_hash(config),
-            }
-        )
+        exact = BranchingTransport(payload=get_payload("reviewed-dashboard", config))
         provider.configure(settings(), transport=exact)
         await provider.get_dashboard_config(
             url_path="reviewed-dashboard",

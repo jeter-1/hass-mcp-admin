@@ -277,6 +277,46 @@ class RealHomeAssistantDev14GateTests(unittest.TestCase):
         )
         return matches[0]
 
+    def test_upstream_gateway_url_uses_engineering_strict_form(self):
+        from ha_mcp_engineering.clients import ha_mcp_endpoint
+
+        base = (
+            f"http://127.0.0.1:{self.contract.UPSTREAM_PORT}"
+            f"{self.contract.UPSTREAM_SECRET_PATH}"
+        )
+        strict = self.contract.upstream_gateway_url("9.2.0")
+        self.assertEqual(strict, base + "/catalog/full")
+        self.assertEqual(
+            ha_mcp_endpoint.classify_endpoint_form(strict),
+            ha_mcp_endpoint.STRICT_FULL,
+        )
+        legacy = self.contract.upstream_gateway_url("8.5.0")
+        self.assertEqual(legacy, base)
+        self.assertEqual(
+            ha_mcp_endpoint.classify_endpoint_form(legacy),
+            ha_mcp_endpoint.LEGACY,
+        )
+        # Engineering's own constants, not a local copy of the version set.
+        self.assertIs(
+            self.contract.STRICT_FULL_SELECTOR_RELEASES,
+            ha_mcp_endpoint.STRICT_FULL_SELECTOR_RELEASES,
+        )
+        for version in ha_mcp_endpoint.STRICT_FULL_SELECTOR_RELEASES:
+            self.assertTrue(self.contract.upstream_gateway_url(version).endswith(
+                ha_mcp_endpoint.EXPECTED_SELECTOR_SUFFIX
+            ))
+        for version, expected in (("9.2.0", strict), ("8.5.0", legacy)):
+            with patch.object(self.contract, "UPSTREAM_IMAGE", "image"), \
+                    patch.object(self.contract, "UPSTREAM_VERSION", version):
+                self.assertEqual(
+                    self.contract.settings("token").upstream_dashboard_mcp_url,
+                    expected,
+                )
+        with patch.object(self.contract, "UPSTREAM_IMAGE", ""):
+            self.assertEqual(
+                self.contract.settings("token").upstream_dashboard_mcp_url, ""
+            )
+
     def test_real_resource_gateway_is_wired_to_real_clients(self):
         assignments = assigned_constructor_names(self.tree)
         gateway_calls = calls_under(self.tree, "ConfigurationResourceGateway")
@@ -1247,18 +1287,18 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
                 "ghcr.io/home-assistant/home-assistant:" + version + "@"
                 + core_lane_bindings.reviewed_lane_binding(version).image_index_digest,
             )
-        # Every Core slot is paired with ha_mcp.current only.
+        # Every Core slot is paired with ha_mcp.current only (9.2.0 since HAMCP-437).
         for row in matrix:
-            self.assertEqual(row["ha_mcp_version"], "8.5.0")
+            self.assertEqual(row["ha_mcp_version"], "9.2.0")
             self.assertEqual(
                 row["ha_mcp_image"],
-                "ghcr.io/homeassistant-ai/ha-mcp:8.5.0@"
-                "sha256:e1538bcdadb13a5467bbb8258fba3262a05518585e18115742da638adec7057c",
+                "ghcr.io/homeassistant-ai/ha-mcp:9.2.0@"
+                "sha256:9de5bf6c4216142fdffe862900abe72dac8dfe9621dd0b2b050d132372b676ba",
             )
-            self.assertEqual(row["ha_mcp_source_commit"], "311d6dc273fb4e9a5b8cde0de15f69472a64fe44")
+            self.assertEqual(row["ha_mcp_source_commit"], "51e3aac788482a081807591cd5d58d07dc4e540b")
             self.assertEqual(
                 row["ha_mcp_source_sha256"],
-                "02a0f9d8534d7265a21cf52daac193c405c703aac013be0c808ebd8fb9aa056e",
+                "82ce384c9cd09db2b6a81233f44dd61d6f07a80082bc1b8e34aed49ac3f53f6f",
             )
             self.assertEqual(row["lane"], "ha-" + row["ha_version"].replace(".", "-"))
         self.assertEqual(job["env"]["HA_CONTRACT_VERSION"], "${{ matrix.ha_version }}")
@@ -1422,7 +1462,6 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
         source = ast.get_source_segment(self.source, runner) or ""
         for contract in (
             "config/device_registry/list",
-            "config/device_registry/list_composite_splits",
             "config/entity_registry/list",
             "ha_mcp_tools/device_get",
             '"service": "turn_on"',
@@ -1430,13 +1469,17 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
             # HAMCP-200: the direct-target readback binds the entity through the path guard.
             'rest_path("/states/{}", entity_id, kinds=("entity_id",))',
             "primary_config_entry_id",
-            "primary_id",
             "device_id",
             "composite_device_id",
             "direct_automation_reference",
             "device_registry_relationship",
         ):
             self.assertIn(contract, source)
+        # HAMCP-437 (I2b): the retired 2026.8.x split-projection arm is gone, and
+        # an unbound Core other than 2026.7.2 is refused at split_projection.
+        self.assertNotIn("list_composite_splits", source)
+        self.assertNotIn('"2026.8.', source)
+        self.assertIn('_assert_device_contract(False, "split_projection")', source)
         self.assertIn("_assert_device_contract", call_names)
         self.assertIn("authorize_core_read", source)
         self.assertIn("composite_core_authority", source)
@@ -1496,7 +1539,7 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
             self.assertIn(f'"{tool_name}"', source)
         self.assertIn('"config/device_registry/update"', source)
         self.assertIn('"config/area_registry/delete"', source)
-        self.assertIn('len(tools) == 28', source)
+        self.assertIn('len(tools) == 27,', source)
         self.assertIn('"ha_get_operation_status" not in tools', source)
         self.assertIn('metadata.get("fallback") == "none"', source)
         self.assertIn('"lovelace/config/save"', source)
@@ -1573,16 +1616,20 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
 
         # Historical semantics of named Cores (stay explicit; unaffected by a
         # new reviewed binding).
-        for version in ("2026.9.0", "2026.9.1", "2026.9.2"):
-            self.assertEqual(contract._core_binding(version).child_consumer, "8.4.3")
-        for version in ("2026.9.3", "2026.9.4", "2026.10.0", "2026.10.1"):
+        for version in ("2026.9.4", "2026.10.0", "2026.10.1", "2026.10.3"):
             self.assertEqual(contract._core_binding(version).child_consumer, "8.5.0")
-        for version in ("2026.9.0", "2026.9.1"):
-            self.assertIs(contract._core_test_authority(version), False)
-        for version in ("2026.10.0", "2026.10.1"):
+        # HAMCP-437 (I2b ruling 2): 2026.11.0 consumes ha-mcp 9.2.0, and the
+        # script-dependency contract still runs on that consumer.
+        self.assertEqual(contract._core_binding("2026.11.0").child_consumer, "9.2.0")
+        for version in ("2026.10.0", "2026.10.1", "2026.10.3", "2026.11.0"):
             self.assertIs(expected(version), schema.CHILD_DEVICE_NAME_PARTS)
-        for version in ("2026.9.2", "2026.9.3", "2026.9.4"):
-            self.assertIs(expected(version), schema.CHILD_DEVICES)
+        self.assertIs(expected("2026.9.4"), schema.CHILD_DEVICES)
+        # HAMCP-437 (I2b): the 2026.9.0-2026.9.3 bindings are retired, so those
+        # Cores take the migration route like any unreviewed version.
+        for version in ("2026.9.0", "2026.9.1", "2026.9.2", "2026.9.3"):
+            with self.subTest(retired=version):
+                self.assertIsNone(contract._core_binding(version))
+                self.assertIs(contract._core_test_authority(version), False)
 
         runner = self.functions["run_contracts"]
         runner_source = ast.get_source_segment(self.source, runner) or ""
@@ -1595,6 +1642,8 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
         child_source = ast.get_source_segment(self.source, child) or ""
         self.assertIn("binding = _core_binding(EXPECTED_HA_VERSION)", child_source)
         self.assertIn("UPSTREAM_VERSION == binding.child_consumer", child_source)
+        self.assertIn('if binding.child_consumer in {"8.5.0", "9.2.0"}:\n'
+                      "            await _run_script_dependency_contract(", child_source)
         self.assertIn("schema=_expected_device_registry_schema()", child_source)
         # Alarmo and automation-baseline acceptance follow every support-window
         # Core slot (HAMCP-159); there is no literal Core version gate.
@@ -1630,7 +1679,9 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
         self.assertEqual(versions, [window["core"][slot]["version"]
                                     for slot in support_window.core_slots(window, support_window.SLOTS)])
         self.assertIn(window["core"]["current"]["version"], versions)
-        self.assertIn(window["core"]["rollback"]["version"], versions)
+        # HAMCP-406: the rollback may be empty; a non-empty one is an Alarmo slot.
+        if window["core"]["rollback"] is not None:
+            self.assertIn(window["core"]["rollback"]["version"], versions)
         with patch.object(sys, "path", list(sys.path)), patch.dict(sys.modules):
             for version in versions:
                 with self.subTest(version=version):

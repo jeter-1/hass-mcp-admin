@@ -53,14 +53,16 @@ from ha_mcp_engineering.thread_matter_topology import (
     ThreadMatterTopologyService, normalize_identifier, validate_arguments)
 from ha_mcp_engineering.request_context import begin_request, end_request
 
+from core_lane_proof import transition
 import lane_failure_diagnostics as diagnostics
 
 TOOL = "get_thread_matter_topology"
 STUB_TOPOLOGY_COMMAND = "get_network_topology"
 EXPECTATIONS_MODEL = "hamcp231-a2-stub-expectations-v2"
 GRAPH_REF = re.compile(r"g[1-9][0-9]*")
+# Version-specific, so keyed to the reviewed anchor (HAMCP-443 D5); an anchor without a reviewed pattern refuses.
 # Core 2026.11.0 components/matter/helpers.py:137-146 get_node_device_identifier.
-NODE_DEVICE_IDENTIFIER = re.compile(r"deviceid_[0-9A-F]{16}-([0-9A-F]{16})-MatterNodeDevice")
+NODE_DEVICE_IDENTIFIER = {"2026.11.0": re.compile(r"deviceid_[0-9A-F]{16}-([0-9A-F]{16})-MatterNodeDevice")}
 TOPOLOGY_READS = 2  # the default read and the topology-only read
 SHA256 = re.compile(r"[0-9a-f]{64}")
 REQUIRED_STUB_FILES = ("stub.py", "provenance.json")
@@ -172,12 +174,19 @@ def check_stub_state(state, *, recorded):
     return {"topology_requests": len(requests), "refresh_values": sorted({r["refresh"] for r in requests})}
 
 
-def registry_node_devices(devices):
+def node_identifier(anchor):
+    """The anchor's reviewed Matter node device identifier pattern."""
+    if type(anchor) is not str or anchor not in NODE_DEVICE_IDENTIFIER:
+        raise ValueError("lane_anchor_unreviewed")
+    return NODE_DEVICE_IDENTIFIER[anchor]
+
+
+def registry_node_devices(devices, *, anchor):
     """Raw disposable device registry: Matter node_id -> HA device id."""
-    mapping = {}
+    pattern, mapping = node_identifier(anchor), {}
     for device in devices:
         for domain, identifier in device.get("identifiers") or ():
-            match = NODE_DEVICE_IDENTIFIER.fullmatch(identifier) if domain == "matter" else None
+            match = pattern.fullmatch(identifier) if domain == "matter" else None
             if match:
                 node_id = int(match.group(1), 16)
                 assert node_id not in mapping, "duplicate Matter node device"
@@ -268,7 +277,7 @@ async def disposable_authority(configured, entry, refs, path):
 
 
 @diagnostics.checked("helper_setup", "helper_contract")
-async def run(configured, entry, directory, *, expectations, read_stub_record, read_devices,
+async def run(configured, entry, directory, *, mode, anchor, expectations, read_stub_record, read_devices,
               stub_control, stub_state, reload_matter):
     """Run the A2 success and fault checks; the caller owns startup, identity and teardown proof.
 
@@ -278,8 +287,16 @@ async def run(configured, entry, directory, *, expectations, read_stub_record, r
     ``stub_state()`` reads the stub's control view; ``reload_matter()`` reloads
     the disposable Core's Matter entry so it reconnects to the stub.
     """
-    old = entry["capabilities"]
-    assert len(old) == 32 and CAPABILITY not in {p["capability_id"] for p in old}
+    # The caller names the mode; nothing here reads the environment to choose one.
+    if mode not in ("local", "ci"):
+        raise ValueError("lane_mode_unknown")
+    if mode == "ci":
+        # D3 rules 1-3: the authenticated baseline minus exactly this group, then its compiled profile.
+        old, _ = transition(entry, "thread_matter_topology", [reference()])
+    else:
+        old = entry["capabilities"]
+        assert len(old) == 32 and CAPABILITY not in {p["capability_id"] for p in old}
+    node_identifier(anchor)  # Before any Core command.
     canaries = (*expectations["canaries"], configured.ha_token, configured.access_secret)
     raw = A2RawCore(configured)
     assert dict(PAYLOADS[TOPOLOGY]) == {"type": NETWORK_TOPOLOGY_COMMAND, "refresh": False}
@@ -289,7 +306,7 @@ async def run(configured, entry, directory, *, expectations, read_stub_record, r
         reply = await raw.command(dict(PAYLOADS[TOPOLOGY]))
         assert reply["success"] is True and type(reply["result"]) is dict
         upstream = reply["result"]
-        devices = registry_node_devices(await read_devices())
+        devices = registry_node_devices(await read_devices(), anchor=anchor)
         mark = len(stub_commands(read_stub_record()))
 
     runtime = await disposable_authority(configured, entry, old + [reference()], directory / "a2-extended.json")

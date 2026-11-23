@@ -249,7 +249,7 @@ Tests:
 - No unplanned writes.
 - No self-approval.
 
-Mutations (`docs/evidence/hamcp155-mutations/`):
+Mutations (`docs/evidence/hamcp155-mutations/`, deleted by HAMCP-437):
 
 1. the admission check is removed;
 2. the readback is skipped;
