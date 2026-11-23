@@ -9,6 +9,7 @@
     "registry_entry": "ha-mcp-v9.1.0-4259f247",
     "source_commit": "d2e3f4b0647d815fb32d530fed15a6a99b1d4b33"
   },
+  "frozen_input_label": "9.1.0 upstream receipt, frozen input, projected through the shipped 9.2.0 binding; not evidence of 9.2.0 upstream output",
   "generation": "Class C values were extracted by JSON pointer from the committed Phase 1 receipts with json.loads and written with json.dumps(indent=2, sort_keys=True); no value was edited, and the consumer re-verifies each receipt sha256 against SHA256SUMS.json and each value against its pointer. Class S is a transcription of the pinned 9.1.0 source shape (read only, never executed). No record carries a record hash.",
   "fixtures": {
     "/class_c/yaml_fixed_projection": {

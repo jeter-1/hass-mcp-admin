@@ -334,7 +334,7 @@ class AcceptanceScript(unittest.IsolatedAsyncioTestCase):
         from datetime import datetime, timezone
         from tests.test_core_release_evidence import refs
         from core_registry_contract_lane import lane_entry, probe_profile_for
-        transport = HelperTransport('8.5.0')
+        transport = HelperTransport('9.2.0')
         transport.states = {key.split('.')[0] + '.hamcp_seq17': {**value,
             'entity_id': key.split('.')[0] + '.hamcp_seq17'}
             for key, value in transport.states.items() if key.endswith('.synthetic')}

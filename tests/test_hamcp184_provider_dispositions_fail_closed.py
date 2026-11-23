@@ -10,6 +10,12 @@ dispositions explicitly. Owner decision (independent review R1): 8.2.0 backup
 and lifecycle are ``held`` because no capability-specific review record exists
 for them; every other effective disposition is unchanged, and the production
 release (8.5.0) and rollback release (8.4.3) are pinned exactly.
+
+HAMCP-437 (I2a-D): the compiled registry holds only the 9.2.0 row. The
+EFFECTIVE_* tables stay as the historical HAMCP-184 record; the compiled checks
+run on 9.2.0, the admitted-backup control runs on the test-only synthetic
+admission (I2a-D ruling 1, group B), and the per-row legacy, 8.2.0, 8.4.3 and
+8.5.0 pins retire with those rows.
 """
 
 from __future__ import annotations
@@ -23,13 +29,14 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
+if str(ROOT / "tests") not in sys.path:
+    sys.path.append(str(ROOT / "tests"))
 
 from ha_mcp_engineering.clients.upstream_read import McpReadCatalog  # noqa: E402
 from ha_mcp_engineering.compatibility_family import (  # noqa: E402
     PROVIDER_DISPOSITIONS,
     PROVIDER_SURFACES,
 )
-from ha_mcp_engineering.providers import operational_backup  # noqa: E402
 from ha_mcp_engineering.providers import operational_lifecycle  # noqa: E402
 from ha_mcp_engineering.providers.operational_backup import (  # noqa: E402
     OperationalBackupProviderError,
@@ -45,15 +52,14 @@ from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
     UpstreamToolPolicyError,
     load_reviewed_upstream_release_registry,
 )
+from support import synthetic_backup_admission  # noqa: E402
 from tests.test_upstream_release_registry import RegistryFixture  # noqa: E402
 
-LEGACY = ("7.14.1", "7.14.2", "8.0.0", "8.1.0", "8.2.0")
-# Legacy entries with capability-specific backup/lifecycle review evidence.
-LEGACY_ADMITTED = ("7.14.1", "7.14.2", "8.0.0", "8.1.0")
-# Legacy entry without it (owner decision, independent review R1).
+# Legacy entry without capability-specific backup/lifecycle review evidence
+# (owner decision, independent review R1).
 LEGACY_OPERATIONAL_HELD = "8.2.0"
-PRODUCTION = "8.5.0"
-ROLLBACK = "8.4.3"
+# HAMCP-437: the only compiled row.
+SHIPPED = ("9.2.0",)
 ALL_ADMITTED = {
     "read_gateway": "admitted",
     "dashboard": "admitted",
@@ -108,7 +114,7 @@ class CompiledRegistryDispositionTests(unittest.TestCase):
     def test_every_compiled_entry_declares_every_surface(self):
         raw = json.loads(RELEASE_REGISTRY_PATH.read_text(encoding="utf-8"))
         self.assertEqual(
-            [entry["version"] for entry in raw["releases"]], list(EFFECTIVE_AFTER)
+            [entry["version"] for entry in raw["releases"]], list(SHIPPED)
         )
         for entry in raw["releases"]:
             with self.subTest(version=entry["version"]):
@@ -138,36 +144,17 @@ class CompiledRegistryDispositionTests(unittest.TestCase):
             },
         )
 
-    def test_production_8_5_0_exact_and_unchanged(self):
-        release = load_reviewed_upstream_release_registry().by_version[PRODUCTION]
+    def test_production_9_2_0_exact_and_backup_held(self):
+        # HAMCP-184/371: 9.2.0 backup stays held (no reviewed backup dispatch
+        # shape for the 9.1+ tool contract until HAMCP-381 Phase 2);
+        # HAMCP-401 Phase 1 admits 9.2.0 lifecycle.
+        release = load_reviewed_upstream_release_registry().by_version["9.2.0"]
         self.assertFalse(release.revoked)
         self.assertEqual(
             effective(release),
-            {"read_gateway": "admitted", "dashboard": "admitted", "backup": "held", "lifecycle": "held"},
+            {"read_gateway": "admitted", "dashboard": "admitted", "backup": "held", "lifecycle": "admitted"},
         )
-
-    def test_rollback_8_4_3_exact_and_unchanged(self):
-        release = load_reviewed_upstream_release_registry().by_version[ROLLBACK]
-        self.assertFalse(release.revoked)
-        self.assertEqual(effective(release), OPERATIONAL_HELD)
-
-    def test_legacy_entries_explicitly_reproduce_reviewed_behavior(self):
-        registry = load_reviewed_upstream_release_registry().by_version
-        self.assertEqual(set(LEGACY), set(LEGACY_ADMITTED) | {LEGACY_OPERATIONAL_HELD})
-        for version in LEGACY_ADMITTED:
-            with self.subTest(version=version):
-                self.assertEqual(dict(registry[version].provider_dispositions), ALL_ADMITTED)
-        # 8.1.1 keeps its family-admission explicit backup/lifecycle admission.
-        self.assertIsNotNone(registry["8.1.1"].family_admission)
-        self.assertEqual(dict(registry["8.1.1"].provider_dispositions), ALL_ADMITTED)
-
-    def test_8_2_0_backup_and_lifecycle_held_reads_and_dashboard_admitted(self):
-        release = load_reviewed_upstream_release_registry().by_version[LEGACY_OPERATIONAL_HELD]
-        self.assertFalse(release.revoked)
         self.assertEqual(release.provider_disposition("backup"), "held")
-        self.assertEqual(release.provider_disposition("lifecycle"), "held")
-        self.assertEqual(release.provider_disposition("read_gateway"), "admitted")
-        self.assertEqual(release.provider_disposition("dashboard"), "admitted")
 
 
 class AccessorFailClosedTests(unittest.TestCase):
@@ -263,33 +250,27 @@ class ProviderGateRefusalTests(unittest.TestCase):
     """Negative reachability: a provider refuses a release without dispositions."""
 
     def test_backup_provider_refuses_absent_disposition_before_dispatch(self):
-        registry = load_reviewed_upstream_release_registry()
+        # HAMCP-437: the shipped 9.2.0 backup is held, so the admitted row is
+        # the test-only synthetic admission (I2a-D ruling 1, group B).
+        registry = synthetic_backup_admission.registry()
         stripped = replace(
             registry,
             releases=tuple(
-                replace(item, provider_dispositions=()) if item.version == "7.14.2" else item
-                for item in registry.releases
+                replace(item, provider_dispositions=()) for item in registry.releases
             ),
         )
-        catalog = McpReadCatalog(
-            protocol_version="2025-03-26",
-            server_name="ha-mcp",
-            server_version="7.14.2",
-            tools=(),
-            connection_latency_ms=1.0,
-        )
+        catalog = _catalog(synthetic_backup_admission.VERSION)
         provider = ReviewedOperationalBackupProvider()
-        with patch.object(
-            operational_backup, "load_reviewed_upstream_release_registry", return_value=stripped
-        ):
+        with synthetic_backup_admission.patch_backup_registry(stripped):
             with self.assertRaises(OperationalBackupProviderError) as raised:
                 provider._validate_catalog(catalog)
         self.assertEqual(raised.exception.category, "provider_held")
         self.assertFalse(raised.exception.dispatched)
         # The unmodified explicit entry passes the disposition gate and fails
         # later only on the (empty) synthetic tool catalog.
-        with self.assertRaises(OperationalBackupProviderError) as later:
-            ReviewedOperationalBackupProvider()._validate_catalog(catalog)
+        with synthetic_backup_admission.patch_backup_registry():
+            with self.assertRaises(OperationalBackupProviderError) as later:
+                ReviewedOperationalBackupProvider()._validate_catalog(catalog)
         self.assertNotEqual(later.exception.category, "upstream_version_mismatch")
 
 
@@ -342,41 +323,64 @@ def _catalog(version: str) -> McpReadCatalog:
     )
 
 
-class HeldLegacyOperationalRefusalTests(unittest.TestCase):
-    """8.2.0 backup/lifecycle are held: both providers refuse before dispatch.
+class HeldOperationalRefusalTests(unittest.TestCase):
+    """A held backup/lifecycle disposition refuses before dispatch.
 
     HAMCP-400: a held disposition of a reviewed release is ``provider_held``;
     ``upstream_version_mismatch`` is kept for an unknown version.
 
-    8.1.0 (admitted, capability-specific review evidence) is the control: its
-    disposition gate passes and validation fails later only on the empty
-    synthetic tool catalog.
+    HAMCP-437: the shipped 9.2.0 backup is held. The admitted-backup control is
+    the test-only synthetic admission (I2a-D ruling 1, group B): its disposition
+    gate passes and validation fails later only on the empty synthetic tool
+    catalog. No shipped row holds lifecycle, so the lifecycle case holds it on
+    a copy of the 9.2.0 row (a hold, never an admission).
     """
 
-    def test_backup_provider_refuses_8_2_0_before_dispatch(self):
+    def test_backup_provider_refuses_held_9_2_0_before_dispatch(self):
         with self.assertRaises(OperationalBackupProviderError) as raised:
-            ReviewedOperationalBackupProvider()._validate_catalog(_catalog(LEGACY_OPERATIONAL_HELD))
+            ReviewedOperationalBackupProvider()._validate_catalog(_catalog("9.2.0"))
         self.assertEqual(raised.exception.category, "provider_held")
         self.assertFalse(raised.exception.dispatched)
-        with self.assertRaises(OperationalBackupProviderError) as control:
-            ReviewedOperationalBackupProvider()._validate_catalog(_catalog("8.1.0"))
-        self.assertNotEqual(control.exception.category, "upstream_version_mismatch")
+        with synthetic_backup_admission.patch_backup_registry():
+            with self.assertRaises(OperationalBackupProviderError) as control:
+                ReviewedOperationalBackupProvider()._validate_catalog(
+                    _catalog(synthetic_backup_admission.VERSION)
+                )
+        self.assertNotIn(control.exception.category, {"provider_held", "upstream_version_mismatch"})
         self.assertFalse(control.exception.dispatched)
 
-    def test_lifecycle_provider_refuses_8_2_0_before_dispatch(self):
+    def test_lifecycle_provider_refuses_held_lifecycle_before_dispatch(self):
+        registry = load_reviewed_upstream_release_registry()
+        held = replace(
+            registry,
+            releases=tuple(
+                replace(
+                    item,
+                    provider_dispositions=tuple(
+                        (surface, "held" if surface == "lifecycle" else value)
+                        for surface, value in item.provider_dispositions
+                    ),
+                )
+                for item in registry.releases
+            ),
+        )
+        self.assertEqual(held.by_version["9.2.0"].provider_disposition("lifecycle"), "held")
         for operation in ("controlled_reload", "restart_addon", "restart_home_assistant"):
             required = ReviewedOperationalLifecycleProvider._required_tools(operation)
             with self.subTest(operation=operation):
                 self.assertTrue(required)
-                with self.assertRaises(OperationalLifecycleProviderError) as raised:
-                    ReviewedOperationalLifecycleProvider()._validate_catalog(
-                        _catalog(LEGACY_OPERATIONAL_HELD), required, operation=operation
-                    )
+                with patch.object(
+                    operational_lifecycle, "load_reviewed_upstream_release_registry", return_value=held
+                ):
+                    with self.assertRaises(OperationalLifecycleProviderError) as raised:
+                        ReviewedOperationalLifecycleProvider()._validate_catalog(
+                            _catalog("9.2.0"), required, operation=operation
+                        )
                 self.assertEqual(raised.exception.category, "provider_held")
                 self.assertFalse(raised.exception.dispatched)
         with self.assertRaises(OperationalLifecycleProviderError) as control:
             ReviewedOperationalLifecycleProvider()._validate_catalog(
-                _catalog("8.1.0"), (ADDON_READ_TOOL,), operation="restart_addon"
+                _catalog("9.2.0"), (ADDON_READ_TOOL,), operation="restart_addon"
             )
         self.assertNotEqual(control.exception.category, "upstream_version_mismatch")
         self.assertFalse(control.exception.dispatched)

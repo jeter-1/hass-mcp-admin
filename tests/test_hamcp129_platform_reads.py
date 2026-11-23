@@ -38,7 +38,7 @@ from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
     validate_reviewed_release_catalog,
     validate_reviewed_release_evidence,
 )
-from test_beta58_ha_mcp_8_4_3_continuity import EXACT_READS  # noqa: E402
+from support.shipped_920_reads import READS_920 as EXACT_READS  # noqa: E402  (HAMCP-437 A3.4)
 from test_ha_mcp_production_readmission import _GatewayTransport, _settings  # noqa: E402
 from support.ha_mcp_captures import capture  # noqa: E402  (HAMCP-437)
 from support.ha_mcp_920_receipts import receipt  # noqa: E402  (HAMCP-437)
@@ -48,12 +48,18 @@ TOOLS = (HEALTH, APP, INTEGRATION)
 VERSIONS = ("9.2.0",)
 # HAMCP-371: exact 9.2.0 binds its own tokens (upstream_platform_reads.py
 # ADAPTER_BINDINGS, from the S8 9.2.0 registry capture ha-mcp-9.2.0.json).
-# HAMCP-437: the 9.2.0 bindings are exactly the three tools, and every
-# binding names a release the reviewed registry still admits.
+# HAMCP-437: the 9.2.0 bindings are exactly the three tools.
 BINDING_VERSIONS = VERSIONS
+# HAMCP-437 I2a-D (ANSWER 20261122-0305-01 B): the bindings of the removed
+# rows stay in upstream_platform_reads.py as possible dead branches. No
+# reviewed row admits them, so they are listed here rather than checked against
+# a policy; a new binding for an unreviewed release fails the test.
+RETIRED_BINDING_VERSIONS = ("8.4.3", "8.5.0", "8.6.0", "9.1.0", "9.1.2")
 # A token of a release other than 9.2.0, refused under the 9.2.0 policy.
 OTHER_RELEASE = "9.1.2"
-# The releases whose generated fixtures (tests/fixtures/hamcp129) exist.
+# The releases whose generated fixtures (tests/fixtures/hamcp129) exist. Their
+# rows are removed (HAMCP-437 I2a-D), so the fixtures are frozen inputs that
+# replay through the shipped 9.2.0 binding.
 GENERATED_FIXTURE_VERSIONS = ("8.4.3", "8.5.0", "8.6.0")
 # The 28 reviewed reads of 8.4.3 to 8.6.0 less the retired ha_get_hacs_info.
 EXACT_READ_COUNT = 27
@@ -455,11 +461,14 @@ class ModuleTests(unittest.TestCase):
         for version in BINDING_VERSIONS:
             tools = sorted(tool for tool, bound, _s, _f in platform.ADAPTER_BINDINGS.values() if bound == version)
             self.assertEqual(tools, sorted(TOOLS))
+        bound = {version for _tool, version, _s, _f in platform.ADAPTER_BINDINGS.values()}
+        self.assertEqual(bound - set(reviewed), set(RETIRED_BINDING_VERSIONS))
         for token, (tool, version, source, fingerprint) in platform.ADAPTER_BINDINGS.items():
             with self.subTest(token=token):
-                self.assertIn(version, reviewed)
                 self.assertEqual(token, f"ha-mcp-{version}-platform-{TOKEN_KIND[tool].replace('health', 'health')}-v1")
                 self.assertEqual(source, SOURCES[version][1])
+                if version in RETIRED_BINDING_VERSIONS:
+                    continue
                 entry = policy_entry(version, tool)
                 self.assertEqual(entry.argument_restrictions, (token,))
                 self.assertEqual(entry.input_schema_fingerprint, fingerprint)
@@ -1160,25 +1169,40 @@ class FixtureReplayTests(unittest.IsolatedAsyncioTestCase):
     async def test_exact_upstream_outputs_project_through_the_allowlists(self):
         # HAMCP-437: the generated fixtures exist for 8.4.3, 8.5.0 and 8.6.0
         # only; there is no generated 9.2.0 fixture (reported, not invented).
-        # The committed 9.2.0 receipts replay in the next test.
-        for version in GENERATED_FIXTURE_VERSIONS:
-            cases = json.loads((FIXTURES / f"results-{version}.json").read_text(encoding="utf-8"))
+        # I2a-D removed those rows, so each committed, unedited fixture is a
+        # frozen input replayed through the shipped 9.2.0 binding (ANSWER
+        # 20261122-0005-01). This asserts Engineering's 9.2.0 projection of
+        # that input shape, not that 9.2.0 upstream emits it. The committed
+        # 9.2.0 receipts replay in the next test.
+        for fixture_version in GENERATED_FIXTURE_VERSIONS:
+            cases = json.loads((FIXTURES / f"results-{fixture_version}.json").read_text(encoding="utf-8"))
             self.assertEqual(set(cases), {name + mode for name in FIXTURE_PUBLIC
                                           for mode in ("", "@core_ws_proxy")
                                           if name + mode in cases})
             for case in sorted(cases):
-                with self.subTest(version=version, case=case):
-                    fixture, sent, result = await self._replay(version, case, cases)
+                with self.subTest(fixture=fixture_version, case=case):
+                    fixture, sent, result = await self._replay("9.2.0", case, cases)
                     self.assertTrue(result["success"], result)
                     self.assertEqual(sent[-1], (fixture["tool"], fixture["arguments"]))
                     text = json.dumps(result)
                     for canary in FIXTURE_CANARIES:
                         self.assertNotIn(canary, text)
                     status, reasons = FIXTURE_COMPLETENESS[case.split("@")[0]]
-                    self.assertEqual(result["data"]["completeness"], {"status": status, "reasons": reasons})
                     data = result["data"]
+                    # HAMCP-371 D5: 9.2.0 replaces every upstream warning with
+                    # one code and discloses it in completeness.
+                    upstream_warnings = fixture["result"].get("warnings") or []
+                    if upstream_warnings:
+                        reasons = sorted([*reasons, "upstream_warnings_replaced"])
+                        self.assertIn(REPLACED_WARNING_920, data["warnings"])
+                        for warning in upstream_warnings:
+                            self.assertNotIn(warning, text)
+                    self.assertEqual(data["completeness"], {"status": status, "reasons": reasons})
+                    self.assertGreater(data["fields_withheld"], 0)
+                    self.assertEqual(data["fields_dropped_by_policy"], 0)
+                    self.assertEqual(data["upstream_warnings_replaced"], len(upstream_warnings))
                     if case.split("@")[0] == "apps_installed_stats":
-                        self.assertEqual(data["warnings"], ["stats_unavailable:synthetic_beta"])
+                        self.assertEqual(data["warnings"], ["stats_unavailable:synthetic_beta", REPLACED_WARNING_920])
                     if fixture["tool"] == HEALTH:
                         for domain, keys in PLATFORM_KEYS.items():
                             self.assertLessEqual(set(data["platform"].get(domain, {})), keys)

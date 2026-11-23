@@ -61,34 +61,31 @@ from ha_mcp_engineering.clients.upstream_read import (  # noqa: E402
     McpReadGatewayTransport,
 )
 from ha_mcp_engineering.ha_core_readmission import CoreRuntime  # noqa: E402
+from tests.support.ha_mcp_920_receipts import STRICT_CANARY_URL  # noqa: E402
 from tests.test_ha_core_2026_9_integration import (  # noqa: E402
     _MutableSource,
     _core_2026_9_snapshot,
 )
 
 
-ENTRY_IDS = {
-    "8.0.0": "ha-mcp-v8.0.0-d65630f6",
-    "8.1.0": "ha-mcp-v8.1.0-4c07e625",
-    "8.1.1": "ha-mcp-v8.1.1-e1d76a6e",
-    "8.2.0": "ha-mcp-v8.2.0-dbcfc0ee",
-    "8.4.1": "ha-mcp-v8.4.1-7823b365",
-}
-ENTRY_ID = ENTRY_IDS["8.1.1"]
 # HAMCP-437: the current reviewed release, which survives the registry
-# reduction to 9.2.0 alone.
+# reduction to 9.2.0 alone. I2a-D retires the 8.0.0-8.4.1 held profiles with
+# their registry rows; the held canary contract runs on 9.2.0.
 CURRENT_VERSION = "9.2.0"
 CURRENT_ENTRY_ID = "ha-mcp-v9.2.0-9de5bf6c"
+ENTRY_IDS = {CURRENT_VERSION: CURRENT_ENTRY_ID}
+ENTRY_ID = CURRENT_ENTRY_ID
 CURRENT_TAXONOMY_FIXTURE = json.loads(
     TAXONOMY_FIXTURE_PATH.read_text(encoding="utf-8")
 )
-from ha_mcp_engineering.ha_core_readmission.routes import RETIRED_DELEGATED_READS  # noqa: E402
-# HAMCP-290: the delegated ha_get_hacs_info is retired on every reviewed
-# release (Josh decision 2026-11-08), so exposure pins drop by one.
-RETIRED_COUNT = len(RETIRED_DELEGATED_READS)
+# HAMCP-437: read routes the 9.2.0 policy exposes: 23 automatic_read entries
+# plus four adapter-backed reads (ha_get_blueprint, ha_get_system_health,
+# ha_get_app, ha_get_integration). ha_get_hacs_info is already ``unsupported``
+# in the 9.2.0 policy, so the HAMCP-290 retirement subtracts nothing here.
+READ_ROUTES_920 = 27
 
 
-def captured_tools(version: str = "8.1.1") -> list[dict]:
+def captured_tools(version: str = CURRENT_VERSION) -> list[dict]:
     capture = CAPTURE_ROOT / f"ha-mcp-{version}.json"
     tools = deepcopy(json.loads(capture.read_text(encoding="utf-8"))["tools"])
     if version in {"8.4.1", CURRENT_VERSION}:
@@ -187,10 +184,10 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
             held_classifications,
             (("ha_get_operation_status", "held_for_canary"),),
         )
-        self.assertEqual(len(registered_dynamic_tools), 25 - RETIRED_COUNT)  # HAMCP-290
+        self.assertEqual(len(registered_dynamic_tools), READ_ROUTES_920)
         self.assertIn("ha_search", registered_dynamic_tools)
         self.assertNotIn("ha_get_operation_status", registered_dynamic_tools)
-        self.assertEqual(len(dynamic_capabilities), 25 - RETIRED_COUNT)  # HAMCP-290
+        self.assertEqual(len(dynamic_capabilities), READ_ROUTES_920)
         self.assertTrue(
             all(
                 item["operation_class"] == "automatic_read"
@@ -226,7 +223,7 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
     async def gateway(
         self,
         *,
-        version: str = "8.1.1",
+        version: str = CURRENT_VERSION,
         tools: list[dict] | None = None,
         result: dict | None = None,
         error: str | None = None,
@@ -258,7 +255,7 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
         self,
         gateway: UpstreamReadGateway,
         *,
-        version: str = "8.1.1",
+        version: str = CURRENT_VERSION,
         operation_id: object = "synthetic-missing-operation",
     ) -> dict:
         return decoded(
@@ -391,7 +388,7 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(evidence["promotion_performed"])
                 self.assertFalse(evidence["fallback_occurred"])
                 self.assertNotIn("ha_get_operation_status", registered_tools(server))
-                expected_reads = (24 if version in {"8.0.0", "8.1.0"} else 25) - RETIRED_COUNT  # HAMCP-290
+                expected_reads = READ_ROUTES_920
                 self.assertEqual(
                     gateway.health_snapshot()["dynamically_exposed_count"],
                     expected_reads,
@@ -853,7 +850,7 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
                 )
 
     def test_held_security_and_nonheld_quarantine_contracts_are_rejected(self):
-        release = load_reviewed_upstream_release_registry().by_version["8.1.1"]
+        release = load_reviewed_upstream_release_registry().by_version[CURRENT_VERSION]
         entry = release.policy.by_name["ha_get_operation_status"]
         contract = release.tool_contracts_by_name["ha_get_operation_status"]
         observed = next(
@@ -977,7 +974,7 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
                     "expected_compatibility_entry_id": ENTRY_ID,
                     "active_compatibility_entry_id": ENTRY_ID,
                     "observed_upstream_server": "ha-mcp",
-                    "observed_upstream_version": "8.1.1",
+                    "observed_upstream_version": CURRENT_VERSION,
                     "observed_upstream_protocol": "2025-03-26",
                     "reviewed_classification_before": "held_for_canary",
                     "reviewed_classification_after": "held_for_canary",
@@ -1099,7 +1096,7 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
 class _HeldCanaryNetwork:
     """Synthetic network boundary; gateway and transport remain production code."""
 
-    def __init__(self, version: str = "8.1.1"):
+    def __init__(self, version: str = CURRENT_VERSION):
         self.version = version
         self.tools = captured_tools(version)
         self.catalog_entered = asyncio.Event()
@@ -1193,11 +1190,11 @@ class GatedSubmitWait:
 
 
 class HeldReadCanaryAuthorityTests(unittest.IsolatedAsyncioTestCase):
-    # HAMCP-437: the peer release the authority harness serves; a subclass
-    # re-pins both (test_rc6_held_canary_timing runs on 9.2.0).
-    canary_version = "8.1.1"
+    # HAMCP-437: the peer release the authority harness serves. 9.2.0 is
+    # admitted only through the strict full-catalog endpoint form.
+    canary_version = CURRENT_VERSION
     canary_entry_id = ENTRY_ID
-    canary_url = "http://upstream.invalid/synthetic-canary/mcp"
+    canary_url = STRICT_CANARY_URL
 
     async def harness(self, *, retained=False):
         runtime = CoreRuntime()

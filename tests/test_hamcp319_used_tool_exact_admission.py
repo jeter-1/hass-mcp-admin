@@ -50,8 +50,9 @@ from test_hamcp319_typed_writes import FAMILIES, catalog_tools
 # HAMCP-437 I2c-2: the 8.5.0, 9.1.0 and 9.1.2 cases are retired with those
 # admissions (D1); every case runs on exact 9.2.0.
 VERSIONS = ('9.2.0',)
-# I2a-D narrows EXACT_GETTER_RELEASES and removes these rows; until then the
-# scope test pins the shipped set.
+# I2a-D removes the 8.5.0, 9.1.0 and 9.1.2 rows; EXACT_GETTER_RELEASES keeps
+# their keys as listed dead branches (ANSWER 0305-01 B), so the scope test pins
+# the source set and checks only the reviewed rows.
 SHIPPED_EXACT_RELEASES = frozenset({'8.5.0', '9.1.0', '9.1.2', '9.2.0'})
 WIRE_920 = ROOT / 'docs/evidence/hamcp371/s8/profiles-2/out/standalone-9.2.0-fs-on/observation.json'
 REGISTRY = load_reviewed_upstream_release_registry()
@@ -154,7 +155,11 @@ def with_extra(tools, template='ha_get_state'):
 class Scope(unittest.TestCase):
     def test_exact_used_tool_releases(self):
         self.assertEqual(EXACT_GETTER_RELEASES, SHIPPED_EXACT_RELEASES)
-        for version in sorted(SHIPPED_EXACT_RELEASES):
+        # HAMCP-437 I2a-D: the retired getter keys stay in source as dead
+        # branches (ANSWER 0305-01 B); only the reviewed 9.2.0 row is checked.
+        reviewed = SHIPPED_EXACT_RELEASES & set(REGISTRY.by_version)
+        self.assertEqual(reviewed, {'9.2.0'})
+        for version in sorted(reviewed):
             release = REGISTRY.by_version[version]
             self.assertEqual(release.runtime_contract_fingerprint_model,
                              'ha-mcp-operational-tool-descriptor-v2')

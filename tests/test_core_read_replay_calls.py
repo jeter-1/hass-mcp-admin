@@ -20,7 +20,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import core_read_replay_calls as calls  # noqa: E402
 import review_upstream_read_release as review  # noqa: E402
 
-POLICY = "9.1.2"
+POLICY = "9.2.0"  # HAMCP-437 I2a-D: the shipped row
 SEED = {
     "automation_id": "synthetic_automation", "automation_entity": "automation.synthetic",
     "calendar_entity": "calendar.synthetic", "scene_id": "synthetic_scene",
@@ -187,6 +187,34 @@ class WireArgumentTests(unittest.TestCase):
                 self.assertIsNot(wire.get("include_schema"), True)
                 self.assertIsNot(wire.get("describe"), True)
                 self.assertNotIn("include_subentry_schema", wire)
+
+    def test_the_offset_free_history_variant_is_a_labelled_raw_probe(self):
+        # HAMCP-437 I2a-D: on 9.2.0 Engineering refuses an offset-free time
+        # before dispatch; the harness mirrors that refusal and plans the raw
+        # probe with the unchecked 9.1 row, as the committed s6 receipts hold.
+        from ha_mcp_engineering.providers.upstream_history_9_2 import (
+            HistoryTimeOffsetRequired,
+        )
+
+        entry = calls.policy_entries(POLICY)["ha_get_history"]
+        public = {"entity_ids": "input_boolean.synthetic", "limit": 5,
+                  "start_time": SEED["window_start_offset_free"],
+                  "end_time": SEED["window_end_offset_free"]}
+        with self.assertRaises(HistoryTimeOffsetRequired):
+            calls.wire_call(entry, dict(public))
+        case = planned("variants")["v16-history-offset-free"]
+        self.assertEqual(case["upstream_tool"], "ha_get_history")
+        self.assertEqual(case["wire_arguments"], {
+            **public, "summary": False, "include_schema": False, "core_options": None})
+        self.assertEqual(
+            case["arguments_built_by"],
+            "adapter code, policy " + POLICY
+            + "; refused before dispatch by Engineering history_time_offset_required")
+        for other in planned("variants").values():
+            if other["id"] != "v16-history-offset-free":
+                with self.subTest(case=other["id"]):
+                    self.assertEqual(other["arguments_built_by"],
+                                     "adapter code, policy " + POLICY)
 
     def test_a_probe_goes_to_the_peer_as_written(self):
         case = planned("errors")["p3-unknown-argument"]

@@ -1,4 +1,15 @@
-"""Beta 23 compatibility-family admission and exact-runtime authority tests."""
+"""Beta 23 compatibility-family admission and exact-runtime authority tests.
+
+HAMCP-437 I2a-D: the shipped registry admits only 9.2.0, which has no family
+baseline. The dormant family-engine coverage runs on the frozen 8.1.x fixture
+``tests/fixtures/ha_mcp_8_1_x_family`` (rows 8.1.0, 8.1.1 and 8.2.0, their
+policies, the families file and the dashboard attestations, byte copies at
+``0f1adcb5``; see its ``provenance.json``) until HAMCP-465 decides whether the
+family-admission path is retired or rebaselined on 9.2.0. Captures, contract
+reviews and the 8.1.1 family decision still resolve from the committed
+``docs/evidence`` files. No test joins the shipped families file against the
+shipped registry.
+"""
 
 from __future__ import annotations
 
@@ -20,7 +31,6 @@ from ha_mcp_engineering.compatibility_family import (
     load_compatibility_families,
 )
 from ha_mcp_engineering.upstream_tool_policy import (
-    RELEASE_REGISTRY_PATH,
     ReviewedUpstreamReleaseRegistry,
     UpstreamToolPolicyError,
     canonical_json,
@@ -35,11 +45,10 @@ from scripts.admit_upstream_compatibility_family import (
 
 
 CAPTURE_DIR = ROOT / "docs/evidence/upstream-read-compatibility"
-FAMILY_PATH = (
-    ROOT
-    / "hass_mcp_engineering_beta/ha_mcp_engineering"
-    / "upstream_compatibility_families.json"
-)
+FIXTURE = ROOT / "tests/fixtures/ha_mcp_8_1_x_family"
+REGISTRY_PATH = FIXTURE / "upstream_release_registry.json"
+FAMILY_PATH = FIXTURE / "upstream_compatibility_families.json"
+ATTESTATIONS_PATH = FIXTURE / "upstream_dashboard_builtin_attestations.json"
 
 
 class CompatibilityFamilyAdmissionTests(unittest.TestCase):
@@ -47,7 +56,7 @@ class CompatibilityFamilyAdmissionTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.families = load_compatibility_families(FAMILY_PATH)
         cls.family = cls.families.by_id["ha-mcp-8.1.x-v1"]
-        cls.registry = load_reviewed_upstream_release_registry()
+        cls.registry = load_reviewed_upstream_release_registry(REGISTRY_PATH)
         cls.baseline = cls.registry.historical_by_version["8.1.0"]
         cls.candidate = cls.registry.historical_by_version["8.1.1"]
         cls.baseline_capture = json.loads(
@@ -307,13 +316,13 @@ class CompatibilityFamilyAdmissionTests(unittest.TestCase):
         self.assertIn("8.1.0", registry.by_version)
 
     def test_family_decision_digest_tampering_fails_closed(self) -> None:
-        raw = json.loads(RELEASE_REGISTRY_PATH.read_text(encoding="utf-8"))
+        raw = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
         release = next(item for item in raw["releases"] if item["version"] == "8.1.1")
         release["family_admission"]["decision_sha256"] = "sha256:" + "0" * 64
         with tempfile.NamedTemporaryFile(
             mode="wb",
             suffix=".json",
-            dir=RELEASE_REGISTRY_PATH.parent,
+            dir=REGISTRY_PATH.parent,
             delete=False,
         ) as stream:
             temporary = Path(stream.name)
@@ -326,18 +335,19 @@ class CompatibilityFamilyAdmissionTests(unittest.TestCase):
                 validate_reviewed_release_evidence(
                     temporary,
                     repository_root=ROOT,
+                    dashboard_attestations_path=ATTESTATIONS_PATH,
                 )
         finally:
             temporary.unlink(missing_ok=True)
 
     def test_provider_disposition_tampering_fails_closed(self) -> None:
-        raw = json.loads(RELEASE_REGISTRY_PATH.read_text(encoding="utf-8"))
+        raw = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
         release = next(item for item in raw["releases"] if item["version"] == "8.1.1")
         release["provider_dispositions"]["lifecycle"] = "held"
         with tempfile.NamedTemporaryFile(
             mode="wb",
             suffix=".json",
-            dir=RELEASE_REGISTRY_PATH.parent,
+            dir=REGISTRY_PATH.parent,
             delete=False,
         ) as stream:
             temporary = Path(stream.name)
@@ -350,6 +360,7 @@ class CompatibilityFamilyAdmissionTests(unittest.TestCase):
                 validate_reviewed_release_evidence(
                     temporary,
                     repository_root=ROOT,
+                    dashboard_attestations_path=ATTESTATIONS_PATH,
                 )
         finally:
             temporary.unlink(missing_ok=True)
@@ -359,7 +370,7 @@ class CompatibilityFamilyAdmissionTests(unittest.TestCase):
             "ha_mcp_engineering.compatibility_family.sha256_resource",
             side_effect=AssertionError("runtime reached review-time evidence"),
         ):
-            registry = load_reviewed_upstream_release_registry()
+            registry = load_reviewed_upstream_release_registry(REGISTRY_PATH)
         self.assertEqual(
             registry.by_version["8.1.1"].entry_id,
             "ha-mcp-v8.1.1-e1d76a6e",
@@ -367,7 +378,9 @@ class CompatibilityFamilyAdmissionTests(unittest.TestCase):
 
     def test_exact_evidence_and_complete_accounting_validate(self) -> None:
         registry = validate_reviewed_release_evidence(
-            repository_root=ROOT
+            REGISTRY_PATH,
+            repository_root=ROOT,
+            dashboard_attestations_path=ATTESTATIONS_PATH,
         )
         release = registry.by_version["8.1.1"]
         result = validate_reviewed_release_catalog(

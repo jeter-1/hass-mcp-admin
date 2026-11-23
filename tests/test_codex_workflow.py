@@ -477,7 +477,8 @@ class ContextToolTests(unittest.TestCase):
         fixture = RepositoryFixture()
         self.addCleanup(fixture.close)
         runtime = "hass_mcp_engineering_beta/ha_mcp_engineering/"
-        policy = json.loads((ROOT / runtime / "upstream_tool_policy_8_5_0.json").read_text())
+        # HAMCP-437 I2a-D: the shipped 9.2.0 policy (ANSWER 0755-01 item 5).
+        policy = json.loads((ROOT / runtime / "upstream_tool_policy_9_2_0.json").read_text())
         adapter_path = runtime + "providers/upstream_blueprint.py"
         adapter_source = (ROOT / adapter_path).read_text()
         fixture.write(runtime + "upstream_tool_policy.json", json.dumps(policy))
@@ -487,8 +488,11 @@ class ContextToolTests(unittest.TestCase):
                           str(fixture.root), "--format", "json"], cwd=fixture.root)
             return json.loads(result.stdout)["tool_counts"]["expected_delegated_reads"]
 
-        # HAMCP-290: each count is one lower; the 8.5.0 policy's automatic
-        # ha_get_hacs_info is a retired delegated read, never exposed.
+        # HAMCP-437 I2a-D: the 9.2.0 policy file has 23 automatic_read
+        # entries; it classifies the retired ha_get_hacs_info unsupported, so
+        # none is subtracted, and the fixture has no platform-read adapter.
+        # The ha-mcp-9.2.0-blueprint-list-get-v1 binding (9.2.0, 51e3aac7,
+        # 6a09a0f2) matches the ha_manage_blueprints entry, adding one.
         self.assertEqual(count(), 23)  # Policy data without compiled code is not a wrapper.
         fixture.write(adapter_path, adapter_source + "\nraise RuntimeError('must not execute')\n")
         self.assertEqual(count(), 24)

@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import importlib.util
 import io
+import json
 import unittest
 from copy import deepcopy
 from pathlib import Path
@@ -55,9 +56,23 @@ class P4ParityTests(unittest.TestCase):
         health = self.report["health_9_2_0"]
         self.assertEqual(set(health["exposed_counts"].values()), {28})
         self.assertTrue(health["agrees_with_p1"])
-        for setup in p4.SETUPS:
-            self.assertTrue(health["recovered_names"][setup]["fingerprint_matches_lane"])
-            self.assertEqual(health["recovered_names"][setup]["peer_tool_calls"], 0)
+        recovered = health["recovered_names"]
+        self.assertTrue(recovered["9.2.0"]["fingerprint_matches_lane"])
+        self.assertEqual(recovered["9.2.0"]["peer_tool_calls"], 0)
+        # HAMCP-437 (ANSWER 20261122-1140-01 (a)): 8.5.0 is not in the shipped
+        # registry, so its recovery is recorded as not recomputed, with the lane
+        # fingerprint read from the committed 8.5.0 _health.json.
+        self.assertEqual(p4.RECOVERY_SETUPS, ("9.2.0",))
+        lane = p4.public_result(json.loads(
+            (ROOT / p4.RUN / "8.5.0/out/reads/_health.json").read_bytes()))
+        self.assertEqual(recovered["8.5.0"], {
+            "status": "not_recomputed_at_head",
+            "reason": ("8.5.0 is not in the shipped registry after HAMCP-437; in-process "
+                       "recovery needs an admitted 8.5.0 row and an 8.5.0 YAML read contract"),
+            "last_recomputed_and_matched_at": "901482d14b7d91f5a99d3b00d57446e9a87aa09c",
+            "lane_fingerprint": lane["data"]["upstream_read_gateway"][
+                "catalog_name_projection_fingerprint"],
+        })
 
     def test_rebuild_counts_equal_engineerings_withheld_names(self):
         rows = {row["id"]: row for row in self.report["reads"]}

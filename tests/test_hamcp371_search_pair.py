@@ -238,8 +238,9 @@ class ResolutionTests(unittest.TestCase):
     def test_foreign_or_altered_authority_is_untrusted(self):
         unified = descriptor("unified")
         cases = {
-            "8.6.0": core.REGISTRY.by_version["8.6.0"],
-            "9.1.2": core.REGISTRY.by_version["9.1.2"],
+            # Real retired releases, frozen at 0f1adcb5 (HAMCP-437).
+            "8.6.0": core.FOREIGN.by_version["8.6.0"],
+            "9.1.2": core.FOREIGN.by_version["9.1.2"],
             "source": replace(RELEASE, source_commit="0" * 40),
             "policy_sha256": replace(RELEASE, policy_sha256="sha256:" + "0" * 64),
             "revoked": replace(RELEASE, revoked=True),
@@ -258,7 +259,7 @@ class ResolutionTests(unittest.TestCase):
                 self.assertIsNone(reads_9_2.resolve_search_variant(RELEASE, entry, unified))
         # Neither module's pair crosses into the other's release.
         self.assertIsNone(search_8_6.resolve_search_variant(RELEASE, self.entry, unified))
-        release_86 = core.REGISTRY.by_version["8.6.0"]
+        release_86 = core.FOREIGN.by_version["8.6.0"]
         for tool in (t for t in useful.reviewed_catalog("8.6.0") if t["name"] == SEARCH):
             self.assertIsNone(reads_9_2.resolve_search_variant(
                 release_86, release_86.policy.by_name[SEARCH], tool))

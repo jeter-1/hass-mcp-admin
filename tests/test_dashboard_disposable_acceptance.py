@@ -155,6 +155,29 @@ class DisposableNetworkTests(unittest.TestCase):
                         lane.owned_url(lane.core, 8123)
                     self.assertFalse((lane.out / "endpoint-8123.json").exists())
 
+    def test_upstream_uses_the_9_2_0_strict_full_selector_on_an_allowed_route(self):
+        # HAMCP-437: the 8.5.0-era /disposable-dashboard-mcp path is legacy, which 9.2.0 refuses.
+        from urllib.parse import urlsplit
+        from ha_mcp_engineering.clients import ha_mcp_endpoint as endpoint
+        with tempfile.TemporaryDirectory() as directory:
+            lane = DisposableOwnershipTests().lane(directory)
+            network, container = self.fixtures(lane)
+            container["network"]["IPAddress"] = "172.28.0.3"
+            lane.docker = self.docker(network, container)
+            url = lane.start_upstream("synthetic-token-not-a-credential")
+            run = next(call.args for call in lane.docker.call_args_list if call.args[0] == "run")
+        self.assertEqual(url, "http://172.28.0.3:8086/synthetic-upstream-secret/mcp/catalog/full")
+        self.assertIn("MCP_SECRET_PATH=/synthetic-upstream-secret/mcp", run)
+        self.assertNotIn("synthetic-token-not-a-credential", run)
+        self.assertEqual(run[run.index(driver.MCP) + 1:], ("ha-mcp-web",))
+        self.assertIn("9.2.0", endpoint.STRICT_FULL_SELECTOR_RELEASES)
+        self.assertEqual(endpoint.classify_endpoint_form(url), endpoint.STRICT_FULL)
+        self.assertEqual(driver.harness_url("http://127.0.0.1:8086", urlsplit(url).path),
+                         "http://127.0.0.1:8086/synthetic-upstream-secret/mcp/catalog/full")
+        legacy = "http://172.28.0.3:8086/disposable-dashboard-mcp"
+        self.assertEqual(endpoint.classify_endpoint_form(legacy), endpoint.LEGACY)
+        self.assertEqual(endpoint.selector_refusal_code(legacy), endpoint.UPSTREAM_CATALOG_MODE_UNADMITTED)
+
     def test_unknown_container_or_port_refuses_before_docker(self):
         with tempfile.TemporaryDirectory() as directory:
             lane = DisposableOwnershipTests().lane(directory)

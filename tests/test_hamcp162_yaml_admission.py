@@ -76,12 +76,12 @@ import tests.test_core_2026_10_device_registry as october  # noqa: E402
 from core_registry_fixtures import core_entry, core_revocation  # noqa: E402
 
 EVIDENCE = ROOT / "docs/evidence/hamcp162"
-VERSIONS = ("8.4.3", "8.5.0", "9.2.0")
+VERSIONS = ("9.2.0",)  # HAMCP-437 I2a retired the 8.4.3 and 8.5.0 rows
 PRIMARY = "9.2.0"  # HAMCP-437: the version single-version cases run on
 TOOL = y.TOOL_NAME
 OPTIONAL = (TOOL,) + y.SIBLING_TOOLS
 SESSION = "synthetic-ha-mcp-session"
-STOCK_UPSTREAM = {"8.4.3": 78, "8.5.0": 77, "9.2.0": 77}  # K9 stock reviewed catalogs
+STOCK_UPSTREAM = {"9.2.0": 77}  # K9 stock reviewed catalogs
 # The 9.2.0 S8 profiles-2 SHA256SUMS: both captures of the exact
 # filesystem-on catalog; one is committed (as capture.json) with the
 # observation that records the wire order.
@@ -89,9 +89,6 @@ S8 = ROOT / "docs/evidence/hamcp371/s8/profiles-2"
 S8_SUMS = S8 / "SHA256SUMS"
 S8_CAPTURES = ("out/standalone-9.2.0-fs-on/capture-1.json", "out/standalone-9.2.0-fs-on/capture-2.json")
 S8_OBSERVATION = "out/standalone-9.2.0-fs-on/observation.json"
-# Readers whose descriptor carries the 8.x ``_meta.ha_mcp.policy`` block; the
-# 9.2.0 reader carries only ``_meta.fastmcp`` (the S8 capture).
-POLICY_META_VERSIONS = ("8.4.3", "8.5.0")
 STOCK_PUBLIC = 113  # + HAMCP-106, + HAMCP-071, + HAMCP-253, + HAMCP-311, + HAMCP-229, + HAMCP-134; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
 
 
@@ -252,7 +249,7 @@ class Harness(unittest.IsolatedAsyncioTestCase):
             fetcher=fetcher, now=lambda: self.now,
         )
 
-    async def gateway(self, version="8.5.0", tools=None, *, mode="A", revoked=(), core_runtime=None):
+    async def gateway(self, version=PRIMARY, tools=None, *, mode="A", revoked=(), core_runtime=None):
         transport = RaceTransport(captured(version) if tools is None else tools, version)
         gateway = UpstreamReadGateway()
         kwargs = {"core_runtime": core_runtime} if core_runtime is not None else {}
@@ -698,15 +695,12 @@ class AdmissionTests(Harness):
         self.assert_reader_only_refused(gateway, transport, stock, "optional_absent")
         self.assertNotIn("ha_config_get_yaml_v2", self.exposed(gateway))
 
-    async def test_policy_state_within_the_reviewed_shape_does_not_quarantine(self):
-        for version in POLICY_META_VERSIONS:
-            for name, change in POLICY_IN_SHAPE:
-                with self.subTest(version=version, state=name):
-                    gateway, _ = await self.gateway(version, with_reader(version, change))
-                    self.assertEqual(self.optional(gateway)[TOOL], "admitted")
-                    self.assertIn(TOOL, self.exposed(gateway))
-        # 9.2.0 has no policy block to vary: adding one is a descriptor change.
-        for version in set(VERSIONS) - set(POLICY_META_VERSIONS):
+    async def test_a_policy_block_on_the_92_reader_quarantines_it(self):
+        # HAMCP-437 I2a: the in-shape ``_meta.ha_mcp.policy`` variation was
+        # 8.4.3/8.5.0-only (those readers carried the block); both rows are
+        # retired. 9.2.0 has no policy block to vary: adding one is a
+        # descriptor change.
+        for version in VERSIONS:
             self.assertEqual(descriptor(captured(version))["_meta"], {"fastmcp": {"tags": ["System", "beta"]}})
             stock = await self.stock_names(version)
             for name, change in POLICY_IN_SHAPE:
@@ -760,16 +754,10 @@ class AdmissionTests(Harness):
             self.assertEqual(y.evaluate_optional(captured(version), held).status, "held")
             self.assertEqual(y.withheld_reason(release, signed_selection=True), "optional_signed_selection")
         self.assertEqual(y.withheld_reason(None, signed_selection=False), "optional_binding_absent")
-        for release in self.compiled.releases:
-            # HAMCP-319: 9.1.0 is admitted; tests/test_hamcp319_yaml.py covers it.
-            # HAMCP-351: 9.1.2 is admitted at 9.1.0 parity.
-            # HAMCP-371: 9.2.0 is admitted at 9.1.2 parity (N29).
-            if release.version in VERSIONS or release.version in {"9.1.0", "9.1.2"}:
-                continue
-            with self.subTest(version=release.version):
-                self.assertEqual(y.OPTIONAL_TOOL_DISPOSITIONS[release.version], "held")
-                self.assertEqual(y.withheld_reason(release, signed_selection=False),
-                                 "optional_disposition_held")
+        # HAMCP-437 I2a: the shipped registry holds only 9.2.0 (admitted,
+        # HAMCP-371 N29); an unlisted version stays held
+        # (test_an_unlisted_version_is_never_default_admitted).
+        self.assertEqual({release.version for release in self.compiled.releases}, set(VERSIONS))
         with patch.dict(y.OPTIONAL_TOOL_BINDINGS):
             del y.OPTIONAL_TOOL_BINDINGS[(PRIMARY, TOOL)]
             self.assertEqual(y.withheld_reason(self.compiled.by_version[PRIMARY], signed_selection=False),
@@ -804,11 +792,11 @@ class AdmissionTests(Harness):
         binding = y.OPTIONAL_TOOL_BINDINGS[(PRIMARY, TOOL)]
         cases = (
             ("optional_disposition_versions_mismatch",
-             {"dispositions": {k: v for k, v in y.OPTIONAL_TOOL_DISPOSITIONS.items() if k != "8.6.0"}}),
+             {"dispositions": {k: v for k, v in y.OPTIONAL_TOOL_DISPOSITIONS.items() if k != PRIMARY}}),
             ("optional_disposition_versions_mismatch",
              {"dispositions": {**y.OPTIONAL_TOOL_DISPOSITIONS, "9.9.9": "held"}}),
             ("optional_disposition_invalid",
-             {"dispositions": {**y.OPTIONAL_TOOL_DISPOSITIONS, "8.6.0": "default"}}),
+             {"dispositions": {**y.OPTIONAL_TOOL_DISPOSITIONS, PRIMARY: "default"}}),
             ("optional_binding_version_unknown",
              {"bindings": {("9.9.9", TOOL): replace(binding, version="9.9.9")}}),
             ("optional_binding_version_unknown",
@@ -819,7 +807,7 @@ class AdmissionTests(Harness):
             ("optional_binding_model_invalid",
              {"bindings": {(PRIMARY, TOOL): replace(binding, binding_model="synthetic-model")}}),
             ("optional_admitted_binding_absent",
-             {"dispositions": {**y.OPTIONAL_TOOL_DISPOSITIONS, "8.4.1": "admitted"}}),
+             {"removed_bindings": ((PRIMARY, TOOL),)}),
         )
         for code, change in cases:
             with self.subTest(code=code, change=sorted(change)):
@@ -831,13 +819,15 @@ class AdmissionTests(Harness):
                         load_reviewed_upstream_release_registry(RELEASE_REGISTRY_PATH)
 
     @contextmanager
-    def patched_tables(self, dispositions=None, bindings=None):
+    def patched_tables(self, dispositions=None, bindings=None, removed_bindings=()):
         with patch.dict(y.OPTIONAL_TOOL_DISPOSITIONS, clear=dispositions is not None), \
                 patch.dict(y.OPTIONAL_TOOL_BINDINGS):
             if dispositions is not None:
                 y.OPTIONAL_TOOL_DISPOSITIONS.update(dispositions)
             if bindings is not None:
                 y.OPTIONAL_TOOL_BINDINGS.update(bindings)
+            for key in removed_bindings:
+                del y.OPTIONAL_TOOL_BINDINGS[key]
             yield
 
     def test_an_unlisted_version_is_never_default_admitted(self):
@@ -853,9 +843,8 @@ class AdmissionTests(Harness):
 
     def test_every_registry_version_has_an_explicit_disposition(self):
         self.assertEqual(set(y.OPTIONAL_TOOL_DISPOSITIONS), {r.version for r in self.compiled.releases})
-        self.assertEqual({v for v, d in y.OPTIONAL_TOOL_DISPOSITIONS.items() if d == "admitted"},
-                         set(VERSIONS) | {"9.1.0", "9.1.2"})
-        self.assertEqual(y.OPTIONAL_TOOL_DISPOSITIONS["8.6.0"], "held")
+        # HAMCP-437 I2a: the 9.1.x rows and the 8.6.0 hold are retired.
+        self.assertEqual(y.OPTIONAL_TOOL_DISPOSITIONS, {version: "admitted" for version in VERSIONS})
 
     def test_captures_are_pinned_with_provenance(self):
         for version in VERSIONS:

@@ -8,9 +8,9 @@ On 9.2.0 a key outside a read's reviewed key set is withheld and an unreviewed
 upstream warning is replaced, where 9.1.0 refused the response or passed the
 key through. The cause is the shipped key layer (upstream_reads_9_2_keys.py),
 not a 9.2.0 upstream change. KeySet92Tests pins each of those outcomes as its
-own case; KeySetPending91Tests keeps the 9.1.0 originals while the 9.1.0
-provider path is in the tree (ANSWER 20261122-0042-01). No live Home
-Assistant, no network.
+own case; HAMCP-437 I2a-D retired the 9.1.0 originals (KeySetPending91Tests)
+with the 9.1.0 row (ANSWER 20261122-0042-01 item 6). No live Home Assistant,
+no network.
 """
 from __future__ import annotations
 
@@ -38,10 +38,6 @@ from support.ha_mcp_captures import capture  # noqa: E402  (HAMCP-437)
 
 FIXTURES_92 = json.loads(
     (ROOT / "tests/fixtures/ha_mcp_9_2_0/config/responses.json").read_text("utf-8")
-)
-# Read only by KeySetPending91Tests.
-FIXTURES_91 = json.loads(
-    (ROOT / "tests/fixtures/ha_mcp_9_1_0/config/responses.json").read_text("utf-8")
 )
 CANARY = "SYNTHETIC-CANARY-319-CFG"
 ADAPTER_92 = "ha_mcp_error_contract_9_2_0_v1"
@@ -464,7 +460,7 @@ class Parity92Tests(_Base):
 class KeySet92Tests(_Base):
     """9.2.0 outcomes of the shipped key layer, one case per outcome.
 
-    Each case replaces a 9.1.0 KeySetPending91Tests case (ANSWER
+    Each case replaces a retired 9.1.0 KeySetPending91Tests case (ANSWER
     20261122-0042-01): an unadmitted key is withheld and counted, and an
     unreviewed upstream warning is replaced and makes the read partial.
     """
@@ -589,77 +585,17 @@ class KeySet92Tests(_Base):
                 # 9.1.0: data equalled the payload.
 
 
-class KeySetPending91Tests(_Base):
-    """Shipped 9.1.0 cases whose guarded outcome the 9.2.0 key sets change.
-
-    Kept unedited on the 9.1.0 templates while the 9.1.0 provider path is in
-    the tree; whoever removes that path retires them, mapping each to its
-    KeySet92Tests case (ANSWER 20261122-0042-01 item 6).
-    """
-
-    version = "9.1.0"
-    fixtures = FIXTURES_91
-
-    async def test_91_pending_row_1_upstream_warnings(self):
-        arguments, payload = self.fixture("row_1_automation")
-        # Upstream warnings stay untrusted data; they never become gateway warnings.
-        warned = payload | {"warnings": ["Deprecated syntax detected."]}
-        result = await self.call(AUTOMATION, arguments, ok(warned))
-        self.assertEqual(self.succeeded(result), warned)
-        self.assertNotIn("Deprecated syntax detected.", result["warnings"])
-        await self.assert_invalid_response(AUTOMATION, arguments, payload | {"warnings": [1]})
-
-    async def test_91_pending_row_5_scene_listing_key(self):
-        arguments, payload = self.fixture("row_5_scene")
-        await self.assert_invalid_response(SCENE, arguments, payload | {"scenes": []})
-
-    async def test_91_pending_row_7_resource_config_hash(self):
-        arguments, payload = self.fixture("row_7_resources")
-        row = payload["resources"][0]
-        await self.assert_invalid_response(
-            RESOURCES, arguments, payload | {"resources": [row | {"_config_hash": "abc"}]}
-        )
-
-    async def test_91_pending_row_8_reported_group_fields(self):
-        arguments, payload = self.fixture("row_8_groups")
-        result = await self.call(GROUPS, arguments, ok(payload))
-        data = self.succeeded(result, complete=False)
-        self.assertEqual(result["warnings"], [config.GROUP_FIELDS_UNAVAILABLE_WARNING])
-        first, second = data["groups"]
-        self.assertEqual(first["unavailable_fields"], ["all"])
-        self.assertNotIn("all", first)
-        self.assertNotIn("unavailable_fields", second)
-        self.assertEqual(second["all"], True)
-        expected = deepcopy(payload)
-        expected["groups"][0]["unavailable_fields"] = ["all"]
-        self.assertEqual(data, expected)
-        # A record that reports both fields stays complete and undisclosed.
-        full = deepcopy(payload)
-        full["groups"][0]["all"] = False
-        result = await self.call(GROUPS, arguments, ok(full))
-        self.assertEqual(self.succeeded(result), full)
-
-    async def test_91_pending_row_8_upstream_unavailable_fields(self):
-        arguments, payload = self.fixture("row_8_groups")
-        record = payload["groups"][0]
-        await self.assert_invalid_response(GROUPS, arguments, payload | {
-            "groups": [record | {"unavailable_fields": []}, payload["groups"][1]]})
-
-    async def test_91_pending_row_10_upstream_template_fields(self):
-        arguments, payload = self.fixture("row_10_template")
-        for broken in (
-            payload | {"request_id": "synthetic"},
-            payload | {"evaluation_time": 0.1},
-            payload | {"unavailable_fields": []},
-            payload | {"condition": True},
-        ):
-            await self.assert_invalid_response(TEMPLATE, arguments, broken)
-
-    async def test_91_pending_row_11_trace_records(self):
-        for key in ("row_11_traces_list", "row_11_traces_detail"):
-            arguments, payload = self.fixture(key)
-            data = self.succeeded(await self.call(TRACES, arguments, ok(payload)))
-            self.assertEqual(data, payload)
+# HAMCP-437 I2a-D retired KeySetPending91Tests with the 9.1.0 row (ANSWER
+# 20261122-0042-01 item 6). Each case maps to its KeySet92Tests case:
+# * row 1 upstream warnings -> test_92_keyset_row_1_upstream_warning_replaced_partial
+#   and test_92_keyset_row_1_non_string_warning_replaced_partial;
+# * row 5 scene listing key -> test_92_keyset_row_5_scene_listing_key_withheld;
+# * row 7 resource config hash -> test_92_keyset_row_7_resource_config_hash_withheld;
+# * row 8 reported group fields -> test_92_keyset_row_8_group_all_withheld_and_listed_unavailable
+#   and test_92_keyset_row_8_full_records_partial;
+# * row 8 upstream unavailable fields -> test_92_keyset_row_8_upstream_unavailable_fields_withheld;
+# * row 10 upstream template fields -> test_92_keyset_row_10_upstream_template_fields_withheld;
+# * row 11 trace records -> test_92_keyset_row_11_trace_record_keys_withheld.
 
 
 class ProjectionTableTests(unittest.TestCase):

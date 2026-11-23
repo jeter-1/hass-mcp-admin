@@ -4,7 +4,7 @@ These tests pin the S8 admission core:
 
 * the exact reviewed 9.2.0 identity (index, per-platform manifests, image
   revision, source commit, entry id), with its exact provider dispositions
-  (backup held) and every other registry entry unchanged;
+  (backup held), as the only compiled release (HAMCP-437);
 * the 9.2.0 dashboard is "admitted" with a reviewed attestation (Q8 ruling;
   quarantined at S8, reviewed at SB): the provider authority admits 9.2.0, and
   a quarantined attestation, a changed setter descriptor or an unreviewed
@@ -12,7 +12,7 @@ These tests pin the S8 admission core:
 * the separate 9.2.0 read-adapter module: its own token, source commit and
   wire fingerprints, a loader gate that refuses crossed tokens and stale
   fingerprints, and the gateway helper that sends only 9.2.0-token entries to
-  it (9.1.0 and 9.1.2 keep the 9.1 module);
+  it (a retired 9.1.2 entry keeps the 9.1 module);
 * ha_get_history on 9.2.0 goes through the S9 module: an offset-free time
   refuses before any upstream call (the time semantics and the closed key set
   are tests/test_hamcp371_history_offsets.py);
@@ -24,7 +24,9 @@ These tests pin the S8 admission core:
 * Q1: the built-in 9.2.0 entry admits with both switches off; with either
   switch on and no signed 9.2.0 row the outcome is asserted and reported.
 
-Loopback peers and committed captures only; every secret is synthetic.
+Loopback peers and committed captures only; every secret is synthetic. The
+retired 8.6.0 and 9.1.2 releases that 9.2.0 must not trust are the frozen
+copies in tests/support/frozen_foreign_releases.py (byte copies at 0f1adcb5).
 """
 from __future__ import annotations
 
@@ -76,6 +78,7 @@ from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
     schema_fingerprint,
 )
 from signed_registry_fixtures import NOW, RegistrySigner  # noqa: E402
+from support import frozen_foreign_releases as foreign  # noqa: E402
 from support.ha_mcp_redirect_peer import RedirectPeer  # noqa: E402
 import test_hamcp319_history as history_fixtures  # noqa: E402
 import test_hamcp319_no_redirect as part1  # noqa: E402
@@ -83,9 +86,10 @@ import test_hamcp319_no_redirect_useful as useful  # noqa: E402
 
 RUNTIME = ROOT / "hass_mcp_engineering_beta/ha_mcp_engineering"
 POLICY_920 = RUNTIME / "upstream_tool_policy_9_2_0.json"
-POLICY_912 = RUNTIME / "upstream_tool_policy_9_1_2.json"
-REGISTRY_FILE = RUNTIME / "upstream_release_registry.json"
+POLICY_912 = foreign.POLICY_912
+REGISTRY_FILE = RUNTIME / "upstream_release_registry.json"  # read by sr/p1_catalog_admission.py
 REGISTRY = load_reviewed_upstream_release_registry()
+FOREIGN = foreign.registry()
 
 INDEX_920 = "sha256:9de5bf6c4216142fdffe862900abe72dac8dfe9621dd0b2b050d132372b676ba"
 PLATFORMS_920 = {
@@ -95,11 +99,8 @@ PLATFORMS_920 = {
 REVISION_920 = "4d7148309af7e4d3da95e16ced8bb67d6a43b9c1"
 SOURCE_920 = "51e3aac788482a081807591cd5d58d07dc4e540b"
 ENTRY_920 = "ha-mcp-v9.2.0-9de5bf6c"
-SOURCE_912 = "bab615dfc90cc510f5e19a9118707d0fae03a37c"
+SOURCE_912 = foreign.SOURCE_912
 ERROR_AGGREGATE = "4ed5b1b4c0aaad0036b4625206e96739b40fc83ec1c944754fef1ed667a10437"
-# sha256 of the canonical JSON of every registry release other than 9.2.0, as
-# committed at origin/main e741f2ed (S8 appends 9.2.0 and changes nothing else).
-OTHER_RELEASES_SHA256 = "dbd78793fc113ffc02a1581be515a311b3efe87d899cc15876b18be5cda2e6bf"
 HELPERS = "ha_config_list_helpers"
 HISTORY = "ha_get_history"
 BLOCKED = ("ha_manage_backup", "ha_manage_hacs", "ha_report_issue", "ha_set_integration")
@@ -110,16 +111,13 @@ def _policy(version):
     return REGISTRY.by_version[version].policy
 
 
+def _foreign_policy(version):
+    return FOREIGN.by_version[version].policy
+
+
 def _load(path, version, tag, commit):
     return load_upstream_tool_policy(
         path, expected_version=version, expected_source_tag=tag, expected_source_commit=commit)
-
-
-def _other_releases_sha256():
-    value = json.loads(REGISTRY_FILE.read_text(encoding="utf-8"))
-    others = [item for item in value["releases"] if item["version"] != "9.2.0"]
-    text = json.dumps(others, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 class RegistryIdentityTests(unittest.TestCase):
@@ -135,8 +133,8 @@ class RegistryIdentityTests(unittest.TestCase):
         self.assertEqual(release.advertised_tool_count, 77)
         self.assertEqual(release.runtime_contract_fingerprint_model, "ha-mcp-operational-tool-descriptor-v2")
         self.assertEqual(release.error_contract_fingerprint, ERROR_AGGREGATE)
-        # The release set enumerates 9.2.0 beside the kept 9.1 releases.
-        self.assertEqual(USED_TOOL_ADMISSION_RELEASES, frozenset({"9.1.0", "9.1.2", "9.2.0"}))
+        # HAMCP-437 retired the 9.1 releases; the release set is 9.2.0 alone.
+        self.assertEqual(USED_TOOL_ADMISSION_RELEASES, frozenset({"9.2.0"}))
 
     def test_920_provider_dispositions(self):
         # HAMCP-401 Phase 1 admits 9.2.0 lifecycle; backup stays held until
@@ -146,9 +144,11 @@ class RegistryIdentityTests(unittest.TestCase):
             "backup": "held", "dashboard": "admitted", "lifecycle": "admitted",
             "read_gateway": "admitted"})
 
-    def test_every_other_registry_entry_is_unchanged(self):
-        self.assertEqual(_other_releases_sha256(), OTHER_RELEASES_SHA256)
-        self.assertEqual(REGISTRY.default_version, "7.14.1")
+    def test_the_registry_holds_only_920(self):
+        # HAMCP-437 removed every other release; the old "every other entry
+        # unchanged" digest has no subject left.
+        self.assertEqual(tuple(item.version for item in REGISTRY.releases), ("9.2.0",))
+        self.assertEqual(REGISTRY.default_version, "9.2.0")
 
 
 class DashboardAdmissionTests(unittest.TestCase):
@@ -162,7 +162,8 @@ class DashboardAdmissionTests(unittest.TestCase):
             connection_latency_ms=1.0)
 
     def test_attestation_is_reviewed_like_912(self):
-        release, base = REGISTRY.by_version["9.2.0"], REGISTRY.by_version["9.1.2"]
+        # The base is the reviewed 9.1.2 row, frozen at 0f1adcb5.
+        release, base = REGISTRY.by_version["9.2.0"], FOREIGN.by_version["9.1.2"]
         self.assertEqual(release.provider_disposition("dashboard"), "admitted")
         self.assertEqual(release.dashboard_attestation_status, "reviewed")
         self.assertEqual(base.dashboard_attestation_status, "reviewed")
@@ -248,7 +249,7 @@ class ReadAdapterModuleTests(unittest.TestCase):
         entry = _policy("9.2.0").by_name["ha_search"]
         stale = replace(entry, input_schema_fingerprint=reads_9_1.INPUT_FINGERPRINTS_9_1_2["ha_search"])
         self.assertIsNone(reads_9_2.adapter_release(stale))
-        crossed = replace(_policy("9.1.2").by_name["ha_search"],
+        crossed = replace(_foreign_policy("9.1.2").by_name["ha_search"],
                           input_schema_fingerprint=entry.input_schema_fingerprint)
         self.assertIsNone(reads_9_1.adapter_release(crossed))
         both = replace(entry, argument_restrictions=(reads_9_2.ADAPTER, reads_9_1.ADAPTER_9_1_2))
@@ -279,16 +280,21 @@ class ReadAdapterModuleTests(unittest.TestCase):
 
 class GatewayHelperTests(unittest.TestCase):
     def test_helper_selects_the_module_by_the_entry_release(self):
-        for version, module in (("9.1.0", reads_9_1), ("9.1.2", reads_9_1), ("9.2.0", reads_9_2)):
-            for entry in _policy(version).tools:
+        # 9.2.0 is shipped; 9.1.2 is the frozen retired release (HAMCP-437
+        # dropped the 9.1.0 loop: no reviewed 9.1.0 release is left).
+        for version, policy, module in (("9.1.2", _foreign_policy("9.1.2"), reads_9_1),
+                                        ("9.2.0", _policy("9.2.0"), reads_9_2)):
+            for entry in policy.tools:
                 with self.subTest(version=version, tool=entry.upstream_name):
                     expected = (module if (reads_9_1.names_adapter(entry) or reads_9_2.names_adapter(entry))
                                 else reads_9_1)
                     self.assertIs(gateway_module._reads(entry), expected)
 
     def test_helper_keeps_the_91_pass_through_for_other_releases(self):
-        for version in ("8.5.0", "8.6.0", "7.14.1"):
-            for entry in _policy(version).tools:
+        # The frozen 8.6.0 release names no 9.x adapter (HAMCP-437 dropped the
+        # 8.5.0 and 7.14.1 loops with those releases).
+        for version in ("8.6.0",):
+            for entry in _foreign_policy(version).tools:
                 with self.subTest(version=version, tool=entry.upstream_name):
                     self.assertIs(gateway_module._reads(entry), reads_9_1)
 
@@ -316,9 +322,13 @@ class PolicyLoaderRefusalTests(unittest.TestCase):
         self.assertEqual(_load(POLICY_920, "9.2.0", "v9.2.0", SOURCE_920).reviewed_upstream_version, "9.2.0")
 
     def test_920_policy_is_refused_under_912_identity(self):
-        with self.assertRaises(UpstreamToolPolicyError):
+        # The frozen 9.1.2 policy loads under its own identity, so each refusal
+        # is the identity check (the reason code base 0f1adcb5 gave), not an
+        # unreadable file.
+        self.assertEqual(_load(POLICY_912, "9.1.2", "v9.1.2", SOURCE_912).reviewed_upstream_version, "9.1.2")
+        with self.assertRaisesRegex(UpstreamToolPolicyError, "^policy_version_invalid$"):
             _load(POLICY_920, "9.1.2", "v9.1.2", SOURCE_912)
-        with self.assertRaises(UpstreamToolPolicyError):
+        with self.assertRaisesRegex(UpstreamToolPolicyError, "^policy_version_invalid$"):
             _load(POLICY_912, "9.2.0", "v9.2.0", SOURCE_920)
 
     def test_crossed_tokens_and_stale_fingerprints_are_refused(self):
@@ -388,11 +398,13 @@ class YamlReadBindingTests(unittest.TestCase):
         self.assertEqual(commit, SOURCE_920)
         path = ROOT / capture
         self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), digest)
-        self.assertIs(yaml_reader.YAML_READ_CONTRACTS["9.2.0"], yaml_reader.YAML_READ_CONTRACTS["9.1.2"])
+        # The unchanged 9.1 contract object (9.1.2 used the same one at 0f1adcb5).
+        self.assertIs(yaml_reader.YAML_READ_CONTRACTS["9.2.0"], yaml_reader._CONTRACT_9_1)
 
     def test_siblings_stay_prohibited(self):
+        # The same four siblings 9.1.2 prohibited at 0f1adcb5.
         self.assertEqual(set(yaml_reader._SIBLING_TOOLS_BY_VERSION["9.2.0"]),
-                         set(yaml_reader._SIBLING_TOOLS_BY_VERSION["9.1.2"]))
+                         {"ha_delete_file", "ha_list_files", "ha_read_file", "ha_write_file"})
         delegated = {e.exposed_name for e in _policy("9.2.0").tools if e.is_read_route}
         self.assertFalse(set(yaml_reader._SIBLING_TOOLS_BY_VERSION["9.2.0"]) & delegated)
 
@@ -430,19 +442,16 @@ def _delegated(version):
 
 
 class GatewaySurfaceTests(unittest.TestCase):
-    def test_920_exposed_surface_equals_912(self):
-        surfaces = {}
-        for version in ("9.1.2", "9.2.0"):
-            with self.subTest(version=version):
-                health, exposed, _result, peer = asyncio.run(_gateway(version, useful.reviewed_catalog(version)))
-                self.assertEqual(health["admission_status"], "admitted_exact")
-                self.assertEqual(health["upstream_server_version"], version)
-                self.assertEqual(health["reviewed_upstream_version"], version)
-                self.assertEqual(peer.calls, [])
-                self.assertFalse(set(BLOCKED) & exposed)
-                surfaces[version] = exposed
-        self.assertEqual(surfaces["9.2.0"], surfaces["9.1.2"])
-        self.assertLessEqual(_delegated("9.2.0") - {yaml_reader.TOOL_NAME}, surfaces["9.2.0"])
+    def test_920_exposed_surface(self):
+        # HAMCP-437 dropped the equality with the 9.1.2 surface: 9.1.2 is no
+        # longer admitted, so there is no second exposed surface to compare.
+        health, exposed, _result, peer = asyncio.run(_gateway("9.2.0", useful.reviewed_catalog("9.2.0")))
+        self.assertEqual(health["admission_status"], "admitted_exact")
+        self.assertEqual(health["upstream_server_version"], "9.2.0")
+        self.assertEqual(health["reviewed_upstream_version"], "9.2.0")
+        self.assertEqual(peer.calls, [])
+        self.assertFalse(set(BLOCKED) & exposed)
+        self.assertLessEqual(_delegated("9.2.0") - {yaml_reader.TOOL_NAME}, exposed)
 
     def test_920_delegated_read_dispatches_through_the_92_module(self):
         case = useful.NoRedirectUseful._delegated_read_case(None, "9.2.0")

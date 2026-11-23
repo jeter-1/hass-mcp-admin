@@ -11,14 +11,18 @@ Assistant is used.
 
 1. The 9.2.0 health record's exposed tool count. Its public projection blanks the
    tool names by design (``catalog_name_projection_bounded``) and keeps
-   ``catalog_name_projection_fingerprint``. The names are recovered in-process:
-   Engineering's ``UpstreamReadGateway`` at the branch head admits each setup's
-   committed ``out/catalog/peer.json`` tools from a loopback peer (the
-   ``tests/test_hamcp371_admission_core`` helper, as P1 does), and the
+   ``catalog_name_projection_fingerprint``. The names are recovered in-process for
+   9.2.0 only (``RECOVERY_SETUPS``): Engineering's ``UpstreamReadGateway`` at the
+   branch head admits the committed ``out/catalog/peer.json`` tools from a loopback
+   peer (the ``tests/test_hamcp371_admission_core`` helper, as P1 does), and the
    ``schema_fingerprint`` of its name projection must equal the lane record's
    fingerprint. This step runs Engineering code on committed bytes; it is not a
    reading of the receipts alone, and is reported as such. The recovered names
-   are compared with ``p1-catalog-admission.json``.
+   are compared with ``p1-catalog-admission.json``. 8.5.0 is not in the shipped
+   registry after HAMCP-437, so its recovery cannot run at the head; its entry
+   (``NOT_RECOMPUTED``) records the lane fingerprint from the committed
+   ``_health.json`` (bound to ``SHA256SUMS``), the reason, and the last commit
+   where the recovery was recomputed and matched.
 2. One row per read r01 to r26: for each setup, the result class, the public result's
    key paths, ``data.fields_withheld``, ``data.fields_dropped_by_policy`` and the
    warning codes. Key paths follow the S7 output-key contract walk
@@ -62,6 +66,18 @@ OUTPUT_JSON = SR / "p4-parity.json"
 OUTPUT_MD = SR / "p4-parity.md"
 SCHEMA = "hamcp371.sr.p4_parity.v1"
 SETUPS = ("8.5.0", "9.2.0")
+# HAMCP-437 (ANSWER 20261122-1140-01 (a)): in-process name recovery needs an admitted
+# registry row and a YAML read contract for the version; the shipped registry holds
+# only 9.2.0. SETUPS still drives every receipt-only step.
+RECOVERY_SETUPS = ("9.2.0",)
+NOT_RECOMPUTED = {
+    "8.5.0": {
+        "status": "not_recomputed_at_head",
+        "reason": ("8.5.0 is not in the shipped registry after HAMCP-437; in-process recovery "
+                   "needs an admitted 8.5.0 row and an 8.5.0 YAML read contract"),
+        "last_recomputed_and_matched_at": "901482d14b7d91f5a99d3b00d57446e9a87aa09c",
+    },
+}
 READ_RANGE = range(1, 27)
 P1_EXPOSED = 28
 WITHHELD = "fields_withheld"
@@ -289,13 +305,27 @@ def upstream_row(root: Path, sums: dict, setup: str, entry: dict) -> dict:
     return row
 
 
+def lane_fingerprint(root: Path, sums: dict, setup: str) -> str:
+    """The lane record's name-projection fingerprint, bound to SHA256SUMS."""
+    rel = f"{setup}/out/reads/_health.json"
+    raw = (root / RUN / rel).read_bytes()
+    if sums.get(rel) != _sha256(raw):
+        raise P4Error(f"{rel} does not match {RUN}/SHA256SUMS")
+    return public_result(json.loads(raw))["data"]["upstream_read_gateway"][
+        "catalog_name_projection_fingerprint"]
+
+
 def fingerprint_check(root: Path, receipt: dict, sums: dict) -> dict:
     """Recover the exposed names in-process and match the lane's name-projection fingerprint."""
     import test_hamcp371_admission_core as core  # noqa: PLC0415 - test helper, imported on use
-    out = {"method": ("in-process: Engineering UpstreamReadGateway at the branch head admits the "
-                      "committed out/catalog/peer.json tools from a loopback peer "
+    out = {"method": ("in-process, 9.2.0 only: Engineering UpstreamReadGateway at the branch head "
+                      "admits the committed out/catalog/peer.json tools from a loopback peer "
                       "(tests/test_hamcp371_admission_core._gateway); no launch; not receipts-only")}
     for setup in SETUPS:
+        if setup not in RECOVERY_SETUPS:
+            out[setup] = {**NOT_RECOMPUTED[setup],
+                          "lane_fingerprint": lane_fingerprint(root, sums, setup)}
+            continue
         rel = f"{setup}/out/catalog/peer.json"
         raw = (root / RUN / rel).read_bytes()
         if sums.get(rel) != _sha256(raw):
@@ -304,8 +334,7 @@ def fingerprint_check(root: Path, receipt: dict, sums: dict) -> dict:
         tools = tuple(tool for page in pages for tool in page["tools"])
         health, exposed, _result, peer = asyncio.run(core._gateway(setup, tools))
         fingerprint = schema_fingerprint({name: health.get(name, []) for name in PROJECTION_FIELDS})
-        lane = public_result(json.loads((root / RUN / f"{setup}/out/reads/_health.json").read_bytes()))
-        recorded = lane["data"]["upstream_read_gateway"]["catalog_name_projection_fingerprint"]
+        recorded = lane_fingerprint(root, sums, setup)
         out[setup] = {"catalog": f"{RUN}/{rel}", "catalog_tools": len(tools),
                       "exposed_count": len(exposed), "exposed_tools": sorted(exposed),
                       "held_tools": sorted(health.get("held_tools", [])),
@@ -470,13 +499,18 @@ def markdown(report: dict) -> str:
         "",
         "Names recovered in-process (Engineering's gateway on the committed "
         "`out/catalog/peer.json`, loopback peer; this step runs Engineering code and is not "
-        "receipts-only):",
+        "receipts-only). Recovery runs for 9.2.0 only: 8.5.0 is not in the shipped registry "
+        "after HAMCP-437, and recovery needs an admitted row and a YAML read contract.",
         "",
         "| Setup | Catalog tools | Exposed | Held | Blocked | Fingerprint matches lane | Equal to P1 |",
         "|---|---|---|---|---|---|---|",
     ]
     for setup in SETUPS:
         item = health["recovered_names"][setup]
+        if item.get("status") == "not_recomputed_at_head":
+            lines.append(f"| {setup} | - | - | - | - | not recomputed at head (last matched at "
+                         f"{item['last_recomputed_and_matched_at'][:8]}) | - |")
+            continue
         lines.append(
             f"| {setup} | {item['catalog_tools']} | {item['exposed_count']} | "
             f"{', '.join(f'`{t}`' for t in item['held_tools']) or 'none'} | {item['blocked_count']} | "

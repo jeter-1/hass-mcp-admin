@@ -4,17 +4,20 @@ from __future__ import annotations
 
 import asyncio
 from copy import deepcopy
+from dataclasses import replace
 import json
 from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 sys.path.insert(0, str(Path(__file__).parent))
 
+import f3_dashboard_support  # noqa: E402
 from f3_dashboard_support import (  # noqa: E402
     PRIVATE_KEY,
     PRIVATE_TEXT,
@@ -68,6 +71,10 @@ from ha_mcp_engineering.governance.storage import (  # noqa: E402
 from ha_mcp_engineering.providers.upstream_dashboard import (  # noqa: E402
     UpstreamDashboardProvider,
 )
+from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
+    load_reviewed_upstream_release_registry,
+)
+from support import frozen_signed_reuse  # noqa: E402
 
 
 class _UnusedConfigurationGateway(ConfigurationResourceGateway):
@@ -88,8 +95,30 @@ class _UnusedConfigurationGateway(ConfigurationResourceGateway):
         raise AssertionError("configuration gateway must not be used")
 
 
+# HAMCP-437 I2a-D: the shipped registry holds only 9.2.0. The planning and
+# apply-time provider-drift guards that name an older release run their preread
+# on that release's frozen registry row (byte copies at 0f1adcb5; the 8.1.1 and
+# 8.2.0 dashboard authority fields equal the base rows). Only the test preread
+# builder is patched; the shipped registry is never replaced.
+FROZEN_8_1_X_REGISTRY = (
+    ROOT / "tests/fixtures/ha_mcp_8_1_x_family/upstream_release_registry.json"
+)
+
+
+def _frozen_preread_registry(registry):
+    return patch.object(
+        f3_dashboard_support,
+        "load_reviewed_upstream_release_registry",
+        return_value=registry,
+    )
+
+
+def _frozen_8_1_x_registry():
+    return load_reviewed_upstream_release_registry(FROZEN_8_1_X_REGISTRY)
+
+
 class _DashboardGateway:
-    def __init__(self, *, version: str = "8.4.1") -> None:
+    def __init__(self, *, version: str = "9.2.0") -> None:
         self.version = version
         self.configuration = {"title": "Before", "views": []}
         self.preread_count = 0
@@ -156,9 +185,19 @@ class _DashboardGateway:
         }
 
 
+# HAMCP-437 I2a-D: the provider tests run on the reviewed 9.2.0 peer, whose
+# ``get`` reply carries the committed 9.2.0 envelope fields (``stored_config``
+# is required from 9.1.0 on, STORED_CONFIG_REQUIRED_RELEASES).
+ENVELOPES_920 = json.loads(
+    (ROOT / "tests/fixtures/ha_mcp_9_2_0/dashboard/envelopes.json").read_text(
+        encoding="utf-8"
+    )
+)
+
+
 class _ExactProviderTransport:
     def __init__(
-        self, *, version: str = "8.1.1", omit_tool: str | None = None
+        self, *, version: str = "9.2.0", omit_tool: str | None = None
     ) -> None:
         capture = json.loads(
             (
@@ -233,11 +272,11 @@ class _ExactProviderTransport:
             }
         else:
             payload = {
-                "success": True,
-                "action": "get",
+                **deepcopy(ENVELOPES_920["get_stored_config"]),
                 "url_path": arguments["url_path"],
                 "config": deepcopy(self.configuration),
                 "config_hash": upstream_config_hash(self.configuration),
+                "config_size_bytes": len(json.dumps(self.configuration)),
             }
         return McpDashboardRead(
             self.handshake,
@@ -333,8 +372,8 @@ class DashboardWriteProviderTests(unittest.IsolatedAsyncioTestCase):
             "evidence_hash"
         ]
 
-    async def test_exact_8_4_1_inventory_configuration_and_authority_succeed(self):
-        transport = _ExactProviderTransport(version="8.4.1")
+    async def test_exact_9_2_0_inventory_configuration_and_authority_succeed(self):
+        transport = _ExactProviderTransport(version="9.2.0")
         provider = UpstreamDashboardProvider()
         provider.configure(
             Settings(
@@ -356,8 +395,8 @@ class DashboardWriteProviderTests(unittest.IsolatedAsyncioTestCase):
 
         preread = await gateway.preread(url_path="operations")
 
-        self.assertEqual(preread.upstream_version, "8.4.1")
-        self.assertEqual(preread.compatibility_entry, "ha-mcp-v8.4.1-7823b365")
+        self.assertEqual(preread.upstream_version, "9.2.0")
+        self.assertEqual(preread.compatibility_entry, "ha-mcp-v9.2.0-9de5bf6c")
         self.assertEqual(preread.operational_identity.target_url_path, "operations")
         self.assertEqual(
             preread.operational_identity.authority.provider_slug,
@@ -365,14 +404,14 @@ class DashboardWriteProviderTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             preread.operational_identity.authority.source_commit,
-            "701a7c26ac0e2309c7883a627d31873ab1510077",
+            "51e3aac788482a081807591cd5d58d07dc4e540b",
         )
         self.assertEqual(transport.read_count, 2)
         self.assertEqual(transport.write_count, 0)
 
     async def test_getter_without_setter_is_readable_but_not_plannable(self):
         transport = _ExactProviderTransport(
-            version="8.4.1", omit_tool="ha_config_set_dashboard"
+            version="9.2.0", omit_tool="ha_config_set_dashboard"
         )
         provider = UpstreamDashboardProvider()
         provider._transport = transport
@@ -394,7 +433,7 @@ class DashboardWriteProviderTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_setter_without_getter_fails_before_provider_call(self):
         transport = _ExactProviderTransport(
-            version="8.4.1", omit_tool="ha_config_get_dashboard"
+            version="9.2.0", omit_tool="ha_config_get_dashboard"
         )
         provider = UpstreamDashboardProvider()
         provider._transport = transport
@@ -406,7 +445,7 @@ class DashboardWriteProviderTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(transport.write_count, 0)
 
     async def test_exact_8_4_1_setter_is_binary_owned_and_callable_once(self):
-        transport = _ExactProviderTransport(version="8.4.1")
+        transport = _ExactProviderTransport(version="9.2.0")
         provider = UpstreamDashboardProvider()
         provider._transport = transport
 
@@ -529,7 +568,7 @@ class DashboardWriteProviderTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_reviewed_handshake_swap_is_rejected_before_setter_call(self):
-        transport = _ExactProviderTransport(version="8.4.1")
+        transport = _ExactProviderTransport(version="9.2.0")
         provider = UpstreamDashboardProvider()
         provider._transport = transport
         gateway = DashboardExecutionGateway(provider, response_limit=60_000)
@@ -539,9 +578,18 @@ class DashboardWriteProviderTests(unittest.IsolatedAsyncioTestCase):
             expected_provider_authority_evidence_hash=authority_hash
         )
 
-        transport.handshake = _ExactProviderTransport(
-            version="8.2.0"
-        ).handshake
+        # HAMCP-437 I2a-D: the swapped handshake is the reviewed 9.2.0 one
+        # with a drifted setter descriptor (the 8.2.0 row is retired); it
+        # refuses with the same code and details as the former 8.2.0 swap.
+        transport.handshake = replace(
+            transport.handshake,
+            tools=tuple(
+                {**tool, "description": tool.get("description", "") + " (drift)"}
+                if tool["name"] == "ha_config_set_dashboard"
+                else tool
+                for tool in transport.handshake.tools
+            ),
+        )
         with self.assertRaises(DashboardProviderError) as caught:
             await gateway.write(
                 url_path="operations",
@@ -695,7 +743,8 @@ class DashboardUpdateRuntimeTests(unittest.IsolatedAsyncioTestCase):
     async def test_exact_8_2_0_plan_uses_dashboard_not_lifecycle_authority(self):
         self.dashboard.version = "8.2.0"
 
-        created = await self._plan()
+        with _frozen_preread_registry(frozen_signed_reuse.registry()):
+            created = await self._plan()
 
         self.assertEqual(created["status"], "awaiting_approval")
         self.assertEqual(
@@ -705,7 +754,7 @@ class DashboardUpdateRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.dashboard.write_count, 0)
 
     async def test_home_fixture_approved_apply_duplicate_and_exact_restoration(self):
-        self.dashboard.version = "8.5.0"
+        self.dashboard.version = "9.2.0"
         original = load_home_dashboard()
         self.dashboard.configuration = deepcopy(original)
         operations = home_dashboard_patch_operations()
@@ -763,7 +812,7 @@ class DashboardUpdateRuntimeTests(unittest.IsolatedAsyncioTestCase):
                          upstream_config_hash(original))
 
     async def test_exact_256_leaf_plan_is_completely_approvable_and_verified(self):
-        self.dashboard.version = "8.5.0"
+        self.dashboard.version = "9.2.0"
         original = {"values": {f"k{i}": 0 for i in range(256)}}
         after = {f"k{i}": 1 for i in range(256)}
         self.dashboard.configuration = deepcopy(original)
@@ -782,7 +831,7 @@ class DashboardUpdateRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.dashboard.write_count, 1)
 
     async def test_limit_diagnostics_preserve_error_identity_without_creating_work(self):
-        self.dashboard.version = "8.5.0"
+        self.dashboard.version = "9.2.0"
         for count in (257, 300):
             with self.subTest(count=count):
                 original = {"synthetic_private_path": {
@@ -859,7 +908,7 @@ class DashboardUpdateRuntimeTests(unittest.IsolatedAsyncioTestCase):
         # HAMCP-143: direct service callers (the MCP input schema already
         # bounds operation count and path length earlier) receive the
         # reviewed constraint, stage and counts under the unchanged codes.
-        self.dashboard.version = "8.5.0"
+        self.dashboard.version = "9.2.0"
         for case in compiler_limit_cases():
             with self.subTest(constraint=case.constraint):
                 self.assertEqual(self.repository.list(), [])
@@ -875,7 +924,7 @@ class DashboardUpdateRuntimeTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIsNone(self.dashboard.last_write)
 
     async def test_every_compiler_limit_boundary_passes_the_compiler(self):
-        self.dashboard.version = "8.5.0"
+        self.dashboard.version = "9.2.0"
         for case in compiler_limit_cases():
             with self.subTest(constraint=case.constraint):
                 if case.at_limit_refusal is not None:
@@ -1098,15 +1147,16 @@ class DashboardUpdateRuntimeTests(unittest.IsolatedAsyncioTestCase):
         await self._approve(created)
         self.dashboard.version = "8.2.0"
 
-        result = await self.service.apply(
-            created["plan_id"], created["plan_hash"]
-        )
+        with _frozen_preread_registry(frozen_signed_reuse.registry()):
+            result = await self.service.apply(
+                created["plan_id"], created["plan_hash"]
+            )
 
         self.assertEqual(result["task_state"], "failed_pre_dispatch")
         self.assertEqual(self.dashboard.write_count, 0)
 
     async def test_setter_handshake_drift_is_confirmed_without_dispatch(self):
-        transport = _ExactProviderTransport(version="8.4.1")
+        transport = _ExactProviderTransport(version="9.2.0")
         provider = UpstreamDashboardProvider()
         provider._transport = transport
         dashboard_gateway = DashboardExecutionGateway(
@@ -1196,7 +1246,9 @@ class DashboardUpdateRuntimeTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_ha_mcp_8_1_1_hyphenless_target_fails_during_planning(self):
         self.dashboard.version = "8.1.1"
-        with self.assertRaises(GovernanceError) as caught:
+        with self.assertRaises(GovernanceError) as caught, _frozen_preread_registry(
+            _frozen_8_1_x_registry()
+        ):
             await self.service.create_dashboard_update_plan(
                 title="Rename map dashboard",
                 description="Known 8.1.1 compatibility rejection.",

@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import sys
 import unittest
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -37,7 +38,9 @@ from ha_mcp_engineering.providers.upstream_contracts import (  # noqa: E402
 from ha_mcp_engineering.providers.upstream_dashboard import (  # noqa: E402
     UpstreamDashboardProvider,
 )
+from ha_mcp_engineering.providers import upstream_dashboard  # noqa: E402
 from tests.test_hamcp401_lifecycle_9_2_0 import catalog_920  # noqa: E402
+from support import frozen_signed_reuse  # noqa: E402
 
 
 def load_json(path: Path) -> dict:
@@ -83,6 +86,47 @@ def addon_8_tools() -> list[dict]:
     return tools
 
 
+def frozen_release():
+    """The frozen 8.2.0 row (HAMCP-437 I2a-D).
+
+    Its descriptors carry the _meta.ha_mcp block that no 9.2.0 descriptor
+    carries, so the add-on policy normalization cases run on this committed
+    input instead of the retired 8.0.0 row.
+    """
+
+    return frozen_signed_reuse.registry().by_version[frozen_signed_reuse.VERSION]
+
+
+def frozen_tools() -> list[dict]:
+    return deepcopy(frozen_signed_reuse.capture(frozen_release())["tools"])
+
+
+def addon_frozen_tools() -> list[dict]:
+    """The frozen 8.2.0 catalog with the reviewed add-on policy block.
+
+    The replacement is the committed 8.0.0 live add-on reconstruction
+    transform, applied to every advertised tool as that evidence records.
+    """
+
+    tools = frozen_tools()
+    reconstruction = load_json(
+        EVIDENCE / "ha-mcp-8.0.0-live-addon-reconstruction.json"
+    )
+    policy = reconstruction["transform"]["replacement"]
+    for tool in tools:
+        tool["_meta"]["ha_mcp"]["policy"] = deepcopy(policy)
+    return tools
+
+
+def validate_frozen(tools: list[dict], **overrides):
+    return validate(
+        frozen_signed_reuse.VERSION,
+        tools,
+        release=frozen_release(),
+        **overrides,
+    )
+
+
 def dashboard_tool(tools: list[dict]) -> dict:
     return next(
         item for item in tools if item["name"] == "ha_config_get_dashboard"
@@ -117,9 +161,11 @@ def dashboard_settings() -> Settings:
 
 
 def validate(version: str, tools: list[dict], **overrides):
-    release = load_reviewed_upstream_release_registry().by_version[version]
+    release = overrides.pop("release", None)
+    if release is None:
+        release = load_reviewed_upstream_release_registry().by_version[version]
     return validate_reviewed_release_catalog(
-        overrides.pop("release", release),
+        release,
         observed_server_name=overrides.pop("server_name", "ha-mcp"),
         observed_upstream_version=overrides.pop("upstream_version", version),
         observed_protocol_version=overrides.pop(
@@ -130,11 +176,11 @@ def validate(version: str, tools: list[dict], **overrides):
 
 
 class DashboardCatalogTransport:
-    def __init__(self, tool: dict) -> None:
+    def __init__(self, tool: dict, server_version: str = "9.2.0") -> None:
         self.handshake = McpDashboardHandshake(
             protocol_version="2025-03-26",
             server_name="ha-mcp",
-            server_version="8.0.0",
+            server_version=server_version,
             tools=(tool,),
             connection_latency_ms=1.0,
         )
@@ -175,20 +221,25 @@ class ReviewedCatalogValidatorTests(unittest.TestCase):
                 )
 
     def test_exact_addon_catalog_uses_same_normalized_identity(self):
-        # HAMCP-437: kept on 8.0.0 and reported. Its subject is the
-        # _meta.ha_mcp descriptor block, which no 9.2.0 descriptor carries.
-        standalone = validate("8.0.0", reviewed_tools("8.0.0"))
-        addon = validate("8.0.0", addon_8_tools())
+        # HAMCP-437 I2a-D: moved from the retired 8.0.0 row to the frozen
+        # 8.2.0 row. Its subject is the _meta.ha_mcp descriptor block, which
+        # no 9.2.0 descriptor carries. The expected fingerprints come from
+        # the frozen row, not from literals computed here.
+        release = frozen_release()
+        standalone = validate_frozen(frozen_tools())
+        addon = validate_frozen(addon_frozen_tools())
 
+        self.assertTrue(standalone.valid)
         self.assertTrue(addon.valid)
+        self.assertEqual(addon.validation_status, "accepted_exact")
         self.assertEqual(addon.reviewed_accounted_count, 78)
+        self.assertEqual(
+            standalone.observed_raw_catalog_fingerprint,
+            release.catalog_fingerprint,
+        )
         self.assertNotEqual(
             standalone.observed_raw_catalog_fingerprint,
             addon.observed_raw_catalog_fingerprint,
-        )
-        self.assertEqual(
-            addon.observed_raw_catalog_fingerprint,
-            "c61b0959e766f3900300dd4dd69a6d799fc113186d91983f21be69f1bc6b8768",
         )
         self.assertEqual(
             standalone.normalized_catalog_fingerprint,
@@ -196,7 +247,7 @@ class ReviewedCatalogValidatorTests(unittest.TestCase):
         )
         self.assertEqual(
             addon.normalized_catalog_fingerprint,
-            "3bad86b86400807ceddf68805cf4ed86d1243f201104e18ed8d3c15e560a1d53",
+            addon.expected_normalized_catalog_fingerprint,
         )
 
     def test_identity_tool_set_and_contract_drift_fail_closed(self):
@@ -265,9 +316,14 @@ class ReviewedCatalogValidatorTests(unittest.TestCase):
                     )
 
     def _assert_all_rejected(self, version: str, candidates: dict) -> None:
+        release = (
+            frozen_release()
+            if version == frozen_signed_reuse.VERSION
+            else None
+        )
         for name, tools in candidates.items():
             with self.subTest(name=name):
-                result = validate(version, tools)
+                result = validate(version, tools, release=release)
                 self.assertFalse(result.valid)
                 self.assertEqual(
                     result.validation_status,
@@ -326,9 +382,10 @@ class ReviewedCatalogValidatorTests(unittest.TestCase):
         self._assert_all_rejected("9.2.0", candidates)
 
     def test_ha_mcp_meta_and_policy_drift_fail_closed(self):
-        # HAMCP-437: kept on 8.0.0 and reported. Its subject is the
-        # _meta.ha_mcp descriptor block, which no 9.2.0 descriptor carries.
-        baseline = addon_8_tools()
+        # HAMCP-437 I2a-D: moved from the retired 8.0.0 row to the frozen
+        # 8.2.0 row. Its subject is the _meta.ha_mcp descriptor block, which
+        # no 9.2.0 descriptor carries.
+        baseline = addon_frozen_tools()
         target_index = next(
             index
             for index, tool in enumerate(baseline)
@@ -400,7 +457,7 @@ class ReviewedCatalogValidatorTests(unittest.TestCase):
         missing_policy[target_index]["_meta"]["ha_mcp"].pop("policy")
         candidates["policy_missing"] = missing_policy
 
-        self._assert_all_rejected("8.0.0", candidates)
+        self._assert_all_rejected(frozen_signed_reuse.VERSION, candidates)
 
     def test_reviewed_classification_and_runtime_model_are_fail_closed(self):
         # HAMCP-437: re-bound from the 8.0.0 add-on catalog to 9.2.0.
@@ -497,14 +554,24 @@ class DashboardV3RuntimeAdmissionTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(dashboard_decision(addon_tool, "8.0.0").accepted)
 
     async def test_addon_dashboard_admission_reports_exact_release_model(self):
-        # HAMCP-437: kept on 8.0.0 and reported. Its subject is the
-        # _meta.ha_mcp descriptor block, which no 9.2.0 descriptor carries.
-        tool = dashboard_tool(addon_8_tools())
-        transport = DashboardCatalogTransport(tool)
+        # HAMCP-437 I2a-D: moved from the retired 8.0.0 row to the frozen
+        # 8.2.0 row, injected by patching the provider module's registry
+        # loader. Its subject is the _meta.ha_mcp descriptor block, which no
+        # 9.2.0 descriptor carries. 8.0.0 and 8.2.0 share this getter's
+        # reviewed runtime fingerprint.
+        tool = dashboard_tool(addon_frozen_tools())
+        transport = DashboardCatalogTransport(
+            tool, server_version=frozen_signed_reuse.VERSION
+        )
         provider = UpstreamDashboardProvider()
         provider.configure(dashboard_settings(), transport=transport)
 
-        await provider.refresh_capabilities()
+        with patch.object(
+            upstream_dashboard,
+            "load_reviewed_upstream_release_registry",
+            return_value=frozen_signed_reuse.registry(),
+        ):
+            await provider.refresh_capabilities()
 
         health = provider.health_snapshot()
         exact_release_fingerprint = (

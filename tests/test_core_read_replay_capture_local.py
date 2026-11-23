@@ -26,7 +26,10 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
+if str(ROOT / "tests") not in sys.path:
+    sys.path.append(str(ROOT / "tests"))
 import core_read_replay_capture_local as lane  # noqa: E402
+from support import frozen_capture_baseline as baseline  # noqa: E402
 
 
 def export_stream(members):
@@ -979,6 +982,12 @@ def synthetic_resolved(version):
 class LaneFlowTests(unittest.TestCase):
     """The whole lane against the synthetic Docker above; no process is started."""
 
+    def setUp(self):
+        # Historical capture-lane coverage; shipped default refuses (HAMCP-437).
+        patcher = baseline.patch_binding()
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def launch(self, docker, *tail):
         def cached(image, labels):
             return {"image": image, "config_digest": fake_digest(image), "labels": dict(labels)}
@@ -1518,6 +1527,19 @@ class LaneFlowTests(unittest.TestCase):
         self.assertEqual((code, launch["failure"]), (2, "disposable_name_already_exists"))
         self.assertFalse(run_dir.exists())
         self.assertEqual(docker.volumes, {"hamcp371-s6-run-config": {"Labels": {}}})
+
+    def test_the_shipped_registry_refuses_the_9_1_2_baseline_at_the_entry_point(self):
+        # The lane's own binding, not the frozen one: the shipped registry has no
+        # 9.1.2 row after HAMCP-437, so the run is a preflight refusal.
+        self.assertIs(baseline.s4, lane.s4)
+        docker = FakeDocker()
+        with mock.patch.object(lane.s4, "binding", baseline.SHIPPED_BINDING):
+            code, launch, receipt, run_dir = self.launch(docker, "run", "--profile", "A")
+        self.assertEqual((code, launch["result"], launch["failure"]),
+                         (2, "REFUSED", "baseline_registry_row_missing"))
+        self.assertFalse(launch["execution_started"])
+        self.assertIsNone(receipt)
+        self.assertFalse(run_dir.exists())
 
 
 # --- Profile B sources: synthetic export streams, wheels and component clones ---
@@ -2260,6 +2282,12 @@ class ProfileBCheckTests(unittest.TestCase):
 class ProfileBPlanTests(unittest.TestCase):
     """The calls plan, the bound sources and the names a profile B run uses."""
 
+    def setUp(self):
+        # Historical capture-lane coverage; shipped default refuses (HAMCP-437).
+        patcher = baseline.patch_binding()
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     SEED = {
         "automation_id": "synthetic_automation", "automation_entity": "automation.synthetic",
         "calendar_entity": "calendar.synthetic", "scene_id": "synthetic_scene",
@@ -2271,15 +2299,30 @@ class ProfileBPlanTests(unittest.TestCase):
         "window_end_offset_free": "2026-01-02T00:00:00",
     }
 
-    def test_the_profile_b_plan_covers_every_component_read_and_the_yaml_read(self):
+    def test_the_profile_b_plan_on_the_shipped_policy_covers_every_component_read_and_the_yaml_read(self):
+        # Plan-builder coverage on the shipped 9.2.0 policy; the lane's
+        # ARGUMENT_POLICY (9.1.2) refuses after HAMCP-437, see the refusal test.
+        from ha_mcp_engineering import upstream_tool_policy
+
+        shipped = upstream_tool_policy.load_reviewed_upstream_release_registry()
+        self.assertEqual(shipped.default_version, "9.2.0")
         groups = list(lane.CAPTURE_GROUPS + lane.PROFILE_B_GROUPS)
-        cases = lane.calls_step.plan(lane.ARGUMENT_POLICY, groups, self.SEED)
+        cases = lane.calls_step.plan("9.2.0", groups, self.SEED)
         self.assertEqual(len(cases), 47)
         tools = {case["upstream_tool"] for case in cases}
         self.assertEqual(set(lane.COMPONENT_READS) - tools, set())
-        yaml = lane.calls_step.plan(lane.ARGUMENT_POLICY, list(lane.PROFILE_B_GROUPS), self.SEED)
+        yaml = lane.calls_step.plan("9.2.0", list(lane.PROFILE_B_GROUPS), self.SEED)
         self.assertEqual([case["id"] for case in yaml], ["y-group", "y-absent-key"])
         self.assertEqual({case["upstream_tool"] for case in yaml}, {lane.YAML_READ})
+
+    def test_the_lane_argument_policy_plan_refuses_after_hamcp_437(self):
+        # The scripts are unchanged: the lane still builds its arguments with the
+        # 9.1.2 policy, which the shipped registry no longer reviews.
+        self.assertEqual(lane.ARGUMENT_POLICY, "9.1.2")
+        groups = list(lane.CAPTURE_GROUPS + lane.PROFILE_B_GROUPS)
+        with self.assertRaises(lane.calls_step.CallsError) as raised:
+            lane.calls_step.plan(lane.ARGUMENT_POLICY, groups, self.SEED)
+        self.assertEqual(str(raised.exception), "policy_version_not_reviewed")
 
     def test_each_component_source_is_the_bound_upstream_commit(self):
         for version in lane.VERSIONS:

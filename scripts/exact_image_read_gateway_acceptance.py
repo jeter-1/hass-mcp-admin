@@ -1536,6 +1536,7 @@ async def inspect_engineering(
     expected_upstream_version: str,
     policy: Any,
     release: Any,
+    reviewed_supported_versions: frozenset[str],
     optional_exposed: frozenset[str] = frozenset(),
     prohibited_optional: frozenset[str] = frozenset(),
     stock_wire: bool = True,
@@ -2181,9 +2182,13 @@ async def inspect_engineering(
                 gateway_state.get("core_withheld_read_count") == len(retired),
                 "a retired delegated read was not withheld",
             )
+            # HAMCP-437 I2a-D: the diagnostics equal the shipped registry.
+            reported_versions = set(
+                gateway_state.get("reviewed_supported_versions") or ()
+            )
             require(
-                set(gateway_state.get("reviewed_supported_versions") or ())
-                >= {"7.14.1", "7.14.2"},
+                reported_versions == reviewed_supported_versions
+                and expected_upstream_version in reported_versions,
                 "compiled reviewed-version diagnostics are incomplete",
             )
             require(
@@ -3073,6 +3078,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         expected_upstream_version=args.expected_upstream_version,
         policy=policy,
         release=release,
+        reviewed_supported_versions=frozenset(registry.supported_versions),
         optional_exposed=optional_exposed,
         prohibited_optional=optional_on_wire - optional_exposed,
         stock_wire=not optional_on_wire,

@@ -1,0 +1,22 @@
+{
+  "purpose": "Dormant signed-reuse mechanism coverage until HAMCP-156/424 redesign (HAMCP-437 I2a-D, ruling 2).",
+  "source_commit": "0f1adcb56b080c74ababfea84cf9892479a3b1cc",
+  "files": {
+    "upstream_tool_policy_8_2_0.json": {
+      "source_path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_8_2_0.json",
+      "generation": "git show <source_commit>:<source_path> (byte copy)",
+      "sha256": "sha256:ab3fa7390e16a4097bf2e7cddba8ecc25860eb20cf2a185e04993a634f098920"
+    },
+    "ha-mcp-8.2.0.json": {
+      "source_path": "docs/evidence/upstream-read-compatibility/ha-mcp-8.2.0.json",
+      "generation": "git show <source_commit>:<source_path> (byte copy)",
+      "sha256": "sha256:c7337087bb1f63dafeb3319c9ca8134db1069f87025b897781e7fae43f0474e4"
+    },
+    "upstream_release_registry.json": {
+      "source_path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_release_registry.json",
+      "generation": "the releases[] row with version 8.2.0 copied unchanged from <source_commit>; registry_format_version copied; default_version set to 8.2.0; written with json.dumps(indent=2) and a trailing newline",
+      "entry_id": "ha-mcp-v8.2.0-dbcfc0ee",
+      "sha256": "sha256:6fa05f0aac69865285a5425da9b082edaa9ed645096e878d3c3f7bf6502fda67"
+    }
+  }
+}

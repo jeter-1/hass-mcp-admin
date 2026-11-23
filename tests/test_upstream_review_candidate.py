@@ -17,10 +17,13 @@ CAPTURE = (
     / "upstream-read-compatibility"
     / "ha-mcp-8.0.0.json"
 )
+# HAMCP-437 I2a-D: the shipped runtime holds only the 9.2.0 policy. The
+# script's worked 8.0.0 input is the frozen byte copy from 0f1adcb5.
 BASE_POLICY = (
     ROOT
-    / "hass_mcp_engineering_beta"
-    / "ha_mcp_engineering"
+    / "tests"
+    / "fixtures"
+    / "ha_mcp_8_0_0_review_candidate"
     / "upstream_tool_policy_8_0_0.json"
 )
 SOURCE_COMMIT = "9dd3ac620e3149cd34ec3c990b6ee81e778191f2"
