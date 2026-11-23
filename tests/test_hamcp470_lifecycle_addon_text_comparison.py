@@ -220,6 +220,13 @@ class TextComparisonBoundTests(unittest.TestCase):
             ),
             "nonfinite": ('{"value":NaN}', "nonfinite"),
             "infinity": ('{"value":-Infinity}', "nonfinite"),
+            "exponent_overflow": ('{"value":1e999}', "nonfinite"),
+            "negative_exponent_overflow": (
+                '{"a":[{"value":-1e999}]}',
+                "nonfinite",
+            ),
+            "exponent_underflow_is_finite": ('{"value":1e-999}', "none"),
+            "finite_float": ('{"value":-1.5e3}', "none"),
             "recursion": ("[" * 100_000 + "]" * 100_000, "recursion"),
             "lone_surrogate": ('{"a":"\ud800"}', "unicode"),
         }
@@ -586,12 +593,121 @@ class LifecycleAddonTextComparisonTests(unittest.IsolatedAsyncioTestCase):
                     "lifecycle_addon_response_diagnostics"
                 ]
                 key = name.split("/", 1)[0]
+                field = key.split("#", 1)[0]
                 self.assertEqual(
                     diagnostics["invalid_semantic_field_paths"],
-                    [f"/structuredContent/{key}"],
+                    [f"/structuredContent/{field}#N"],
                 )
+                self.assertNotIn(key, json.dumps(provider.health_snapshot()))
+                self.assertNotIn(key, f"{error!s} {error!r}")
                 entry = text_entries(provider)["detail"]
                 self.assertNotEqual(entry["text_comparison"], "verified_equal")
+
+    async def test_renamed_envelope_key_diagnostic_is_fixed_and_bounded(self):
+        # SEC-483-01: the observed key is upstream text; only the reviewed
+        # field name and a literal "#N" reach the diagnostic.
+        long_suffix = "7" * 100_000
+        cases = {
+            "short": ("success#2",),
+            "long": (f"success#{long_suffix}",),
+            "several": ("success#2", "success#3", f"addon#{long_suffix}"),
+        }
+        for name, keys in cases.items():
+            with self.subTest(name=name):
+                result = call_result(sized_detail_payload(80_000))
+                for key in keys:
+                    result["structuredContent"][key] = False
+                provider, error = await self._refuse(result)
+                self.assertEqual(
+                    error.category, "addon_response_contract_mismatch"
+                )
+                diagnostics = provider.health_snapshot()[
+                    "lifecycle_addon_response_diagnostics"
+                ]
+                paths = diagnostics["invalid_semantic_field_paths"]
+                expected = list(
+                    dict.fromkeys(
+                        f"/structuredContent/{key.split('#', 1)[0]}#N"
+                        for key in keys
+                    )
+                )
+                self.assertEqual(paths, expected)
+                self.assertTrue(all(len(path) <= 64 for path in paths))
+                health = json.dumps(provider.health_snapshot())
+                self.assertLess(len(health), 20_000)
+                rendered = f"{error!s} {error!r}"
+                for key in keys:
+                    self.assertNotIn(key, health)
+                    self.assertNotIn(key, rendered)
+                self.assertNotIn("7" * 16, health)
+                self.assertNotIn("7" * 16, rendered)
+
+    def _overflow_result(self, tokens: dict[str, str]) -> dict:
+        # The text carries exponent-overflow numbers; structuredContent
+        # carries finite strings, so an unclassified text would compare
+        # unequal and refuse.
+        payload = sized_detail_payload(80_000)
+        payload["addon"]["overflow_probe"] = {
+            "value": "__OVERFLOW_0__",
+            "items": [{"value": "__OVERFLOW_1__"}, ["__OVERFLOW_2__"]],
+        }
+        result = call_result(payload)
+        text = result["content"][0]["text"]
+        for placeholder, token in tokens.items():
+            text = text.replace(f'"{placeholder}"', token)
+        result["content"][0]["text"] = text
+        return result
+
+    _OVERFLOW_CASES = {
+        "positive_object": {"__OVERFLOW_0__": "1e999"},
+        "negative_object": {"__OVERFLOW_0__": "-1e999"},
+        "nested_array_object": {"__OVERFLOW_1__": "1E+400"},
+        "nested_array": {"__OVERFLOW_2__": "-1e999"},
+        "several": {
+            "__OVERFLOW_0__": "1e999",
+            "__OVERFLOW_1__": "-1e999",
+            "__OVERFLOW_2__": "1e309",
+        },
+    }
+
+    async def test_exponent_overflow_text_is_skipped_nonfinite(self):
+        # SEC-483-02: an exponent overflow parses to infinity without
+        # reaching parse_constant; it is a nonfinite text, not a mismatch.
+        for name, tokens in self._OVERFLOW_CASES.items():
+            with self.subTest(name=name):
+                provider, addon = await self._read(self._overflow_result(tokens))
+                self.assertEqual(addon["slug"], UPSTREAM_ADDON_SLUG)
+                self.assertEqual(addon["version"], "9.2.0")
+                self.assertEqual(
+                    text_entries(provider)["detail"],
+                    {
+                        "read": "detail",
+                        "text_comparison": "skipped",
+                        "text_bytes_bucket": "64K-128K",
+                        "text_failure_class": "nonfinite",
+                    },
+                )
+                self._assert_no_dispatch(provider)
+
+    async def test_exponent_overflow_text_keeps_structured_identity_checks(self):
+        for name, tokens in self._OVERFLOW_CASES.items():
+            for field, value in (("version", "9.2.1"), ("state", "stopped")):
+                with self.subTest(name=name, field=field):
+                    result = self._overflow_result(tokens)
+                    result["structuredContent"]["addon"][field] = value
+                    provider, error = await self._refuse(result)
+                    self.assertEqual(
+                        error.category, "addon_response_contract_mismatch"
+                    )
+                    entry = text_entries(provider)["detail"]
+                    self.assertEqual(entry["text_comparison"], "skipped")
+                    self.assertEqual(entry["text_failure_class"], "nonfinite")
+                    diagnostics = provider.health_snapshot()[
+                        "lifecycle_addon_response_diagnostics"
+                    ]
+                    self.assertEqual(
+                        diagnostics["identity_mismatch_fields"], [field]
+                    )
 
     async def test_redaction_marker_in_identity_value_is_not_identity(self):
         # Pins the existing _safe_text marker rejection for identity values.

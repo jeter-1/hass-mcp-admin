@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 import hashlib
 import inspect
 import json
+import math
 import re
 import threading
 import time
@@ -1433,10 +1434,17 @@ class ReviewedOperationalLifecycleProvider:
                 "addon_response_contract_mismatch",
                 dispatched=dispatched,
             )
+        # The observed key is upstream text of unbounded length, so the
+        # diagnostic names the reviewed field and a literal "#N" instead.
         renamed_paths = tuple(
-            f"/structuredContent/{key}"
-            for key in payload
-            if _is_redaction_renamed_key(key, _ADDON_ENVELOPE_FIELDS)
+            dict.fromkeys(
+                f"/structuredContent/{field}#N"
+                for field in (
+                    _redaction_renamed_field(key, _ADDON_ENVELOPE_FIELDS)
+                    for key in payload
+                )
+                if field is not None
+            )
         )
         if renamed_paths:
             self._record_addon_response_diagnostics(
@@ -2048,6 +2056,7 @@ def _parse_lifecycle_addon_text(text: str) -> tuple[Any, str]:
             text,
             object_pairs_hook=_reject_duplicate_members,
             parse_constant=_reject_nonfinite,
+            parse_float=_parse_finite_float,
         )
     except _DuplicateJsonMember:
         return None, "duplicate_member"
@@ -2062,13 +2071,21 @@ def _parse_lifecycle_addon_text(text: str) -> tuple[Any, str]:
     return parsed, "none"
 
 
-def _is_redaction_renamed_key(key: Any, fields: frozenset[str]) -> bool:
+def _redaction_renamed_field(
+    key: Any, fields: frozenset[str]
+) -> str | None:
     match = (
         _REDACTION_RENAMED_KEY.fullmatch(key)
         if isinstance(key, str)
         else None
     )
-    return match is not None and match.group(1) in fields
+    if match is None or match.group(1) not in fields:
+        return None
+    return match.group(1)
+
+
+def _is_redaction_renamed_key(key: Any, fields: frozenset[str]) -> bool:
+    return _redaction_renamed_field(key, fields) is not None
 
 
 def _json_values_exact(left: Any, right: Any) -> bool:
@@ -2090,6 +2107,15 @@ def _json_values_exact(left: Any, right: Any) -> bool:
 
 def _reject_nonfinite(_value: str) -> None:
     raise _NonFiniteJsonConstant("non-finite JSON constant")
+
+
+def _parse_finite_float(value: str) -> float:
+    # An exponent overflow such as 1e999 never reaches parse_constant; the
+    # float parser returns infinity.
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        raise _NonFiniteJsonConstant("non-finite JSON number")
+    return parsed
 
 
 def _safe_text(value: Any) -> str | None:
