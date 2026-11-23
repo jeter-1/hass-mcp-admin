@@ -41,11 +41,11 @@ request binds their evidence.
 
 | Item | Scope | State |
 | --- | --- | --- |
-| HAMCP-401 Phase 1, with HAMCP-400 | governed reload, app restart and Home Assistant restart on ha-mcp 9.2.0; the `provider_held` refusal category | landed: #445, reviewed head ae9c637b, merged as 6587849d; evidence bound by the final release pull request |
+| HAMCP-401 Phase 1, with HAMCP-400 | governed reload, app restart and Home Assistant restart on ha-mcp 9.2.0; the `provider_held` refusal category | landed: #445, accepted head 3d6feb1b, merged head ae9c637b, merged as 6587849d; evidence bound by the final release pull request |
 | HAMCP-415 / HAMCP-416 | plans survive an identical Core restart (E043); terminal rollback plans are replanned (E044) | landed: #448, reviewed head 5a39a919, merged as 7aa5e0cf; evidence bound by the final release pull request |
 | HAMCP-410 | ha-mcp 9.2.0 key-set maps for bulk `ha_get_state` and exposure listings; emptied collections read `partial` (E042) | landed: #446, reviewed head fe93a18b, merged as bcf42e52; evidence bound by the final release pull request |
-| HAMCP-411 bundle (HAMCP-408, 409, 411, 412, 413, 414) | truthfulness fixes, including bounded `get_history` with a continuation (E041) | landed: #447, reviewed head d19aac9b, merged as 8f7e2a70; evidence bound by the final release pull request |
-| HAMCP-417 / HAMCP-419 (optional) | I5: `created_identity` on task and plan reads (E049); the automation `initial_state` field (E052) | landed: #450, reviewed head 40b1b5ef, merged as 3fb1dd83; evidence bound by the final release pull request |
+| HAMCP-411 bundle (HAMCP-408, 409, 411, 412, 413, 414) | truthfulness fixes, including bounded `get_history` with a continuation (E041) | landed: #447, accepted head 767ac19d, merged head d19aac9b, merged as 8f7e2a70; evidence bound by the final release pull request |
+| HAMCP-417 / HAMCP-419 (optional) | I5: `created_identity` on task and plan reads (E049); the automation `initial_state` field (E052) | landed: #450, accepted head 6901fa55, merged head 40b1b5ef, merged as 3fb1dd83; evidence bound by the final release pull request |
 | HAMCP-418 | an oversize list response returns a first page of whole rows, flagged `partial` (E048) | landed: #451, reviewed head 20e69176, merged as fc552ab0; evidence bound by the final release pull request |
 
 ## 1. Source and offline acceptance
@@ -53,14 +53,16 @@ request binds their evidence.
 Scope and authority for every item come from the 2.8.0 orchestrator task
 (architect, 2026-11-16 23:35 CST; Josh approved the scope) and the architect
 rulings cited in each pull request. Josh merged each pull request into
-`release/2.8.0` on 2026-11-17. The architect's reviews are the architect's
-record; the pull requests carry no GitHub review object. Each pull request's
+`release/2.8.0` on 2026-11-17. Each architect review below was done in the
+architect chat (no GitHub review object) and accepted before the merge, at
+the head and time it names. A later head named "a clean catch-up only" holds
+nothing but a catch-up merge of `release/2.8.0`. Each pull request's
 Security section covers its provider, write or persistence change, and its
 diff holds the success, refusal and negative-reachability tests. Times are
 CST.
 
 **HAMCP-401 Phase 1, with HAMCP-400 (I1).**
-- **Pull request.** #445, `agent/HAMCP-401-lifecycle-9.2.0`. Reviewed head
+- **Pull request.** #445, `agent/HAMCP-401-lifecycle-9.2.0`. Merged head
   ae9c637b8c3e2d9eef9c2c6c257b5293a79907dc, merged at 15:02 as
   6587849da6b3accdce43a8e131cfc76e8520e8b5.
 - **Review record.**
@@ -72,7 +74,10 @@ CST.
   - Cursor delta rereview at 3a918fa8, 02:01–02:12: **APPROVE**, with no
     new findings; read-only, leak check clean. After 3a918fa8 the branch
     holds only catch-up merges of `release/2.8.0` (3d6feb1b and ae9c637b).
-  - Architect: reviewed and accepted before the merge.
+  - Architect: reviewed in the architect chat (no GitHub review object) and
+    accepted before the merge, at 3d6feb1b1999371389b53d5f56bc3bda3c56cbfb
+    at 08:1x; ready at 15:0x after the Cursor round-2 approval. ae9c637b is
+    a clean catch-up only.
 - **Offline evidence.**
   - `tests/test_hamcp401_lifecycle_9_2_0.py`.
   - Evidence tier on ee876eca (2026-11-16 21:23): passed, 15,178 run, 32
@@ -88,7 +93,8 @@ CST.
 - **Pull request.** #446, `agent/HAMCP-410-9-2-keyset-maps`. Reviewed head
   fe93a18b7dbf0c5ee23ae28e55ca0b5b82eae8cc, merged at 12:30 as
   bcf42e52f78c442b483ee9e6a73d9e0617540af6.
-- **Review record.** Architect: reviewed and accepted before the merge.
+- **Review record.** Architect: reviewed in the architect chat (no GitHub
+  review object) and accepted before the merge, at fe93a18b at 09:2x.
 - **Offline evidence.**
   - `tests/test_hamcp410_keyset_maps.py`, plus the key-set, real-Core
     replay and parity-entity suites: 119 tests OK.
@@ -96,10 +102,13 @@ CST.
   - CI 44099047412 at fe93a18b: success.
 
 **HAMCP-411 bundle: HAMCP-408, 409, 411, 412, 413 and 414 (I3).**
-- **Pull request.** #447, `agent/HAMCP-411-truthfulness-bundle`. Reviewed
+- **Pull request.** #447, `agent/HAMCP-411-truthfulness-bundle`. Merged
   head d19aac9bb877d68641e6985be499cd5134c431ba, merged at 15:03 as
   8f7e2a7028bdebffc04fcc8c7ca0e5d6e529db6e.
-- **Review record.** Architect: reviewed and accepted before the merge.
+- **Review record.** Architect: reviewed in the architect chat (no GitHub
+  review object) and accepted before the merge, at
+  767ac19d5f76f0dbc5cdb7fbcf282f68e4a0b0c2 at 09:2x. d19aac9b is a clean
+  catch-up only.
 - **Offline evidence.**
   - `tests/test_hamcp411_truthfulness.py`.
   - Fast passed (287 tests).
@@ -118,7 +127,8 @@ CST.
     four were corrected.
   - Cursor round 2 at 6bbfad11: **APPROVE WITH NITS**. Its two Low
     findings were corrected in 5a39a919.
-  - Architect: accepted at 5a39a919 (2026-11-17, about 07:36).
+  - Architect: reviewed in the architect chat (no GitHub review object) and
+    accepted before the merge, at 5a39a919 at 07:3x.
 - **Offline evidence.**
   - `tests/test_hamcp415_core_plan_continuity.py` and
     `tests/test_hamcp416_rollback_plan_resolution.py`.
@@ -128,10 +138,13 @@ CST.
     around, so dispatch stays at most once.
 
 **HAMCP-417 / HAMCP-419 (I5, E049 and E052).**
-- **Pull request.** #450, `agent/HAMCP-417-i5-optional`. Reviewed head
+- **Pull request.** #450, `agent/HAMCP-417-i5-optional`. Merged head
   40b1b5efaaeb1b9dcfcb286f4a976630d10095a5, merged at 17:04 as
   3fb1dd8330fed05b452d3971f22ef3abe0f15ff6.
-- **Review record.** Architect: reviewed and accepted before the merge.
+- **Review record.** Architect: reviewed in the architect chat (no GitHub
+  review object) and accepted before the merge, at
+  6901fa553d4f47c7f792dd81b2c50c8f95fe0aec at 09:2x. 40b1b5ef is a clean
+  catch-up only.
 - **Offline evidence.**
   - `tests/test_hamcp417_created_identity_surface.py` and
     `tests/test_hamcp419_automation_initial_state.py`.
@@ -142,7 +155,8 @@ CST.
 - **Pull request.** #451, `agent/HAMCP-418-list-first-page`. Reviewed head
   20e69176644e838e9cba933c58257fecb28ac77a, merged at 17:04 as
   fc552ab086e0b8dcdec6e466d092d4bdad33631b.
-- **Review record.** Architect: reviewed and accepted before the merge
+- **Review record.** Architect: reviewed in the architect chat (no GitHub
+  review object) and accepted before the merge, at 20e69176 at 15:0x
   (decision 2026-11-17, option (b)).
 - **Offline evidence.**
   - `tests/test_hamcp418_list_first_page.py` (16 tests).
@@ -246,9 +260,14 @@ release. Every step is a read.
    - Stop and record `tools/list` if Engineering is not 86 or delegated is
      not 28, unless the filesystem flag has changed since beta.9. In that
      case, record which way it changed.
-   - **CI reference (flag-off):** delegated 27, catalog fingerprint
+   - **CI reference (lane value):** delegated 27, catalog fingerprint
      `0f1a2c75...`, from run 44196696582, as listed in the release notes
-     under "Tool catalog". It is not the live expectation. CI's
+     under "Tool catalog". It is not the live expectation. It is not a
+     flag-off value: that run's 9.2.0 parity case admits
+     `ha_config_get_yaml` and still records 27. The cause of 27 in CI
+     against 28 live is not established. One unverified possibility is that
+     the CI lanes have no Supervisor, which may withhold a
+     Supervisor-dependent read. The live stop condition (28) is unaffected. CI's
      strict-admission case (82 advertised, 77 reviewed exact) records 28
      dynamically exposed tools.
 
