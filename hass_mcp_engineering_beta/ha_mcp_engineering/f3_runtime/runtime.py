@@ -20,6 +20,7 @@ from ..errors import ErrorCode, GovernanceError
 from ..request_context import observe_provider_send
 from .health_scan import HealthScanFence
 from ..governance.task_storage import TaskHealthSnapshotSuperseded
+from ..governance.operational_lifecycle import LifecycleGatewayError
 from ..f3.executor import (
     DispatchAuthorityRefused,
     PreIntentRetryRequired,
@@ -2889,7 +2890,26 @@ class F3RuntimeIntegration:
         )
 
     async def _provider_identity(self) -> dict[str, str]:
-        value = await self.provider_identity_reader()
+        # HAMCP-470: an unreadable upstream add-on identity is a provider
+        # contract refusal before dispatch, not an internal server error.
+        # Both callers (prepare and the pre-dispatch recheck) read through
+        # here, so the mapping covers each of them.
+        try:
+            value = await self.provider_identity_reader()
+        except LifecycleGatewayError as exc:
+            raise GovernanceError(
+                ErrorCode.OPERATIONAL_CONTRACT_MISMATCH,
+                details={
+                    "failure_category": exc.category,
+                    "failure_stage": "pre_dispatch",
+                    "provider_dispatch_occurred": False,
+                    "action_attempted": False,
+                    "fallback": "none",
+                    "fallback_occurred": False,
+                    "redispatch_performed": False,
+                    "required_action": "refresh_provider_evidence_and_replan",
+                },
+            ) from None
         if (
             not isinstance(value, dict)
             or not isinstance(value.get("slug"), str)

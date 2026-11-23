@@ -644,12 +644,9 @@ class LiveLifecycleAddonResponseTests(unittest.IsolatedAsyncioTestCase):
             "addon_response_contract_mismatch",
         )
 
-        oversized = deepcopy(base)
-        oversized["content"][0]["text"] = "x" * 250_001
-        cases["model_bound_exceeded"] = (
-            oversized,
-            "addon_response_contract_mismatch",
-        )
+        # HAMCP-470: a text over the comparison bound is no longer refused;
+        # it is decided from structuredContent and recorded skipped/oversize.
+        # tests/test_hamcp470_lifecycle_addon_text_comparison.py covers it.
 
         warning = deepcopy(base)
         warning["structuredContent"]["warnings"] = [
