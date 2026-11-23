@@ -1,20 +1,43 @@
 # Changelog
 
-## 2.4.2-beta.11 - 2.9.0 build, in progress (HAMCP-436 first)
+## 2.4.2-beta.11 - 2.9.0 build: ha-mcp 9.2.0 only, dispatch-scoped lifecycle catalog, replaced upstream warnings (HAMCP-436, HAMCP-437, HAMCP-464)
 
-Builds on 2.4.2-beta.10 (HAMCP-401, #452). In progress: items land through
-reviewed pull requests into `release/2.9.0`, and the final release pull
-request completes this entry.
+Builds on 2.4.2-beta.10 (HAMCP-401, #452). In progress: every item has
+landed in `release/2.9.0`; the final release pull request completes this
+entry with its Evidence and release CI.
 
 - Version materialized at the base of `release/2.9.0` (`main` at
   6449c7b3), so item pull requests carry no version change. The release
   transition from 2.4.2-beta.10 is to 2.4.2-beta.11.
-- Landed: none yet. HAMCP-436 (the E022 lifecycle catalog: exact contracts
-  for the dispatched tools only, other descriptor drift recorded in
-  lifecycle health) is in its draft item pull request into
-  `release/2.9.0`.
-- New in-progress `V2_4_2_BETA11` release notes and acceptance contract.
-- Rollback: pending; stated by the final release pull request.
+- **Only ha-mcp 9.2.0 is admitted** (HAMCP-437 I2a-D, #479). The other
+  registry rows (7.14.1 through 9.1.2) and their packaged policies are
+  deleted. Older releases are refused through the existing unknown-version
+  path, before dispatch. Backup on 9.2.0 stays held (HAMCP-381). Keep the
+  ha-mcp add-on's auto-update off.
+- **Dispatch-scoped lifecycle catalog** (HAMCP-436, E022, #453). Exact
+  contracts are required only for the tools lifecycle and backup dispatch;
+  other descriptor drift (on 9.2.0, `ha_config_set_helper`) is recorded in
+  lifecycle health, not rejected.
+- **Upstream warnings replaced** (HAMCP-464, #477). On five 9.2.0 reads
+  (overview, state, todo, zone, floors and areas) upstream warning text is
+  replaced by `upstream_warning_replaced`, counted, and the read reports
+  `partial`.
+- **9.2.0 read fixes.** Full-detail `ha_get_overview` rows keep `entity_id`
+  (HAMCP-439, #463); `ha_search` `result_fields` keys are admitted
+  (HAMCP-441, #464).
+- **Cleanup** (HAMCP-437 I2a-T to I2f-2: #459, #460, #461, #462, #465, #466,
+  #467, #468, #471, #473, #474, #475, #476). Tests, CI lanes, workflows,
+  bindings, fixtures and historical docs that served older releases are
+  moved onto 9.2.0 or retired. The CI trust root moves to Core registry
+  sequence 18. CI's in-place rollback lane is retired (HAMCP-405).
+- **Core evidence** (HAMCP-443, #469, #472, #478): the lane-groups job
+  proves all 19 groups, and the round-8 known red is retired.
+- No landed item states a public schema, tool registration or
+  persisted-format change.
+- Exact `V2_4_2_BETA11` release notes and acceptance contract, with the
+  2.9.0 live acceptance and its expected results. Evidence tier pending.
+- Rollback: no in-place rollback. Restore the pre-deploy full backup or the
+  VM 400 snapshot, which returns 2.4.2-beta.10 with ha-mcp 9.2.0.
 
 ## 2.4.2-beta.10 - 2.8.0 build, in progress (HAMCP-401)
 
@@ -179,6 +202,43 @@ add-on option or Home Assistant write change.
 - Other gating constructs are assessed in the release notes and unchanged.
 - New exact `V2_4_2_BETA4` release notes and read-only acceptance contract.
 - Rollback to 2.4.2-beta.3 is safe (same storage contracts).
+
+## 2.4.2-beta.3 - Helper value changes are ordinary runtime control (HAMCP-311)
+
+Builds on 2.4.2-beta.2 (HAMCP-306, #361). Released through #366. This entry
+was added later (HAMCP-317); the release notes and acceptance contract are
+the record.
+
+- New `control_helper(entity_id, action, operation_id, value?,
+  acknowledge_safety_critical=false)` changes one exact helper value with no
+  plan and no approval panel, like `control_power` and `control_fan`.
+  Actions: `input_boolean` `turn_on`/`turn_off`; `input_select`
+  `select_option`; `input_number` and `input_text` `set_value`;
+  `input_datetime` `set_datetime`; `input_button` `press`; `counter`
+  `increment`/`decrement`/`reset`/`set_value`; `timer`
+  `start`/`pause`/`cancel`/`finish`. Anything else refuses before dispatch.
+- A value that is already current returns `no_change` with no dispatch. It
+  dispatches at most once and reads back independently
+  (`succeeded_verified`, `changed_unverified`, `verification_failed`,
+  `no_change`, `refused` or `provider_unavailable`). Every call writes an
+  audit entry.
+- A change the dependency evidence classifies as `safety_critical` returns
+  `confirmation_required` and sends nothing. With the acknowledgement it
+  proceeds, audited as a model-conveyed chat confirmation, not external
+  approval.
+- Provider: one reviewed internal ha-mcp provider (8.4.3, 8.5.0 or 8.6.0)
+  through `ha_get_state`, `ha_list_services` and `ha_call_service`, with no
+  fallback. Core authority is signed-only through
+  `core.typed_helper_value_operation`; it stays dormant
+  (`provider_unavailable`) until an owner-signed sequence names it, and
+  sequence 16 does not.
+- `create_helper_state_plan` and `create_input_select_option_plan` are
+  unchanged but superseded for value changes.
+- Static tools 80 to 81; advertised catalog 108 to 109 (109 to 110 with the
+  optional YAML reader). No persisted format change.
+- New exact `V2_4_2_BETA3` release notes and acceptance contract, and
+  `TYPED_HELPER_CONTROL.md`.
+- Rollback: reinstall 2.4.2-beta.2 (same storage, plan and task formats).
 
 ## 2.4.2-beta.2 - Dashboard read size check uses the response limit's measure (HAMCP-306)
 
