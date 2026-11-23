@@ -308,6 +308,16 @@ class Step0CorpusTests(unittest.TestCase):
             "test_core_device_configuration_local.py",
             "http://127.0.0.1:18298/beta23-real-ha-mcp/catalog/full",
         ),
+        # HAMCP-437 dashboard lane pin: 9.2.0 strict-full selector
+        (
+            "test_dashboard_disposable_acceptance.py",
+            "http://172.28.0.3:8086/synthetic-upstream-secret/mcp/catalog/full",
+        ),
+        # HAMCP-437 dashboard lane pin: 9.2.0 strict-full selector
+        (
+            "test_dashboard_disposable_acceptance.py",
+            "http://127.0.0.1:8086/synthetic-upstream-secret/mcp/catalog/full",
+        ),
     }
 
     def test_step0_corpus_has_no_strict_value_outside_hamcp319_tests(self):

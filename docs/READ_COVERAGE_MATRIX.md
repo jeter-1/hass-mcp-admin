@@ -66,10 +66,11 @@ this matrix. Its gap ids (`RCG-NNN`) refer to the gaps defined here.
 
 ## Versions and limits
 
-- **ha-mcp policy.** The reviewed policies range from 7.14.1 to 8.6.0. The
-  default reviewed release is 7.14.1. The 8.6.0 policy and its public-read
-  adapters are compiled but on HOLD (HAMCP-156). A delegated tool marked
-  "8.6.0" is reachable only once that version is admitted and observed.
+- **ha-mcp policy.** 9.2.0 is the only reviewed release and the loader's
+  default source (`v9.2.0`, `51e3aac7`, 77 tools). The rows for 7.14.1 to
+  9.1.2, including 8.6.0 (formerly on HOLD, HAMCP-156), are retired
+  (HAMCP-437) and refuse as unknown versions. A delegated tool marked "8.6.0"
+  is not reachable through that version.
 - **Core profiles.** The table "Compiled Core profile index" lists every
   compiled profile. A profile admits nothing until the signed registry admits
   it for the exact observed Core release. Sequence 18 is the journal tip:
@@ -188,7 +189,7 @@ Do not edit the generated block by hand.
 - Signed registry sequence 15 carries three exact Core releases, and sequences 16 to 18 carry them unchanged. 2026.10.0: 22 profiles, including core.entity_registry_metadata_operation. 2026.10.1: 26, adding core.configuration_delete_operation, core.entity_registry_availability_operation, core.entity_assistant_exposure_operation and core.label_registry_operation (first signed for 2026.10.1 in sequence 13; sequences 14 and 15 carry them, and add 2026.10.3). 2026.10.3: all 31, adding core.config_entry_helper_options_operation, core.typed_input_select_option_operation, core.script_trace_read, core.dashboard_metadata_operation and core.scene_configuration_operation (sequence 15). Runtime enablement and current Core authority still apply to every one. Each exact Core release, including each patch release, needs its own signed entry. A row that cites sequence 15 describes these 2026.10.x entries, and its 'only' ranges over them; sequence 16 also signs the same 31 profiles for Core 2026.11.0 (next note). Per-source version-coverage gaps are not repeated.
 - Sequence 18 (sha256 e792670dd22586cfa3d2fbbfaacf6165feb85bcb435e33f69bc712f7db27b092, generated 2026-11-14) is the journal tip in upstream-trust/ha-core-release-registry.json. It signs Core 2026.11.0 with 38 profiles: sequence 16 signed the same 31 as 2026.10.3, sequence 17 added core.typed_helper_value_operation, and sequence 18 added core.marketplace_read, core.security_metadata_read, core.device_configuration_entity_operation, core.scene_create_delete_operation, core.created_helper_delete_operation and core.thread_matter_topology_read. Tests and the pull-request acceptance path read this in-repo journal; the runtime fetches the registry from the registry branch (CORE_REGISTRY_URL in ha_core_readmission/registry.py), so the deployed registry state is unknown from source.
 - core.scene_configuration_operation is already in sequence 15 for Core 2026.10.3. Text that says it awaits sequence 16 (for example the comment in governance/scene_configuration.py) is stale.
-- Backup creation, add-on restart, Home Assistant restart and reload are admitted for ha-mcp 7.14.1 to 8.1.1 and held at 8.2.0 to 9.1.2; on 9.2.0 the three lifecycle operations are admitted and backup stays held (HAMCP-401, HAMCP-381); ha-mcp 8.6.0 itself is on HOLD (HAMCP-156).
+- On ha-mcp 9.2.0, the only reviewed release, add-on restart, Home Assistant restart and reload are admitted and backup creation stays held (HAMCP-401, HAMCP-381). The rows for 7.14.1 to 9.1.2, including 8.6.0 (formerly on HOLD, HAMCP-156), are retired (HAMCP-437) and refuse as unknown versions.
 - ha-mcp tools classified mixed_or_requires_wrapper without an adapter (ha_get_logs, ha_manage_backup, ha_manage_energy_prefs, ha_manage_updates) are unreachable and appear only in gaps.
 - Redaction and sanitization of each path are recorded as implemented; this matrix did not re-verify the generic gateway sanitizer.
 - A pending_signed_registry_admission refusal does not by itself prove that a profile is unsigned: the same reason is also reported while Core authority is transiently retired for re-verification (HAMCP-275, architect report on beta.54). HAMCP-276 (options apply refused at dispatch_authority) and HAMCP-274 (input_select option planning refused) are separate apply and planning failures.
@@ -1012,7 +1013,7 @@ Completeness: **partial**. Inventory readable; only restart is writable and only
 
 | Write path | Operations | Policy | Admission | Detail | Code |
 |---|---|---|---|---|---|
-| `create_addon_restart_plan` | restart | governed plan, exact-hash external approval | upstream:ha_get_addon+ha_manage_addon (7.14.1-8.1.1) or ha_get_app+ha_manage_app (9.2.0), lifecycle disposition admitted for ha-mcp 7.14.1-8.1.1 and 9.2.0; held at 8.2.0-9.1.2 | Restart only; self-restart refused; tool names come from each admitted release's reviewed contract row (HAMCP-401), never from the upstream renamed-tool redirect. | `governance.py:99`<br>`operational_lifecycle.py:56`<br>`operational_lifecycle.py:112` |
+| `create_addon_restart_plan` | restart | governed plan, exact-hash external approval | upstream:ha_get_app+ha_manage_app (9.2.0), lifecycle disposition admitted for ha-mcp 9.2.0; 7.14.1-9.1.2 are retired rows that refuse as unknown versions | Restart only; self-restart refused; tool names come from each admitted release's reviewed contract row (HAMCP-401), never from the upstream renamed-tool redirect. | `governance.py:99`<br>`operational_lifecycle.py:56`<br>`operational_lifecycle.py:112` |
 
 | Gap | Missing | Requirement type | Requirement to close | Register |
 |---|---|---|---|---|
@@ -1031,7 +1032,7 @@ Completeness: **partial**. Inventory readable; create only on admitted upstream 
 
 | Write path | Operations | Policy | Admission | Detail | Code |
 |---|---|---|---|---|---|
-| `create_backup_plan` | create | governed plan, exact-hash approval | upstream:ha_manage_backup via upstream_operational_backup; disposition admitted 7.14.1-8.1.1, held 8.2.0-9.2.0 | Create full backup only; fixed args scope snapshot/action create; restore and delete disallowed. | `governance.py:78`<br>`operational_backup.py:35`<br>`operational_backup.py:389` |
+| `create_backup_plan` | create | governed plan, exact-hash approval | upstream:ha_manage_backup via upstream_operational_backup; disposition held on 9.2.0; 7.14.1-9.1.2 are retired rows that refuse as unknown versions | Create full backup only; fixed args scope snapshot/action create; restore and delete disallowed. | `governance.py:78`<br>`operational_backup.py:35`<br>`operational_backup.py:389` |
 
 | Gap | Missing | Requirement type | Requirement to close | Register |
 |---|---|---|---|---|
