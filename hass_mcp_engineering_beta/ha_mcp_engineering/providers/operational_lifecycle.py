@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 import hashlib
 import inspect
 import json
+import math
 import re
 import threading
 import time
@@ -17,6 +18,7 @@ from urllib.parse import urlsplit
 
 from ..clients.mcp import DashboardTransportError
 from ..clients.upstream_read import (
+    MAX_GENERIC_UPSTREAM_RESPONSE_BYTES,
     BeforeDispatchFailure,
     CatalogValidationFailure,
     McpReadCatalog,
@@ -41,7 +43,31 @@ from ..version import SERVER_VERSION
 
 PROVIDER_ID = "upstream_operational_lifecycle"
 MAX_RESULT_BYTES = 60_000
-MAX_LIFECYCLE_ADDON_STRUCTURED_TEXT_BYTES = 250_000
+# HAMCP-470: the structured add-on text is compared with structuredContent
+# only up to a third of the one-megabyte exchange bound. One exchange carries
+# the text twice: once JSON-escaped inside content[0].text (at most about two
+# bytes per text byte) and once decoded as structuredContent (about one byte
+# per text byte). An equal pair whose text is within this bound therefore fits
+# one exchange apart from envelope bytes; a pair that does not fit is refused
+# upstream as response_too_large. Above the bound the response is decided from
+# structuredContent alone and the comparison is recorded as skipped.
+MAX_LIFECYCLE_ADDON_STRUCTURED_TEXT_BYTES = (
+    MAX_GENERIC_UPSTREAM_RESPONSE_BYTES // 3
+)
+# Value-free size buckets for the lifecycle text-comparison diagnostic. The
+# exchange bound keeps every text below one megabyte, so the last bucket is
+# exhaustive.
+_LIFECYCLE_TEXT_BYTES_BUCKETS = (
+    (65_536, "<64K"),
+    (131_072, "64K-128K"),
+    (262_144, "128K-256K"),
+    (524_288, "256K-512K"),
+)
+_LIFECYCLE_TEXT_BYTES_BUCKET_LAST = "512K-1M"
+_LIFECYCLE_TEXT_BUCKET_LABELS = frozenset(
+    {label for _limit, label in _LIFECYCLE_TEXT_BYTES_BUCKETS}
+    | {_LIFECYCLE_TEXT_BYTES_BUCKET_LAST}
+)
 LIFECYCLE_ADDON_RESPONSE_MODEL_TEXT_V1 = (
     "ha-mcp-lifecycle-addon-text-json-v1"
 )
@@ -77,6 +103,51 @@ RELOAD_SERVICES = {
 _SAFE_SLUG = re.compile(r"^[a-z0-9][a-z0-9_-]{0,127}$")
 _SAFE_REPOSITORY = re.compile(r"^[a-z0-9][a-z0-9_-]{0,127}$")
 _SAFE_TEXT = re.compile(r"^[^\x00-\x1f\x7f]{1,160}$")
+# HAMCP-470: upstream redact_secrets renames a colliding scrubbed key
+# "<key>#N" (N >= 2).
+_REDACTION_RENAMED_KEY = re.compile(r"^(.*)#[0-9]+$", re.DOTALL)
+_ADDON_IDENTITY_FIELDS = frozenset(
+    {
+        "slug",
+        "name",
+        "version",
+        "state",
+        "repository",
+        "update_available",
+        "installed",
+    }
+)
+_ADDON_ENVELOPE_FIELDS = frozenset(
+    {
+        "success",
+        "error",
+        "addon",
+        "addons",
+        "summary",
+        "warning",
+        "warnings",
+        "truncated",
+        "partial",
+        "has_more",
+        "next",
+        "next_cursor",
+    }
+)
+_LIFECYCLE_TEXT_READS = frozenset({"inventory", "detail"})
+_LIFECYCLE_TEXT_COMPARISONS = frozenset(
+    {"verified_equal", "skipped", "mismatch", "not_reached"}
+)
+_LIFECYCLE_TEXT_FAILURE_CLASSES = frozenset(
+    {
+        "oversize",
+        "invalid_json",
+        "duplicate_member",
+        "nonfinite",
+        "recursion",
+        "unicode",
+        "none",
+    }
+)
 _SAFE_VERSION = re.compile(
     r"^[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}"
     r"(?:[-+][A-Za-z0-9.-]{1,32})?$"
@@ -305,6 +376,9 @@ class OperationalProviderState:
     lifecycle_addon_response_contract_model: str | None = None
     lifecycle_addon_response_envelope_variant: str | None = None
     lifecycle_addon_response_diagnostics: dict[str, Any] | None = None
+    # HAMCP-470: value-free record of the last add-on read's text comparison,
+    # one entry per read (inventory, detail). Kept across success.
+    lifecycle_addon_text_comparison: tuple[dict[str, str], ...] | None = None
     runtime_contract_mismatch_diagnostics: dict[str, Any] | None = None
     catalog_validation: dict[str, Any] | None = None
     # HAMCP-436: the dispatch-scoped admission of the last validated catalog,
@@ -474,6 +548,8 @@ class ReviewedOperationalLifecycleProvider:
             self._fail("provider_unavailable", dispatched=False)
         evidence: OperationalProviderEvidence | None = None
         read_tool = ADDON_READ_TOOL
+        with self._lock:
+            self._state.lifecycle_addon_text_comparison = None
 
         def validate(catalog: McpReadCatalog) -> None:
             nonlocal evidence
@@ -513,6 +589,7 @@ class ReviewedOperationalLifecycleProvider:
                 evidence=evidence,
                 dispatched=False,
                 error_category=_upstream_error_category,
+                read="inventory",
             )
             addons = inventory.get("addons")
             summary = inventory.get("summary")
@@ -630,6 +707,7 @@ class ReviewedOperationalLifecycleProvider:
                 evidence=evidence,
                 dispatched=False,
                 error_category=_addon_error_category,
+                read="detail",
             )
             addon = payload.get("addon")
             detail_addon = _project_addon_identity(
@@ -1213,6 +1291,7 @@ class ReviewedOperationalLifecycleProvider:
         evidence: OperationalProviderEvidence,
         dispatched: bool,
         error_category: Callable[[Any], str],
+        read: str = "detail",
     ) -> dict[str, Any]:
         """Decode one exact-release add-on detail envelope.
 
@@ -1324,25 +1403,20 @@ class ReviewedOperationalLifecycleProvider:
                 dispatched=dispatched,
             )
         text = item["text"]
-        try:
-            if (
-                len(text.encode("utf-8"))
-                > MAX_LIFECYCLE_ADDON_STRUCTURED_TEXT_BYTES
-            ):
-                raise ValueError("bounded lifecycle detail exceeded")
-            text_payload = json.loads(
-                text,
-                object_pairs_hook=_reject_duplicate_members,
-                parse_constant=_reject_nonfinite,
-            )
-        except (TypeError, ValueError, UnicodeError, RecursionError):
-            self._record_addon_response_diagnostics(
-                invalid_paths=("/content/0/text",),
-            )
-            self._fail(
-                "addon_response_contract_mismatch",
-                dispatched=dispatched,
-            )
+        # HAMCP-470: upstream redaction (redact_secrets) scrubs the text as a
+        # raw string and structuredContent as an object, so a scrubbed text
+        # can stop parsing or carry duplicate members. A text over the bound,
+        # or one that does not parse cleanly, is never compared and never
+        # reads as verified equal: the response is decided from
+        # structuredContent alone and the comparison is recorded skipped.
+        text_bytes_bucket = _lifecycle_text_bytes_bucket(text)
+        text_payload, text_failure_class = _parse_lifecycle_addon_text(text)
+        self._record_addon_text_comparison(
+            read=read,
+            text_comparison="not_reached",
+            text_bytes_bucket=text_bytes_bucket,
+            text_failure_class=text_failure_class,
+        )
         payload = result.get("structuredContent")
         if "structuredContent" not in result:
             self._record_addon_response_diagnostics(
@@ -1360,7 +1434,40 @@ class ReviewedOperationalLifecycleProvider:
                 "addon_response_contract_mismatch",
                 dispatched=dispatched,
             )
-        if not _json_values_exact(text_payload, payload):
+        # The observed key is upstream text of unbounded length, so the
+        # diagnostic names the reviewed field and a literal "#N" instead.
+        renamed_paths = tuple(
+            dict.fromkeys(
+                f"/structuredContent/{field}#N"
+                for field in (
+                    _redaction_renamed_field(key, _ADDON_ENVELOPE_FIELDS)
+                    for key in payload
+                )
+                if field is not None
+            )
+        )
+        if renamed_paths:
+            self._record_addon_response_diagnostics(
+                invalid_paths=renamed_paths,
+            )
+            self._fail(
+                "addon_response_contract_mismatch",
+                dispatched=dispatched,
+            )
+        if text_failure_class != "none":
+            self._record_addon_text_comparison(
+                read=read,
+                text_comparison="skipped",
+                text_bytes_bucket=text_bytes_bucket,
+                text_failure_class=text_failure_class,
+            )
+        elif not _json_values_exact(text_payload, payload):
+            self._record_addon_text_comparison(
+                read=read,
+                text_comparison="mismatch",
+                text_bytes_bucket=text_bytes_bucket,
+                text_failure_class=text_failure_class,
+            )
             self._record_addon_response_diagnostics(
                 invalid_paths=(
                     "/content/0/text",
@@ -1370,6 +1477,13 @@ class ReviewedOperationalLifecycleProvider:
             self._fail(
                 "addon_response_contract_mismatch",
                 dispatched=dispatched,
+            )
+        else:
+            self._record_addon_text_comparison(
+                read=read,
+                text_comparison="verified_equal",
+                text_bytes_bucket=text_bytes_bucket,
+                text_failure_class=text_failure_class,
             )
         if result.get("isError") or payload.get("success") is False:
             code = (
@@ -1410,6 +1524,40 @@ class ReviewedOperationalLifecycleProvider:
                 dispatched=dispatched,
             )
         return payload
+
+    def _record_addon_text_comparison(
+        self,
+        *,
+        read: str,
+        text_comparison: str,
+        text_bytes_bucket: str,
+        text_failure_class: str,
+    ) -> None:
+        if (
+            read not in _LIFECYCLE_TEXT_READS
+            or text_comparison not in _LIFECYCLE_TEXT_COMPARISONS
+            or text_failure_class not in _LIFECYCLE_TEXT_FAILURE_CLASSES
+            or text_bytes_bucket not in _LIFECYCLE_TEXT_BUCKET_LABELS
+        ):
+            raise AssertionError("unreviewed lifecycle text diagnostic")
+        entry = {
+            "read": read,
+            "text_comparison": text_comparison,
+            "text_bytes_bucket": text_bytes_bucket,
+            "text_failure_class": text_failure_class,
+        }
+        with self._lock:
+            entries = tuple(
+                item
+                for item in (
+                    self._state.lifecycle_addon_text_comparison or ()
+                )
+                if item["read"] != read
+            )
+            self._state.lifecycle_addon_text_comparison = (
+                *entries,
+                entry,
+            )
 
     def _record_addon_response_diagnostics(
         self,
@@ -1559,6 +1707,17 @@ class ReviewedOperationalLifecycleProvider:
                     is not None
                     else None
                 ),
+                "lifecycle_addon_text_comparison": (
+                    [
+                        dict(item)
+                        for item in (
+                            self._state.lifecycle_addon_text_comparison
+                        )
+                    ]
+                    if self._state.lifecycle_addon_text_comparison
+                    is not None
+                    else None
+                ),
                 "runtime_contract_mismatch_diagnostics": (
                     dict(self._state.runtime_contract_mismatch_diagnostics)
                     if self._state.runtime_contract_mismatch_diagnostics
@@ -1659,6 +1818,15 @@ def _project_addon_identity(
     """Project only the reviewed lifecycle identity surface."""
 
     if not isinstance(value, dict):
+        return None
+    # HAMCP-470: upstream redaction renames colliding scrubbed keys with a
+    # "#N" suffix. A renamed identity key means the record's identity keys
+    # were rewritten, so the record is not an identity. A redaction marker
+    # in an identity value is already refused by _safe_text.
+    if any(
+        _is_redaction_renamed_key(key, _ADDON_IDENTITY_FIELDS)
+        for key in value
+    ):
         return None
     slug = value.get("slug")
     name = _safe_text(value.get("name"))
@@ -1847,15 +2015,77 @@ def _response_reports_incomplete(value: dict[str, Any]) -> bool:
     return bool(_incomplete_response_paths(value))
 
 
+class _DuplicateJsonMember(ValueError):
+    pass
+
+
+class _NonFiniteJsonConstant(ValueError):
+    pass
+
+
 def _reject_duplicate_members(
     pairs: list[tuple[str, Any]],
 ) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for key, value in pairs:
         if key in result:
-            raise ValueError("duplicate JSON member")
+            raise _DuplicateJsonMember("duplicate JSON member")
         result[key] = value
     return result
+
+
+def _lifecycle_text_bytes_bucket(text: str) -> str:
+    size = len(text.encode("utf-8", "surrogatepass"))
+    for limit, label in _LIFECYCLE_TEXT_BYTES_BUCKETS:
+        if size < limit:
+            return label
+    return _LIFECYCLE_TEXT_BYTES_BUCKET_LAST
+
+
+def _parse_lifecycle_addon_text(text: str) -> tuple[Any, str]:
+    """Parse the add-on text for comparison, or name why it is not compared."""
+
+    try:
+        size = len(text.encode("utf-8"))
+    except UnicodeError:
+        return None, "unicode"
+    if size > MAX_LIFECYCLE_ADDON_STRUCTURED_TEXT_BYTES:
+        return None, "oversize"
+    try:
+        parsed = json.loads(
+            text,
+            object_pairs_hook=_reject_duplicate_members,
+            parse_constant=_reject_nonfinite,
+            parse_float=_parse_finite_float,
+        )
+    except _DuplicateJsonMember:
+        return None, "duplicate_member"
+    except _NonFiniteJsonConstant:
+        return None, "nonfinite"
+    except RecursionError:
+        return None, "recursion"
+    except UnicodeError:
+        return None, "unicode"
+    except (TypeError, ValueError):
+        return None, "invalid_json"
+    return parsed, "none"
+
+
+def _redaction_renamed_field(
+    key: Any, fields: frozenset[str]
+) -> str | None:
+    match = (
+        _REDACTION_RENAMED_KEY.fullmatch(key)
+        if isinstance(key, str)
+        else None
+    )
+    if match is None or match.group(1) not in fields:
+        return None
+    return match.group(1)
+
+
+def _is_redaction_renamed_key(key: Any, fields: frozenset[str]) -> bool:
+    return _redaction_renamed_field(key, fields) is not None
 
 
 def _json_values_exact(left: Any, right: Any) -> bool:
@@ -1876,7 +2106,16 @@ def _json_values_exact(left: Any, right: Any) -> bool:
 
 
 def _reject_nonfinite(_value: str) -> None:
-    raise ValueError("non-finite JSON constant")
+    raise _NonFiniteJsonConstant("non-finite JSON constant")
+
+
+def _parse_finite_float(value: str) -> float:
+    # An exponent overflow such as 1e999 never reaches parse_constant; the
+    # float parser returns infinity.
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        raise _NonFiniteJsonConstant("non-finite JSON number")
+    return parsed
 
 
 def _safe_text(value: Any) -> str | None:
