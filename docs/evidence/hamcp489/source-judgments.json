@@ -1,0 +1,86 @@
+{
+  "model": "hamcp489-source-judgments-v1",
+  "publication_evidence": false,
+  "manifest_sha256": "073fa5ad6adc954940a5678d5b064795d2a45b2728e76998fc4b79309e8cd9a1",
+  "comparison_sha256": "69b8e0979f6f67e7f8754f065fa92cdb72ef58f250aa690c129a405072957e06",
+  "architect_review": "pending",
+  "files": [
+    {
+      "path": "homeassistant/components/auth/indieauth.py",
+      "predecessor_sha256": "72f579dec71f9b8e44bbbfcc0eb58f837f9e5a80dce8ccf3ab4edc911afe8aae",
+      "release_sha256": "8fd96eee3ea6d27f7158b8bfda85723ecd45271c87957e883faacda572ec8abe",
+      "status": "modified",
+      "profiles": "core.automation_baseline_metadata_read",
+      "source_assessment": "home-assistant/core#193440: the IndieAuth client_id fetch now uses its own aiohttp session capped at MAXIMUM_HEADER_SIZE for line and field size. Sign-in transport only; no registry, state or metadata the profile reads changes.",
+      "review_status": "preparer assessment from exact source; independent review pending",
+      "source_url": "https://github.com/home-assistant/core/blob/92da9f154079459b9e547126f9bd9fce726de16a/homeassistant/components/auth/indieauth.py",
+      "predecessor_url": "https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/auth/indieauth.py"
+    },
+    {
+      "path": "homeassistant/components/input_text/entity.py",
+      "predecessor_sha256": "bc843b38b3348104b5051491475ef11f5094725cfe2b1f96a1244a1475b253eb",
+      "release_sha256": "77cf8db651221bd7e99b1f47951897db5b5d4ba20b20cf9cc5f4b66c5abb8daf",
+      "status": "modified",
+      "profiles": "core.typed_helper_value_operation",
+      "source_assessment": "home-assistant/core#192100: async_set_value now drops a value that fails pattern_cmp.match (start-anchored re.match), logs a warning and returns without a state change. Engineering's check_text (helper_value/contracts.py:320-332) refuses unless compiled.fullmatch(value) matches, with the same truthiness test on pattern; every value Engineering admits also passes Core's match, so no admitted write is newly dropped. docs/TYPED_HELPER_CONTROL.md records the version note.",
+      "review_status": "preparer assessment from exact source; independent review pending",
+      "source_url": "https://github.com/home-assistant/core/blob/92da9f154079459b9e547126f9bd9fce726de16a/homeassistant/components/input_text/entity.py",
+      "predecessor_url": "https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/input_text/entity.py"
+    },
+    {
+      "path": "homeassistant/components/marketplace/base.py",
+      "predecessor_sha256": "33ad8a0038128ea5f373f4113e0d9f6cb6773ac4a607307403aff3372b58fdf0",
+      "release_sha256": "f35548bf28172edf2d035f70e585aa36f2247c9b9525fb8603d4dfc36f2de4e6",
+      "status": "modified",
+      "profiles": "core.marketplace_read",
+      "source_assessment": "home-assistant/core#191093, #193439: compressed cache files keep the source file mode (copymode), and a GitHub connection failure while reading the rate limit logs at debug instead of exception. No change to the inventory the profile reads.",
+      "review_status": "preparer assessment from exact source; independent review pending",
+      "source_url": "https://github.com/home-assistant/core/blob/92da9f154079459b9e547126f9bd9fce726de16a/homeassistant/components/marketplace/base.py",
+      "predecessor_url": "https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/marketplace/base.py"
+    },
+    {
+      "path": "homeassistant/components/marketplace/repositories/base.py",
+      "predecessor_sha256": "5fb3d79e5f2411f0c6172066e70af7bcb45169bc75233788586a09389dac1b72",
+      "release_sha256": "45aae3e6ba3806f030cc6e4e5d6d1c0fc4674c7272e3c65d83bbe8785ce77bc7",
+      "status": "modified",
+      "profiles": "core.marketplace_read",
+      "source_assessment": "home-assistant/core#191129, #193438: the cached README (additional_info, updated_info) is cleared on install and uninstall, and a failed GitHub-API refresh restores ref, remote path, single, tree, tree_ref and treefiles as well as the manifest. Engineering reads none of these fields (repository grep); the listed repository shape is unchanged.",
+      "review_status": "preparer assessment from exact source; independent review pending",
+      "source_url": "https://github.com/home-assistant/core/blob/92da9f154079459b9e547126f9bd9fce726de16a/homeassistant/components/marketplace/repositories/base.py",
+      "predecessor_url": "https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/components/marketplace/repositories/base.py"
+    },
+    {
+      "path": "homeassistant/const.py",
+      "predecessor_sha256": "d063d49145f0b0f3abf7bca7439e803c04c7f3873484a7f85cdad88cfd6abf02",
+      "release_sha256": "a9a9dd7688c892fb72f98d0947ad318f7183f1c21f1c542b01e5bf0ec6615c1f",
+      "status": "modified",
+      "profiles": "core.device_configuration_entity_operation, core.marketplace_read, core.thread_matter_topology_read, core.typed_helper_value_operation",
+      "source_assessment": "PATCH_VERSION 0 -> 3 only (the release version string).",
+      "review_status": "preparer assessment from exact source; independent review pending",
+      "source_url": "https://github.com/home-assistant/core/blob/92da9f154079459b9e547126f9bd9fce726de16a/homeassistant/const.py",
+      "predecessor_url": "https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/const.py"
+    },
+    {
+      "path": "homeassistant/core_config.py",
+      "predecessor_sha256": "9237ddda424b3dcd4783038201298a4dc8fcddc8895ab4ee328a192c17f66458",
+      "release_sha256": "c27468b7ab9dbe80202ef914bbb1d836ccc9f1c8086333b87eea7e1fbfb71b94",
+      "status": "modified",
+      "profiles": "core.security_metadata_read",
+      "source_assessment": "home-assistant/core#193306: _async_update sets the time zone first, so an invalid time zone raises before any other field changes. Write-path ordering only; the stored and reported configuration fields are unchanged.",
+      "review_status": "preparer assessment from exact source; independent review pending",
+      "source_url": "https://github.com/home-assistant/core/blob/92da9f154079459b9e547126f9bd9fce726de16a/homeassistant/core_config.py",
+      "predecessor_url": "https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/core_config.py"
+    },
+    {
+      "path": "homeassistant/helpers/config_validation.py",
+      "predecessor_sha256": "ab472221aaac1bb03652ec48f47591580f8f14d0bd0f1e4bc9926bc39b6a6f08",
+      "release_sha256": "78b725723b4ca3f03ed90f5d00b4e853b5f90b57db582f52ba292f23cb944006",
+      "status": "modified",
+      "profiles": "core.configuration_validation, core.governed_configuration_operation, core.typed_helper_value_operation",
+      "source_assessment": "The warning for YAML under a config-entry-only domain now names the configuration keys only (_describe_config_keys), never the values. No schema or validator change. Lines after 1204 shift by +13: the citation config_validation.py:1257-1263 in configuration_definitions/schemas.py:20 now sits at 1270-1276 with identical text. That comment is protected runtime and is not edited here.",
+      "review_status": "preparer assessment from exact source; independent review pending",
+      "source_url": "https://github.com/home-assistant/core/blob/92da9f154079459b9e547126f9bd9fce726de16a/homeassistant/helpers/config_validation.py",
+      "predecessor_url": "https://github.com/home-assistant/core/blob/74cf5a49c63ed8d4d87717844bf14f79c28c9cea/homeassistant/helpers/config_validation.py"
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 import ast
 import copy
 from contextlib import redirect_stderr
+import dataclasses
 import importlib.util
 import io
 import json
@@ -1621,7 +1622,11 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
         # HAMCP-437 (I2b ruling 2): 2026.11.0 consumes ha-mcp 9.2.0, and the
         # script-dependency contract still runs on that consumer.
         self.assertEqual(contract._core_binding("2026.11.0").child_consumer, "9.2.0")
-        for version in ("2026.10.0", "2026.10.1", "2026.10.3", "2026.11.0"):
+        # HAMCP-489: 2026.11.3 keeps the 2026.11.0 semantics and consumer.
+        self.assertEqual(contract._core_binding("2026.11.3"), dataclasses.replace(
+            contract._core_binding("2026.11.0"),
+            image_index_digest="sha256:24e541ddae5818bf8eb27898b9ba00d0c344a655aa5097e9e9bd4b19356be847"))
+        for version in ("2026.10.0", "2026.10.1", "2026.10.3", "2026.11.0", "2026.11.3"):
             self.assertIs(expected(version), schema.CHILD_DEVICE_NAME_PARTS)
         self.assertIs(expected("2026.9.4"), schema.CHILD_DEVICES)
         # HAMCP-437 (I2b): the 2026.9.0-2026.9.3 bindings are retired, so those
