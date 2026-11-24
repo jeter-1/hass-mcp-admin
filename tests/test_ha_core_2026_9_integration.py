@@ -3032,7 +3032,7 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         # HAMCP-437 I2a-D: the shipped registry holds only ha-mcp 9.2.0.
         policy = registry.by_version["9.2.0"].policy
         counts = policy.classification_counts
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 86)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 87)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
         self.assertEqual(counts["automatic_read"], 27)
         self.assertEqual(counts["held_for_canary"], 1)
         self.assertEqual(
@@ -3045,14 +3045,14 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         )
         # HAMCP-290: Engineering retires ha_get_hacs_info (Josh, 2026-11-08);
         # the 9.2.0 policy already classifies it unsupported, so no matched
-        # read is withheld for retirement (86 + 27 - 0 = 113).
+        # read is withheld for retirement (87 + 27 - 0 = 114).
         retired = {
             item.upstream_name
             for item in policy.tools
             if item.classification == "automatic_read"
         } & RETIRED_DELEGATED_READS
         self.assertEqual(retired, set())
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + counts["automatic_read"] - len(retired), 113)  # HAMCP-231: + thread/matter topology
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + counts["automatic_read"] - len(retired), 114)  # HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
         # HAMCP-162: the optional ha_config_get_yaml route is mapped but is
         # never a stock policy entry; HAMCP-290 retired ha_get_hacs_info
         # from the mapping (31 -> 30). The ha_manage_blueprints mapping
@@ -3119,9 +3119,9 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(counts["reviewed_stock_catalog"], 77)
         # HAMCP-290: the retired delegated ha_get_hacs_info is subtracted
         # only when the newest policy classifies it automatic_read; 9.1.2
-        # already marks it unsupported, so 27 stay and 85 + 27 = 112 (HAMCP-134, HAMCP-297).
+        # already marks it unsupported, so 27 stay and 87 + 27 = 114 (HAMCP-134, HAMCP-297, HAMCP-231, HAMCP-476).
         self.assertEqual(counts["expected_delegated_reads"], 27)
-        self.assertEqual(counts["expected_connector_total"], 113)  # HAMCP-231: + thread/matter topology
+        self.assertEqual(counts["expected_connector_total"], 114)  # HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
 
     async def test_missing_dashboard_evidence_withholds_only_dashboard_resources(self):
         evidence = [
@@ -3209,7 +3209,7 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         # device-dependent reads; 25 matched, 5 Core-withheld, 1 retired.
         self.assertEqual(health["core_withheld_read_count"], 5 + len(RETIRED_DELEGATED_READS))
         self.assertEqual(health["dynamically_exposed_count"], 20 - len(RETIRED_DELEGATED_READS))
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + 19, 105)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + 19, 106)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
         self.assertEqual(
             {item["tool"] for item in health["core_withheld_tools"]},
             set(DEVICE_DEPENDENT_DELEGATED_TOOLS) | RETIRED_DELEGATED_READS,

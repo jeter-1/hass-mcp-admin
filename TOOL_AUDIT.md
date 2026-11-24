@@ -2,6 +2,43 @@
 
 Date: 2026-07-10
 
+## Automation run counts (2.9.1, HAMCP-476)
+
+`get_automation_run_counts` is a native, read-only, Engineering-owned evidence
+tool:
+- category `evidence`, routing `engineering_native`, provider `engineering`,
+  data provider `direct_ha_api`, policy `automation_run_counts_read_v1`
+  (trust profile `automation-run-counts-read-v1`);
+- risk `read`, writes `none`, fallback `none`, additive;
+- annotations `readOnlyHint` true, `destructiveHint` false,
+  `idempotentHint` true and `openWorldHint` false;
+- mapped to `core.basic_rest_read` in the HAMCP-164 Core gate.
+
+A run is one `automation_triggered` logbook row, which Core 2026.11.0 writes
+only when the conditions pass and the action starts; failed-condition
+triggers and runs the automation's mode dropped are not counted. The caller
+names 1-10 automations (`automation_ids`, in request order; an ID with no
+runs or no such automation counts 0 with a note) or asks for every
+automation (`all_automations`: one `GET /api/states`, at most 200
+automations, ranked by runs descending with ties by ID). The window is
+`hours` back from `end_time` (default 24, at most 168) or `start_time` to
+`end_time`; Core's bounds are exclusive.
+
+Each batch of 10 is one logbook GET over the whole window. A body over a
+logbook limit is split in halves, never below 60 seconds; the later half
+starts 1 microsecond early and each row is counted by its own time, so a
+split neither drops nor double-counts a run. Budgets: 8 GETs and 60 seconds
+for named automations, 32 GETs and 120 seconds for all mode (sized from the
+house's 115 automations, beta.40 findings). A spent budget or an unsplittable
+window returns partial with `partial_reasons` and the uncovered automations
+and intervals; their counts are lower bounds. Any other failure is an error.
+Before any logbook read, a set whose worst-case reply would not fit the
+response limit (60,000 characters, or a smaller `response_size_limit`) is
+refused with `response_size_exceeds_bound`, which says to name up to 10 with
+`automation_ids` instead; a success the response bound would still cut is
+returned as the same error.
+The tool adds one static tool (87 static on this branch).
+
 ## Security posture metadata (2.6.0, HAMCP-134)
 
 `get_security_metadata` is a native, read-only, Engineering-owned evidence

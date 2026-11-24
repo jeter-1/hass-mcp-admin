@@ -10,6 +10,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from tests.support.audit_pages import audit_page_message, audit_page_rows
 from tests.support.process_isolation import restore_after_class
 from tests.test_beta_v2 import INITIALIZE_REQUEST, SECRET, beta_settings
 
@@ -25,9 +26,8 @@ from ha_mcp_engineering.tools import compatibility
 
 
 def _json_rows(rendered: str) -> list[dict]:
-    if rendered in {"No audit log yet.", "No matching entries."}:
-        return []
-    return [json.loads(line) for line in rendered.splitlines() if line.strip()]
+    # HAMCP-475: every page ends with one _page trailer; the helper checks it.
+    return audit_page_rows(rendered)
 
 
 def _provider_snapshot() -> dict:
@@ -420,8 +420,10 @@ class RoutedAuditFilteringTests(unittest.TestCase):
             for line in self.audit_path.read_text(encoding="utf-8").splitlines()
         ]
 
-        self.assertIn(first, {"No audit log yet.", "No matching entries."})
-        self.assertEqual(second, "No matching entries.")
+        self.assertIn(
+            audit_page_message(first), {"No audit log yet.", "No matching entries."}
+        )
+        self.assertEqual(audit_page_message(second), "No matching entries.")
         first_record = next(
             row
             for row in records

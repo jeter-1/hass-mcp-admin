@@ -1019,6 +1019,22 @@ class AuthenticatedMcpGateway:
                     )
                     return
             # Equality, not set membership (HAMCP-189 non-string names).
+            if tool_name == "get_automation_run_counts":
+                from .automation_runs.contracts import INVALID_MESSAGE, validate_arguments as validate_hamcp476
+                try:
+                    validate_hamcp476(raw_parameters)
+                except ValueError:
+                    telemetry.error_code = ErrorCode.INVALID_REQUEST.value
+                    failure = FailureResponse(
+                        operation=tool_name, error="InvalidAutomationRunCountsRequest",
+                        error_code=telemetry.error_code, message=INVALID_MESSAGE,
+                        retryable=False, request_id=request_id,
+                    )
+                    await self._respond_mcp_tool_result(
+                        send, rpc_id=rpc.get("id"), rendered=failure.to_json(self.settings.response_size_limit), request_id=request_id,
+                    )
+                    return
+            # Equality, not set membership (HAMCP-189 non-string names).
             if tool_name == "capture_automation_baseline" or tool_name == "compare_automation_baselines":
                 from .audit_baseline.capture_contracts import CaptureError
                 from .tools.audit_baseline import validate_raw_arguments
@@ -1364,7 +1380,7 @@ class AuthenticatedMcpGateway:
                         "upstream_attempted": False,
                     }
                     resource_ids = {}
-                elif tool_name not in {"get_integration_inspection", "get_backup_inventory", "get_recorder_settings", "get_unregistered_entities", "get_configuration_definitions", "get_incident_logs", "get_history_slices", "capture_automation_baseline", "compare_automation_baselines", "dashboard_integrity_analysis", *TRACE_SNAPSHOT_TOOLS} and telemetry.error_code in {
+                elif tool_name not in {"get_integration_inspection", "get_backup_inventory", "get_recorder_settings", "get_unregistered_entities", "get_configuration_definitions", "get_incident_logs", "get_history_slices", "get_automation_run_counts", "capture_automation_baseline", "compare_automation_baselines", "dashboard_integrity_analysis", *TRACE_SNAPSHOT_TOOLS} and telemetry.error_code in {
                     ErrorCode.INVALID_REQUEST.value,
                     ErrorCode.VALIDATION_FAILURE.value,
                 }:
@@ -1532,6 +1548,14 @@ class AuthenticatedMcpGateway:
                         "provider": "engineering", "fallback": "none",
                     }
                     resource_ids = {}
+                elif tool_name == "get_audit_log":
+                    # HAMCP-475: cursor material never enters audit.
+                    audit_parameters = {
+                        key: parameters[key]
+                        for key in ("lines", "event")
+                        if key in parameters
+                    }
+                    audit_parameters["cursor_present"] = bool(parameters.get("cursor"))
                 elif tool_name in TRACE_SNAPSHOT_TOOLS:
                     # HAMCP-225: pattern-checked identifiers and bounded flags
                     # only; note text, cursors and rejected values are never
@@ -1648,6 +1672,25 @@ class AuthenticatedMcpGateway:
                         "fallback": "none",
                     }
                     resource_ids = {}
+                elif tool_name == "get_automation_run_counts":
+                    # HAMCP-476: the mode and bounded shape only; automation
+                    # IDs and window times are never copied.
+                    from .automation_runs.contracts import validate_arguments as validate_hamcp476_audit
+                    try:
+                        checked = validate_hamcp476_audit(parameters)
+                    except ValueError:
+                        checked = None
+                    audit_parameters = {
+                        "profile": "automation-run-counts-read-v1",
+                        "mode": checked["mode"] if checked else None,
+                        "automation_id_count": (len(checked["automation_ids"])
+                                                if checked and checked["automation_ids"] else None),
+                        "window_kind": checked["window_kind"] if checked else None,
+                        "end_time_present": bool(checked and checked["end_time"] is not None),
+                        "provider": "engineering", "data_providers": ["direct_ha_api"],
+                        "fallback": "none",
+                    }
+                    resource_ids = {}
                 elif tool_name == "run_held_read_canary":
                     # Canary arguments and upstream result content are
                     # untrusted and may contain sensitive Home Assistant data.
@@ -1738,6 +1781,7 @@ class AuthenticatedMcpGateway:
                             "get_core_log_history",
                             "get_incident_logs",
                             "get_history_slices",
+                            "get_automation_run_counts",
                             "get_integration_inspection",
                             "get_backup_inventory",
                             "get_recorder_settings",

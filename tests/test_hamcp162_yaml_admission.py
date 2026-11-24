@@ -89,7 +89,7 @@ S8 = ROOT / "docs/evidence/hamcp371/s8/profiles-2"
 S8_SUMS = S8 / "SHA256SUMS"
 S8_CAPTURES = ("out/standalone-9.2.0-fs-on/capture-1.json", "out/standalone-9.2.0-fs-on/capture-2.json")
 S8_OBSERVATION = "out/standalone-9.2.0-fs-on/observation.json"
-STOCK_PUBLIC = 113  # + HAMCP-106, + HAMCP-071, + HAMCP-253, + HAMCP-311, + HAMCP-229, + HAMCP-134; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
+STOCK_PUBLIC = 114  # + HAMCP-106, + HAMCP-071, + HAMCP-253, + HAMCP-311, + HAMCP-229, + HAMCP-134; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
 
 
 def captured(version, label="A"):
@@ -558,7 +558,7 @@ class AdmissionTests(Harness):
         return self.exposed(gateway)
 
     async def test_stock_catalog_is_optional_absent_with_87_public_tools(self):
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 86)  # HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 87)  # HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
         for version in VERSIONS:
             for mode in ("A", "B"):
                 with self.subTest(version=version, mode=mode):

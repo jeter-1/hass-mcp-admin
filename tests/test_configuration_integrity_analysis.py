@@ -702,7 +702,7 @@ class ProviderAndPublicContractTests(unittest.IsolatedAsyncioTestCase):
             set(),
         )
         tools = registered_tools(get_registered_server())
-        self.assertEqual(len(tools), 86)  # HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
+        self.assertEqual(len(tools), 87)  # HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
         self.assertIn("configuration_integrity_analysis", tools)
         schema = tools["configuration_integrity_analysis"].parameters
         json.dumps(schema)
@@ -716,6 +716,7 @@ class ProviderAndPublicContractTests(unittest.IsolatedAsyncioTestCase):
                 "limit",
                 "cursor",
                 "refresh_index",
+                "severities",  # + HAMCP-473
             },
         )
         self.assertEqual(schema.get("required", []), [])
@@ -726,6 +727,7 @@ class ProviderAndPublicContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(schema["properties"]["detail_level"]["default"], "standard")
         self.assertEqual(schema["properties"]["cursor"]["default"], "")
         self.assertEqual(schema["properties"]["refresh_index"]["default"], False)
+        self.assertEqual(schema["properties"]["severities"]["default"], [])  # + HAMCP-473
 
 
 class AuditContractTests(unittest.IsolatedAsyncioTestCase):

@@ -47,6 +47,7 @@ _ENGINEERING_NATIVE = {
     ProviderCapability.SECURITY_METADATA,
     ProviderCapability.THREAD_MATTER_TOPOLOGY,
     ProviderCapability.HISTORY_SLICES,
+    ProviderCapability.AUTOMATION_RUN_COUNTS,
     ProviderCapability.UNREGISTERED_ENTITIES,
     ProviderCapability.CONFIGURATION_DEFINITIONS,
     ProviderCapability.AUTOMATION_BASELINE_CAPTURE,
@@ -171,6 +172,7 @@ TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
     "get_core_log_history": ProviderCapability.CORE_LOG_HISTORY,
     "get_incident_logs": ProviderCapability.INCIDENT_LOGS,
     "get_history_slices": ProviderCapability.HISTORY_SLICES,
+    "get_automation_run_counts": ProviderCapability.AUTOMATION_RUN_COUNTS,
     "list_automations": ProviderCapability.AUTOMATION_LIST,
     "get_automation_config": ProviderCapability.AUTOMATION_CONFIG,
     "list_devices": ProviderCapability.DEVICE_REGISTRY_READ,
@@ -318,6 +320,11 @@ ANALYTICAL_PROVIDER_POLICIES = {
     "get_history_slices": {
         "policy_id": "history_slices_read_v1", "access": "read", "orchestrator": "engineering",
         "scope": "admitted ha_get_history route only; one entity; Engineering-built absolute slice bounds, ascending, minimal; bounded offset paging",
+        "writes_allowed": "none", "fallback_policy": "none",
+    },
+    "get_automation_run_counts": {
+        "policy_id": "automation_run_counts_read_v1", "access": "read", "orchestrator": "engineering",
+        "scope": "GET /api/logbook for 1-10 automation entities per request, bisected on a logbook limit within 8 GETs and 60 s (named) or 32 GETs and 120 s (all mode, after one GET /api/states, at most 200 automations); the logbook slot is held for the call; counts and times only",
         "writes_allowed": "none", "fallback_policy": "none",
     },
     "get_unregistered_entities": {
@@ -556,6 +563,18 @@ def history_slices_policy_allows_read() -> bool:
     decision = routing_for_tool("get_history_slices")
     return (
         decision.capability == ProviderCapability.HISTORY_SLICES
+        and decision.route == CapabilityRoute.ENGINEERING_NATIVE
+        and decision.preferred_provider == "engineering"
+        and not decision.fallback_providers
+        and not decision.explicit_direct_fallback_allowed
+    )
+
+
+def automation_run_counts_policy_allows_read() -> bool:
+    """HAMCP-476: the native logbook and states reads only; no fallback."""
+    decision = routing_for_tool("get_automation_run_counts")
+    return (
+        decision.capability == ProviderCapability.AUTOMATION_RUN_COUNTS
         and decision.route == CapabilityRoute.ENGINEERING_NATIVE
         and decision.preferred_provider == "engineering"
         and not decision.fallback_providers

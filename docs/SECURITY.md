@@ -1329,6 +1329,43 @@ provider, fallback, write path or tool.
 - **Unavailability.** Decided from `/proc/self/mountinfo` and the open, never
   from an empty result; an unavailable source is never `complete`.
 
+The 2.9.1 automation run count read (HAMCP-476) adds one read-only native tool,
+`get_automation_run_counts`. It adds no permission, add-on option, HTTP
+client, Supervisor call, WebSocket command, upstream route, fallback or write
+path.
+
+- **Fixed reads.** The existing native `GET /api/logbook/{start}` read with
+  `end_time` and an `entity` filter of 1-10 validated `automation.*` IDs
+  (512 characters at most), through the shared logbook fetch and its byte,
+  record and structure limits. All mode adds one `GET /api/states`; a
+  malformed state item fails the call rather than being skipped, and more than
+  200 automations is refused before any logbook read.
+- **Bounded work.** A body over a logbook limit splits its window in halves
+  (never below 60 seconds) inside a fixed budget: 8 GETs and 60 seconds for
+  named automations, 32 GETs and 120 seconds for all mode. The single logbook
+  slot is held for the whole call, so a concurrent `get_logbook` is refused as
+  busy. A spent budget or an unsplittable window is partial and names the
+  uncovered automations and intervals; any other failure is an error.
+- **Reply size.** The 200-automation cap alone does not bound the reply, since
+  an entity ID may be 255 characters. Before any logbook read (in all mode,
+  after the states read), the call computes a worst-case reply (every row at
+  its longest, every batch uncovered, the most intervals a call can leave,
+  plus a 2,000-character reserve) and refuses a set that would not fit the
+  response limit (60,000 characters, or a smaller `response_size_limit`
+  option) with `response_size_exceeds_bound`, which says to name up to 10 with
+  `automation_ids` instead. A success the shared response bound would still
+  page or cut is returned as that error, so a success always lists every
+  counted automation.
+- **Output.** Only validated automation IDs, counts, first and last run
+  times, interval bounds, request counts and fixed reason and note strings.
+  Logbook names, messages, sources, context IDs and state values are never
+  returned. Raw arguments are validated before the SDK can coerce them; an
+  invalid request sends nothing and echoes nothing, and the audit records only
+  the mode, an ID count and the window kind, never IDs or times.
+- **Routing.** `engineering_native` with no fallback; the tool refuses with
+  `PROVIDER_PROHIBITED` if its policy drifts. It is mapped to
+  `core.basic_rest_read` in the HAMCP-164 Core gate, like `get_logbook`.
+
 The `2.4.1-beta.30` incident-window slice (HAMCP-131) adds two read-only tools.
 Neither adds a permission, add-on option, role, fallback or write path.
 

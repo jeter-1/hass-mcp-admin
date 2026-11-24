@@ -162,13 +162,16 @@ class RC1PublicContractTests(unittest.TestCase):
         names = tuple(sorted(tool.name for tool in tools))
         schemas = {tool.name: tool.parameters for tool in tools}
         from hamcp226_228_descriptor_changes import without_hamcp226_finding_type
+        from hamcp473_descriptor_changes import without_hamcp473_inputs  # + HAMCP-473
         schemas["configuration_integrity_analysis"] = without_hamcp226_finding_type(
-            self, schemas["configuration_integrity_analysis"])
+            self, without_hamcp473_inputs(self, schemas["configuration_integrity_analysis"]))
         from hamcp247_descriptor_changes import without_hamcp247_detail_section
         schemas["list_capabilities"] = without_hamcp247_detail_section(
             self, schemas["list_capabilities"])
         from hamcp294_descriptor_changes import without_hamcp294_inputs  # + HAMCP-294
         schemas["get_logbook"] = without_hamcp294_inputs(self, schemas["get_logbook"])
+        from hamcp475_descriptor_changes import without_hamcp475_inputs  # + HAMCP-475
+        schemas["get_audit_log"] = without_hamcp475_inputs(self, schemas["get_audit_log"])
         beta26_schemas = {
             name: schemas[name]
             for name in BETA26_TOOL_NAMES
@@ -229,6 +232,8 @@ class RC1PublicContractTests(unittest.TestCase):
                         "get_security_metadata",
                         # HAMCP-231: additive dormant Thread/Matter topology read.
                         "get_thread_matter_topology",
+                        # HAMCP-476: additive automation run counts read.
+                        "get_automation_run_counts",
                     )
                 )
             ),
@@ -474,7 +479,7 @@ class RC1PublicContractTests(unittest.TestCase):
             BETA26_DIRECT_POLICY_SHA256,
         )
         self.assertEqual(len(CAPABILITIES), 25)
-        self.assertEqual(len(classifications), 86)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
+        self.assertEqual(len(classifications), 87)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
         self.assertEqual(PLANNED_CAPABILITIES, ())
         self.assertEqual(SCHEMA_VERSION, "1")
 

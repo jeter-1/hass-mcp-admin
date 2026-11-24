@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import importlib.metadata
 import importlib.util
 import os
 from pathlib import Path
@@ -20,6 +21,10 @@ CHECK_SCRIPT = ROOT / "scripts" / "check.ps1"
 SHARD_SCRIPT = ROOT / "scripts" / "unit_test_shards.py"
 LOCAL_SHARD_SCRIPT = ROOT / "scripts" / "local_unit_test_shards.py"
 REPOSITORY_CODE_SENTINEL = "FIXTURE_REPOSITORY_CODE_EXECUTED"
+# HAMCP-458: check.ps1 compares the interpreter with tests/requirements.lock,
+# so the fixture lock pins what the test interpreter has installed.
+FIXTURE_PYYAML_VERSION = importlib.metadata.version("PyYAML")
+FIXTURE_LOCK = f"pyyaml=={FIXTURE_PYYAML_VERSION} \\\n    --hash=sha256:{'0' * 64}\n"
 # A field a fake answer leaves out, as distinct from one it reports as null.
 ABSENT = object()
 
@@ -262,6 +267,7 @@ class SmokeTests(unittest.TestCase):
 """,
         )
         self.write("tests/test_codex_workflow.py", "# Fixture workflow test module.\n")
+        self.write("tests/requirements.lock", FIXTURE_LOCK)
         # Inputs for the opt-in -Parallel path: the real shard modules, a
         # two-general-shard plan, and one real-time measurement.
         self.write("scripts/unit_test_shards.py", SHARD_SCRIPT.read_text(encoding="utf-8"))
@@ -2393,6 +2399,10 @@ class CheckScriptDefaultsTests(unittest.TestCase):
 
     HAMCP-358: the pull-request lookup names the repository of the fixture's
     ``origin``, which is a github.com URL nothing ever contacts.
+
+    HAMCP-458: with no detected base the run is refused, never compared with
+    origin/main by default; and the interpreter must match
+    tests/requirements.lock before any repository code runs.
     """
 
     BRANCH = "agent/HAMCP-1-fixture"
@@ -2483,10 +2493,16 @@ class CheckScriptDefaultsTests(unittest.TestCase):
         self.assertIn("AuthorizedProtectedPath", output)
         self.assertNotIn(REPOSITORY_CODE_SENTINEL, output)
 
-    def assert_default_message(self, output: str, reason: str) -> None:
-        self.assertIn("Base reference origin/main (default: no pull-request base was detected because", output)
-        self.assertIn(reason, output)
-        self.assertIn("Pass -BaseRef", output)
+    def assert_base_refused(self, code: int, output: str, reason: str) -> None:
+        # HAMCP-458: with no detected base, check.ps1 refuses; it no longer
+        # compares with origin/main by default.
+        self.assertNotEqual(code, 0, output)
+        self.assertIn(f"No pull-request base was detected because {reason}", output)
+        self.assertIn("Refusing to choose a base: pass -BaseRef with the pull request's base", output)
+        self.assertIn("Validation stopped during safe preflight", output)
+        self.assertNotIn("Base reference origin/main", output)
+        self.assertNotIn("Verified base commit", output)
+        self.assertNotIn(REPOSITORY_CODE_SENTINEL, output)
 
     def test_explicit_base_ref_wins_and_gh_is_not_consulted(self):
         self.write_pull_request(baseRefName="main")
@@ -2583,8 +2599,7 @@ class CheckScriptDefaultsTests(unittest.TestCase):
                 self.set_origin(url)
                 self.write_pull_request()
                 code, output = self.check()
-                self.assert_default_message(output, f"{self.NOT_GITHUB}; the branch has no upstream")
-                self.assert_compared_with_main(code, output)
+                self.assert_base_refused(code, output, f"{self.NOT_GITHUB}; the branch has no upstream")
                 self.assertEqual(self.gh_calls(), [])
                 self.assertNotIn(marker, output)
 
@@ -2597,35 +2612,31 @@ class CheckScriptDefaultsTests(unittest.TestCase):
         self.assertEqual(payload["base_sha"], git(self.fixture.root, "rev-parse", "origin/release/9.9.0"))
         self.assertEqual(payload["overall_status"], "passed")
 
-    def test_missing_gh_falls_back_to_origin_main_with_a_message(self):
+    def test_missing_gh_and_no_upstream_is_refused(self):
         code, output = self.check()
-        self.assert_default_message(output, "gh is not on PATH; the branch has no upstream")
-        self.assert_compared_with_main(code, output)
+        self.assert_base_refused(code, output, "gh is not on PATH; the branch has no upstream")
 
-    def test_unauthenticated_gh_falls_back_without_printing_gh_output(self):
+    def test_unauthenticated_gh_is_refused_without_printing_gh_output(self):
         self.write_gh(exit_code=4, stdout="fixture-gh-stdout", stderr="fixture-gh-stderr-detail")
         code, output = self.check()
-        self.assert_default_message(output, f"gh pr view {self.BRANCH} failed with exit code 4")
-        self.assert_compared_with_main(code, output)
+        self.assert_base_refused(code, output, f"gh pr view {self.BRANCH} failed with exit code 4")
         self.assertNotIn("fixture-gh-stderr-detail", output)
         self.assertNotIn("fixture-gh-stdout", output)
         self.assertEqual(len(self.gh_calls()), 1)
 
-    def test_gh_that_does_not_answer_is_abandoned_and_falls_back(self):
+    def test_gh_that_does_not_answer_is_abandoned_and_refused(self):
         if not self.sleep:
             self.skipTest("sleep is unavailable")
         self.write_gh(sleep=True)
         code, output = self.check()
-        self.assert_default_message(output, "gh pr view did not answer within 10 s")
-        self.assert_compared_with_main(code, output)
+        self.assert_base_refused(code, output, "gh pr view did not answer within 10 s")
 
     def test_closed_or_merged_pull_request_is_not_used(self):
         for state in ("MERGED", "CLOSED"):
             with self.subTest(state=state):
                 self.write_pull_request(state=state)
                 code, output = self.check()
-                self.assert_default_message(output, f"the pull request for {self.BRANCH} is not open")
-                self.assert_compared_with_main(code, output)
+                self.assert_base_refused(code, output, f"the pull request for {self.BRANCH} is not open")
 
     def test_pull_request_base_that_is_not_fetched_fails_closed(self):
         self.write_pull_request(baseRefName="release/8.0.0")
@@ -2686,22 +2697,19 @@ class CheckScriptDefaultsTests(unittest.TestCase):
         git(self.fixture.root, "update-ref", own, "HEAD")
         self.set_upstream(f"origin/{self.BRANCH}")
         code, output = self.check()
-        self.assert_default_message(output, f"the branch upstream origin/{self.BRANCH} is not origin/main "
-                                            "or an origin/release/* branch")
-        self.assert_compared_with_main(code, output)
+        self.assert_base_refused(code, output, f"gh is not on PATH; the branch upstream origin/{self.BRANCH} "
+                                               "is not origin/main or an origin/release/* branch")
         git(self.fixture.root, "checkout", "-q", "-b", "release/9.9.0")
         self.set_upstream("origin/release/9.9.0")
         code, output = self.check()
-        self.assert_default_message(output, "gh is not on PATH; the branch upstream origin/release/9.9.0 "
-                                            "is the branch's own remote copy")
-        self.assert_compared_with_main(code, output)
+        self.assert_base_refused(code, output, "gh is not on PATH; the branch upstream origin/release/9.9.0 "
+                                               "is the branch's own remote copy")
 
-    def test_detached_head_falls_back_without_consulting_gh(self):
+    def test_detached_head_is_refused_without_consulting_gh(self):
         self.write_pull_request()
         git(self.fixture.root, "checkout", "-q", "--detach")
         code, output = self.check()
-        self.assert_default_message(output, "HEAD is detached")
-        self.assert_compared_with_main(code, output)
+        self.assert_base_refused(code, output, "HEAD is detached")
         self.assertEqual(self.gh_calls(), [])
 
     def venv_python(self) -> Path:
@@ -2749,6 +2757,138 @@ class CheckScriptDefaultsTests(unittest.TestCase):
         code, output = self.check(python_executable=None, base_ref="origin/release/9.9.0")
         self.assertEqual(code, 0, output)
         self.assertNotIn("worktree venv", output)
+
+    LOCK_MISMATCH = "does not match tests/requirements.lock"
+    LOCK_REBUILD = ("Rebuild .artifacts/venv from the lock (docs/CODEX_WORKFLOW.md, Sandbox-local scratch) "
+                    "or pass -PythonExecutable with a matching environment.")
+
+    def write_lock(self, text: str | None) -> None:
+        path = self.fixture.root / "tests" / "requirements.lock"
+        if text is None:
+            path.unlink()
+        else:
+            path.write_text(text, encoding="utf-8", newline="\n")
+
+    def assert_lock_refused(self, code: int, output: str, message: str) -> None:
+        self.assertNotEqual(code, 0, output)
+        self.assertIn(message, output)
+        # Refused with the interpreter, before any step or repository code.
+        self.assertIn("Validation stopped during safe preflight", output)
+        self.assertNotIn("Verify base reference", output)
+        self.assertNotIn(REPOSITORY_CODE_SENTINEL, output)
+
+    def test_environment_that_matches_the_lock_passes(self):
+        for lock in (FIXTURE_LOCK,
+                     f"# comment\n\nPyYAML=={FIXTURE_PYYAML_VERSION}\n",
+                     FIXTURE_LOCK.replace("pyyaml==", "PYYAML==")):
+            with self.subTest(lock=lock):
+                self.write_lock(lock)
+                code, output = self.check(base_ref="origin/release/9.9.0")
+                self.assertEqual(code, 0, output)
+                self.assertIn(f"The Python environment at {sys.executable} matches all 1 pins in "
+                              "tests/requirements.lock.", output)
+                self.assertIn(REPOSITORY_CODE_SENTINEL, output)
+                self.assertIn("Fast validation passed", output)
+
+    def test_environment_that_differs_from_the_lock_is_refused(self):
+        cases = (
+            ("pyyaml==0.0.1 \\\n    --hash=sha256:" + "0" * 64 + "\n",
+             f"(1 of 1 pins differ): pyyaml==0.0.1 (installed {FIXTURE_PYYAML_VERSION})."),
+            (FIXTURE_LOCK + "fixture-absent-distribution==1.0\n",
+             "(1 of 2 pins differ): fixture-absent-distribution==1.0 (not installed)."),
+        )
+        for lock, message in cases:
+            with self.subTest(message=message):
+                self.write_lock(lock)
+                code, output = self.check(base_ref="origin/release/9.9.0")
+                self.assert_lock_refused(code, output, f"The Python environment at {sys.executable} "
+                                                       f"{self.LOCK_MISMATCH} {message}")
+                self.assertIn(self.LOCK_REBUILD, output)
+
+    def test_many_differences_are_bounded_in_the_message(self):
+        self.write_lock("".join(f"fixture-absent-{number:02d}==1.0\n" for number in range(12)))
+        code, output = self.check(base_ref="origin/release/9.9.0")
+        self.assert_lock_refused(code, output, f"{self.LOCK_MISMATCH} (12 of 12 pins differ): "
+                                               "fixture-absent-00==1.0 (not installed);")
+        self.assertIn("fixture-absent-09==1.0 (not installed); and 2 more.", output)
+        self.assertNotIn("fixture-absent-10", output)
+
+    def test_missing_or_unusable_lock_is_refused(self):
+        cases = (
+            (None, "tests/requirements.lock does not exist; refusing to validate without the locked test "
+                   "environment."),
+            ("pyyaml>=6\n", "tests/requirements.lock line 1 is not a name==version pin; refusing"),
+            ("-r other.txt\n", "tests/requirements.lock line 1 is not a name==version pin; refusing"),
+            (f"pyyaml=={FIXTURE_PYYAML_VERSION} ; python_version >= '3'\n",
+             "tests/requirements.lock line 1 is not a name==version pin; refusing"),
+            (f"pyyaml=={FIXTURE_PYYAML_VERSION}\nPyYAML=={FIXTURE_PYYAML_VERSION}\n",
+             "tests/requirements.lock pins pyyaml more than once (line 2); refusing"),
+            ("", "tests/requirements.lock pins no distributions; refusing"),
+            ("# only comments\n\n    --hash=sha256:" + "0" * 64 + "\n",
+             "tests/requirements.lock pins no distributions; refusing"),
+        )
+        for lock, message in cases:
+            with self.subTest(lock=lock):
+                self.write_lock(lock)
+                code, output = self.check(base_ref="origin/release/9.9.0")
+                self.assert_lock_refused(code, output, message)
+
+    def test_interpreter_that_cannot_list_its_distributions_is_refused(self):
+        fake = self.bin / "fake-python"
+        for script in ("printf '%s\\n' 'not json'\n",
+                       "printf '%s\\n' '[]'\n",
+                       "printf '%s\\n' '{}' '{}'\n",
+                       "printf '%s\\n' '{\"pyyaml\": \"6\"}'\nexit 3\n",
+                       "exit 0\n"):
+            with self.subTest(script=script):
+                self.write_executable(fake, "#!/bin/sh\n" + script)
+                code, output = self.check(base_ref="origin/release/9.9.0", python_executable=str(fake))
+                self.assert_lock_refused(code, output, f"{fake} did not list its installed distributions; "
+                                                       "refusing to validate without the locked test environment.")
+        code, output = self.check(base_ref="origin/release/9.9.0", python_executable=str(self.bin / "absent"))
+        self.assert_lock_refused(code, output, "did not list its installed distributions")
+
+    def test_unreadable_installed_version_is_refused(self):
+        fake = self.bin / "fake-python"
+        for answer in ('{"pyyaml": 7}', '{"pyyaml": null}', '{"pyyaml": "6.0.2; rm -rf /"}'):
+            with self.subTest(answer=answer):
+                self.write_executable(fake, f"#!/bin/sh\nprintf '%s\\n' '{answer}'\n")
+                code, output = self.check(base_ref="origin/release/9.9.0", python_executable=str(fake))
+                self.assert_lock_refused(code, output, f"pyyaml=={FIXTURE_PYYAML_VERSION} (installed with an "
+                                                       "unreadable version)")
+                self.assertNotIn("rm -rf", output)
+
+    def test_pythonpath_shadow_cannot_change_the_lock_answer(self):
+        # R1-2: the interpreter lists its distributions isolated (-I), so a dist-info directory on PYTHONPATH can
+        # neither supply a missing pin nor replace the installed version of a pinned one. Without -I every case
+        # below gives the opposite answer.
+        absent = "fixture-shadow-distribution"
+        cases = (
+            ("missing pin", (absent, "1.0"), FIXTURE_LOCK + f"{absent}==1.0\n",
+             f"(1 of 2 pins differ): {absent}==1.0 (not installed)."),
+            ("replaced version", ("PyYAML", "0.0.1"), "pyyaml==0.0.1\n",
+             f"(1 of 1 pins differ): pyyaml==0.0.1 (installed {FIXTURE_PYYAML_VERSION})."),
+            ("installed version kept", ("PyYAML", "0.0.1"), FIXTURE_LOCK, None),
+        )
+        for label, (name, version), lock, message in cases:
+            with self.subTest(label):
+                shadow = self.bin / ("shadow-" + label.replace(" ", "-"))
+                info = shadow / f"{name.replace('-', '_')}-{version}.dist-info"
+                info.mkdir(parents=True)
+                (info / "METADATA").write_text(f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n",
+                                               encoding="utf-8")
+                self.write_lock(lock)
+                env = self.environment()
+                env["PYTHONPATH"] = str(shadow)
+                result = self.fixture.run_check(self.powershell, "Fast", env=env, base_ref="origin/release/9.9.0")
+                code, output = result.returncode, result.stdout + result.stderr
+                if message is None:
+                    self.assertEqual(code, 0, output)
+                    self.assertIn(f"The Python environment at {sys.executable} matches all 1 pins in "
+                                  "tests/requirements.lock.", output)
+                else:
+                    self.assert_lock_refused(code, output, f"The Python environment at {sys.executable} "
+                                                           f"{self.LOCK_MISMATCH} {message}")
 
 
 class CheckScriptPinnedBaseTests(unittest.TestCase):

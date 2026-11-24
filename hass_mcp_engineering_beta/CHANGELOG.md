@@ -1,5 +1,37 @@
 # Changelog
 
+## 2.4.2-beta.13 - 2.9.1 build, in progress (HAMCP-455)
+
+Builds on 2.4.2-beta.12 (2.9.0.1 hotfix, HAMCP-470, #488). In progress: every
+item has landed in `release/2.9.1`; the final release pull request completes
+this entry with its Evidence and release CI.
+
+- Version materialized on `release/2.9.1` at its catch-up with `main`
+  (b4dd3da3), so item pull requests carry no version change. The release
+  transition is from 2.4.2-beta.12 to 2.4.2-beta.13.
+- Landed, tooling and tests only: the version-gate lint (HAMCP-456, #487)
+  and release tooling (HAMCP-458, #486).
+- Re-scoped 2026-11-23 to audit-driven read fixes. Landed:
+  - `configuration_integrity_analysis` compact detail level and `severities`
+    filter, bound to the cursor (HAMCP-473, #492).
+  - `get_audit_log` pages to the response limit with a `_page` trailer and a
+    signed `cursor` (HAMCP-475, #493).
+  - New read-only `get_automation_run_counts` (HAMCP-476, #498). Engineering
+    tools: 86 to 87.
+  - `automation_reliability_batch_analysis` names limited sources and
+    carries root-cause detail (HAMCP-474 D5 and D6, #497). D1 is deferred to
+    HAMCP-487.
+  - Exact automation update plans add reasons that name what changed; the
+    legacy level is kept (HAMCP-293, #494). A lowering rule is HAMCP-486.
+  - The dashboard update review projection keeps in-bound strings whole
+    (HAMCP-292, #495).
+  - The native search design, docs only (HAMCP-481, #491). HAMCP-472 moved
+    to native search; the build is next-release work.
+- `V2_4_2_BETA13` release notes and acceptance contract. Evidence tier
+  pending.
+- Rollback: restore the pre-deploy backup or the VM 400 snapshot, which
+  returns 2.4.2-beta.12 (`v2.4.2-beta.12`, b4dd3da3).
+
 ## 2.4.2-beta.12 - 2.9.0.1 hotfix: lifecycle add-on identity read on ha-mcp 9.2.0 (HAMCP-470)
 
 Builds on 2.4.2-beta.11 (2.9.0, #481). In progress: its items land in
