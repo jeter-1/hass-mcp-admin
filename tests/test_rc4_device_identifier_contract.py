@@ -253,7 +253,7 @@ class IdentifierAuthorityTests(unittest.IsolatedAsyncioTestCase):
         self.network.records[2]["identifiers"] = [["test", 1]]
         await reconcile_through_gate(self.core)
         await gateway.initialize(server)
-        self.assertEqual(len(postcore.registered_tools(server)), 108)  # HAMCP-134: +1; HAMCP-253: +1; HAMCP-165 + HAMCP-155: +2 static; HAMCP-225: +4; HAMCP-228: +1 baseline compare tool; HAMCP-232/145: +4; HAMCP-106: +1; HAMCP-071: +1; HAMCP-311: +1; HAMCP-229: +1; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
+        self.assertEqual(len(postcore.registered_tools(server)), 109)  # HAMCP-134: +1; HAMCP-253: +1; HAMCP-165 + HAMCP-155: +2 static; HAMCP-225: +4; HAMCP-228: +1 baseline compare tool; HAMCP-232/145: +4; HAMCP-106: +1; HAMCP-071: +1; HAMCP-311: +1; HAMCP-229: +1; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: +1
         self.assertEqual(len(transport.calls), calls)
         transport.result = ha_mcp_920_receipts.result(postcore.STATE_RECEIPT)
         result = json.loads(await postcore.registered_tools(server)["ha_get_state"].run(
