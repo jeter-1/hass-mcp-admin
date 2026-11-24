@@ -170,7 +170,10 @@ function Read-LockedRequirements {
 function Test-LockedPythonEnvironment {
     # HAMCP-458: a venv built from an older lock, or a PATH Python without the
     # locked packages, is refused before any repository code runs. The
-    # interpreter runs isolated (-I) and only lists its distributions.
+    # interpreter runs isolated (-I) and only lists its distributions. The
+    # later steps are not isolated (-I would also drop the working directory
+    # from sys.path), so this covers the installed distributions only, not
+    # what PYTHONPATH adds to those steps.
     $pins = Read-LockedRequirements
     $previousErrorPreference = $ErrorActionPreference
     try {

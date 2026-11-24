@@ -272,12 +272,12 @@ class CoreEvidenceTests(unittest.TestCase):
             with self.subTest(event=event):
                 routes = ready_routes()
                 del routes[CORE_RUNS]
-                routes[route] = core_run(CORE_RUN, event=event, branch="main", head="c" * 40)
+                routes[route] = core_run(CORE_RUN, event=event, branch="main")
                 routes[jobs_route(CORE_RUN)] = jobs(["prepare", *RELEASE_JOBS])
                 report, github = sweep(routes, core_run=str(CORE_RUN))
                 self.assertTrue(report["ready"])
                 self.assertEqual(detail(report, "Core evidence"),
-                                 ("ready", f"run {CORE_RUN} attempt 1 ({event}), not the head: every lane-group and "
+                                 ("ready", f"run {CORE_RUN} attempt 1 ({event}): every lane-group and "
                                            f"lanes job of release proved Core {CORE}"))
                 self.assertNotIn(CORE_RUNS, github.calls)
         routes = ready_routes()
@@ -289,9 +289,40 @@ class CoreEvidenceTests(unittest.TestCase):
         routes[jobs_route(CORE_RUN)] = jobs(RELEASE_JOBS[:-1])
         self.assert_core(routes, f"run {CORE_RUN} attempt 1 (schedule): {RELEASE_JOBS[-1]}: absent",
                          core_run=str(CORE_RUN))
-        routes[route] = core_run(CORE_RUN, event="schedule", head="c" * 40, status="queued", conclusion=None)
-        self.assert_core(routes, f"run {CORE_RUN} attempt 1 (schedule), not the head is queued",
-                         core_run=str(CORE_RUN))
+        routes[route] = core_run(CORE_RUN, event="schedule", status="queued", conclusion=None)
+        self.assert_core(routes, f"run {CORE_RUN} attempt 1 (schedule) is queued", core_run=str(CORE_RUN))
+
+    def test_named_run_of_another_commit_is_never_ready(self):
+        # Only a run of the head proves it: a successful, complete run of any other commit is not ready, and
+        # its jobs are not read.
+        route = f"repos/{REPO}/actions/runs/{CORE_RUN}"
+        other = "c" * 40
+        cases = (
+            ("release case", core_run(CORE_RUN, event="schedule", branch="main", head=other), RELEASE_JOBS,
+             "schedule", other[:12]),
+            ("dispatched", core_run(CORE_RUN, event="workflow_dispatch", branch="main", head=other), RELEASE_JOBS,
+             "workflow_dispatch", other[:12]),
+            ("older pull-request head", core_run(CORE_RUN, head=other), CORE_JOBS, "pull_request", other[:12]),
+            ("queued", core_run(CORE_RUN, event="schedule", head=other, status="queued", conclusion=None),
+             RELEASE_JOBS, "schedule", other[:12]),
+            ("no head", core_run(CORE_RUN, head=None), CORE_JOBS, "pull_request", "an unrecognized commit"),
+            ("uppercase head", core_run(CORE_RUN, head=HEAD.upper()), CORE_JOBS, "pull_request",
+             "an unrecognized commit"),
+            ("injected head", core_run(CORE_RUN, head=MARKER), CORE_JOBS, "pull_request", "an unrecognized commit"),
+        )
+        for label, body, names, event, commit in cases:
+            with self.subTest(label):
+                routes = ready_routes()
+                del routes[CORE_RUNS]
+                routes[route] = body
+                routes[jobs_route(CORE_RUN)] = jobs(["prepare", *names])
+                report, github = sweep(routes, core_run=str(CORE_RUN))
+                self.assertFalse(report["ready"])
+                self.assertEqual(detail(report, "Core evidence"),
+                                 ("not ready", f"run {CORE_RUN} attempt 1 ({event}) is for {commit}, not the head; "
+                                               f"only a run of the head counts"))
+                self.assertNotIn(jobs_route(CORE_RUN), github.calls)
+                self.assertNotIn(MARKER, json.dumps(report))
 
     def test_named_pull_request_run_is_read_directly(self):
         routes = ready_routes()

@@ -2858,6 +2858,38 @@ class CheckScriptDefaultsTests(unittest.TestCase):
                                                        "unreadable version)")
                 self.assertNotIn("rm -rf", output)
 
+    def test_pythonpath_shadow_cannot_change_the_lock_answer(self):
+        # R1-2: the interpreter lists its distributions isolated (-I), so a dist-info directory on PYTHONPATH can
+        # neither supply a missing pin nor replace the installed version of a pinned one. Without -I every case
+        # below gives the opposite answer.
+        absent = "fixture-shadow-distribution"
+        cases = (
+            ("missing pin", (absent, "1.0"), FIXTURE_LOCK + f"{absent}==1.0\n",
+             f"(1 of 2 pins differ): {absent}==1.0 (not installed)."),
+            ("replaced version", ("PyYAML", "0.0.1"), "pyyaml==0.0.1\n",
+             f"(1 of 1 pins differ): pyyaml==0.0.1 (installed {FIXTURE_PYYAML_VERSION})."),
+            ("installed version kept", ("PyYAML", "0.0.1"), FIXTURE_LOCK, None),
+        )
+        for label, (name, version), lock, message in cases:
+            with self.subTest(label):
+                shadow = self.bin / ("shadow-" + label.replace(" ", "-"))
+                info = shadow / f"{name.replace('-', '_')}-{version}.dist-info"
+                info.mkdir(parents=True)
+                (info / "METADATA").write_text(f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n",
+                                               encoding="utf-8")
+                self.write_lock(lock)
+                env = self.environment()
+                env["PYTHONPATH"] = str(shadow)
+                result = self.fixture.run_check(self.powershell, "Fast", env=env, base_ref="origin/release/9.9.0")
+                code, output = result.returncode, result.stdout + result.stderr
+                if message is None:
+                    self.assertEqual(code, 0, output)
+                    self.assertIn(f"The Python environment at {sys.executable} matches all 1 pins in "
+                                  "tests/requirements.lock.", output)
+                else:
+                    self.assert_lock_refused(code, output, f"The Python environment at {sys.executable} "
+                                                           f"{self.LOCK_MISMATCH} {message}")
+
 
 class CheckScriptPinnedBaseTests(unittest.TestCase):
     """HAMCP-356: one pinned base commit, and a separate version-check base.

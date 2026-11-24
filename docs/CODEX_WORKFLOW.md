@@ -344,6 +344,11 @@ run and names the differences. Names and versions are compared; the wheel
 hashes are the `--require-hashes` install's job above. A venv built from an
 older lock is refused, so rebuild it from the current lock.
 
+The check covers the interpreter's installed distributions only. A
+`PYTHONPATH` entry or the user site cannot change its answer, but the later
+steps run the interpreter normally, so they still import from `PYTHONPATH` and
+the user site. Run `check.ps1` with `PYTHONPATH` unset.
+
 `git worktree add` writes into the main checkout's `.git/worktrees`, which is
 outside the writable root or protected. A `--shared` clone borrows objects
 read-only through `objects/info/alternates` and writes only under
@@ -1350,8 +1355,9 @@ or MCP access. It reports three parts: the support window's current Core and
 ha-mcp pair; the head's newest `ci.yml` run (`validate` and every full-tier
 `Real HA` lane); and the head's newest `core-release-evidence.yml` pull-request
 run (each lane-group and lanes job of the `coverage` and `fixture` cases).
-`--core-run <id>` names another Core evidence run instead; a scheduled or
-dispatched run counts only when it selected the window's current Core. A part
+`--core-run <id>` names another Core evidence run of the same head instead;
+a run of any other commit is not ready, and a scheduled or dispatched run
+counts only when it selected the window's current Core. A part
 that cannot be read or has no result is not ready. Exit 0 means every checked
 part is ready, 1 that one is not, 2 a usage refusal. The upstream-read audit,
 output-expanding parameters, exact-version gates and live re-checks stay with

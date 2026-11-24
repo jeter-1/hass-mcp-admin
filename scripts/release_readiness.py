@@ -11,9 +11,10 @@ Assistant or MCP access. Three parts are checked:
   for the exact head commit completed successfully, and in its latest attempt
   ``validate`` and every full-tier ``Real HA`` lane of the window succeeded;
 - Core evidence: the newest ``core-release-evidence.yml`` pull-request run of
-  this repository for the exact head (or the run ``--core-run`` names)
-  completed successfully, and in its latest attempt every lane-group job and
-  the lanes job of each of its cases proved the window's current Core:
+  this repository for the exact head (or the run ``--core-run`` names, which
+  must also be a run of the head) completed successfully, and in its latest
+  attempt every lane-group job and the lanes job of each of its cases proved
+  the window's current Core:
   ``coverage`` and ``fixture`` for a pull request, or ``release`` and its
   selected-release job for a scheduled or dispatched run. Scheduled runs only
   try Core releases newer than the window, so they rarely prove its Core.
@@ -245,10 +246,15 @@ def core_evidence(read, repository, head, version, groups, core_run=None):
         if not (isinstance(run, dict) and run.get("id") == int(core_run)
                 and own_run(run, repository, CORE_WORKFLOW, EVENTS)):
             return part(name, NOT_READY, f"run {core_run} is not a core-release-evidence.yml run of this repository")
-    label = run_label(run) + ("" if run.get("head_sha") == head else ", not the head")
+    label = run_label(run)
+    if run.get("head_sha") != head:
+        # Evidence from other code never proves the head, whatever the run concluded.
+        commit = run.get("head_sha")
+        commit = commit[:12] if isinstance(commit, str) and SHA.fullmatch(commit) else "an unrecognized commit"
+        return part(name, NOT_READY, f"{label} is for {commit}, not the head; only a run of the head counts")
     problem = run_complete(run)
     if problem:
-        return part(name, NOT_READY, problem.replace(run_label(run), label, 1))
+        return part(name, NOT_READY, problem)
     jobs = latest_jobs(read, repository, run["id"])
     expected = core_jobs(version, run["event"], groups)
     if run["event"] != "pull_request" and expected[0] not in jobs:
@@ -309,7 +315,8 @@ def main(argv=None, read=github_read, stdout=None, stderr=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--repo", default=DEFAULT_REPOSITORY, help="owner/name (default %(default)s)")
     parser.add_argument("--head", required=True, help="the exact 40-hex commit the release would ship")
-    parser.add_argument("--core-run", help="a core-release-evidence.yml run id instead of the head's newest pull-request run")
+    parser.add_argument("--core-run", help="a core-release-evidence.yml run id of the head, instead of its newest "
+                        "pull-request run")
     parser.add_argument("--format", choices=("markdown", "json"), default="markdown")
     args = parser.parse_args(argv)
     for value, pattern, category in ((args.repo, REPOSITORY, "repository_invalid"), (args.head, SHA, "head_invalid"),
