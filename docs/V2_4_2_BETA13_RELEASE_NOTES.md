@@ -36,8 +36,8 @@ Planned, in this order:
 
 | Item | Scope | State |
 | --- | --- | --- |
-| HAMCP-472 | `ha_search` with a domain filter returns no entities where `search_entities` finds them, and every search reports `partial` with one replaced warning. A read-only diagnosis comes first; a fix follows if the cause is Engineering's | not landed |
-| Native search | Design only in this build (entities, automations and scripts; filters; `result_fields`; correct partial semantics). The build is planned for the next release | not landed |
+| HAMCP-472 | `ha_search` with a domain filter returns no entities where `search_entities` finds them, and every search reports `partial` with one replaced warning. A read-only diagnosis comes first; a fix follows if the cause is Engineering's | moved to native search (not reproduced in the HA Admin replay; no 2.9.1 code) |
+| HAMCP-481 | Native search design only in this build (entities, automations and scripts; filters; `result_fields`; correct partial semantics): [`HAMCP_481_NATIVE_SEARCH_DESIGN.md`](HAMCP_481_NATIVE_SEARCH_DESIGN.md). The build is planned for the next release | not landed |
 | HAMCP-473 | `configuration_integrity_analysis` paging and filters | not landed |
 | HAMCP-474 | Analysis coverage gaps: large automations, scripts and templates, the default dashboard, and the system-log partial reason | not landed |
 | HAMCP-475 | `get_audit_log` smaller pages with a cursor | not landed |
