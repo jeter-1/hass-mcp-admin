@@ -1,13 +1,11 @@
 # Engineering 2.4.2-beta.12 acceptance
 
-**Status: in progress.** This contract covers the 2.9.0.1 hotfix, released as
-2.4.2-beta.12. It follows 2.4.2-beta.11 (2.9.0, #481). Its content lands
-through item pull requests into the `release/2.9.0.1` integration branch.
-Sections 1, 4 and 5, Deploy and Rollback are complete on this branch, so the
-Evidence tier runs on a head that nothing changes afterwards. What stays
-**pending** is recorded only after release: the Evidence tier result
-(section 1), release CI (section 2) and publication (section 3). A small docs
-pull request to `main` records them, as #482 did for 2.4.2-beta.11.
+**Status: released.** This contract covers the 2.9.0.1 hotfix, released as
+2.4.2-beta.12. It follows 2.4.2-beta.11 (2.9.0, #481). Its content landed
+through item pull requests into the `release/2.9.0.1` integration branch,
+and release pull request #488 carried it to `main`. Sections 1 to 3 are
+recorded below. Sections 4 and 5 are the installed acceptance contract; this
+document records no installed result.
 
 See also the release notes:
 [`V2_4_2_BETA12_RELEASE_NOTES.md`](V2_4_2_BETA12_RELEASE_NOTES.md).
@@ -61,9 +59,10 @@ The review copies are kept under `~/handoffs/architect/reviews/`.
 | --- | --- | --- | --- |
 | #483 | HAMCP-470 runtime fix and tests | Cursor r1 READY at e2a96b3c; Codex r1 CHANGES_REQUIRED at e2a96b3c, r2 at e044b9f7 (see below) | 45282990469 success |
 | #484 | release notes Items and Current state; acceptance sections 4 and 5 | architect, at f35fe3e9 | 45288986587 success |
+| #485 | tool catalog, Deploy, Rollback and section 4 short check | architect, at 91526213 | 45295014302 success |
 
-The final docs pull request (tool catalog, Deploy and Rollback) is bound
-here after release, with the Evidence tier result.
+#485 was merged as 32973a80, whose tree equals 91526213. That commit is the
+final release head.
 
 **Merged head that differs from the last Cursor-reviewed head.**
 - **#483.** The merged head e044b9f7 is the correction batch for Codex r1's
@@ -91,21 +90,39 @@ change, and no new write, dispatch path or fallback.
   document, with resolution `exact`.
 - The docs pull requests run the Fast checks and CI on their own heads.
   Their reviewer is the architect only (not independent).
-- **Evidence tier: pending.** It runs once, on the final release head, after
-  Josh's go. Nothing on this branch changes after it. Its result is recorded
-  after release by the docs pull request to `main`.
+- **Evidence tier: passed** on the final release head 32973a80 (base `main`
+  6fa9699e), 2026-11-23 20:12-21:05 CST, after Josh's go. It ran
+  `check.ps1 -Tier Evidence -Parallel 4` with `-AuthorizedProtectedPath` for
+  the four protected files in the diff (13,905 tests ran, 19 skipped).
+  `validation.json` sha256
+  `6722ac4a3ff735413ed88cd2505fa1f40d2c9629bd2d3de376d6c082b753859a`.
+  Peak memory was 1.82 GiB, under the 3 GiB cap.
 
 ## 2. Release CI
 
 The exact materialized final head's `validate` check passes, including the
-release transition. **Pending.** Recorded after release by a small docs pull
-request to `main`, as #482 did for 2.4.2-beta.11.
+release transition. **Passed.** Release pull request #488 (`release/2.9.0.1`
+at 32973a80 into `main` at 6fa9699e): 23 checks passed, none failed, and
+CodeRabbit was skipped. The runs were CI 45317083660 (`validate`) and Policy
+locks 45317083727, both `success` on 32973a80.
 
 ## 3. Publication
 
 Publication happens only through Josh's Ready action and the repository's
-head-bound workflow. **Pending.** Recorded after release by the same docs
-pull request to `main`.
+head-bound workflow. **Done.**
+- #488 was merged by the head-bound Ready workflow on 2026-11-23 at 21:29
+  CST, as `main` b4dd3da332b381d81df9ec1fd6f72e2be06a527a. Its tree differs
+  from 32973a80 only by #482's beta.11 acceptance corrections (docs only),
+  which `main` already carried.
+- Workflow run 45319928652 ("Publish reviewed Engineering release",
+  `success`, 21:30-21:59 CST) published that commit:
+  - version image `ghcr.io/jeter-1/hass-mcp-engineering-beta:2.4.2-beta.12`;
+  - commit image
+    `ghcr.io/jeter-1/hass-mcp-engineering-beta:sha-b4dd3da332b381d81df9ec1fd6f72e2be06a527a`;
+  - OCI manifest digest
+    `sha256:916f941c052cdbe9516cce8f22ff68e7682754dcccfb3518960d245983e4d634`;
+  - annotated tag `v2.4.2-beta.12` at b4dd3da3;
+  - a GitHub pre-release, published at 21:59 CST.
 
 ## 4. Installed read-only acceptance (separately authorized, after deploy)
 

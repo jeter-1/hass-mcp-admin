@@ -1,10 +1,11 @@
 # Engineering 2.4.2-beta.12 release notes
 
-**Status: in progress.** Engineering 2.4.2-beta.12 is the 2.9.0.1 hotfix. It
-builds on 2.4.2-beta.11 (2.9.0, #481). Its content lands through item pull
-requests into the `release/2.9.0.1` integration branch. These notes are
-complete on that branch except for what is recorded after release: the
-Evidence tier result, release CI and publication.
+**Status: released.** Engineering 2.4.2-beta.12 is the 2.9.0.1 hotfix. It
+builds on 2.4.2-beta.11 (2.9.0, #481). Its content landed through item pull
+requests into the `release/2.9.0.1` integration branch, and release pull
+request #488 carried it to `main` (merged as b4dd3da3). The Evidence tier
+result, release CI and publication are recorded in the acceptance document,
+sections 1 to 3.
 
 The architect's block of 2026-11-23 (HAMCP-470 hotfix) names 2.4.2-beta.12
 for the 2.9.0.1 path. The hotfix is narrow: the lifecycle add-on identity
@@ -19,8 +20,10 @@ The version is materialized at the base of `release/2.9.0.1` (`main` at
 23c5c429). The one item, HAMCP-470, has landed (#483, merged as 71520cba),
 and so have these notes' Items and the acceptance sections 4 and 5 (#484).
 A final docs pull request completes the tool catalog, Deploy and Rollback,
-so the Evidence tier runs on a head that nothing changes afterwards. Nothing is
-published or deployed.
+so the Evidence tier runs on a head that nothing changes afterwards (#485,
+merged as 32973a80). The release is published as tag `v2.4.2-beta.12` and
+image `ghcr.io/jeter-1/hass-mcp-engineering-beta:2.4.2-beta.12`. Deployment
+is a separate decision, and these notes record no installed result.
 
 ## Items
 
@@ -81,10 +84,11 @@ tool refresh for this release.
 ## Evidence
 
 Each pull request's review and CI run are bound in the acceptance document,
-section 1. **Evidence tier: pending.** It runs once, on the final release
-head, after Josh's go. Its result, release CI and publication are recorded
-after release by a small docs pull request to `main`, as #482 did for
-2.4.2-beta.11.
+section 1. **Evidence tier: passed** on the final release head 32973a80,
+2026-11-23 20:12-21:05 CST, after Josh's go (13,905 tests ran, 19 skipped;
+`validation.json` sha256
+`6722ac4a3ff735413ed88cd2505fa1f40d2c9629bd2d3de376d6c082b753859a`). Release
+CI and publication are recorded in the acceptance document, sections 2 and 3.
 
 ## Tool catalog
 
