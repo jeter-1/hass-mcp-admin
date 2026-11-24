@@ -63,6 +63,11 @@ REVIEWED_CORE_BINDINGS = {
     # file on the child-consumer paths was reviewed against 8.5.0 (exact source).
     "2026.11.0": CoreBinding("sha256:c6c1ca9931036bf3a2c4cc088d8db25dfea3b33935a5ecc83c40349462e2f69e",
                              CHILD_DEVICE_NAME_PARTS, True, "9.2.0", http_storage_version=3),
+    # HAMCP-489: O3 against 2026.11.0 differs in seven contract-read files, each with
+    # a source judgment (docs/evidence/hamcp489); the device and entity registries,
+    # the HTTP config store and storage are byte-identical, so semantics carry over.
+    "2026.11.3": CoreBinding("sha256:24e541ddae5818bf8eb27898b9ba00d0c344a655aa5097e9e9bd4b19356be847",
+                             CHILD_DEVICE_NAME_PARTS, True, "9.2.0", http_storage_version=3),
 }
 
 

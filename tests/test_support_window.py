@@ -125,14 +125,15 @@ class CommittedWindowTests(SupportWindowFixture):
         self.assertNotIn("admission", self.window)
 
     def test_committed_window_is_the_deployed_2026_11_0_and_9_2_0_pair(self):
-        # HAMCP-437 (release 2.9.0): the deployed pair, with every candidate and
-        # rollback empty (HAMCP-406, restore-first recovery).
+        # HAMCP-437 (release 2.9.0): the deployed pair, with every rollback empty
+        # (HAMCP-406, restore-first recovery). HAMCP-489: Core 2026.11.3 is the
+        # Core candidate under evaluation; the ha-mcp candidate stays empty.
         self.assertEqual(self.window["core"]["current"]["version"], "2026.11.0")
         self.assertEqual(self.window["ha_mcp"]["current"]["version"], "9.2.0")
-        for component in ("core", "ha_mcp"):
-            for slot in ("candidate", "rollback"):
-                with self.subTest(component=component, slot=slot):
-                    self.assertIsNone(self.window[component][slot])
+        self.assertEqual(self.window["core"]["candidate"]["version"], "2026.11.3")
+        for component, slot in (("core", "rollback"), ("ha_mcp", "candidate"), ("ha_mcp", "rollback")):
+            with self.subTest(component=component, slot=slot):
+                self.assertIsNone(self.window[component][slot])
         reviewed = {r["upstream_version"]: r for r in registry_matrix()["include"]}["9.2.0"]
         current = self.window["ha_mcp"]["current"]
         self.assertEqual((current["image_index_digest"], current["source_commit"]),
@@ -824,7 +825,7 @@ class EmptyRollbackTests(TempRootFixture):
     def test_rotation_fills_an_empty_rollback(self):
         # Core: a later reviewed current arrives and the former current becomes rollback.
         former = self.base["core"]["current"]
-        self.assertEqual(self.sw.core_slots(self.sw.load(self.root), self.sw.SLOTS), ("current",))
+        self.assertNotIn("rollback", self.sw.core_slots(self.sw.load(self.root), self.sw.SLOTS))
         self.mutate(lambda w: w["core"].update(
             current={"version": self.later, "image_index_digest": "sha256:" + "c" * 64},
             candidate=None, rollback=dict(former)))

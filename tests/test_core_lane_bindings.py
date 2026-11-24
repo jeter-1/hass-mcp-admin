@@ -565,7 +565,7 @@ class HttpStorageBindingTests(unittest.IsolatedAsyncioTestCase):
             await contract._assert_http_configuration_contract()
 
     async def test_exact_http_storage_versions_and_cross_version_refusal(self):
-        versions = {**{v: 2 for v in core_lane_bindings.REVIEWED_CORE_BINDINGS}, "2026.11.0": 3}
+        versions = {**{v: 2 for v in core_lane_bindings.REVIEWED_CORE_BINDINGS}, "2026.11.0": 3, "2026.11.3": 3}
         for version, expected in versions.items():
             projection = {"version": expected, "has_yaml_migration_done": True,
                           "yaml_migration_done": True, "has_pending": True, "pending": None,

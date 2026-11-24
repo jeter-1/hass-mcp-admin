@@ -78,8 +78,12 @@ ignore or clamp:
     `1000000000.5` refuses (`helper_value_not_on_step`).
 - **input_text:** `min <= len(value) <= max`, and the full value matches the
   live `pattern`. An empty value is checked the same way.
-  - Home Assistant does not enforce `pattern`, and it silently ignores an
-    out-of-range length, so Engineering checks both.
+  - Home Assistant before 2026.11.3 does not enforce `pattern`, and it
+    silently ignores an out-of-range length, so Engineering checks both.
+  - From Core 2026.11.3, Home Assistant drops a value that fails `pattern`
+    with a start-anchored `re.match`, logs a warning and leaves the state
+    unchanged (HAMCP-489). Engineering's full-match check is stricter, so every
+    value it admits also passes Core's check.
   - The pattern runs with Python `re`. A pattern over 255 characters, or one
     that does not compile, refuses (`helper_pattern_unsupported`).
 - **input_datetime:** the value has exactly the fields that `has_date` and
