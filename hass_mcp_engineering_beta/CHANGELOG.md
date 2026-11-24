@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.4.2-beta.12 - 2.9.0.1 hotfix: lifecycle add-on identity read on ha-mcp 9.2.0 (HAMCP-470)
+
+Builds on 2.4.2-beta.11 (2.9.0, #481). In progress: its items land in
+`release/2.9.0.1`; the final release pull request completes this entry with
+its Evidence and release CI.
+
+- Version materialized at the base of `release/2.9.0.1` (`main` at
+  23c5c429), so item pull requests carry no version change. The release
+  transition from 2.4.2-beta.11 is to 2.4.2-beta.12.
+- Exact `V2_4_2_BETA12` release notes and acceptance contract. Evidence tier
+  pending.
+
 ## 2.4.2-beta.11 - 2.9.0 build: ha-mcp 9.2.0 only, dispatch-scoped lifecycle catalog, replaced upstream warnings (HAMCP-436, HAMCP-437, HAMCP-464)
 
 Builds on 2.4.2-beta.10 (HAMCP-401, #452). In progress: every item has
