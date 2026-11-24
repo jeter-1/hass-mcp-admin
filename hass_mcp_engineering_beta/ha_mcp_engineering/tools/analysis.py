@@ -457,16 +457,19 @@ async def configuration_integrity_analysis(
         ]
     ] = [],
     include_orphan_candidates: bool = True,
-    detail_level: Literal["summary", "standard", "evidence"] = "standard",
+    detail_level: Literal["summary", "standard", "evidence", "compact"] = "standard",
     limit: Annotated[int, Field(ge=1, le=100)] = 20,
     cursor: str = "",
     refresh_index: bool = False,
+    severities: list[Literal["high", "medium", "low", "info"]] = [],
 ) -> str:
     """Audit global Home Assistant configuration integrity using bounded evidence.
 
     Reports exact references to missing, disabled, or registry-only entities,
     conservative orphan-registry candidates, and unresolved dynamic references.
     This read-only operation never deletes, rewrites, or changes Home Assistant.
+    To walk every finding, use detail_level compact with limit 100 and follow
+    next_cursor; severities and finding_types narrow the walk.
     """
 
     started = time.perf_counter()
@@ -516,6 +519,7 @@ async def configuration_integrity_analysis(
             cursor=cursor,
             refresh_index=refresh_index,
             page_fits=page_fits,
+            severities=severities,
         )
         if rendered is None and not page_fits(output):
             raise GovernanceError(ErrorCode.ANALYSIS_UNAVAILABLE)
