@@ -4,14 +4,17 @@ Josh's middle path (2026-11-24, as relayed by the architect): the
 whole-configuration risk level stays exactly as it is, with no downgrade path
 of any kind. Only the reasons change: they name the changed fields and action
 steps, and list a high-risk call that did not change as "present, unchanged"
-rather than as the cause.
+rather than as the cause. Each high-risk call is named by its path and its
+literal targets, so two calls to one service are reported separately as
+changed, moved, removed, or unchanged.
 
 Every plan-path assertion compares the plan with the same plan classified by
 the legacy rule alone (``_change_reasons`` disabled): level, apply decision,
 evidence, warnings, policy class, and acknowledgements must be equal, and the
 legacy reasons must come first, unchanged. The PR #494 round-1
-counterexamples (Cursor H1, H2, M1, M2, L1; Codex H1, H2, H3, M1) and the
-I4a plan shape are reproduced here. Configurations are synthetic.
+counterexamples (Cursor H1, H2, M1, M2, L1; Codex H1, H2, H3, M1), the round-2
+counterexamples (Cursor R2-M1, R2-M2), and the I4a plan shape are reproduced
+here. Configurations are synthetic.
 """
 
 from __future__ import annotations
@@ -111,6 +114,7 @@ class ChangeReasonPlanTests(ConfigurationPlanTestCase):
         self.gateway.configs[("script", "thermostat_apply_setpoints")] = script(
             notify("setpoints")
         )
+        self.gateway.configs[("script", "hamcp293_spare")] = script(notify("spare"))
 
     async def plan(self, resource_type, target, before, after):
         self.gateway.configs[(resource_type, target)] = copy.deepcopy(before)
@@ -182,7 +186,8 @@ class ChangeReasonPlanTests(ConfigurationPlanTestCase):
             added,
             [
                 f"{CHANGED}: conditions, description",
-                f"{UNCHANGED}: script.turn_on",
+                f"{UNCHANGED}: script.turn_on at action[0] "
+                "(script.thermostat_apply_setpoints)",
             ],
         )
 
@@ -209,7 +214,7 @@ class ChangeReasonPlanTests(ConfigurationPlanTestCase):
                 # the allowlist gap as pre-existing); HAMCP-293 leaves it.
                 self.assertEqual(
                     added,
-                    [f"{CHANGED}: {field}", f"{UNCHANGED}: script.hamcp293_helper"],
+                    [f"{CHANGED}: {field}", f"{UNCHANGED}: script.hamcp293_helper at action[0]"],
                 )
 
     async def test_cursor_h2_device_unlock_after_an_unchanged_call_stays_high(self):
@@ -226,7 +231,7 @@ class ChangeReasonPlanTests(ConfigurationPlanTestCase):
             [
                 f"{CHANGED}: actions",
                 f"{STEPS}: action[1]",
-                f"{UNCHANGED}: script.hamcp293_helper",
+                f"{UNCHANGED}: script.hamcp293_helper at action[0]",
             ],
         )
         self.assertIn(SAFETY, self.policy(created)[1])
@@ -241,7 +246,7 @@ class ChangeReasonPlanTests(ConfigurationPlanTestCase):
             [
                 f"{CHANGED}: actions",
                 f"{STEPS}: action[0]",
-                f"{REMOVED}: automation.turn_off",
+                f"{REMOVED}: automation.turn_off at action[0] (automation.lights)",
             ],
         )
 
@@ -280,7 +285,10 @@ class ChangeReasonPlanTests(ConfigurationPlanTestCase):
                 )
                 self.assertEqual(operation.risk.level, RiskLevel.HIGH)
                 self.assertNotIn(LOW_IMPACT, operation.risk.reasons)
-                self.assertEqual(added[-1], f"{UNCHANGED}: automation.turn_off")
+                self.assertEqual(
+                    added[-1],
+                    f"{UNCHANGED}: automation.turn_off at action[0] (automation.lights)",
+                )
                 self.assertTrue(
                     any(reason.startswith(f"{STEPS}: ") and "[1]" in reason for reason in added),
                     added,
@@ -300,7 +308,7 @@ class ChangeReasonPlanTests(ConfigurationPlanTestCase):
             [
                 f"{CHANGED}: actions, alias",
                 f"{STEPS}: action[1]",
-                f"{UNCHANGED}: automation.turn_off",
+                f"{UNCHANGED}: automation.turn_off at action[0] (automation.lights)",
             ],
         )
 
@@ -313,7 +321,10 @@ class ChangeReasonPlanTests(ConfigurationPlanTestCase):
         )
         self.assertEqual(operation.risk.level, RiskLevel.HIGH)
         self.assertTrue(operation.risk.evidence)
-        self.assertEqual(added[-1], f"{UNCHANGED}: water_heater.turn_off")
+        self.assertEqual(
+            added[-1],
+            f"{UNCHANGED}: water_heater.turn_off at action[0] (water_heater.tank)",
+        )
 
     # Reason semantics on the plan path.
 
@@ -328,20 +339,26 @@ class ChangeReasonPlanTests(ConfigurationPlanTestCase):
             [
                 f"{CHANGED}: actions",
                 f"{STEPS}: action[1]",
-                f"{UNCHANGED}: script.hamcp293_helper",
+                f"{UNCHANGED}: script.hamcp293_helper at action[0]",
             ],
         )
 
     async def test_changed_added_removed_and_moved_calls_are_named(self):
         cases = (
             ("a293_changed", automation(HELPER, PAUSE), automation(HELPER, FANS),
-             [f"{ADDED}: automation.turn_off", f"{UNCHANGED}: script.hamcp293_helper"]),
+             [f"{ADDED}: automation.turn_off at action[1] (automation.fans)",
+              f"{UNCHANGED}: script.hamcp293_helper at action[0]"]),
             ("a293_added", automation(notify("a")), automation(notify("a"), PAUSE),
-             [f"{ADDED}: automation.turn_off"]),
+             [f"{ADDED}: automation.turn_off at action[1] (automation.lights)"]),
             ("a293_removed", automation(HELPER, PAUSE), automation(HELPER),
-             [f"{REMOVED}: automation.turn_off", f"{UNCHANGED}: script.hamcp293_helper"]),
+             [f"{REMOVED}: automation.turn_off at action[1] (automation.lights)",
+              f"{UNCHANGED}: script.hamcp293_helper at action[0]"]),
             ("a293_moved", automation(HELPER, PAUSE), automation(PAUSE, HELPER),
-             [f"{MOVED}: automation.turn_off, script.hamcp293_helper"]),
+             [f"{MOVED}: automation.turn_off at action[0] from action[1] "
+              "(automation.lights), script.hamcp293_helper at action[1] from action[0]"]),
+            ("a293_duplicate", automation(PAUSE), automation(PAUSE, PAUSE),
+             [f"{ADDED}: automation.turn_off at action[1] (automation.lights)",
+              f"{UNCHANGED}: automation.turn_off at action[0] (automation.lights)"]),
         )
         for target, before, after, calls in cases:
             with self.subTest(change=target):
@@ -370,7 +387,7 @@ class ChangeReasonPlanTests(ConfigurationPlanTestCase):
                 self.assertEqual(operation.risk.level, RiskLevel.HIGH)
                 self.assertEqual(
                     added,
-                    [f"{CHANGED}: {field}", f"{UNCHANGED}: script.hamcp293_helper"],
+                    [f"{CHANGED}: {field}", f"{UNCHANGED}: script.hamcp293_helper at action[0]"],
                 )
 
     async def test_nested_branch_changes_name_the_step(self):
@@ -388,8 +405,8 @@ class ChangeReasonPlanTests(ConfigurationPlanTestCase):
             [
                 f"{CHANGED}: actions",
                 f"{STEPS}: action[0].else[0]",
-                f"{ADDED}: automation.turn_off",
-                f"{UNCHANGED}: script.hamcp293_helper",
+                f"{ADDED}: automation.turn_off at action[0].else[0] (automation.fans)",
+                f"{UNCHANGED}: script.hamcp293_helper at action[0].then[0]",
             ],
         )
         _created, test_changed, test_added = await self.classify(
@@ -400,7 +417,8 @@ class ChangeReasonPlanTests(ConfigurationPlanTestCase):
             [
                 f"{CHANGED}: actions",
                 f"{STEPS}: action[0]",
-                f"{UNCHANGED}: automation.turn_off, script.hamcp293_helper",
+                f"{UNCHANGED}: script.hamcp293_helper at action[0].then[0], "
+                "automation.turn_off at action[0].else[0] (automation.lights)",
             ],
         )
         for operation in (else_only, test_changed):
@@ -411,7 +429,9 @@ class ChangeReasonPlanTests(ConfigurationPlanTestCase):
             "automation", "a293_unlock",
             automation(UNLOCK, notify("a")), automation(UNLOCK, notify("b")),
         )
-        self.assertEqual(added[-1], f"{UNCHANGED}: lock.unlock")
+        self.assertEqual(
+            added[-1], f"{UNCHANGED}: lock.unlock at action[0] (lock.front_door)"
+        )
         self.assertEqual(self.policy(created)[1], ["plan_approval", SAFETY])
         (row,) = compare_operation(operation).projection["rows"]
         self.assertIn("unlock_or_disarm_effect", row["reason_codes"])
@@ -424,7 +444,7 @@ class ChangeReasonPlanTests(ConfigurationPlanTestCase):
         )
         self.assertEqual(compare_operation(operation).verdict, VERDICT_UNRESOLVED)
         self.assertEqual(operation.risk.level, RiskLevel.HIGH)
-        self.assertEqual(added[-1], f"{UNCHANGED}: script.hamcp293_missing")
+        self.assertEqual(added[-1], f"{UNCHANGED}: script.hamcp293_missing at action[0]")
         self.assertIn(SAFETY, self.policy(created)[1])
 
     async def test_script_reasons_keep_dotted_call_names(self):
@@ -432,11 +452,84 @@ class ChangeReasonPlanTests(ConfigurationPlanTestCase):
         _created, operation, added = await self.classify(
             "script", "s293_trigger", script(notify("a")), script(notify("a"), trigger)
         )
-        self.assertIn(f"{ADDED}: automation.trigger", added)
+        self.assertIn(
+            f"{ADDED}: automation.trigger at action[1] (automation.lights)", added
+        )
         self.assertFalse(
             any("script.trigger" in reason for reason in operation.risk.reasons),
             operation.risk.reasons,
         )
+
+    # Round-2 counterexamples: two calls to one service, and a second root.
+
+    async def test_cursor_r2_m1_two_script_turn_on_calls_are_told_apart(self):
+        def turn_on(script_id):
+            return {"action": "script.turn_on", "target": {"entity_id": f"script.{script_id}"}}
+
+        _created, operation, added = await self.classify(
+            "automation", "a293_two_turn_on",
+            automation(turn_on("hamcp293_helper"), turn_on("thermostat_apply_setpoints")),
+            automation(turn_on("hamcp293_helper"), turn_on("hamcp293_spare")),
+        )
+        self.assertEqual(operation.risk.level, RiskLevel.HIGH)
+        self.assertEqual(
+            added,
+            [
+                f"{CHANGED}: actions",
+                f"{STEPS}: action[1]",
+                f"{ADDED}: script.turn_on at action[1] (script.hamcp293_spare)",
+                f"{UNCHANGED}: script.turn_on at action[0] (script.hamcp293_helper)",
+            ],
+        )
+
+    async def test_cursor_r2_m1_removing_one_of_two_unlocks_is_named(self):
+        back = {"action": "lock.unlock", "target": {"entity_id": "lock.back_door"}}
+        cases = (
+            ("a293_unlock_second", automation(UNLOCK, back), automation(UNLOCK),
+             [f"{REMOVED}: lock.unlock at action[1] (lock.back_door)",
+              f"{UNCHANGED}: lock.unlock at action[0] (lock.front_door)"]),
+            ("a293_unlock_first", automation(UNLOCK, back), automation(back),
+             [f"{MOVED}: lock.unlock at action[0] from action[1] (lock.back_door)",
+              f"{REMOVED}: lock.unlock at action[0] (lock.front_door)"]),
+        )
+        for target, before, after, calls in cases:
+            with self.subTest(change=target):
+                created, _operation, added = await self.classify(
+                    "automation", target, before, after
+                )
+                self.assertEqual(
+                    [reason for reason in added if reason.startswith("High-risk call")],
+                    calls,
+                )
+                self.assertIn(SAFETY, self.policy(created)[1])
+
+    async def test_cursor_r2_m2_a_call_under_a_second_root_reads_as_added(self):
+        # The diff reports the second root as ``other:actions`` (or nothing,
+        # when ``actions`` comes first); either way the call is compared.
+        def both_roots(actions_first):
+            config = automation(HELPER)
+            action = config.pop("action")
+            if actions_first:
+                config["actions"] = [PAUSE]
+                config["action"] = action
+            else:
+                config["action"] = action
+                config["actions"] = [PAUSE]
+            return config
+
+        for actions_first in (False, True):
+            with self.subTest(actions_first=actions_first):
+                _created, _operation, added = await self.classify(
+                    "automation", f"a293_two_roots_{int(actions_first)}",
+                    automation(HELPER), both_roots(actions_first),
+                )
+                self.assertEqual(
+                    [reason for reason in added if reason.startswith("High-risk call")],
+                    [
+                        f"{ADDED}: automation.turn_off at actions[0] (automation.lights)",
+                        f"{UNCHANGED}: script.hamcp293_helper at action[0]",
+                    ],
+                )
 
     async def test_plan_reasons_carry_the_operation_prefix(self):
         created, operation, added = await self.classify(
@@ -502,7 +595,7 @@ class DirectClassifierTests(unittest.TestCase):
             current=automation(HELPER, notify("a")), protected_effect_verdict=VERDICT_UNRESOLVED,
         )
         self.assertEqual(risk.level, RiskLevel.HIGH)
-        self.assertIn(f"{UNCHANGED}: script.hamcp293_helper", risk.reasons)
+        self.assertIn(f"{UNCHANGED}: script.hamcp293_helper at action[0]", risk.reasons)
 
     def test_cursor_l1_sequence_only_diff_keeps_the_legacy_level(self):
         risk, _legacy = self.assert_legacy(
@@ -528,9 +621,69 @@ class DirectClassifierTests(unittest.TestCase):
             ChangeOperation.UPDATE_AUTOMATION, self.DIFF, after, current=before
         )
         self.assertIn(
-            f"{UNCHANGED}: automation.turn_off, script.hamcp293_helper", risk.reasons
+            f"{UNCHANGED}: script.hamcp293_helper at actions[0], "
+            "automation.turn_off at actions[1] (automation.lights)",
+            risk.reasons,
         )
         self.assertFalse(any(reason.startswith(STEPS) for reason in risk.reasons))
+
+    def test_other_prefixed_action_field_is_compared(self):
+        risk, _legacy = self.assert_legacy(
+            ChangeOperation.UPDATE_AUTOMATION,
+            {"changed_fields": [{"field": "other:actions", "change_type": "modified"}]},
+            automation(HELPER, PAUSE), current=automation(HELPER),
+        )
+        self.assertIn(
+            f"{ADDED}: automation.turn_off at action[1] (automation.lights)", risk.reasons
+        )
+
+    def test_a_second_action_root_is_compared(self):
+        before = automation(HELPER)
+        after = automation(HELPER)
+        after["actions"] = [PAUSE]
+        for diff in (
+            {"changed_fields": [{"field": "other:actions", "change_type": "added"}]},
+            {"changed_fields": []},
+        ):
+            with self.subTest(diff=diff):
+                risk, _legacy = self.assert_legacy(
+                    ChangeOperation.UPDATE_AUTOMATION, diff, after, current=before
+                )
+                self.assertIn(
+                    f"{ADDED}: automation.turn_off at actions[0] (automation.lights)",
+                    risk.reasons,
+                )
+                self.assertFalse(
+                    any(
+                        reason.startswith(UNCHANGED) and "automation.turn_off" in reason
+                        for reason in risk.reasons
+                    ),
+                    risk.reasons,
+                )
+
+    def test_shown_targets_are_bounded_plain_identifiers(self):
+        def unlock(entity_id):
+            return {"action": "lock.unlock", "target": {"entity_id": entity_id}}
+
+        cases = (
+            (unlock([f"lock.door_{letter}" for letter in "abcde"]),
+             "lock.unlock at action[0] (lock.door_a, lock.door_b, lock.door_c, +2)"),
+            (unlock(["{{ which }}", "Lock.Front_Door", "lock." + "x" * 64,
+                     "Physical-device action detected"]),
+             "lock.unlock at action[0] (lock.front_door)"),
+            (unlock("{{ which }}"), "lock.unlock at action[0]"),
+        )
+        for call, shown in cases:
+            with self.subTest(shown=shown):
+                risk, legacy = self.assert_legacy(
+                    ChangeOperation.UPDATE_AUTOMATION, self.DIFF, automation(call),
+                    current=automation(notify("a")),
+                )
+                self.assertIn(f"{ADDED}: {shown}", risk.reasons)
+                self.assertEqual(
+                    sum(PHYSICAL in reason for reason in risk.reasons),
+                    sum(PHYSICAL in reason for reason in legacy.reasons),
+                )
 
     def test_name_lists_are_bounded(self):
         calls = [{"action": f"script.hamcp293_{index:02d}"} for index in range(11)]

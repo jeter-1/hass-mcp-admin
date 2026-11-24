@@ -1846,8 +1846,12 @@ def _protected_high_evidence(item: dict[str, Any]) -> bool:
 # the level, apply decision, evidence, and warnings of an exact update stay
 # the whole-configuration result. Only the reasons change: they name what
 # changed, and they list an unchanged high-risk call as present and
-# unchanged rather than as the cause.
+# unchanged rather than as the cause. Each call line names one instance by
+# path and target, so two calls to the same service are told apart.
 _CHANGE_NAME_LIMIT = 8
+_CHANGE_TARGET_LIMIT = 3
+_CHANGE_TARGET_LENGTH = 64
+_CHANGE_TARGET_CHARS = frozenset("abcdefghijklmnopqrstuvwxyz0123456789_.-")
 _CHANGE_ACTION_FIELDS = frozenset({"actions", "sequence"})
 _CHANGE_HIGH_TRIGGERS = frozenset(
     {"high_risk_service", "safety_critical_service", *PROTECTED_OBJECT_TRIGGERS}
@@ -1870,6 +1874,46 @@ def _change_list(label: str, items: Iterable[str]) -> str:
     if len(ordered) > _CHANGE_NAME_LIMIT:
         shown += f", and {len(ordered) - _CHANGE_NAME_LIMIT} more"
     return f"{label}: {shown}"
+
+
+def _change_targets(node: dict[str, Any]) -> tuple[str, ...]:
+    """Return the call's literal target IDs for display, in order.
+
+    Only short, plain identifiers are shown; a template, a mapping, or any
+    other text is left out.
+    """
+
+    shown: list[str] = []
+    for _field, _selector, value in _target_selectors(node):
+        for item in value if isinstance(value, list) else [value]:
+            if not isinstance(item, str):
+                continue
+            item = item.strip().lower()
+            if (
+                0 < len(item) <= _CHANGE_TARGET_LENGTH
+                and set(item) <= _CHANGE_TARGET_CHARS
+            ):
+                shown.append(item)
+    return tuple(dict.fromkeys(shown))
+
+
+def _change_call(
+    names: frozenset[str],
+    targets: tuple[str, ...],
+    path: str,
+    origin: str | None = None,
+) -> str:
+    """Name one call instance: service, path, origin if moved, and targets."""
+
+    text = f"{'/'.join(sorted(names)) or 'call'} at {path}"
+    if origin is not None:
+        text += f" from {origin}"
+    if targets:
+        shown = ", ".join(targets[:_CHANGE_TARGET_LIMIT])
+        if len(targets) > _CHANGE_TARGET_LIMIT:
+            shown += f", +{len(targets) - _CHANGE_TARGET_LIMIT}"
+        text += f" ({shown})"
+    return text
 
 
 def _change_roots(
@@ -1970,11 +2014,15 @@ def _change_calls(
     config: dict[str, Any],
     roots: list[tuple[str, Any]],
     labels: dict[str, str],
-) -> tuple[dict[str, str], dict[str, tuple[str, frozenset[str]]]]:
-    """Return every call node's content, and the high-risk ones with names.
+) -> tuple[
+    dict[str, str], dict[str, tuple[str, frozenset[str], tuple[str, ...]]]
+]:
+    """Return every call node's content, and the high-risk ones by path.
 
     A call node is high-risk when the whole-configuration analysis records
-    high-risk, safety-critical, or protected-object evidence inside it.
+    high-risk, safety-critical, or protected-object evidence inside it. Each
+    high-risk entry is its content, its service names, and its targets, in
+    execution order.
     """
 
     nodes: dict[str, dict[str, Any]] = {}
@@ -1984,7 +2032,7 @@ def _change_calls(
     contents = {path: _change_canonical(node) for path, node in nodes.items()}
     by_length = sorted(nodes, key=len, reverse=True)
     _services, evidence, _warnings, _targets = _structured_analysis(config)
-    high: dict[str, tuple[str, frozenset[str]]] = {}
+    high: dict[str, tuple[str, frozenset[str], tuple[str, ...]]] = {}
     for item in evidence:
         if item.get("trigger") not in _CHANGE_HIGH_TRIGGERS:
             continue
@@ -2012,8 +2060,12 @@ def _change_calls(
             for service in literal
             if _is_high_service(service) or service in SAFETY_CRITICAL_SERVICES
         }
-        high[path] = (contents[path], frozenset(flagged or literal or {path}))
-    return contents, high
+        high[path] = (
+            contents[path],
+            frozenset(flagged or literal),
+            _change_targets(node),
+        )
+    return contents, {path: high[path] for path in nodes if path in high}
 
 
 def _change_reasons(
@@ -2021,18 +2073,30 @@ def _change_reasons(
 ) -> list[str]:
     """Name what an exact update changed, for the reasons only."""
 
-    named = {field.removeprefix("other:") for field in fields}
+    stripped = {field.removeprefix("other:") for field in fields}
+    named = set(stripped)
     if "sequence" in named:
         # A script's sequence is also reported as the synthetic actions field.
         named.discard("actions")
     reasons = [_change_list(_CHANGE_FIELDS, sorted(named))] if named else []
     try:
         proposed_roots, current_roots, labels = _change_roots(proposed, current)
-        _contents, proposed_high = _change_calls(proposed, proposed_roots, {})
-        if not fields & _CHANGE_ACTION_FIELDS:
-            unchanged = {name for _content, names in proposed_high.values() for name in names}
+        proposed_contents, proposed_high = _change_calls(
+            proposed, proposed_roots, {}
+        )
+        if (
+            not stripped & _CHANGE_ACTION_FIELDS
+            and len(proposed_roots) < 2
+            and len(current_roots) < 2
+        ):
+            # The diff reports no action change and there is at most one
+            # action root on each side, so every high-risk call is in place.
+            unchanged = [
+                _change_call(names, targets, path)
+                for path, (_content, names, targets) in proposed_high.items()
+            ]
             if unchanged:
-                reasons.append(_change_list(_CHANGE_CALL_UNCHANGED, sorted(unchanged)))
+                reasons.append(_change_list(_CHANGE_CALL_UNCHANGED, unchanged))
             return reasons
         current_contents, current_high = _change_calls(
             current, current_roots, labels
@@ -2052,37 +2116,56 @@ def _change_reasons(
     ] + [path for path in current_steps if path not in proposed_steps]
     if changed_steps:
         reasons.append(_change_list(_CHANGE_STEPS, changed_steps))
-    remaining: dict[str, int] = {}
-    for content in current_contents.values():
-        remaining[content] = remaining.get(content, 0) + 1
-    unchanged: set[str] = set()
-    pending: list[tuple[str, frozenset[str]]] = []
-    for path, (content, names) in proposed_high.items():
-        if current_contents.get(path) == content:
-            unchanged.update(names)
-            remaining[content] -= 1
+    # A call is in place when the same content is at the same path on both
+    # sides. Any other proposed call is moved when an unmatched current call
+    # has its content, and otherwise added or changed. An unmatched current
+    # high-risk call is removed, unless a changed call to the same service
+    # now sits at its path.
+    in_place = {
+        path
+        for path, content in current_contents.items()
+        if proposed_contents.get(path) == content
+    }
+    matched = set(in_place)
+    added: list[str] = []
+    moved: list[str] = []
+    unchanged: list[str] = []
+    changed_at: dict[str, frozenset[str]] = {}
+    for path, (content, names, targets) in proposed_high.items():
+        if path in in_place:
+            unchanged.append(_change_call(names, targets, path))
+            continue
+        origin = next(
+            (
+                candidate
+                for candidate, candidate_content in current_contents.items()
+                if candidate not in matched and candidate_content == content
+            ),
+            None,
+        )
+        if origin is not None:
+            matched.add(origin)
+            moved.append(_change_call(names, targets, path, origin))
         else:
-            pending.append((content, names))
-    moved: set[str] = set()
-    added: set[str] = set()
-    for content, names in pending:
-        if remaining.get(content, 0) > 0:
-            moved.update(names)
-            remaining[content] -= 1
-        else:
-            added.update(names)
-    proposed_names = {name for _content, names in proposed_high.values() for name in names}
-    removed = {
-        name for _content, names in current_high.values() for name in names
-    } - proposed_names
-    for label, names in (
+            added.append(_change_call(names, targets, path))
+            changed_at[path] = names
+    removed = [
+        _change_call(names, targets, path)
+        for path, (_content, names, targets) in current_high.items()
+        if path not in matched
+        and not (
+            path in changed_at
+            and (names == changed_at[path] or names & changed_at[path])
+        )
+    ]
+    for label, items in (
         (_CHANGE_CALL_ADDED, added),
         (_CHANGE_CALL_MOVED, moved),
         (_CHANGE_CALL_REMOVED, removed),
         (_CHANGE_CALL_UNCHANGED, unchanged),
     ):
-        if names:
-            reasons.append(_change_list(label, sorted(names)))
+        if items:
+            reasons.append(_change_list(label, items))
     return reasons
 
 
@@ -2099,8 +2182,8 @@ def classify_risk(
     The level, apply decision, evidence, and warnings are always the
     whole-configuration result of ``_legacy_classify_risk``. For an exact
     update with ``current`` (HAMCP-293), the reasons also name the changed
-    fields and action steps, and each high-risk call as added or changed,
-    moved, removed, or present and unchanged.
+    fields and action steps, and each high-risk call instance, by path and
+    target, as added or changed, moved, removed, or present and unchanged.
     """
 
     assessment = _legacy_classify_risk(
