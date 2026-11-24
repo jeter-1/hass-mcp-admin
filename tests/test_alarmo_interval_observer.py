@@ -46,10 +46,10 @@ SLOT_VERSIONS = {slot: WINDOW["core"][slot]["version"] for slot in ALARMO_SLOTS}
 SLOT_OF = {version: slot for slot, version in SLOT_VERSIONS.items()}
 # Single-slot checks use the current slot (Core 2026.11.0 today).
 CORE = WINDOW["core"]["current"]["version"]
-# HAMCP-406 empties the Core rollback, so the window holds one Alarmo slot and
-# no second in-window binding exists. Substitution checks use an exact Core
-# outside the window with a well-formed binding of its own (a former slot, a
-# distinct digest and the empty slot's name); every verifier must refuse it.
+# HAMCP-406 empties the Core rollback; HAMCP-489 fills the candidate. Substitution
+# checks use an exact Core outside the window with a well-formed binding of its
+# own (a former slot, a distinct digest and the empty slot's name); every
+# verifier must refuse it.
 OTHER_CORE = "2026.10.3"
 OTHER_BINDING = {"slot": "rollback", "version": OTHER_CORE, "lane": "ha-" + OTHER_CORE.replace(".", "-"),
                  "image": f"{support_window.CORE_IMAGE}:{OTHER_CORE}@sha256:{'1' * 64}",
@@ -2135,8 +2135,8 @@ class PublicationCleanupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = window_root(directory)
             case = self.publication(root, "current")
-            # HAMCP-406: the one-slot window has no second in-window binding, so the
-            # substitution uses OTHER_BINDING, a well-formed Core outside the window.
+            # The substitution uses OTHER_BINDING, a well-formed Core outside the
+            # window in the empty rollback slot (HAMCP-406).
             for kwargs in ({"container": "beta25-real-ha-" + OTHER_BINDING["lane"]},
                            {"image": OTHER_BINDING["image"]},
                            {"version": OTHER_CORE}):
@@ -2224,8 +2224,8 @@ class SlotBindingTests(unittest.TestCase):
         # Derived from the committed window's non-empty slots (an empty Core
         # candidate has no binding and no Alarmo job).
         self.assertEqual(ALARMO_SLOTS, support_window.core_slots(WINDOW, support_window.SLOTS))
-        # HAMCP-406: the Core candidate and rollback are empty; current always binds.
-        self.assertEqual(ALARMO_SLOTS, ("current",))
+        # HAMCP-406 empties the rollback; HAMCP-489 binds Core 2026.11.3 as the candidate.
+        self.assertEqual(ALARMO_SLOTS, ("current", "candidate"))
         self.assertIn(CORE, SLOT_VERSIONS.values())
         for slot, version in SLOT_VERSIONS.items():
             provenance = json.loads(provenance_path(ROOT, version).read_text(encoding="utf-8"))
