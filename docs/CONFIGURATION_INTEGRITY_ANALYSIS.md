@@ -32,15 +32,81 @@ service, generate a cleanup command, or create a governance plan.
   "detail_level": "standard",
   "limit": 20,
   "cursor": "",
-  "refresh_index": false
+  "refresh_index": false,
+  "severities": []
 }
 ```
 
-Empty `source_types` and `finding_types` arrays select every supported value.
-`detail_level` is `summary`, `standard`, or `evidence`. `limit` is 1–100;
-detail-specific response caps may lower the effective page size and are
-reported explicitly. `cursor` is an opaque signed continuation token.
-`refresh_index=true` is valid only on a first-page request.
+Empty `source_types`, `finding_types` and `severities` arrays select every
+supported value. `detail_level` is `summary`, `standard`, `evidence`, or
+`compact`. `limit` is 1–100; detail-specific response caps may lower the
+effective page size and are reported explicitly. `cursor` is an opaque signed
+continuation token. `refresh_index=true` is valid only on a first-page request.
+`severities` may contain `high`, `medium`, `low`, and `info`.
+
+### Walking every finding (HAMCP-473)
+
+To walk the whole result, request `detail_level=compact` with `limit=100` and
+follow `next_cursor` until it is `null`. Narrow the walk with `severities`,
+`finding_types`, or `source_types`.
+
+- **Compact records.** A compact finding keeps only `finding_id`,
+  `finding_type`, `severity`, `confidence`, `target_entity_id`, `source_type`,
+  `source_id`, `source_entity_id`, `configuration_paths` (at most three),
+  `disabled_classification`, `manual_review_required`, and
+  `remediation_required`. It carries no explanation, remediation text, evidence
+  records, or excerpts. `evidence_references` is empty. The dynamic reference
+  summary keeps its counts and reports `review_items_omitted: true` in place of
+  `review_items`. Use `standard` or `evidence` with a narrowed query to read the
+  text for chosen findings.
+- **Page size.** Compact pages hold up to 100 findings (the detail cap is 100).
+  A synthetic walk of 1,282 findings under a 60,000-character limit returns 13
+  pages, each full except the last, from one provider read.
+- **Severity filter.** The filter applies after classification and before the
+  2,000-finding whole-analysis bound. `finding_count`, `findings_by_severity`,
+  and the other totals describe the filtered result. A filtered walk still
+  reads the same evidence: the provider call is unchanged.
+- **Assessment under a filter.** Findings the filter hides still need review.
+  `final_assessment` and `manual_review_required` are taken before the filter,
+  so `severities=["info"]` over a result with only high findings returns no
+  findings and `review_required`, never `no_confirmed_integrity_findings`. A
+  narrowed query adds `severity_filter` on every page: the `severities`
+  requested, `excluded_finding_count`, and
+  `assessment_includes_excluded_findings: true`. A query without a filter has
+  no `severity_filter` key.
+- **Cursor binding.** `severities` and `detail_level` are part of the query
+  fingerprint. Changing either during a walk returns `stale_cursor`; the
+  original arguments resume the walk.
+- **Unchanged rules.** Omitting `severities`, or passing an empty array or all
+  four values, gives the same result as before. Refusals, the credential
+  screen, partial status, ordering, totals, the snapshot TTL and capacity, and
+  `summary`/`standard`/`evidence` output are unchanged.
+
+### Migration review (HAMCP-473 public input schema)
+
+Josh authorized this additive schema change (2.9.1 C/E build block,
+2026-11-24 decision 2).
+
+- **Change.** One optional input, `severities` (array of the four severities,
+  default `[]`), and one new `detail_level` value, `compact`. No input is
+  removed, renamed, retyped or made required. No output field is removed from
+  `summary`, `standard` or `evidence`. The only new output key,
+  `severity_filter`, appears only when the new input narrows the query.
+- **Existing clients.** A call that omits both returns the same findings,
+  evidence, totals and summaries as before
+  (`test_standard_detail_is_unchanged_by_the_new_inputs`). The default
+  `detail_level` stays `standard`.
+- **Cursors.** A cursor issued before the upgrade does not survive it in any
+  case (the snapshot store is in memory). A cursor issued after it is bound to
+  both new inputs.
+- **Persisted formats.** None change. Snapshots are in memory only.
+- **Catalog and descriptors.** The tool count, category, risk, route,
+  provider and policy are unchanged. The descriptor gains the input and two
+  description lines; the historical descriptor pins remove exactly those
+  through `tests/hamcp473_descriptor_changes.py` and must otherwise match.
+- **Rollback.** Rolling back removes the inputs from the descriptor. How an
+  older build treats a client that still sends them was not tested here; a
+  client should re-read `tools/list` after a rollback.
 
 The capability catalog declares category `analysis`, lifecycle
 `beta_native`, risk `read`, route `engineering_native`, provider
@@ -311,6 +377,9 @@ character and UTF-8 response budget before advancing or retiring its snapshot.
 It can lower `effective_limit`, with `clamp_reason=response_size_limit`; follow
 the returned cursor, whose offset includes only delivered findings. This also
 applies when an oversized first page would otherwise contain every finding.
+HAMCP-473: the lowered page is the largest that fits, found by a bounded binary
+search (at most seven further renders of a 100-finding page), not by repeated
+halving.
 Totals, evidence, coverage disclosures, ordering, and the snapshot's 300-second
 TTL and 16-entry capacity are unchanged. A final snapshot is retired only after
 its complete response fits. If even one finding with its disclosures cannot fit,
@@ -354,7 +423,8 @@ failed new analyses. Validation failures add a failed request but no findings.
 Audit records contain the tool and read/Engineering classifications, requested
 source and finding types, orphan flag, detail, limit, refresh flag, cursor
 presence as a Boolean, bounded terminal summary, endpoint categories, request
-ID, and server version. They never contain raw cursor material, configuration,
+ID, and server version. The `severities` filter is not recorded: the audit
+argument allowlist is in `routing.py`, which HAMCP-473 did not change. They never contain raw cursor material, configuration,
 unbounded evidence, authentication material, or secrets.
 
 ## Read-only guarantees

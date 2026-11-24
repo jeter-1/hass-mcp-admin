@@ -716,6 +716,7 @@ class ProviderAndPublicContractTests(unittest.IsolatedAsyncioTestCase):
                 "limit",
                 "cursor",
                 "refresh_index",
+                "severities",  # + HAMCP-473
             },
         )
         self.assertEqual(schema.get("required", []), [])
@@ -726,6 +727,7 @@ class ProviderAndPublicContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(schema["properties"]["detail_level"]["default"], "standard")
         self.assertEqual(schema["properties"]["cursor"]["default"], "")
         self.assertEqual(schema["properties"]["refresh_index"]["default"], False)
+        self.assertEqual(schema["properties"]["severities"]["default"], [])  # + HAMCP-473
 
 
 class AuditContractTests(unittest.IsolatedAsyncioTestCase):

@@ -162,8 +162,9 @@ class RC1PublicContractTests(unittest.TestCase):
         names = tuple(sorted(tool.name for tool in tools))
         schemas = {tool.name: tool.parameters for tool in tools}
         from hamcp226_228_descriptor_changes import without_hamcp226_finding_type
+        from hamcp473_descriptor_changes import without_hamcp473_inputs  # + HAMCP-473
         schemas["configuration_integrity_analysis"] = without_hamcp226_finding_type(
-            self, schemas["configuration_integrity_analysis"])
+            self, without_hamcp473_inputs(self, schemas["configuration_integrity_analysis"]))
         from hamcp247_descriptor_changes import without_hamcp247_detail_section
         schemas["list_capabilities"] = without_hamcp247_detail_section(
             self, schemas["list_capabilities"])
