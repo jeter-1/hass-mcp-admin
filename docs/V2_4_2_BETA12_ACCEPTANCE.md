@@ -2,9 +2,12 @@
 
 **Status: in progress.** This contract covers the 2.9.0.1 hotfix, released as
 2.4.2-beta.12. It follows 2.4.2-beta.11 (2.9.0, #481). Its content lands
-through item pull requests into the `release/2.9.0.1` integration branch. The
-final release pull request completes every section marked **pending** before
-it is offered for review.
+through item pull requests into the `release/2.9.0.1` integration branch.
+Sections 1, 4 and 5, Deploy and Rollback are complete on this branch, so the
+Evidence tier runs on a head that nothing changes afterwards. What stays
+**pending** is recorded only after release: the Evidence tier result
+(section 1), release CI (section 2) and publication (section 3). A small docs
+pull request to `main` records them, as #482 did for 2.4.2-beta.11.
 
 See also the release notes:
 [`V2_4_2_BETA12_RELEASE_NOTES.md`](V2_4_2_BETA12_RELEASE_NOTES.md).
@@ -36,19 +39,73 @@ claim about its behavior.
 
 ## 1. Source and offline acceptance
 
-**Pending.** The final release pull request binds each landed item's pull
-request, reviewed head, review record and offline evidence, and the final
-head SHA, its `validate` run and the single Evidence tier log.
+Scope and authority come from the architect's block of 2026-11-23 (HAMCP-470
+hotfix). Josh merges each pull request into `release/2.9.0.1`. Each pull
+request's body carries its validation tier and, for #483, its Security
+section and its success, refusal and negative-reachability tests. Every pull
+request ran the Fast checks and CI, under the `release/*` exception in
+`AGENTS.md`.
+
+Reviewers, one set per pull request for its whole life:
+- **Cursor** (hardened review unit, Grok 4.7, non-Claude): the recorded
+  independent reviewer for #483.
+- **Codex** (`gpt-6-astra`, high, read-only sandbox, non-Claude): the
+  security review for #483.
+- **The architect**: reviewed in the architect chat (no GitHub review
+  object). Claude self-family review, not independent. It is the only
+  reviewer of the docs pull requests.
+
+The review copies are kept under `~/handoffs/architect/reviews/`.
+
+| PR | Scope | Reviewer and final round | CI on the merged head |
+| --- | --- | --- | --- |
+| #483 | HAMCP-470 runtime fix and tests | Cursor r1 READY at e2a96b3c; Codex r1 CHANGES_REQUIRED at e2a96b3c, r2 at e044b9f7 (see below) | 45282990469 success |
+| #484 | release notes Items and Current state; acceptance sections 4 and 5 | architect, at f35fe3e9 | 45288986587 success |
+
+The final docs pull request (tool catalog, Deploy and Rollback) is bound
+here after release, with the Evidence tier result.
+
+**Merged head that differs from the last Cursor-reviewed head.**
+- **#483.** The merged head e044b9f7 is the correction batch for Codex r1's
+  two Medium findings, SEC-483-01 (the renamed-key diagnostic path) and
+  SEC-483-02 (exponent overflow). Cursor made no delta review, per the
+  architect's batch block. Codex r2 found both resolved, with no new
+  finding; its verdict was BLOCKED only because its read-only sandbox could
+  not run tests or mutations. The architect closed that gap with its own
+  run in a separate clone: 50 tests OK; mutations M18, M19 and M20 each
+  fail, and the restored tree is OK.
+
+**Runtime changes.** Between `main` at 23c5c429 and `release/2.9.0.1` at
+71520cba, five files under `hass_mcp_engineering_beta/` changed (+296, −25):
+- the version commit ed2560b7: `config.yaml` (version), `version.py` and
+  `CHANGELOG.md`;
+- #483: `providers/operational_lifecycle.py` and `f3_runtime/runtime.py`.
+
+#483 states no public input schema, tool registration or persisted-format
+change, and no new write, dispatch path or fallback.
+
+**Release head.**
+- `2.4.2-beta.12` is materialized at ed2560b7, the base of
+  `release/2.9.0.1`, in `config.yaml` and `version.py`.
+  `scripts/codex-context.py` resolves this document as the active acceptance
+  document, with resolution `exact`.
+- The docs pull requests run the Fast checks and CI on their own heads.
+  Their reviewer is the architect only (not independent).
+- **Evidence tier: pending.** It runs once, on the final release head, after
+  Josh's go. Nothing on this branch changes after it. Its result is recorded
+  after release by the docs pull request to `main`.
 
 ## 2. Release CI
 
 The exact materialized final head's `validate` check passes, including the
-release transition. **Pending.**
+release transition. **Pending.** Recorded after release by a small docs pull
+request to `main`, as #482 did for 2.4.2-beta.11.
 
 ## 3. Publication
 
 Publication happens only through Josh's Ready action and the repository's
-head-bound workflow. **Pending.**
+head-bound workflow. **Pending.** Recorded after release by the same docs
+pull request to `main`.
 
 ## 4. Installed read-only acceptance (separately authorized, after deploy)
 
@@ -82,11 +139,44 @@ add-on options, secrets or the ha-mcp secret path.
      `rejected_catalog_mismatch`, as on beta.11;
    - `lifecycle_addon_text_comparison` is `null`: no add-on identity read has
      run yet.
-3. **The other beta.11 section 4 reads** (the read gateway, `result_fields`
-   and replaced upstream warnings) are not changed by this release. Their
-   expected values are those of beta.11 section 4, as corrected on `main`
-   (HAMCP-469). Whether to re-run them on beta.12 is Josh's decision
-   [JOSH].
+3. **Read sanity check.** Josh decided on a short read check on beta.12,
+   not the full beta.11 set (relayed by the architect, 2026-11-23). This
+   release changes no read-gateway path. The expected values are from
+   `tests/test_hamcp439_overview_entity_id.py` and
+   `tests/test_hamcp441_search_result_fields.py`.
+   1. One `ha_get_overview` with `detail_level: "full"`. Expected:
+      - each row under `data.domain_stats.<domain>.entities[]` carries
+        `entity_id`, with `friendly_name` and `state`, and `name` when it
+        differs from `friendly_name`;
+      - keeping `entity_id` adds nothing to `fields_withheld`, and no
+        `COLLECTION_WITHHELD` note appears.
+
+      If upstream returns a warning on this read, the warning is replaced
+      by `upstream_warning_replaced` and the read reports `partial`. That
+      is expected and is not a failure of this check.
+   2. One `ha_search` with `result_fields` set to `entity_id`,
+      `friendly_name`, `domain`, `state`, `score`, `match_type`, `area`,
+      `floor`, `labels`, `aliases`, `is_group` and `member_entity_ids`.
+      Expected:
+      - each record in `data.entities` arrives whole: `area` and `floor`
+        are names or `null`, `labels` and `aliases` are lists, `is_group`
+        is a boolean, and `member_entity_ids` appears for groups;
+      - `fields_withheld` does not grow for these keys, and no
+        `COLLECTION_WITHHELD` note appears;
+      - no upstream warning or validation text reaches the client.
+
+   Stop and record the response if a full-detail row has no `entity_id`, if
+   a requested `result_fields` key is withheld, or if upstream warning or
+   validation text appears.
+
+   Not re-run on beta.12 (beta.11 section 4, as corrected on `main` by
+   HAMCP-469): the standard-detail overview (step 3.2), the other
+   `result_fields` reads, with two keys and with an unknown key (steps 4.2
+   and 4.3), the replaced-warning survey (step 5) and the live tool catalog
+   (step 6).
+
+PASS needs every check. If a step fails, record the response in the release
+task. Whether to roll back is Josh's decision.
 
 ## 5. Installed governed-change acceptance (separately authorized, after deploy)
 
@@ -190,7 +280,63 @@ dispatch, and the test automation no longer exists.
 
 PASS for the stage needs every expected value in every step that ran.
 
+## Deploy (Engineering 2.4.2-beta.12 on the ha-mcp 9.2.0 pair)
+
+Deploying is separately authorized by Josh. Nothing here authorizes it. Each
+numbered step that changes the house is a live change that Josh authorizes.
+
+**What changes for the operator.** Nothing in the ha-mcp pair or the
+admitted set changes from 2.4.2-beta.11:
+- **Engineering admits ha-mcp 9.2.0 only**, as on beta.11 (#479). Every
+  other ha-mcp release is refused as an unknown version, before dispatch.
+  **Keep the ha-mcp add-on's auto-update off**, so the house stays on 9.2.0.
+- **Backup on 9.2.0 stays held** (`provider_held`, HAMCP-381).
+- The house runs the 9.2.0 pair (the ha-mcp 9.2.0 add-on and HACS
+  `ha_mcp_tools` 9.2.0, entry `ha-mcp-v9.2.0-9de5bf6c`) and an
+  `upstream_dashboard_mcp_url` ending with `/catalog/full`. Neither changes
+  here.
+
+`upstream_dashboard_mcp_url` contains the ha-mcp secret path. Never paste it
+into a chat, a task, a log or a document. Engineering redacts it from every
+response.
+
+0. **Prepare.**
+   - Export the beta.11 audit (`get_audit_log`).
+   - Take a FULL Home Assistant backup in the UI.
+   - Take a Proxmox snapshot of VM 400 (homeassistant; not VM 300, which is
+     scriptbox), named for the release. The host admin takes it, with Josh's
+     approval.
+   - Confirm that the ha-mcp add-on runs 9.2.0, from Engineering's detected
+     upstream version, not the store label, and that its auto-update is off.
+   - List every object acceptance creates as it is created.
+1. **Deploy Engineering 2.4.2-beta.12.**
+2. **Confirm 9.2.0 admission.** `get_server_health` shows
+   `upstream_dashboard.upstream_server_version` `9.2.0`, reachable, and the
+   read gateway `admitted_exact`. If it shows any other version, stop: that
+   release is refused (see above).
+3. **Acceptance:** section 4, then, if Josh authorizes it, section 5.
+
 ## Rollback
 
-**Pending.** The final release pull request states the rollback target and
-whether rolling back is safe.
+There is no in-place rollback. Recovery is restoring the pre-deploy full Home
+Assistant backup, or the VM 400 snapshot, both taken in Deploy step 0. That
+returns Engineering 2.4.2-beta.11 with ha-mcp 9.2.0.
+- Target: tag `v2.4.2-beta.11`, commit
+  23c5c4297fc0360f2cf46e62a384bbebd82d3015, image
+  `ghcr.io/jeter-1/hass-mcp-engineering-beta:2.4.2-beta.11`, OCI digest
+  `sha256:e5e46d52a6db1bc4e02e207603d21dab57c7e6a03cc1030d03d9193199a294fd`
+  (2.4.2-beta.11 acceptance, section 3, on `main`).
+- Restoring returns the beta.11 defect: governed lifecycle applies are
+  refused before dispatch (HAMCP-470).
+- Export `get_audit_log` before any restore.
+- In-place downgrade from beta.12 to beta.11 is not supported and is
+  unproven.
+- CI runs no in-place rollback lane: #461 retired it (HAMCP-405) and allows
+  an empty rollback slot (HAMCP-406, restore-first recovery).
+- No landed item states a persisted-format change. That is not a downgrade
+  proof.
+- **Safety.** Restoring the backup or snapshot returns Engineering, its
+  storage and Home Assistant together to the backed-up state. It also
+  reverts every Home Assistant change made since it was taken, including
+  anything section 5 created or changed. Whether to restore, and which, is
+  Josh's decision.

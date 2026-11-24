@@ -2,8 +2,9 @@
 
 **Status: in progress.** Engineering 2.4.2-beta.12 is the 2.9.0.1 hotfix. It
 builds on 2.4.2-beta.11 (2.9.0, #481). Its content lands through item pull
-requests into the `release/2.9.0.1` integration branch, and the final release
-pull request completes these notes.
+requests into the `release/2.9.0.1` integration branch. These notes are
+complete on that branch except for what is recorded after release: the
+Evidence tier result, release CI and publication.
 
 The architect's block of 2026-11-23 (HAMCP-470 hotfix) names 2.4.2-beta.12
 for the 2.9.0.1 path. The hotfix is narrow: the lifecycle add-on identity
@@ -15,8 +16,11 @@ Per-release records: [release index](RELEASES.md).
 ## Current state
 
 The version is materialized at the base of `release/2.9.0.1` (`main` at
-23c5c429). The one item, HAMCP-470, has landed: `release/2.9.0.1` is at
-71520cba (#483). Nothing is published or deployed.
+23c5c429). The one item, HAMCP-470, has landed (#483, merged as 71520cba),
+and so have these notes' Items and the acceptance sections 4 and 5 (#484).
+A final docs pull request completes the tool catalog, Deploy and Rollback,
+so the Evidence tier runs on a head that nothing changes afterwards. Nothing is
+published or deployed.
 
 ## Items
 
@@ -76,18 +80,50 @@ tool refresh for this release.
 
 ## Evidence
 
-**Pending.** The Evidence tier runs once, on the final release head, after
-Josh's go.
+Each pull request's review and CI run are bound in the acceptance document,
+section 1. **Evidence tier: pending.** It runs once, on the final release
+head, after Josh's go. Its result, release CI and publication are recorded
+after release by a small docs pull request to `main`, as #482 did for
+2.4.2-beta.11.
 
 ## Tool catalog
 
-**Pending.** The final release pull request states the CI-observed catalog.
+Only CI-observed values are listed. All are from run 45282990469, the #483
+run at e044b9f7 (2026-11-23, 16:47 to 17:02 CST, success), the last item
+head before 71520cba.
+
+| Lane | Engineering | Delegated | Total | Upstream catalog | Source |
+| --- | --- | --- | --- | --- | --- |
+| ha-mcp 9.2.0 | not recorded | 27 | not recorded | fingerprint `0f1a2c75a766a111a83053733c6803ca14d60357137f4ecc7bc7978061982147` | artifact `exact-image-admission-cases-91_only-amd64`, `91_parity_read_gateway_acceptance.json` (Engineering 2.4.2-beta.12, `ha_config_get_yaml` exposed) and `91_filesystem_disabled_variant.json`; the arm64 artifact is identical |
+
+- **9.2.0 strict admission.** `admitted_exact`; 82 advertised, 77 reviewed
+  exact; no extras, missing or duplicates; 28 dynamically exposed; selected
+  entry `ha-mcp-v9.2.0-9de5bf6c` (`91_strict_admission_positive.json`).
+- These are the beta.11 CI values: delegated count and fingerprint are
+  unchanged. No landed item states a tool registration change.
+- **CI reference (lane value).** The 27 above is the CI lane value; the
+  cause of 27 in CI against 28 live is not established. The live
+  expectation stays the beta.9 live baseline: Engineering 86, delegated 28,
+  total 114, with `ha_config_get_yaml` admitted.
+- CI did not record the Engineering count or connector total. Beta.12
+  installed acceptance takes no fresh `tools/list` (Josh's short read
+  check, section 4 step 3), so this release records no live catalog.
 
 ## Deploy
 
-**Pending.** See the acceptance contract.
+See [the acceptance contract](V2_4_2_BETA12_ACCEPTANCE.md), "Deploy". The
+operator change from beta.11 is none: Engineering still admits ha-mcp 9.2.0
+only, so keep auto-update off. Before deploy, export the audit, take a full
+Home Assistant backup and a Proxmox snapshot of VM 400 (homeassistant),
+named for the release, taken by the host admin with Josh's approval.
 
 ## Rollback
 
-**Pending.** The final release pull request states the rollback target and
-whether rolling back is safe.
+See [the acceptance contract](V2_4_2_BETA12_ACCEPTANCE.md), "Rollback". In
+short: restore the pre-deploy backup or the VM 400 snapshot, which returns
+2.4.2-beta.11 (tag `v2.4.2-beta.11`, commit 23c5c429, image digest
+`sha256:e5e46d52a6db1bc4e02e207603d21dab57c7e6a03cc1030d03d9193199a294fd`)
+with ha-mcp 9.2.0, and the HAMCP-470 defect. The restore also reverts every
+Home Assistant change made since the backup. There is no in-place rollback.
+Export `get_audit_log` before any restore. No landed item states a
+persisted-format change.
