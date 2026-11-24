@@ -111,6 +111,8 @@ class CatalogTests(unittest.IsolatedAsyncioTestCase):
         actual = without_hamcp311_descriptor_changes(self, actual)
         from hamcp294_descriptor_changes import without_hamcp294_descriptor_changes  # + HAMCP-294
         actual = without_hamcp294_descriptor_changes(self, actual)
+        from hamcp475_descriptor_changes import without_hamcp475_descriptor_changes  # + HAMCP-475
+        actual = without_hamcp475_descriptor_changes(self, actual)
         from hamcp298_descriptor_changes import without_hamcp298_descriptor_changes  # + HAMCP-298
         actual = without_hamcp298_descriptor_changes(self, actual)
         from hamcp379_descriptor_changes import without_hamcp379_descriptor_changes  # + HAMCP-379

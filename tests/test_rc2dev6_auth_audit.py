@@ -9,6 +9,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from tests.support.audit_pages import audit_page_rows
 from tests.test_beta_observability import SECRET, settings
 
 from ha_mcp_engineering.audit import (
@@ -260,7 +261,7 @@ class AuditFilteringAndSanitizationTests(unittest.IsolatedAsyncioTestCase):
                     RATE_LIMITED_EVENT,
                 ):
                     rendered = await compatibility.get_audit_log(lines=10, event=event)
-                    rows = [json.loads(line) for line in rendered.splitlines()]
+                    rows = audit_page_rows(rendered)
                     self.assertEqual([row["event"] for row in rows], [event])
 
     def test_auth_audit_payloads_redact_nested_secrets_and_fail_closed(self) -> None:
