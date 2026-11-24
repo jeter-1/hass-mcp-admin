@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Any, Callable, Iterable
+from typing import Any, Iterable
 
 from jinja2 import Environment, TemplateSyntaxError, nodes
 
@@ -1842,366 +1842,248 @@ def _protected_high_evidence(item: dict[str, Any]) -> bool:
     )
 
 
-# HAMCP-293 (Josh, 2026-11-24, as relayed by the architect): an exact update
-# is HIGH when a high-risk call is added or changed, or when what gates it
-# (a trigger, condition, mode, or an enclosing or preceding step) changes.
-# Otherwise it is classified by the changed parts only. Protected-object
-# evidence (lock, alarm, valve, garage, water) keeps the whole-configuration
-# rule: the HAMCP-213 physical-effect comparison scopes those changes.
-_SCOPE_NON_GATING_FIELDS = frozenset(
-    {"alias", "description", "icon", "trace", "trace_settings"}
+# HAMCP-293 (Josh, 2026-11-24, "Middle path", as relayed by the architect):
+# the level, apply decision, evidence, and warnings of an exact update stay
+# the whole-configuration result. Only the reasons change: they name what
+# changed, and they list an unchanged high-risk call as present and
+# unchanged rather than as the cause.
+_CHANGE_NAME_LIMIT = 8
+_CHANGE_ACTION_FIELDS = frozenset({"actions", "sequence"})
+_CHANGE_HIGH_TRIGGERS = frozenset(
+    {"high_risk_service", "safety_critical_service", *PROTECTED_OBJECT_TRIGGERS}
 )
-_SCOPE_ACTION_FIELDS = frozenset({"actions", "sequence"})
-_SCOPE_FIELD_LABELS = {
-    "blueprint_usage": "Blueprint",
-    "conditions": "Condition",
-    "maximum_runs": "Maximum-runs",
-    "mode": "Mode",
-    "triggers": "Trigger",
-    "variables": "Variables",
-}
-_SCOPE_NAME_LIMIT = 8
-_SCOPE_CALL_CHANGED = "High-risk call added or changed"
-_SCOPE_STEP_GATING = "Preceding or enclosing step change gating high-risk calls"
-_SCOPE_CALL_REMOVED = "High-risk call removed or moved"
-_SCOPE_PROTECTED_KEPT = "Protected-object call kept at high risk"
+_CHANGE_FIELDS = "Changed"
+_CHANGE_STEPS = "Changed action steps"
+_CHANGE_CALL_ADDED = "High-risk call added or changed"
+_CHANGE_CALL_MOVED = "High-risk call moved"
+_CHANGE_CALL_REMOVED = "High-risk call removed"
+_CHANGE_CALL_UNCHANGED = "High-risk call present, unchanged"
 
 
-def _scope_digest(*parts: str) -> str:
-    digest = hashlib.sha256()
-    for part in parts:
-        encoded = part.encode("utf-8")
-        digest.update(len(encoded).to_bytes(8, "big"))
-        digest.update(encoded)
-    return digest.hexdigest()
+def _change_canonical(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
 
 
-def _scope_canonical(value: Any) -> str:
-    return json.dumps(value, sort_keys=True, separators=(",", ":"))
+def _change_list(label: str, items: Iterable[str]) -> str:
+    ordered = list(dict.fromkeys(items))
+    shown = ", ".join(ordered[:_CHANGE_NAME_LIMIT])
+    if len(ordered) > _CHANGE_NAME_LIMIT:
+        shown += f", and {len(ordered) - _CHANGE_NAME_LIMIT} more"
+    return f"{label}: {shown}"
 
 
-def _scope_without(step: dict[str, Any], keys: set[str]) -> dict[str, Any]:
-    return {key: value for key, value in step.items() if key not in keys}
+def _change_roots(
+    proposed: dict[str, Any], current: dict[str, Any]
+) -> tuple[list[tuple[str, Any]], list[tuple[str, Any]], dict[str, str]]:
+    """Return both action roots, with one ``action``/``actions`` key aligned.
+
+    The returned map renames a current root label to the proposed one, so
+    the two sides compare by the same paths.
+    """
+
+    proposed_roots = _action_roots(proposed)
+    current_roots = _action_roots(current)
+    labels: dict[str, str] = {}
+    if (
+        len(proposed_roots) == 1
+        and len(current_roots) == 1
+        and proposed_roots[0][0] != current_roots[0][0]
+    ):
+        labels[current_roots[0][0]] = proposed_roots[0][0]
+        current_roots = [(proposed_roots[0][0], current_roots[0][1])]
+    return proposed_roots, current_roots, labels
 
 
-def _scope_services(node: dict[str, Any]) -> frozenset[str]:
-    """Return the literal services of one call node, as the analysis does."""
-
-    return frozenset(
-        value.lower().strip()
-        for alias in ("service", "action")
-        if isinstance(value := node.get(alias), str)
-        and value.strip()
-        and not _has_template(value)
-    )
+def _change_relabel(field: str, labels: dict[str, str]) -> str:
+    for old, new in labels.items():
+        if field == old or field.startswith((old + "[", old + ".")):
+            return new + field[len(old):]
+    return field
 
 
-def _scope_signatures(
+def _change_steps(
     value: Any,
     path: str,
-    context: str,
-    signatures: dict[str, tuple[str, str, frozenset[str]]],
+    steps: dict[str, str],
     *,
     allow_sequence_wrapper: bool = False,
 ) -> None:
-    """Record ``path -> (gating signature, digest, services)`` per call node.
+    """Record ``path -> canonical step`` with traversed child lists left out.
 
-    The traversal is ``_action_nodes``. A node's gating signature covers its
-    enclosing context and every preceding sibling at each level, as the
-    HAMCP-213 OD-10/H2 walk does: a choose option is gated by the conditions
-    of that option and of every earlier option, a default by all of them, a
-    then/else branch by its ``if``, and a repeat or parallel body by the
-    whole step.
+    The traversal is ``_action_steps``. A child list that is traversed is
+    compared step by step, so a step records only its own keys: a change
+    inside a ``then`` branch names that branch step, and a change to the
+    ``if`` names the enclosing step.
     """
 
     if not isinstance(value, list):
+        steps[path] = _change_canonical(value)
         return
-    preceding = _scope_digest(context, "list")
     for index, step in enumerate(value):
         step_path = f"{path}[{index}]"
-        step_context = preceding
-        encoded = _scope_canonical(step)
-        preceding = _scope_digest(step_context, encoded)
         if not isinstance(step, dict):
+            steps[step_path] = _change_canonical(step)
             continue
-        if "service" in step or "action" in step:
-            signatures[step_path] = (
-                preceding,
-                _scope_digest(encoded),
-                _scope_services(step),
-            )
+        shell = dict(step)
+        children: list[tuple[Any, str, bool]] = []
         choices = step.get("choose")
-        shell = _scope_canonical(_scope_without(step, {"choose", "default"}))
         if isinstance(choices, list):
-            gates: list[Any] = []
-            for choice_index, choice in enumerate(choices):
-                gates.append(
-                    _scope_without(choice, {"sequence"})
-                    if isinstance(choice, dict)
-                    else choice
-                )
-                if isinstance(choice, dict):
-                    _scope_signatures(
-                        choice.get("sequence"),
-                        f"{step_path}.choose[{choice_index}].sequence",
-                        _scope_digest(
-                            step_context,
-                            "choose",
-                            shell,
-                            _scope_canonical(gates),
-                        ),
-                        signatures,
-                    )
-        if "default" in step:
-            all_gates = (
-                [
-                    _scope_without(choice, {"sequence"})
-                    if isinstance(choice, dict)
-                    else choice
-                    for choice in choices
-                ]
-                if isinstance(choices, list)
-                else choices
+            shell["choose"] = [
+                {key: item for key, item in choice.items() if key != "sequence"}
+                if isinstance(choice, dict)
+                and isinstance(choice.get("sequence"), list)
+                else choice
+                for choice in choices
+            ]
+            children.extend(
+                (choice["sequence"], f"{step_path}.choose[{choice_index}].sequence", False)
+                for choice_index, choice in enumerate(choices)
+                if isinstance(choice, dict)
+                and isinstance(choice.get("sequence"), list)
             )
-            _scope_signatures(
-                step.get("default"),
-                f"{step_path}.default",
-                _scope_digest(
-                    step_context, "default", shell, _scope_canonical(all_gates)
-                ),
-                signatures,
-            )
-        for branch in ("then", "else"):
-            if branch in step:
-                _scope_signatures(
-                    step.get(branch),
-                    f"{step_path}.{branch}",
-                    _scope_digest(
-                        step_context,
-                        branch,
-                        _scope_canonical(_scope_without(step, {"then", "else"})),
-                    ),
-                    signatures,
-                )
+        for key in ("default", "then", "else"):
+            if isinstance(step.get(key), list):
+                shell[key] = None
+                children.append((step[key], f"{step_path}.{key}", False))
         repeat = step.get("repeat")
-        if isinstance(repeat, dict):
-            _scope_signatures(
-                repeat.get("sequence"),
-                f"{step_path}.repeat.sequence",
-                _scope_digest(step_context, "repeat", encoded),
-                signatures,
-            )
-        if "parallel" in step:
-            _scope_signatures(
-                step.get("parallel"),
-                f"{step_path}.parallel",
-                _scope_digest(step_context, "parallel", encoded),
-                signatures,
-                allow_sequence_wrapper=True,
-            )
-        if allow_sequence_wrapper and "sequence" in step:
-            _scope_signatures(
-                step.get("sequence"),
-                f"{step_path}.sequence",
-                _scope_digest(
-                    step_context,
-                    "sequence",
-                    _scope_canonical(_scope_without(step, {"sequence"})),
-                ),
-                signatures,
-            )
-
-
-def _scope_root(config: dict[str, Any]) -> tuple[str | None, Any] | None:
-    """Return the one action root, ``(None, None)`` if none, or None if two."""
-
-    roots = _action_roots(config)
-    if len(roots) > 1:
-        return None
-    return roots[0] if roots else (None, None)
-
-
-def _scope_names(names: Iterable[str]) -> str:
-    ordered = sorted(set(names))
-    shown = ", ".join(ordered[:_SCOPE_NAME_LIMIT])
-    if len(ordered) > _SCOPE_NAME_LIMIT:
-        shown += f", and {len(ordered) - _SCOPE_NAME_LIMIT} more"
-    return shown
-
-
-class _ChangeScope:
-    """Which call nodes of an exact update a change adds, alters, or gates."""
-
-    def __init__(
-        self,
-        *,
-        proposed: dict[str, tuple[str, str, frozenset[str]]],
-        current: dict[str, tuple[str, str, frozenset[str]]],
-        global_fields: tuple[str, ...],
-        actions_changed: bool,
-    ) -> None:
-        self.proposed = proposed
-        self.current = current
-        self.global_fields = global_fields
-        self.actions_changed = actions_changed
-        self.protected_nodes: set[str] = set()
-        self.removed: tuple[str, ...] = ()
-        self.vanished_services: frozenset[str] = frozenset()
-        self._paths = sorted(proposed, key=len, reverse=True)
-
-    def node_of(self, field: str, nodes: Iterable[str] | None = None) -> str | None:
-        for path in self._paths if nodes is None else sorted(nodes, key=len, reverse=True):
-            if field == path or field.startswith(path + "."):
-                return path
-        return None
-
-    def causes(self, path: str) -> list[str]:
-        causes = [
-            f"{_SCOPE_FIELD_LABELS.get(field, field.removeprefix('other:'))}"
-            " change gating high-risk calls"
-            for field in self.global_fields
-        ]
-        if self.actions_changed and path in self.proposed:
-            signature, digest, _services = self.proposed[path]
-            before = self.current.get(path)
-            if before is None or before[1] != digest:
-                causes.append(_SCOPE_CALL_CHANGED)
-            elif before[0] != signature:
-                causes.append(_SCOPE_STEP_GATING)
-        return causes
-
-    def in_scope(self, path: str) -> bool:
-        """A node whose change or protection keeps it under review.
-
-        A node with no call signature (a device action, for instance) has
-        no change evidence, so it stays under review.
-        """
-
-        return (
-            path not in self.proposed
-            or path in self.protected_nodes
-            or bool(self.causes(path))
-        )
-
-    def services(self) -> list[str]:
-        """The services under review: in-scope calls plus moved or removed ones."""
-
-        return sorted(
-            {
-                service
-                for path, (_signature, _digest, services) in self.proposed.items()
-                if self.in_scope(path)
-                for service in services
+        if isinstance(repeat, dict) and isinstance(repeat.get("sequence"), list):
+            shell["repeat"] = {
+                key: item for key, item in repeat.items() if key != "sequence"
             }
-            | self.vanished_services
-        )
-
-    def reasons(self, items: list[dict[str, str]]) -> list[str]:
-        grouped: dict[str, set[str]] = {}
-        for item in items:
-            path = self.node_of(item["field"])
-            if path is None:
-                continue
-            names = (
-                {str(item["service"])}
-                if item.get("service")
-                else set(self.proposed[path][2]) or {str(item["trigger"])}
+            children.append(
+                (repeat["sequence"], f"{step_path}.repeat.sequence", False)
             )
-            for cause in self.causes(path) or [_SCOPE_PROTECTED_KEPT]:
-                grouped.setdefault(cause, set()).update(names)
-        if self.removed:
-            grouped.setdefault(_SCOPE_CALL_REMOVED, set()).update(self.removed)
-        return [f"{cause}: {_scope_names(names)}" for cause, names in grouped.items()]
+        if isinstance(step.get("parallel"), list):
+            shell["parallel"] = None
+            children.append((step["parallel"], f"{step_path}.parallel", True))
+        if allow_sequence_wrapper and isinstance(step.get("sequence"), list):
+            shell["sequence"] = None
+            children.append((step["sequence"], f"{step_path}.sequence", False))
+        steps[step_path] = _change_canonical(shell)
+        for child, child_path, wrapper in children:
+            _change_steps(
+                child, child_path, steps, allow_sequence_wrapper=wrapper
+            )
 
 
-def _change_scope(
-    operation: ChangeOperation,
-    fields: set[str],
-    proposed: dict[str, Any],
-    current: Any,
-    protected_effect_verdict: str | None,
-    evidence: list[dict[str, str]],
-) -> _ChangeScope | None:
-    """Return the HAMCP-293 change scope, or None for the legacy rule.
+def _change_calls(
+    config: dict[str, Any],
+    roots: list[tuple[str, Any]],
+    labels: dict[str, str],
+) -> tuple[dict[str, str], dict[str, tuple[str, frozenset[str]]]]:
+    """Return every call node's content, and the high-risk ones with names.
 
-    The legacy whole-configuration rule applies to a create, to a call
-    without the current configuration, to an unresolved protected-effect
-    comparison, to an action structure that could not be bounded, to a
-    configuration with both ``action`` and ``actions`` roots, and to any
-    configuration this analysis cannot encode.
+    A call node is high-risk when the whole-configuration analysis records
+    high-risk, safety-critical, or protected-object evidence inside it.
     """
 
-    if (
-        operation != ChangeOperation.UPDATE_AUTOMATION
-        or not isinstance(current, dict)
-        or protected_effect_verdict == "unresolved"
-        or any(
-            item.get("trigger") == "unresolved_action_structure"
-            for item in evidence
-        )
-    ):
-        return None
-    proposed_root = _scope_root(proposed)
-    current_root = _scope_root(current)
-    if proposed_root is None or current_root is None:
-        return None
-    label = proposed_root[0] or current_root[0] or "actions"
-    proposed_signatures: dict[str, tuple[str, str, frozenset[str]]] = {}
-    current_signatures: dict[str, tuple[str, str, frozenset[str]]] = {}
-    try:
-        _scope_signatures(proposed_root[1], label, "root", proposed_signatures)
-        _scope_signatures(current_root[1], label, "root", current_signatures)
-        _services, current_evidence, _warnings, _targets = _structured_analysis(
-            current
-        )
-    except (TypeError, ValueError, RecursionError, OverflowError):
-        return None
-    scope = _ChangeScope(
-        proposed=proposed_signatures,
-        current=current_signatures,
-        global_fields=tuple(
-            sorted(fields - _SCOPE_NON_GATING_FIELDS - _SCOPE_ACTION_FIELDS)
-        ),
-        actions_changed=bool(fields & _SCOPE_ACTION_FIELDS),
-    )
+    nodes: dict[str, dict[str, Any]] = {}
+    for root_path, root in roots:
+        for path, node in _action_nodes(root, root_path):
+            nodes[path] = node
+    contents = {path: _change_canonical(node) for path, node in nodes.items()}
+    by_length = sorted(nodes, key=len, reverse=True)
+    _services, evidence, _warnings, _targets = _structured_analysis(config)
+    high: dict[str, tuple[str, frozenset[str]]] = {}
     for item in evidence:
-        if _protected_high_evidence(item) or item.get("trigger") == (
-            "safety_critical_service"
-        ):
-            path = scope.node_of(item["field"])
-            if path is not None:
-                scope.protected_nodes.add(path)
-    vanished = {
-        path
-        for path, (signature, _digest, _services) in current_signatures.items()
-        if path not in proposed_signatures
-        or proposed_signatures[path][0] != signature
-    }
-    scope.vanished_services = frozenset(
-        service for path in vanished for service in current_signatures[path][2]
-    )
-    if scope.actions_changed:
-        retained = {
-            str(item.get("service"))
-            for item in evidence
-            if item.get("trigger") == "high_risk_service"
-            and not _protected_high_evidence(item)
-            and (path := scope.node_of(item["field"])) is not None
-            and scope.causes(path)
+        if item.get("trigger") not in _CHANGE_HIGH_TRIGGERS:
+            continue
+        field = _change_relabel(str(item.get("field", "")), labels)
+        path = next(
+            (
+                candidate
+                for candidate in by_length
+                if field == candidate or field.startswith(candidate + ".")
+            ),
+            None,
+        )
+        if path is None or path in high:
+            continue
+        node = nodes[path]
+        literal = {
+            value.lower().strip()
+            for alias in ("service", "action")
+            if isinstance(value := node.get(alias), str)
+            and value.strip()
+            and not _has_template(value)
         }
-        removed: set[str] = set()
-        for item in current_evidence:
-            if item.get("trigger") != "high_risk_service" or (
-                _protected_high_evidence(item)
-            ):
-                continue
-            field = item["field"]
-            if current_root[0] is not None and current_root[0] != label:
-                field = label + field[len(current_root[0]):]
-            if scope.node_of(field, current_signatures) in vanished:
-                removed.add(str(item.get("service")))
-        scope.removed = tuple(sorted(removed - retained))
-    return scope
+        flagged = {
+            service
+            for service in literal
+            if _is_high_service(service) or service in SAFETY_CRITICAL_SERVICES
+        }
+        high[path] = (contents[path], frozenset(flagged or literal or {path}))
+    return contents, high
+
+
+def _change_reasons(
+    fields: set[str], proposed: dict[str, Any], current: dict[str, Any]
+) -> list[str]:
+    """Name what an exact update changed, for the reasons only."""
+
+    named = {field.removeprefix("other:") for field in fields}
+    if "sequence" in named:
+        # A script's sequence is also reported as the synthetic actions field.
+        named.discard("actions")
+    reasons = [_change_list(_CHANGE_FIELDS, sorted(named))] if named else []
+    try:
+        proposed_roots, current_roots, labels = _change_roots(proposed, current)
+        _contents, proposed_high = _change_calls(proposed, proposed_roots, {})
+        if not fields & _CHANGE_ACTION_FIELDS:
+            unchanged = {name for _content, names in proposed_high.values() for name in names}
+            if unchanged:
+                reasons.append(_change_list(_CHANGE_CALL_UNCHANGED, sorted(unchanged)))
+            return reasons
+        current_contents, current_high = _change_calls(
+            current, current_roots, labels
+        )
+        proposed_steps: dict[str, str] = {}
+        current_steps: dict[str, str] = {}
+        for root_path, root in proposed_roots:
+            _change_steps(root, root_path, proposed_steps)
+        for root_path, root in current_roots:
+            _change_steps(root, root_path, current_steps)
+    except (TypeError, ValueError, RecursionError, OverflowError):
+        return reasons
+    changed_steps = [
+        path
+        for path, content in proposed_steps.items()
+        if current_steps.get(path) != content
+    ] + [path for path in current_steps if path not in proposed_steps]
+    if changed_steps:
+        reasons.append(_change_list(_CHANGE_STEPS, changed_steps))
+    remaining: dict[str, int] = {}
+    for content in current_contents.values():
+        remaining[content] = remaining.get(content, 0) + 1
+    unchanged: set[str] = set()
+    pending: list[tuple[str, frozenset[str]]] = []
+    for path, (content, names) in proposed_high.items():
+        if current_contents.get(path) == content:
+            unchanged.update(names)
+            remaining[content] -= 1
+        else:
+            pending.append((content, names))
+    moved: set[str] = set()
+    added: set[str] = set()
+    for content, names in pending:
+        if remaining.get(content, 0) > 0:
+            moved.update(names)
+            remaining[content] -= 1
+        else:
+            added.update(names)
+    proposed_names = {name for _content, names in proposed_high.values() for name in names}
+    removed = {
+        name for _content, names in current_high.values() for name in names
+    } - proposed_names
+    for label, names in (
+        (_CHANGE_CALL_ADDED, added),
+        (_CHANGE_CALL_MOVED, moved),
+        (_CHANGE_CALL_REMOVED, removed),
+        (_CHANGE_CALL_UNCHANGED, unchanged),
+    ):
+        if names:
+            reasons.append(_change_list(label, sorted(names)))
+    return reasons
 
 
 def classify_risk(
@@ -2214,15 +2096,46 @@ def classify_risk(
 ) -> ChangeRiskAssessment:
     """Classify one automation-shaped configuration.
 
+    The level, apply decision, evidence, and warnings are always the
+    whole-configuration result of ``_legacy_classify_risk``. For an exact
+    update with ``current`` (HAMCP-293), the reasons also name the changed
+    fields and action steps, and each high-risk call as added or changed,
+    moved, removed, or present and unchanged.
+    """
+
+    assessment = _legacy_classify_risk(
+        operation,
+        diff,
+        proposed,
+        current=current,
+        protected_effect_verdict=protected_effect_verdict,
+    )
+    if operation != ChangeOperation.UPDATE_AUTOMATION or not isinstance(
+        current, dict
+    ):
+        return assessment
+    fields = {item["field"] for item in diff.get("changed_fields", [])}
+    assessment.reasons = [
+        *assessment.reasons,
+        *_change_reasons(fields, proposed, current),
+    ]
+    return assessment
+
+
+def _legacy_classify_risk(
+    operation: ChangeOperation,
+    diff: dict[str, Any],
+    proposed: dict[str, Any],
+    *,
+    current: dict[str, Any] | None = _UNSET,
+    protected_effect_verdict: str | None = None,
+) -> ChangeRiskAssessment:
+    """Classify one automation-shaped configuration as a whole.
+
     ``current`` (HAMCP-213 D4.4) limits the recipient reason to a changed
     recipient set. ``protected_effect_verdict`` (D4.5) is the D2 comparison
     verdict: when the protected effects are ``equivalent`` they do not by
     themselves raise HIGH; the policy keeps the operation elevated.
-
-    For an exact update with ``current`` (HAMCP-293), a non-protected
-    high-risk call, a broad target, or a physical-device call counts only
-    when the change adds, alters, removes, or gates it; the reasons name
-    the cause and the calls, and the evidence drops the unchanged calls.
     """
 
     fields = {item["field"] for item in diff.get("changed_fields", [])}
@@ -2235,44 +2148,20 @@ def classify_risk(
             "blueprint_usage", "mode", "maximum_runs",
         }
     )
-    scope = _change_scope(
-        operation, fields, proposed, current, protected_effect_verdict, evidence
-    )
-    target_in_scope = None
-    device_services = services
-    if scope is not None:
-        target_in_scope = scope.in_scope
-        evidence = [
-            item
-            for item in evidence
-            if item["trigger"] != "high_risk_service"
-            or _protected_high_evidence(item)
-            or (path := scope.node_of(item["field"])) is None
-            or scope.causes(path)
-        ]
-        device_services = scope.services()
 
-    high_items = [
-        item
-        for item in evidence
-        if item["trigger"] in {"high_risk_service", *PROTECTED_OBJECT_TRIGGERS}
+    if behavioral_change and any(
+        item["trigger"] in {"high_risk_service", *PROTECTED_OBJECT_TRIGGERS}
         and not (
             protected_effect_verdict == "equivalent"
             and _protected_high_evidence(item)
         )
-    ]
-    if behavioral_change and (
-        high_items or (scope is not None and scope.removed)
+        for item in evidence
     ):
         reasons.append("Structured action or target requires high-risk review")
-        if scope is not None:
-            reasons.extend(scope.reasons(high_items))
-    if behavioral_change and _has_unrestricted_action_target(
-        proposed, target_in_scope
-    ):
+    if behavioral_change and _has_unrestricted_action_target(proposed):
         reasons.append("Broad or unrestricted target detected")
         evidence.append({"field": "action.target", "trigger": "unrestricted_target"})
-    if behavioral_change and _has_broad_action_target(proposed, target_in_scope):
+    if behavioral_change and _has_broad_action_target(proposed):
         reasons.append("Broad entity or area target detected")
         evidence.append({"field": "action.target", "trigger": "large_target_set"})
     if reasons:
@@ -2294,9 +2183,7 @@ def classify_risk(
         # HAMCP-419: initial_state enables or disables the automation at the
         # next Home Assistant start.
         medium_reasons.append("Behavior-impacting initial_state change")
-    if "actions" in fields and any(
-        service.startswith(MEDIUM_SERVICE_PREFIXES) for service in device_services
-    ):
+    if "actions" in fields and any(service.startswith(MEDIUM_SERVICE_PREFIXES) for service in services):
         medium_reasons.append("Physical-device action detected")
     if (
         "actions" in fields
@@ -2332,13 +2219,9 @@ def _deduplicate_evidence(evidence: list[dict[str, str]]) -> list[dict[str, str]
     return [values[key] for key in sorted(values)]
 
 
-def _has_broad_action_target(
-    config: dict[str, Any], include: Callable[[str], bool] | None = None
-) -> bool:
+def _has_broad_action_target(config: dict[str, Any]) -> bool:
     for root_path, root in _action_roots(config):
-        for path, node in _action_nodes(root, root_path):
-            if include is not None and not include(path):
-                continue
+        for _path, node in _action_nodes(root, root_path):
             for _field, selector, value in _target_selectors(node):
                 if (
                     selector in {"entity_id", "device_id"}
@@ -2355,13 +2238,9 @@ def _has_broad_action_target(
     return False
 
 
-def _has_unrestricted_action_target(
-    config: dict[str, Any], include: Callable[[str], bool] | None = None
-) -> bool:
+def _has_unrestricted_action_target(config: dict[str, Any]) -> bool:
     for root_path, root in _action_roots(config):
-        for path, node in _action_nodes(root, root_path):
-            if include is not None and not include(path):
-                continue
+        for _path, node in _action_nodes(root, root_path):
             for key in ("entity_id", "device_id", "area_id"):
                 containers = [node.get(key)]
                 if isinstance(node.get("target"), dict):

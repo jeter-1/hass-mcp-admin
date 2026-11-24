@@ -1,15 +1,17 @@
-"""HAMCP-293: change-scoped risk for exact automation and script updates.
+"""HAMCP-293: exact-update risk reasons name what changed; the level does not move.
 
-Josh's rule (2026-11-24, as relayed by the architect): an update is HIGH
-when a high-risk call is added or changed, or when what gates it (a
-trigger, condition, mode, or an enclosing or preceding step) changes;
-otherwise it is classified by the changed parts only. The reasons name the
-cause and the calls, and the evidence drops unchanged calls.
+Josh's middle path (2026-11-24, as relayed by the architect): the
+whole-configuration risk level stays exactly as it is, with no downgrade path
+of any kind. Only the reasons change: they name the changed fields and action
+steps, and list a high-risk call that did not change as "present, unchanged"
+rather than as the cause.
 
-Negatives: the unlock/disarm floor stays, an unresolved comparison keeps the
-whole-configuration rule, an added or removed call is HIGH, a condition-only
-change gating a call is HIGH, and the legacy route without the current
-configuration is unchanged.
+Every plan-path assertion compares the plan with the same plan classified by
+the legacy rule alone (``_change_reasons`` disabled): level, apply decision,
+evidence, warnings, policy class, and acknowledgements must be equal, and the
+legacy reasons must come first, unchanged. The PR #494 round-1
+counterexamples (Cursor H1, H2, M1, M2, L1; Codex H1, H2, H3, M1) and the
+I4a plan shape are reproduced here. Configurations are synthetic.
 """
 
 from __future__ import annotations
@@ -18,6 +20,7 @@ import copy
 from pathlib import Path
 import sys
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
@@ -28,25 +31,32 @@ from ha_mcp_engineering.governance.models import (  # noqa: E402
     RiskLevel,
 )
 from ha_mcp_engineering.governance.physical_effects import (  # noqa: E402
-    VERDICT_EQUIVALENT,
     VERDICT_UNRESOLVED,
     compare_operation,
 )
 from ha_mcp_engineering.governance import risk as risk_module  # noqa: E402
-from ha_mcp_engineering.governance.risk import classify_risk  # noqa: E402
+from ha_mcp_engineering.governance.risk import (  # noqa: E402
+    _legacy_classify_risk,
+    classify_risk,
+)
 from tests.test_dev14_configuration_plans import (  # noqa: E402
     ConfigurationPlanTestCase,
 )
 
 SAFETY = "safety_critical_acknowledgement"
-GENERIC_HIGH = "Structured action or target requires high-risk review"
-CHANGED = "High-risk call added or changed"
-STEP = "Preceding or enclosing step change gating high-risk calls"
-REMOVED = "High-risk call removed or moved"
-BROAD = "Broad entity or area target detected"
+LOW_IMPACT = "Only low-impact metadata, logging, notification text, or minor timing changed"
+PHYSICAL = "Physical-device action detected"
+CHANGED = "Changed"
+STEPS = "Changed action steps"
+ADDED = "High-risk call added or changed"
+MOVED = "High-risk call moved"
+REMOVED = "High-risk call removed"
+UNCHANGED = "High-risk call present, unchanged"
+NEW_LABELS = (CHANGED, STEPS, ADDED, MOVED, REMOVED, UNCHANGED)
 
 HELPER = {"action": "script.hamcp293_helper"}
 PAUSE = {"action": "automation.turn_off", "target": {"entity_id": "automation.lights"}}
+FANS = {"action": "automation.turn_off", "target": {"entity_id": "automation.fans"}}
 UNLOCK = {"action": "lock.unlock", "target": {"entity_id": "lock.front_door"}}
 
 
@@ -54,7 +64,7 @@ def notify(message):
     return {"action": "notify.mobile_app_phone", "data": {"message": message}}
 
 
-def automation(*steps, condition=None, mode="single", trace=None):
+def automation(*steps, condition=None, mode="single", **extra):
     config = {
         "alias": "HAMCP-293 automation",
         "description": "HAMCP-293 regression",
@@ -65,41 +75,48 @@ def automation(*steps, condition=None, mode="single", trace=None):
         "condition": list(condition or []),
         "action": list(steps),
     }
-    if trace is not None:
-        config["trace"] = {"stored_traces": trace}
+    config.update(extra)
     return config
 
 
-def script(*steps, alias="HAMCP-293 script"):
-    return {"alias": alias, "mode": "single", "sequence": list(steps)}
+def script(*steps, alias="HAMCP-293 script", mode="single", **extra):
+    return {"alias": alias, "mode": mode, "sequence": list(steps), **extra}
 
 
 def condition(entity_id):
     return [{"condition": "state", "entity_id": entity_id, "state": "on"}]
 
 
-def high_services(operation):
+def device_lock(kind):
     return {
-        item.get("service")
-        for item in operation.risk.evidence
-        if item.get("trigger") == "high_risk_service"
+        "device_id": "devlock",
+        "domain": "lock",
+        "type": kind,
+        "entity_id": "lock.front_door",
     }
 
 
-class ChangeScopedRiskPlanTests(ConfigurationPlanTestCase):
+def legacy_rule():
+    """Classify by the whole-configuration rule alone, as before HAMCP-293."""
+
+    return mock.patch.object(risk_module, "_change_reasons", lambda *_args: [])
+
+
+class ChangeReasonPlanTests(ConfigurationPlanTestCase):
     async def asyncSetUp(self):
         await super().asyncSetUp()
-        # The called script has no protected effect, so the comparison
-        # verdict is "none" and the change scope applies.
         self.gateway.configs[("script", "hamcp293_helper")] = script(
             notify("helper")
+        )
+        self.gateway.configs[("script", "thermostat_apply_setpoints")] = script(
+            notify("setpoints")
         )
 
     async def plan(self, resource_type, target, before, after):
         self.gateway.configs[(resource_type, target)] = copy.deepcopy(before)
         created = await self.service.create_configuration_plan(
             title="HAMCP-293",
-            description="Change-scoped risk regression",
+            description="Change-reason regression",
             operations=[
                 {
                     "operation_id": "op",
@@ -118,343 +135,440 @@ class ChangeScopedRiskPlanTests(ConfigurationPlanTestCase):
         decision = created["policy_decision"]
         return decision["policy_class"], decision["required_acknowledgements"]
 
-    async def test_unrelated_change_with_an_unchanged_call_is_classified_by_the_change(self):
-        before = automation(HELPER, notify("a"))
-        after = automation(HELPER, notify("b"))
-        created, operation = await self.plan("automation", "a293_unrelated", before, after)
-        self.assertNotEqual(operation.risk.level, RiskLevel.HIGH, operation.risk.reasons)
-        self.assertNotIn(GENERIC_HIGH, operation.risk.reasons)
-        self.assertEqual(high_services(operation), set())
-        self.assertEqual(self.policy(created), ("standard_admin", ["plan_approval"]))
-        # Control: the legacy whole-configuration rule still flags it.
-        diff = {"changed_fields": [{"field": "actions", "change_type": "modified"}]}
-        legacy = classify_risk(ChangeOperation.UPDATE_AUTOMATION, diff, after)
-        self.assertEqual(legacy.level, RiskLevel.HIGH)
-        self.assertIn(GENERIC_HIGH, legacy.reasons)
+    async def classify(self, resource_type, target, before, after):
+        """Plan once with the change reasons and once by the legacy rule.
 
-    async def test_changed_call_is_cited_alone(self):
-        before = automation(HELPER, PAUSE)
+        Asserts that everything but the appended reasons is the legacy
+        result, and returns the plan, the operation, and the added reasons.
+        """
+
+        created, operation = await self.plan(resource_type, target, before, after)
+        with legacy_rule():
+            legacy_created, legacy = await self.plan(
+                resource_type, f"{target}_legacy", before, after
+            )
+        self.assertEqual(operation.risk.level, legacy.risk.level)
+        self.assertEqual(operation.risk.apply_allowed, legacy.risk.apply_allowed)
+        self.assertEqual(operation.risk.evidence, legacy.risk.evidence)
+        self.assertEqual(operation.risk.warnings, legacy.risk.warnings)
+        self.assertEqual(self.policy(created), self.policy(legacy_created))
+        count = len(legacy.risk.reasons)
+        self.assertEqual(operation.risk.reasons[:count], legacy.risk.reasons)
+        added = operation.risk.reasons[count:]
+        for reason in added:
+            self.assertTrue(reason.startswith(NEW_LABELS), reason)
+            self.assertNotIn(PHYSICAL, reason)
+        return created, operation, added
+
+    # The I4a shape (plan e2df21db): a condition and description edit beside
+    # an unchanged ``script.turn_on`` call.
+
+    async def test_i4a_shape_reads_as_changed_parts_with_the_call_unchanged(self):
+        call = {
+            "action": "script.turn_on",
+            "target": {"entity_id": "script.thermostat_apply_setpoints"},
+        }
+        before = automation(call, condition=condition("binary_sensor.window_a"))
         after = automation(
-            HELPER,
-            {"action": "automation.turn_off", "target": {"entity_id": "automation.fans"}},
+            call,
+            condition=condition("binary_sensor.window_b"),
+            description="HAMCP-293 regression, edited",
         )
-        created, operation = await self.plan("automation", "a293_one_call", before, after)
+        _created, operation, added = await self.classify(
+            "automation", "a293_i4a", before, after
+        )
         self.assertEqual(operation.risk.level, RiskLevel.HIGH)
-        self.assertIn(f"{CHANGED}: automation.turn_off", operation.risk.reasons)
-        self.assertFalse(
-            any("script.hamcp293_helper" in reason for reason in operation.risk.reasons),
-            operation.risk.reasons,
+        self.assertEqual(
+            added,
+            [
+                f"{CHANGED}: conditions, description",
+                f"{UNCHANGED}: script.turn_on",
+            ],
         )
-        self.assertEqual(high_services(operation), {"automation.turn_off"})
-        self.assertEqual(self.policy(created)[0], "elevated_admin")
 
-    async def test_condition_only_change_gating_a_call_is_high(self):
-        before = automation(HELPER, condition=condition("input_boolean.away"))
-        after = automation(HELPER, condition=condition("input_boolean.home"))
-        created, operation = await self.plan("automation", "a293_condition", before, after)
+    # Round-1 counterexamples: each keeps the legacy level.
+
+    async def test_cursor_h1_fields_outside_the_allowlist_keep_the_legacy_level(self):
+        cases = (
+            ("automation", "a293_trigger_variables",
+             automation(HELPER, trigger_variables={"x": 1}),
+             automation(HELPER, trigger_variables={"x": 2}), "trigger_variables"),
+            ("script", "s293_max", script(HELPER, mode="queued", max=2),
+             script(HELPER, mode="queued", max=5), "max"),
+            ("script", "s293_fields", script(HELPER, fields={"who": {"default": "a"}}),
+             script(HELPER, fields={"who": {"default": "b"}}), "fields"),
+            ("automation", "a293_initial_state", automation(HELPER, initial_state=False),
+             automation(HELPER, initial_state=True), "initial_state"),
+        )
+        for resource_type, target, before, after, field in cases:
+            with self.subTest(change=target):
+                _created, _operation, added = await self.classify(
+                    resource_type, target, before, after
+                )
+                # The level is whatever the legacy rule sets (Codex H3 names
+                # the allowlist gap as pre-existing); HAMCP-293 leaves it.
+                self.assertEqual(
+                    added,
+                    [f"{CHANGED}: {field}", f"{UNCHANGED}: script.hamcp293_helper"],
+                )
+
+    async def test_cursor_h2_device_unlock_after_an_unchanged_call_stays_high(self):
+        created, operation, added = await self.classify(
+            "automation",
+            "a293_device_unlock",
+            automation(HELPER, device_lock("lock")),
+            automation(HELPER, device_lock("unlock")),
+        )
         self.assertEqual(operation.risk.level, RiskLevel.HIGH)
-        self.assertIn(
-            "Condition change gating high-risk calls: script.hamcp293_helper",
-            operation.risk.reasons,
+        self.assertNotIn(LOW_IMPACT, operation.risk.reasons)
+        self.assertEqual(
+            added,
+            [
+                f"{CHANGED}: actions",
+                f"{STEPS}: action[1]",
+                f"{UNCHANGED}: script.hamcp293_helper",
+            ],
         )
-        self.assertEqual(high_services(operation), {"script.hamcp293_helper"})
-        self.assertEqual(self.policy(created)[0], "elevated_admin")
+        self.assertIn(SAFETY, self.policy(created)[1])
 
-    async def test_trigger_and_mode_changes_gate_every_call(self):
-        moved = automation(HELPER)
-        moved["trigger"][0]["to"] = "off"
-        for name, after, cause in (
-            ("trigger", moved, "Trigger"),
-            ("mode", automation(HELPER, mode="restart"), "Mode"),
-        ):
-            with self.subTest(change=name):
-                _created, operation = await self.plan(
-                    "automation", f"a293_{name}", automation(HELPER), after
+    async def test_cursor_m1_call_replaced_by_a_template_names_the_removed_call(self):
+        templated = {"action": "{{ which }}", "target": {"entity_id": "automation.lights"}}
+        created, _operation, added = await self.classify(
+            "automation", "a293_templated", automation(PAUSE), automation(templated)
+        )
+        self.assertEqual(
+            added,
+            [
+                f"{CHANGED}: actions",
+                f"{STEPS}: action[0]",
+                f"{REMOVED}: automation.turn_off",
+            ],
+        )
+
+    async def test_cursor_m2_unwalked_steps_keep_the_legacy_level(self):
+        cases = (
+            ("a293_bare_sequence", automation({"sequence": [PAUSE]}),
+             automation({"sequence": [FANS]})),
+            ("a293_then_mapping",
+             automation({"if": condition("input_boolean.a"), "then": HELPER}),
+             automation({"if": condition("input_boolean.b"), "then": HELPER})),
+        )
+        for target, before, after in cases:
+            with self.subTest(change=target):
+                _created, _operation, added = await self.classify(
+                    "automation", target, before, after
+                )
+                self.assertEqual(added[:2], [f"{CHANGED}: actions", f"{STEPS}: action[0]"])
+
+    async def test_codex_h1_trailing_delay_change_stays_high(self):
+        cases = (
+            ("automation", "a293_delay_single",
+             automation(PAUSE, {"delay": 60}), automation(PAUSE, {"delay": 1})),
+            ("automation", "a293_delay_queued",
+             automation(PAUSE, {"delay": 60}, mode="queued"),
+             automation(PAUSE, {"delay": 1}, mode="queued")),
+            ("automation", "a293_wait_parallel",
+             automation(PAUSE, {"wait_template": "{{ false }}", "timeout": 60}, mode="parallel"),
+             automation(PAUSE, {"wait_template": "{{ false }}", "timeout": 1}, mode="parallel")),
+            ("script", "s293_delay",
+             script(PAUSE, {"delay": 60}), script(PAUSE, {"delay": 1})),
+        )
+        for resource_type, target, before, after in cases:
+            with self.subTest(change=target):
+                _created, operation, added = await self.classify(
+                    resource_type, target, before, after
                 )
                 self.assertEqual(operation.risk.level, RiskLevel.HIGH)
-                self.assertIn(
-                    f"{cause} change gating high-risk calls: script.hamcp293_helper",
-                    operation.risk.reasons,
+                self.assertNotIn(LOW_IMPACT, operation.risk.reasons)
+                self.assertEqual(added[-1], f"{UNCHANGED}: automation.turn_off")
+                self.assertTrue(
+                    any(reason.startswith(f"{STEPS}: ") and "[1]" in reason for reason in added),
+                    added,
                 )
 
-    async def test_added_call_is_high(self):
-        _created, operation = await self.plan(
-            "automation", "a293_added", automation(notify("a")), automation(notify("a"), PAUSE)
+    async def test_codex_h2_alias_read_by_a_template_condition_stays_high(self):
+        gate = [{"condition": "template",
+                 "value_template": "{{ this.attributes.friendly_name == 'enabled' }}"}]
+        before = automation(PAUSE, notify("a"), condition=gate, alias="disabled")
+        after = automation(PAUSE, notify("b"), condition=gate, alias="enabled")
+        _created, operation, added = await self.classify(
+            "automation", "a293_alias_gate", before, after
         )
         self.assertEqual(operation.risk.level, RiskLevel.HIGH)
-        self.assertIn(f"{CHANGED}: automation.turn_off", operation.risk.reasons)
+        self.assertEqual(
+            added,
+            [
+                f"{CHANGED}: actions, alias",
+                f"{STEPS}: action[1]",
+                f"{UNCHANGED}: automation.turn_off",
+            ],
+        )
 
-    async def test_removed_call_is_high(self):
-        _created, operation = await self.plan(
-            "automation", "a293_removed", automation(HELPER, PAUSE), automation(HELPER)
+    async def test_codex_m1_unchanged_water_call_keeps_its_evidence(self):
+        water = {"action": "water_heater.turn_off",
+                 "target": {"entity_id": "water_heater.tank"}}
+        _created, operation, added = await self.classify(
+            "automation", "a293_water",
+            automation(water, notify("a")), automation(water, notify("b")),
         )
         self.assertEqual(operation.risk.level, RiskLevel.HIGH)
-        self.assertIn(GENERIC_HIGH, operation.risk.reasons)
-        self.assertIn(f"{REMOVED}: automation.turn_off", operation.risk.reasons)
-        self.assertEqual(high_services(operation), set())
+        self.assertTrue(operation.risk.evidence)
+        self.assertEqual(added[-1], f"{UNCHANGED}: water_heater.turn_off")
 
-    async def test_preceding_step_change_gates_a_later_call(self):
-        _created, operation = await self.plan(
-            "automation",
-            "a293_preceding",
-            automation(notify("a"), HELPER),
-            automation(notify("b"), HELPER),
+    # Reason semantics on the plan path.
+
+    async def test_unrelated_change_beside_an_unchanged_call_stays_high(self):
+        _created, operation, added = await self.classify(
+            "automation", "a293_unrelated",
+            automation(HELPER, notify("a")), automation(HELPER, notify("b")),
         )
         self.assertEqual(operation.risk.level, RiskLevel.HIGH)
-        self.assertIn(f"{STEP}: script.hamcp293_helper", operation.risk.reasons)
-
-    async def test_trace_only_change_is_not_high(self):
-        created, operation = await self.plan(
-            "automation", "a293_trace", automation(HELPER, trace=5), automation(HELPER, trace=10)
+        self.assertEqual(
+            added,
+            [
+                f"{CHANGED}: actions",
+                f"{STEPS}: action[1]",
+                f"{UNCHANGED}: script.hamcp293_helper",
+            ],
         )
-        self.assertNotEqual(operation.risk.level, RiskLevel.HIGH, operation.risk.reasons)
-        self.assertEqual(high_services(operation), set())
-        self.assertEqual(self.policy(created), ("standard_admin", ["plan_approval"]))
 
-    async def test_unlock_floor_survives_an_unrelated_change(self):
-        created, operation = await self.plan(
-            "automation",
-            "a293_unlock",
-            automation(UNLOCK, notify("a")),
-            automation(UNLOCK, notify("b")),
+    async def test_changed_added_removed_and_moved_calls_are_named(self):
+        cases = (
+            ("a293_changed", automation(HELPER, PAUSE), automation(HELPER, FANS),
+             [f"{ADDED}: automation.turn_off", f"{UNCHANGED}: script.hamcp293_helper"]),
+            ("a293_added", automation(notify("a")), automation(notify("a"), PAUSE),
+             [f"{ADDED}: automation.turn_off"]),
+            ("a293_removed", automation(HELPER, PAUSE), automation(HELPER),
+             [f"{REMOVED}: automation.turn_off", f"{UNCHANGED}: script.hamcp293_helper"]),
+            ("a293_moved", automation(HELPER, PAUSE), automation(PAUSE, HELPER),
+             [f"{MOVED}: automation.turn_off, script.hamcp293_helper"]),
         )
-        comparison = compare_operation(operation)
-        self.assertEqual(comparison.verdict, VERDICT_EQUIVALENT)
-        # The OD-6(b) floor comes from the comparison, not the risk level.
-        (row,) = comparison.projection["rows"]
+        for target, before, after, calls in cases:
+            with self.subTest(change=target):
+                _created, _operation, added = await self.classify(
+                    "automation", target, before, after
+                )
+                self.assertEqual(
+                    [reason for reason in added if reason.startswith("High-risk call")],
+                    calls,
+                )
+
+    async def test_condition_trigger_and_mode_changes_name_the_field(self):
+        moved = automation(HELPER)
+        moved["trigger"][0]["to"] = "off"
+        cases = (
+            ("a293_condition", automation(HELPER, condition=condition("input_boolean.a")),
+             automation(HELPER, condition=condition("input_boolean.b")), "conditions"),
+            ("a293_trigger", automation(HELPER), moved, "triggers"),
+            ("a293_mode", automation(HELPER), automation(HELPER, mode="restart"), "mode"),
+        )
+        for target, before, after, field in cases:
+            with self.subTest(change=target):
+                _created, operation, added = await self.classify(
+                    "automation", target, before, after
+                )
+                self.assertEqual(operation.risk.level, RiskLevel.HIGH)
+                self.assertEqual(
+                    added,
+                    [f"{CHANGED}: {field}", f"{UNCHANGED}: script.hamcp293_helper"],
+                )
+
+    async def test_nested_branch_changes_name_the_step(self):
+        def branches(test_entity, else_call):
+            return automation(
+                {"if": condition(test_entity), "then": [HELPER], "else": [else_call]}
+            )
+
+        before = branches("input_boolean.a", PAUSE)
+        _created, else_only, else_added = await self.classify(
+            "automation", "a293_else", before, branches("input_boolean.a", FANS)
+        )
+        self.assertEqual(
+            else_added,
+            [
+                f"{CHANGED}: actions",
+                f"{STEPS}: action[0].else[0]",
+                f"{ADDED}: automation.turn_off",
+                f"{UNCHANGED}: script.hamcp293_helper",
+            ],
+        )
+        _created, test_changed, test_added = await self.classify(
+            "automation", "a293_if", before, branches("input_boolean.b", PAUSE)
+        )
+        self.assertEqual(
+            test_added,
+            [
+                f"{CHANGED}: actions",
+                f"{STEPS}: action[0]",
+                f"{UNCHANGED}: automation.turn_off, script.hamcp293_helper",
+            ],
+        )
+        for operation in (else_only, test_changed):
+            self.assertEqual(operation.risk.level, RiskLevel.HIGH)
+
+    async def test_unlock_floor_and_reasons_are_kept(self):
+        created, operation, added = await self.classify(
+            "automation", "a293_unlock",
+            automation(UNLOCK, notify("a")), automation(UNLOCK, notify("b")),
+        )
+        self.assertEqual(added[-1], f"{UNCHANGED}: lock.unlock")
+        self.assertEqual(self.policy(created)[1], ["plan_approval", SAFETY])
+        (row,) = compare_operation(operation).projection["rows"]
         self.assertIn("unlock_or_disarm_effect", row["reason_codes"])
-        self.assertTrue(row["acknowledgement_required"])
-        self.assertEqual(self.policy(created)[1], ["plan_approval", SAFETY])
 
-    async def test_unlock_kept_while_a_changed_call_is_cited(self):
-        created, operation = await self.plan(
-            "automation",
-            "a293_unlock_mixed",
-            automation(UNLOCK, PAUSE),
-            automation(
-                UNLOCK,
-                {"action": "automation.turn_off", "target": {"entity_id": "automation.fans"}},
-            ),
-        )
-        self.assertEqual(operation.risk.level, RiskLevel.HIGH)
-        self.assertIn(f"{CHANGED}: automation.turn_off", operation.risk.reasons)
-        self.assertIn(
-            "Protected-object call kept at high risk: lock.unlock",
-            operation.risk.reasons,
-        )
-        self.assertIn("lock.unlock", high_services(operation))
-        self.assertEqual(self.policy(created)[1], ["plan_approval", SAFETY])
-        # A changed step ahead of the unlock gates it.
-        _created, ahead = await self.plan(
-            "automation",
-            "a293_unlock_ahead",
-            automation(PAUSE, UNLOCK),
-            automation(
-                {"action": "automation.turn_off", "target": {"entity_id": "automation.fans"}},
-                UNLOCK,
-            ),
-        )
-        self.assertIn(f"{STEP}: lock.unlock", ahead.risk.reasons)
-
-    async def test_unresolved_comparison_keeps_the_whole_configuration_rule(self):
-        # The called script is not captured, so the comparison cannot bound
-        # it: the legacy rule applies and the OD-6(b) floor is required.
+    async def test_unresolved_comparison_keeps_the_legacy_level(self):
         missing = {"action": "script.hamcp293_missing"}
-        created, operation = await self.plan(
-            "automation",
-            "a293_unresolved",
-            automation(missing, notify("a")),
-            automation(missing, notify("b")),
+        created, operation, added = await self.classify(
+            "automation", "a293_unresolved",
+            automation(missing, notify("a")), automation(missing, notify("b")),
         )
         self.assertEqual(compare_operation(operation).verdict, VERDICT_UNRESOLVED)
         self.assertEqual(operation.risk.level, RiskLevel.HIGH)
-        self.assertIn(GENERIC_HIGH, operation.risk.reasons)
-        self.assertFalse(
-            any(reason.startswith((CHANGED, STEP)) for reason in operation.risk.reasons),
-            operation.risk.reasons,
-        )
-        self.assertIn("script.hamcp293_missing", high_services(operation))
-        self.assertEqual(self.policy(created)[1], ["plan_approval", SAFETY])
-
-    async def test_broad_target_counts_only_when_in_scope(self):
-        lights = {
-            "action": "light.turn_on",
-            "target": {"entity_id": [f"light.room_{index}" for index in range(11)]},
-        }
-        _created, unchanged = await self.plan(
-            "automation", "a293_broad_kept", automation(lights, notify("a")), automation(lights, notify("b"))
-        )
-        self.assertNotIn(BROAD, unchanged.risk.reasons)
-        self.assertNotIn("Physical-device action detected", unchanged.risk.reasons)
-        _created, added = await self.plan(
-            "automation", "a293_broad_added", automation(notify("a")), automation(notify("a"), lights)
-        )
-        self.assertIn(BROAD, added.risk.reasons)
-
-    async def test_removed_device_call_still_counts_as_a_device_change(self):
-        def light(entity_id):
-            return {"action": "light.turn_on", "target": {"entity_id": entity_id}}
-
-        _created, operation = await self.plan(
-            "automation",
-            "a293_light_removed",
-            automation(light("light.a"), light("light.b")),
-            automation(light("light.a")),
-        )
-        self.assertEqual(operation.risk.level, RiskLevel.MEDIUM)
-        self.assertIn("Physical-device action detected", operation.risk.reasons)
-
-    async def test_branch_context_scopes_if_then_else(self):
-        def branches(test_entity, else_target):
-            return automation(
-                {
-                    "if": condition(test_entity),
-                    "then": [HELPER],
-                    "else": [
-                        {"action": "automation.turn_off", "target": {"entity_id": else_target}}
-                    ],
-                }
-            )
-
-        before = branches("input_boolean.a", "automation.lights")
-        _created, else_only = await self.plan(
-            "automation", "a293_else", before, branches("input_boolean.a", "automation.fans")
-        )
-        self.assertIn(f"{CHANGED}: automation.turn_off", else_only.risk.reasons)
-        self.assertEqual(high_services(else_only), {"automation.turn_off"})
-        _created, test_changed = await self.plan(
-            "automation", "a293_if", before, branches("input_boolean.b", "automation.lights")
-        )
-        self.assertIn(
-            f"{STEP}: automation.turn_off, script.hamcp293_helper",
-            test_changed.risk.reasons,
-        )
-
-    async def test_choose_option_gates_its_own_and_later_options(self):
-        def chooser(first, second, second_call):
-            return automation(
-                {
-                    "choose": [
-                        {"conditions": condition(first), "sequence": [HELPER]},
-                        {"conditions": condition(second), "sequence": [second_call]},
-                    ]
-                }
-            )
-
-        before = chooser("input_boolean.a", "input_boolean.b", PAUSE)
-        _created, later = await self.plan(
-            "automation", "a293_choose_later", before, chooser("input_boolean.a", "input_boolean.c", PAUSE)
-        )
-        self.assertEqual(high_services(later), {"automation.turn_off"})
-        _created, earlier = await self.plan(
-            "automation", "a293_choose_earlier", before, chooser("input_boolean.c", "input_boolean.b", PAUSE)
-        )
-        self.assertEqual(
-            high_services(earlier), {"automation.turn_off", "script.hamcp293_helper"}
-        )
+        self.assertEqual(added[-1], f"{UNCHANGED}: script.hamcp293_missing")
+        self.assertIn(SAFETY, self.policy(created)[1])
 
     async def test_script_reasons_keep_dotted_call_names(self):
         trigger = {"action": "automation.trigger", "target": {"entity_id": "automation.lights"}}
-        created, operation = await self.plan(
+        _created, operation, added = await self.classify(
             "script", "s293_trigger", script(notify("a")), script(notify("a"), trigger)
         )
-        self.assertIn(f"{CHANGED}: automation.trigger", operation.risk.reasons)
+        self.assertIn(f"{ADDED}: automation.trigger", added)
         self.assertFalse(
             any("script.trigger" in reason for reason in operation.risk.reasons),
             operation.risk.reasons,
         )
-        self.assertEqual(self.policy(created)[0], "elevated_admin")
 
-    async def test_script_unrelated_change_is_classified_by_the_change(self):
-        created, operation = await self.plan(
-            "script", "s293_unrelated", script(HELPER, notify("a")), script(HELPER, notify("b"))
+    async def test_plan_reasons_carry_the_operation_prefix(self):
+        created, operation, added = await self.classify(
+            "automation", "a293_prefix",
+            automation(HELPER, notify("a")), automation(HELPER, notify("b")),
         )
-        self.assertNotEqual(operation.risk.level, RiskLevel.HIGH, operation.risk.reasons)
-        self.assertEqual(self.policy(created), ("standard_admin", ["plan_approval"]))
+        plan = self.repository.get(created["plan_id"])
+        self.assertTrue(added)
+        for reason in added:
+            self.assertIn(f"op: {reason}", plan.risk.reasons)
+        self.assertEqual(plan.risk.level, operation.risk.level)
+
+    async def test_stored_plan_hash_does_not_rederive_risk(self):
+        # A plan stored before an upgrade keeps its hash: re-hashing reads the
+        # stored risk and never calls the classifier again.
+        created, _operation = await self.plan(
+            "automation", "a293_stored",
+            automation(HELPER, notify("a")), automation(HELPER, notify("b")),
+        )
+        expected = self.service.plan_hash(self.repository.get(created["plan_id"]))
+        with mock.patch.object(
+            risk_module, "_change_reasons", side_effect=AssertionError("re-derived")
+        ), mock.patch.object(
+            risk_module, "_legacy_classify_risk", side_effect=AssertionError("re-derived")
+        ):
+            self.assertEqual(
+                self.service.plan_hash(self.repository.get(created["plan_id"])),
+                expected,
+            )
 
 
-class LegacyRouteTests(unittest.TestCase):
-    """Without the current configuration the whole-configuration rule holds."""
+class DirectClassifierTests(unittest.TestCase):
+    """``classify_risk`` against ``_legacy_classify_risk`` on the same inputs."""
 
     DIFF = {"changed_fields": [{"field": "actions", "change_type": "modified"}]}
 
-    def test_update_without_current_is_unchanged(self):
-        config = automation(HELPER, notify("b"))
-        risk = classify_risk(ChangeOperation.UPDATE_AUTOMATION, self.DIFF, config)
-        self.assertEqual(risk.level, RiskLevel.HIGH)
-        self.assertEqual(risk.reasons, [GENERIC_HIGH])
+    def assert_legacy(self, operation, diff, proposed, **kwargs):
+        risk = classify_risk(operation, diff, proposed, **kwargs)
+        legacy = _legacy_classify_risk(operation, diff, proposed, **kwargs)
+        self.assertEqual(risk.level, legacy.level)
+        self.assertEqual(risk.apply_allowed, legacy.apply_allowed)
+        self.assertEqual(risk.evidence, legacy.evidence)
+        self.assertEqual(risk.warnings, legacy.warnings)
+        self.assertEqual(risk.reasons[: len(legacy.reasons)], legacy.reasons)
+        return risk, legacy
 
-    def test_create_is_unchanged(self):
-        config = automation(HELPER)
-        risk = classify_risk(
-            ChangeOperation.CREATE_AUTOMATION, {"changed_fields": []}, config, current=None
+    def test_update_without_current_is_the_legacy_result(self):
+        risk, legacy = self.assert_legacy(
+            ChangeOperation.UPDATE_AUTOMATION, self.DIFF, automation(HELPER, notify("b"))
+        )
+        self.assertEqual(risk.reasons, legacy.reasons)
+
+    def test_create_is_the_legacy_result(self):
+        risk, legacy = self.assert_legacy(
+            ChangeOperation.CREATE_AUTOMATION, {"changed_fields": []},
+            automation(HELPER), current=None,
+        )
+        self.assertEqual(risk.reasons, legacy.reasons)
+
+    def test_unresolved_verdict_keeps_the_legacy_level(self):
+        risk, _legacy = self.assert_legacy(
+            ChangeOperation.UPDATE_AUTOMATION, self.DIFF, automation(HELPER, notify("b")),
+            current=automation(HELPER, notify("a")), protected_effect_verdict=VERDICT_UNRESOLVED,
         )
         self.assertEqual(risk.level, RiskLevel.HIGH)
-        self.assertEqual(risk.reasons, [GENERIC_HIGH])
+        self.assertIn(f"{UNCHANGED}: script.hamcp293_helper", risk.reasons)
 
-    def test_unresolved_verdict_is_unchanged(self):
-        before = automation(HELPER, notify("a"))
-        after = automation(HELPER, notify("b"))
-        risk = classify_risk(
+    def test_cursor_l1_sequence_only_diff_keeps_the_legacy_level(self):
+        risk, _legacy = self.assert_legacy(
             ChangeOperation.UPDATE_AUTOMATION,
-            self.DIFF,
-            after,
-            current=before,
-            protected_effect_verdict="unresolved",
+            {"changed_fields": [{"field": "sequence", "change_type": "modified"}]},
+            script(PAUSE), current=script(notify("a")),
         )
-        self.assertEqual(risk.reasons, [GENERIC_HIGH])
+        self.assertIn(f"{CHANGED}: sequence", risk.reasons)
 
-    def test_both_action_roots_use_the_legacy_rule(self):
-        before = automation(HELPER, notify("a"))
+    def test_both_action_roots_keep_the_legacy_level(self):
         after = automation(HELPER, notify("b"))
         after["actions"] = [notify("c")]
-        risk = classify_risk(
-            ChangeOperation.UPDATE_AUTOMATION, self.DIFF, after, current=before
+        self.assert_legacy(
+            ChangeOperation.UPDATE_AUTOMATION, self.DIFF, after,
+            current=automation(HELPER, notify("a")),
         )
-        self.assertEqual(risk.reasons, [GENERIC_HIGH])
 
-    def test_scoped_and_legacy_agree_when_every_call_changes(self):
-        before = automation(notify("a"))
+    def test_action_and_actions_keys_compare_by_the_same_paths(self):
+        before = automation(HELPER, PAUSE)
         after = automation(HELPER, PAUSE)
-        scoped = classify_risk(
+        after["actions"] = after.pop("action")
+        risk, _legacy = self.assert_legacy(
             ChangeOperation.UPDATE_AUTOMATION, self.DIFF, after, current=before
         )
-        legacy = classify_risk(ChangeOperation.UPDATE_AUTOMATION, self.DIFF, after)
-        self.assertEqual(scoped.level, legacy.level)
-        self.assertEqual(scoped.evidence, legacy.evidence)
         self.assertIn(
-            f"{CHANGED}: automation.turn_off, script.hamcp293_helper", scoped.reasons
+            f"{UNCHANGED}: automation.turn_off, script.hamcp293_helper", risk.reasons
         )
+        self.assertFalse(any(reason.startswith(STEPS) for reason in risk.reasons))
 
-
-class ScopeTraversalTests(unittest.TestCase):
-    """The target scans and the change scope must visit the same call nodes."""
-
-    def test_every_scanned_call_node_has_a_signature(self):
-        lights = {"action": "light.turn_on", "target": {"entity_id": "light.a"}}
-        config = automation(
-            {"choose": [{"conditions": [], "sequence": [lights]}], "default": [PAUSE]},
-            {"if": [], "then": [UNLOCK], "else": [HELPER]},
-            {"parallel": [lights, {"sequence": [notify("p")]}]},
-            {"repeat": {"count": 2, "sequence": [notify("r")]}},
-            {"sequence": [lights]},
+    def test_name_lists_are_bounded(self):
+        calls = [{"action": f"script.hamcp293_{index:02d}"} for index in range(11)]
+        risk, _legacy = self.assert_legacy(
+            ChangeOperation.UPDATE_AUTOMATION, self.DIFF, automation(*calls),
+            current=automation(notify("a")),
         )
-        roots = risk_module._action_roots(config)
-        self.assertEqual(len(roots), 1)
-        root_path, root = roots[0]
-        scanned = {path for path, _node in risk_module._action_nodes(root, root_path)}
-        signatures: dict = {}
-        risk_module._scope_signatures(root, root_path, "root", signatures)
-        self.assertTrue(scanned)
-        self.assertLessEqual(scanned, set(signatures))
+        (line,) = [reason for reason in risk.reasons if reason.startswith(ADDED)]
+        self.assertTrue(line.endswith(", and 3 more"), line)
+        self.assertEqual(line.count("script.hamcp293_"), 8)
 
-    def test_a_node_without_a_signature_stays_in_scope(self):
-        # Fail closed: with no change evidence for a node, a target scan
-        # keeps it under review rather than dropping it.
-        scope = risk_module._ChangeScope(
-            proposed={}, current={}, global_fields=(), actions_changed=True
+    def test_reasons_are_deterministic(self):
+        args = (ChangeOperation.UPDATE_AUTOMATION, self.DIFF, automation(PAUSE, HELPER))
+        first = classify_risk(*args, current=automation(HELPER, PAUSE)).reasons
+        second = classify_risk(*args, current=automation(HELPER, PAUSE)).reasons
+        self.assertEqual(first, second)
+
+    def test_a_failed_comparison_keeps_the_legacy_result_and_the_field_line(self):
+        for error in (TypeError, ValueError, RecursionError, OverflowError):
+            with self.subTest(error=error.__name__), mock.patch.object(
+                risk_module, "_change_calls", side_effect=error("probe")
+            ):
+                risk, legacy = self.assert_legacy(
+                    ChangeOperation.UPDATE_AUTOMATION, self.DIFF,
+                    automation(HELPER, notify("b")), current=automation(HELPER, notify("a")),
+                )
+                self.assertEqual(risk.reasons, [*legacy.reasons, f"{CHANGED}: actions"])
+
+    def test_no_new_reason_reads_as_a_physical_device_action(self):
+        light = {"action": "light.turn_on", "target": {"entity_id": "light.a"}}
+        risk, legacy = self.assert_legacy(
+            ChangeOperation.UPDATE_AUTOMATION, self.DIFF, automation(notify("a")),
+            current=automation(light),
         )
-        self.assertTrue(scope.in_scope("action[0]"))
+        self.assertEqual(
+            sum(PHYSICAL in reason for reason in risk.reasons),
+            sum(PHYSICAL in reason for reason in legacy.reasons),
+        )
 
 
 if __name__ == "__main__":
