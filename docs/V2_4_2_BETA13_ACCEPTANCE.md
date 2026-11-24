@@ -48,7 +48,7 @@ each row in more detail.
 | HAMCP-458 | #486 | c5f160c0 | merged | Release tooling: refuse a guessed base, check the test venv, readiness sweep | No runtime change (tooling only) |
 | HAMCP-472 | none | none | moved to native search | Diagnosis: not reproduced (the HA Admin replay's domain-only and query-plus-domain calls returned entities); source cause found (a call that passes `search_types` still skips entities on ha-mcp 9.2.0) | No 2.9.1 code; that path stays until the native provider ships |
 | HAMCP-481 | #491 | e51968a2 | merged, design only | [`HAMCP_481_NATIVE_SEARCH_DESIGN.md`](HAMCP_481_NATIVE_SEARCH_DESIGN.md), revision 4 (draft for review, not approved) | The build, planned for the next release |
-| HAMCP-473 | #492 | 8ed1b99b | merged | `configuration_integrity_analysis` compact detail level and severity filter, bound to the cursor | The audit record does not record `severities` (disclosed) |
+| HAMCP-473 | #492 | 8ed1b99b | merged | `configuration_integrity_analysis` compact detail level and severity filter, bound to the cursor | The audit record does not record `severities`, and the health counters add a filtered query's filtered counts, not the classified totals (both disclosed) |
 | HAMCP-474 D5, D6 | #497 | 0f52b0e0 | merged | `automation_reliability_batch_analysis` names limited sources (`source_limitations`) and carries root-cause detail | Near the bound, one automation fewer per response (disclosed); D2-D4 split to HAMCP-482, HAMCP-483, HAMCP-484 |
 | HAMCP-474 D1 | #496 | none | deferred to HAMCP-487; #496 left open as a draft | Nothing | Exact coverage for deep automations with a long configuration path (HAMCP-487) |
 | HAMCP-475 | #493 | 6adccba0 | merged | `get_audit_log` pages that fit the response limit, a `_page` trailer and a signed `cursor` | The rotated `audit.jsonl.1` is not read; cursors do not survive a restart |
@@ -87,15 +87,14 @@ head-bound workflow. **Pending.**
 ## 4. Installed read-only acceptance (separately authorized, after deploy)
 
 This stage runs only after Josh separately authorizes deploying this
-release. Josh approves each step, and the final release pull request states
-which steps are reads.
+release. Every step is a read, and Josh approves each step.
 
 1. **Identity.** `server_info` and `get_server_health` report:
    - `2.4.2-beta.13`;
    - the merged release SHA as build SHA;
    - `dirty: false`.
-2. **Item checks.** Reads in one sitting, one step per landed runtime item.
-   Two steps create a plan only. No step approves or applies a plan.
+2. **Item checks.** Reads only, in one sitting. No step creates, approves or
+   applies a plan.
    1. **Integrity paging** (HAMCP-473). `configuration_integrity_analysis`
       with `detail_level` `compact`, walked by cursor to its last page, then
       one call with `severities` naming a single severity. Expected: compact
@@ -118,21 +117,7 @@ which steps are reads.
       (`automation_count_exceeds_bound` or `response_size_exceeds_bound`)
       does not pass this step; record its reason and counts. Offline:
       `tests/test_hamcp476_automation_run_counts.py`.
-   4. **Change-scoped risk reasons** (HAMCP-293), plan only.
-      `create_configuration_plan` for an update to one existing automation
-      that already contains a high-risk call, changing a different step.
-      Expected: the legacy level and reasons first, unchanged; then a
-      `Changed:` line, a `Changed action steps:` line, and a
-      `High-risk call present, unchanged` line naming the call by service and
-      path. Do not approve or apply the plan. Offline:
-      `tests/test_hamcp293_change_scoped_risk.py`.
-   5. **Long dashboard description** (HAMCP-292), plan only.
-      `create_dashboard_update_plan` with a description of 513 to 2,000
-      characters that contains no secret. Expected: the plan is created, not
-      refused with `plan_contains_prohibited_sensitive_data`, and its review
-      shows the description whole. Do not approve or apply the plan.
-      Offline: `tests/test_hamcp292_dashboard_review_projection_bound.py`.
-   6. **Reliability batch detail** (HAMCP-474 D5, D6).
+   4. **Reliability batch detail** (HAMCP-474 D5, D6).
       `automation_reliability_batch_analysis` over a few automations.
       Expected: `source_limitations` names each limited source with
       `source_type`, `reason`, `affects_result_status` and `item_count` (a
@@ -143,22 +128,46 @@ which steps are reads.
       `root_cause_detail` is `full` or `reduced`. Offline:
       `tests/test_hamcp229_reliability_batch.py`.
 
-   There are no lifecycle steps. The two plan-only steps add a plan record
-   in Engineering and change nothing in Home Assistant; neither plan is
-   approved or applied.
+   There are no lifecycle steps. HAMCP-293 and HAMCP-292 are not checked
+   live: both act only when a plan is created, and creating a plan is not a
+   read. Their offline evidence is `tests/test_hamcp293_change_scoped_risk.py`
+   (#494) and `tests/test_hamcp292_dashboard_review_projection_bound.py`
+   (#495).
 
    Two checks planned in the 2.9.1 re-scope are not in this list: search
    with a domain filter (HAMCP-472 moved to native search, HAMCP-481) and
    coverage of the three large automations (HAMCP-474 D1, deferred to
    HAMCP-487).
-3. **Tool catalog.** A fresh `tools/list` matches the catalog the final
-   release pull request declares. **Pending.**
+3. **Tool catalog.** A fresh `tools/list` lists 87 Engineering tools,
+   including `get_automation_run_counts`, with none removed, and the same
+   delegated tools as beta.12 listed before the deploy (see the release
+   notes, "Tool catalog").
 
 PASS needs every check. If a step fails, record the response in the release
 task. Whether to roll back is Josh's decision.
 
 ## Rollback
 
-**Pending.** The final release pull request states the rollback target and
-whether rolling back is safe, from the storage, provider and option changes
-that actually landed.
+There is no in-place rollback. Recovery is restoring the pre-deploy full Home
+Assistant backup, or the VM 400 snapshot, both taken before the deploy. That
+returns Engineering 2.4.2-beta.12 with ha-mcp 9.2.0.
+- Target: tag `v2.4.2-beta.12`, commit
+  b4dd3da332b381d81df9ec1fd6f72e2be06a527a, image
+  `ghcr.io/jeter-1/hass-mcp-engineering-beta:2.4.2-beta.12`, OCI digest
+  `sha256:916f941c052cdbe9516cce8f22ff68e7682754dcccfb3518960d245983e4d634`
+  (2.4.2-beta.12 acceptance, section 3, on `main`).
+- Restoring removes `get_automation_run_counts`, the integrity and audit-log
+  paging, the batch detail and the new risk reasons.
+- Export `get_audit_log` before any restore.
+- In-place downgrade from beta.13 to beta.12 is not supported and is
+  unproven.
+- CI runs no in-place rollback lane: #461 retired it (HAMCP-405) and allows
+  an empty rollback slot (HAMCP-406, restore-first recovery).
+- No landed item states a persisted-format change. #492, #493 and #498 state
+  none. #494 adds risk reasons to new plans only, and a plan stored before it
+  keeps its hash. #495 leaves the stored plan record and its scan unchanged.
+  That is not a downgrade proof.
+- **Safety.** Restoring the backup or snapshot returns Engineering, its
+  storage and Home Assistant together to the backed-up state. It also
+  reverts every Home Assistant change made since it was taken. Whether to
+  restore, and which, is Josh's decision.

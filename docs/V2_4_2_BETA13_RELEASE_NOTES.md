@@ -54,11 +54,36 @@ evidence and the single Evidence tier log of the final release head.
 
 ## Tool catalog
 
-**Pending.** The final release pull request states the expected connector
-tool counts from the landed source.
+From the release source: the Engineering tools registered by
+`ha_mcp_engineering.tools.registry`, counted at b4dd3da3 and at this docs
+update (its runtime is that of 99b41cc5), and the count pins in
+`tests/test_rc3_postcore_regressions.py` and
+`tests/test_readonly_upstream_gateway.py`.
+
+| | 2.4.2-beta.12 (b4dd3da3) | 2.4.2-beta.13 (99b41cc5) |
+| --- | --- | --- |
+| Engineering native tools | 86 | 87 |
+| Added | none | `get_automation_run_counts` (HAMCP-476, #498) |
+| Removed | none | none |
+
+- Delegated tools are unchanged. No landed item changes ha-mcp admission,
+  the 9.2.0 registry row or the read-gateway policy.
+- Public input schemas change additively, with optional inputs only:
+  `configuration_integrity_analysis` gains `severities` and the
+  `detail_level` value `compact` (#492), and `get_audit_log` gains `cursor`
+  (#493). No input is removed or made required.
+- The live connector total is not predicted here: beta.12 recorded no live
+  catalog. The final release pull request adds the CI-observed lane values,
+  as beta.12 did.
 
 ## Rollback
 
-**Pending.** The final release pull request states the rollback target and
-whether rolling back is safe, from the storage, provider and option changes
-that actually landed.
+See [the acceptance contract](V2_4_2_BETA13_ACCEPTANCE.md), "Rollback". In
+short: restore the pre-deploy backup or the VM 400 snapshot, which returns
+2.4.2-beta.12 (tag `v2.4.2-beta.12`, commit b4dd3da3, image digest
+`sha256:916f941c052cdbe9516cce8f22ff68e7682754dcccfb3518960d245983e4d634`)
+with ha-mcp 9.2.0. Restoring removes `get_automation_run_counts`, the
+integrity and audit-log paging, the batch detail and the new risk reasons.
+The restore also reverts every Home Assistant change made since the backup.
+There is no in-place rollback. Export `get_audit_log` before any restore. No
+landed item states a persisted-format change.
