@@ -12,11 +12,15 @@ row is assigned by its own ``when``: the earlier half owns ``when < m`` and
 the later half owns ``when >= m`` (the outermost halves own everything
 before the window start or after its end). A row inside the 1 us overlap is
 returned by both requests and counted by one.
+
+Reply size: once the automations are known, and before any logbook read, a
+set whose worst-case reply would not fit the response limit is refused.
 """
 
 import asyncio
 from collections import deque
 from datetime import datetime, timedelta, timezone
+import json
 import time
 
 from ..clients import logbook
@@ -28,6 +32,16 @@ from . import contracts as c
 
 ONE_US = timedelta(microseconds=1)
 MIN_SPLIT = timedelta(seconds=c.MIN_SPLIT_SECONDS)
+# The longest run time a row can carry: aware UTC at microsecond precision.
+LONGEST_WHEN = datetime(9999, 12, 31, 23, 59, 59, 999_999, tzinfo=timezone.utc)
+
+
+def size_error(automation_count, limit):
+    return InvalidRequestError(
+        f"The reply for {automation_count} automations would not fit the {limit}-character "
+        "response limit; name up to 10 with automation_ids instead.",
+        details={"reason": "response_size_exceeds_bound", "automation_count": automation_count,
+                 "limit_chars": limit})
 
 
 async def _automation_ids(client):
@@ -100,7 +114,8 @@ def _intervals(items):
     return [{"start": lo.isoformat(), "end": hi.isoformat(), "cause": cause} for lo, hi, cause in merged]
 
 
-async def count_runs(client, checked, *, now=None, clock=time.monotonic):
+async def count_runs(client, checked, *, now=None, clock=time.monotonic,
+                     response_limit=c.MAX_RESPONSE_CHARS):
     started = clock()
     window = logbook.resolve_window(
         now or datetime.now(timezone.utc), checked["hours"], checked["start_time"],
@@ -114,6 +129,8 @@ async def count_runs(client, checked, *, now=None, clock=time.monotonic):
     try:
         ids = await _automation_ids(client) if all_mode else list(checked["automation_ids"])
         groups = c.batches(ids)
+        if worst_case_chars(checked["mode"], window, ids, groups, max_gets, max_seconds) > response_limit:
+            raise size_error(len(ids), response_limit)
         start, end = window["start"], window["end"]
         queue = deque((index, start, end) for index in range(len(groups)))
         totals = {automation_id: [0, None, None] for automation_id in ids}
@@ -175,17 +192,26 @@ async def count_runs(client, checked, *, now=None, clock=time.monotonic):
     finally:
         LOGBOOK.release(worker)
 
-    batch_of = {automation_id: index for index, group in enumerate(groups) for automation_id in group}
+    incomplete = {automation_id for index, items in enumerate(uncovered) if items
+                  for automation_id in groups[index]}
+    reasons = sorted({cause for items in uncovered for _, _, cause in items})
+    return _result(checked["mode"], window, ids, totals, incomplete, reasons,
+                   [{"automation_ids": list(groups[index]), "intervals": _intervals(items)}
+                    for index, items in enumerate(uncovered) if items],
+                   ignored, gets, max_gets, max_seconds)
+
+
+def _result(mode, window, ids, totals, incomplete, reasons, uncovered, ignored, gets, max_gets, max_seconds):
+    all_mode = mode == "all_automations"
     counts = []
     for automation_id in ids:
         runs, first, last = totals[automation_id]
         counts.append({"automation_id": automation_id, "runs": runs,
                        "first_run": first.isoformat() if first else None,
                        "last_run": last.isoformat() if last else None,
-                       "complete": not uncovered[batch_of[automation_id]]})
+                       "complete": automation_id not in incomplete})
     if all_mode:
         counts.sort(key=lambda row: (-row["runs"], row["automation_id"]))
-    reasons = sorted({cause for items in uncovered for _, _, cause in items})
     notes = [*logbook.BASE_NOTES, "failed_condition_triggers_not_counted", "mode_dropped_runs_not_counted"]
     if all_mode:
         notes.append("automations_from_current_states")
@@ -194,7 +220,7 @@ async def count_runs(client, checked, *, now=None, clock=time.monotonic):
     else:
         notes.append("automation_existence_not_checked")
     return {
-        "mode": checked["mode"],
+        "mode": mode,
         "requested_interval": window["requested_interval"],
         "effective_interval": window["effective_interval"],
         "interval_bounds": "exclusive",
@@ -207,7 +233,26 @@ async def count_runs(client, checked, *, now=None, clock=time.monotonic):
                      "max_logbook_gets": max_gets, "max_seconds": max_seconds},
         "complete": not reasons,
         "partial_reasons": reasons,
-        "uncovered": [{"automation_ids": list(groups[index]), "intervals": _intervals(items)}
-                      for index, items in enumerate(uncovered) if items],
+        "uncovered": uncovered,
         "completeness_notes": notes,
     }
+
+
+def worst_case_chars(mode, window, ids, groups, max_gets, max_seconds):
+    """An upper bound on the compact reply, envelope reserve included.
+
+    Every row at its longest (a run count no GET budget can exceed, both run
+    times, incomplete), every batch uncovered, every cause named, and the
+    most intervals a call can leave: one per batch plus one per split, at
+    most one split per GET.
+    """
+
+    most = logbook.MAX_RECORDS * max_gets
+    bound = window["start"].replace(microsecond=1).isoformat()
+    interval = {"start": bound, "end": bound, "cause": max(sorted(c.CAUSES), key=len)}
+    uncovered = [{"automation_ids": list(group), "intervals": [interval] * (1 + max_gets * (index == 0))}
+                 for index, group in enumerate(groups)]
+    result = _result(mode, window, ids, {automation_id: [most, LONGEST_WHEN, LONGEST_WHEN] for automation_id in ids},
+                     set(ids), sorted(c.CAUSES), uncovered, {"state_rows": most, "other_rows": most},
+                     max_gets, max_gets, max_seconds)
+    return len(json.dumps(result, separators=(",", ":"), default=str)) + c.ENVELOPE_RESERVE_CHARS

@@ -70,6 +70,21 @@ def automations(count):
     return [f"automation.synthetic_{index:03d}" for index in range(count)]
 
 
+def long_ids(count, length):
+    """Valid automation IDs of exactly ``length`` characters."""
+
+    return [f"automation.{'x' * (length - 15)}_{index:03d}" for index in range(count)]
+
+
+ROW_KEYS = {"automation_id", "runs", "first_run", "last_run", "complete"}
+# Logbook row material the reply must never carry (see ``run``).
+FIXTURE_STRINGS = ("Synthetic", "01SYNTHETIC", "triggered by", "binary_sensor.synthetic_door", "context_id")
+
+
+def compact(value):
+    return json.dumps(value, separators=(",", ":"), default=str)
+
+
 class FakeHome:
     """Synthetic Core: states and an exclusive-bound, entity-filtered logbook."""
 
@@ -393,6 +408,60 @@ class AllModeTests(Invariants, unittest.IsolatedAsyncioTestCase):
         result = await self.count(FakeHome(states=self.states(automations(200))), all_automations=True)
         self.assertEqual(result["automation_count"], 200)
 
+    async def test_worst_case_bounds_a_heavy_partial_reply(self):
+        # 200 IDs of 51 characters: the longest that still fit, 9 to a batch.
+        # A 3-minute window: each limited batch splits once into two
+        # unsplittable halves with different causes, so they stay apart.
+        ids = long_ids(200, 51)
+        start = NOW - timedelta(minutes=3)
+        rows = [run(automation_id, NOW - timedelta(seconds=index % 170 + 1, microseconds=index + 1))
+                for index, automation_id in enumerate(ids) for _ in range(3)]
+        rows += [state_row(ids[1], NOW - timedelta(seconds=5)), entry_row(ids[2], NOW - timedelta(seconds=6))]
+        limited = {ids[0], ids[100], ids[199]}
+
+        def limit(lo, hi, entities):
+            if not limited & set(entities):
+                return None
+            return "structure_items" if lo == start else "record_count"
+
+        home = FakeHome(rows, states=self.states(ids), limit=limit)
+        bounds = []
+        original = service_module.worst_case_chars
+
+        def spy(*args):
+            bounds.append(original(*args))
+            return bounds[-1]
+
+        with patch.object(service_module, "worst_case_chars", side_effect=spy):
+            result = await self.count(home, all_automations=True, hours=0.05)
+        self.assertEqual(len(bounds), 1)
+        self.assertLessEqual(bounds[0], c.MAX_RESPONSE_CHARS)
+        self.assertFalse(result["complete"])
+        self.assertEqual(len(result["counts"]), 200)
+        self.assertEqual(result["requests"]["logbook_gets"], 23 + 3 * 2)
+        self.assertEqual(sum(len(item["intervals"]) for item in result["uncovered"]), 6)
+        # 9 IDs to a batch; the last batch holds 2.
+        self.assertEqual(sum(not row["complete"] for row in result["counts"]), 9 + 9 + 2)
+        self.assertEqual(sum(row["runs"] for row in result["counts"] if row["complete"]), 3 * 180)
+        self.assertLessEqual(len(compact(result)) + c.ENVELOPE_RESERVE_CHARS, bounds[0])
+
+    async def test_an_oversized_set_is_refused_before_any_logbook_read(self):
+        for length in (52, 120, 255):
+            with self.subTest(length=length):
+                home = FakeHome(states=self.states(long_ids(200, length)))
+                with self.assertRaises(InvalidRequestError) as error:
+                    await count_runs(home, checked(all_automations=True), now=NOW)
+                self.assertEqual(error.exception.details, {"reason": "response_size_exceeds_bound",
+                                                           "automation_count": 200, "limit_chars": 60_000})
+                self.assertIn("automation_ids", str(error.exception))
+                self.assertEqual(home.calls, ["/states"])
+                self.assertFalse(logbook.LOGBOOK._active)
+        # The house's ~130 short IDs, and 130 IDs of 113 characters, fit.
+        for ids in (automations(130), long_ids(130, 113)):
+            with self.subTest(length=len(ids[0])):
+                result = await self.count(FakeHome(states=self.states(ids)), all_automations=True)
+                self.assertEqual(result["automation_count"], 130)
+
     async def test_a_states_read_failure_is_an_error(self):
         good = {"entity_id": "automation.synthetic_a", "state": "on"}
         for states in ({"entity_id": "automation.synthetic_a"}, None, [good, "x"], [good, {"state": "on"}],
@@ -562,6 +631,63 @@ class ToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["metadata"]["completeness"], "partial")
         self.assertEqual(result["data"]["partial_reasons"], ["request_budget"])
 
+    async def test_success_is_whole_and_carries_no_logbook_material(self):
+        for arguments in ({"automation_ids": ["automation.synthetic_a", "automation.synthetic_b"]},
+                          {"all_automations": True}):
+            with self.subTest(arguments=arguments):
+                result = await self.call(arguments)
+                self.assertTrue(result["success"], result)
+                self.assertNotIn("response_completeness", result)
+                self.assertEqual(len(result["data"]["counts"]), result["data"]["automation_count"])
+                for row in result["data"]["counts"]:
+                    self.assertEqual(set(row), ROW_KEYS)
+                text = json.dumps(result)
+                for needle in FIXTURE_STRINGS:
+                    self.assertNotIn(needle, text)
+
+    async def test_a_reply_near_the_bound_is_whole_and_the_envelope_fits_its_reserve(self):
+        ids = long_ids(200, 51)
+        self.home.rows = [run(automation_id, self.now - timedelta(minutes=index + 1, microseconds=1))
+                          for index, automation_id in enumerate(ids)]
+        self.home.states = [{"entity_id": automation_id, "state": "on"} for automation_id in ids]
+        self.home.limit = lambda lo, hi, entities: "structure_items" if ids[0] in entities else None
+        result = await self.call({"all_automations": True})
+        self.assertTrue(result["success"], result.get("details"))
+        self.assertEqual(result["metadata"]["completeness"], "partial")
+        self.assertNotIn("response_completeness", result)
+        self.assertEqual(len(result["data"]["counts"]), 200)
+        self.assertLessEqual(len(compact(result)) - len(compact(result["data"])), c.ENVELOPE_RESERVE_CHARS)
+
+    async def test_an_oversized_set_is_an_error_before_any_logbook_read(self):
+        for length in (120, 255):
+            with self.subTest(length=length):
+                self.home.calls.clear()
+                self.home.states = [{"entity_id": automation_id, "state": "on"}
+                                    for automation_id in long_ids(200, length)]
+                result = await self.call({"all_automations": True})
+                self.assertFalse(result["success"])
+                self.assertEqual(result["error_code"], ErrorCode.INVALID_REQUEST.value)
+                self.assertEqual(result["details"]["reason"], "response_size_exceeds_bound")
+                self.assertNotIn("data", result)
+                self.assertEqual(result["metadata"]["completeness"], "failed")
+                self.assertEqual(self.home.calls, ["/states"])
+                self.assertFalse(logbook.LOGBOOK._active)
+
+    async def test_a_cut_render_is_an_error_never_a_paged_success(self):
+        # Defeat the pre-check: the binder then cuts the reply, which must
+        # become an error rather than a paged or trimmed count list.
+        self.home.states = [{"entity_id": automation_id, "state": "on"} for automation_id in long_ids(200, 255)]
+        with patch.object(service_module, "worst_case_chars", return_value=0):
+            result = await self.call({"all_automations": True})
+        self.assertFalse(result["success"], result.get("response_completeness"))
+        self.assertEqual(result["details"], {"reason": "response_size_exceeds_bound", "automation_count": 200,
+                                             "limit_chars": 60_000})
+        self.assertNotIn("data", result)
+        self.assertNotIn("response_completeness", result)
+        self.assertEqual(result["metadata"]["completeness"], "failed")
+        self.assertGreater(len(self.home.calls), 1)
+        self.assertFalse(logbook.LOGBOOK._active)
+
     async def test_errors_are_never_partial(self):
         self.home.states = None
         result = await self.call({"all_automations": True})
@@ -660,15 +786,23 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
     async def test_gateway_rejects_before_sdk_and_audit_excludes_invalid_material(self):
         app = Mock(side_effect=AssertionError("SDK must not be reached"))
         with tempfile.TemporaryDirectory() as directory:
-            for bad in ({"automation_ids": [IDS_NEEDLE], "synthetic_key": "synthetic-needle"},
-                        {"automation_ids": [IDS_NEEDLE], "all_automations": True},
-                        {"automation_ids": [IDS_NEEDLE], "start_time": "synthetic-needle"}):
+            for index, bad in enumerate((
+                    {"automation_ids": [IDS_NEEDLE], "synthetic_key": "synthetic-needle"},
+                    {"automation_ids": [IDS_NEEDLE], "all_automations": True},
+                    {"automation_ids": [IDS_NEEDLE], "start_time": "synthetic-needle"},
+                    # Keys ending in _id are copied into resource_ids unless cleared.
+                    {"automation_ids": [IDS_NEEDLE], "entity_id": "automation.synthetic_entity_id_needle"},
+                    {"all_automations": True, "automation_id": "automation.synthetic_automation_id_needle"})):
                 with self.subTest(bad=bad):
-                    response, core, audit = await self.post(bad, app, Path(directory) / "audit.jsonl")
+                    response, core, audit = await self.post(bad, app, Path(directory) / f"audit-{index}.jsonl")
                     self.assertIn("InvalidAutomationRunCountsRequest", response.text)
-                    for needle in (IDS_NEEDLE, "synthetic-needle", "synthetic_key"):
+                    for needle in (IDS_NEEDLE, "synthetic-needle", "synthetic_key",
+                                   "synthetic_entity_id_needle", "synthetic_automation_id_needle"):
                         self.assertNotIn(needle, response.text)
                         self.assertNotIn(needle, audit)
+                    record = next(json.loads(row) for row in audit.splitlines()
+                                  if json.loads(row).get("tool_name") == "get_automation_run_counts")
+                    self.assertEqual(record["resource_ids"], {})
                     core.acquire.assert_not_called()
             app.assert_not_called()
 
@@ -695,6 +829,9 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
         data = json.loads(response.json()["result"]["content"][0]["text"])
         self.assertTrue(data["success"], data)
         self.assertEqual(data["data"]["counts"][0]["runs"], 1)
+        self.assertEqual([set(row) for row in data["data"]["counts"]], [ROW_KEYS, ROW_KEYS])
+        for needle in FIXTURE_STRINGS:
+            self.assertNotIn(needle, response.text)
         rows = [json.loads(row) for row in audit.splitlines()]
         record = next(row for row in rows if row.get("tool_name") == "get_automation_run_counts")
         self.assertEqual(record["resource_ids"], {})

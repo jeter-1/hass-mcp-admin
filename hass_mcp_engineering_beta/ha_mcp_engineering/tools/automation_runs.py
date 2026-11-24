@@ -1,5 +1,6 @@
 """Public read-only automation run counts from the native logbook (HAMCP-476)."""
 
+import json
 from typing import Annotated
 
 from mcp.server.fastmcp.tools.base import Tool
@@ -7,7 +8,7 @@ from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from ..automation_runs import contracts as c
-from ..automation_runs.service import count_runs
+from ..automation_runs.service import count_runs, size_error
 from ..errors import ErrorCode, GovernanceError
 from ..providers.routing import automation_run_counts_policy_allows_read
 from ..tool_framework import run_structured
@@ -37,7 +38,8 @@ async def get_automation_run_counts(
     automation_ids, 32 GETs and 120 seconds for all_automations. A spent
     budget or an unsplittable window returns partial with partial_reasons
     and the uncovered automations and intervals; their counts are lower
-    bounds. Any other failure is an error, never partial.
+    bounds. A set whose reply cannot fit the response limit is refused
+    before any logbook read. Any other failure is an error, never partial.
     """
     metadata = {"provider": "engineering", "data_providers": ["direct_ha_api"],
                 "fallback_occurred": False, "completeness": "failed"}
@@ -45,16 +47,39 @@ async def get_automation_run_counts(
                  "hours": hours, "start_time": start_time, "end_time": end_time}
     arguments = {key: value for key, value in arguments.items() if value is not None}
 
+    limit = min(c.MAX_RESPONSE_CHARS, SETTINGS.response_size_limit)
+    counted = {}
+
     async def action():
         if not automation_run_counts_policy_allows_read():
             raise GovernanceError(ErrorCode.PROVIDER_PROHIBITED)
-        result = await count_runs(REST_CLIENT, c.validate_arguments(arguments))
+        result = await count_runs(REST_CLIENT, c.validate_arguments(arguments), response_limit=limit)
         metadata["completeness"] = "complete" if result["complete"] else "partial"
+        counted["automation_count"] = result["automation_count"]
         return result
 
-    return await run_structured("get_automation_run_counts", "Returned automation run counts.",
-                                action, metadata=metadata,
-                                response_limit=min(60_000, SETTINGS.response_size_limit))
+    rendered = await run_structured("get_automation_run_counts", "Returned automation run counts.",
+                                    action, metadata=metadata, response_limit=limit)
+    value = json.loads(rendered)
+    if value.get("success") is not True or _whole(value):
+        return rendered
+
+    # The size bound cut a success: never return a paged or cut count list.
+    async def overflow():
+        raise size_error(counted["automation_count"], limit)
+
+    metadata["completeness"] = "failed"
+    return await run_structured("get_automation_run_counts", "", overflow,
+                                metadata=metadata, response_limit=limit)
+
+
+def _whole(value):
+    """True when a rendered success carries every counted automation, uncut."""
+
+    data = value.get("data")
+    return ("response_completeness" not in value and isinstance(data, dict)
+            and isinstance(data.get("counts"), list) and "uncovered" in data
+            and len(data["counts"]) == data.get("automation_count"))
 
 
 class AutomationRunCountsTool(Tool):

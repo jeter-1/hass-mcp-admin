@@ -39,12 +39,18 @@ IDS_MAX_SECONDS = 60
 # All automations: sized from the house's recorded count, 115 automations
 # (hass_mcp_engineering_beta/CHANGELOG.md, beta.40 live findings, Core
 # 2026.10.3). 115 is 12 batches of 10; 32 GETs cover them with 20 splits
-# to spare, or about 2.5 times the automations with no split. More than
-# MAX_ALL_AUTOMATIONS is refused before any logbook read, which also keeps
-# the reply inside the 60,000-byte response limit.
+# to spare, or about 2.5 times the automations with no split (Josh, relayed
+# 2026-11-24: the house now has about 130). More than MAX_ALL_AUTOMATIONS is
+# refused before any logbook read.
 ALL_MAX_GETS = 32
 ALL_MAX_SECONDS = 120
 MAX_ALL_AUTOMATIONS = 200
+# The count cap alone does not bound the reply: entity IDs may be 255
+# characters. A set whose worst-case reply, plus this envelope reserve, does
+# not fit the response limit is refused before any logbook read, and a reply
+# that still does not fit is an error, never a paged or cut success.
+MAX_RESPONSE_CHARS = 60_000
+ENVELOPE_RESERVE_CHARS = 2_000
 BATCH = MAX_FILTER_ENTITIES
 # A sub-window shorter than two of these is never split again.
 MIN_SPLIT_SECONDS = 60
