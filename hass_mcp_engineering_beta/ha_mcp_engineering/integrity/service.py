@@ -250,15 +250,30 @@ class ConfigurationIntegrityAnalysisService:
         # HAMCP-473: filter before the whole-analysis cap, so a client can
         # walk every finding of one severity even when the total exceeds it.
         # Findings the filter hides still need review: the assessment is
-        # taken before the filter and the exclusion is disclosed.
+        # taken before the filter and the exclusion is disclosed. The
+        # disclosure reconciles: finding_count, excluded_finding_count and
+        # truncated_selected_count add up to the classified total.
         severity_filter = None
         if set(validated["severities"]) != set(SEVERITIES):
             selected = [
                 item for item in findings if item.severity in validated["severities"]
             ]
+            excluded_counts = Counter(
+                item.severity
+                for item in findings
+                if item.severity not in validated["severities"]
+            )
             severity_filter = {
                 "severities": list(validated["severities"]),
                 "excluded_finding_count": len(findings) - len(selected),
+                "excluded_by_severity": {
+                    severity: excluded_counts.get(severity, 0)
+                    for severity in SEVERITIES
+                    if severity not in validated["severities"]
+                },
+                "truncated_selected_count": max(
+                    0, len(selected) - MAX_ANALYSIS_FINDINGS
+                ),
                 "assessment_includes_excluded_findings": True,
             }
             excluded_findings = len(findings) > len(selected)
@@ -393,7 +408,16 @@ class ConfigurationIntegrityAnalysisService:
                 "target_entity_ids_inferred": False,
             },
             "counter_semantics": {
-                "finding_count": "whole_bounded_analysis_findings",
+                "finding_count": (
+                    "selected_severity_findings_within_whole_bounded_analysis"
+                    if severity_filter
+                    else "whole_bounded_analysis_findings"
+                ),
+                **(
+                    {"findings_by_severity": "selected_severities_only"}
+                    if severity_filter
+                    else {}
+                ),
                 "unique_source_object_count": "unique_source_type_and_source_id_pairs_with_findings",
                 "unique_target_entity_count": "unique_confirmed_target_ids_across_reference_and_candidate_findings",
                 "unique_orphan_candidate_count": "registry_candidates_only",
@@ -939,6 +963,9 @@ def _public_finding(item, include_evidence: bool, compact: bool) -> dict[str, An
         return value
     value = {key: value[key] for key in COMPACT_FINDING_KEYS if key in value}
     if "configuration_paths" in value:
+        # The count is taken before the compact slice, so a client can tell
+        # when a standard read would return more paths.
+        value["configuration_path_count"] = len(value["configuration_paths"])
         value["configuration_paths"] = value["configuration_paths"][
             :COMPACT_CONFIGURATION_PATHS
         ]

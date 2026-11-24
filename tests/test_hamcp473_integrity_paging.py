@@ -104,15 +104,36 @@ class CompactWalkTests(unittest.IsolatedAsyncioTestCase):
         data = response["data"]
         self.assertEqual(data["evidence_references"], [])
         for item in data["findings"]:
-            self.assertLessEqual(set(item), set(COMPACT_FINDING_KEYS))
+            # The one key a compact record adds is the count of its paths.
+            self.assertLessEqual(set(item), {*COMPACT_FINDING_KEYS, "configuration_path_count"})
             self.assertNotIn("evidence_references", item)
             self.assertLessEqual(len(item.get("configuration_paths", [])), 3)
+            if "configuration_paths" in item:
+                self.assertGreaterEqual(item["configuration_path_count"], len(item["configuration_paths"]))
         summary = data["dynamic_reference_summary"]
         self.assertIs(summary["review_items_omitted"], True)
         self.assertNotIn("review_items", summary)
         self.assertEqual(summary["unresolved_in_requested_scope_count"], 60)
         for text in ("Exact static reference.", "sensor.example", "An enabled automation"):
             self.assertNotIn(text, raw)
+
+    async def test_a_compact_finding_counts_the_paths_it_leaves_out(self):
+        value = mixed_bundle(high=0, medium=0, low=0, info=0, dynamic=0)
+        value.exact_references.extend(
+            fixtures.reference("sensor.gone_paths", source_id="auto_paths", path=f"$.branch[{i}].entity_id")
+            for i in range(6)
+        )
+        responses = {}
+        for detail_level in ("standard", "compact"):
+            service, _ = make_service(deepcopy(value))
+            _, response = await read(service, detail_level=detail_level)
+            [finding] = response["data"]["findings"]
+            responses[detail_level] = finding
+        self.assertEqual(len(responses["standard"]["configuration_paths"]), 6)
+        self.assertNotIn("configuration_path_count", responses["standard"])
+        compact = responses["compact"]
+        self.assertEqual(compact["configuration_paths"], responses["standard"]["configuration_paths"][:3])
+        self.assertEqual(compact["configuration_path_count"], 6)
 
     async def test_standard_detail_is_unchanged_by_the_new_inputs(self):
         outputs = []
@@ -167,6 +188,28 @@ class SeverityFilterTests(unittest.IsolatedAsyncioTestCase):
         pages = await CompactWalkTests.walk(self, service, severities=["high"])
         self.assertEqual([item["severity"] for page in pages for item in page["findings"]], ["high"] * 10)
         self.assertEqual(pages[-1]["result_status"], "success")
+        self.assertEqual(pages[0]["severity_filter"]["excluded_by_severity"],
+                         {"medium": 2_050, "low": 0, "info": 0})
+        self.assertEqual(pages[0]["severity_filter"]["truncated_selected_count"], 0)
+
+    async def test_the_cap_on_a_selected_severity_is_counted(self):
+        value = mixed_bundle(high=2_050, medium=10, low=0, info=0, dynamic=0)
+        service, _ = make_service(value)
+        _, response = await read(service, limit=1, severities=["high"])
+        data = response["data"]
+        self.assertEqual(data["finding_count"], 2_000)
+        self.assertEqual(data["result_status"], "partial")
+        self.assertEqual(data["final_assessment"], "review_required")
+        disclosed = data["severity_filter"]
+        self.assertEqual(disclosed["excluded_finding_count"], 10)
+        self.assertEqual(disclosed["excluded_by_severity"], {"medium": 10, "low": 0, "info": 0})
+        self.assertEqual(disclosed["truncated_selected_count"], 50)
+        # The three counts reconcile to the classified total.
+        self.assertEqual(
+            data["finding_count"] + disclosed["excluded_finding_count"] + disclosed["truncated_selected_count"],
+            2_060,
+        )
+        self.assertTrue(any("finding cap was reached" in item for item in response["warnings"]))
 
     async def test_filter_that_hides_findings_keeps_the_assessment_and_discloses_it(self):
         value = mixed_bundle(high=5, medium=0, low=0, info=0, dynamic=0)
@@ -180,8 +223,15 @@ class SeverityFilterTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(data["manual_review_required"], True)
         self.assertEqual(data["severity_filter"], {
             "severities": ["info"], "excluded_finding_count": 5,
+            "excluded_by_severity": {"high": 5, "medium": 0, "low": 0},
+            "truncated_selected_count": 0,
             "assessment_includes_excluded_findings": True,
         })
+        # The zeros describe the selected severities only, and say so.
+        self.assertEqual(data["findings_by_severity"]["high"], 0)
+        self.assertEqual(data["counter_semantics"]["finding_count"],
+                         "selected_severity_findings_within_whole_bounded_analysis")
+        self.assertEqual(data["counter_semantics"]["findings_by_severity"], "selected_severities_only")
 
     async def test_severity_filter_disclosure_follows_every_page_and_only_a_narrowed_query(self):
         service, _ = make_service()
@@ -193,6 +243,9 @@ class SeverityFilterTests(unittest.IsolatedAsyncioTestCase):
             service, _ = make_service()
             _, response = await read(service, **arguments)
             self.assertNotIn("severity_filter", response["data"])
+            self.assertEqual(response["data"]["counter_semantics"]["finding_count"],
+                             "whole_bounded_analysis_findings")
+            self.assertNotIn("findings_by_severity", response["data"]["counter_semantics"])
 
     async def test_cursor_is_bound_to_the_filter_and_detail_level(self):
         for change in ({"severities": []}, {"severities": ["medium"]}, {"detail_level": "standard"},

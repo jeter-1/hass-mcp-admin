@@ -54,7 +54,10 @@ follow `next_cursor` until it is `null`. Narrow the walk with `severities`,
   `finding_type`, `severity`, `confidence`, `target_entity_id`, `source_type`,
   `source_id`, `source_entity_id`, `configuration_paths` (at most three),
   `disabled_classification`, `manual_review_required`, and
-  `remediation_required`. It carries no explanation, remediation text, evidence
+  `remediation_required`, plus `configuration_path_count`, the number of paths
+  a `standard` read of the same finding returns (at most 20). When the count
+  is above three, the compact list is short; read the finding with `standard`
+  for the rest. It carries no explanation, remediation text, evidence
   records, or excerpts. `evidence_references` is empty. The dynamic reference
   summary keeps its counts and reports `review_items_omitted: true` in place of
   `review_items`. Use `standard` or `evidence` with a narrowed query to read the
@@ -64,16 +67,33 @@ follow `next_cursor` until it is `null`. Narrow the walk with `severities`,
   pages, each full except the last, from one provider read.
 - **Severity filter.** The filter applies after classification and before the
   2,000-finding whole-analysis bound. `finding_count`, `findings_by_severity`,
-  and the other totals describe the filtered result. A filtered walk still
-  reads the same evidence: the provider call is unchanged.
+  and the other totals describe the filtered result, and a narrowed query says
+  so: `counter_semantics.finding_count` is
+  `selected_severity_findings_within_whole_bounded_analysis` and
+  `counter_semantics.findings_by_severity` is `selected_severities_only`. A
+  zero in `findings_by_severity` for a severity that was not selected means
+  "not counted", not "none found"; read `severity_filter.excluded_by_severity`
+  for those. A filtered walk still reads the same evidence: the provider call
+  is unchanged.
 - **Assessment under a filter.** Findings the filter hides still need review.
   `final_assessment` and `manual_review_required` are taken before the filter,
   so `severities=["info"]` over a result with only high findings returns no
   findings and `review_required`, never `no_confirmed_integrity_findings`. A
   narrowed query adds `severity_filter` on every page: the `severities`
-  requested, `excluded_finding_count`, and
-  `assessment_includes_excluded_findings: true`. A query without a filter has
-  no `severity_filter` key.
+  requested, `excluded_finding_count`, `excluded_by_severity` (the excluded
+  count for each severity not selected), `truncated_selected_count` (selected
+  findings dropped by the 2,000-finding bound, `0` unless the bound was
+  reached, which also makes the result `partial`), and
+  `assessment_includes_excluded_findings: true`. `finding_count`,
+  `excluded_finding_count` and `truncated_selected_count` add up to the
+  classified total. A query without a filter has no `severity_filter` key and
+  keeps the unfiltered `counter_semantics`.
+- **Health counters and audit.** The cumulative integrity counters in health
+  output add the counts of each analysis's query, so a filtered query adds its
+  filtered `finding_count` and `findings_by_severity`, not the classified
+  totals. The tool's audit arguments keep `detail_level` but not
+  `severities`. Changing either needs a file outside this item's authorized
+  set.
 - **Cursor binding.** `severities` and `detail_level` are part of the query
   fingerprint. Changing either during a walk returns `stale_cursor`; the
   original arguments resume the walk.
@@ -90,8 +110,11 @@ Josh authorized this additive schema change (2.9.1 C/E build block,
 - **Change.** One optional input, `severities` (array of the four severities,
   default `[]`), and one new `detail_level` value, `compact`. No input is
   removed, renamed, retyped or made required. No output field is removed from
-  `summary`, `standard` or `evidence`. The only new output key,
-  `severity_filter`, appears only when the new input narrows the query.
+  `summary`, `standard` or `evidence`. The new output keys,
+  `severity_filter` and `counter_semantics.findings_by_severity`, and the
+  filtered `counter_semantics.finding_count` value, appear only when the new
+  input narrows the query. `configuration_path_count` appears only on
+  `compact` findings.
 - **Existing clients.** A call that omits both returns the same findings,
   evidence, totals and summaries as before
   (`test_standard_detail_is_unchanged_by_the_new_inputs`). The default
