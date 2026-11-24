@@ -253,5 +253,194 @@ class ConservativeReclassificationTests(unittest.TestCase):
         )
 
 
+LONG_PATH = (
+    "$.actions[0].repeat.sequence[0]"
+    + ".choose[0].sequence[0]" * 5
+    + ".choose[0].conditions[0].entity_id"
+)
+LOCATION_PREFIX = "configuration_path:"
+
+
+def _located(**overrides) -> DependencyObligation:
+    fields = dict(
+        config_path=LONG_PATH,
+        outcome="exact_dependency",
+        lock_projection="exact",
+        exact_entity_ids=("input_boolean.example",),
+        context_provenance=(LOCATION_PREFIX + LONG_PATH,),
+    )
+    fields.update(overrides)
+    return _obligation(**fields)
+
+
+def _assert_coverage_failed(test: unittest.TestCase, item) -> None:
+    test.assertEqual("coverage_failure", item.outcome)
+    test.assertEqual("coverage_failure", item.lock_projection)
+    test.assertEqual("coverage_failure", item.target_selector_scope)
+    test.assertTrue(item.limit_exceeded)
+    test.assertTrue(item.evidence_bounded)
+
+
+class LocationContextRelabelTests(unittest.TestCase):
+    """HAMCP-474 D1: only the obligation's own over-bound location is relabelled."""
+
+    def test_fixture_location_exceeds_the_value_bound(self):
+        self.assertGreater(
+            len((LOCATION_PREFIX + LONG_PATH).encode("utf-8")),
+            MAX_OBLIGATION_VALUE_BYTES,
+        )
+
+    def test_own_over_bound_location_keeps_the_classification(self):
+        for outcome, lock in (
+            ("exact_dependency", "exact"),
+            ("proven_target_exclusion", "none"),
+        ):
+            with self.subTest(outcome=outcome):
+                item = _located(outcome=outcome, lock_projection=lock)
+                self.assertEqual(outcome, item.outcome)
+                self.assertEqual(lock, item.lock_projection)
+                self.assertEqual(
+                    "closed_finite_candidates", item.target_selector_scope
+                )
+                self.assertFalse(item.limit_exceeded)
+                self.assertFalse(item.coverage_failure_authority)
+                self.assertTrue(item.evidence_bounded)
+                self.assertEqual(LONG_PATH, item.config_path)
+                self.assertEqual(
+                    ("input_boolean.example",), item.exact_entity_ids
+                )
+                (context,) = item.context_provenance
+                self.assertTrue(
+                    context.startswith(LOCATION_PREFIX + "sha256:")
+                )
+                self.assertLessEqual(
+                    len(context.encode("utf-8")), MAX_OBLIGATION_VALUE_BYTES
+                )
+
+    def test_relabel_is_deterministic_idempotent_and_path_sensitive(self):
+        first = _located()
+        again = _located()
+        rebuilt = _located(
+            context_provenance=first.context_provenance,
+            evidence_bounded=first.evidence_bounded,
+        )
+        other_path = LONG_PATH.replace("entity_id", "state")
+        other = _located(
+            config_path=other_path,
+            context_provenance=(LOCATION_PREFIX + other_path,),
+        )
+        self.assertEqual(first.context_provenance, again.context_provenance)
+        self.assertEqual(first.context_provenance, rebuilt.context_provenance)
+        self.assertEqual("exact_dependency", rebuilt.outcome)
+        self.assertNotEqual(
+            first.context_provenance, other.context_provenance
+        )
+        self.assertNotEqual(
+            obligation_fingerprint(first), obligation_fingerprint(other)
+        )
+
+    def test_in_bound_location_is_retained_verbatim(self):
+        short = "$.conditions[0].entity_id"
+        item = _located(
+            config_path=short,
+            context_provenance=(LOCATION_PREFIX + short,),
+        )
+        self.assertEqual((LOCATION_PREFIX + short,), item.context_provenance)
+        self.assertFalse(item.evidence_bounded)
+        self.assertEqual("exact_dependency", item.outcome)
+
+    def test_selector_markers_beside_a_relabel_are_kept(self):
+        for marker in (
+            "entity_set_producer:label_entities",
+            "entity_selector_transform:expand",
+        ):
+            with self.subTest(marker=marker):
+                item = _located(
+                    context_provenance=(LOCATION_PREFIX + LONG_PATH, marker)
+                )
+                self.assertEqual("exact_dependency", item.outcome)
+                self.assertTrue(item.evidence_bounded)
+                self.assertTrue(
+                    item.context_provenance[0].startswith(
+                        LOCATION_PREFIX + "sha256:"
+                    )
+                )
+                self.assertEqual(marker, item.context_provenance[1])
+
+    # Negatives: every other loss still fails closed.
+
+    def test_foreign_over_bound_value_still_fails(self):
+        for value in (
+            LOCATION_PREFIX + LONG_PATH + "[1]",
+            LOCATION_PREFIX + LONG_PATH.replace("[0]", "[1]", 1),
+            LONG_PATH + "x" * MAX_OBLIGATION_VALUE_BYTES,
+            "context_path:" + LONG_PATH,
+        ):
+            with self.subTest(value=value[:40]):
+                _assert_coverage_failed(
+                    self, _located(context_provenance=(value,))
+                )
+
+    def test_sanitizer_altered_own_location_still_fails(self):
+        for path in (
+            LONG_PATH + ".data.synthetic...<truncated>",
+            LONG_PATH
+            + ".data.Authorization: Bearer abcdefghijklmnopqrstuvwxyz012345",
+        ):
+            with self.subTest(path=path[-24:]):
+                item = _located(
+                    config_path=path,
+                    context_provenance=(LOCATION_PREFIX + path,),
+                )
+                _assert_coverage_failed(self, item)
+                self.assertNotIn(
+                    "abcdefghijklmnopqrstuvwxyz012345",
+                    str(item.context_provenance),
+                )
+
+    def test_non_path_context_loss_beside_a_relabel_still_fails(self):
+        for value in (
+            "entity_selector_transform:" + "x" * MAX_OBLIGATION_VALUE_BYTES,
+            "label_resolution_fingerprint:" + "f" * MAX_OBLIGATION_VALUE_BYTES,
+        ):
+            with self.subTest(value=value[:30]):
+                _assert_coverage_failed(
+                    self,
+                    _located(
+                        context_provenance=(
+                            LOCATION_PREFIX + LONG_PATH,
+                            value,
+                        )
+                    ),
+                )
+
+    def test_context_aggregate_overflow_beside_a_relabel_still_fails(self):
+        values = (LOCATION_PREFIX + LONG_PATH,) + tuple(
+            f"context_marker:{index:05d}" for index in range(200)
+        )
+        item = _located(context_provenance=values)
+        _assert_coverage_failed(self, item)
+        self.assertTrue(item.context_provenance[-1].startswith("omitted:"))
+
+    def test_target_detail_loss_beside_a_relabel_still_fails(self):
+        oversized = "y" * (MAX_OBLIGATION_VALUE_BYTES + 1)
+        for overrides in (
+            {"literal_selectors": (oversized,)},
+            {
+                "exact_entity_ids": tuple(
+                    f"input_boolean.helper_{index:05d}" for index in range(1000)
+                )
+            },
+            {
+                "outcome": "proven_target_exclusion",
+                "lock_projection": "none",
+                "exact_entity_ids": (),
+                "possible_entity_domains": (oversized,),
+            },
+        ):
+            with self.subTest(field=next(iter(overrides))):
+                _assert_coverage_failed(self, _located(**overrides))
+
+
 if __name__ == "__main__":
     unittest.main()

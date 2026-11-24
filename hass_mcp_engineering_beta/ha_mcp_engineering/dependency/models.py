@@ -149,6 +149,48 @@ def _bounded_evidence_text(value: str | None) -> tuple[str | None, bool]:
     return safe, False
 
 
+_LOCATION_CONTEXT_PREFIX = "configuration_path:"
+
+
+def _segment_location_context(
+    values: tuple[str, ...] | list[str],
+    config_path: str,
+) -> tuple[tuple[str, ...], bool]:
+    """Relabel an over-bound copy of the obligation's own location.
+
+    HAMCP-474 D1: a ``configuration_path:`` context value that repeats this
+    obligation's ``config_path`` carries no selector semantics, and the full
+    path is retained unbounded in ``config_path``. Only that exact copy, when
+    it exceeds the per-value bound and the sanitizer leaves it unchanged, is
+    replaced by a digest without loss of target-specific detail. Every other
+    value, including a sanitizer-altered or foreign path, is left for the
+    unchanged bounding below, so its loss still fails closed.
+    """
+
+    if not isinstance(config_path, str):
+        return tuple(values), False
+    label = _LOCATION_CONTEXT_PREFIX + config_path
+    retained: list[str] = []
+    relabelled = False
+    for value in values:
+        if (
+            isinstance(value, str)
+            and value == label
+            and len(value.encode("utf-8")) > MAX_OBLIGATION_VALUE_BYTES
+        ):
+            safe = sanitize_untrusted_data(
+                value, registry=extraction_registry()
+            ).value
+            if isinstance(safe, str) and safe == value:
+                retained.append(
+                    _LOCATION_CONTEXT_PREFIX + _evidence_digest(value)
+                )
+                relabelled = True
+                continue
+        retained.append(value)
+    return tuple(retained), relabelled
+
+
 @dataclass(frozen=True)
 class DependencyObligation:
     """One terminal whole-template dependency-analysis obligation.
@@ -264,6 +306,9 @@ class DependencyObligation:
         silently truncated.
         """
 
+        location_context, location_relabelled = _segment_location_context(
+            self.context_provenance, self.config_path
+        )
         exact, exact_lost = _bounded_evidence_values(
             self.exact_entity_ids,
             aggregate_bytes=MAX_OBLIGATION_EXACT_AGGREGATE_BYTES,
@@ -273,7 +318,7 @@ class DependencyObligation:
             aggregate_bytes=MAX_OBLIGATION_SELECTOR_AGGREGATE_BYTES,
         )
         context, context_lost = _bounded_evidence_values(
-            self.context_provenance,
+            location_context,
             aggregate_bytes=MAX_OBLIGATION_CONTEXT_AGGREGATE_BYTES,
         )
         if self.possible_entity_domains is None:
@@ -298,6 +343,7 @@ class DependencyObligation:
         object.__setattr__(self, "source_state", source_state)
         bounded = any(
             (
+                location_relabelled,
                 exact_lost,
                 selector_lost,
                 context_lost,
@@ -313,6 +359,8 @@ class DependencyObligation:
         # Target-specific detail is what an exact terminal or a proven
         # exclusion rests on. Without it the obligation is coverage-failed;
         # retained prefixes remain diagnostic and cannot narrow its lock.
+        # A relabelled location copy is disclosed as bounded only: the full
+        # path stays in ``config_path``.
         target_detail_lost = bool(
             exact_lost or selector_lost or domain_lost or context_lost
         )

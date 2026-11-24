@@ -581,6 +581,9 @@ SANITIZER_SITES = {
     ("dependency/extraction.py", "_bounded", "redact_data"): (1, "analysis"),
     ("dependency/models.py", "_bounded_evidence_text", "sanitize_untrusted_data"): (1, "analysis"),
     ("dependency/models.py", "_bounded_evidence_values", "sanitize_untrusted_data"): (1, "analysis"),
+    # HAMCP-474 D1: an over-bound own location is relabelled only when the
+    # sanitizer leaves it unchanged.
+    ("dependency/models.py", "_segment_location_context", "sanitize_untrusted_data"): (1, "analysis"),
     ("dependency/provider.py", "DirectHaDependencyProvider._scan_sources", "redact_data"): (2, "analysis"),
     ("dependency/provider.py", "_bounded_provider_identity", "redact_data"): (1, "analysis"),
     ("dependency/provider.py", "_EffectDisplayFilter._clean", "redact_data"): (1, "analysis"),

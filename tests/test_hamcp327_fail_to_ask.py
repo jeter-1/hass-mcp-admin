@@ -28,6 +28,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "hass_mcp_engineering_beta"), str(ROOT)]
 
 from ha_mcp_engineering import dependency as dependency_package  # noqa: E402
+from ha_mcp_engineering.dependency import models as dependency_models  # noqa: E402
 from ha_mcp_engineering.dependency.index import DependencyIndex  # noqa: E402
 from ha_mcp_engineering.dependency.models import MAX_OBLIGATION_VALUE_BYTES  # noqa: E402
 from ha_mcp_engineering.dependency.provider import (  # noqa: E402
@@ -67,7 +68,10 @@ def _nest(inner, depth):
     return inner
 
 
-def _bounded(entity_id):
+FORGED_KEY = "synthetic...<truncated>"
+
+
+def _deep(entity_id):
     """A deep lock automation: its condition path exceeds the provenance bound."""
     gate = {"choose": [{
         "conditions": [{"condition": "state", "entity_id": entity_id, "state": "on"}],
@@ -76,6 +80,25 @@ def _bounded(entity_id):
     return {"alias": "Front door lock bedtime",
             "triggers": [{"trigger": "time", "at": "22:00:00"}],
             "actions": [{"repeat": {"count": 3, "sequence": _nest([gate], 5)}}]}
+
+
+def _bounded(entity_id):
+    """A lock automation whose read sits under a key the sanitizer alters (forged suffix)."""
+    return {"alias": "Front door lock bedtime",
+            "triggers": [{"trigger": "time", "at": "22:00:00"}],
+            "actions": [{"action": "script.synthetic", "data": {FORGED_KEY: {"entity_id": entity_id}}},
+                        {"action": "lock.lock", "target": {"entity_id": "lock.synthetic_front"}}]}
+
+
+def without_location_relabel(test):
+    """Seam: the pre-D1 binder, so an over-bound location still fails its obligation."""
+    patcher = patch.object(
+        dependency_models,
+        "_segment_location_context",
+        lambda values, path: (tuple(values), False),
+    )
+    patcher.start()
+    test.addCleanup(patcher.stop)
 
 
 def configs(*shapes):
@@ -94,7 +117,9 @@ def configs(*shapes):
         result["front_door_lock_bedtime"] = _bounded("binary_sensor.synthetic_bed")
     if "bounded_guest" in shapes:
         # C-iv: the same bounded shape whose literal read is the helper itself.
-        result["front_door_lock_bedtime"] = _bounded(GUEST)
+        result["front_door_lock_bedtime"] = _deep(GUEST)
+    if "deep" in shapes:
+        result["front_door_lock_bedtime"] = _deep("binary_sensor.synthetic_bed")
     if "noise" in shapes:
         result["noise"] = {
             "alias": "Unrelated",
@@ -263,6 +288,10 @@ class IntactIdBoundedTests(Hamcp327Base):
 
     shapes = ("bounded_guest", "noise")
 
+    async def asyncSetUp(self):
+        without_location_relabel(self)
+        await super().asyncSetUp()
+
     async def test_fixture_reproduces_the_c_iv_shape(self):
         index = self.runtime.require().index
         snapshot, *_ = await index.get(refresh=True)
@@ -299,6 +328,7 @@ class UnattributedGapTests(Hamcp327Base):
     shapes = ("bounded_guest", "noise")
 
     async def asyncSetUp(self):
+        without_location_relabel(self)
         await super().asyncSetUp()
         provider = self.runtime.require().index.provider
         for number in range(MAX_PENDING_AUTOMATION_WRITES + 1):
@@ -577,6 +607,56 @@ class ResultDisclosureTests(Hamcp327Base):
                          ("reconciliation_of_existing_task", "unavailable", "RuntimeError"))
         self.assertEqual({key: safety[key] for key in NO_CONSUMERS}, NO_CONSUMERS)
         self.assertEqual(len(self.dispatches()), 1)
+        self.settled()
+
+
+class OverBoundLocationTests(Hamcp327Base):
+    """HAMCP-474 D1: an over-bound location alone no longer fails the obligation."""
+
+    shapes = ("exact", "deep", "noise")
+
+    async def test_deep_unrelated_lock_is_ruled_out_for_other_helpers(self):
+        for entity, action, value in ((ACCEPTANCE, "turn_on", None), (SEASON, "select_option", "Away")):
+            with self.subTest(entity=entity):
+                result = await self.call(self.request(entity, action, value))
+                self.assertEqual(result["status"], "succeeded_verified", result)
+                safety = result["safety"]
+                self.assertFalse(safety["safety_critical"])
+                self.assertEqual(safety["known_consumers"], [])
+                self.assertTrue(safety["coverage_complete"])
+                self.assertEqual(safety["coverage_reason_codes"], [])
+                self.assertIsNone(safety["template_readers"])
+        self.settled()
+
+    async def test_deep_location_keeps_full_path_and_records_the_bound(self):
+        snapshot, *_ = await self.runtime.require().index.get(refresh=True)
+        deep = [item for item in snapshot.obligations if item.source_id == "front_door_lock_bedtime"
+                and len(str(item.config_path).encode()) > MAX_OBLIGATION_VALUE_BYTES]
+        self.assertTrue(deep)
+        self.assertFalse(any(item.coverage_failure_authority for item in deep))
+        relabelled = [item for item in deep
+                      if any(value.startswith("configuration_path:sha256:") for value in item.context_provenance)]
+        self.assertTrue(relabelled)
+        self.assertTrue(all(item.evidence_bounded for item in relabelled))
+
+
+class OverBoundLiteralConsumerTests(Hamcp327Base):
+    """HAMCP-474 D1: the C-iv consumer now asks from exact evidence."""
+
+    shapes = ("bounded_guest", "noise")
+
+    async def test_deep_literal_consumer_is_exact_and_asks_without_dispatch(self):
+        evidence = await read_helper_dependency_evidence(GUEST)
+        binding = evidence["binding"]
+        self.assertEqual(binding["completeness"], "complete")
+        self.assertGreaterEqual(binding["exact_dependency_obligation_count"], 1)
+        consumer = next(item for item in binding["downstream_profiles"]
+                        if item["automation_id"] == "automation.front_door_lock_bedtime")
+        self.assertEqual(consumer["relationships"], ["choose_condition"])
+        request = self.request(GUEST, "turn_on")
+        result = await self.assert_asks(request, "safety_critical_consumers")
+        self.assertEqual([item["automation_id"] for item in result["consequential_automations"]],
+                         ["automation.front_door_lock_bedtime"])
         self.settled()
 
 
