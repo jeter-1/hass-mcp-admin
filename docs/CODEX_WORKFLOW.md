@@ -213,8 +213,11 @@ Keep publication eligibility/scheduling changes separate from action updates.
       pull request: the branch upstream, but only when
       it is `origin/main` or an `origin/release/*` branch other than the
       branch's own remote copy (`git push -u` changes the upstream to that copy).
-   3. Otherwise `origin/main`, with a message naming each reason detection did
-      not apply and suggesting `-BaseRef`.
+   3. Otherwise the preflight refuses, naming each reason detection did not
+      apply, before any repository code runs. Pass `-BaseRef` with the pull
+      request's base (HAMCP-458). There is no default base: a guessed
+      `origin/main` judged pull requests into a release branch against the
+      wrong base.
 
    A detached HEAD skips gh and the upstream. gh's own output is not printed.
    Pass `-BaseRef` whenever the base matters for a record, for example the
@@ -330,6 +333,21 @@ Then pass `-PythonExecutable "$A/venv/bin/python"` to `check.ps1`. When no
 the interpreter reports Python 3.12 and stops if it reports another version,
 does not answer, or does not exist. A `python` on PATH still takes precedence,
 so pass `-PythonExecutable` when PATH may hold another interpreter.
+
+Whichever interpreter it uses, `check.ps1` then compares it with
+`tests/requirements.lock` before any step or repository code runs (HAMCP-458).
+The interpreter, run isolated (`-I`), lists its installed distributions; every
+`name==version` pin in the lock must be installed at exactly that version.
+A missing distribution, another version, an interpreter that cannot list its
+distributions, a missing lock, or a lock line that is not a plain pin stops the
+run and names the differences. Names and versions are compared; the wheel
+hashes are the `--require-hashes` install's job above. A venv built from an
+older lock is refused, so rebuild it from the current lock.
+
+The check covers the interpreter's installed distributions only. A
+`PYTHONPATH` entry or the user site cannot change its answer, but the later
+steps run the interpreter normally, so they still import from `PYTHONPATH` and
+the user site. Run `check.ps1` with `PYTHONPATH` unset.
 
 `git worktree add` writes into the main checkout's `.git/worktrees`, which is
 outside the writable root or protected. A `--shared` clone borrows objects
@@ -1328,6 +1346,22 @@ Missing, mismatched, partial or unsupported acceptance authority for the selecte
 state blocks that state's promotion/publication/deployment action. Existing
 context and metadata validators remain authoritative; this guide adds no new
 version transition or bypass.
+
+The release readiness sweep (release plan F10, step 0) starts from one
+read-only command: `python scripts/release_readiness.py --head <sha>`
+(`--format json` for the report as data). It reads existing GitHub results only
+and starts nothing: no dispatch, rerun, comment or label, and no Home Assistant
+or MCP access. It reports three parts: the support window's current Core and
+ha-mcp pair; the head's newest `ci.yml` run (`validate` and every full-tier
+`Real HA` lane); and the head's newest `core-release-evidence.yml` pull-request
+run (each lane-group and lanes job of the `coverage` and `fixture` cases).
+`--core-run <id>` names another Core evidence run of the same head instead;
+a run of any other commit is not ready, and a scheduled or dispatched run
+counts only when it selected the window's current Core. A part
+that cannot be read or has no result is not ready. Exit 0 means every checked
+part is ready, 1 that one is not, 2 a usage refusal. The upstream-read audit,
+output-expanding parameters, exact-version gates and live re-checks stay with
+their owners; the report lists them and never marks them ready.
 
 Release documents stay flat in `docs/`; do not move earlier records. A release
 PR adds one row at the top of `docs/RELEASES.md` and replaces the root README's
