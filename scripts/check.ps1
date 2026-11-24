@@ -75,6 +75,15 @@ $GhAnswerBound = 4096
 $GitHubOriginPattern = '^(?:https://github\.com/|git@github\.com:|ssh://git@github\.com/)(?<owner>[A-Za-z0-9][A-Za-z0-9-]{0,38})/(?<name>[A-Za-z0-9._-]{1,100}?)(?:\.git)?/?$'
 # A branch name safe to pass to gh and to append to origin/.
 $SafeBranchNamePattern = '^(?!-)(?!.*\.\.)(?!.*//)(?!.*@\{)[A-Za-z0-9._/-]{1,200}(?<![./])$'
+# HAMCP-458: the test environment must hold exactly the versions this lock
+# pins. Names and versions are compared; wheel hashes are checked by the
+# --require-hashes install (docs/CODEX_WORKFLOW.md, Sandbox-local scratch).
+$LockedRequirements = "tests/requirements.lock"
+$LockPinPattern = '^(?<name>[A-Za-z0-9][A-Za-z0-9._-]{0,99})==(?<version>[A-Za-z0-9][A-Za-z0-9.+!_-]{0,63})$'
+$InstalledVersionPattern = '^[A-Za-z0-9][A-Za-z0-9.+!_-]{0,63}$'
+$InstalledDistributionsBound = 1048576
+# Single quotes only, so the program reaches Python unchanged on every PowerShell.
+$InstalledDistributionsProgram = "import importlib.metadata as m,json,re; v={}; [v.setdefault(re.sub('[-_.]+','-',n).lower(),d.version) for d in m.distributions() for n in [d.metadata.get('Name')] if n]; print(json.dumps(v))"
 
 if (-not $PythonExecutable) {
     $pythonCommand = Get-Command python.exe, python -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -116,6 +125,106 @@ if (-not $PythonExecutable) {
         Write-Host "No -PythonExecutable and no python on PATH: using the worktree venv Python 3.12 at $venvPython."
         $PythonExecutable = $venvPython
     }
+}
+
+function ConvertTo-CanonicalDistributionName {
+    param([string]$Name)
+    return ($Name -replace '[-_.]+', '-').ToLowerInvariant()
+}
+
+function Read-LockedRequirements {
+    # Every line is a name==version pin, a --hash continuation, a comment or
+    # blank. Anything else is refused rather than skipped.
+    $path = Join-Path $RepoRoot $LockedRequirements
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        throw "$LockedRequirements does not exist; refusing to validate without the locked test environment."
+    }
+    $pins = [ordered]@{}
+    $number = 0
+    foreach ($raw in [IO.File]::ReadAllLines($path)) {
+        $number++
+        $line = $raw.Trim()
+        if (-not $line -or $line.StartsWith("#") -or $line.StartsWith("--hash=")) {
+            continue
+        }
+        if ($line.EndsWith("\")) {
+            $line = $line.Substring(0, $line.Length - 1).TrimEnd()
+        }
+        if ($line -cmatch $LockPinPattern) {
+            $name = ConvertTo-CanonicalDistributionName $Matches["name"]
+            if ($pins.Contains($name)) {
+                throw "$LockedRequirements pins $name more than once (line $number); refusing to check the environment against it."
+            }
+            $pins[$name] = $Matches["version"]
+        }
+        else {
+            throw "$LockedRequirements line $number is not a name==version pin; refusing to check the environment against it."
+        }
+    }
+    if ($pins.Count -eq 0) {
+        throw "$LockedRequirements pins no distributions; refusing to check the environment against it."
+    }
+    return $pins
+}
+
+function Test-LockedPythonEnvironment {
+    # HAMCP-458: a venv built from an older lock, or a PATH Python without the
+    # locked packages, is refused before any repository code runs. The
+    # interpreter runs isolated (-I) and only lists its distributions.
+    $pins = Read-LockedRequirements
+    $previousErrorPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        $answer = @(& $PythonExecutable -I -c $InstalledDistributionsProgram 2>$null | ForEach-Object { "$_" })
+        $exitCode = $LASTEXITCODE
+    }
+    catch {
+        $answer = @()
+        $exitCode = 1
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorPreference
+    }
+    $listing = $null
+    if ($exitCode -eq 0 -and $answer.Count -eq 1 -and $answer[0].Length -le $InstalledDistributionsBound) {
+        try {
+            $listing = $answer[0] | ConvertFrom-Json
+        }
+        catch {
+            $listing = $null
+        }
+    }
+    if (-not ($listing -is [System.Management.Automation.PSCustomObject])) {
+        throw "$PythonExecutable did not list its installed distributions; refusing to validate without the locked test environment."
+    }
+    $mismatches = New-Object System.Collections.Generic.List[string]
+    foreach ($name in $pins.Keys) {
+        $property = $listing.PSObject.Properties[$name]
+        $installed = if ($property -and $property.Value -is [string]) { $property.Value } else { $null }
+        if ($installed -cne $pins[$name]) {
+            $observed = if (-not $property) { "not installed" } elseif ($installed -and $installed -cmatch $InstalledVersionPattern) { "installed $installed" } else { "installed with an unreadable version" }
+            $mismatches.Add("$name==$($pins[$name]) ($observed)")
+        }
+    }
+    if ($mismatches.Count -gt 0) {
+        $shown = @($mismatches | Select-Object -First 10) -join "; "
+        if ($mismatches.Count -gt 10) {
+            $shown += "; and $($mismatches.Count - 10) more"
+        }
+        throw "The Python environment at $PythonExecutable does not match $LockedRequirements ($($mismatches.Count) of $($pins.Count) pins differ): $shown. Rebuild .artifacts/venv from the lock (docs/CODEX_WORKFLOW.md, Sandbox-local scratch) or pass -PythonExecutable with a matching environment."
+    }
+    Write-Host "The Python environment at $PythonExecutable matches all $($pins.Count) pins in $LockedRequirements."
+}
+
+# HAMCP-458: checked here, with the interpreter, before any step runs. It is
+# not a recorded step, so the passed Evidence step contract is unchanged.
+try {
+    Test-LockedPythonEnvironment
+}
+catch {
+    Write-Host $_.Exception.Message -ForegroundColor Red
+    Write-Host "`nValidation stopped during safe preflight. No repository code was executed." -ForegroundColor Red
+    exit 1
 }
 
 function Write-Step {
@@ -718,8 +827,9 @@ function Resolve-BaseReference {
         Write-Host "Base reference $BaseRef (detected: $($found.source); pass -BaseRef to override)."
         return
     }
-    $script:BaseRef = "origin/main"
-    Write-Host "Base reference origin/main (default: no pull-request base was detected because $($notes -join '; ')). Pass -BaseRef if the pull request targets another branch." -ForegroundColor Yellow
+    # HAMCP-458: no default base. A guessed origin/main judged pull requests
+    # into a release branch against the wrong base.
+    throw "No pull-request base was detected because $($notes -join '; '). Refusing to choose a base: pass -BaseRef with the pull request's base, for example origin/main or origin/release/<version>."
 }
 
 function Test-BaseReference {
@@ -1187,7 +1297,7 @@ try {
             $script:GitIdentitySnapshot = Get-GitIdentitySnapshot
         }
     }
-    $baseCommandText = if ($script:BaseRefExplicit) { "git rev-parse --verify $BaseRef^{commit}" } else { "resolve the pull-request base (gh, then upstream, then origin/main), then git rev-parse --verify <base>^{commit}" }
+    $baseCommandText = if ($script:BaseRefExplicit) { "git rev-parse --verify $BaseRef^{commit}" } else { "resolve the pull-request base (gh, then upstream, otherwise refuse), then git rev-parse --verify <base>^{commit}" }
     $baseCommandText += "; pin the version-check base with git rev-parse --verify $VersionCheckBaseRef^{commit}"
     Invoke-LocalStep -Label "Verify base reference" -CommandText $baseCommandText -Action { Test-BaseReference }
     if (-not $script:HadFailure -and $Tier -eq "Evidence") {
