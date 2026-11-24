@@ -1,9 +1,9 @@
 # Engineering 2.4.2-beta.13 release notes
 
-**Status: in progress.** Engineering 2.4.2-beta.13 is the 2.9.1 build. It
+**Status: released.** Engineering 2.4.2-beta.13 is the 2.9.1 build. It
 builds on 2.4.2-beta.12 (the 2.9.0.1 hotfix, HAMCP-470, #488). Its content
-lands through item pull requests into the `release/2.9.1` integration branch,
-and the final release pull request completes these notes.
+landed through item pull requests into the `release/2.9.1` integration
+branch, and release pull request #500 carried it to `main`.
 
 The architect's block of 2026-11-23 names 2.4.2-beta.13 for the 2.9.1 build.
 The same day, the 2.9.1 scope was re-scoped to audit-driven read fixes taken
@@ -15,10 +15,15 @@ Per-release records: [release index](RELEASES.md).
 ## Current state
 
 The version is materialized on `release/2.9.1` at its catch-up with `main`
-(b4dd3da3, 2.4.2-beta.12). Every 2.9.1 item pull request below has merged
-into `release/2.9.1`, whose tip before this docs update is 99b41cc5. #496
-(HAMCP-474 D1) is left open as a draft and is not part of this build.
-Nothing is published or deployed.
+(b4dd3da3, 2.4.2-beta.12). Every 2.9.1 item pull request below merged into
+`release/2.9.1`. Release pull request #500 carried its tip 34bab9ad to
+`main`, merged as f7e03478 on 2026-11-24. It was published the same day: tag
+`v2.4.2-beta.13`, image digest
+`sha256:bf7f5c1d7ecb71c4824447f38e77c200cb0160e020a07400ea3ed35b262d5af7`
+(acceptance, section 3). Josh deployed it, and HA Admin's installed
+read-only acceptance passed at 16:52-16:58 CST (acceptance, section 4; as
+relayed by the architect). #496 (HAMCP-474 D1) is left open as a draft and
+is not part of this build.
 
 ## Items
 
@@ -49,8 +54,14 @@ lowering rule (HAMCP-486). There is no lifecycle work in this build.
 
 ## Evidence
 
-**Pending.** The final release pull request binds each landed item's
-evidence and the single Evidence tier log of the final release head.
+**Passed.** Release pull request #500 binds each landed item's merged head,
+merge commit and head CI run (acceptance, section 1). The Evidence tier
+passed on the final release head 34bab9ad (base `main` 3d7c1c67),
+2026-11-24 14:24-15:22 CST: 18 of 18 steps, 14,100 tests run and 19 skipped.
+`validation.json` sha256
+`2be12ac51c82b7fcfcd7d6e533211ffa5c8ececc009be0e2fa0144e2da8bbc76`. Release
+CI passed on the same head (CI run 45490799988, Policy locks run
+45490799860; acceptance, section 2).
 
 ## Tool catalog
 
@@ -72,9 +83,15 @@ update (its runtime is that of 99b41cc5), and the count pins in
   `configuration_integrity_analysis` gains `severities` and the
   `detail_level` value `compact` (#492), and `get_audit_log` gains `cursor`
   (#493). No input is removed or made required.
-- The live connector total is not predicted here: beta.12 recorded no live
-  catalog. The final release pull request adds the CI-observed lane values,
-  as beta.12 did.
+- CI-observed lane values for 34bab9ad (CI run 45490799988, the 9.2.0
+  exact-image lanes, as recorded in #500): 27 delegated, catalog
+  fingerprint
+  `0f1a2c75a766a111a83053733c6803ca14d60357137f4ecc7bc7978061982147` (the
+  beta.12 value). No lane reports the Engineering native count.
+- Live, after the deploy (acceptance, section 4, step 3, as relayed by the
+  architect): 115 tools, 87 Engineering and 28 delegated, with the delegated
+  catalog fingerprint unchanged. The lane's 27 against 28 live is not
+  explained, as in beta.12.
 
 ## Rollback
 
