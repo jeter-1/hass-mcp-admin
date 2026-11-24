@@ -1,14 +1,17 @@
 # HAMCP-481 native search — design
 
-Status: **draft for review; not approved.** Docs only. Revision 3, the
-correction batch for Cursor's round-2 review of revision 2 (head `3ace9227`).
-Revision 2 was the correction batch for the Cursor review and the architect
-review of revision 1 (head `4cd3a430`), with J2 applied as decided. The build
-is planned for the release after 2.9.1, not for 2.9.1 (2.4.2-beta.13).
-Nothing here authorizes a runtime, schema, routing, protected-path, version or
-release change, deployment, or live Home Assistant or Engineering access. No
-decision is open for Josh in this revision. One build gate is new: the source
-of the ha-mcp visibility state (§3.7).
+Status: **draft for review; not approved.** Docs only. Revision 4, the
+architect's delta-check change to revision 3 (head `93175f3c`): the visibility
+filter gives one fixed note instead of a per-query `hidden` count (§3.7, §7).
+Revision 3 was the correction batch for Cursor's round-2 review of revision 2
+(head `3ace9227`). Revision 2 was the correction batch for the Cursor review
+and the architect review of revision 1 (head `4cd3a430`), with J2 applied as
+decided. The build is planned for the release after 2.9.1, not for 2.9.1
+(2.4.2-beta.13). Nothing here authorizes a runtime, schema, routing,
+protected-path, version or release change, deployment, or live Home Assistant
+or Engineering access. No decision is open for Josh in this revision. The
+build gate added in revision 3 still applies: the source of the ha-mcp
+visibility state (§3.7).
 
 - Register: HAMCP-481. Related rows:
   - HAMCP-472, the `ha_search` audit finding this design absorbs;
@@ -34,7 +37,10 @@ of the ha-mcp visibility state (§3.7).
     N1 to N4, plus the author self-review S1 to S5;
   - Cursor round 2, `cursor-hass-mcp-admin-491-r2.md`: r2-S1, r2-S2, r2-S3,
     r2-M1 and r2-M2, all corrected as Cursor wrote them, as the architect
-    directed. The `r2-` prefix keeps them apart from the self-review S1 to S5.
+    directed. The `r2-` prefix keeps them apart from the self-review S1 to S5;
+  - the architect's delta check of revision 3 (relayed in an architect session
+    message, 2026-11-24): the author's additions 1 to 3 accepted, and
+    addition 4, the `hidden` count, changed to the fixed visibility note (§9).
 - Base: `release/2.9.1` at `774328e0` (2.4.2-beta.13 declared).
   - Engineering citations are relative to
     `hass_mcp_engineering_beta/ha_mcp_engineering/` at that base.
@@ -78,9 +84,10 @@ It has these properties:
   mode keep their 9.2.0 effect on native results (§3.7).
 - **Default is parity.** Every current argument behavior and reply key is
   kept unless Josh retires it by name. This revision retires nothing.
-- **Partial only with a reason.** `partial` is true only when Engineering or
-  the kept visibility filter withheld, cut or could not search something, and
-  it names the reason.
+- **Partial only with a reason.** `partial` is true only when Engineering
+  withheld, cut or could not search something, and it names the reason. The
+  kept visibility filter never sets it. An active filter is disclosed by one
+  fixed note that does not depend on the query (§3.7).
 
 ## 1. Cause of HAMCP-472
 
@@ -400,21 +407,22 @@ reason applied or its count.
 
 For each sub-call that sends at least one page:
 
-- **Enforce mode on:** one `hidden` entry, code `upstream_visibility_enforce`,
-  count null. In enforce mode, 9.2.0 omits any configuration record that
-  references a hidden entity (`tools/smart_search/_deep.py:44-65`, applied at
-  `:376`). It reports no count and does not set `partial`. Native knows the
-  mode from the visibility source (§3.7).
 - **A page whose projected `partial` is true:** one `not_searched` entry, code
   `upstream_partial`, count null. In 9.2.0 that flag comes from a failed
   helper search, from custom helper entries that were not searched
   (`helper_unsearched`) or from a failed dashboard search
   (`_deep.py:1535-1560`). Native does not invent a count.
-- **Otherwise,** no entry. A sub-call whose pages have `partial` false, with
-  enforce mode off, adds no partial reason.
+- **Otherwise,** no entry. A sub-call whose pages have `partial` false adds no
+  partial reason.
+- **Enforce mode adds no entry** (architect delta check). In enforce mode,
+  9.2.0 omits any configuration record that references a hidden entity
+  (`tools/smart_search/_deep.py:44-65`, applied at `:376`, before the reply is
+  paged and counted at `:378`). It reports no count and does not set
+  `partial`. Native adds no partial reason for it either. The fixed
+  visibility note covers it (§3.7).
 
 A failed page gives only the `source_unavailable` entry above. It is not also
-`hidden` or `not_searched`.
+`not_searched`.
 
 ## 3. Search semantics (parity with 9.2.0)
 
@@ -591,19 +599,34 @@ at 9.2.0 parity, as the architect relayed (§9).
   call returns a reviewed error that names no hidden id. These gates were not
   in Cursor's round-2 text. They are part of enforce mode for this tool in
   9.2.0, so parity includes them.
-- **Partial reasons.** A real omission sets `hidden`, with a count and no
-  ids:
-  - code `visibility_filter`, `search_type` null: the number of entities the
-    call would otherwise have matched;
-  - code `visibility_members`, `search_type` null: the number of returned
-    groups whose member list was reduced or withheld;
-  - code `visibility_enforce`, with the configuration `search_type`: the
-    number of records omitted.
+- **No visibility partial reason** (architect delta check). A visibility
+  omission never gives a count, a partial reason or a `partial` flip. That
+  covers an excluded entity, a reduced or withheld member list and an
+  enforce-scrubbed record, in a native bucket or in a sub-call (§2.6). The
+  entity exclusion and the enforce scrub run before counting and paging, as
+  in 9.2.0 (`tools/search/entities.py:460-461`; the scrub at `_deep.py:376`
+  runs before the reply is paged and counted at `:378`). So the totals and
+  the paging keys count only records the filter lets through. Every other
+  partial reason is unchanged.
+- **The fixed visibility note.** When the filter is on and its resolved hidden
+  set is non-empty, every reply carries one fixed note in `engineering_notes`
+  (§5.1), named `visibility_filter_active` in the build's closed note set. The
+  note:
+  - is the same on every reply, whatever the query, arguments, search types
+    or results;
+  - carries no count and no id;
+  - does not by itself set `partial`;
+  - is always retained, whatever `fields` asks for (§5.1).
 
-  Nothing omitted, no entry. When the filter is off, or the hidden set is
-  empty, visibility is never a partial reason. The reply never lists a hidden
-  entity id, in records, `applied`, warnings or partial reasons. A gate refusal
-  is an error, not a partial reply.
+  Its text is a reviewed fixed text, in this form: "The ha-mcp entity
+  visibility filter is active: entities in its hidden set are not returned,
+  and in enforce mode neither are configuration records that reference
+  them." When the filter is off, or its hidden set is empty, there is no note.
+  When ha-mcp's own load failed open, there is no filter and no note, only the
+  reviewed fail-open warning (§6.4).
+- **No id.** The reply never lists a hidden entity id, in records, `applied`,
+  warnings, notes or partial reasons. A gate refusal is an error, not a
+  partial reply.
 
 **Source of the visibility state (build gate).**
 
@@ -658,9 +681,9 @@ the build stops.
 | `include_hidden` | Default true, with a score penalty; false excludes hidden entities | The same. It is separate from the visibility filter (§3.7) | Kept |
 | `include_config` | Default false. With true, bodies are withheld by Row 25 | Bodies are still withheld (HAMCP-454). The reply is partial `filtered` with code `config_bodies_withheld` | Kept (named, not silent) |
 | `result_fields` | 13 allowed keys: `entity_id`, `friendly_name`, `domain`, `state`, `score`, `match_type`, `name`, `area`, `floor`, `labels`, `aliases`, `is_group`, `member_entity_ids`. Unknown or empty is rejected (`tools/search/entities.py:42-62`, `:139-160`) | The same set, default and refusal (S3) | Kept |
-| `fields` | Projects top-level keys; pagination and diagnostic keys always retained | The same, mapped exactly (S4). The added keys `applied` and `partial_reasons` are diagnostic keys and are always retained (r2-M2, §5.1). A withheld key that is requested is counted in `fields_withheld`, as today | Kept |
+| `fields` | Projects top-level keys; pagination and diagnostic keys always retained | The same, mapped exactly (S4). The added keys `applied` and `partial_reasons`, and `engineering_notes`, are diagnostic keys and are always retained (r2-M2, §5.1). A withheld key that is requested is counted in `fields_withheld`, as today | Kept |
 | `config_time_budget` | 0.001-300 or null; per-type configuration budget | The same (§3.5) | Kept |
-| Visibility filter (ha-mcp configuration, not an argument) | Hard-excludes the hidden set from entities and members; in enforce mode, scrubs configuration records and gates arguments and replies (§3.7) | The same, from a reviewed source of the visibility state (§3.7 build gate). A real omission sets `hidden` with a count and no ids | Kept, as relayed (r2-S3, §9) |
+| Visibility filter (ha-mcp configuration, not an argument) | Hard-excludes the hidden set from entities and members; in enforce mode, scrubs configuration records and gates arguments and replies (§3.7) | The same, from a reviewed source of the visibility state (§3.7 build gate). An active filter gives the fixed `visibility_filter_active` note; an omission gives no count and no partial reason | Kept, as relayed (r2-S3, §9) |
 
 The schema fingerprint (`SEARCH_PUBLIC_SCHEMA_FINGERPRINT`,
 `upstream_reads_9_2.py:98`, checked at `:186`) changes only by the
@@ -705,6 +728,8 @@ Added keys (additive):
 
 `applied` and `partial_reasons` are diagnostic keys. Like `partial` and the
 paging keys, they are always retained, whatever `fields` asks for (r2-M2).
+`engineering_notes` is retained in the same way, so the fixed visibility note
+(§3.7) is never projected away.
 
 ### 5.2 Record keys
 
@@ -756,25 +781,19 @@ No new record field is added in this revision. Revision 1 proposed `device_id`,
 
   These are the 9.2.0 per-type partial causes (`_deep.py:1234-1356`,
   `:1356-1420`, `:1541-1545`), named instead of summarized.
-- `hidden`: the ha-mcp visibility filter withheld matching records. The
-  entry carries a count and never an id. Only these cases set it:
-  - a real omission by the filter or its enforce mode in a native bucket
-    (§3.7, codes `visibility_filter`, `visibility_members` and
-    `visibility_enforce`);
-  - a delegated sub-call while enforce mode is on (§2.6, code
-    `upstream_visibility_enforce`, count null).
-
-  The F3 qualifier is not a reason. When the filter is off, or nothing was
-  omitted, no `hidden` entry is set. The caller's `include_hidden` false is
-  scope, not `hidden`.
 - `source_unavailable`: a source that no requested filter depends on could
   not be read, and the affected fields are null (which source, count). That
   includes the dashboard and helper sub-calls (§2.6: codes
   `dashboard_subcall_incomplete`, `helper_subcall_incomplete` and
   `subcall_not_admitted`), and malformed state rows (code
   `malformed_state_row`, count). A malformed row is never skipped silently. A
-  failed sub-call page gives only `source_unavailable`, not `hidden` or
-  `not_searched`.
+  failed sub-call page gives only `source_unavailable`, not `not_searched`.
+
+Visibility is not a partial reason (architect delta check, §3.7). The closed
+set has no `hidden` reason. A visibility omission gives no count and no
+`partial` flip, and an active filter is disclosed only by the fixed note. The
+F3 qualifier is not a reason either. The caller's `include_hidden` false is
+scope, not a reason.
 
 A complete reply has `partial` false and no reasons. It has no `VISIBLE_SCOPE`
 text and no `REPLACED_PARTIAL` text. A caller's own filters are never a
@@ -866,15 +885,20 @@ Notes for the build's security section:
   enforce mode keep their 9.2.0 effect (§3.7). Records the filter withholds
   today stay withheld, and no hidden entity id is returned. So the table above
   stands as it is.
-- **The `hidden` count is new information.** A `hidden` entry carries a count
-  and no ids, as Cursor's r2-S3 correction states. 9.2.0 reports no count. In
-  enforce mode it conceals a hidden entity's existence on a best-effort basis
-  (`visibility/enforcement.py:11-15`). With enforce mode on, the
-  `visibility_filter` count tells a caller how many hidden entities match a
-  query, and the `visibility_enforce` count how many configuration records
-  reference one. That is an existence oracle that 9.2.0 does not give. The
-  build's security section must weigh it. This revision follows the directed
-  correction, and the oracle is raised for the architect's delta check (§9).
+- **No visibility oracle** (architect delta check). This keeps 9.2.0's
+  no-oracle property for visibility omissions. 9.2.0 reports no count and sets
+  no `partial` flag when its filter excludes an entity or its enforce scrub
+  omits a record (`tools/search/entities.py:460-461`,
+  `tools/smart_search/_deep.py:44-65`). Native reports none either (§3.7).
+  - The only visibility signal native adds is the fixed note. It depends on
+    the filter configuration alone. It tells a caller that some entities are
+    hidden, never which, how many, or whether any of them matched a query.
+  - Native keeps the residual signals of 9.2.0 itself at parity and does not
+    widen them. Enforce mode conceals a hidden entity's existence only on a
+    best-effort basis (`visibility/enforcement.py:11-16`). The smart-search
+    member rule keeps `is_group` while withholding the member ids of a group
+    with a hidden member (`tools/smart_search/_entities.py:30-52`).
+  - The build's security section records both.
 - Every output string passes `sanitize_untrusted_data`
   (`sanitization.py:1069`) with identity-only markers (`:1075`).
   - A redaction count above zero sets `filtered`.
@@ -1009,38 +1033,47 @@ Notes for the build's security section:
       differs from the first page's counts as failed;
     - a pinned page-size test: a page of P projected rows of the fixture's
       largest row shape stays under the gateway check;
-    - a helper sub-call whose pages have `partial` false, with enforce mode
-      off: the reply has no `hidden` entry and no `upstream_partial` entry;
+    - a helper sub-call whose pages have `partial` false: the reply has no
+      partial reason from it, with enforce mode off and with it on;
     - a page fixture with `helper_unsearched` set (custom helper entries not
       searched): the reply has `not_searched` `upstream_partial` for
       `helper` with count null, and no invented count;
-    - enforce mode on: each sub-call that sent a page adds one `hidden`
-      `upstream_visibility_enforce` entry, count null;
-    - a failed page adds `source_unavailable` only, not `hidden` or
-      `not_searched`;
+    - enforce mode on, with a non-empty hidden set: a sub-call that sent a
+      page adds no partial reason, and the reply carries the fixed visibility
+      note;
+    - a failed page adds `source_unavailable` only, not `not_searched`;
     - ha-mcp not admitted: no page is sent, and the reply has
       `source_unavailable` `subcall_not_admitted` for each sub-call it
       needed.
-15. **Visibility filter (r2-S3):**
+15. **Visibility filter (r2-S3, architect delta check):**
     - one entity in the hidden set and one automation whose body references
-      it. With the filter on and enforce mode on, neither appears, `partial`
-      is true with `hidden` entries (`visibility_filter`, and
-      `visibility_enforce` for `automation`) that carry counts, and the hidden
+      it. With the filter on and enforce mode on, neither appears, the reply
+      carries the fixed visibility note, no partial reason or count refers to
+      visibility, `partial` is false when nothing else applies, and the hidden
       id is absent from the whole reply. With the filter off, both follow the
-      ordinary match rules, and no visibility reason is set;
+      ordinary match rules, and there is no note;
     - the filter on and enforce mode off: the entity is excluded, the
-      automation is returned, and only `visibility_filter` is set;
-    - a hidden entity that would not have matched the query sets no `hidden`
-      entry;
+      automation is returned, and the reply carries the note and no partial
+      reason;
+    - **no oracle:** with the same query and the same visible entities, a
+      fixture whose hidden entity matches the query and one whose hidden
+      entity does not give identical replies, totals and paging keys
+      included. In enforce mode, a corpus with one more automation that
+      references a hidden entity gives the same reply as the corpus without
+      it;
+    - the note is the same on a reply with results and on one with none, for
+      each search type, and with `fields: ["entities"]`. With the filter on
+      and an empty hidden set, there is no note;
     - a group with a hidden member follows the pinned member rule for its
-      mode, with `visibility_members` and a count;
+      mode, with no count and no partial reason;
     - `include_hidden` true does not bring back an entity in the visibility
       hidden set;
     - enforce mode on: a query that names a hidden id exactly is refused as
       not found, and one that embeds a hidden id is refused with the generic
       error. Neither error names the id, and no read or sub-call is sent;
     - the visibility source unreadable: the read fails. The source reporting
-      ha-mcp's own fail-open state: no filter, and the reviewed warning.
+      ha-mcp's own fail-open state: no filter, no note, and the reviewed
+      warning.
 16. **Enumeration and `fields` (r2-M1, r2-M2):**
     - `domain_filter` set, with no query and no `search_types`: entities are
       returned, there is no R-C or R-A text, and `partial` is false when
@@ -1072,10 +1105,9 @@ with fixed numbers.
 10. `search_types` `["dashboard"]` with a query returns the delegated
     dashboard rows, with `url_path` and `title` withheld.
 11. A query with no matches gives empty buckets and `applied`. `partial` is
-    false, or it carries only the reasons §2.6 and §3.7 set for this install:
-    `hidden` when the visibility filter omitted a match or enforce mode is
-    on, and `not_searched` `upstream_partial` when a helper page was itself
-    partial (r2-S2). No other reason is accepted.
+    false, or it carries only `not_searched` `upstream_partial` when a helper
+    page was itself partial (r2-S2). No other reason is accepted. The fixed
+    visibility note is on every step's reply or on none (§3.7).
 12. The audit log records native provider attribution, plus the delegated
     sub-call pages only where §2.4, §2.5 and §2.6 call for them: the
     dashboard pages for step 10, and the helper pages for each step that
@@ -1139,12 +1171,28 @@ I did not see Josh's words. These are the relayed texts.
 - r2-S1: the sub-calls are paged on the existing route (§2.6). Two
   definitions are the author's, not Cursor's: a page whose
   `config_total_matches` differs from the first page's counts as failed, and
-  the scan has a whole-scan deadline that the build names.
-- r2-S2: sub-call reasons come from enforce mode and the projected `partial`
-  only (§2.6). The F3 qualifier is not a partial reason.
+  the scan has a whole-scan deadline that the build names. The architect's
+  delta check accepted both.
+- r2-S2: sub-call reasons come from the projected `partial` only (§2.6).
+  Enforce mode adds no reason (architect delta check). The F3 qualifier is
+  not a partial reason.
 - r2-S3: the enforce-mode argument gates and the reply check are included as
-  part of 9.2.0 enforce parity (§3.7). They go beyond Cursor's round-2 text.
-  The `hidden` count is disclosed as new information in §7.
+  part of 9.2.0 enforce parity (§3.7). They go beyond Cursor's round-2 text,
+  and the architect's delta check accepted them. Cursor's `hidden` count is
+  replaced by the fixed visibility note (next item).
+- **Architect delta check of revision 3** (relayed in an architect session
+  message, 2026-11-24; an architect direction, not an owner decision). The
+  author's additions 1 to 3 were accepted: a moved total is a failed page,
+  the whole-scan deadline, and the enforce gates. Addition 4, the `hidden`
+  count, was changed: "when the filter is on and the hidden set is
+  non-empty, every reply carries the same fixed note, e.g.
+  `visibility_filter_active`. It is not query-dependent, has no count, and
+  doesn't by itself set partial. Visibility omissions never produce a
+  per-query count or partial flip. Every other partial reason is
+  unchanged."
+  - Applied in §2.6, §3.7, §4, §5.1, §6.1, §7 and §8.
+  - Under the same rule, the sub-call entry `upstream_visibility_enforce` is
+    removed, because it set `partial` from visibility.
 - r2-M1: the R-C text only in the intent-gate case (§6.4).
 - r2-M2: `applied` and `partial_reasons` always retained (§5.1).
 
