@@ -8,7 +8,8 @@ import json
 
 AUDIT_EMPTY_MESSAGES = frozenset({"No audit log yet.", "No matching entries."})
 _TRAILER_FIELDS = {"returned", "next_cursor", "complete"}
-_OPTIONAL_TRAILER_FIELDS = {"omitted_oversized"}
+_OPTIONAL_TRAILER_FIELDS = {"omitted_oversized", "skipped_undecodable"}
+_MAX_CURSOR_CHARS = 512
 
 
 def split_audit_page(rendered):
@@ -28,8 +29,20 @@ def split_audit_page(rendered):
     fields = set(page)
     if not _TRAILER_FIELDS <= fields <= _TRAILER_FIELDS | _OPTIONAL_TRAILER_FIELDS:
         raise AssertionError(f"unexpected _page fields: {sorted(fields)}")
-    if type(page["returned"]) is not int or type(page["complete"]) is not bool:
+    if (
+        type(page["returned"]) is not int
+        or page["returned"] < 0
+        or type(page["complete"]) is not bool
+    ):
         raise AssertionError(f"malformed _page trailer: {page!r}")
+    cursor = page["next_cursor"]
+    if cursor is not None and (
+        type(cursor) is not str or not 0 < len(cursor) <= _MAX_CURSOR_CHARS
+    ):
+        raise AssertionError(f"malformed next_cursor: {page!r}")
+    for field in _OPTIONAL_TRAILER_FIELDS & set(page):
+        if type(page[field]) is not int or page[field] < 1:
+            raise AssertionError(f"malformed {field}: {page!r}")
     if page["complete"] != (page["next_cursor"] is None):
         raise AssertionError(f"complete and next_cursor disagree: {page!r}")
     for line in body.splitlines():

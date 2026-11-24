@@ -1014,12 +1014,13 @@ def _parsed_audit_record(row: str) -> dict[str, Any] | None:
 
 # HAMCP-475: a page is fitted to the response limit and always ends with one
 # trailer line. The cursor is signed with a per-process key and carries only
-# a byte offset and two digests (the log file's identity and the event
-# filter), never record content.
+# a byte offset and three digests (the log file's identity, the event filter,
+# and a keyed digest of the log bytes before the offset), never record
+# content.
 AUDIT_PAGE_TRAILER_KEY = "_page"
 MAX_AUDIT_CURSOR_CHARS = 512
 _AUDIT_CURSOR_KEY = secrets.token_bytes(32)
-_AUDIT_CURSOR_FIELDS = frozenset({"v", "file", "event", "before"})
+_AUDIT_CURSOR_FIELDS = frozenset({"v", "file", "event", "before", "prefix"})
 
 
 def _audit_digest(value: str) -> str:
@@ -1030,9 +1031,21 @@ def _audit_file_identity(stat: os.stat_result) -> str:
     return _audit_digest(f"{stat.st_dev}:{stat.st_ino}")
 
 
-def _encode_audit_cursor(*, file: str, event: str, before: int) -> str:
+def _audit_prefix_digest(mac: Any) -> str:
+    # Keyed, so the digest of the bytes before a cursor's offset cannot be
+    # recognized offline.
+    return mac.hexdigest()[:32]
+
+
+def _encode_audit_cursor(*, file: str, event: str, before: int, prefix: str) -> str:
     payload = json.dumps(
-        {"v": 1, "file": file, "event": event, "before": int(before)},
+        {
+            "v": 1,
+            "file": file,
+            "event": event,
+            "before": int(before),
+            "prefix": prefix,
+        },
         sort_keys=True,
         separators=(",", ":"),
     ).encode("utf-8")
@@ -1068,9 +1081,13 @@ def _decode_audit_cursor(cursor: str) -> dict[str, Any]:
         if (
             not isinstance(value, dict)
             or set(value) != _AUDIT_CURSOR_FIELDS
+            or type(value["v"]) is not int
             or value["v"] != 1
             or type(value["before"]) is not int
             or value["before"] < 0
+            or not all(
+                isinstance(value[field], str) for field in ("file", "event", "prefix")
+            )
         ):
             raise ValueError("cursor fields")
         return value
@@ -1082,7 +1099,11 @@ def _decode_audit_cursor(cursor: str) -> dict[str, Any]:
 
 
 def _audit_page_trailer(
-    returned: int, next_cursor: str | None, complete: bool, oversized: int = 0
+    returned: int,
+    next_cursor: str | None,
+    complete: bool,
+    oversized: int = 0,
+    undecodable: int = 0,
 ) -> str:
     page: dict[str, Any] = {
         "returned": returned,
@@ -1091,6 +1112,8 @@ def _audit_page_trailer(
     }
     if oversized:
         page["omitted_oversized"] = oversized
+    if undecodable:
+        page["skipped_undecodable"] = undecodable
     return json.dumps({AUDIT_PAGE_TRAILER_KEY: page}) + "\n"
 
 
@@ -1119,9 +1142,14 @@ async def get_audit_log(lines: int = 50, event: str = "", cursor: str = "") -> s
     effective_lines = max(1, min(int(lines), 500))
     from collections import deque
 
-    # Each kept row is (line start offset, verbatim line text).
-    rows: deque[tuple[int, str]] = deque(maxlen=effective_lines)
+    # Each kept row is (line start offset, verbatim line text, keyed digest
+    # state of every byte before the row).
+    rows: deque[tuple[int, str, Any]] = deque(maxlen=effective_lines)
+    # Start offsets of rows that are not UTF-8. A page reports those inside
+    # the byte range it covers, so a walk counts each one once.
+    undecodable: list[int] = []
     matched = 0
+    prefix_mac = hmac.new(_AUDIT_CURSOR_KEY, digestmod=hashlib.sha256)
     with open(path, "rb") as f:
         stat = os.fstat(f.fileno())
         identity = _audit_file_identity(stat)
@@ -1138,12 +1166,18 @@ async def get_audit_log(lines: int = 50, event: str = "", cursor: str = "") -> s
         offset = 0
         for raw in f:
             start = offset
-            offset += len(raw)
-            if start >= end:
+            # Only whole rows inside the snapshot count. A row still being
+            # written, or completed past the snapshot, is left for a later
+            # walk.
+            if start + len(raw) > end or not raw.endswith(b"\n"):
                 break
+            offset += len(raw)
+            state = prefix_mac.copy()
+            prefix_mac.update(raw)
             try:
                 row = raw.decode("utf-8")
             except UnicodeDecodeError:
+                undecodable.append(start)
                 continue
             record = _parsed_audit_record(row)
             if record is None:
@@ -1151,12 +1185,27 @@ async def get_audit_log(lines: int = 50, event: str = "", cursor: str = "") -> s
             if event and not audit_record_matches_event(record, event):
                 continue
             matched += 1
-            rows.append((start, row if row.endswith("\n") else row + "\n"))
+            rows.append((start, row, state))
+    if claim is not None and (
+        offset != end
+        or not hmac.compare_digest(_audit_prefix_digest(prefix_mac), claim["prefix"])
+    ):
+        # The bytes before the cursor changed in place (same file, rewritten
+        # or regrown), so its offset no longer addresses the same records.
+        raise GovernanceError(
+            ErrorCode.STALE_CURSOR,
+            details={"field": "cursor", "reason": "audit_log_rewritten"},
+        )
+    def undecodable_from(boundary: int) -> int:
+        return sum(1 for start in undecodable if start >= boundary)
+
     if not rows:
-        return "No matching entries.\n" + _audit_page_trailer(0, None, True)
+        return "No matching entries.\n" + _audit_page_trailer(
+            0, None, True, undecodable=len(undecodable)
+        )
     page = list(rows)
     budget = SETTINGS.response_size_limit
-    sizes = [len(row.encode("utf-8")) for _, row in page]
+    sizes = [len(row.encode("utf-8")) for _, row, _ in page]
     # Keep the newest rows that fit with the trailer; the cursor resumes at
     # the oldest returned row.
     kept = len(page)
@@ -1166,25 +1215,35 @@ async def get_audit_log(lines: int = 50, event: str = "", cursor: str = "") -> s
         trailer = _audit_page_trailer(
             kept,
             _encode_audit_cursor(
-                file=identity, event=event_binding, before=page[-kept][0]
+                file=identity,
+                event=event_binding,
+                before=page[-kept][0],
+                prefix=_audit_prefix_digest(page[-kept][2]),
             )
             if older
             else None,
             not older,
+            undecodable=undecodable_from(page[-kept][0] if older else 0),
         )
         if total + len(trailer.encode("utf-8")) <= budget:
-            return "".join(row for _, row in page[-kept:]) + trailer
+            return "".join(row for _, row, _ in page[-kept:]) + trailer
         total -= sizes[-kept]
         kept -= 1
     # The newest row alone exceeds the limit. It is skipped, never cut, and
     # the cursor moves past it so a walk still makes progress.
-    newest_start = page[-1][0]
+    newest_start, _, newest_prefix = page[-1]
     older = matched > 1
     return _audit_page_trailer(
         0,
-        _encode_audit_cursor(file=identity, event=event_binding, before=newest_start)
+        _encode_audit_cursor(
+            file=identity,
+            event=event_binding,
+            before=newest_start,
+            prefix=_audit_prefix_digest(newest_prefix),
+        )
         if older
         else None,
         not older,
         oversized=1,
+        undecodable=undecodable_from(newest_start if older else 0),
     )

@@ -3,13 +3,16 @@
 A client walks from the newest page to the oldest by passing each trailer's
 ``next_cursor`` until ``complete`` is true. These tests prove the walk returns
 every record exactly once, in order, within the limit, and that the cursor is
-signed, bound to the file and the event filter, and carries no record content.
+signed, bound to the file, the event filter and the unchanged bytes before its
+offset, and carries no record content.
 """
 
 from __future__ import annotations
 
 import base64
 from dataclasses import replace
+import hashlib
+import hmac
 import json
 import os
 from pathlib import Path
@@ -19,6 +22,8 @@ from unittest.mock import patch
 
 import tests.test_beta_v2  # noqa: F401  (puts the Engineering package on sys.path)
 from tests.support.audit_pages import audit_page_message, audit_page_rows, split_audit_page
+
+_REAL_FSTAT = os.fstat
 
 from ha_mcp_engineering.errors import ErrorCode, GovernanceError
 from ha_mcp_engineering.tools import compatibility
@@ -33,6 +38,12 @@ def _record(index: int, pad: int = 120) -> dict:
         "marker": f"record-content-marker-{index:05d}",
         "padding": "p" * pad,
     }
+
+
+def _same_shape(index: int, fill: str) -> dict:
+    """A different record with exactly the byte length of ``_record(index)``."""
+
+    return {**_record(index), "padding": fill * 120}
 
 
 def _write(path: Path, records, mode: str = "w") -> list[str]:
@@ -196,6 +207,58 @@ class CompatibilityTests(_AuditLogCase):
         rows = [row for _, page_rows, _ in reversed(pages) for row in page_rows]
         self.assertEqual([row["index"] for row in rows], [0, 4])
         self.assertEqual(len(pages), 2)
+        # The undecodable row is disclosed once across the walk, on the older
+        # page, whose byte range holds it; malformed JSON is not counted.
+        self.assertEqual([page.get("skipped_undecodable", 0) for _, _, page in pages], [0, 1])
+
+    async def test_undecodable_rows_are_counted_once_across_a_walk(self):
+        with self.path.open("wb") as stream:
+            for i in range(30):
+                stream.write(json.dumps(_record(i)).encode() + b"\n")
+                if i % 7 == 3:
+                    stream.write(b'{"event": "tool_call", "bad": "\xff"}\n')
+        self.limit(2_048)
+        pages = await self.walk(lines=4)
+        self.assertGreater(len(pages), 2)
+        self.assertEqual(sum(page.get("skipped_undecodable", 0) for _, _, page in pages), 4)
+        rows = [row for _, page_rows, _ in reversed(pages) for row in page_rows]
+        self.assertEqual([row["index"] for row in rows], list(range(30)))
+
+    async def test_an_undecodable_only_log_reports_its_count(self):
+        with self.path.open("wb") as stream:
+            stream.write(b'{"event": "tool_call", "bad": "\xff"}\n' * 2)
+        rendered = await compatibility.get_audit_log()
+        self.assertTrue(rendered.startswith("No matching entries.\n"))
+        self.assertEqual(split_audit_page(rendered)[1]["skipped_undecodable"], 2)
+
+
+class SnapshotBoundaryTests(_AuditLogCase):
+    async def test_a_row_completed_after_the_snapshot_is_left_for_the_next_walk(self):
+        _write(self.path, (_record(i) for i in range(3)))
+        tail = json.dumps(_record(3), sort_keys=True) + "\n"
+        with self.path.open("a", encoding="utf-8") as stream:
+            stream.write(tail[:40])
+
+        def fstat_then_finish_the_row(fd):
+            # The writer completes the row after the size is captured and
+            # before the reader reaches it.
+            result = _REAL_FSTAT(fd)
+            with self.path.open("a", encoding="utf-8") as stream:
+                stream.write(tail[40:])
+            return result
+
+        with patch.object(compatibility.os, "fstat", side_effect=fstat_then_finish_the_row):
+            rows = audit_page_rows(await compatibility.get_audit_log(lines=500))
+        self.assertEqual([row["index"] for row in rows], [0, 1, 2])
+        rows = [row for _, page_rows, _ in reversed(await self.walk()) for row in page_rows]
+        self.assertEqual([row["index"] for row in rows], [0, 1, 2, 3])
+
+    async def test_an_unterminated_last_row_is_not_returned(self):
+        _write(self.path, (_record(i) for i in range(2)))
+        with self.path.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(_record(2), sort_keys=True))
+        rows = audit_page_rows(await compatibility.get_audit_log(lines=500))
+        self.assertEqual([row["index"] for row in rows], [0, 1])
 
 
 class OversizedRecordTests(_AuditLogCase):
@@ -232,11 +295,18 @@ class CursorContentTests(_AuditLogCase):
                 payload = json.loads(
                     base64.urlsafe_b64decode(payload_part + "=" * (-len(payload_part) % 4))
                 )
-                self.assertEqual(set(payload), {"v", "file", "event", "before"})
+                self.assertEqual(set(payload), {"v", "file", "event", "before", "prefix"})
                 self.assertEqual(payload["v"], 1)
                 self.assertIsInstance(payload["before"], int)
                 self.assertRegex(payload["file"], r"^[0-9a-f]{32}$")
                 self.assertRegex(payload["event"], r"^[0-9a-f]{32}$")
+                self.assertRegex(payload["prefix"], r"^[0-9a-f]{32}$")
+                # The prefix digest is keyed: it is not the plain hash of the
+                # bytes before the offset.
+                prefix_bytes = self.path.read_bytes()[: payload["before"]]
+                self.assertNotEqual(
+                    payload["prefix"], hashlib.sha256(prefix_bytes).hexdigest()[:32]
+                )
                 decoded = json.dumps(payload) + cursor
                 for forbidden in ("record-content-marker", "padding", "tool_call", str(self.path)):
                     self.assertNotIn(forbidden, decoded)
@@ -265,7 +335,7 @@ class CursorRefusalTests(_AuditLogCase):
         flipped = "A" if signature[0] != "A" else "B"
         other_payload = base64.urlsafe_b64encode(
             json.dumps(
-                {"before": 0, "event": "0" * 32, "file": "0" * 32, "v": 1},
+                {"before": 0, "event": "0" * 32, "file": "0" * 32, "prefix": "0" * 32, "v": 1},
                 sort_keys=True,
                 separators=(",", ":"),
             ).encode()
@@ -285,6 +355,35 @@ class CursorRefusalTests(_AuditLogCase):
         with self.subTest(case="another process's key"):
             with patch.object(compatibility, "_AUDIT_CURSOR_KEY", b"k" * 32):
                 await self.assert_refused(ErrorCode.INVALID_CURSOR, lines=500, cursor=cursor)
+
+    async def test_signed_cursors_with_mistyped_fields_are_invalid(self):
+        cursor = await self._cursor()
+        payload = json.loads(
+            base64.urlsafe_b64decode(cursor.split(".", 1)[0] + "==")
+        )
+
+        def signed(value):
+            body = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+            signature = hmac.new(compatibility._AUDIT_CURSOR_KEY, body, hashlib.sha256).digest()
+            return ".".join(
+                base64.urlsafe_b64encode(part).decode().rstrip("=") for part in (body, signature)
+            )
+
+        # The signing helper reproduces a real cursor, so each refusal below
+        # comes from the field check, not the signature.
+        self.assertEqual(signed(payload), cursor)
+        for name, change in {
+            "boolean version": {"v": True},
+            "string version": {"v": "1"},
+            "numeric file": {"file": 0},
+            "null event": {"event": None},
+            "numeric prefix": {"prefix": 0},
+            "boolean offset": {"before": True},
+        }.items():
+            with self.subTest(case=name):
+                await self.assert_refused(
+                    ErrorCode.INVALID_CURSOR, lines=500, cursor=signed({**payload, **change})
+                )
 
     async def test_an_invalid_cursor_is_refused_before_the_log_is_read(self):
         with patch.object(compatibility, "open", side_effect=AssertionError("read"), create=True):
@@ -315,14 +414,200 @@ class CursorRefusalTests(_AuditLogCase):
             os.replace(rotated, self.path)
             await self.assert_refused(ErrorCode.STALE_CURSOR, lines=500, cursor=cursor)
         cursor = await self._cursor()
+        with self.subTest(case="rotated twice onto a reused inode"):
+            # Production rotation is os.replace onto audit.jsonl.1. A second
+            # rotation frees the inode the cursor names, and the filesystem
+            # may give it to the new log. Pin the identity to model that reuse:
+            # only the prefix digest can then tell the files apart.
+            identity = compatibility._audit_file_identity(os.stat(self.path))
+            with patch.object(compatibility, "_audit_file_identity", return_value=identity):
+                for fill in ("q", "r"):
+                    os.replace(self.path, str(self.path) + ".1")
+                    # Same row lengths, so every offset still lands on a row
+                    # boundary.
+                    _write(self.path, (_same_shape(i, fill) for i in range(400)))
+                await self.assert_refused(ErrorCode.STALE_CURSOR, lines=500, cursor=cursor)
+        cursor = await self._cursor()
         with self.subTest(case="truncated in place"):
             with self.path.open("r+", encoding="utf-8") as stream:
                 stream.truncate(10)
             await self.assert_refused(ErrorCode.STALE_CURSOR, lines=500, cursor=cursor)
         cursor = await self._cursor()
+        with self.subTest(case="rewritten and regrown in place"):
+            # Same file identity, row boundaries and size, but different
+            # records before the cursor's offset.
+            with self.path.open("r+", encoding="utf-8") as stream:
+                stream.truncate(0)
+                stream.writelines(
+                    json.dumps(_same_shape(i, "q"), sort_keys=True) + "\n" for i in range(420)
+                )
+            await self.assert_refused(ErrorCode.STALE_CURSOR, lines=500, cursor=cursor)
+        cursor = await self._cursor()
+        with self.subTest(case="appended"):
+            _write(self.path, (_record(i) for i in range(400, 410)), mode="a")
+            rendered = await compatibility.get_audit_log(lines=500, cursor=cursor)
+            self.assertTrue(audit_page_rows(rendered))
+        cursor = await self._cursor()
         with self.subTest(case="removed"):
             self.path.unlink()
             await self.assert_refused(ErrorCode.STALE_CURSOR, lines=500, cursor=cursor)
+
+
+
+class PageParserTests(unittest.TestCase):
+    """The shared test oracle rejects malformed trailer values."""
+
+    def test_malformed_trailers_are_rejected(self):
+        cases = {
+            "numeric cursor": {"returned": 1, "next_cursor": 7, "complete": False},
+            "empty cursor": {"returned": 1, "next_cursor": "", "complete": False},
+            "overlong cursor": {"returned": 1, "next_cursor": "A" * 513, "complete": False},
+            "negative returned": {"returned": -1, "next_cursor": None, "complete": True},
+            "boolean returned": {"returned": True, "next_cursor": None, "complete": True},
+            "zero omitted": {
+                "returned": 0, "next_cursor": None, "complete": True, "omitted_oversized": 0
+            },
+            "negative omitted": {
+                "returned": 0, "next_cursor": None, "complete": True, "omitted_oversized": -1
+            },
+            "unknown field": {"returned": 0, "next_cursor": None, "complete": True, "x": 1},
+            "disagreement": {"returned": 0, "next_cursor": None, "complete": False},
+        }
+        for name, page in cases.items():
+            with self.subTest(case=name):
+                with self.assertRaises(AssertionError):
+                    split_audit_page("No matching entries.\n" + json.dumps({"_page": page}) + "\n")
+
+    def test_well_formed_trailers_are_accepted(self):
+        for page in (
+            {"returned": 0, "next_cursor": None, "complete": True},
+            {"returned": 2, "next_cursor": "abc.def", "complete": False},
+            {"returned": 0, "next_cursor": "abc.def", "complete": False, "omitted_oversized": 1},
+        ):
+            split_audit_page("x\n" + json.dumps({"_page": page}) + "\n")
+
+
+class GatewayAuditTests(_AuditLogCase):
+    """The authenticated route records that a cursor was passed, never the cursor."""
+
+    SECRET = "hamcp475-gateway-access-secret"
+
+    def gateway(self, gateway_audit: Path):
+        from ha_mcp_engineering.audit import AuditLogger
+        from ha_mcp_engineering.configuration import Settings
+        from ha_mcp_engineering.routing import AuthenticatedMcpGateway
+
+        settings = Settings(
+            ha_url="http://supervisor/core",
+            ha_token="test-token",
+            access_secret=self.SECRET,
+            port=8100,
+            audit_path=str(gateway_audit),
+            rate_limit_per_minute=1000,
+            rate_limit_burst=1000,
+            destructive_services=frozenset(),
+            audit_enabled=True,
+            audit_max_payload_chars=8192,
+            log_level="INFO",
+            ha_timeout_seconds=60,
+            response_size_limit=60_000,
+            redaction_enabled=True,
+        )
+
+        async def app(scope, receive, send):
+            # Stands in for the SDK: runs the real tool on the forwarded call.
+            body = b""
+            while True:
+                message = await receive()
+                body += message.get("body", b"")
+                if not message.get("more_body"):
+                    break
+            arguments = json.loads(body)["params"]["arguments"]
+            try:
+                result = {"text": await compatibility.get_audit_log(**arguments)}
+            except GovernanceError as error:
+                result = {"error": error.code.value}
+            await send({"type": "http.response.start", "status": 200, "headers": []})
+            await send({"type": "http.response.body", "body": json.dumps(result).encode()})
+
+        return AuthenticatedMcpGateway(
+            app, settings, AuditLogger(str(gateway_audit), self.SECRET)
+        )
+
+    async def call(self, gateway, arguments: dict) -> dict:
+        import httpx
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=gateway), base_url="http://127.0.0.1:8100"
+        ) as client:
+            response = await client.post(
+                f"/{self.SECRET}/mcp",
+                json={
+                    "jsonrpc": "2.0",
+                    "id": "hamcp475-gateway",
+                    "method": "tools/call",
+                    "params": {"name": "get_audit_log", "arguments": arguments},
+                },
+            )
+        self.assertEqual(response.status_code, 200)
+        return response.json()
+
+    async def test_no_cursor_reaches_the_audit_record_and_a_walk_still_works(self):
+        _write(self.path, (_record(i) for i in range(400)))
+        self.limit(4_096)
+        gateway_audit = self.path.parent / "gateway-audit.jsonl"
+        gateway = self.gateway(gateway_audit)
+
+        sent = []
+        returned = []
+        cursor = ""
+        for _ in range(1000):
+            arguments = {"lines": 500, "event": ""}
+            if cursor:
+                arguments["cursor"] = cursor
+                sent.append(cursor)
+            result = await self.call(gateway, arguments)
+            returned.extend(row["index"] for row in audit_page_rows(result["text"]))
+            page = split_audit_page(result["text"])[1]
+            if page["complete"]:
+                break
+            cursor = page["next_cursor"]
+        self.assertEqual(sorted(returned), list(range(400)))
+        self.assertGreater(len(sent), 1)
+
+        valid = sent[0]
+        payload, signature = valid.split(".", 1)
+        marker = "hamcp475-synthetic-cursor-marker"
+        refused = {
+            "malformed": (f"{marker}.not-a-cursor", ErrorCode.INVALID_CURSOR),
+            "tampered": (f"{payload}.{'A' * len(signature)}", ErrorCode.INVALID_CURSOR),
+            "overlong": (marker + "A" * 600, ErrorCode.INVALID_CURSOR),
+            "stale": (valid, ErrorCode.STALE_CURSOR),
+        }
+        for name, (value, code) in refused.items():
+            with self.subTest(cursor=name):
+                arguments = {"lines": 500, "cursor": value}
+                if name == "stale":
+                    arguments["event"] = "tool_call"
+                result = await self.call(gateway, arguments)
+                self.assertEqual(result, {"error": code.value})
+                sent.append(value)
+
+        stored = gateway_audit.read_text(encoding="utf-8")
+        records = [json.loads(line) for line in stored.splitlines()]
+        calls = [record for record in records if record.get("tool_name") == "get_audit_log"]
+        self.assertEqual(len(calls), len(sent) + 1)
+        for record in calls:
+            self.assertNotIn("cursor", record["parameters"])
+            self.assertIsInstance(record["parameters"]["cursor_present"], bool)
+        self.assertEqual(
+            [record["parameters"]["cursor_present"] for record in calls].count(False), 1
+        )
+        for value in sent:
+            self.assertNotIn(value, stored)
+            self.assertNotIn(value.split(".", 1)[0], stored)
+        self.assertNotIn(marker, stored)
+        self.assertNotIn(self.SECRET, stored)
 
 
 if __name__ == "__main__":
