@@ -12,6 +12,7 @@ The bounds below are implementation defaults pending Josh (design note Q4).
 from __future__ import annotations
 
 import asyncio
+from collections import Counter
 from dataclasses import dataclass
 import json
 import time
@@ -54,9 +55,60 @@ FAILURE_REASONS = (
 )
 SKIP_REASONS = ("time_budget", "output_budget")
 
+# HAMCP-474 D6: root-cause summary keys. The basic keys are the 2.6 digest
+# shape. The detail keys carry the values the single tool returns for the
+# same group at detail_level="summary" (``service._summary_root_cause_group``);
+# finding and evidence identifiers stay with the single tool.
+_BASIC_ROOT_CAUSE_KEYS = (
+    "root_cause_group_id", "title", "affected_dependency", "severity", "reference_count",
+)
+_DETAIL_ROOT_CAUSE_KEYS = (
+    "confidence", "current_state", "representative_configuration_paths",
+    "recommended_investigation", "governed_change_required",
+)
+ROOT_CAUSE_DETAIL_LEVELS = ("full", "reduced")
+# HAMCP-474 D5: the closed sets of the batch-level ``source_limitations`` list.
+SOURCE_LIMITATION_REASONS = (
+    "source_unavailable",
+    "source_failed",
+    "items_failed",
+    "truncated",
+    "retention_unknown",
+    "retention_partial",
+    "source_partial",
+)
+_KNOWN_SOURCE_TYPES = frozenset({
+    "automation_config", "automation_state", "automation_traces", "blueprint_source",
+    "entity_registry", "entity_state", "logbook_history", "system_log",
+})
+OTHER_SOURCE_TYPE = "other_source"
+SOURCE_LIMITATIONS_WARNING = (
+    "Some evidence sources have known limits; source_limitations names each source and "
+    "reason, and affects_result_status says whether the limit makes an item partial."
+)
+REDUCED_DETAIL_WARNING = (
+    "Root-cause detail was reduced to fit the response bound; use "
+    "automation_reliability_analysis for an automation's full root causes."
+)
+# Nesting depth of an item digest in the rendered response: the response
+# object, ``data`` and ``items``.
+_ITEM_DEPTH = 3
+
 
 def _compact(value: Any) -> str:
     return json.dumps(value, separators=(",", ":"), default=str)
+
+
+def _rendered_cost(value: Any, depth: int) -> int:
+    """Characters ``value`` takes at ``depth`` in the rendered response.
+
+    The tool renders with ``indent=2`` (``dump_json_with_truncation``), so
+    every line of the value gains ``2 * depth`` spaces, plus a separating
+    comma and newline.
+    """
+
+    text = json.dumps(value, indent=2, default=str)
+    return len(text) + 2 * depth * (text.count("\n") + 1) + 2
 
 
 def validate_batch_request(automation_ids, lookback_hours, trace_limit) -> tuple[list[str], list[str]]:
@@ -145,6 +197,7 @@ class _ItemOutcome:
     error_code: str | None = None
     digest: dict | None = None
     result_status: str | None = None
+    limitations: frozenset = frozenset()
 
 
 def _digest(automation_id: str, output: ReliabilityAnalysisOutput) -> dict:
@@ -162,10 +215,7 @@ def _digest(automation_id: str, output: ReliabilityAnalysisOutput) -> dict:
         "root_cause_summaries": [
             {
                 key: group.get(key)
-                for key in (
-                    "root_cause_group_id", "title", "affected_dependency",
-                    "severity", "reference_count",
-                )
+                for key in _BASIC_ROOT_CAUSE_KEYS + _DETAIL_ROOT_CAUSE_KEYS
             }
             for group in (data.get("root_cause_groups") or [])[:MAX_ROOT_CAUSE_SUMMARIES]
         ],
@@ -180,6 +230,87 @@ def _digest(automation_id: str, output: ReliabilityAnalysisOutput) -> dict:
         "configuration_fingerprint": data.get("configuration_fingerprint"),
         "evidence_fingerprint": data.get("evidence_fingerprint"),
     }
+
+
+def _reduced_digest(digest: dict) -> dict:
+    """The 2.6 digest shape: only the basic root-cause summary keys."""
+
+    return {
+        **digest,
+        "root_cause_summaries": [
+            {key: group.get(key) for key in _BASIC_ROOT_CAUSE_KEYS}
+            for group in digest.get("root_cause_summaries") or []
+        ],
+    }
+
+
+def _coverage_limitation_reasons(coverage: Any) -> tuple[str, ...]:
+    """The closed reasons one source coverage record is limited, if any.
+
+    The test mirrors ``ReliabilityEvidenceBundle.has_coverage_limitations``:
+    completeness other than complete or not_requested, or unknown or
+    partial retention. ``source_partial`` names a limit no other reason
+    explains, including an unrecognized record.
+    """
+
+    if not isinstance(coverage, dict):
+        return ("source_partial",)
+    completeness = coverage.get("completeness")
+    retention = coverage.get("retention_coverage")
+    if completeness in {"complete", "not_requested"} and retention not in {"unknown", "partial"}:
+        return ()
+    reasons = []
+    if completeness == "unavailable":
+        reasons.append("source_unavailable")
+    elif completeness == "failed":
+        reasons.append("source_failed")
+    else:
+        failed_items = coverage.get("failed_items")
+        if type(failed_items) is int and failed_items > 0:
+            reasons.append("items_failed")
+        if coverage.get("truncated") is True:
+            reasons.append("truncated")
+    if retention == "unknown":
+        reasons.append("retention_unknown")
+    elif retention == "partial":
+        reasons.append("retention_partial")
+    if not reasons:
+        reasons.append("source_partial")
+    return tuple(reasons)
+
+
+def _item_limitations(output: ReliabilityAnalysisOutput) -> frozenset:
+    """``(source_type, reason, affects_result_status)`` for one analyzed item."""
+
+    values = set()
+    for coverage in output.data.get("evidence_source_coverage") or []:
+        source = coverage.get("source_type") if isinstance(coverage, dict) else None
+        if source not in _KNOWN_SOURCE_TYPES:
+            source = OTHER_SOURCE_TYPE
+        affects = not (isinstance(coverage, dict) and coverage.get("affects_result_status") is False)
+        for reason in _coverage_limitation_reasons(coverage):
+            values.add((source, reason, affects))
+    return frozenset(values)
+
+
+def _source_limitations(outcomes: list[_ItemOutcome]) -> list[dict]:
+    """Batch-level limits over the items that carry a digest, in a fixed order."""
+
+    counts = Counter(
+        value for item in outcomes if item.digest is not None for value in item.limitations
+    )
+    order = {reason: index for index, reason in enumerate(SOURCE_LIMITATION_REASONS)}
+    return [
+        {
+            "source_type": source,
+            "reason": reason,
+            "affects_result_status": affects,
+            "item_count": count,
+        }
+        for (source, reason, affects), count in sorted(
+            counts.items(), key=lambda entry: (entry[0][0], order[entry[0][1]], entry[0][2]),
+        )
+    ]
 
 
 def _row(outcome: _ItemOutcome) -> dict:
@@ -317,6 +448,7 @@ class ReliabilityBatchAnalyzer:
             digest = _digest(automation_id, output)
             return _ItemOutcome(
                 automation_id, "analyzed", None, None, digest, digest["result_status"],
+                _item_limitations(output),
             )
 
         async def worker() -> None:
@@ -328,19 +460,45 @@ class ReliabilityBatchAnalyzer:
 
         await asyncio.gather(*(worker() for _ in range(min(self.concurrency, len(unique)))))
         final = [item for item in outcomes if item is not None]
-        self._apply_output_budget(final, response_limit)
+        root_cause_detail = self._apply_output_budget(final, response_limit)
         return self._assemble(
             final, unique=unique, duplicates=duplicates, requested=requested,
             lookback_hours=lookback_hours, trace_limit=trace_limit,
             analysis_timestamp=analysis_timestamp, started=started,
-            response_limit=response_limit,
+            response_limit=response_limit, root_cause_detail=root_cause_detail,
         )
 
     @staticmethod
-    def _apply_output_budget(outcomes: list[_ItemOutcome], response_limit: int) -> None:
+    def _apply_output_budget(outcomes: list[_ItemOutcome], response_limit: int) -> str:
+        """Charge the digests against the bound; return the root-cause detail level.
+
+        HAMCP-474: the batch-level additions are charged first at their
+        rendered size, computed over every analyzed item. That is an upper
+        bound: the final list covers only the digests kept, so it can only
+        shrink. Full root-cause detail is kept only when every analyzed
+        digest fits at its rendered size. Otherwise every digest returns to
+        the 2.6 shape and the 2.6 charge below applies unchanged, so the
+        added detail never causes an item to be skipped.
+        """
+
         available = int(response_limit) - ENVELOPE_RESERVE_CHARS - sum(
             _fixed_item_cost(item.automation_id) for item in outcomes
         )
+        limitations = _source_limitations(outcomes)
+        available -= _rendered_cost(
+            {"source_limitations": limitations, "root_cause_detail": "reduced"}, 1,
+        )
+        if limitations:
+            available -= _rendered_cost(SOURCE_LIMITATIONS_WARNING, 2)
+        detail = "full"
+        analyzed = [item for item in outcomes if item.digest is not None]
+        if sum(_rendered_cost(item.digest, _ITEM_DEPTH) for item in analyzed) > available:
+            reduced = [_reduced_digest(item.digest) for item in analyzed]
+            if any(value != item.digest for value, item in zip(reduced, analyzed)):
+                detail = "reduced"
+                available -= _rendered_cost(REDUCED_DETAIL_WARNING, 2)
+                for value, item in zip(reduced, analyzed):
+                    item.digest = value
         overflowed = False
         for item in outcomes:
             if item.digest is None:
@@ -352,10 +510,12 @@ class ReliabilityBatchAnalyzer:
                 item.digest, item.result_status = None, None
                 continue
             available -= cost
+        return detail
 
     def _assemble(
         self, outcomes, *, unique, duplicates, requested, lookback_hours,
         trace_limit, analysis_timestamp, started, response_limit,
+        root_cause_detail="full",
     ) -> ReliabilityAnalysisOutput:
         analyzed = [item for item in outcomes if item.status == "analyzed"]
         complete = [item for item in analyzed if item.result_status == "success"]
@@ -389,6 +549,11 @@ class ReliabilityBatchAnalyzer:
                 "Some analyses have partial evidence; use automation_reliability_analysis "
                 "for that automation's findings and coverage."
             )
+        source_limitations = _source_limitations(outcomes)
+        if source_limitations:
+            warnings.append(SOURCE_LIMITATIONS_WARNING)
+        if root_cause_detail == "reduced":
+            warnings.append(REDUCED_DETAIL_WARNING)
         data = {
             "analysis_timestamp": analysis_timestamp,
             "request": {
@@ -417,6 +582,8 @@ class ReliabilityBatchAnalyzer:
                 "skipped_budget": len(skipped),
                 "remaining_automation_ids": remaining,
             },
+            "source_limitations": source_limitations,
+            "root_cause_detail": root_cause_detail,
             "items": [_row(item) for item in outcomes],
             "drill_down": "automation_reliability_analysis",
             "analysis_duration_ms": round((time.perf_counter() - started) * 1000, 3),
