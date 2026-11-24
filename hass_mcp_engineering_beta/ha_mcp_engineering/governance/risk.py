@@ -1842,6 +1842,333 @@ def _protected_high_evidence(item: dict[str, Any]) -> bool:
     )
 
 
+# HAMCP-293 (Josh, 2026-11-24, "Middle path", as relayed by the architect):
+# the level, apply decision, evidence, and warnings of an exact update stay
+# the whole-configuration result. Only the reasons change: they name what
+# changed, and they list an unchanged high-risk call as present and
+# unchanged rather than as the cause. Each call line names one instance by
+# path and target, so two calls to the same service are told apart.
+_CHANGE_NAME_LIMIT = 8
+_CHANGE_TARGET_LIMIT = 3
+_CHANGE_TARGET_LENGTH = 64
+_CHANGE_TARGET_CHARS = frozenset("abcdefghijklmnopqrstuvwxyz0123456789_.-")
+_CHANGE_ACTION_FIELDS = frozenset({"actions", "sequence"})
+_CHANGE_HIGH_TRIGGERS = frozenset(
+    {"high_risk_service", "safety_critical_service", *PROTECTED_OBJECT_TRIGGERS}
+)
+_CHANGE_FIELDS = "Changed"
+_CHANGE_STEPS = "Changed action steps"
+_CHANGE_CALL_ADDED = "High-risk call added or changed"
+_CHANGE_CALL_MOVED = "High-risk call moved"
+_CHANGE_CALL_REMOVED = "High-risk call removed"
+_CHANGE_CALL_UNCHANGED = "High-risk call present, unchanged"
+
+
+def _change_canonical(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
+
+
+def _change_list(label: str, items: Iterable[str]) -> str:
+    ordered = list(dict.fromkeys(items))
+    shown = ", ".join(ordered[:_CHANGE_NAME_LIMIT])
+    if len(ordered) > _CHANGE_NAME_LIMIT:
+        shown += f", and {len(ordered) - _CHANGE_NAME_LIMIT} more"
+    return f"{label}: {shown}"
+
+
+def _change_targets(node: dict[str, Any]) -> tuple[str, ...]:
+    """Return the call's literal target IDs for display, in order.
+
+    Only short, plain identifiers are shown; a template, a mapping, or any
+    other text is left out.
+    """
+
+    shown: list[str] = []
+    for _field, _selector, value in _target_selectors(node):
+        for item in value if isinstance(value, list) else [value]:
+            if not isinstance(item, str):
+                continue
+            item = item.strip().lower()
+            if (
+                0 < len(item) <= _CHANGE_TARGET_LENGTH
+                and set(item) <= _CHANGE_TARGET_CHARS
+            ):
+                shown.append(item)
+    return tuple(dict.fromkeys(shown))
+
+
+def _change_call(
+    names: frozenset[str],
+    targets: tuple[str, ...],
+    path: str,
+    origin: str | None = None,
+) -> str:
+    """Name one call instance: service, path, origin if moved, and targets."""
+
+    text = f"{'/'.join(sorted(names)) or 'call'} at {path}"
+    if origin is not None:
+        text += f" from {origin}"
+    if targets:
+        shown = ", ".join(targets[:_CHANGE_TARGET_LIMIT])
+        if len(targets) > _CHANGE_TARGET_LIMIT:
+            shown += f", +{len(targets) - _CHANGE_TARGET_LIMIT}"
+        text += f" ({shown})"
+    return text
+
+
+def _change_roots(
+    proposed: dict[str, Any], current: dict[str, Any]
+) -> tuple[list[tuple[str, Any]], list[tuple[str, Any]], dict[str, str]]:
+    """Return both action roots, with one ``action``/``actions`` key aligned.
+
+    The returned map renames a current root label to the proposed one, so
+    the two sides compare by the same paths.
+    """
+
+    proposed_roots = _action_roots(proposed)
+    current_roots = _action_roots(current)
+    labels: dict[str, str] = {}
+    if (
+        len(proposed_roots) == 1
+        and len(current_roots) == 1
+        and proposed_roots[0][0] != current_roots[0][0]
+    ):
+        labels[current_roots[0][0]] = proposed_roots[0][0]
+        current_roots = [(proposed_roots[0][0], current_roots[0][1])]
+    return proposed_roots, current_roots, labels
+
+
+def _change_relabel(field: str, labels: dict[str, str]) -> str:
+    for old, new in labels.items():
+        if field == old or field.startswith((old + "[", old + ".")):
+            return new + field[len(old):]
+    return field
+
+
+def _change_steps(
+    value: Any,
+    path: str,
+    steps: dict[str, str],
+    *,
+    allow_sequence_wrapper: bool = False,
+) -> None:
+    """Record ``path -> canonical step`` with traversed child lists left out.
+
+    The traversal is ``_action_steps``. A child list that is traversed is
+    compared step by step, so a step records only its own keys: a change
+    inside a ``then`` branch names that branch step, and a change to the
+    ``if`` names the enclosing step.
+    """
+
+    if not isinstance(value, list):
+        steps[path] = _change_canonical(value)
+        return
+    for index, step in enumerate(value):
+        step_path = f"{path}[{index}]"
+        if not isinstance(step, dict):
+            steps[step_path] = _change_canonical(step)
+            continue
+        shell = dict(step)
+        children: list[tuple[Any, str, bool]] = []
+        choices = step.get("choose")
+        if isinstance(choices, list):
+            shell["choose"] = [
+                {key: item for key, item in choice.items() if key != "sequence"}
+                if isinstance(choice, dict)
+                and isinstance(choice.get("sequence"), list)
+                else choice
+                for choice in choices
+            ]
+            children.extend(
+                (choice["sequence"], f"{step_path}.choose[{choice_index}].sequence", False)
+                for choice_index, choice in enumerate(choices)
+                if isinstance(choice, dict)
+                and isinstance(choice.get("sequence"), list)
+            )
+        for key in ("default", "then", "else"):
+            if isinstance(step.get(key), list):
+                shell[key] = None
+                children.append((step[key], f"{step_path}.{key}", False))
+        repeat = step.get("repeat")
+        if isinstance(repeat, dict) and isinstance(repeat.get("sequence"), list):
+            shell["repeat"] = {
+                key: item for key, item in repeat.items() if key != "sequence"
+            }
+            children.append(
+                (repeat["sequence"], f"{step_path}.repeat.sequence", False)
+            )
+        if isinstance(step.get("parallel"), list):
+            shell["parallel"] = None
+            children.append((step["parallel"], f"{step_path}.parallel", True))
+        if allow_sequence_wrapper and isinstance(step.get("sequence"), list):
+            shell["sequence"] = None
+            children.append((step["sequence"], f"{step_path}.sequence", False))
+        steps[step_path] = _change_canonical(shell)
+        for child, child_path, wrapper in children:
+            _change_steps(
+                child, child_path, steps, allow_sequence_wrapper=wrapper
+            )
+
+
+def _change_calls(
+    config: dict[str, Any],
+    roots: list[tuple[str, Any]],
+    labels: dict[str, str],
+) -> tuple[
+    dict[str, str], dict[str, tuple[str, frozenset[str], tuple[str, ...]]]
+]:
+    """Return every call node's content, and the high-risk ones by path.
+
+    A call node is high-risk when the whole-configuration analysis records
+    high-risk, safety-critical, or protected-object evidence inside it. Each
+    high-risk entry is its content, its service names, and its targets, in
+    execution order.
+    """
+
+    nodes: dict[str, dict[str, Any]] = {}
+    for root_path, root in roots:
+        for path, node in _action_nodes(root, root_path):
+            nodes[path] = node
+    contents = {path: _change_canonical(node) for path, node in nodes.items()}
+    by_length = sorted(nodes, key=len, reverse=True)
+    _services, evidence, _warnings, _targets = _structured_analysis(config)
+    high: dict[str, tuple[str, frozenset[str], tuple[str, ...]]] = {}
+    for item in evidence:
+        if item.get("trigger") not in _CHANGE_HIGH_TRIGGERS:
+            continue
+        field = _change_relabel(str(item.get("field", "")), labels)
+        path = next(
+            (
+                candidate
+                for candidate in by_length
+                if field == candidate or field.startswith(candidate + ".")
+            ),
+            None,
+        )
+        if path is None or path in high:
+            continue
+        node = nodes[path]
+        literal = {
+            value.lower().strip()
+            for alias in ("service", "action")
+            if isinstance(value := node.get(alias), str)
+            and value.strip()
+            and not _has_template(value)
+        }
+        flagged = {
+            service
+            for service in literal
+            if _is_high_service(service) or service in SAFETY_CRITICAL_SERVICES
+        }
+        high[path] = (
+            contents[path],
+            frozenset(flagged or literal),
+            _change_targets(node),
+        )
+    return contents, {path: high[path] for path in nodes if path in high}
+
+
+def _change_reasons(
+    fields: set[str], proposed: dict[str, Any], current: dict[str, Any]
+) -> list[str]:
+    """Name what an exact update changed, for the reasons only."""
+
+    stripped = {field.removeprefix("other:") for field in fields}
+    named = set(stripped)
+    if "sequence" in named:
+        # A script's sequence is also reported as the synthetic actions field.
+        named.discard("actions")
+    reasons = [_change_list(_CHANGE_FIELDS, sorted(named))] if named else []
+    try:
+        proposed_roots, current_roots, labels = _change_roots(proposed, current)
+        proposed_contents, proposed_high = _change_calls(
+            proposed, proposed_roots, {}
+        )
+        if (
+            not stripped & _CHANGE_ACTION_FIELDS
+            and len(proposed_roots) < 2
+            and len(current_roots) < 2
+        ):
+            # The diff reports no action change and there is at most one
+            # action root on each side, so every high-risk call is in place.
+            unchanged = [
+                _change_call(names, targets, path)
+                for path, (_content, names, targets) in proposed_high.items()
+            ]
+            if unchanged:
+                reasons.append(_change_list(_CHANGE_CALL_UNCHANGED, unchanged))
+            return reasons
+        current_contents, current_high = _change_calls(
+            current, current_roots, labels
+        )
+        proposed_steps: dict[str, str] = {}
+        current_steps: dict[str, str] = {}
+        for root_path, root in proposed_roots:
+            _change_steps(root, root_path, proposed_steps)
+        for root_path, root in current_roots:
+            _change_steps(root, root_path, current_steps)
+    except (TypeError, ValueError, RecursionError, OverflowError):
+        return reasons
+    changed_steps = [
+        path
+        for path, content in proposed_steps.items()
+        if current_steps.get(path) != content
+    ] + [path for path in current_steps if path not in proposed_steps]
+    if changed_steps:
+        reasons.append(_change_list(_CHANGE_STEPS, changed_steps))
+    # A call is in place when the same content is at the same path on both
+    # sides. Any other proposed call is moved when an unmatched current call
+    # has its content, and otherwise added or changed. An unmatched current
+    # high-risk call is removed, unless a changed call to the same service
+    # now sits at its path.
+    in_place = {
+        path
+        for path, content in current_contents.items()
+        if proposed_contents.get(path) == content
+    }
+    matched = set(in_place)
+    added: list[str] = []
+    moved: list[str] = []
+    unchanged: list[str] = []
+    changed_at: dict[str, frozenset[str]] = {}
+    for path, (content, names, targets) in proposed_high.items():
+        if path in in_place:
+            unchanged.append(_change_call(names, targets, path))
+            continue
+        origin = next(
+            (
+                candidate
+                for candidate, candidate_content in current_contents.items()
+                if candidate not in matched and candidate_content == content
+            ),
+            None,
+        )
+        if origin is not None:
+            matched.add(origin)
+            moved.append(_change_call(names, targets, path, origin))
+        else:
+            added.append(_change_call(names, targets, path))
+            changed_at[path] = names
+    removed = [
+        _change_call(names, targets, path)
+        for path, (_content, names, targets) in current_high.items()
+        if path not in matched
+        and not (
+            path in changed_at
+            and (names == changed_at[path] or names & changed_at[path])
+        )
+    ]
+    for label, items in (
+        (_CHANGE_CALL_ADDED, added),
+        (_CHANGE_CALL_MOVED, moved),
+        (_CHANGE_CALL_REMOVED, removed),
+        (_CHANGE_CALL_UNCHANGED, unchanged),
+    ):
+        if items:
+            reasons.append(_change_list(label, items))
+    return reasons
+
+
 def classify_risk(
     operation: ChangeOperation,
     diff: dict[str, Any],
@@ -1851,6 +2178,42 @@ def classify_risk(
     protected_effect_verdict: str | None = None,
 ) -> ChangeRiskAssessment:
     """Classify one automation-shaped configuration.
+
+    The level, apply decision, evidence, and warnings are always the
+    whole-configuration result of ``_legacy_classify_risk``. For an exact
+    update with ``current`` (HAMCP-293), the reasons also name the changed
+    fields and action steps, and each high-risk call instance, by path and
+    target, as added or changed, moved, removed, or present and unchanged.
+    """
+
+    assessment = _legacy_classify_risk(
+        operation,
+        diff,
+        proposed,
+        current=current,
+        protected_effect_verdict=protected_effect_verdict,
+    )
+    if operation != ChangeOperation.UPDATE_AUTOMATION or not isinstance(
+        current, dict
+    ):
+        return assessment
+    fields = {item["field"] for item in diff.get("changed_fields", [])}
+    assessment.reasons = [
+        *assessment.reasons,
+        *_change_reasons(fields, proposed, current),
+    ]
+    return assessment
+
+
+def _legacy_classify_risk(
+    operation: ChangeOperation,
+    diff: dict[str, Any],
+    proposed: dict[str, Any],
+    *,
+    current: dict[str, Any] | None = _UNSET,
+    protected_effect_verdict: str | None = None,
+) -> ChangeRiskAssessment:
+    """Classify one automation-shaped configuration as a whole.
 
     ``current`` (HAMCP-213 D4.4) limits the recipient reason to a changed
     recipient set. ``protected_effect_verdict`` (D4.5) is the D2 comparison

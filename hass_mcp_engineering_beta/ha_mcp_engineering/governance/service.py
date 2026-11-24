@@ -3952,8 +3952,10 @@ class ChangeGovernanceService:
                 warnings=list(risk.warnings),
             )
         if resource_type == "script":
+            # HAMCP-293: reasons now name calls such as automation.trigger;
+            # rename the resource word only, never a dotted call name.
             risk.reasons = [
-                reason.replace("automation", "script")
+                re.sub(r"(?<!\.)\bautomation\b(?!\.)", "script", reason)
                 for reason in risk.reasons
             ]
         return risk
