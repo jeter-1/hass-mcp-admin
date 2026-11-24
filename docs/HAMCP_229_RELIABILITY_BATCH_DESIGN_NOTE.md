@@ -331,3 +331,32 @@ selector argument (`tier`, `query` or "all"), and an unknown argument is still r
 
 Effect on the Codex corrections in section 10: none. The #402 delivery record is unchanged; only the status of the
 defaults (confirmed) and of the selectors (deferred past 2.6) changes.
+
+## 12. HAMCP-474 D5 and D6 (2.9.1)
+
+Source: HA Admin's read-only audit of 2026-11-23, as recorded on the HAMCP-474 register row. It reported the
+system-log source as partial on every item, without saying which source, and no finding detail in the batch
+summary. Josh trimmed HAMCP-474 to D1, D5 and D6 on 2026-11-24 (as relayed by the architect, block
+`release-291-josh-decisions-0424`). The named protected OK for `reliability/batch.py` covers reporting only (as
+relayed by the architect). Nothing else protected changes.
+
+- **D5, `source_limitations`.** A batch-level list of `source_type`, `reason`, `affects_result_status` and
+  `item_count`, over the items whose digest is in the response. The reasons and the `other_source` fold are
+  closed sets. The test mirrors `ReliabilityEvidenceBundle.has_coverage_limitations`. An item's result status is
+  unchanged; the list only names what was already counted.
+- **D6, root-cause detail.** Each root-cause summary adds `confidence`, `current_state`,
+  `representative_configuration_paths`, `recommended_investigation` and `governed_change_required`. The values are
+  the single tool's at `detail_level` `summary` (`service._summary_root_cause_group`). Finding IDs, evidence
+  references and `intentional_trigger_context` are not added.
+- **Budget (approach accepted by the architect, 2026-11-24).** The new fields and their warnings are charged
+  against the 60,000-character bound at their rendered size. Full detail is kept only when every analyzed digest
+  fits at its rendered size. Otherwise `root_cause_detail` is `reduced`, every summary returns to the 2.6 keys,
+  and the 2.6 budget loop runs unchanged. Detail is reduced before any item is skipped.
+- **Disclosed cost.** Near the bound a response can hold one item fewer than in 2.6. In the synthetic worst case
+  tested offline (20 IDs of 128 characters, three root causes each with long configuration paths, a long friendly
+  name), the 20th automation becomes `skipped_budget` and is listed in `remaining_automation_ids`. The base
+  analyzes all 20 of the same input.
+- **Unchanged.** Arguments, bounds, concurrency, deadlines, failure and skip reasons, `batch_result_status`, the
+  provider reads and the single tool. No write, service call, fallback or forwarding is added.
+- The module docstring in `reliability/batch.py` still says the bounds are "pending Josh (design note Q4)". Q4 is
+  decided (section 9). The line is left unchanged here because it is outside the reporting scope.

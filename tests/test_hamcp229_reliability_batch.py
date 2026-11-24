@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -40,6 +41,7 @@ from ha_mcp_engineering.reliability import batch as batch_module  # noqa: E402
 from ha_mcp_engineering.reliability.batch import (  # noqa: E402
     MAX_BATCH_ITEMS, ReliabilityBatchAnalyzer,
 )
+from ha_mcp_engineering.reliability.models import ReliabilitySourceCoverage  # noqa: E402
 from ha_mcp_engineering.reliability.provider import DirectHaReliabilityProvider  # noqa: E402
 from ha_mcp_engineering.reliability.runtime import RELIABILITY_ANALYSIS  # noqa: E402
 from ha_mcp_engineering.reliability.service import AutomationReliabilityAnalysisService  # noqa: E402
@@ -464,6 +466,385 @@ class ParityTests(unittest.TestCase):
         )
         self.assertNotIn("findings", digest)
         self.assertNotIn("evidence_references", digest)
+
+
+def system_log_snapshot(completeness="partial", *, failed=0, truncated=False, affects=False):
+    """System Log coverage in the shape the reliability provider builds."""
+
+    snapshot = (
+        "unavailable" if completeness == "unavailable"
+        else "partial" if truncated or failed else "complete"
+    )
+    return ReliabilitySourceCoverage(
+        "system_log", "direct_ha_api", "error_log_read", completeness, 0, failed, 1.0, truncated,
+        ["System Log is an in-memory deduplicated snapshot; retention coverage for the requested lookback is unknown."],
+        affects_result_status=affects, snapshot_completeness=snapshot,
+        retention_coverage="unknown", requested_lookback_hours=168,
+    )
+
+
+def coverage_with(*replacements):
+    """The default bundle coverage with the named sources replaced."""
+
+    by_type = {item.source_type: item for item in replacements}
+    return [by_type.get(item.source_type, item) for item in bundle().coverage]
+
+
+def root_cause_bundle(groups=3, *, paths=1, path_suffix="", name=None, coverage_items=None):
+    statuses = ("missing", "unavailable", "unknown")
+    references = [
+        {
+            "entity_id": f"sensor.synthetic_root_{group:02d}",
+            "status": statuses[group % 3],
+            "config_path": f"$.action[{group}].choose[0].sequence[1].entity_id[{path}]{path_suffix}",
+        }
+        for group in range(groups)
+        for path in range(paths)
+    ]
+    value = bundle(state="on", references=references, coverage_items=coverage_items)
+    if name is not None:
+        value.automation = {**value.automation, "friendly_name": name}
+    return value
+
+
+def every_source_limited():
+    """Every reliability source limited for three reasons at once."""
+
+    return [
+        ReliabilitySourceCoverage(
+            item.source_type, item.provider, item.provider_capability, "partial", 1, 1, 1.0, True,
+            retention_coverage="partial",
+        )
+        for item in bundle().coverage
+    ]
+
+
+class RootCauseDetailTests(unittest.TestCase):
+    """HAMCP-474 D6: the single tool's summary root-cause detail, within the bound."""
+
+    @staticmethod
+    def analyze(automation_ids, value, limit=None):
+        arguments = {} if limit is None else {"response_limit": limit}
+        return run(ReliabilityBatchAnalyzer().analyze(
+            service_for(PerIdProvider(default=value)), automation_ids=automation_ids, **arguments,
+        ))
+
+    def budget(self, automation_ids, value):
+        """``(fixed charge, rendered full digests, compact reduced digests, full output)``."""
+
+        full = self.analyze(automation_ids, value)
+        self.assertEqual(full.data["root_cause_detail"], "full")
+        digests = full.data["items"]
+        fixed = (
+            batch_module.ENVELOPE_RESERVE_CHARS
+            + sum(batch_module._fixed_item_cost(item) for item in automation_ids)
+            + batch_module._rendered_cost({"source_limitations": [], "root_cause_detail": "reduced"}, 1)
+        )
+        rendered = sum(batch_module._rendered_cost(item, batch_module._ITEM_DEPTH) for item in digests)
+        reduced = sum(len(batch_module._compact(batch_module._reduced_digest(item))) for item in digests)
+        return fixed, rendered, reduced, full
+
+    def test_full_detail_carries_the_single_tools_summary_values(self):
+        provider = PerIdProvider(default=root_cause_bundle(3, paths=2))
+        with patch.object(RELIABILITY_ANALYSIS, "service", service_for(provider)):
+            single = json.loads(run(automation_reliability_analysis(
+                automation_id="detail", lookback_hours=24, trace_limit=5, detail_level="summary",
+            )))
+            batch = json.loads(run(automation_reliability_batch_analysis(
+                automation_ids=["detail"], lookback_hours=24, trace_limit=5,
+            )))
+        self.assertTrue(single["success"])
+        self.assertEqual(batch["data"]["root_cause_detail"], "full")
+        self.assertNotIn(batch_module.REDUCED_DETAIL_WARNING, batch["warnings"])
+        keys = batch_module._BASIC_ROOT_CAUSE_KEYS + batch_module._DETAIL_ROOT_CAUSE_KEYS
+        summaries = batch["data"]["items"][0]["root_cause_summaries"]
+        groups = single["data"]["root_cause_groups"][:batch_module.MAX_ROOT_CAUSE_SUMMARIES]
+        self.assertEqual(len(summaries), 3)
+        self.assertEqual(len(summaries), len(groups))
+        for summary, group in zip(summaries, groups):
+            with self.subTest(group=group["root_cause_group_id"]):
+                self.assertEqual(tuple(summary), keys)
+                self.assertEqual(summary, {key: group[key] for key in keys})
+                # Finding and evidence identifiers stay with the single tool.
+                self.assertNotIn("finding_ids", summary)
+                self.assertNotIn("evidence_references", summary)
+                # Real detail, not defaults.
+                self.assertEqual(len(summary["representative_configuration_paths"]), 2)
+                self.assertIn(summary["current_state"], {"missing", "unavailable", "unknown"})
+
+    def test_full_detail_is_kept_exactly_while_every_rendered_digest_fits(self):
+        automation_ids = ids(4)
+        value = root_cause_bundle(3)
+        fixed, rendered, _, full = self.budget(automation_ids, value)
+        at_bound = self.analyze(automation_ids, value, fixed + rendered)
+        self.assertEqual(at_bound.data["root_cause_detail"], "full")
+        self.assertEqual(at_bound.data["items"], full.data["items"])
+        self.assertNotIn(batch_module.REDUCED_DETAIL_WARNING, at_bound.warnings)
+        below = self.analyze(automation_ids, value, fixed + rendered - 1)
+        self.assertEqual(below.data["root_cause_detail"], "reduced")
+        self.assertEqual([row["status"] for row in below.data["items"]], ["analyzed"] * 4)
+        self.assertIn(batch_module.REDUCED_DETAIL_WARNING, below.warnings)
+
+    def test_the_limitations_list_and_its_warning_are_charged_at_the_exact_bound(self):
+        automation_ids = ids(4)
+        value = root_cause_bundle(3, coverage_items=coverage_with(system_log_snapshot()))
+        full = self.analyze(automation_ids, value)
+        self.assertEqual(full.data["root_cause_detail"], "full")
+        limitations = full.data["source_limitations"]
+        self.assertEqual(
+            [(entry["source_type"], entry["item_count"]) for entry in limitations],
+            [("system_log", 4)],
+        )
+        self.assertIn(batch_module.SOURCE_LIMITATIONS_WARNING, full.warnings)
+        fixed = (
+            batch_module.ENVELOPE_RESERVE_CHARS
+            + sum(batch_module._fixed_item_cost(item) for item in automation_ids)
+            + batch_module._rendered_cost(
+                {"source_limitations": limitations, "root_cause_detail": "reduced"}, 1,
+            )
+            + batch_module._rendered_cost(batch_module.SOURCE_LIMITATIONS_WARNING, 2)
+        )
+        rendered = sum(
+            batch_module._rendered_cost(item, batch_module._ITEM_DEPTH) for item in full.data["items"]
+        )
+        at_bound = self.analyze(automation_ids, value, fixed + rendered)
+        self.assertEqual(at_bound.data["root_cause_detail"], "full")
+        self.assertEqual(at_bound.data["items"], full.data["items"])
+        self.assertEqual(at_bound.data["source_limitations"], limitations)
+        below = self.analyze(automation_ids, value, fixed + rendered - 1)
+        self.assertEqual(below.data["root_cause_detail"], "reduced")
+        self.assertEqual([row["status"] for row in below.data["items"]], ["analyzed"] * 4)
+        self.assertEqual(below.data["source_limitations"], limitations)
+        self.assertIn(batch_module.SOURCE_LIMITATIONS_WARNING, below.warnings)
+        self.assertIn(batch_module.REDUCED_DETAIL_WARNING, below.warnings)
+
+    def test_detail_is_reduced_to_the_2_6_shape_before_any_item_is_skipped(self):
+        automation_ids = ids(4)
+        value = root_cause_bundle(3)
+        fixed, rendered, reduced, full = self.budget(automation_ids, value)
+        warning = batch_module._rendered_cost(batch_module.REDUCED_DETAIL_WARNING, 2)
+        self.assertLess(warning + reduced, rendered)
+        fits = self.analyze(automation_ids, value, fixed + warning + reduced)
+        self.assertEqual(fits.data["root_cause_detail"], "reduced")
+        self.assertEqual([row["status"] for row in fits.data["items"]], ["analyzed"] * 4)
+        self.assertEqual(fits.data["batch_result_status"], full.data["batch_result_status"])
+        self.assertEqual(fits.partial, full.partial)
+        self.assertIn(batch_module.REDUCED_DETAIL_WARNING, fits.warnings)
+        for row, original in zip(fits.data["items"], full.data["items"]):
+            self.assertEqual(
+                [tuple(summary) for summary in row["root_cause_summaries"]],
+                [batch_module._BASIC_ROOT_CAUSE_KEYS] * 3,
+            )
+            self.assertEqual(row, batch_module._reduced_digest(original))
+        tight = self.analyze(automation_ids, value, fixed + warning + reduced - 1)
+        self.assertEqual(tight.data["root_cause_detail"], "reduced")
+        self.assertEqual(
+            [(row["status"], row["reason"]) for row in tight.data["items"]],
+            [("analyzed", None)] * 3 + [("skipped_budget", "output_budget")],
+        )
+        self.assertEqual(tight.data["coverage"]["remaining_automation_ids"], automation_ids[3:])
+
+    def test_without_root_causes_detail_stays_full_while_items_are_skipped(self):
+        provider = PerIdProvider()
+        full = run(ReliabilityBatchAnalyzer().analyze(service_for(provider), automation_ids=ids(6)))
+        self.assertEqual(full.data["items"][0]["root_cause_summaries"], [])
+        digest_size = len(batch_module._compact(full.data["items"][0]))
+        fixed = sum(batch_module._fixed_item_cost(item) for item in ids(6))
+        limit = batch_module.ENVELOPE_RESERVE_CHARS + fixed + 2 * digest_size + digest_size // 2
+        output = run(ReliabilityBatchAnalyzer().analyze(
+            service_for(PerIdProvider()), automation_ids=ids(6), response_limit=limit,
+        ))
+        self.assertEqual([row["status"] for row in output.data["items"]], ["analyzed"] * 2 + ["skipped_budget"] * 4)
+        self.assertEqual(output.data["root_cause_detail"], "full")
+        self.assertNotIn(batch_module.REDUCED_DETAIL_WARNING, output.warnings)
+
+    def test_worst_case_render_sweep_stays_within_the_bound(self):
+        long_ids = [f"{index:02d}" + "x" * 126 for index in range(20)]
+        details = set()
+        for count in (1, 5, 12, 20):
+            for multiplier in (0, 10, 30):
+                for limited in (False, True):
+                    with self.subTest(count=count, multiplier=multiplier, limited=limited):
+                        value = root_cause_bundle(
+                            6, paths=3, path_suffix=".x" * 20, name="Synthetic long name " * multiplier,
+                            coverage_items=every_source_limited() if limited else coverage_with(system_log_snapshot()),
+                        )
+                        automation_ids = long_ids[:count]
+                        with patch.object(RELIABILITY_ANALYSIS, "service", service_for(PerIdProvider(default=value))):
+                            rendered = run(automation_reliability_batch_analysis(automation_ids=automation_ids))
+                        self.assertLessEqual(len(rendered), 60_000)
+                        output = json.loads(rendered)  # a cut envelope would not parse
+                        self.assertTrue(output["success"], output.get("details"))
+                        rows = output["data"]["items"]
+                        self.assertEqual([row["automation_id"] for row in rows], automation_ids)
+                        self.assertLessEqual({row["status"] for row in rows}, {"analyzed", "skipped_budget"})
+                        self.assertEqual(
+                            output["data"]["coverage"]["remaining_automation_ids"],
+                            [row["automation_id"] for row in rows if row["status"] == "skipped_budget"],
+                        )
+                        self.assertIn(output["data"]["root_cause_detail"], batch_module.ROOT_CAUSE_DETAIL_LEVELS)
+                        details.add(output["data"]["root_cause_detail"])
+        self.assertEqual(details, {"full", "reduced"})
+
+
+class SourceLimitationTests(unittest.TestCase):
+    """HAMCP-474 D5: batch-level source limits in closed terms; status unchanged."""
+
+    ENTRY_KEYS = ("source_type", "reason", "affects_result_status", "item_count")
+
+    @staticmethod
+    def analyze(automation_ids, outcomes=None, default=None, limit=None):
+        arguments = {} if limit is None else {"response_limit": limit}
+        return run(ReliabilityBatchAnalyzer().analyze(
+            service_for(PerIdProvider(outcomes, default=default)), automation_ids=automation_ids, **arguments,
+        ))
+
+    @staticmethod
+    def entry(source_type, reason, affects, count):
+        return {"source_type": source_type, "reason": reason, "affects_result_status": affects, "item_count": count}
+
+    def test_system_log_snapshot_limit_is_named_without_changing_status(self):
+        value = bundle(coverage_items=coverage_with(system_log_snapshot()))
+        self.assertFalse(value.partial)
+        self.assertTrue(value.has_coverage_limitations)
+        provider = PerIdProvider(default=value)
+        with patch.object(RELIABILITY_ANALYSIS, "service", service_for(provider)):
+            single = json.loads(run(automation_reliability_analysis(automation_id="single")))
+            batch = json.loads(run(automation_reliability_batch_analysis(automation_ids=ids(3))))
+        self.assertEqual(single["data"]["result_status"], "success")
+        data = batch["data"]
+        self.assertEqual(data["source_limitations"], [self.entry("system_log", "retention_unknown", False, 3)])
+        self.assertEqual(data["batch_result_status"], "success")
+        self.assertEqual([row["result_status"] for row in data["items"]], ["success"] * 3)
+        self.assertEqual({row["source_completeness"]["system_log"] for row in data["items"]}, {"partial"})
+        self.assertIn(batch_module.SOURCE_LIMITATIONS_WARNING, batch["warnings"])
+        self.assertFalse(any("partial evidence" in warning for warning in batch["warnings"]))
+
+    def test_each_coverage_record_maps_to_closed_reasons(self):
+        def record(completeness, *, failed=0, truncated=False, retention=None, affects=True):
+            return ReliabilitySourceCoverage(
+                "automation_traces", "direct_ha_api", "automation_trace", completeness, 1, failed, 1.0,
+                truncated, affects_result_status=affects, retention_coverage=retention,
+            )
+
+        cases = [
+            (record("complete"), ()),
+            (record("not_requested"), ()),
+            (record("complete", retention="complete"), ()),
+            (record("complete", retention="unknown"), ("retention_unknown",)),
+            (record("not_requested", retention="partial"), ("retention_partial",)),
+            (record("unavailable"), ("source_unavailable",)),
+            (record("unavailable", failed=1, retention="unknown", affects=False), ("source_unavailable", "retention_unknown")),
+            (record("failed", failed=1, truncated=True), ("source_failed",)),
+            (record("partial", failed=1), ("items_failed",)),
+            (record("partial", truncated=True), ("truncated",)),
+            (record("partial", failed=2, truncated=True, retention="partial"), ("items_failed", "truncated", "retention_partial")),
+            (record("partial"), ("source_partial",)),
+            (record("partial", retention="unknown", affects=False), ("retention_unknown",)),
+            (record("unrecognized"), ("source_partial",)),
+        ]
+        for item, expected in cases:
+            with self.subTest(coverage=item.public()):
+                reasons = batch_module._coverage_limitation_reasons(item.public())
+                self.assertEqual(reasons, expected)
+                self.assertLessEqual(set(reasons), set(batch_module.SOURCE_LIMITATION_REASONS))
+                # The same test as the single tool's coverage-limitation flag.
+                self.assertEqual(bool(reasons), bundle(coverage_items=[item]).has_coverage_limitations)
+        for raw in (
+            "not a coverage record",
+            None,
+            {"completeness": "partial", "failed_items": True},
+            {"completeness": "partial", "truncated": "yes"},
+        ):
+            with self.subTest(raw=raw):
+                self.assertEqual(batch_module._coverage_limitation_reasons(raw), ("source_partial",))
+
+    def test_unrecognized_sources_fold_into_closed_names(self):
+        output = SimpleNamespace(data={"evidence_source_coverage": [
+            {"source_type": "synthetic novel source", "completeness": "partial"},
+            "not a coverage record",
+            {"source_type": "system_log", "completeness": "partial", "retention_coverage": "unknown",
+             "affects_result_status": False},
+            {"source_type": "automation_state", "completeness": "unavailable", "affects_result_status": "false"},
+            {"source_type": "entity_state", "completeness": "complete"},
+        ]})
+        self.assertEqual(batch_module._item_limitations(output), frozenset({
+            ("other_source", "source_partial", True),
+            ("system_log", "retention_unknown", False),
+            ("automation_state", "source_unavailable", True),
+        }))
+
+    def test_a_status_affecting_limit_is_named_and_the_item_is_partial(self):
+        limited = bundle(coverage_items=coverage_with(
+            coverage("automation_traces", "partial", failed=1), system_log_snapshot(),
+        ))
+        output = self.analyze(
+            ["ok", "p"], {"p": limited}, bundle(coverage_items=coverage_with(system_log_snapshot())),
+        )
+        self.assertEqual(output.data["source_limitations"], [
+            self.entry("automation_traces", "items_failed", True, 1),
+            self.entry("system_log", "retention_unknown", False, 2),
+        ])
+        rows = {row["automation_id"]: row for row in output.data["items"]}
+        self.assertEqual((rows["ok"]["result_status"], rows["p"]["result_status"]), ("success", "partial"))
+        self.assertEqual(output.data["batch_result_status"], "partial")
+        self.assertTrue(output.partial)
+        self.assertIn(batch_module.SOURCE_LIMITATIONS_WARNING, output.warnings)
+        self.assertTrue(any("partial evidence" in warning for warning in output.warnings))
+
+    def test_counts_cover_only_items_with_a_digest(self):
+        value = bundle(coverage_items=coverage_with(system_log_snapshot()))
+        automation_ids = ["missing", *ids(5)]
+        outcomes = {"missing": AutomationNotFoundError()}
+        full = self.analyze(automation_ids, outcomes, value)
+        self.assertEqual(full.data["source_limitations"], [self.entry("system_log", "retention_unknown", False, 5)])
+        digest_size = len(batch_module._compact(full.data["items"][1]))
+        limit = (
+            batch_module.ENVELOPE_RESERVE_CHARS
+            + sum(batch_module._fixed_item_cost(item) for item in automation_ids)
+            + batch_module._rendered_cost(
+                {"source_limitations": full.data["source_limitations"], "root_cause_detail": "reduced"}, 1,
+            )
+            + batch_module._rendered_cost(batch_module.SOURCE_LIMITATIONS_WARNING, 2)
+            + 2 * digest_size + digest_size // 2
+        )
+        output = self.analyze(automation_ids, outcomes, value, limit)
+        self.assertEqual(
+            [row["status"] for row in output.data["items"]],
+            ["failed", "analyzed", "analyzed", "skipped_budget", "skipped_budget", "skipped_budget"],
+        )
+        self.assertEqual(output.data["source_limitations"], [self.entry("system_log", "retention_unknown", False, 2)])
+
+    def test_complete_sources_give_an_empty_list_and_no_warning(self):
+        output = self.analyze(ids(2))
+        self.assertEqual(output.data["source_limitations"], [])
+        self.assertEqual(output.data["root_cause_detail"], "full")
+        self.assertNotIn(batch_module.SOURCE_LIMITATIONS_WARNING, output.warnings)
+        self.assertEqual(output.data["batch_result_status"], "success")
+
+    def test_entries_are_split_by_status_effect_and_sorted(self):
+        outcomes = {
+            "a": bundle(coverage_items=coverage_with(
+                coverage("entity_state", "partial", failed=1),
+                system_log_snapshot("unavailable", failed=1),
+            )),
+            "b": bundle(coverage_items=coverage_with(
+                coverage("automation_state", "unavailable", examined=0, failed=1), system_log_snapshot(),
+            )),
+            "c": bundle(coverage_items=coverage_with(system_log_snapshot(affects=True))),
+        }
+        output = self.analyze(["a", "b", "c"], outcomes)
+        self.assertEqual(output.data["source_limitations"], [
+            self.entry("automation_state", "source_unavailable", True, 1),
+            self.entry("entity_state", "items_failed", True, 1),
+            self.entry("system_log", "source_unavailable", False, 1),
+            self.entry("system_log", "retention_unknown", False, 2),
+            self.entry("system_log", "retention_unknown", True, 1),
+        ])
+        for value in output.data["source_limitations"]:
+            self.assertEqual(tuple(value), self.ENTRY_KEYS)
+        rows = {row["automation_id"]: row["result_status"] for row in output.data["items"]}
+        self.assertEqual(rows, {"a": "partial", "b": "partial", "c": "partial"})
 
 
 class LoopbackRest:
