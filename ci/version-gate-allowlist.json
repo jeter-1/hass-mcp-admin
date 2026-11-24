@@ -1,0 +1,1008 @@
+{
+  "schema_version": 1,
+  "scope": "hass_mcp_engineering_beta/ha_mcp_engineering",
+  "entries": [
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+      "symbol": "CAPABILITY_PROVIDER_MATRIX.history_slices.security_justification",
+      "literals": {
+        "8.5.0": 1,
+        "8.6.0": 1
+      },
+      "finding": "F2-5",
+      "reason": "Stale client-visible label: says versions 8.5.0/8.6.0 only, while the route admits 9.2.0",
+      "expiry": "2.9.1 cleanup"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+      "symbol": "CAPABILITY_PROVIDER_MATRIX.typed_fan_execution.core_applicability",
+      "literals": {
+        "2026.9.2": 1
+      },
+      "finding": "label",
+      "reason": "core_applicability label naming the legacy Core 2026.9.2 receipt path",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+      "symbol": "CAPABILITY_PROVIDER_MATRIX.typed_power_execution.core_applicability",
+      "literals": {
+        "2026.9.2": 1
+      },
+      "finding": "label",
+      "reason": "core_applicability label naming the legacy Core 2026.9.2 receipt path",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+      "symbol": "CAPABILITY_PROVIDER_MATRIX.yaml_configuration_read.security_justification",
+      "literals": {
+        "8.4.3": 2,
+        "8.5.0": 2,
+        "9.1.0": 2,
+        "9.1.2": 2
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+      "symbol": "CAPABILITY_PROVIDER_MATRIX.yaml_configuration_read.trust_profile",
+      "literals": {
+        "8.4.3": 1,
+        "8.5.0": 1,
+        "9.1.0": 1,
+        "9.1.2": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
+      "symbol": "_platform_read_profile",
+      "literals": {
+        "8.4.3": 1,
+        "8.5.0": 1,
+        "8.6.0": 1,
+        "9.1.0": 1,
+        "9.1.2": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/clients/ha_mcp_endpoint.py",
+      "symbol": "STRICT_FULL_SELECTOR_RELEASES",
+      "literals": {
+        "9.1.0": 1,
+        "9.1.2": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/clients/ha_mcp_endpoint.py",
+      "symbol": "UPSTREAM_CATALOG_MODE_OPERATOR_MESSAGE",
+      "literals": {
+        "9.1.0": 1,
+        "9.1.2": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/clients/mcp.py",
+      "symbol": "_BEST_PRACTICES_ARGUMENT_REWRITES",
+      "literals": {
+        "8.6.0": 1,
+        "9.1.0": 1,
+        "9.1.2": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/naming.py",
+      "symbol": "SLUGIFY_PIN",
+      "literals": {
+        "2026.10.1": 1,
+        "9.1.2": 1
+      },
+      "finding": "copied-source pin",
+      "reason": "Provenance pin of source copied from Core 2026.10.1 (SLUGIFY_PIN also ha-mcp 9.1.2); see the G1 mirror-manifest design note",
+      "expiry": "G1 mirror manifest [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/schemas.py",
+      "symbol": "CORE_PIN",
+      "literals": {
+        "2026.10.1": 1
+      },
+      "finding": "copied-source pin",
+      "reason": "Provenance pin of source copied from Core 2026.10.1 (SLUGIFY_PIN also ha-mcp 9.1.2); see the G1 mirror-manifest design note",
+      "expiry": "G1 mirror manifest [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dashboard_analysis/rules.py",
+      "symbol": "CORE_VERSION",
+      "literals": {
+        "2026.9.4": 1
+      },
+      "finding": "F2-1",
+      "reason": "Gate loss: default rules apply only when Core equals 2026.9.4, so on Core 2026.11.0 inferred defaults become source_gate_pending gaps; owned by HAMCP-444",
+      "expiry": "R1"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/semantic_registry.py",
+      "symbol": "SUPPORTED_HOME_ASSISTANT_TEMPLATE_SOURCES",
+      "literals": {
+        "2026.7.2": 1,
+        "2026.8.0": 1,
+        "2026.8.1": 1,
+        "2026.9.0": 1,
+        "2026.9.1": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/atomicity.py",
+      "symbol": "HOME_ASSISTANT_RELEASE",
+      "literals": {
+        "2026.8.0": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/atomicity.py",
+      "symbol": "UPSTREAM_SOURCE_COMMITS",
+      "literals": {
+        "7.14.2": 1,
+        "8.0.0": 1,
+        "8.1.1": 1,
+        "8.2.0": 1,
+        "8.4.1": 1,
+        "8.4.3": 1,
+        "8.5.0": 1,
+        "8.6.0": 1,
+        "9.1.0": 1,
+        "9.1.2": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/atomicity.py",
+      "symbol": "assess_atomicity",
+      "literals": {
+        "2026.9.2": 1,
+        "2026.9.4": 1,
+        "8.5.0": 1,
+        "8.6.0": 1,
+        "9.1.0": 1,
+        "9.1.2": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/constants.py",
+      "symbol": "SUPPORTED_UPSTREAM_VERSIONS",
+      "literals": {
+        "7.14.2": 1,
+        "8.0.0": 1,
+        "8.1.1": 1,
+        "8.2.0": 1,
+        "8.4.1": 1,
+        "8.4.3": 1,
+        "8.5.0": 1,
+        "8.6.0": 1,
+        "9.1.0": 1,
+        "9.1.2": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/planning.py",
+      "symbol": "KNOWN_HYPHENLESS_EXISTING_UPDATE_INCOMPATIBLE_RELEASES",
+      "literals": {
+        "8.1.1": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/planning.py",
+      "symbol": "create_dashboard_update_plan",
+      "literals": {
+        "8.1.1": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/provider.py",
+      "symbol": "EXACT_CONTRACTS",
+      "literals": {
+        "7.14.2": 3,
+        "8.0.0": 3,
+        "8.1.1": 3,
+        "8.2.0": 3,
+        "8.4.1": 3,
+        "8.4.3": 3,
+        "8.5.0": 3,
+        "8.6.0": 3,
+        "9.1.0": 3,
+        "9.1.2": 3
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/raw_evidence.py",
+      "symbol": "EXPECTED_RELEASES",
+      "literals": {
+        "7.14.2": 2,
+        "8.0.0": 2,
+        "8.1.1": 2,
+        "8.2.0": 2,
+        "8.4.1": 2,
+        "8.4.3": 2,
+        "8.5.0": 2,
+        "8.6.0": 2,
+        "9.1.0": 2,
+        "9.1.2": 2
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/registry.py",
+      "symbol": "AdapterRegistration.required_releases",
+      "literals": {
+        "7.14.2": 1,
+        "8.0.0": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/registry.py",
+      "symbol": "ClosedAdapterRegistry.build",
+      "literals": {
+        "8.1.1": 1,
+        "8.2.0": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/registry.py",
+      "symbol": "ClosedAdapterRegistry.validate",
+      "literals": {
+        "7.14.2": 1,
+        "8.0.0": 1,
+        "8.1.1": 1,
+        "8.2.0": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/fan/contracts.py",
+      "symbol": "CORE_VERSION",
+      "literals": {
+        "2026.9.2": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/fan/contracts.py",
+      "symbol": "FAN_CONTRACT",
+      "literals": {
+        "2026.9.2": 1,
+        "8.4.3": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/fan/contracts.py",
+      "symbol": "FAN_RELEASES",
+      "literals": {
+        "2026.9.2": 5,
+        "8.4.3": 2,
+        "8.5.0": 3,
+        "8.6.0": 3,
+        "9.1.0": 3,
+        "9.1.2": 3
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/probe_profiles.py",
+      "symbol": "CHILD_DEVICE_NAME_PARTS_PROBE_PROFILE",
+      "literals": {
+        "8.5.0": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/probe_profiles.py",
+      "symbol": "CHILD_DEVICE_PROBE_PROFILE",
+      "literals": {
+        "8.4.3": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/profiles.py",
+      "symbol": "CORE_2026_9_1_AUTHORITY.image_version",
+      "literals": {
+        "2026.9.1": 1
+      },
+      "finding": "F2-2",
+      "reason": "Compiled Core table, the fallback when the signed Core release registry is off; new Cores come through the registry",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/profiles.py",
+      "symbol": "CORE_2026_9_1_AUTHORITY.tag",
+      "literals": {
+        "2026.9.1": 1
+      },
+      "finding": "F2-2",
+      "reason": "Compiled Core table, the fallback when the signed Core release registry is off; new Cores come through the registry",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/profiles.py",
+      "symbol": "CORE_2026_9_1_AUTHORITY.version",
+      "literals": {
+        "2026.9.1": 1
+      },
+      "finding": "F2-2",
+      "reason": "Compiled Core table, the fallback when the signed Core release registry is off; new Cores come through the registry",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/profiles.py",
+      "symbol": "CORE_2026_9_AUTHORITY.image_version",
+      "literals": {
+        "2026.9.0": 1
+      },
+      "finding": "F2-2",
+      "reason": "Compiled Core table, the fallback when the signed Core release registry is off; new Cores come through the registry",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/profiles.py",
+      "symbol": "CORE_2026_9_AUTHORITY.tag",
+      "literals": {
+        "2026.9.0": 1
+      },
+      "finding": "F2-2",
+      "reason": "Compiled Core table, the fallback when the signed Core release registry is off; new Cores come through the registry",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/profiles.py",
+      "symbol": "CORE_2026_9_AUTHORITY.version",
+      "literals": {
+        "2026.9.0": 1
+      },
+      "finding": "F2-2",
+      "reason": "Compiled Core table, the fallback when the signed Core release registry is off; new Cores come through the registry",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/profiles.py",
+      "symbol": "SUPPORTED_CORE_RELEASES",
+      "literals": {
+        "2026.7.2": 1,
+        "2026.8.0": 1,
+        "2026.8.1": 1
+      },
+      "finding": "F2-2",
+      "reason": "Compiled Core table, the fallback when the signed Core release registry is off; new Cores come through the registry",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
+      "symbol": "CORE_2026_9_DEVICE_ADAPTER_RELEASES",
+      "literals": {
+        "8.4.3": 1
+      },
+      "finding": "F2-3",
+      "reason": "Dead constant: no reader besides __all__ and the package re-export",
+      "expiry": "2.9.1 cleanup"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
+      "symbol": "CORE_2026_9_RELEASES",
+      "literals": {
+        "2026.9.0": 1,
+        "2026.9.1": 1
+      },
+      "finding": "F2-3",
+      "reason": "Dead constant: no reader besides __all__ and the package re-export",
+      "expiry": "2.9.1 cleanup"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
+      "symbol": "delegated_provider_compatibility",
+      "literals": {
+        "2026.10.0": 1,
+        "8.5.0": 1,
+        "8.6.0": 2,
+        "9.1.0": 1,
+        "9.1.2": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/source.py",
+      "symbol": "CORE_2026_9_VERSIONS",
+      "literals": {
+        "2026.9.0": 1,
+        "2026.9.1": 1
+      },
+      "finding": "F2-3",
+      "reason": "Dead constant: no reader besides the package re-export",
+      "expiry": "2.9.1 cleanup"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_mcp_readmission/ha_mcp.py",
+      "symbol": "_ERROR_ADAPTERS",
+      "literals": {
+        "9.1.0": 1,
+        "9.1.2": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/helper_value/contracts.py",
+      "symbol": "_SOURCES",
+      "literals": {
+        "8.4.3": 2,
+        "8.5.0": 2,
+        "8.6.0": 2,
+        "9.1.0": 2,
+        "9.1.2": 2
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/history_slices/contracts.py",
+      "symbol": "REVIEWED_VERSIONS",
+      "literals": {
+        "8.5.0": 1,
+        "8.6.0": 1,
+        "9.1.0": 1,
+        "9.1.2": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/history_slices/service.py",
+      "symbol": "_PARSERS",
+      "literals": {
+        "8.5.0": 1,
+        "8.6.0": 1,
+        "9.1.0": 1,
+        "9.1.2": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/history_slices/service.py",
+      "symbol": "_parse_9_1",
+      "literals": {
+        "9.1.0": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/history_slices/service.py",
+      "symbol": "_parse_9_1_2",
+      "literals": {
+        "9.1.2": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/contracts.py",
+      "symbol": "SUPERVISOR_PIN",
+      "literals": {
+        "2026.09.1": 1
+      },
+      "finding": "label",
+      "reason": "Supervisor or libsystemd provenance pin, emitted only in the result pins; nothing compares it",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/contracts.py",
+      "symbol": "TEXT_TIMESTAMP_PIN",
+      "literals": {
+        "2026.09.1": 1,
+        "2026.10.3": 1
+      },
+      "finding": "label",
+      "reason": "Supervisor or libsystemd provenance pin, emitted only in the result pins; nothing compares it",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
+      "symbol": "IDENTIFIERS_PIN",
+      "literals": {
+        "2026.09.1": 1
+      },
+      "finding": "label",
+      "reason": "Supervisor or libsystemd provenance pin, emitted only in the result pins; nothing compares it",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/power/contracts.py",
+      "symbol": "POWER_RELEASES",
+      "literals": {
+        "2026.9.2": 6,
+        "8.4.3": 3,
+        "8.5.0": 3,
+        "8.6.0": 3,
+        "9.1.0": 3,
+        "9.1.2": 3
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/ha_2026_8_device_compatibility.py",
+      "symbol": "ADAPTER_IDS_BY_HA_VERSION",
+      "literals": {
+        "2026.8.1": 1
+      },
+      "finding": "F2-4",
+      "reason": "Device adapter for ha-mcp 8.1.0-8.2.0 on Core 2026.8.x, a no-op on the supported pair; open whether ha-mcp 9.2.0 still has the split-entity join defect it repaired",
+      "expiry": "2.9.2 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/ha_2026_8_device_compatibility.py",
+      "symbol": "EXACT_HA_VERSION",
+      "literals": {
+        "2026.8.0": 1
+      },
+      "finding": "F2-4",
+      "reason": "Device adapter for ha-mcp 8.1.0-8.2.0 on Core 2026.8.x, a no-op on the supported pair; open whether ha-mcp 9.2.0 still has the split-entity join defect it repaired",
+      "expiry": "2.9.2 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/ha_2026_8_device_compatibility.py",
+      "symbol": "HA_2026_8_1_ADAPTER_ID",
+      "literals": {
+        "2026.8.1": 1
+      },
+      "finding": "F2-4",
+      "reason": "Device adapter for ha-mcp 8.1.0-8.2.0 on Core 2026.8.x, a no-op on the supported pair; open whether ha-mcp 9.2.0 still has the split-entity join defect it repaired",
+      "expiry": "2.9.2 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/ha_2026_8_device_compatibility.py",
+      "symbol": "REVIEWED_UPSTREAM_VERSIONS",
+      "literals": {
+        "8.1.0": 1,
+        "8.1.1": 1,
+        "8.2.0": 1
+      },
+      "finding": "F2-4",
+      "reason": "Device adapter for ha-mcp 8.1.0-8.2.0 on Core 2026.8.x, a no-op on the supported pair; open whether ha-mcp 9.2.0 still has the split-entity join defect it repaired",
+      "expiry": "2.9.2 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/operational_lifecycle.py",
+      "symbol": "_LIFECYCLE_ADDON_RESPONSE_CONTRACTS",
+      "literals": {
+        "7.14.1": 2,
+        "7.14.2": 2,
+        "8.0.0": 2,
+        "8.1.0": 2,
+        "8.1.1": 2,
+        "8.2.0": 2
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_blueprint.py",
+      "symbol": "ADAPTER",
+      "literals": {
+        "8.5.0": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_blueprint.py",
+      "symbol": "ADAPTER_BINDINGS",
+      "literals": {
+        "8.6.0": 2,
+        "9.1.0": 2,
+        "9.1.2": 2
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_blueprint.py",
+      "symbol": "VERSION",
+      "literals": {
+        "8.5.0": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_contracts.py",
+      "symbol": "EXACT_9_1_DASHBOARD_RELEASES",
+      "literals": {
+        "9.1.0": 1,
+        "9.1.2": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_contracts.py",
+      "symbol": "expected_contract_family",
+      "literals": {
+        "8.0.0": 1,
+        "8.1.0": 1,
+        "8.1.1": 1,
+        "8.2.0": 1,
+        "8.4.1": 1,
+        "8.4.3": 1,
+        "8.5.0": 1,
+        "8.6.0": 1,
+        "9.1.0": 1,
+        "9.1.2": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_dashboard.py",
+      "symbol": "COLLAPSIBLE_EMPTY_LIST_RELEASES",
+      "literals": {
+        "9.1.0": 1,
+        "9.1.2": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_dashboard.py",
+      "symbol": "EXACT_GETTER_RELEASES",
+      "literals": {
+        "8.5.0": 1,
+        "9.1.0": 1,
+        "9.1.2": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_dashboard.py",
+      "symbol": "REVIEWED_SERVER_VERSION",
+      "literals": {
+        "7.13.0": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_dashboard.py",
+      "symbol": "STORED_CONFIG_REQUIRED_RELEASES",
+      "literals": {
+        "9.1.0": 1,
+        "9.1.2": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py",
+      "symbol": "REVIEWED_VERSIONS",
+      "literals": {
+        "8.5.0": 1,
+        "9.1.0": 1,
+        "9.1.2": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_fan.py",
+      "symbol": "ENTRY",
+      "literals": {
+        "8.4.3": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_fan.py",
+      "symbol": "FanProvider._authority",
+      "literals": {
+        "8.4.3": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_history_9_1.py",
+      "symbol": "PROJECTION_ID",
+      "literals": {
+        "9.1.0": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py",
+      "symbol": "_FINGERPRINTS",
+      "literals": {
+        "8.4.3": 3,
+        "8.5.0": 3,
+        "8.6.0": 3,
+        "9.1.0": 3,
+        "9.1.2": 3
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py",
+      "symbol": "_SOURCES",
+      "literals": {
+        "8.4.3": 1,
+        "8.5.0": 1,
+        "8.6.0": 1,
+        "9.1.0": 1,
+        "9.1.2": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+      "symbol": "UpstreamReadGateway.fan_provider_authority_token",
+      "literals": {
+        "8.4.3": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+      "symbol": "UpstreamReadGateway.helper_value_provider_authority_token",
+      "literals": {
+        "8.4.3": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+      "symbol": "UpstreamReadGateway.power_provider_authority_token",
+      "literals": {
+        "8.4.3": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_8_6.py",
+      "symbol": "ADAPTER",
+      "literals": {
+        "8.6.0": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1.py",
+      "symbol": "ADAPTER",
+      "literals": {
+        "9.1.0": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1.py",
+      "symbol": "ADAPTER_9_1_2",
+      "literals": {
+        "9.1.2": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1.py",
+      "symbol": "VERSION",
+      "literals": {
+        "9.1.0": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1.py",
+      "symbol": "VERSION_9_1_2",
+      "literals": {
+        "9.1.2": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py",
+      "symbol": "GROUP_FIELDS_UNAVAILABLE_WARNING",
+      "literals": {
+        "9.1.0": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py",
+      "symbol": "TEMPLATE_FIELDS_UNAVAILABLE_WARNING",
+      "literals": {
+        "9.1.0": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_search_8_6.py",
+      "symbol": "ADAPTER",
+      "literals": {
+        "8.6.0": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_search_8_6.py",
+      "symbol": "_trusted_release",
+      "literals": {
+        "8.6.0": 2
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_search_8_6.py",
+      "symbol": "search_capability_contract.version",
+      "literals": {
+        "8.6.0": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/entity_filter.py",
+      "symbol": "CORE_PIN",
+      "literals": {
+        "2026.10.1": 1
+      },
+      "finding": "copied-source pin",
+      "reason": "Provenance pin of source copied from Core 2026.10.1 (SLUGIFY_PIN also ha-mcp 9.1.2); see the G1 mirror-manifest design note",
+      "expiry": "G1 mirror manifest [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy.py",
+      "symbol": "_load_reviewed_release",
+      "literals": {
+        "8.1.0": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy.py",
+      "symbol": "_reviewed_artifact_evidence",
+      "literals": {
+        "8.6.0": 1,
+        "9.1.0": 1,
+        "9.1.2": 1
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    },
+    {
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy.py",
+      "symbol": "load_upstream_tool_policy",
+      "literals": {
+        "8.6.0": 2
+      },
+      "finding": "history",
+      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
+      "expiry": "HAMCP-456 triage [JOSH]"
+    }
+  ]
+}
