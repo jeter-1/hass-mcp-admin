@@ -60,7 +60,12 @@ from ..f3_dashboard.errors import (
 )
 from ..f3_dashboard.planning import create_dashboard_update_plan as build_dashboard_update
 from ..f3_dashboard.semantic_diff import REDACTED_PREVIEW
-from ..f3_dashboard.constants import ARTIFACT_SCHEMA
+from ..f3_dashboard.constants import (
+    ARTIFACT_SCHEMA,
+    MAX_DESCRIPTION_CHARS,
+    MAX_POINTER_CHARS,
+    MAX_TITLE_CHARS,
+)
 from ..f3_dashboard.json_codec import engineering_sha256
 from ..f3_dashboard.serialization import (
     private_proposal_projection,
@@ -5686,10 +5691,16 @@ class ChangeGovernanceService:
         # Engineering's own marker, kept by object identity only.
         review_registry = ReferenceMarkerRegistry()
         review_registry.register_output(REDACTED_PREVIEW)
+        # HAMCP-292: every projected string stays whole up to its reviewed
+        # input bound (description 2,000, patch path 1,024, title 160). A
+        # shorter cut appended Engineering's own truncation suffix, which the
+        # strict creation gate then refused as a marker collision.
         sanitation = sanitize_untrusted_data(
             public_projection,
             known_secrets=self.sensitive_values,
-            max_string=512,
+            max_string=max(
+                MAX_DESCRIPTION_CHARS, MAX_POINTER_CHARS, MAX_TITLE_CHARS
+            ),
             registry=review_registry,
         )
         if sanitation.failed_closed:
@@ -9892,7 +9903,7 @@ class ChangeGovernanceService:
         summary = {
             "plan_id": plan.plan_id,
             "title": plan.title[:160],
-            "description": plan.description[:1000],
+            "description": plan.description[:MAX_DESCRIPTION_CHARS],
             "plan_hash": self.plan_hash(plan),
             "plan_version": plan.plan_version,
             "approval_kind": plan.approval.approval_kind,
