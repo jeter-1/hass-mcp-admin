@@ -1346,6 +1346,16 @@ path.
   slot is held for the whole call, so a concurrent `get_logbook` is refused as
   busy. A spent budget or an unsplittable window is partial and names the
   uncovered automations and intervals; any other failure is an error.
+- **Reply size.** The 200-automation cap alone does not bound the reply, since
+  an entity ID may be 255 characters. Before any logbook read (in all mode,
+  after the states read), the call computes a worst-case reply (every row at
+  its longest, every batch uncovered, the most intervals a call can leave,
+  plus a 2,000-character reserve) and refuses a set that would not fit the
+  response limit (60,000 characters, or a smaller `response_size_limit`
+  option) with `response_size_exceeds_bound`, which says to name up to 10 with
+  `automation_ids` instead. A success the shared response bound would still
+  page or cut is returned as that error, so a success always lists every
+  counted automation.
 - **Output.** Only validated automation IDs, counts, first and last run
   times, interval bounds, request counts and fixed reason and note strings.
   Logbook names, messages, sources, context IDs and state values are never

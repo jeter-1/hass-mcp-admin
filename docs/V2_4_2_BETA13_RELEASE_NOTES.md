@@ -15,40 +15,37 @@ Per-release records: [release index](RELEASES.md).
 ## Current state
 
 The version is materialized on `release/2.9.1` at its catch-up with `main`
-(b4dd3da3, 2.4.2-beta.12). Nothing is published or deployed.
+(b4dd3da3, 2.4.2-beta.12). Every 2.9.1 item pull request below has merged
+into `release/2.9.1`, whose tip before this docs update is 99b41cc5. #496
+(HAMCP-474 D1) is left open as a draft and is not part of this build.
+Nothing is published or deployed.
 
 ## Items
 
-An item that has not landed is not part of this release, and these notes
-make no claim about its behavior. The final release pull request describes
-each landed item's behavior from the landed source.
+The pull request, merge commit and state of each row were read from GitHub
+on 2026-11-24. An item or part that has not landed is not part of this
+release, and these notes make no claim about its behavior. The final release
+pull request binds each landed item's evidence.
 
-Landed, tooling and tests only (no runtime change):
+| Item | Pull request | Merge | State | What landed | What did not |
+| --- | --- | --- | --- | --- | --- |
+| HAMCP-456 | #487 | 584b31da | merged | Version-gate lint: `tests/test_version_gate_lint.py` fails on an exact Core or ha-mcp version literal in the Engineering runtime that is outside `ci/support-window.yaml` and not listed in `ci/version-gate-allowlist.json` | No runtime change (tests only) |
+| HAMCP-458 | #486 | c5f160c0 | merged | Release tooling: the release scripts refuse a guessed base and check the test venv, and a readiness sweep is added | No runtime change (tooling only) |
+| HAMCP-472 | none | none | moved to native search | Diagnosis only. It did not reproduce: the HA Admin replay's domain-only and query-plus-domain `ha_search` calls returned entities. The source cause was found: a call that passes `search_types` still skips entities on ha-mcp 9.2.0 | No 2.9.1 code either way. The `search_types` path stays until the native search provider (HAMCP-481) ships |
+| HAMCP-481 | #491 | e51968a2 | merged, design only | [`HAMCP_481_NATIVE_SEARCH_DESIGN.md`](HAMCP_481_NATIVE_SEARCH_DESIGN.md), revision 4, whose own status is draft for review, not approved: native search with parity to ha-mcp 9.2.0 for entities, automations, scripts, scenes and helpers, including configuration and reference matching with identity-only results; dashboard search and flow-helper options matching stay on delegated sub-calls; partial only with a reason | The build, planned for the next release. No runtime change |
+| HAMCP-473 | #492 | 8ed1b99b | merged | `configuration_integrity_analysis` gains `detail_level` `compact` (up to 100 findings a page; 12 allowlisted keys; no explanation, remediation or evidence text; at most three configuration paths, with `configuration_path_count`) and an optional `severities` filter (default all). A narrowed query carries `severity_filter` (`excluded_finding_count`, `excluded_by_severity`, `truncated_selected_count`) on every page, and hidden findings still count toward `final_assessment`. Both inputs are bound to the cursor (`stale_cursor` if either changes mid-walk). A cut page is the largest that fits, found by binary search | The tool's audit record does not record `severities`, and the health counters add a filtered query's filtered counts, not the classified totals (both disclosed in [`CONFIGURATION_INTEGRITY_ANALYSIS.md`](CONFIGURATION_INTEGRITY_ANALYSIS.md)). The 2,000-finding bound is unchanged, and standard output is unchanged with `severities` omitted |
+| HAMCP-474 D5, D6 | #497 | 0f52b0e0 | merged | `automation_reliability_batch_analysis` adds `source_limitations` (`source_type`, a closed-set `reason`, `affects_result_status`, `item_count`; the system log is named `retention_unknown` and does not change the result status) and root-cause detail (`confidence`, `current_state`, `representative_configuration_paths`, `recommended_investigation`, `governed_change_required`), with `root_cause_detail` `full`, or `reduced` under the 60,000-character bound | Near the bound a response can hold one automation fewer than before: the 20th becomes `skipped_budget` and is listed in `coverage.remaining_automation_ids`. Finding IDs and evidence references stay with the single-automation tool. D2, D3 and D4 were split to HAMCP-482, HAMCP-483 and HAMCP-484 |
+| HAMCP-474 D1 | #496 | none | deferred to HAMCP-487; #496 left open as a draft | Nothing | A deep automation whose configuration path is long is still reported as possibly touching any target. The fix is HAMCP-487 (exact coverage without changing stored prepared-task hashes) |
+| HAMCP-475 | #493 | 6adccba0 | merged | `get_audit_log` fits each page to `response_size_limit` without cutting a record, and every response ends with one `{"_page": {"returned", "next_cursor", "complete"}}` line. An optional opaque `cursor` (HMAC-signed with a per-process key) walks older records. A bad cursor is `invalid_cursor`; a changed `event` or a rotated, truncated or rewritten log is `stale_cursor`. Non-UTF-8 rows are counted as `skipped_undecodable`. The tool's audit record stores `cursor_present` only | The rotated `audit.jsonl.1` is not read. Cursors do not survive an add-on restart or upgrade. Redaction is unchanged (at write time) |
+| HAMCP-476 | #498 | c6d6b538 | merged | One read-only native tool, `get_automation_run_counts`: 1-10 named automations, or every automation (at most 200, ranked by runs), over a window of 24 hours by default and at most 168, within fixed GET and time budgets. `partial` is set exactly when `partial_reasons` is non-empty. A set whose worst-case reply would not fit the response limit is refused with `response_size_exceeds_bound` before any logbook read | Failed-condition triggers and runs the automation's mode dropped are not counted. A named automation is not checked to exist (it counts 0 with a note). No paging |
+| HAMCP-293 | #494 | 99b41cc5 | merged, middle path | An exact automation update plan keeps the legacy level, apply decision, evidence and warnings unchanged, and adds reasons that name what changed: the changed fields, the changed action steps, and each high-risk call instance by service and path as added or changed, moved, removed, or present, unchanged | No risk level is lowered; a provable lowering rule is follow-up HAMCP-486 (after 2.9.1). A create, an update without the current configuration, and other operations keep the legacy reasons only. Stored plans are not re-classified |
+| HAMCP-292 | #495 | 010de1ff | merged | The dashboard update plan's review projection keeps strings whole up to 2,000 characters (the largest reviewed input bound) instead of cutting at 512, so a description of 513 to 2,000 characters, or a long patch path, is no longer refused as `plan_contains_prohibited_sensitive_data` | Secret detection is unchanged and runs per field; a secret split across fields is still not detected (pre-existing) |
 
-- **Version-gate lint** (HAMCP-456, #487). `tests/test_version_gate_lint.py`
-  fails on an exact Core or ha-mcp version literal in the Engineering runtime
-  that is outside `ci/support-window.yaml` and not listed in
-  `ci/version-gate-allowlist.json`.
-- **Release tooling** (HAMCP-458, #486). The release scripts refuse a
-  guessed base and check the test venv, and a readiness sweep is added.
-
-Planned, in this order:
-
-| Item | Scope | State |
-| --- | --- | --- |
-| HAMCP-472 | `ha_search` with a domain filter returns no entities where `search_entities` finds them, and every search reports `partial` with one replaced warning. A read-only diagnosis comes first; a fix follows if the cause is Engineering's | moved to native search (the HA Admin replay's domain-only and query-plus-domain calls returned entities; a call that passes `search_types` still skips entities on ha-mcp 9.2.0, and that path stays until the native provider ships; no 2.9.1 code either way) |
-| HAMCP-481 | Native search design only in this build (parity with ha-mcp 9.2.0 for entities, automations, scripts, scenes and helpers, including configuration and reference matching with identity-only results; dashboard search and flow-helper options matching stay on delegated sub-calls; partial only with a reason): [`HAMCP_481_NATIVE_SEARCH_DESIGN.md`](HAMCP_481_NATIVE_SEARCH_DESIGN.md). The build is planned for the next release | not landed |
-| HAMCP-473 | `configuration_integrity_analysis` paging and filters | not landed |
-| HAMCP-474 | Analysis coverage gaps: large automations, scripts and templates, the default dashboard, and the system-log partial reason | not landed |
-| HAMCP-475 | `get_audit_log` smaller pages with a cursor | not landed |
-| HAMCP-476 | Per-automation run count over a time window (a new native read) | not landed |
-| HAMCP-293 | Automation plan risk classified from the change, not the automation's existing actions | not landed |
-| HAMCP-292 | Sensitive-data false positive on plan description wording | not landed |
-
-Not in this build: native lifecycle and identity (Phase 1), the restart
-verification fixes (HAMCP-479, HAMCP-480), the dashboard rule profile
-(HAMCP-444), the protocol ADR (HAMCP-384) and the Core mirror refresh
-(HAMCP-462). No lifecycle work is planned for this build.
+Not in this build: native lifecycle and identity (Phase 1), native search
+(HAMCP-481 build), the restart verification fixes (HAMCP-479, HAMCP-480), the
+dashboard rule profile (HAMCP-444), the protocol ADR (HAMCP-384), the Core
+mirror refresh (HAMCP-462), HAMCP-474 D1 (HAMCP-487) and the HAMCP-293
+lowering rule (HAMCP-486). There is no lifecycle work in this build.
 
 ## Evidence
 
