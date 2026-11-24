@@ -688,6 +688,19 @@ class ToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreater(len(self.home.calls), 1)
         self.assertFalse(logbook.LOGBOOK._active)
 
+    def test_only_an_uncut_success_counts_as_whole(self):
+        row = {"automation_id": "automation.synthetic_a", "runs": 0, "first_run": None, "last_run": None,
+               "complete": True}
+        whole = {"success": True, "data": {"automation_count": 2, "counts": [row, row], "uncovered": []}}
+        self.assertTrue(tool_module._whole(whole))
+        for cut in ({**whole, "response_completeness": {"truncated": True}},
+                    {**whole, "data": {**whole["data"], "counts": [row]}},
+                    {**whole, "data": {"automation_count": 2, "counts": [row, row]}},
+                    {**whole, "data": {**whole["data"], "counts": None}},
+                    {"success": True}):
+            with self.subTest(cut=cut):
+                self.assertFalse(tool_module._whole(cut))
+
     async def test_errors_are_never_partial(self):
         self.home.states = None
         result = await self.call({"all_automations": True})
