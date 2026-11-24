@@ -13,20 +13,112 @@ tool-specific bounded intent. They exclude access secrets, authentication
 material, authenticated URLs, raw cursors, full configuration, traces, logs,
 history, diffs, and unbounded analytical evidence.
 
-`get_audit_log(lines=50, event="")` is read-only. Its effective line count is
-always clamped to 1 through 500: zero and negative values produce at most one
-line, the default remains 50, and values above 500 produce at most 500. Event
+`get_audit_log(lines=50, event="", cursor="")` is read-only. Its effective
+page size is always clamped to 1 through 500: zero and negative values produce
+at most one record, the default remains 50, and values above 500 produce at
+most 500. Event
 filtering occurs without disabling the bound, and existing global response
 sanitization still applies. RC2dev7 parses each bounded JSONL object and
 compares only the exact, case-sensitive top-level `event` value. Nested tool
 arguments, messages, exceptions, and metadata cannot satisfy a filter. The
 reader returns the most recent matching records in their existing order.
 
-Blank, malformed, truncated, non-object, and records larger than 64 KiB are
-skipped without returning their raw content. Later valid records remain
+Blank, malformed, truncated, non-UTF-8, non-object, and records larger than
+64 KiB are skipped without returning their raw content. Only two skips are
+counted in the trailer (see below): a non-UTF-8 row (`skipped_undecodable`) and
+a record that alone exceeds the response limit (`omitted_oversized`). The other
+skips are silent, so `complete: true` does not mean every line in the log was a
+record. Later valid records remain
 queryable. Valid historical objects without a string event remain available to
-unfiltered reads but cannot match a filtered read. The existing plain JSONL and
-`No audit log yet.` / `No matching entries.` response contract is preserved.
+unfiltered reads but cannot match a filtered read. Records are returned as the
+verbatim JSONL lines written to the log; `No audit log yet.` and
+`No matching entries.` remain the empty-page messages.
+
+## Pages and the cursor (HAMCP-475)
+
+A page is fitted to `response_size_limit` (UTF-8 bytes, trailer included). When
+the newest `lines` matching records do not fit, the page keeps the newest
+records that do and drops older ones, which the cursor then returns. A record
+is never cut. Every response ends with exactly one trailer line:
+
+```json
+{"_page": {"returned": 12, "next_cursor": "<opaque>", "complete": false}}
+```
+
+- `returned` is the number of records on the page (`0` on an empty page).
+- `next_cursor` is `null` when no older matching record remains. Otherwise,
+  passing it back with the same `event` returns the next older page. `lines`
+  may change between pages.
+- `complete` is `true` exactly when `next_cursor` is `null`.
+- A record that alone exceeds the limit cannot be returned. The page then holds
+  no records, the cursor moves past that record, and the trailer adds
+  `"omitted_oversized": 1`. The key is absent otherwise. Records are written
+  at most `audit_max_payload_chars` (default 8,192) and the default limit is
+  60,000, so this applies only when the limit is configured below the payload
+  bound, or to a historical record larger than the limit and within the
+  64 KiB read bound.
+- `skipped_undecodable` counts the non-UTF-8 rows skipped in the byte range the
+  page covered. Over a walk each such row is counted once, on one page. The key
+  is absent when the count is zero.
+
+A client walks the whole log by calling with no cursor (the newest page) and
+following `next_cursor` until `complete` is true. Every matching record present
+in the file when the walk started is returned exactly once, in file order
+across pages read oldest-last. Records written during a walk are not returned
+by it; a new walk starts at the then-newest record. A page reads only whole,
+newline-terminated rows inside the file size captured when it opens the log. A
+last row still being written, or one completed after that point, is left out
+and returned by a later walk.
+
+The cursor is opaque and signed (HMAC-SHA256 with a key generated per process).
+It carries a format version, a byte offset into the log, a truncated SHA-256 of
+the log file's identity (device and inode), a truncated SHA-256 of the `event`
+filter, and a truncated keyed digest (HMAC-SHA256 with the same per-process
+key) of the log bytes before the offset. It carries no record content, no event
+name and no path, and is at most 512 characters. The keyed digest cannot be
+matched against log bytes offline. The cursor's signature is checked before the
+log is read:
+
+- a malformed, tampered or overlong cursor, or one signed by another process
+  (for example, after a restart), is refused with `invalid_cursor`;
+- a different `event` filter, a rotated or removed log (rotation replaces the
+  file at 5 MiB), a log shorter than the cursor's offset, or a log whose bytes
+  before the offset changed is refused with
+  `stale_cursor`. The last check covers a log rewritten in place and a second
+  rotation whose new file reuses the freed inode, since the file identity alone
+  can repeat. Appending to the log does not make a cursor stale. Start a new
+  walk.
+
+Cursors do not survive an add-on restart or upgrade: the signing key exists
+only in process memory, so every outstanding cursor is then `invalid_cursor`.
+After a restart, start a new walk without a cursor.
+
+Redaction is unchanged: records are redacted when written, and the reader
+returns them as written. The reader reads only the current log, not the
+rotated `audit.jsonl.1`.
+
+A `get_audit_log` call's own audit record stores `lines`, `event` and
+`cursor_present` (a boolean), as the other cursor tools do. The cursor itself
+is never recorded, whether the call succeeds or is refused.
+
+### Migration review (public input schema)
+
+- Additive only: one optional input, `cursor` (string, default empty). `lines`
+  and `event` keep their names, types and defaults; no input is required.
+- Output: every response now ends with the `_page` trailer line, including
+  the two empty-page messages. A client that parsed every line as an audit
+  record must skip the last line (its only top-level key is `_page`). This is
+  the one visible change for existing calls. The trailer's three fields are
+  always present; `omitted_oversized` and `skipped_undecodable` are added only
+  when nonzero.
+- A non-UTF-8 row used to fail the whole call; it is now skipped and counted.
+- The tool's own audit record replaces a raw `cursor` with `cursor_present`.
+- A default call (`lines=50`) whose newest 50 records exceed the response limit
+  now returns fewer records plus a cursor, instead of an oversized response.
+- The description gains two lines naming the trailer and the walk. Tool count,
+  category, risk, route, provider and policy are unchanged.
+- Cursors live in process memory (the signing key) and never survive a
+  restart or an upgrade. There is no persisted format.
 
 A refused `upsert_automation` is recorded as write-capable intent rejected
 before provider dispatch. Only the bounded automation ID and

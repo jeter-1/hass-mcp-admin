@@ -160,6 +160,8 @@ class PublicBoundaryTests(unittest.IsolatedAsyncioTestCase):
         current = without_hamcp311_descriptor_changes(self, current)
         from hamcp294_descriptor_changes import without_hamcp294_descriptor_changes  # + HAMCP-294
         current = without_hamcp294_descriptor_changes(self, current)
+        from hamcp475_descriptor_changes import without_hamcp475_descriptor_changes  # + HAMCP-475
+        current = without_hamcp475_descriptor_changes(self, current)
         from hamcp298_descriptor_changes import without_hamcp298_descriptor_changes  # + HAMCP-298
         current = without_hamcp298_descriptor_changes(self, current)
         self.assertEqual({name: current[name] for name in baseline["descriptors"]}, baseline["descriptors"])

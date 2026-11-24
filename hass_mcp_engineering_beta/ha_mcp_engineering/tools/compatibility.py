@@ -10,9 +10,13 @@ ha_mcp_engineering``) is the sole server, owning inbound authentication,
 rate limiting and audit (HAMCP-200 finding 15).
 """
 
+import base64
+import hashlib
+import hmac
 import json
 import os
 import re
+import secrets
 import time
 from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
@@ -1008,24 +1012,235 @@ def _parsed_audit_record(row: str) -> dict[str, Any] | None:
     return record if isinstance(record, dict) else None
 
 
+# HAMCP-475: a page is fitted to the response limit and always ends with one
+# trailer line. The cursor is signed with a per-process key and carries only
+# a byte offset and three digests (the log file's identity, the event filter,
+# and a keyed digest of the log bytes before the offset), never record
+# content.
+AUDIT_PAGE_TRAILER_KEY = "_page"
+MAX_AUDIT_CURSOR_CHARS = 512
+_AUDIT_CURSOR_KEY = secrets.token_bytes(32)
+_AUDIT_CURSOR_FIELDS = frozenset({"v", "file", "event", "before", "prefix"})
+
+
+def _audit_digest(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:32]
+
+
+def _audit_file_identity(stat: os.stat_result) -> str:
+    return _audit_digest(f"{stat.st_dev}:{stat.st_ino}")
+
+
+def _audit_prefix_digest(mac: Any) -> str:
+    # Keyed, so the digest of the bytes before a cursor's offset cannot be
+    # recognized offline.
+    return mac.hexdigest()[:32]
+
+
+def _encode_audit_cursor(*, file: str, event: str, before: int, prefix: str) -> str:
+    payload = json.dumps(
+        {
+            "v": 1,
+            "file": file,
+            "event": event,
+            "before": int(before),
+            "prefix": prefix,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    signature = hmac.new(_AUDIT_CURSOR_KEY, payload, hashlib.sha256).digest()
+    return (
+        base64.urlsafe_b64encode(payload).decode().rstrip("=")
+        + "."
+        + base64.urlsafe_b64encode(signature).decode().rstrip("=")
+    )
+
+
+def _decode_audit_cursor(cursor: str) -> dict[str, Any]:
+    try:
+        if not isinstance(cursor, str) or len(cursor) > MAX_AUDIT_CURSOR_CHARS:
+            raise ValueError("cursor length")
+        payload_part, signature_part = cursor.split(".", 1)
+        payload = base64.urlsafe_b64decode(
+            payload_part + "=" * (-len(payload_part) % 4)
+        )
+        signature = base64.urlsafe_b64decode(
+            signature_part + "=" * (-len(signature_part) % 4)
+        )
+        if (
+            base64.urlsafe_b64encode(payload).decode().rstrip("=") != payload_part
+            or base64.urlsafe_b64encode(signature).decode().rstrip("=")
+            != signature_part
+        ):
+            raise ValueError("cursor encoding is not canonical")
+        expected = hmac.new(_AUDIT_CURSOR_KEY, payload, hashlib.sha256).digest()
+        if not hmac.compare_digest(signature, expected):
+            raise ValueError("cursor signature mismatch")
+        value = json.loads(payload.decode("utf-8"))
+        if (
+            not isinstance(value, dict)
+            or set(value) != _AUDIT_CURSOR_FIELDS
+            or type(value["v"]) is not int
+            or value["v"] != 1
+            or type(value["before"]) is not int
+            or value["before"] < 0
+            or not all(
+                isinstance(value[field], str) for field in ("file", "event", "prefix")
+            )
+        ):
+            raise ValueError("cursor fields")
+        return value
+    except Exception as exc:
+        raise GovernanceError(
+            ErrorCode.INVALID_CURSOR,
+            details={"field": "cursor", "reason": "integrity_or_format_invalid"},
+        ) from exc
+
+
+def _audit_page_trailer(
+    returned: int,
+    next_cursor: str | None,
+    complete: bool,
+    oversized: int = 0,
+    undecodable: int = 0,
+) -> str:
+    page: dict[str, Any] = {
+        "returned": returned,
+        "next_cursor": next_cursor,
+        "complete": complete,
+    }
+    if oversized:
+        page["omitted_oversized"] = oversized
+    if undecodable:
+        page["skipped_undecodable"] = undecodable
+    return json.dumps({AUDIT_PAGE_TRAILER_KEY: page}) + "\n"
+
+
 @mcp.tool()
-async def get_audit_log(lines: int = 50, event: str = "") -> str:
+async def get_audit_log(lines: int = 50, event: str = "", cursor: str = "") -> str:
     """Tail this server's own audit log (tool calls, auth failures, rate
     limit events). Optional event filter: tool_call, auth_failure,
-    auth_failure_throttled, rate_limited."""
+    auth_failure_throttled, rate_limited.
+    Pages fit the response limit; the last line is always a _page trailer.
+    To read older entries, pass its next_cursor until complete is true."""
+    claim = _decode_audit_cursor(cursor) if cursor else None
+    event_binding = _audit_digest(event)
+    if claim is not None and claim["event"] != event_binding:
+        raise GovernanceError(
+            ErrorCode.STALE_CURSOR,
+            details={"field": "cursor", "reason": "query_changed"},
+        )
     path = os.environ.get("AUDIT_PATH", "/data/audit.jsonl")
     if not os.path.exists(path):
-        return "No audit log yet."
+        if claim is not None:
+            raise GovernanceError(
+                ErrorCode.STALE_CURSOR,
+                details={"field": "cursor", "reason": "audit_log_rotated"},
+            )
+        return "No audit log yet.\n" + _audit_page_trailer(0, None, True)
     effective_lines = max(1, min(int(lines), 500))
     from collections import deque
 
-    rows = deque(maxlen=effective_lines)
-    with open(path, encoding="utf-8") as f:
-        for row in f:
+    # Each kept row is (line start offset, verbatim line text, keyed digest
+    # state of every byte before the row, count of non-UTF-8 rows before it).
+    # A page reports the non-UTF-8 rows inside the byte range it covers, so a
+    # walk counts each one once, and the count is a subtraction, not a rescan.
+    rows: deque[tuple[int, str, Any, int]] = deque(maxlen=effective_lines)
+    undecodable = 0
+    matched = 0
+    prefix_mac = hmac.new(_AUDIT_CURSOR_KEY, digestmod=hashlib.sha256)
+    with open(path, "rb") as f:
+        stat = os.fstat(f.fileno())
+        identity = _audit_file_identity(stat)
+        if claim is not None and (
+            claim["file"] != identity or claim["before"] > stat.st_size
+        ):
+            # Rotation replaces the file, so a cursor's offsets no longer
+            # address the records it was walking.
+            raise GovernanceError(
+                ErrorCode.STALE_CURSOR,
+                details={"field": "cursor", "reason": "audit_log_rotated"},
+            )
+        end = claim["before"] if claim is not None else stat.st_size
+        offset = 0
+        for raw in f:
+            start = offset
+            # Only whole rows inside the snapshot count. A row still being
+            # written, or completed past the snapshot, is left for a later
+            # walk.
+            if start + len(raw) > end or not raw.endswith(b"\n"):
+                break
+            offset += len(raw)
+            state = prefix_mac.copy()
+            prefix_mac.update(raw)
+            try:
+                row = raw.decode("utf-8")
+            except UnicodeDecodeError:
+                undecodable += 1
+                continue
             record = _parsed_audit_record(row)
             if record is None:
                 continue
             if event and not audit_record_matches_event(record, event):
                 continue
-            rows.append(row)
-    return "".join(rows) or "No matching entries."
+            matched += 1
+            rows.append((start, row, state, undecodable))
+    if claim is not None and (
+        offset != end
+        or not hmac.compare_digest(_audit_prefix_digest(prefix_mac), claim["prefix"])
+    ):
+        # The bytes before the cursor changed in place (same file, rewritten
+        # or regrown), so its offset no longer addresses the same records.
+        raise GovernanceError(
+            ErrorCode.STALE_CURSOR,
+            details={"field": "cursor", "reason": "audit_log_rewritten"},
+        )
+    if not rows:
+        return "No matching entries.\n" + _audit_page_trailer(
+            0, None, True, undecodable=undecodable
+        )
+    page = list(rows)
+    budget = SETTINGS.response_size_limit
+    sizes = [len(row.encode("utf-8")) for _, row, _, _ in page]
+    # Keep the newest rows that fit with the trailer; the cursor resumes at
+    # the oldest returned row.
+    kept = len(page)
+    total = sum(sizes)
+    while kept:
+        older = matched > kept
+        trailer = _audit_page_trailer(
+            kept,
+            _encode_audit_cursor(
+                file=identity,
+                event=event_binding,
+                before=page[-kept][0],
+                prefix=_audit_prefix_digest(page[-kept][2]),
+            )
+            if older
+            else None,
+            not older,
+            undecodable=undecodable - (page[-kept][3] if older else 0),
+        )
+        if total + len(trailer.encode("utf-8")) <= budget:
+            return "".join(row for _, row, _, _ in page[-kept:]) + trailer
+        total -= sizes[-kept]
+        kept -= 1
+    # The newest row alone exceeds the limit. It is skipped, never cut, and
+    # the cursor moves past it so a walk still makes progress.
+    newest_start, _, newest_prefix, newest_skipped_before = page[-1]
+    older = matched > 1
+    return _audit_page_trailer(
+        0,
+        _encode_audit_cursor(
+            file=identity,
+            event=event_binding,
+            before=newest_start,
+            prefix=_audit_prefix_digest(newest_prefix),
+        )
+        if older
+        else None,
+        not older,
+        oversized=1,
+        undecodable=undecodable - (newest_skipped_before if older else 0),
+    )

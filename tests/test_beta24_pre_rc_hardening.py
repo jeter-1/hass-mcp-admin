@@ -13,6 +13,7 @@ BETA = ROOT / "hass_mcp_engineering_beta"
 sys.path.insert(0, str(BETA))
 
 from ha_mcp_engineering.application import validate_settings  # noqa: E402
+from tests.support.audit_pages import audit_page_rows  # noqa: E402
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
 from ha_mcp_engineering.configuration import Settings  # noqa: E402
 from ha_mcp_engineering.errors import ConfigurationError  # noqa: E402
@@ -385,7 +386,7 @@ class AuditLogBoundTests(unittest.IsolatedAsyncioTestCase):
                             if requested is None
                             else await compatibility.get_audit_log(lines=requested)
                         )
-                        self.assertEqual(len(rendered.splitlines()), expected)
+                        self.assertEqual(len(audit_page_rows(rendered)), expected)
 
     async def test_event_filter_remains_bounded(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -397,7 +398,7 @@ class AuditLogBoundTests(unittest.IsolatedAsyncioTestCase):
             path.write_text("\n".join(rows) + "\n", encoding="utf-8")
             with patch.dict(os.environ, {"AUDIT_PATH": str(path)}):
                 rendered = await compatibility.get_audit_log(lines=3, event="auth_failure")
-            self.assertEqual(len(rendered.splitlines()), 3)
+            self.assertEqual(len(audit_page_rows(rendered)), 3)
             self.assertNotIn('"event": "tool_call"', rendered)
 
 
