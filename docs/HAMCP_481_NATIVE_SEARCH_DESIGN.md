@@ -1,12 +1,14 @@
 # HAMCP-481 native search — design
 
-Status: **draft for review; not approved.** Docs only. Revision 2, the
-correction batch for the Cursor review and the architect review of revision 1
-(head `4cd3a430`), with J2 applied as decided. The build is planned for the
-release after 2.9.1, not for 2.9.1 (2.4.2-beta.13). Nothing here authorizes
-a runtime, schema, routing, protected-path, version or release change,
-deployment, or live Home Assistant or Engineering access. No decision is open
-for Josh in this revision.
+Status: **draft for review; not approved.** Docs only. Revision 3, the
+correction batch for Cursor's round-2 review of revision 2 (head `3ace9227`).
+Revision 2 was the correction batch for the Cursor review and the architect
+review of revision 1 (head `4cd3a430`), with J2 applied as decided. The build
+is planned for the release after 2.9.1, not for 2.9.1 (2.4.2-beta.13).
+Nothing here authorizes a runtime, schema, routing, protected-path, version or
+release change, deployment, or live Home Assistant or Engineering access. No
+decision is open for Josh in this revision. One build gate is new: the source
+of the ha-mcp visibility state (§3.7).
 
 - Register: HAMCP-481. Related rows:
   - HAMCP-472, the `ha_search` audit finding this design absorbs;
@@ -29,7 +31,10 @@ for Josh in this revision.
   - Cursor `cursor-491-native-search-design.md`: C1, C2, C3, P1, D1, R1, B1
     and L1, all accepted;
   - the architect review `2026-11-24-491-hamcp481-native-search-design.md`:
-    N1 to N4, plus the author self-review S1 to S5.
+    N1 to N4, plus the author self-review S1 to S5;
+  - Cursor round 2, `cursor-hass-mcp-admin-491-r2.md`: r2-S1, r2-S2, r2-S3,
+    r2-M1 and r2-M2, all corrected as Cursor wrote them, as the architect
+    directed. The `r2-` prefix keeps them apart from the self-review S1 to S5.
 - Base: `release/2.9.1` at `774328e0` (2.4.2-beta.13 declared).
   - Engineering citations are relative to
     `hass_mcp_engineering_beta/ha_mcp_engineering/` at that base.
@@ -68,11 +73,14 @@ It has these properties:
 - **Identity-only results.** Configuration bodies are read for matching but
   never returned.
 - **Dashboards stay delegated.** Dashboard search stays on the delegated
-  ha-mcp route, through one fixed internal sub-call (§2.4).
+  ha-mcp route, through one fixed, paged internal sub-call (§2.4).
+- **Visibility kept.** The ha-mcp entity visibility filter and its enforce
+  mode keep their 9.2.0 effect on native results (§3.7).
 - **Default is parity.** Every current argument behavior and reply key is
   kept unless Josh retires it by name. This revision retires nothing.
-- **Partial only with a reason.** `partial` is true only when Engineering
-  withheld, cut or could not search something, and it names the reason.
+- **Partial only with a reason.** `partial` is true only when Engineering or
+  the kept visibility filter withheld, cut or could not search something, and
+  it names the reason.
 
 ## 1. Cause of HAMCP-472
 
@@ -138,9 +146,9 @@ HAMCP-403 quarantines `search_unified`.
 | Scripts | `script.*` states, plus each script's configuration | The same, with `script_id` |
 | Scenes | `scene.*` states, plus each UI scene's configuration | The same, with `scene_id` |
 | Storage helpers | the six `<type>/list` commands 9.2.0 searches: `input_boolean`, `input_number`, `input_select`, `input_text`, `input_datetime` and `input_button` (`tools/smart_search/_deep.py:927-934`), mapped to the current `entity_id` through the entity registry (`_deep.py:749`) | Identity-only records with `helper_type` |
-| Flow helpers | the delegated ha-mcp `ha_search`, through one fixed helper sub-call (§2.5) | Identity-only records with `helper_type` and `name`, as today |
+| Flow helpers | the delegated ha-mcp `ha_search`, through one fixed, paged helper sub-call (§2.5) | Identity-only records with `helper_type` and `name`, as today |
 | References | Core's reference graph, `search/related` for an entity, for an `entity_id`-shaped query when automations, scripts or scenes are requested (`tools/smart_search/_graph.py:374-390`) | `match_in_references` on the referencing records |
-| Dashboards | the delegated ha-mcp `ha_search`, through one fixed sub-call (§2.4) | Row 25 projection, as today |
+| Dashboards | the delegated ha-mcp `ha_search`, through one fixed, paged sub-call (§2.4) | Row 25 projection, as today |
 
 Counter, timer and schedule helpers have no body search in 9.2.0. They appear
 only as entity records, and the same holds natively.
@@ -235,29 +243,33 @@ The routing:
 - If `search_types` does not contain `dashboard`, native makes **zero** ha-mcp
   calls for dashboards. (A search that covers helpers adds one helper
   sub-call; §2.5.)
-- If it does, native makes exactly one internal delegated `ha_search`
-  sub-call with fixed arguments:
+- If it does, native makes one internal delegated `ha_search` sub-call for
+  dashboards, paged by §2.6, with fixed arguments:
   - `query`: the caller's query;
   - `search_types`: `["dashboard"]`;
   - `exact_match`: the caller's value;
   - `include_config`: false;
-  - `offset`: 0;
-  - `limit`: the caller's `offset + limit`.
+  - `offset` and `limit`: set for each page by §2.6.
 
-  No other argument and no other `search_types` value is forwarded.
-- The sub-call's reply passes through the existing Row 25 projection.
-  Dashboard `url_path` and `title` stay withheld (HAMCP-447).
+  No other argument and no other `search_types` value is forwarded. The scan
+  stops once it holds the caller's `offset + limit` rows, or when a page has
+  `has_more` false, or by the §2.6 bounds.
+- Each page passes through the existing Row 25 projection. Dashboard
+  `url_path` and `title` stay withheld (HAMCP-447).
 - Its `dashboards` rows merge into the configuration list by the same score
   sort as the native buckets (§3.6). Ties keep the 9.2.0 category order, with
   dashboards last. Then the merged list is sliced to
   `[offset:offset+limit]`. `config_total_matches` is the native total plus the
-  sub-call's `config_total_matches`.
-- The sub-call's own completeness becomes one `partial_reasons` entry with
-  `search_type` `dashboard`. The F3 qualifier applies to that bucket only.
-- If ha-mcp is not admitted, or the sub-call fails, the reply is partial with
-  `source_unavailable` for `dashboard`, and the native buckets are still
-  served. Native never falls back to the delegated route for any other
-  bucket.
+  first page's `config_total_matches`.
+- The sub-call adds partial reasons only by the §2.6 rule. A sub-call whose
+  pages are not partial, with enforce mode off, adds none.
+- If a page fails, or a §2.6 bound stops the scan before it holds
+  `offset + limit` rows, the reply is partial with `source_unavailable` for
+  `dashboard`, code `dashboard_subcall_incomplete`. The dashboard rows already
+  returned are kept. If ha-mcp is not admitted, the reply is partial with
+  `source_unavailable` for `dashboard`, code `subcall_not_admitted`. In both
+  cases the native buckets are still served. Native never falls back to the
+  delegated route for any other bucket.
 - Without a query, `search_types` `["dashboard"]` is refused with the 9.2.0
   validation error (§3.1). That is the same as today.
 
@@ -278,56 +290,131 @@ rule, "no options-flow open and abort"
 (`docs/HAMCP_132_DEFINITION_VISIBILITY_DESIGN.md:445-450`). That rule still
 governs definition visibility.
 
-- **When.** Native makes one fixed internal delegated `ha_search` sub-call
-  whenever the helper bucket is searched: configuration search runs (§3.1)
-  and `search_types` is absent or contains `helper`. Otherwise it makes none.
+- **When.** Native makes one internal delegated `ha_search` sub-call for
+  helpers, paged by §2.6, whenever the helper bucket is searched:
+  configuration search runs (§3.1) and `search_types` is absent or contains
+  `helper`. Otherwise it makes none.
 - **Fixed arguments:**
   - `query`: the caller's query;
   - `search_types`: `["helper"]`;
   - `exact_match`: the caller's value;
   - `include_config`: false;
-  - `offset`: 0;
-  - `limit`: `MAX_CORE_PROBE_ITEMS` (20,000, §6.3).
+  - `offset` and `limit`: set for each page by §2.6.
 
-  No other argument is forwarded. The large `limit` returns every helper
-  match in one reply. A 9.2.0 reply has one total for all helpers
-  (`_deep.py:1269`) and no per-type count, so this is how native counts
-  flow helpers exactly.
-- **Projection.** The reply passes through the Row 25 projection. `entry_id`
+  No other argument is forwarded. A 9.2.0 reply has one total for all
+  helpers (`_deep.py:1269`) and no per-type count. Native therefore counts
+  flow helpers by scanning pages until one has `has_more` false. A scan that
+  stops early gives no full flow-helper count (below).
+- **Projection.** Each page passes through the Row 25 projection. `entry_id`
   and `options_withheld` stay withheld (HAMCP-447). Options bodies are never
   returned (HAMCP-454).
-- **Merge.** Native drops the sub-call's rows whose `helper_type` is one of
-  the six storage types, because native serves those (§2.1). The remaining
-  flow-helper rows merge into the configuration list by §3.6, and their count
-  is added to `config_total_matches`. No helper is counted twice.
-- **Incomplete reply.** If the reply has `has_more` true, the flow-helper rows
-  are incomplete. The reply is partial with `source_unavailable` for
-  `helper`, code `helper_subcall_incomplete`.
-- **Scope qualifier.** The sub-call's completeness becomes one
-  `partial_reasons` entry with `search_type` `helper`, as for dashboards
-  (§2.4, §6.1). The F3 qualifier applies to the flow-helper rows only. It is
-  real for helpers: in enforce mode, 9.2.0 omits any configuration record
-  that references a hidden entity, helpers included (`_deep.py:43-65`,
-  applied at `:376`).
-  - **Consequence.** `helper` is in the default `search_types`
-    (`_deep.py:169`). So every query search that covers helpers is partial
-    while the sub-call stands, with that one named entry. A reply with no
-    partial reason is possible only when helpers are not searched.
-- **Failure.** If ha-mcp is not admitted, or the sub-call fails, the reply is
-  partial with `source_unavailable` for `helper`. Storage helpers and every
-  other native bucket are still served. Native never falls back to the
-  delegated route for any other bucket.
-- **Flow effect, confined.** The sub-call opens and aborts options flows
-  inside ha-mcp, for each Home Assistant helper entry whose title is not a
-  perfect match: the HAMCP-233 behaviour, unchanged from today. That effect is
-  confined to this one sub-call. The native provider's command allowlist has
-  no flow route (§2.2), and the §8 negative-reachability tests assert that.
-  HAMCP-233 stays open on this path.
+- **Merge.** On each page, native drops the rows whose `helper_type` is one of
+  the six storage types, because native serves those (§2.1). It keeps the
+  flow-helper rows. Those rows merge into the configuration list by §3.6, and
+  their count is added to `config_total_matches`. No helper is counted twice.
+- **Incomplete scan.** If a page fails, or a §2.6 bound stops the scan, the
+  reply is partial with `source_unavailable` for `helper`, code
+  `helper_subcall_incomplete`, count null. The flow-helper rows already
+  returned are kept and merged. `config_total_matches` then counts only those
+  rows, and the reply does not claim a full flow-helper count. These two are
+  the only causes of that code. A scan that reaches `has_more` false is
+  complete.
+- **Partial reasons.** The sub-call adds partial reasons only by the §2.6
+  rule. A sub-call whose pages are not partial, with enforce mode off, adds
+  none. `helper` is in the default `search_types` (`_deep.py:169`), so this is
+  what lets a default query search reply with `partial` false.
+- **Not admitted.** If ha-mcp is not admitted, the reply is partial with
+  `source_unavailable` for `helper`, code `subcall_not_admitted`. Storage
+  helpers and every other native bucket are still served. Native never falls
+  back to the delegated route for any other bucket.
+- **Flow effect, confined.** Each page opens and aborts options flows inside
+  ha-mcp, for each Home Assistant helper entry whose title is not a perfect
+  match (`_flow_helpers.py:169-181`; the flow is read and aborted by
+  `fetch_entry_options_with_status`, `tools/tools_integrations.py:182`). That
+  is the HAMCP-233 behaviour. The probes run before the gateway's size check,
+  so a page the gateway then rejects has already opened them. A page is a
+  whole ha-mcp helper search, so each page repeats the probes: a scan of n
+  pages opens and aborts up to n times as many flows as today's single call.
+  I found no cache of probe results across calls. The §2.6 page bound caps n.
+  The effect is confined to the sub-call's pages. The native provider's
+  command allowlist has no flow route (§2.2), and the §8
+  negative-reachability tests assert that. HAMCP-233 stays open on this path.
 - **Until replaced.** The sub-call stays until HAMCP-484 (native UI helper
   reads, as the architect relayed) replaces it with matching that opens no
   flow. HAMCP-484's register row today scopes dependency and integrity
   analysis (`dependency/yaml_sources.py`), so search must be added to that
   row's scope when it is scheduled.
+
+### 2.6 Sub-call paging and reasons (r2-S1, r2-S2)
+
+This section applies to both sub-calls, dashboard (§2.4) and helper (§2.5).
+
+**Paging (r2-S1).**
+
+- **One page, one call.** Each page is one delegated `ha_search` call on the
+  existing admitted route. The 9.2.0 route policy gives it 60,000 bytes and
+  60 seconds (`upstream_tool_policy_9_2_0.json`, the `ha_search` entry). The
+  gateway projects the body. Then it fails the page when the encoded size
+  plus 8,000 bytes exceeds that limit, so above about 52,000 bytes
+  (`providers/upstream_read_gateway.py:4418-4429`). It does not return a
+  short page. No new or unbounded transport is added.
+- **Page size.** The page size is a fixed constant P. The build names P and
+  pins it with a test, so that a page of P projected rows stays under the
+  gateway check. For scale: Cursor's local simulation of projected helper rows
+  was 49,121 bytes at 250 rows and 58,896 at 300. Page k asks
+  `offset` k × P and `limit` P.
+- **Stop conditions.** The scan stops at the first of:
+  - a page with `has_more` false (the scan is complete);
+  - for the dashboard sub-call, holding the caller's `offset + limit` rows
+    (the scan has what the reply needs);
+  - a failed page;
+  - 20,000 rows scanned (`MAX_CORE_PROBE_ITEMS`, §6.3);
+  - a whole-scan deadline, a fixed constant the build names.
+
+  None of these is caller-controlled. The last three make the scan
+  incomplete.
+- **Failed page.** A page fails when the gateway rejects it (size, timeout or
+  any other gateway error), or when it is malformed. A page whose
+  `config_total_matches` differs from the first page's also counts as failed:
+  the upstream snapshot moved under the scan, so the pages may skip or repeat
+  rows.
+- **Incomplete scan.** An incomplete scan gives one `source_unavailable`
+  entry, with `search_type` `helper` or `dashboard` and code
+  `helper_subcall_incomplete` or `dashboard_subcall_incomplete`, count null.
+  The rows already returned are kept. These two causes, a failed page and a
+  bound that stops the scan, are the only ones for these codes. A dashboard
+  scan that stops because it holds `offset + limit` rows is not incomplete.
+- **Not admitted.** When ha-mcp is not admitted, native sends no page. The
+  entry is `source_unavailable` with code `subcall_not_admitted`.
+- **Options flows.** The helper sub-call's options-flow probes run only inside
+  its pages (§2.5). The dashboard sub-call opens none.
+
+**Partial reasons from a sub-call (r2-S2).**
+
+The F3 overlay that `_search_completeness` adds
+(`providers/upstream_reads_9_1_entities.py:293-303`) is not used for the
+sub-calls. That overlay always marks a delegated search partial, so native
+reads ha-mcp's own `partial` field from each projected page instead. Row 25
+does not admit `partial_reason`, so native does not know which upstream
+reason applied or its count.
+
+For each sub-call that sends at least one page:
+
+- **Enforce mode on:** one `hidden` entry, code `upstream_visibility_enforce`,
+  count null. In enforce mode, 9.2.0 omits any configuration record that
+  references a hidden entity (`tools/smart_search/_deep.py:44-65`, applied at
+  `:376`). It reports no count and does not set `partial`. Native knows the
+  mode from the visibility source (§3.7).
+- **A page whose projected `partial` is true:** one `not_searched` entry, code
+  `upstream_partial`, count null. In 9.2.0 that flag comes from a failed
+  helper search, from custom helper entries that were not searched
+  (`helper_unsearched`) or from a failed dashboard search
+  (`_deep.py:1535-1560`). Native does not invent a count.
+- **Otherwise,** no entry. A sub-call whose pages have `partial` false, with
+  enforce mode off, adds no partial reason.
+
+A failed page gives only the `source_unavailable` entry above. It is not also
+`hidden` or `not_searched`.
 
 ## 3. Search semantics (parity with 9.2.0)
 
@@ -378,6 +465,9 @@ Inputs are stripped first (`tools_search.py:355-362`). Then:
   (`entities.py:606`, `fuzzy_search.py:233`, `modes.py:221`, `:423`, `:522`).
   The golden fixture in §8 pins it.
 - Token-AND is dropped. The architect withdrew revision 1's O5 recommendation.
+- **Visibility filter.** Entities in the ha-mcp visibility hidden set are
+  excluded before scoring, counting and paging (§3.7). That is separate from
+  `include_hidden` and its score penalty.
 
 ### 3.3 Area filter
 
@@ -444,6 +534,99 @@ when step 1 did not match, because the floor steps are then needed (§6.2).
   reports `config_has_more` and `config_next_offset`.
 - `limit` applies per surface (entities, configs), as in the public schema.
 
+### 3.7 Visibility filter (kept, r2-S3)
+
+ha-mcp 9.2.0 has an entity visibility filter. It is set in ha-mcp's own
+configuration, not by a call argument. Native keeps it, and its enforce mode,
+at 9.2.0 parity, as the architect relayed (§9).
+
+**9.2.0 behavior** (paths under `src/ha_mcp/` at `51e3aac7`):
+
+- **Configuration.** `entity_visibility.json` in ha-mcp's data directory
+  (`visibility/persistence.py:14`, loaded at `:25`). Its fields
+  (`visibility/model.py:60-93`) include `enabled` and `enforce`, and the
+  category, area, label, allow, deny and Assist-exposure dimensions. The data
+  directory is ha-mcp's own (`utils/data_paths.py:23`).
+- **Hidden set.** `load_hidden_set` (`visibility/resolver.py:840`) resolves the
+  configuration into a set of entity ids. For search it fails open: when the
+  configuration cannot be loaded, the set is empty and the warning "Entity
+  visibility config could not be loaded; the filter is disabled." is returned
+  (`:866-880`). Its strict mode, which fails closed, is used only by the
+  enforce middleware.
+- **Entity search.** The legacy path hard-excludes the hidden set, whatever
+  `include_hidden` says (`tools/search/entities.py:460-461`). `include_hidden`
+  is a separate control over registry-hidden entities (`:462-464`).
+- **Group members.** The legacy path omits members in the hidden set from
+  `member_entity_ids`, and with `include_hidden` false also registry-hidden
+  members (the set is built at `entities.py:580-582`). The smart-search
+  paths keep `is_group` and withhold the member list of a group that has a
+  hidden member (`tools/smart_search/_entities.py:30-52`).
+- **Enforce scrub.** With enforce mode on, configuration records whose
+  serialized form references a hidden entity are omitted before paging
+  (`_scrub_results_for_enforce`, `tools/smart_search/_deep.py:44-65`, applied
+  at `:376`; `scrub_records`, `visibility/enforcement.py:981`). The record
+  still holds its body at that point, so the body is scanned too. No count is
+  reported and `partial` is not set.
+- **Enforce gates.** With enforce mode on, ha-mcp's middleware also gates every
+  tool call, `ha_search` included (`visibility/enforcement.py:1-40`). A call
+  whose arguments name a hidden entity id exactly is refused as not found. A
+  call whose arguments embed one is refused with a generic error
+  (`:735-757`). A reply that would name a hidden id is refused, and the error
+  names no id (`:784-815`).
+
+**Native, at parity:**
+
+- **Entities.** Native excludes the hidden set from the entity bucket before
+  scoring, counting and paging.
+- **Members.** Native applies the member rule of the 9.2.0 path that the call's
+  mode follows. The build's golden fixture pins which rule applies to each
+  mode.
+- **Configuration.** With enforce mode on, native omits each automation,
+  script, scene and storage-helper record whose serialized form, body
+  included, references a hidden entity, by the 9.2.0 matcher. A record whose
+  body was not read is checked on what native holds for it, as in 9.2.0.
+  The sub-calls follow §2.6.
+- **Gates.** With enforce mode on, native applies the same two argument gates
+  before any read, and the same reply check after the projection. A refused
+  call returns a reviewed error that names no hidden id. These gates were not
+  in Cursor's round-2 text. They are part of enforce mode for this tool in
+  9.2.0, so parity includes them.
+- **Partial reasons.** A real omission sets `hidden`, with a count and no
+  ids:
+  - code `visibility_filter`, `search_type` null: the number of entities the
+    call would otherwise have matched;
+  - code `visibility_members`, `search_type` null: the number of returned
+    groups whose member list was reduced or withheld;
+  - code `visibility_enforce`, with the configuration `search_type`: the
+    number of records omitted.
+
+  Nothing omitted, no entry. When the filter is off, or the hidden set is
+  empty, visibility is never a partial reason. The reply never lists a hidden
+  entity id, in records, `applied`, warnings or partial reasons. A gate refusal
+  is an error, not a partial reply.
+
+**Source of the visibility state (build gate).**
+
+- The state is local to ha-mcp. Engineering reaches ha-mcp only as an MCP
+  upstream (`configuration.py:51`). I found no 9.2.0 tool that returns the
+  visibility configuration, the hidden set or the enforce flag. The readers
+  outside `visibility/` are `settings_ui/__init__.py`,
+  `tools/bulk_selector.py`, `tools/smart_search/_overview.py`,
+  `tools/search/modes.py`, `tools/search/overview.py`,
+  `tools/search/entities.py` and `tools/smart_search/_entities.py`. The
+  `ha_get_state` omission warning lists omitted paths, never ids
+  (`visibility/enforcement.py:130`).
+- So the build must name a reviewed read that gives native the same hidden
+  set and the same enforce flag. That read is new and needs Josh's named OK in
+  the build task. A parity fixture pins the resolved set for each
+  configuration dimension.
+- If no such read can be found, the build stops and reports. It does not ship
+  native search without the filter.
+- Native never treats an unknown filter state as off. If the source reports
+  that ha-mcp's own load failed open, native mirrors it: no filter, and a
+  reviewed warning from the closed set (§6.4). If the source cannot be read,
+  the read fails (§6.2).
+
 ## 4. Arguments (C1, C2)
 
 The argument names, types and defaults stay those of
@@ -472,11 +655,12 @@ the build stops.
 | `offset` | Minimum 0 | The same | Kept |
 | `group_by_domain` | Adds the `by_domain` map of page records. Withheld today | The same. `by_domain` stays withheld until HAMCP-447 releases it, and is counted in `fields_withheld` | Kept |
 | `per_domain_limit` | Caps `by_domain` lists only | The same, so no visible effect while `by_domain` is withheld | Kept |
-| `include_hidden` | Default true, with a score penalty; false excludes hidden entities | The same | Kept |
+| `include_hidden` | Default true, with a score penalty; false excludes hidden entities | The same. It is separate from the visibility filter (§3.7) | Kept |
 | `include_config` | Default false. With true, bodies are withheld by Row 25 | Bodies are still withheld (HAMCP-454). The reply is partial `filtered` with code `config_bodies_withheld` | Kept (named, not silent) |
 | `result_fields` | 13 allowed keys: `entity_id`, `friendly_name`, `domain`, `state`, `score`, `match_type`, `name`, `area`, `floor`, `labels`, `aliases`, `is_group`, `member_entity_ids`. Unknown or empty is rejected (`tools/search/entities.py:42-62`, `:139-160`) | The same set, default and refusal (S3) | Kept |
-| `fields` | Projects top-level keys; pagination and diagnostic keys always retained | The same, mapped exactly (S4). A withheld key that is requested is counted in `fields_withheld`, as today | Kept |
+| `fields` | Projects top-level keys; pagination and diagnostic keys always retained | The same, mapped exactly (S4). The added keys `applied` and `partial_reasons` are diagnostic keys and are always retained (r2-M2, §5.1). A withheld key that is requested is counted in `fields_withheld`, as today | Kept |
 | `config_time_budget` | 0.001-300 or null; per-type configuration budget | The same (§3.5) | Kept |
+| Visibility filter (ha-mcp configuration, not an argument) | Hard-excludes the hidden set from entities and members; in enforce mode, scrubs configuration records and gates arguments and replies (§3.7) | The same, from a reviewed source of the visibility state (§3.7 build gate). A real omission sets `hidden` with a count and no ids | Kept, as relayed (r2-S3, §9) |
 
 The schema fingerprint (`SEARCH_PUBLIC_SCHEMA_FINGERPRINT`,
 `upstream_reads_9_2.py:98`, checked at `:186`) changes only by the
@@ -515,7 +699,12 @@ Added keys (additive):
     because the echoes stay withheld (HAMCP-447);
   - `exact_match`, `include_hidden`, `limit`, `offset`;
   - whether entity search and configuration search ran.
-- `partial_reasons`: a list of `{reason, search_type, count, code}`.
+- `partial_reasons`: a list of `{reason, search_type, count, code}`. `count`
+  is an integer, or null when the count is unknown (§2.6). Native never
+  invents a count.
+
+`applied` and `partial_reasons` are diagnostic keys. Like `partial` and the
+paging keys, they are always retained, whatever `fields` asks for (r2-M2).
 
 ### 5.2 Record keys
 
@@ -560,23 +749,32 @@ No new record field is added in this revision. Revision 1 proposed `device_id`,
   - `time_budget`;
   - `read_failed`;
   - `not_readable` (a YAML-defined item the per-item read cannot fetch);
-  - `upstream_partial` (a delegated sub-call's own reply was partial, for
-    its `search_type`);
+  - `upstream_partial` (a page of a delegated sub-call had its own
+    `partial` true, for its `search_type`; count null, §2.6);
   - `graph_unavailable` (an `entity_id`-shaped query whose reference graph
     read failed).
 
   These are the 9.2.0 per-type partial causes (`_deep.py:1234-1356`,
   `:1356-1420`, `:1541-1545`), named instead of summarized.
-- `hidden`: matching records may have been withheld by a visibility policy.
-  Native has no such policy. Each delegated sub-call reply (§2.4, §2.5) adds
-  one `hidden` entry for its own `search_type`, code
-  `upstream_visibility_scope` (F3). The caller's `include_hidden` false is
+- `hidden`: the ha-mcp visibility filter withheld matching records. The
+  entry carries a count and never an id. Only these cases set it:
+  - a real omission by the filter or its enforce mode in a native bucket
+    (§3.7, codes `visibility_filter`, `visibility_members` and
+    `visibility_enforce`);
+  - a delegated sub-call while enforce mode is on (§2.6, code
+    `upstream_visibility_enforce`, count null).
+
+  The F3 qualifier is not a reason. When the filter is off, or nothing was
+  omitted, no `hidden` entry is set. The caller's `include_hidden` false is
   scope, not `hidden`.
 - `source_unavailable`: a source that no requested filter depends on could
   not be read, and the affected fields are null (which source, count). That
-  includes the dashboard sub-call (§2.4), the helper sub-call (§2.5), and
-  malformed state rows (code `malformed_state_row`, count). A malformed row
-  is never skipped silently.
+  includes the dashboard and helper sub-calls (§2.6: codes
+  `dashboard_subcall_incomplete`, `helper_subcall_incomplete` and
+  `subcall_not_admitted`), and malformed state rows (code
+  `malformed_state_row`, count). A malformed row is never skipped silently. A
+  failed sub-call page gives only `source_unavailable`, not `hidden` or
+  `not_searched`.
 
 A complete reply has `partial` false and no reasons. It has no `VISIBLE_SCOPE`
 text and no `REPLACED_PARTIAL` text. A caller's own filters are never a
@@ -595,7 +793,9 @@ success, when:
 - `area_filter` is set and the area registry or the device registry fails;
 - floor resolution is needed (§3.3, steps 2-4) and the floor registry fails;
 - the sanitizer returns `failed_closed` for any output string;
-- an inventory bound is exceeded (§6.3).
+- an inventory bound is exceeded (§6.3);
+- the visibility state cannot be read from its reviewed source (§3.7), or an
+  enforce-mode gate refuses the call (§3.7).
 
 A source failure that no requested filter depends on sets
 `source_unavailable`. Examples are the label registry with only the `labels`
@@ -634,14 +834,17 @@ requested. Native never treats a null as "not hidden" or "not in this area".
   (`response.py:240-245`). The reply carries a reviewed text: "Configuration
   search skipped: domain, area and state filters select entity search;
   remove them or pass search_types to search configurations." It is a
-  warning, not a partial reason. Every reply on which configuration search
-  did not run carries it or the R-A text.
+  warning, not a partial reason. It applies only to that intent-gate case
+  (r2-M1). A call with no query that uses `domain_filter`, `area_filter` or
+  `state_filter` alone, or together, is enumeration: configuration search
+  does not run, and the reply carries neither the R-C text nor the R-A text.
 
 The closed warning set also has reviewed texts for:
 
 - an ambiguous fuzzy floor;
 - the `state_filter` page-only note (§3.4);
-- the composed-`name` note (§5.2).
+- the composed-`name` note (§5.2);
+- ha-mcp's own visibility filter failed open, so no filter applied (§3.7).
 
 ## 7. Disclosure (D1)
 
@@ -659,6 +862,19 @@ Notes for the build's security section:
   section records that this is a query oracle over bodies, already exposed
   today.
 - The new reads in §2.2 add sources, not record fields.
+- **Visibility filter, kept (r2-S3).** The ha-mcp visibility filter and its
+  enforce mode keep their 9.2.0 effect (§3.7). Records the filter withholds
+  today stay withheld, and no hidden entity id is returned. So the table above
+  stands as it is.
+- **The `hidden` count is new information.** A `hidden` entry carries a count
+  and no ids, as Cursor's r2-S3 correction states. 9.2.0 reports no count. In
+  enforce mode it conceals a hidden entity's existence on a best-effort basis
+  (`visibility/enforcement.py:11-15`). With enforce mode on, the
+  `visibility_filter` count tells a caller how many hidden entities match a
+  query, and the `visibility_enforce` count how many configuration records
+  reference one. That is an existence oracle that 9.2.0 does not give. The
+  build's security section must weigh it. This revision follows the directed
+  correction, and the oracle is raised for the architect's delta check (§9).
 - Every output string passes `sanitize_untrusted_data`
   (`sanitization.py:1069`) with identity-only markers (`:1075`).
   - A redaction count above zero sets `filtered`.
@@ -699,8 +915,11 @@ Notes for the build's security section:
    area-plus-query (threshold 80) cases.
 5. **Kept capabilities (C2):**
    - an exact `entity_id` referenced by an automation returns that
-     automation with `match_in_references` true, with bodies absent and
-     `partial` false;
+     automation with `match_in_references` true, with bodies absent. With
+     the visibility filter off and every helper sub-call page `partial`
+     false, the reply has `partial` false and no reason. With one page
+     `partial` true, it has exactly one reason, `not_searched`
+     `upstream_partial` for `helper`, count null, and no other (r2-S2);
    - the same with that automation's configuration unreadable returns the
      automation, plus `not_searched` `read_failed` for its body;
    - `result_fields` with `is_group` and `member_entity_ids` returns those
@@ -711,11 +930,10 @@ Notes for the build's security section:
    - `state_filter` `"ON"` equals `"on"`;
    - scenes and each of the six storage helper types match by name and by
      body;
-   - flow helpers match through the helper sub-call (§2.5): its
-     storage-type rows are dropped, its flow-helper rows merge by score, each
-     helper is counted once in `config_total_matches`, `has_more` gives
-     `helper_subcall_incomplete`, and a failed sub-call gives
-     `source_unavailable` for `helper` while storage helpers are served;
+   - flow helpers match through the paged helper sub-call (§2.5, §2.6): its
+     storage-type rows are dropped on each page, its flow-helper rows merge
+     by score, each helper is counted once in `config_total_matches`, and a
+     scan that reaches `has_more` false is complete with no reason;
    - `include_hidden` false excludes hidden entities, and true ranks them
      with the penalty.
 6. **Effective area (R1):**
@@ -738,13 +956,15 @@ Notes for the build's security section:
    - a record whose fields the budget cuts gives `truncated` with a count.
 9. **Dashboards (§2.4):**
    - a dispatcher spy shows zero dashboard sub-calls when `search_types`
-     lacks `dashboard`, and exactly one with the fixed arguments when it has
-     it;
-   - the same spy shows zero helper sub-calls when helpers are not searched,
-     and exactly one with the §2.5 fixed arguments when they are;
+     lacks `dashboard`. When it has it, the spy shows only pages with the
+     fixed arguments and successive offsets 0, P, 2P and so on, ending at the
+     first §2.6 stop condition;
+   - the same spy shows zero helper sub-calls when helpers are not searched.
+     When they are, it shows only pages with the §2.5 fixed arguments and
+     successive offsets;
    - no other `search_types` value or argument is forwarded;
-   - a failed sub-call gives `source_unavailable` for `dashboard` while the
-     other buckets are served;
+   - a failed dashboard page gives `source_unavailable`
+     `dashboard_subcall_incomplete` while the other buckets are served;
    - the merge order and `config_total_matches` are checked.
 10. **Fail closed (P1, B1):**
     - the no-criteria call is refused;
@@ -777,6 +997,57 @@ Notes for the build's security section:
     - no `integration/descriptions` read;
     - no fallback to the delegated route for a native bucket;
     - Engineering provider attribution in the audit record.
+14. **Sub-call paging and reasons (r2-S1, r2-S2):**
+    - a helper page fixture whose projected body exceeds 52,000 bytes: the
+      gateway fails that page, the native reply stays within the gateway
+      limit, reports `source_unavailable` `helper_subcall_incomplete` with
+      count null, keeps the flow-helper rows of the earlier pages, and does
+      not claim a full flow-helper count;
+    - a scan stopped by the 20,000-row bound or by the scan deadline gives the
+      same code. A failed dashboard page gives
+      `dashboard_subcall_incomplete`. A page whose `config_total_matches`
+      differs from the first page's counts as failed;
+    - a pinned page-size test: a page of P projected rows of the fixture's
+      largest row shape stays under the gateway check;
+    - a helper sub-call whose pages have `partial` false, with enforce mode
+      off: the reply has no `hidden` entry and no `upstream_partial` entry;
+    - a page fixture with `helper_unsearched` set (custom helper entries not
+      searched): the reply has `not_searched` `upstream_partial` for
+      `helper` with count null, and no invented count;
+    - enforce mode on: each sub-call that sent a page adds one `hidden`
+      `upstream_visibility_enforce` entry, count null;
+    - a failed page adds `source_unavailable` only, not `hidden` or
+      `not_searched`;
+    - ha-mcp not admitted: no page is sent, and the reply has
+      `source_unavailable` `subcall_not_admitted` for each sub-call it
+      needed.
+15. **Visibility filter (r2-S3):**
+    - one entity in the hidden set and one automation whose body references
+      it. With the filter on and enforce mode on, neither appears, `partial`
+      is true with `hidden` entries (`visibility_filter`, and
+      `visibility_enforce` for `automation`) that carry counts, and the hidden
+      id is absent from the whole reply. With the filter off, both follow the
+      ordinary match rules, and no visibility reason is set;
+    - the filter on and enforce mode off: the entity is excluded, the
+      automation is returned, and only `visibility_filter` is set;
+    - a hidden entity that would not have matched the query sets no `hidden`
+      entry;
+    - a group with a hidden member follows the pinned member rule for its
+      mode, with `visibility_members` and a count;
+    - `include_hidden` true does not bring back an entity in the visibility
+      hidden set;
+    - enforce mode on: a query that names a hidden id exactly is refused as
+      not found, and one that embeds a hidden id is refused with the generic
+      error. Neither error names the id, and no read or sub-call is sent;
+    - the visibility source unreadable: the read fails. The source reporting
+      ha-mcp's own fail-open state: no filter, and the reviewed warning.
+16. **Enumeration and `fields` (r2-M1, r2-M2):**
+    - `domain_filter` set, with no query and no `search_types`: entities are
+      returned, there is no R-C or R-A text, and `partial` is false when
+      nothing else applies. The same holds for `area_filter` alone and
+      `state_filter` alone;
+    - `fields: ["entities"]` on a paged reply still returns `partial`,
+      `partial_reasons` and `applied`.
 
 ### Installed, read-only (separately authorized, after deploy)
 
@@ -800,12 +1071,15 @@ with fixed numbers.
    body.
 10. `search_types` `["dashboard"]` with a query returns the delegated
     dashboard rows, with `url_path` and `title` withheld.
-11. A query with no matches gives empty buckets, `applied`, and `partial`
-    false.
+11. A query with no matches gives empty buckets and `applied`. `partial` is
+    false, or it carries only the reasons §2.6 and §3.7 set for this install:
+    `hidden` when the visibility filter omitted a match or enforce mode is
+    on, and `not_searched` `upstream_partial` when a helper page was itself
+    partial (r2-S2). No other reason is accepted.
 12. The audit log records native provider attribution, plus the delegated
-    sub-calls only where §2.4 and §2.5 call for them: the dashboard sub-call
-    for step 10, and the helper sub-call for each step that searches
-    helpers.
+    sub-call pages only where §2.4, §2.5 and §2.6 call for them: the
+    dashboard pages for step 10, and the helper pages for each step that
+    searches helpers.
 13. `tools/list` matches the catalog that the build release declares.
 
 ## 9. Decisions
@@ -846,6 +1120,13 @@ I did not see Josh's words. These are the relayed texts.
   remaining work: keep every capability by default, and size governance to
   risk.
 - **Change later:** "Agreed we can change later if it shows warranted".
+- **Visibility filter kept** (relayed in an architect session message,
+  2026-11-24, for Cursor's r2-S3): "KEEP both, the visibility hard-exclude and
+  the enforce-mode config scrub, at 9.2.0 parity." The architect gave this as
+  an application of Josh's standing direction under J2, "the idea isn't to
+  lose features", in which every capability is kept unless Josh retires it by
+  name. So it is not a new decision for Josh. §3.7 has the behavior, §4 the
+  row and §7 the disclosure, which stands as it is.
 
 ### Design choices from the reviews (not owner decisions)
 
@@ -855,6 +1136,17 @@ I did not see Josh's words. These are the relayed texts.
 - B1: the inventory cap at `MAX_CORE_PROBE_ITEMS`. With J1, this supersedes
   N3 and N4.
 - O6: parity. No disabled entities without a state (§2.1).
+- r2-S1: the sub-calls are paged on the existing route (§2.6). Two
+  definitions are the author's, not Cursor's: a page whose
+  `config_total_matches` differs from the first page's counts as failed, and
+  the scan has a whole-scan deadline that the build names.
+- r2-S2: sub-call reasons come from enforce mode and the projected `partial`
+  only (§2.6). The F3 qualifier is not a partial reason.
+- r2-S3: the enforce-mode argument gates and the reply check are included as
+  part of 9.2.0 enforce parity (§3.7). They go beyond Cursor's round-2 text.
+  The `hidden` count is disclosed as new information in §7.
+- r2-M1: the R-C text only in the intent-gate case (§6.4).
+- r2-M2: `applied` and `partial_reasons` always retained (§5.1).
 
 ### Open for Josh
 
