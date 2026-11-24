@@ -2,10 +2,11 @@
 
 Status: **draft for review; not approved.** Docs only. Revision 2, the
 correction batch for the Cursor review and the architect review of revision 1
-(head `4cd3a430`). The build is planned for the release after 2.9.1, not for
-2.9.1 (2.4.2-beta.13). Nothing here authorizes a runtime, schema, routing,
-protected-path, version or release change, deployment, or live Home Assistant
-or Engineering access. Decisions still open for Josh are marked **[JOSH]**.
+(head `4cd3a430`), with J2 applied as decided. The build is planned for the
+release after 2.9.1, not for 2.9.1 (2.4.2-beta.13). Nothing here authorizes
+a runtime, schema, routing, protected-path, version or release change,
+deployment, or live Home Assistant or Engineering access. No decision is open
+for Josh in this revision.
 
 - Register: HAMCP-481. Related rows:
   - HAMCP-472, the `ha_search` audit finding this design absorbs;
@@ -137,7 +138,7 @@ HAMCP-403 quarantines `search_unified`.
 | Scripts | `script.*` states, plus each script's configuration | The same, with `script_id` |
 | Scenes | `scene.*` states, plus each UI scene's configuration | The same, with `scene_id` |
 | Storage helpers | the six `<type>/list` commands 9.2.0 searches: `input_boolean`, `input_number`, `input_select`, `input_text`, `input_datetime` and `input_button` (`tools/smart_search/_deep.py:927-934`), mapped to the current `entity_id` through the entity registry (`_deep.py:749`) | Identity-only records with `helper_type` |
-| Flow helpers | the config-entry list, filtered to helper flow domains (`tools/smart_search/_flow_helpers.py:105-120`) | Identity-only records with `helper_type` and `name`; for bodies see §2.5 |
+| Flow helpers | the delegated ha-mcp `ha_search`, through one fixed helper sub-call (§2.5) | Identity-only records with `helper_type` and `name`, as today |
 | References | Core's reference graph, `search/related` for an entity, for an `entity_id`-shaped query when automations, scripts or scenes are requested (`tools/smart_search/_graph.py:374-390`) | `match_in_references` on the referencing records |
 | Dashboards | the delegated ha-mcp `ha_search`, through one fixed sub-call (§2.4) | Row 25 projection, as today |
 
@@ -152,7 +153,8 @@ revision 1's O6.
 ### 2.2 Reads
 
 Every read is read-only. Native search makes no write, service call, reload,
-or options or config flow call.
+or options or config flow call. The delegated helper sub-call does open and
+abort options flows inside ha-mcp, as today (§2.5).
 
 Already admitted, with the profile that attests it:
 
@@ -184,12 +186,13 @@ needs Josh's named OK in the build task:
   `input_text/list`, `input_datetime/list` and `input_button/list`. Today only
   the first two appear, and only inside the governed delete profile
   `CREATED_HELPER_DELETE_REQUESTS` (`profiles.py:1190-1197`);
-- `GET /config/config_entries/entry` and
-  `GET /config/config_entries/flow_handlers?type=helper` for flow-helper
-  identity (`tools/helper_flows.py:34-45`). Neither is in
-  `ROUTE_TEMPLATES` (`clients/paths.py:53`). That registry does hold the
-  options-flow templates (`clients/paths.py:58-59`) for governed paths; the
-  native provider must not use them.
+- none for flow helpers. Their identity and matching come from the helper
+  sub-call (§2.5), so native does not read
+  `GET /config/config_entries/entry` or
+  `GET /config/config_entries/flow_handlers?type=helper`
+  (`tools/helper_flows.py:34-45`). `ROUTE_TEMPLATES` (`clients/paths.py:53`)
+  holds the options-flow templates (`clients/paths.py:58-59`) for governed
+  paths; the native provider must not use them.
 
 Not read natively:
 
@@ -213,7 +216,7 @@ The build makes these route edits together, in protected files:
   configuration, the graph, scene configuration and the new helper reads.
 - Drop the ha-mcp `ha_search` error probe
   (`ha_mcp_readmission/ha_mcp.py:94-101`) from the native path. It stays only
-  as the admission check for the dashboard sub-call.
+  as the admission check for the dashboard and helper sub-calls.
 - **Effective area.** An entity's area is its own registry `area_id` when
   present. An entity `area_id` that is present but invalid gives no area and
   no fallback. Otherwise the area is the device's effective area under
@@ -230,7 +233,8 @@ Dashboard search stays on the delegated ha-mcp route, as relayed from Josh.
 The routing:
 
 - If `search_types` does not contain `dashboard`, native makes **zero** ha-mcp
-  calls for dashboards. (J2's default adds one helper sub-call; §2.5.)
+  calls for dashboards. (A search that covers helpers adds one helper
+  sub-call; §2.5.)
 - If it does, native makes exactly one internal delegated `ha_search`
   sub-call with fixed arguments:
   - `query`: the caller's query;
@@ -257,30 +261,73 @@ The routing:
 - Without a query, `search_types` `["dashboard"]` is refused with the 9.2.0
   validation error (§3.1). That is the same as today.
 
-### 2.5 Flow-helper bodies **[JOSH] J2**
+### 2.5 Flow helpers: the helper sub-call (J2, decided: keep)
 
 9.2.0 searches a flow helper's options body by opening and aborting its
 options flow, for Home Assistant's own helper domains
-(`tools/smart_search/_flow_helpers.py:20-67`, scoring at `:122`). That is the
-HAMCP-233 path. Entries from custom helper integrations are not searched and
-are counted as a partial reason (`_deep.py:1541-1545`).
+(`tools/smart_search/_flow_helpers.py:20-67`; the probe at `:169-181`,
+scoring at `:122`). That is the HAMCP-233 path. Entries from custom helper
+integrations are not searched and are counted as a partial reason
+(`_deep.py:1541-1545`).
 
-Josh's recorded decision (i) for definition visibility (HAMCP-132,
-`docs/HAMCP_132_DEFINITION_VISIBILITY_DESIGN.md:445-450`, 2026-10-20) is "no
-options-flow open and abort". It is my inference, not Josh's decision, that
-the rule also applies to search.
+**J2, decided as relayed** (architect session message, 2026-11-24): keep
+flow-helper options-body matching. Josh's words as relayed: "Keep it. Keep in
+mind, the idea isn't to lose features. Also keep in mind governance
+proportionate to risk." Search therefore does not apply the HAMCP-132 (i)
+rule, "no options-flow open and abort"
+(`docs/HAMCP_132_DEFINITION_VISIBILITY_DESIGN.md:445-450`). That rule still
+governs definition visibility.
 
-- **Default until Josh decides (keep):** flow-helper body matching stays
-  delegated. When helpers are requested, native makes one fixed sub-call like
-  §2.4, with `search_types` `["helper"]`. Native keeps only the sub-call's rows
-  whose `helper_type` is not one of the six storage types. HAMCP-233 stays
-  open on that path, as it is today.
-- **Recommended (retire flow-helper body matching):** native opens no flow.
-  Flow helpers match on title and domain only. A flow helper whose body was
-  not searched is counted in `partial_reasons` as `not_searched` with code
-  `flow_not_opened`. This closes HAMCP-233 for search.
+- **When.** Native makes one fixed internal delegated `ha_search` sub-call
+  whenever the helper bucket is searched: configuration search runs (§3.1)
+  and `search_types` is absent or contains `helper`. Otherwise it makes none.
+- **Fixed arguments:**
+  - `query`: the caller's query;
+  - `search_types`: `["helper"]`;
+  - `exact_match`: the caller's value;
+  - `include_config`: false;
+  - `offset`: 0;
+  - `limit`: `MAX_CORE_PROBE_ITEMS` (20,000, §6.3).
 
-Either way, options bodies are never returned (HAMCP-454).
+  No other argument is forwarded. The large `limit` returns every helper
+  match in one reply. A 9.2.0 reply has one total for all helpers
+  (`_deep.py:1269`) and no per-type count, so this is how native counts
+  flow helpers exactly.
+- **Projection.** The reply passes through the Row 25 projection. `entry_id`
+  and `options_withheld` stay withheld (HAMCP-447). Options bodies are never
+  returned (HAMCP-454).
+- **Merge.** Native drops the sub-call's rows whose `helper_type` is one of
+  the six storage types, because native serves those (§2.1). The remaining
+  flow-helper rows merge into the configuration list by §3.6, and their count
+  is added to `config_total_matches`. No helper is counted twice.
+- **Incomplete reply.** If the reply has `has_more` true, the flow-helper rows
+  are incomplete. The reply is partial with `source_unavailable` for
+  `helper`, code `helper_subcall_incomplete`.
+- **Scope qualifier.** The sub-call's completeness becomes one
+  `partial_reasons` entry with `search_type` `helper`, as for dashboards
+  (§2.4, §6.1). The F3 qualifier applies to the flow-helper rows only. It is
+  real for helpers: in enforce mode, 9.2.0 omits any configuration record
+  that references a hidden entity, helpers included (`_deep.py:43-65`,
+  applied at `:376`).
+  - **Consequence.** `helper` is in the default `search_types`
+    (`_deep.py:169`). So every query search that covers helpers is partial
+    while the sub-call stands, with that one named entry. A reply with no
+    partial reason is possible only when helpers are not searched.
+- **Failure.** If ha-mcp is not admitted, or the sub-call fails, the reply is
+  partial with `source_unavailable` for `helper`. Storage helpers and every
+  other native bucket are still served. Native never falls back to the
+  delegated route for any other bucket.
+- **Flow effect, confined.** The sub-call opens and aborts options flows
+  inside ha-mcp, for each Home Assistant helper entry whose title is not a
+  perfect match: the HAMCP-233 behaviour, unchanged from today. That effect is
+  confined to this one sub-call. The native provider's command allowlist has
+  no flow route (§2.2), and the §8 negative-reachability tests assert that.
+  HAMCP-233 stays open on this path.
+- **Until replaced.** The sub-call stays until HAMCP-484 (native UI helper
+  reads, as the architect relayed) replaces it with matching that opens no
+  flow. HAMCP-484's register row today scopes dependency and integrity
+  analysis (`dependency/yaml_sources.py`), so search must be added to that
+  row's scope when it is scheduled.
 
 ## 3. Search semantics (parity with 9.2.0)
 
@@ -513,18 +560,21 @@ No new record field is added in this revision. Revision 1 proposed `device_id`,
   - `time_budget`;
   - `read_failed`;
   - `not_readable` (a YAML-defined item the per-item read cannot fetch);
-  - `flow_not_opened` (J2 recommended path);
+  - `upstream_partial` (a delegated sub-call's own reply was partial, for
+    its `search_type`);
   - `graph_unavailable` (an `entity_id`-shaped query whose reference graph
     read failed).
 
   These are the 9.2.0 per-type partial causes (`_deep.py:1234-1356`,
   `:1356-1420`, `:1541-1545`), named instead of summarized.
-- `hidden`: Engineering withheld matching records by its own visibility
-  policy. Native has no such policy, so this reason appears only if one is
-  added later. The caller's `include_hidden` false is scope, not `hidden`.
+- `hidden`: matching records may have been withheld by a visibility policy.
+  Native has no such policy. Each delegated sub-call reply (§2.4, §2.5) adds
+  one `hidden` entry for its own `search_type`, code
+  `upstream_visibility_scope` (F3). The caller's `include_hidden` false is
+  scope, not `hidden`.
 - `source_unavailable`: a source that no requested filter depends on could
   not be read, and the affected fields are null (which source, count). That
-  includes the dashboard sub-call (§2.4), the J2 helper sub-call, and
+  includes the dashboard sub-call (§2.4), the helper sub-call (§2.5), and
   malformed state rows (code `malformed_state_row`, count). A malformed row
   is never skipped silently.
 
@@ -661,7 +711,11 @@ Notes for the build's security section:
    - `state_filter` `"ON"` equals `"on"`;
    - scenes and each of the six storage helper types match by name and by
      body;
-   - flow helpers follow J2;
+   - flow helpers match through the helper sub-call (§2.5): its
+     storage-type rows are dropped, its flow-helper rows merge by score, each
+     helper is counted once in `config_total_matches`, `has_more` gives
+     `helper_subcall_incomplete`, and a failed sub-call gives
+     `source_unavailable` for `helper` while storage helpers are served;
    - `include_hidden` false excludes hidden entities, and true ranks them
      with the penalty.
 6. **Effective area (R1):**
@@ -683,9 +737,11 @@ Notes for the build's security section:
      and the next page continues from it;
    - a record whose fields the budget cuts gives `truncated` with a count.
 9. **Dashboards (§2.4):**
-   - a dispatcher spy shows zero ha-mcp calls when `search_types` lacks
-     `dashboard` (and, under J2's recommendation, `helper`), and exactly one
-     call with the fixed arguments when it has it;
+   - a dispatcher spy shows zero dashboard sub-calls when `search_types`
+     lacks `dashboard`, and exactly one with the fixed arguments when it has
+     it;
+   - the same spy shows zero helper sub-calls when helpers are not searched,
+     and exactly one with the §2.5 fixed arguments when they are;
    - no other `search_types` value or argument is forwarded;
    - a failed sub-call gives `source_unavailable` for `dashboard` while the
      other buckets are served;
@@ -714,7 +770,8 @@ Notes for the build's security section:
     - a dispatcher spy shows zero ha-mcp calls for an entity-only search,
       including when the device registry read fails.
 13. **Negative reachability:**
-    - no options or config flow call;
+    - no options or config flow call from the native provider (the helper
+      sub-call's flows are ha-mcp's, §2.5);
     - no service call;
     - no write;
     - no `integration/descriptions` read;
@@ -745,8 +802,10 @@ with fixed numbers.
     dashboard rows, with `url_path` and `title` withheld.
 11. A query with no matches gives empty buckets, `applied`, and `partial`
     false.
-12. The audit log records native provider attribution, plus one delegated
-    sub-call only for step 10 (and for helper searches under J2's default).
+12. The audit log records native provider attribution, plus the delegated
+    sub-calls only where §2.4 and §2.5 call for them: the dashboard sub-call
+    for step 10, and the helper sub-call for each step that searches
+    helpers.
 13. `tools/list` matches the catalog that the build release declares.
 
 ## 9. Decisions
@@ -779,6 +838,13 @@ I did not see Josh's words. These are the relayed texts.
   instead?". The `limit` and `query` schema stay identical to 9.2.0, with no
   maximum and no `maxLength`. A large `limit` returns a page with `paged` and
   the next offset; it is never refused (§6.3).
+- **J2, keep flow-helper options search** (relayed in an architect session
+  message, 2026-11-24): "Keep it. Keep in mind, the idea isn't to lose
+  features. Also keep in mind governance proportionate to risk." Native keeps
+  options-body matching through the helper sub-call until HAMCP-484 replaces
+  it (§2.5). The architect relayed this as standing direction for the
+  remaining work: keep every capability by default, and size governance to
+  risk.
 - **Change later:** "Agreed we can change later if it shows warranted".
 
 ### Design choices from the reviews (not owner decisions)
@@ -792,10 +858,6 @@ I did not see Josh's words. These are the relayed texts.
 
 ### Open for Josh
 
-- **[JOSH] J2:** flow-helper bodies. The default keeps them delegated through
-  a fixed helper sub-call (§2.5). The recommendation is to retire flow-helper
-  body matching, meaning native opens no flow and counts `flow_not_opened`.
-  That applies the recorded HAMCP-132 (i) decision to search, which is my
-  inference.
+None.
 
 No row in §4 or §5 is retired.
