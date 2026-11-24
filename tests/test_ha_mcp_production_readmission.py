@@ -2716,7 +2716,7 @@ class SignedGatewayReadmissionTests(
         # 2026-11-08), so 25 matched reads expose 24 (85 + 24 = 109; HAMCP-134: +1 static; HAMCP-297: +1 static).
         self.assertEqual(len(registered), 24)
         self.assertFalse(set(registered) & RETIRED_DELEGATED_READS)
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(registered), 110)  # HAMCP-231: + thread/matter topology
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(registered), 111)  # HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
         self.assertNotIn("ha_get_operation_status", registered)
         for policy_entry in self.release.policy.tools:
             if (policy_entry.classification != "automatic_read"

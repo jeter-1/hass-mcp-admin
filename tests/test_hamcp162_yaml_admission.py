@@ -89,7 +89,7 @@ S8 = ROOT / "docs/evidence/hamcp371/s8/profiles-2"
 S8_SUMS = S8 / "SHA256SUMS"
 S8_CAPTURES = ("out/standalone-9.2.0-fs-on/capture-1.json", "out/standalone-9.2.0-fs-on/capture-2.json")
 S8_OBSERVATION = "out/standalone-9.2.0-fs-on/observation.json"
-STOCK_PUBLIC = 113  # + HAMCP-106, + HAMCP-071, + HAMCP-253, + HAMCP-311, + HAMCP-229, + HAMCP-134; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
+STOCK_PUBLIC = 114  # + HAMCP-106, + HAMCP-071, + HAMCP-253, + HAMCP-311, + HAMCP-229, + HAMCP-134; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
 
 
 def captured(version, label="A"):
