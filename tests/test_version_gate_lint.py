@@ -214,6 +214,13 @@ class VersionGateLintTests(unittest.TestCase):
         self.assertEqual(expiries.get("F2-3"), {"2.9.1 cleanup"})
         self.assertEqual(expiries.get("F2-5"), {"2.9.1 cleanup"})
 
+    def test_no_entry_awaits_an_owner_decision(self):
+        text = Path(ROOT, ALLOWLIST).read_text(encoding="utf-8")
+        entries, _ = load_allowlist(text)
+        pending = sorted(" ".join(key) for key, entry in entries.items() if "[JOSH]" in entry["expiry"])
+        self.assertEqual(pending, [], "\n".join(pending))
+        self.assertNotIn("[JOSH]", text)
+
     def test_allowlist_name_stays_outside_the_core_evidence_trigger(self):
         self.assertFalse(Path(ALLOWLIST).name.startswith("core-"))
 

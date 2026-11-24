@@ -21,7 +21,7 @@
       },
       "finding": "label",
       "reason": "core_applicability label naming the legacy Core 2026.9.2 receipt path",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 3 (fan/power/helper native)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
@@ -31,7 +31,7 @@
       },
       "finding": "label",
       "reason": "core_applicability label naming the legacy Core 2026.9.2 receipt path",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 3 (fan/power/helper native)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
@@ -44,7 +44,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
@@ -57,7 +57,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
@@ -71,7 +71,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/clients/ha_mcp_endpoint.py",
@@ -82,7 +82,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/clients/ha_mcp_endpoint.py",
@@ -93,7 +93,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/clients/mcp.py",
@@ -105,7 +105,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/naming.py",
@@ -116,7 +116,7 @@
       },
       "finding": "copied-source pin",
       "reason": "Provenance pin of source copied from Core 2026.10.1 (SLUGIFY_PIN also ha-mcp 9.1.2); see the G1 mirror-manifest design note",
-      "expiry": "G1 mirror manifest [JOSH]"
+      "expiry": "G1 mirror manifest (2.9.1)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/schemas.py",
@@ -126,7 +126,7 @@
       },
       "finding": "copied-source pin",
       "reason": "Provenance pin of source copied from Core 2026.10.1 (SLUGIFY_PIN also ha-mcp 9.1.2); see the G1 mirror-manifest design note",
-      "expiry": "G1 mirror manifest [JOSH]"
+      "expiry": "G1 mirror manifest (2.9.1)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dashboard_analysis/rules.py",
@@ -150,7 +150,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/atomicity.py",
@@ -160,7 +160,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/atomicity.py",
@@ -179,7 +179,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/atomicity.py",
@@ -194,7 +194,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/constants.py",
@@ -213,7 +213,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/planning.py",
@@ -223,7 +223,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/planning.py",
@@ -233,7 +233,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/provider.py",
@@ -252,7 +252,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/raw_evidence.py",
@@ -271,7 +271,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/registry.py",
@@ -282,7 +282,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/registry.py",
@@ -293,7 +293,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/registry.py",
@@ -306,7 +306,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/fan/contracts.py",
@@ -316,7 +316,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/fan/contracts.py",
@@ -327,7 +327,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/fan/contracts.py",
@@ -342,7 +342,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/probe_profiles.py",
@@ -352,7 +352,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/probe_profiles.py",
@@ -362,7 +362,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/profiles.py",
@@ -372,7 +372,7 @@
       },
       "finding": "F2-2",
       "reason": "Compiled Core table, the fallback when the signed Core release registry is off; new Cores come through the registry",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 1 (signed Core registry adopted; compiled-fallback decision)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/profiles.py",
@@ -382,7 +382,7 @@
       },
       "finding": "F2-2",
       "reason": "Compiled Core table, the fallback when the signed Core release registry is off; new Cores come through the registry",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 1 (signed Core registry adopted; compiled-fallback decision)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/profiles.py",
@@ -392,7 +392,7 @@
       },
       "finding": "F2-2",
       "reason": "Compiled Core table, the fallback when the signed Core release registry is off; new Cores come through the registry",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 1 (signed Core registry adopted; compiled-fallback decision)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/profiles.py",
@@ -402,7 +402,7 @@
       },
       "finding": "F2-2",
       "reason": "Compiled Core table, the fallback when the signed Core release registry is off; new Cores come through the registry",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 1 (signed Core registry adopted; compiled-fallback decision)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/profiles.py",
@@ -412,7 +412,7 @@
       },
       "finding": "F2-2",
       "reason": "Compiled Core table, the fallback when the signed Core release registry is off; new Cores come through the registry",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 1 (signed Core registry adopted; compiled-fallback decision)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/profiles.py",
@@ -422,7 +422,7 @@
       },
       "finding": "F2-2",
       "reason": "Compiled Core table, the fallback when the signed Core release registry is off; new Cores come through the registry",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 1 (signed Core registry adopted; compiled-fallback decision)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/profiles.py",
@@ -434,7 +434,7 @@
       },
       "finding": "F2-2",
       "reason": "Compiled Core table, the fallback when the signed Core release registry is off; new Cores come through the registry",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 1 (signed Core registry adopted; compiled-fallback decision)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
@@ -469,7 +469,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/source.py",
@@ -491,7 +491,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/helper_value/contracts.py",
@@ -505,7 +505,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/history_slices/contracts.py",
@@ -518,7 +518,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/history_slices/service.py",
@@ -531,7 +531,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/history_slices/service.py",
@@ -541,7 +541,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/history_slices/service.py",
@@ -551,7 +551,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/contracts.py",
@@ -561,7 +561,7 @@
       },
       "finding": "label",
       "reason": "Supervisor or libsystemd provenance pin, emitted only in the result pins; nothing compares it",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "keep: provenance pin, re-reviewed when the pinned source is refreshed"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/contracts.py",
@@ -572,7 +572,7 @@
       },
       "finding": "label",
       "reason": "Supervisor or libsystemd provenance pin, emitted only in the result pins; nothing compares it",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "keep: provenance pin, re-reviewed when the pinned source is refreshed"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/incident_logs/host_journal.py",
@@ -582,7 +582,7 @@
       },
       "finding": "label",
       "reason": "Supervisor or libsystemd provenance pin, emitted only in the result pins; nothing compares it",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "keep: provenance pin, re-reviewed when the pinned source is refreshed"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/power/contracts.py",
@@ -597,7 +597,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/ha_2026_8_device_compatibility.py",
@@ -607,7 +607,7 @@
       },
       "finding": "F2-4",
       "reason": "Device adapter for ha-mcp 8.1.0-8.2.0 on Core 2026.8.x, a no-op on the supported pair; open whether ha-mcp 9.2.0 still has the split-entity join defect it repaired",
-      "expiry": "2.9.2 triage [JOSH]"
+      "expiry": "2.9.1 cleanup (dead adapter for ha-mcp 8.x)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/ha_2026_8_device_compatibility.py",
@@ -617,7 +617,7 @@
       },
       "finding": "F2-4",
       "reason": "Device adapter for ha-mcp 8.1.0-8.2.0 on Core 2026.8.x, a no-op on the supported pair; open whether ha-mcp 9.2.0 still has the split-entity join defect it repaired",
-      "expiry": "2.9.2 triage [JOSH]"
+      "expiry": "2.9.1 cleanup (dead adapter for ha-mcp 8.x)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/ha_2026_8_device_compatibility.py",
@@ -627,7 +627,7 @@
       },
       "finding": "F2-4",
       "reason": "Device adapter for ha-mcp 8.1.0-8.2.0 on Core 2026.8.x, a no-op on the supported pair; open whether ha-mcp 9.2.0 still has the split-entity join defect it repaired",
-      "expiry": "2.9.2 triage [JOSH]"
+      "expiry": "2.9.1 cleanup (dead adapter for ha-mcp 8.x)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/ha_2026_8_device_compatibility.py",
@@ -639,7 +639,7 @@
       },
       "finding": "F2-4",
       "reason": "Device adapter for ha-mcp 8.1.0-8.2.0 on Core 2026.8.x, a no-op on the supported pair; open whether ha-mcp 9.2.0 still has the split-entity join defect it repaired",
-      "expiry": "2.9.2 triage [JOSH]"
+      "expiry": "2.9.1 cleanup (dead adapter for ha-mcp 8.x)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/operational_lifecycle.py",
@@ -654,7 +654,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_blueprint.py",
@@ -664,7 +664,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_blueprint.py",
@@ -676,7 +676,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_blueprint.py",
@@ -686,7 +686,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_contracts.py",
@@ -697,7 +697,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_contracts.py",
@@ -716,7 +716,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_dashboard.py",
@@ -727,7 +727,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_dashboard.py",
@@ -739,7 +739,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_dashboard.py",
@@ -749,7 +749,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_dashboard.py",
@@ -760,7 +760,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py",
@@ -772,7 +772,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_fan.py",
@@ -782,7 +782,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_fan.py",
@@ -792,7 +792,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_history_9_1.py",
@@ -802,7 +802,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py",
@@ -816,7 +816,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py",
@@ -830,7 +830,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
@@ -840,7 +840,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
@@ -850,7 +850,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
@@ -860,7 +860,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_8_6.py",
@@ -870,7 +870,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1.py",
@@ -880,7 +880,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1.py",
@@ -890,7 +890,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1.py",
@@ -900,7 +900,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1.py",
@@ -910,7 +910,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py",
@@ -920,7 +920,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py",
@@ -930,7 +930,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_search_8_6.py",
@@ -940,7 +940,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_search_8_6.py",
@@ -950,7 +950,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_search_8_6.py",
@@ -960,7 +960,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/entity_filter.py",
@@ -970,7 +970,7 @@
       },
       "finding": "copied-source pin",
       "reason": "Provenance pin of source copied from Core 2026.10.1 (SLUGIFY_PIN also ha-mcp 9.1.2); see the G1 mirror-manifest design note",
-      "expiry": "G1 mirror manifest [JOSH]"
+      "expiry": "G1 mirror manifest (2.9.1)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy.py",
@@ -980,7 +980,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy.py",
@@ -992,7 +992,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy.py",
@@ -1002,7 +1002,7 @@
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "HAMCP-456 triage [JOSH]"
+      "expiry": "Phase 6 (ha-mcp removal)"
     }
   ]
 }
