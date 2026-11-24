@@ -235,9 +235,35 @@ provider, fallback, or write path.
   lifecycle hazard and coverage flags, per-source completeness, and the configuration and
   evidence fingerprints. Call `automation_reliability_analysis` for an item's findings
   and evidence (`drill_down`).
+- Each root-cause summary carries the values the single tool returns for that group at
+  `detail_level` `summary` (HAMCP-474 D6): `root_cause_group_id`, `title`,
+  `affected_dependency`, `severity`, `reference_count`, `confidence`, `current_state`,
+  `representative_configuration_paths` (at most three), `recommended_investigation` and
+  `governed_change_required`. Finding IDs, evidence references and
+  `intentional_trigger_context` stay with the single tool.
+- `root_cause_detail` is `full` when every analyzed digest fits the response bound with
+  that detail. Otherwise it is `reduced`: every summary keeps only the first five keys
+  (the 2.6 shape), a fixed warning says so, and the output budget below then applies as
+  in 2.6. Detail is reduced before any item is skipped.
+- `source_limitations` names each evidence source that limited an analyzed item
+  (HAMCP-474 D5). Each entry has `source_type`, `reason`, `affects_result_status` and
+  `item_count`, the number of analyzed items in the response with that limit. Reasons
+  are `source_unavailable`, `source_failed`, `items_failed`, `truncated`,
+  `retention_unknown`, `retention_partial` and `source_partial` (a limit no other reason
+  explains). A source type the batch does not know is reported as `other_source`. The
+  test is the single tool's coverage-limitation test. So `system_log`, an in-memory
+  snapshot whose retention for the lookback is unknown, is named with
+  `retention_unknown` and `affects_result_status` false, although it does not change the
+  item's result status. The list is empty when no analyzed item has a limited source; otherwise
+  a fixed warning points to it. It covers only items whose digest is in the response.
 - The response stays under 60,000 characters. When the digests do not fit, the items
   that do not fit are reported `skipped_budget` with reason `output_budget`. Every
-  requested ID appears exactly once in `items`.
+  requested ID appears exactly once in `items`. `source_limitations`,
+  `root_cause_detail` and their warnings are charged against the same bound, so near the
+  bound a response can hold one item fewer than in 2.6. In the synthetic worst case
+  tested offline (20 IDs of 128 characters, three root causes each with long
+  configuration paths, and a long friendly name), one more item becomes `skipped_budget`
+  and is listed in `remaining_automation_ids`.
 - `batch_result_status` is `success` only when every item is analyzed with complete
   evidence. It is `failed` when no item is analyzed, and `partial` otherwise.
   `coverage.remaining_automation_ids` lists, in request order, the budget-skipped and

@@ -680,6 +680,10 @@ class ToolParityTests(unittest.TestCase):
         # its v1.1.2 default and type (asserted by the helper).
         from tests.hamcp294_descriptor_changes import without_hamcp294_inputs
         beta_schemas["get_logbook"] = without_hamcp294_inputs(self, beta_schemas["get_logbook"])
+        # HAMCP-475 adds exactly one optional get_audit_log input (cursor);
+        # lines and event keep their v1.1.2 defaults (asserted by the helper).
+        from tests.hamcp475_descriptor_changes import without_hamcp475_inputs
+        beta_schemas["get_audit_log"] = without_hamcp475_inputs(self, beta_schemas["get_audit_log"])
         self.assertEqual(beta_schemas, production_schemas)
 
     def test_capability_catalog_preserves_phase3c_provider_truth(self):

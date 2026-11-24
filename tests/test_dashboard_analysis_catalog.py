@@ -147,8 +147,9 @@ class PublicBoundaryTests(unittest.IsolatedAsyncioTestCase):
         current["get_server_health"] = _without_hamcp242_health_disclosure(self, current["get_server_health"])
         from hamcp226_228_descriptor_changes import (without_hamcp226_descriptor_change,
                                                      without_hamcp228_capture_changes)
+        from hamcp473_descriptor_changes import without_hamcp473_descriptor_change  # + HAMCP-473
         current["configuration_integrity_analysis"] = without_hamcp226_descriptor_change(
-            self, current["configuration_integrity_analysis"])
+            self, without_hamcp473_descriptor_change(self, current["configuration_integrity_analysis"]))
         current["capture_automation_baseline"] = without_hamcp228_capture_changes(
             self, current["capture_automation_baseline"],
             baseline["descriptors"]["capture_automation_baseline"]["description"])
@@ -159,6 +160,8 @@ class PublicBoundaryTests(unittest.IsolatedAsyncioTestCase):
         current = without_hamcp311_descriptor_changes(self, current)
         from hamcp294_descriptor_changes import without_hamcp294_descriptor_changes  # + HAMCP-294
         current = without_hamcp294_descriptor_changes(self, current)
+        from hamcp475_descriptor_changes import without_hamcp475_descriptor_changes  # + HAMCP-475
+        current = without_hamcp475_descriptor_changes(self, current)
         from hamcp298_descriptor_changes import without_hamcp298_descriptor_changes  # + HAMCP-298
         current = without_hamcp298_descriptor_changes(self, current)
         self.assertEqual({name: current[name] for name in baseline["descriptors"]}, baseline["descriptors"])

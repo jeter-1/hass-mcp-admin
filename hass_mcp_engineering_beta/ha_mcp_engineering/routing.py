@@ -1532,6 +1532,14 @@ class AuthenticatedMcpGateway:
                         "provider": "engineering", "fallback": "none",
                     }
                     resource_ids = {}
+                elif tool_name == "get_audit_log":
+                    # HAMCP-475: cursor material never enters audit.
+                    audit_parameters = {
+                        key: parameters[key]
+                        for key in ("lines", "event")
+                        if key in parameters
+                    }
+                    audit_parameters["cursor_present"] = bool(parameters.get("cursor"))
                 elif tool_name in TRACE_SNAPSHOT_TOOLS:
                     # HAMCP-225: pattern-checked identifiers and bounded flags
                     # only; note text, cursors and rejected values are never

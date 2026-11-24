@@ -536,13 +536,16 @@ class Beta26PublicCompatibilityTests(unittest.TestCase):
             }
         }
         from hamcp226_228_descriptor_changes import without_hamcp226_finding_type
+        from hamcp473_descriptor_changes import without_hamcp473_inputs  # + HAMCP-473
         schemas["configuration_integrity_analysis"] = without_hamcp226_finding_type(
-            self, schemas["configuration_integrity_analysis"])
+            self, without_hamcp473_inputs(self, schemas["configuration_integrity_analysis"]))
         from hamcp247_descriptor_changes import without_hamcp247_detail_section
         schemas["list_capabilities"] = without_hamcp247_detail_section(
             self, schemas["list_capabilities"])
         from hamcp294_descriptor_changes import without_hamcp294_inputs  # + HAMCP-294
         schemas["get_logbook"] = without_hamcp294_inputs(self, schemas["get_logbook"])
+        from hamcp475_descriptor_changes import without_hamcp475_inputs  # + HAMCP-475
+        schemas["get_audit_log"] = without_hamcp475_inputs(self, schemas["get_audit_log"])
         encoded = json.dumps(schemas, sort_keys=True, separators=(",", ":")).encode()
         self.assertEqual(hashlib.sha256(encoded).hexdigest(), F2_PUBLIC_SCHEMA_SHA256)
         self.assertEqual(len(tools), 86)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology

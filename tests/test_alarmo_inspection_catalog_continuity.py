@@ -102,8 +102,9 @@ class CatalogTests(unittest.IsolatedAsyncioTestCase):
         actual["get_server_health"] = _without_hamcp171_deep_storage_audit(self, actual["get_server_health"])
         actual["get_server_health"] = _without_hamcp242_health_disclosure(self, actual["get_server_health"])
         from hamcp226_228_descriptor_changes import without_hamcp226_descriptor_change
+        from hamcp473_descriptor_changes import without_hamcp473_descriptor_change  # + HAMCP-473
         actual["configuration_integrity_analysis"] = without_hamcp226_descriptor_change(
-            self, actual["configuration_integrity_analysis"])
+            self, without_hamcp473_descriptor_change(self, actual["configuration_integrity_analysis"]))
         actual["get_automation_trace"] = _without_hamcp225_trace_disclosure(self, actual["get_automation_trace"])
         from hamcp247_descriptor_changes import without_hamcp247_descriptor_change
         actual["list_capabilities"] = without_hamcp247_descriptor_change(self, actual["list_capabilities"])
@@ -111,6 +112,8 @@ class CatalogTests(unittest.IsolatedAsyncioTestCase):
         actual = without_hamcp311_descriptor_changes(self, actual)
         from hamcp294_descriptor_changes import without_hamcp294_descriptor_changes  # + HAMCP-294
         actual = without_hamcp294_descriptor_changes(self, actual)
+        from hamcp475_descriptor_changes import without_hamcp475_descriptor_changes  # + HAMCP-475
+        actual = without_hamcp475_descriptor_changes(self, actual)
         from hamcp298_descriptor_changes import without_hamcp298_descriptor_changes  # + HAMCP-298
         actual = without_hamcp298_descriptor_changes(self, actual)
         from hamcp379_descriptor_changes import without_hamcp379_descriptor_changes  # + HAMCP-379
