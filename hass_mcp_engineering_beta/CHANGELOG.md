@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.4.2-beta.13 - 2.9.1 build, in progress (HAMCP-455)
+
+Builds on 2.4.2-beta.12 (2.9.0.1 hotfix, HAMCP-470, #488). In progress: items
+land through reviewed pull requests into `release/2.9.1`, and the final
+release pull request completes this entry.
+
+- Version materialized on `release/2.9.1` at its catch-up with `main`
+  (b4dd3da3), so item pull requests carry no version change. The release
+  transition is from 2.4.2-beta.12 to 2.4.2-beta.13.
+- Landed, tooling and tests only: the version-gate lint (HAMCP-456, #487)
+  and release tooling (HAMCP-458, #486).
+- Re-scoped 2026-11-23 to audit-driven read fixes: HAMCP-472 to HAMCP-476,
+  the native search design, HAMCP-293 and HAMCP-292. None has landed yet.
+- New in-progress `V2_4_2_BETA13` release notes and acceptance contract.
+- Rollback: pending; stated by the final release pull request.
+
 ## 2.4.2-beta.12 - 2.9.0.1 hotfix: lifecycle add-on identity read on ha-mcp 9.2.0 (HAMCP-470)
 
 Builds on 2.4.2-beta.11 (2.9.0, #481). In progress: its items land in
