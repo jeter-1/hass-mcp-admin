@@ -9903,7 +9903,7 @@ class ChangeGovernanceService:
         summary = {
             "plan_id": plan.plan_id,
             "title": plan.title[:160],
-            "description": plan.description[:1000],
+            "description": plan.description[:MAX_DESCRIPTION_CHARS],
             "plan_hash": self.plan_hash(plan),
             "plan_version": plan.plan_version,
             "approval_kind": plan.approval.approval_kind,
