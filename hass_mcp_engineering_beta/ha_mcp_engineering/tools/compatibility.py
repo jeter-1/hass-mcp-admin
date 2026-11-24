@@ -1143,11 +1143,11 @@ async def get_audit_log(lines: int = 50, event: str = "", cursor: str = "") -> s
     from collections import deque
 
     # Each kept row is (line start offset, verbatim line text, keyed digest
-    # state of every byte before the row).
-    rows: deque[tuple[int, str, Any]] = deque(maxlen=effective_lines)
-    # Start offsets of rows that are not UTF-8. A page reports those inside
-    # the byte range it covers, so a walk counts each one once.
-    undecodable: list[int] = []
+    # state of every byte before the row, count of non-UTF-8 rows before it).
+    # A page reports the non-UTF-8 rows inside the byte range it covers, so a
+    # walk counts each one once, and the count is a subtraction, not a rescan.
+    rows: deque[tuple[int, str, Any, int]] = deque(maxlen=effective_lines)
+    undecodable = 0
     matched = 0
     prefix_mac = hmac.new(_AUDIT_CURSOR_KEY, digestmod=hashlib.sha256)
     with open(path, "rb") as f:
@@ -1177,7 +1177,7 @@ async def get_audit_log(lines: int = 50, event: str = "", cursor: str = "") -> s
             try:
                 row = raw.decode("utf-8")
             except UnicodeDecodeError:
-                undecodable.append(start)
+                undecodable += 1
                 continue
             record = _parsed_audit_record(row)
             if record is None:
@@ -1185,7 +1185,7 @@ async def get_audit_log(lines: int = 50, event: str = "", cursor: str = "") -> s
             if event and not audit_record_matches_event(record, event):
                 continue
             matched += 1
-            rows.append((start, row, state))
+            rows.append((start, row, state, undecodable))
     if claim is not None and (
         offset != end
         or not hmac.compare_digest(_audit_prefix_digest(prefix_mac), claim["prefix"])
@@ -1196,16 +1196,13 @@ async def get_audit_log(lines: int = 50, event: str = "", cursor: str = "") -> s
             ErrorCode.STALE_CURSOR,
             details={"field": "cursor", "reason": "audit_log_rewritten"},
         )
-    def undecodable_from(boundary: int) -> int:
-        return sum(1 for start in undecodable if start >= boundary)
-
     if not rows:
         return "No matching entries.\n" + _audit_page_trailer(
-            0, None, True, undecodable=len(undecodable)
+            0, None, True, undecodable=undecodable
         )
     page = list(rows)
     budget = SETTINGS.response_size_limit
-    sizes = [len(row.encode("utf-8")) for _, row, _ in page]
+    sizes = [len(row.encode("utf-8")) for _, row, _, _ in page]
     # Keep the newest rows that fit with the trailer; the cursor resumes at
     # the oldest returned row.
     kept = len(page)
@@ -1223,15 +1220,15 @@ async def get_audit_log(lines: int = 50, event: str = "", cursor: str = "") -> s
             if older
             else None,
             not older,
-            undecodable=undecodable_from(page[-kept][0] if older else 0),
+            undecodable=undecodable - (page[-kept][3] if older else 0),
         )
         if total + len(trailer.encode("utf-8")) <= budget:
-            return "".join(row for _, row, _ in page[-kept:]) + trailer
+            return "".join(row for _, row, _, _ in page[-kept:]) + trailer
         total -= sizes[-kept]
         kept -= 1
     # The newest row alone exceeds the limit. It is skipped, never cut, and
     # the cursor moves past it so a walk still makes progress.
-    newest_start, _, newest_prefix = page[-1]
+    newest_start, _, newest_prefix, newest_skipped_before = page[-1]
     older = matched > 1
     return _audit_page_trailer(
         0,
@@ -1245,5 +1242,5 @@ async def get_audit_log(lines: int = 50, event: str = "", cursor: str = "") -> s
         else None,
         not older,
         oversized=1,
-        undecodable=undecodable_from(newest_start if older else 0),
+        undecodable=undecodable - (newest_skipped_before if older else 0),
     )

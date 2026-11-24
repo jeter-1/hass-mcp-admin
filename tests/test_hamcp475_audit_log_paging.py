@@ -224,6 +224,55 @@ class CompatibilityTests(_AuditLogCase):
         rows = [row for _, page_rows, _ in reversed(pages) for row in page_rows]
         self.assertEqual([row["index"] for row in rows], list(range(30)))
 
+    async def test_counting_undecodable_rows_costs_linear_work_while_pages_shrink(self):
+        """Codex R493-05: a page that shrinks to fit must not rescan the skipped rows.
+
+        The work is counted as interpreter profile events, not timed. Each extra
+        non-UTF-8 row may add a fixed amount of work; a per-candidate rescan adds
+        work for every row on every one of the ~500 shrink steps.
+        """
+
+        import sys
+
+        def build(undecodable: int) -> None:
+            with self.path.open("wb") as stream:
+                stream.write(b'{"bad": "\xff"}\n' * undecodable)
+                for i in range(500):
+                    stream.write(json.dumps(_record(i, pad=300)).encode() + b"\n")
+
+        async def work(undecodable: int) -> tuple[int, dict]:
+            build(undecodable)
+            events = 0
+
+            def count(frame, event, arg):
+                nonlocal events
+                events += 1
+
+            sys.setprofile(count)
+            try:
+                rendered = await compatibility.get_audit_log(lines=500)
+            finally:
+                sys.setprofile(None)
+            return events, split_audit_page(rendered)[1]
+
+        self.limit(1_024)
+        baseline, clean_page = await work(0)
+        loaded, loaded_page = await work(2_000)
+        # One row fits, so the page shrank through ~500 candidates either way.
+        self.assertEqual(clean_page["returned"], 1)
+        self.assertEqual(loaded_page["returned"], 1)
+        self.assertNotIn("skipped_undecodable", loaded_page)
+        self.assertLess(loaded - baseline, 40 * 2_000)
+        # The skipped rows all precede the newest page, so the walk reports
+        # every one of them exactly once, on its oldest page.
+        pages = await self.walk(lines=500)
+        self.assertEqual(sum(page.get("skipped_undecodable", 0) for _, _, page in pages), 2_000)
+        self.assertEqual(pages[-1][2]["skipped_undecodable"], 2_000)
+        for rendered, _, _ in pages:
+            self.assert_within_limit(rendered)
+        rows = [row for _, page_rows, _ in reversed(pages) for row in page_rows]
+        self.assertEqual([row["index"] for row in rows], list(range(500)))
+
     async def test_an_undecodable_only_log_reports_its_count(self):
         with self.path.open("wb") as stream:
             stream.write(b'{"event": "tool_call", "bad": "\xff"}\n' * 2)
