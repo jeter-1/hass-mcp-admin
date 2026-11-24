@@ -36,22 +36,25 @@ It authorizes none of the later stages.
 ## Items
 
 Each item is reviewed in its own pull request into `release/2.9.1`. An item
-that has not landed is not part of this release, and this contract makes no
-claim about its behavior. Landed items are listed by their pull request; the
-final release pull request binds their evidence.
+or part that has not landed is not part of this release, and this contract
+makes no claim about its behavior. The pull request, merge commit and state
+of each row were read from GitHub on 2026-11-24; the final release pull
+request binds the evidence of each landed item. The release notes describe
+each row in more detail.
 
-| Item | Scope | State |
-| --- | --- | --- |
-| HAMCP-456 | Version-gate lint with a `ci/` allow-list (tests only) | landed, #487 |
-| HAMCP-458 | Release tooling: refuse a guessed base, check the test venv, readiness sweep (tooling only) | landed, #486 |
-| HAMCP-472 | `ha_search` domain-filtered wrong-empty result and always-partial warning | moved to native search (the HA Admin replay's domain-only and query-plus-domain calls returned entities; a call that passes `search_types` still skips entities on ha-mcp 9.2.0, and that path stays until the native provider ships; no 2.9.1 code either way) |
-| HAMCP-481 | Native search design only ([`HAMCP_481_NATIVE_SEARCH_DESIGN.md`](HAMCP_481_NATIVE_SEARCH_DESIGN.md)); the build is planned for the next release | not landed |
-| HAMCP-473 | `configuration_integrity_analysis` paging and filters | not landed |
-| HAMCP-474 | Analysis coverage gaps | not landed |
-| HAMCP-475 | `get_audit_log` paging with a cursor | not landed |
-| HAMCP-476 | Per-automation run count over a time window | not landed |
-| HAMCP-293 | Automation plan risk classified from the change | not landed |
-| HAMCP-292 | Sensitive-data false positive on plan description wording | not landed |
+| Item | Pull request | Merge | State | What landed | What did not |
+| --- | --- | --- | --- | --- | --- |
+| HAMCP-456 | #487 | 584b31da | merged | Version-gate lint | No runtime change (tests only) |
+| HAMCP-458 | #486 | c5f160c0 | merged | Release tooling: refuse a guessed base, check the test venv, readiness sweep | No runtime change (tooling only) |
+| HAMCP-472 | none | none | moved to native search | Diagnosis: not reproduced (the HA Admin replay's domain-only and query-plus-domain calls returned entities); source cause found (a call that passes `search_types` still skips entities on ha-mcp 9.2.0) | No 2.9.1 code; that path stays until the native provider ships |
+| HAMCP-481 | #491 | e51968a2 | merged, design only | [`HAMCP_481_NATIVE_SEARCH_DESIGN.md`](HAMCP_481_NATIVE_SEARCH_DESIGN.md), revision 4 (draft for review, not approved) | The build, planned for the next release |
+| HAMCP-473 | #492 | 8ed1b99b | merged | `configuration_integrity_analysis` compact detail level and severity filter, bound to the cursor | The audit record does not record `severities`, and the health counters add a filtered query's filtered counts, not the classified totals (both disclosed) |
+| HAMCP-474 D5, D6 | #497 | 0f52b0e0 | merged | `automation_reliability_batch_analysis` names limited sources (`source_limitations`) and carries root-cause detail | Near the bound, one automation fewer per response (disclosed); D2-D4 split to HAMCP-482, HAMCP-483, HAMCP-484 |
+| HAMCP-474 D1 | #496 | none | deferred to HAMCP-487; #496 left open as a draft | Nothing | Exact coverage for deep automations with a long configuration path (HAMCP-487) |
+| HAMCP-475 | #493 | 6adccba0 | merged | `get_audit_log` pages that fit the response limit, a `_page` trailer and a signed `cursor` | The rotated `audit.jsonl.1` is not read; cursors do not survive a restart |
+| HAMCP-476 | #498 | c6d6b538 | merged | `get_automation_run_counts`, one read-only native tool | Failed-condition and mode-dropped runs are not counted; no paging |
+| HAMCP-293 | #494 | 99b41cc5 | merged, middle path | Exact automation update reasons name what changed; the legacy level is kept | No level is lowered (lowering rule: HAMCP-486) |
+| HAMCP-292 | #495 | 010de1ff | merged | Dashboard update review projection keeps strings whole up to 2,000 characters | Secret detection unchanged; split-field secrets still not detected (pre-existing) |
 
 ## 1. Source and offline acceptance
 
@@ -84,29 +87,87 @@ head-bound workflow. **Pending.**
 ## 4. Installed read-only acceptance (separately authorized, after deploy)
 
 This stage runs only after Josh separately authorizes deploying this
-release. Josh approves each step, and the final release pull request states
-which steps are reads.
+release. Every step is a read, and Josh approves each step.
 
 1. **Identity.** `server_info` and `get_server_health` report:
    - `2.4.2-beta.13`;
    - the merged release SHA as build SHA;
    - `dirty: false`.
-2. **Item checks.** **Pending.** One read per landed item. The planned checks
-   are:
-   - integrity analysis pages beyond its first page;
-   - analysis covers the three large automations;
-   - the audit log pages;
-   - run counts are returned.
+2. **Item checks.** Reads only, in one sitting. No step creates, approves or
+   applies a plan.
+   1. **Integrity paging** (HAMCP-473). `configuration_integrity_analysis`
+      with `detail_level` `compact`, walked by cursor to its last page, then
+      one call with `severities` naming a single severity. Expected: compact
+      pages of up to 100 findings carrying only the allowlisted keys; the
+      narrowed call carries `severity_filter` with `excluded_finding_count`
+      on every page, and its `final_assessment` still counts the hidden
+      findings. Offline: `tests/test_hamcp473_integrity_paging.py`.
+   2. **Audit-log paging** (HAMCP-475). `get_audit_log` with no cursor, then
+      with the returned `next_cursor` for at least one more page. Expected:
+      each response fits the response limit and ends with exactly one
+      `_page` line (`returned`, `next_cursor`, `complete`); the next page
+      holds older records, none repeated or cut. Offline:
+      `tests/test_hamcp475_audit_log_paging.py`.
+   3. **Run counts** (HAMCP-476). `get_automation_run_counts` with
+      `automation_ids` naming up to 10 automations, then with
+      `all_automations`, both over the default 24-hour window. Expected: a
+      count for every automation, with first and last run times where it
+      ran; all mode ranked by runs descending, ties by ID; `partial` only
+      with a non-empty `partial_reasons`. A refusal
+      (`automation_count_exceeds_bound` or `response_size_exceeds_bound`)
+      does not pass this step; record its reason and counts. Offline:
+      `tests/test_hamcp476_automation_run_counts.py`.
+   4. **Reliability batch detail** (HAMCP-474 D5, D6).
+      `automation_reliability_batch_analysis` over a few automations.
+      Expected: `source_limitations` names each limited source with
+      `source_type`, `reason`, `affects_result_status` and `item_count` (a
+      limited system log reads `retention_unknown`, with
+      `affects_result_status` false); each root-cause summary carries
+      `confidence`, `current_state`, `representative_configuration_paths`,
+      `recommended_investigation` and `governed_change_required`; and
+      `root_cause_detail` is `full` or `reduced`. Offline:
+      `tests/test_hamcp229_reliability_batch.py`.
 
-   There are no lifecycle steps.
-3. **Tool catalog.** A fresh `tools/list` matches the catalog the final
-   release pull request declares. **Pending.**
+   There are no lifecycle steps. HAMCP-293 and HAMCP-292 are not checked
+   live: both act only when a plan is created, and creating a plan is not a
+   read. Their offline evidence is `tests/test_hamcp293_change_scoped_risk.py`
+   (#494) and `tests/test_hamcp292_dashboard_review_projection_bound.py`
+   (#495).
+
+   Two checks planned in the 2.9.1 re-scope are not in this list: search
+   with a domain filter (HAMCP-472 moved to native search, HAMCP-481) and
+   coverage of the three large automations (HAMCP-474 D1, deferred to
+   HAMCP-487).
+3. **Tool catalog.** A fresh `tools/list` lists 87 Engineering tools,
+   including `get_automation_run_counts`, with none removed, and the same
+   delegated tools as beta.12 listed before the deploy (see the release
+   notes, "Tool catalog").
 
 PASS needs every check. If a step fails, record the response in the release
 task. Whether to roll back is Josh's decision.
 
 ## Rollback
 
-**Pending.** The final release pull request states the rollback target and
-whether rolling back is safe, from the storage, provider and option changes
-that actually landed.
+There is no in-place rollback. Recovery is restoring the pre-deploy full Home
+Assistant backup, or the VM 400 snapshot, both taken before the deploy. That
+returns Engineering 2.4.2-beta.12 with ha-mcp 9.2.0.
+- Target: tag `v2.4.2-beta.12`, commit
+  b4dd3da332b381d81df9ec1fd6f72e2be06a527a, image
+  `ghcr.io/jeter-1/hass-mcp-engineering-beta:2.4.2-beta.12`, OCI digest
+  `sha256:916f941c052cdbe9516cce8f22ff68e7682754dcccfb3518960d245983e4d634`
+  (2.4.2-beta.12 acceptance, section 3, on `main`).
+- Restoring removes `get_automation_run_counts`, the integrity and audit-log
+  paging, the batch detail and the new risk reasons.
+- Export `get_audit_log` before any restore.
+- In-place downgrade from beta.13 to beta.12 is not supported and is
+  unproven.
+- CI runs no in-place rollback lane: #461 retired it (HAMCP-405) and allows
+  an empty rollback slot (HAMCP-406, restore-first recovery).
+- No landed item states a persisted-format change. #492, #493 and #498 state
+  none. #494 adds risk reasons to new plans only, and a plan stored before it
+  keeps its hash. #495 leaves the stored plan record and its scan unchanged.
+  That is not a downgrade proof.
+- **Safety.** Restoring the backup or snapshot returns Engineering, its
+  storage and Home Assistant together to the backed-up state. It also
+  reverts every Home Assistant change made since it was taken. Whether to
+  restore, and which, is Josh's decision.

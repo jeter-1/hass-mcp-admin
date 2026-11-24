@@ -32,6 +32,11 @@ for named automations, 32 GETs and 120 seconds for all mode (sized from the
 house's 115 automations, beta.40 findings). A spent budget or an unsplittable
 window returns partial with `partial_reasons` and the uncovered automations
 and intervals; their counts are lower bounds. Any other failure is an error.
+Before any logbook read, a set whose worst-case reply would not fit the
+response limit (60,000 characters, or a smaller `response_size_limit`) is
+refused with `response_size_exceeds_bound`, which says to name up to 10 with
+`automation_ids` instead; a success the response bound would still cut is
+returned as the same error.
 The tool adds one static tool (87 static on this branch).
 
 ## Security posture metadata (2.6.0, HAMCP-134)
