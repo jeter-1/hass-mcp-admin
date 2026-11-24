@@ -7,17 +7,18 @@ never narrowed by a filter, and the envelope's generic bound drops ``/data``
 whole.  The tool now returns a bounded summary by default, narrows every
 section by a filter, and returns one full section on request.
 
-The committed catalog fixture is a 113-tool synthetic, live-shaped catalog:
+The committed catalog fixture is a 114-tool synthetic, live-shaped catalog:
 the real UpstreamReadGateway is driven offline with the captured stock
-ha-mcp 9.2.0 descriptors (8.6.0 before HAMCP-437) and the signed release registry disabled (86 native
-+ 27 dynamic = 113 registered; live had 106 before HAMCP-253 added one native
+ha-mcp 9.2.0 descriptors (8.6.0 before HAMCP-437) and the signed release registry disabled (87 native
++ 27 dynamic = 114 registered; live had 106 before HAMCP-253 added one native
 read, HAMCP-311 added control_helper and HAMCP-229 added one read; HAMCP-290
 added the native get_marketplace_inventory and retired the delegated
 ha_get_hacs_info; HAMCP-134 added the native get_security_metadata; HAMCP-297 added
-control_device_configuration; HAMCP-231 added the native get_thread_matter_topology).  The
-"108-tool" cases (now 114) use the exact ha-mcp 9.2.0
-filesystem-on capture (the 8.5.0 component capture before HAMCP-437) with the optional ``ha_config_get_yaml`` admitted (86 + 28 =
-114 since HAMCP-229, HAMCP-290, HAMCP-134, HAMCP-297 and HAMCP-231), as the round-1 review did; neither is a claim about
+control_device_configuration; HAMCP-231 added the native get_thread_matter_topology; HAMCP-476 added the
+native get_automation_run_counts).  The
+"108-tool" cases (now 115) use the exact ha-mcp 9.2.0
+filesystem-on capture (the 8.5.0 component capture before HAMCP-437) with the optional ``ha_config_get_yaml`` admitted (87 + 28 =
+115 since HAMCP-229, HAMCP-290, HAMCP-134, HAMCP-297, HAMCP-231 and HAMCP-476), as the round-1 review did; neither is a claim about
 the household's current provider version.  Every call shape is rendered by
 the real tool and envelope, at that size and with every section grown by
 half.  Nothing is sent anywhere.
@@ -149,7 +150,7 @@ def _call_at(limit, **arguments):
 
 
 class _LiveShapedCatalog(unittest.TestCase):
-    # The 113-tool synthetic fixture (112 before HAMCP-231) (stock ha-mcp 9.2.0 descriptors; 8.6.0 before HAMCP-437).
+    # The 114-tool synthetic fixture (113 before HAMCP-476, 112 before HAMCP-231) (stock ha-mcp 9.2.0 descriptors; 8.6.0 before HAMCP-437).
     @staticmethod
     def upstream_capture():
         return capture("9.2.0")["tools"], "9.2.0"
@@ -243,7 +244,7 @@ def _request_of(entry):
 class LiveShapedFixtureTests(_LiveShapedCatalog):
     def test_the_fixture_reproduces_the_live_overflow(self):
         self.assertEqual(len(self.dynamic), 27)  # HAMCP-290: the delegated ha_get_hacs_info is retired
-        self.assertEqual(build_capability_catalog()["registered_count"], 113)  # HAMCP-229 + HAMCP-290 + HAMCP-134 + HAMCP-297 + HAMCP-231: 86 + 27
+        self.assertEqual(build_capability_catalog()["registered_count"], 114)  # HAMCP-229 + HAMCP-290 + HAMCP-134 + HAMCP-297 + HAMCP-231 + HAMCP-476: 87 + 27
         for arguments in ({}, {"status": "delegated"}):
             catalog = build_capability_catalog(**arguments)
             # The established filter-less catalog alone exceeds the cap.
@@ -261,7 +262,7 @@ class SizeTests(_LiveShapedCatalog):
 
     def test_every_call_shape_returns_data_under_the_cap_at_half_again_growth(self):
         with self.grown():
-            self.assertEqual(build_capability_catalog()["registered_count"], 171)  # HAMCP-229: +1 native; HAMCP-290: +1 native, -1 retired delegated, grown; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
+            self.assertEqual(build_capability_catalog()["registered_count"], 172)  # HAMCP-229: +1 native; HAMCP-290: +1 native, -1 retired delegated, grown; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
             for arguments in SHAPES:
                 with self.subTest(**arguments):
                     self.assert_usable(_call(**arguments), arguments)
@@ -330,7 +331,7 @@ class SummaryTests(_LiveShapedCatalog):
                     "dynamic_upstream_count", "status_values", "planned",
                     "core_admission"):
             self.assertEqual(data[key], catalog[key], key)
-        self.assertEqual(data["registered_count"], 113)  # HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
+        self.assertEqual(data["registered_count"], 114)  # HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
         self.assertEqual(
             data["server"],
             {
@@ -342,7 +343,7 @@ class SummaryTests(_LiveShapedCatalog):
             },
         )
         index = {item["tool"]: item for item in data["tool_index"]}
-        self.assertEqual(len(index), 113)  # HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
+        self.assertEqual(len(index), 114)  # HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
         for item in (*catalog["tools"], *catalog["beta_native"],
                      *catalog["dynamic_upstream"]):
             self.assertEqual(
@@ -505,7 +506,7 @@ class FilterSemanticsTests(_LiveShapedCatalog):
             [dict(row) for row in capabilities.CAPABILITY_PROVIDER_MATRIX],
         )
         self.assertEqual(catalog["upstream_read_gateway"], self.gateway)
-        self.assertEqual(len(catalog["beta_native"]), 61)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
+        self.assertEqual(len(catalog["beta_native"]), 62)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
 
 
 class SectionSelectorTests(_LiveShapedCatalog):
@@ -546,7 +547,7 @@ class SectionSelectorTests(_LiveShapedCatalog):
             _call(detail_section=" Beta_Native "), {"detail_section": " Beta_Native "}
         )
         self.assertEqual(data["filters"]["detail_section"], "beta_native")
-        self.assertEqual(len(data["beta_native"]), 61)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
+        self.assertEqual(len(data["beta_native"]), 62)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
 
     def test_an_unknown_section_is_refused_clearly(self):
         for section in ("planned", "everything", "tool_index", "beta-native"):
@@ -747,7 +748,7 @@ class SizeLimitTests(_LiveShapedCatalog, _Crawler):
         data = build_capability_view(detail_section="beta_native", response_limit=20_000)
         record = data["beta_native"]
         self.assertIs(record["paged"], True)
-        self.assertEqual(record["item_count"], 61)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
+        self.assertEqual(record["item_count"], 62)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
         self.assertEqual(record["page"]["offset"], 0)
         self.assertIs(record["page"]["final"], False)
         count = record["page"]["row_count"]
@@ -908,7 +909,7 @@ class SizeLimitTests(_LiveShapedCatalog, _Crawler):
         record = data["beta_native"]
         self.assertEqual(record["reason"], "page_row_exceeds_response_limit")
         self.assertEqual(record["retrieval"], [])
-        self.assertEqual(record["item_count"], 61)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
+        self.assertEqual(record["item_count"], 62)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
         self.assertEqual(data["sections"]["beta_native"]["included"], "omitted_size_limit")
 
 
@@ -1051,7 +1052,7 @@ class SizeGuardTests(_LiveShapedCatalog):
 
 
 class _Catalog108(_LiveShapedCatalog):
-    """The exact ha-mcp 9.2.0 filesystem-on capture (8.5.0 component capture before HAMCP-437): 86 native + 28 upstream (114; 113 before HAMCP-231, 108 before HAMCP-253, 109 before HAMCP-311, 110 before HAMCP-229; HAMCP-290 adds the native get_marketplace_inventory and retires the delegated ha_get_hacs_info; HAMCP-134 adds the native get_security_metadata; HAMCP-297 adds control_device_configuration)."""
+    """The exact ha-mcp 9.2.0 filesystem-on capture (8.5.0 component capture before HAMCP-437): 87 native + 28 upstream (115; 114 before HAMCP-476, 113 before HAMCP-231, 108 before HAMCP-253, 109 before HAMCP-311, 110 before HAMCP-229; HAMCP-290 adds the native get_marketplace_inventory and retires the delegated ha_get_hacs_info; HAMCP-134 adds the native get_security_metadata; HAMCP-297 adds control_device_configuration)."""
 
     @staticmethod
     def upstream_capture():
@@ -1067,7 +1068,7 @@ class ReviewReproductionTests(_Catalog108, _Crawler):
 
     def test_the_fixture_is_the_108_tool_catalog(self):
         catalog = build_capability_catalog()
-        self.assertEqual(catalog["registered_count"], 114)  # HAMCP-229 + HAMCP-290 + HAMCP-134 + HAMCP-297 + HAMCP-231: 86 + 28
+        self.assertEqual(catalog["registered_count"], 115)  # HAMCP-229 + HAMCP-290 + HAMCP-134 + HAMCP-297 + HAMCP-231 + HAMCP-476: 87 + 28
         self.assertEqual(catalog["dynamic_upstream_count"], 28)  # HAMCP-290: the delegated ha_get_hacs_info is retired
         # HAMCP-437: 50 on 9.2.0, whose policy blocks the retired ha_get_hacs_info as unsupported.
         self.assertEqual(len(catalog["upstream_read_gateway"]["blocked_tools"]), 50)

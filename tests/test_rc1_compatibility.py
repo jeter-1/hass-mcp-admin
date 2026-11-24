@@ -232,6 +232,8 @@ class RC1PublicContractTests(unittest.TestCase):
                         "get_security_metadata",
                         # HAMCP-231: additive dormant Thread/Matter topology read.
                         "get_thread_matter_topology",
+                        # HAMCP-476: additive automation run counts read.
+                        "get_automation_run_counts",
                     )
                 )
             ),
@@ -477,7 +479,7 @@ class RC1PublicContractTests(unittest.TestCase):
             BETA26_DIRECT_POLICY_SHA256,
         )
         self.assertEqual(len(CAPABILITIES), 25)
-        self.assertEqual(len(classifications), 86)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
+        self.assertEqual(len(classifications), 87)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
         self.assertEqual(PLANNED_CAPABILITIES, ())
         self.assertEqual(SCHEMA_VERSION, "1")
 

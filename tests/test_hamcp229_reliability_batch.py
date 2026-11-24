@@ -180,7 +180,7 @@ class ValidationTests(unittest.TestCase):
 
     def test_public_schema_bounds_and_registration(self):
         tools = list(registered_tools(get_registered_server()).values())
-        self.assertEqual(len(tools), 86)  # + HAMCP-290 get_marketplace_inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
+        self.assertEqual(len(tools), 87)  # + HAMCP-290 get_marketplace_inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
         matches = [tool for tool in tools if tool.name == TOOL]
         self.assertEqual(len(matches), 1)
         schema = matches[0].parameters
@@ -1050,7 +1050,7 @@ class RawArgumentSdkBoundaryTests(RawArgumentAssertions, unittest.TestCase):
 
     def test_registered_tool_keeps_the_public_schema_and_catalog(self):
         tools = registered_tools(get_registered_server())
-        self.assertEqual(len(tools), 86)  # + HAMCP-290 get_marketplace_inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
+        self.assertEqual(len(tools), 87)  # + HAMCP-290 get_marketplace_inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
         tool = tools[TOOL]
         self.assertIsNone(tool.annotations)
         self.assertEqual(tool.description, automation_reliability_batch_analysis.__doc__)
