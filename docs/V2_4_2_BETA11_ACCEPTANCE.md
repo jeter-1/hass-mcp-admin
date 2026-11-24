@@ -1,10 +1,13 @@
 # Engineering 2.4.2-beta.11 acceptance
 
-**Status: in progress.** This contract covers the 2.9.0 build, released as
-2.4.2-beta.11. It follows 2.4.2-beta.10 (HAMCP-401, #452). Its content lands
-through item pull requests into the `release/2.9.0` integration branch. The
-final release pull request completes every section marked **pending** before
-it is offered for review.
+**Status: released.** This contract covers the 2.9.0 build, released as
+2.4.2-beta.11. It follows 2.4.2-beta.10 (HAMCP-401, #452). Its content landed
+through item pull requests into the `release/2.9.0` integration branch, and
+release pull request #481 carried it to `main`. Sections 1 to 3 are recorded
+below. Sections 4 and 5 are the installed acceptance contract; this document
+records no installed result. Section 5 is re-run on 2.4.2-beta.12, the
+2.9.0.1 hotfix (HAMCP-470), under its own acceptance document on the
+`release/2.9.0.1` branch.
 
 See also the release notes:
 [`V2_4_2_BETA11_RELEASE_NOTES.md`](V2_4_2_BETA11_RELEASE_NOTES.md).
@@ -22,7 +25,8 @@ materialized, unstaged release whatever its base
 6449c7b3), and item pull requests carry no version change of their own.
 
 The release is materialized in all three version authorities, with no staged
-declaration left. Nothing is published or deployed.
+declaration left. Section 3 records the publication. Deploying is a separate
+action that this document does not record.
 
 The contract has five stages:
 1. source and offline acceptance;
@@ -137,19 +141,36 @@ landed item states a persisted-format change.
   document as the active acceptance document, with resolution `exact`.
 - The release-docs pull request (I6a, HAMCP-469) runs the Fast checks and CI
   on its own head. Its reviewer is the architect only (not independent).
-- **Evidence tier: pending.** It runs once, on the final release head, after
-  Josh's go. The release pull request names that head, its `validate` run
-  and the Evidence log.
+- **Evidence tier: passed** on the final release head 4cfced4e (base `main`
+  10eada44), 2026-11-22 22:46-23:38 CST, after Josh's go. It ran
+  `check.ps1 -Tier Evidence -Parallel 4` (13,880 tests ran, 19
+  skipped). `validation.json` sha256
+  `a3d62d75e5f57eff122370213a2a7840d9eafa77dd0a590e8edf0cf24753f7cc`.
 
 ## 2. Release CI
 
 The exact materialized final head's `validate` check passes, including the
-release transition. **Pending.**
+release transition. **Passed.** Release pull request #481 (`release/2.9.0`
+at 4cfced4e into `main` at 10eada44): 41 checks passed and 5 were skipped,
+none failed. The runs were CI 45120499867 (`validate`), Policy locks
+45120499535 and Core evidence 45120499679, all `success` on 4cfced4e.
 
 ## 3. Publication
 
 Publication happens only through Josh's Ready action and the repository's
-head-bound workflow. **Pending.**
+head-bound workflow. **Done.**
+- #481 was merged by the head-bound Ready workflow on 2026-11-23 at 05:29
+  CST, as `main` 23c5c4297fc0360f2cf46e62a384bbebd82d3015 (tree equal to
+  4cfced4e).
+- Workflow run 45165732357 ("Publish reviewed Engineering release",
+  `success`, 05:29-05:57 CST) published that commit:
+  - version image `ghcr.io/jeter-1/hass-mcp-engineering-beta:2.4.2-beta.11`;
+  - commit image
+    `ghcr.io/jeter-1/hass-mcp-engineering-beta:sha-23c5c4297fc0360f2cf46e62a384bbebd82d3015`;
+  - OCI manifest digest
+    `sha256:e5e46d52a6db1bc4e02e207603d21dab57c7e6a03cc1030d03d9193199a294fd`;
+  - annotated tag `v2.4.2-beta.11` at 23c5c429;
+  - a GitHub pre-release, published at 05:57 CST.
 
 ## 4. Installed read-only acceptance (separately authorized, after deploy)
 
@@ -162,7 +183,14 @@ run in one sitting, and Josh approves each step.
    - the merged release SHA as build SHA;
    - `dirty: false`.
 2. **Lifecycle health and the admitted ha-mcp set (HAMCP-436, HAMCP-400,
-   #479).** In `get_server_health`, under
+   #479).** The lifecycle provider is probed lazily: it is first probed when
+   a lifecycle plan is created (`planning_evidence`,
+   `governance/operational_lifecycle.py`), not at start-up and not by
+   `get_server_health`. Before that, `operational_status` is `unknown`, and
+   the entry id, observed version and `catalog_admission` are not yet set.
+   So read these fields right after the first lifecycle plan is created (the
+   section 5 step 1 reload plan, before it is applied). In
+   `get_server_health`, under
    `operational_administration.lifecycle_provider`
    (`service.py`, `tests/test_governance_health_cache.py`), expected:
    - `operational_status` is `available` (the lifecycle provider is ready),
@@ -222,14 +250,16 @@ run in one sitting, and Josh approves each step.
       records hold exactly `entity_id` and `area`, and `fields_withheld` is
       unchanged.
    3. `ha_search` with `result_fields` naming one key that does not exist.
-      Expected:
-      - upstream's own warning text (it lists "Available keys") never
-        reaches the client: no "Available keys" text in the response;
-      - `data.warnings` contains `upstream_warning_replaced`, and
-        `upstream_warnings_replaced` goes up by one.
+      Expected: ha-mcp 9.2.0 rejects an unknown `result_fields` key with a
+      validation error before it searches (`_validate_result_field_names`,
+      `tools/search/entities.py`, tag 9.2.0), and the read is refused with
+      `invalid_request`. No records are returned, and upstream's "Valid
+      keys" text does not reach the client. The earlier expectation, a
+      replaced "Available keys" warning, does not apply on 9.2.0.
 
-   Stop and record the response if a requested key is withheld, or if
-   upstream's warning text appears.
+   Stop and record the response if a requested key is withheld, if an
+   unknown key returns records, or if upstream's warning or validation text
+   appears.
 5. **Replaced upstream warnings (HAMCP-464, #477).** This is a
    client-visible change. On `ha_get_overview`, `ha_get_state` (single and
    bulk), `ha_get_todo`, `ha_get_zone` and `ha_list_floors_areas`, an
