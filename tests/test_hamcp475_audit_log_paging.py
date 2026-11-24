@@ -227,9 +227,11 @@ class CompatibilityTests(_AuditLogCase):
     async def test_counting_undecodable_rows_costs_linear_work_while_pages_shrink(self):
         """Codex R493-05: a page that shrinks to fit must not rescan the skipped rows.
 
-        The work is counted as interpreter profile events, not timed. Each extra
+        The work is counted as line events traced in compatibility.py, not timed.
+        A loop iteration is a line event even when it stays on one line, so a
+        rescan that only filters (yields nothing) is still counted. Each extra
         non-UTF-8 row may add a fixed amount of work; a per-candidate rescan adds
-        work for every row on every one of the ~500 shrink steps.
+        work for every row on every one of the ~500 shrink steps (Codex R493-06).
         """
 
         import sys
@@ -243,16 +245,25 @@ class CompatibilityTests(_AuditLogCase):
         async def work(undecodable: int) -> tuple[int, dict]:
             build(undecodable)
             events = 0
+            module_file = compatibility.__file__
 
-            def count(frame, event, arg):
+            def count_lines(frame, event, arg):
                 nonlocal events
-                events += 1
+                if event == "line":
+                    events += 1
+                return count_lines
 
-            sys.setprofile(count)
+            def trace(frame, event, arg):
+                # Only frames of compatibility.py, including its generator
+                # expressions, are line-traced.
+                return count_lines if frame.f_code.co_filename == module_file else None
+
+            previous = sys.gettrace()
+            sys.settrace(trace)
             try:
                 rendered = await compatibility.get_audit_log(lines=500)
             finally:
-                sys.setprofile(None)
+                sys.settrace(previous)
             return events, split_audit_page(rendered)[1]
 
         self.limit(1_024)
