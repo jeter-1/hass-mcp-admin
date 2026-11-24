@@ -147,8 +147,9 @@ class PublicBoundaryTests(unittest.IsolatedAsyncioTestCase):
         current["get_server_health"] = _without_hamcp242_health_disclosure(self, current["get_server_health"])
         from hamcp226_228_descriptor_changes import (without_hamcp226_descriptor_change,
                                                      without_hamcp228_capture_changes)
+        from hamcp473_descriptor_changes import without_hamcp473_descriptor_change  # + HAMCP-473
         current["configuration_integrity_analysis"] = without_hamcp226_descriptor_change(
-            self, current["configuration_integrity_analysis"])
+            self, without_hamcp473_descriptor_change(self, current["configuration_integrity_analysis"]))
         current["capture_automation_baseline"] = without_hamcp228_capture_changes(
             self, current["capture_automation_baseline"],
             baseline["descriptors"]["capture_automation_baseline"]["description"])

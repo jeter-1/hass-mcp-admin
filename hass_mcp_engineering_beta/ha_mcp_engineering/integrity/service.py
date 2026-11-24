@@ -39,7 +39,25 @@ from .rules import classify_integrity
 
 MAX_PAGE_LIMIT = 100
 MAX_ANALYSIS_FINDINGS = 2_000
-DETAIL_RESULT_CAPS = {"summary": 50, "standard": 30, "evidence": 20}
+DETAIL_RESULT_CAPS = {"summary": 50, "standard": 30, "evidence": 20, "compact": 100}
+# HAMCP-473: compact pages carry one short record per finding, no evidence
+# records and no dynamic review items, so a full page fits the response limit.
+COMPACT_DETAIL_LEVEL = "compact"
+COMPACT_FINDING_KEYS = (
+    "finding_id",
+    "finding_type",
+    "severity",
+    "confidence",
+    "target_entity_id",
+    "source_type",
+    "source_id",
+    "source_entity_id",
+    "configuration_paths",
+    "disabled_classification",
+    "manual_review_required",
+    "remediation_required",
+)
+COMPACT_CONFIGURATION_PATHS = 3
 PAGINATION_SNAPSHOT_TTL_SECONDS = 300.0
 MAX_PAGINATION_SNAPSHOTS = 16
 
@@ -125,6 +143,7 @@ class ConfigurationIntegrityAnalysisService:
         cursor: str = "",
         refresh_index: bool = False,
         page_fits: Callable[[IntegrityAnalysisOutput], bool] | None = None,
+        severities: list[str] | None = None,
     ) -> IntegrityAnalysisOutput:
         started = time.perf_counter()
         METRICS.record_integrity_analysis_request()
@@ -137,6 +156,7 @@ class ConfigurationIntegrityAnalysisService:
                 limit=limit,
                 cursor=cursor,
                 refresh_index=refresh_index,
+                severities=severities,
             )
         except InvalidRequestError:
             if cursor:
@@ -151,6 +171,7 @@ class ConfigurationIntegrityAnalysisService:
             validated["finding_types"],
             validated["include_orphan_candidates"],
             validated["detail_level"],
+            validated["severities"],
         )
         if cursor:
             return self._continue_snapshot(
@@ -174,7 +195,9 @@ class ConfigurationIntegrityAnalysisService:
                             "analysis_timestamp": analysis_timestamp,
                         },
                         max_evidence=MAX_PAGE_LIMIT,
-                        detail_level=DetailLevel(validated["detail_level"]),
+                        detail_level=_provider_detail_level(
+                            validated["detail_level"]
+                        ),
                     )
                 ),
                 timeout=self.timeout_seconds,
@@ -224,6 +247,40 @@ class ConfigurationIntegrityAnalysisService:
             METRICS.record_integrity_analysis_failure("internal_server_error")
             raise GovernanceError(ErrorCode.INTERNAL_SERVER_ERROR) from exc
 
+        # HAMCP-473: filter before the whole-analysis cap, so a client can
+        # walk every finding of one severity even when the total exceeds it.
+        # Findings the filter hides still need review: the assessment is
+        # taken before the filter and the exclusion is disclosed. The
+        # disclosure reconciles: finding_count, excluded_finding_count and
+        # truncated_selected_count add up to the classified total.
+        severity_filter = None
+        if set(validated["severities"]) != set(SEVERITIES):
+            selected = [
+                item for item in findings if item.severity in validated["severities"]
+            ]
+            excluded_counts = Counter(
+                item.severity
+                for item in findings
+                if item.severity not in validated["severities"]
+            )
+            severity_filter = {
+                "severities": list(validated["severities"]),
+                "excluded_finding_count": len(findings) - len(selected),
+                "excluded_by_severity": {
+                    severity: excluded_counts.get(severity, 0)
+                    for severity in SEVERITIES
+                    if severity not in validated["severities"]
+                },
+                "truncated_selected_count": max(
+                    0, len(selected) - MAX_ANALYSIS_FINDINGS
+                ),
+                "assessment_includes_excluded_findings": True,
+            }
+            excluded_findings = len(findings) > len(selected)
+            findings = selected
+        else:
+            excluded_findings = False
+
         analysis_truncated = len(findings) > MAX_ANALYSIS_FINDINGS
         if analysis_truncated:
             findings = findings[:MAX_ANALYSIS_FINDINGS]
@@ -244,7 +301,9 @@ class ConfigurationIntegrityAnalysisService:
         orphan_count = type_counts.get("orphan_registry_candidate", 0)
         in_scope_dynamic_count = len(bundle.dynamic_references)
         unresolved_count = type_counts.get("unresolved_dynamic_reference", 0)
-        manual_review_required = bool(findings) or in_scope_dynamic_count > 0
+        manual_review_required = (
+            bool(findings) or excluded_findings or in_scope_dynamic_count > 0
+        )
         coverage = [item.public() for item in bundle.coverage]
         source_failures = sum(
             item.failed_items
@@ -268,11 +327,15 @@ class ConfigurationIntegrityAnalysisService:
             METRICS.record_integrity_truncation()
         source_partial = coverage_incomplete or analysis_truncated
         partial = source_partial or has_more
-        include_evidence = validated["detail_level"] != "summary"
+        compact = validated["detail_level"] == COMPACT_DETAIL_LEVEL
+        include_evidence = validated["detail_level"] not in {
+            "summary",
+            COMPACT_DETAIL_LEVEL,
+        }
         page_reference_ids = {
             reference for item in page for reference in item.evidence_references
         }
-        public_evidence = [
+        public_evidence = [] if compact else [
             evidence_by_model[reference].public(
                 detail_level=validated["detail_level"]
             )
@@ -307,6 +370,7 @@ class ConfigurationIntegrityAnalysisService:
         data = {
             "analysis_timestamp": analysis_timestamp,
             "final_assessment": assessment,
+            **({"severity_filter": severity_filter} if severity_filter else {}),
             "result_status": "partial" if partial else "success",
             "finding_count": len(findings),
             "findings_by_severity": {
@@ -324,7 +388,7 @@ class ConfigurationIntegrityAnalysisService:
             "unresolved_dynamic_reference_count": in_scope_dynamic_count,
             "manual_review_required": manual_review_required,
             "findings": [
-                item.public(include_evidence=include_evidence) for item in page
+                _public_finding(item, include_evidence, compact) for item in page
             ],
             "evidence_references": public_evidence,
             "source_coverage_matrix": coverage,
@@ -336,11 +400,24 @@ class ConfigurationIntegrityAnalysisService:
                     bundle.dynamic_outside_requested_scope_count
                 ),
                 "manual_review_required": in_scope_dynamic_count > 0,
-                "review_items": _dynamic_review_items(bundle),
+                **(
+                    {"review_items_omitted": True}
+                    if compact
+                    else {"review_items": _dynamic_review_items(bundle)}
+                ),
                 "target_entity_ids_inferred": False,
             },
             "counter_semantics": {
-                "finding_count": "whole_bounded_analysis_findings",
+                "finding_count": (
+                    "selected_severity_findings_within_whole_bounded_analysis"
+                    if severity_filter
+                    else "whole_bounded_analysis_findings"
+                ),
+                **(
+                    {"findings_by_severity": "selected_severities_only"}
+                    if severity_filter
+                    else {}
+                ),
                 "unique_source_object_count": "unique_source_type_and_source_id_pairs_with_findings",
                 "unique_target_entity_count": "unique_confirmed_target_ids_across_reference_and_candidate_findings",
                 "unique_orphan_candidate_count": "registry_candidates_only",
@@ -398,9 +475,9 @@ class ConfigurationIntegrityAnalysisService:
         }
 
         all_findings_public = tuple(
-            item.public(include_evidence=include_evidence) for item in findings
+            _public_finding(item, include_evidence, compact) for item in findings
         )
-        all_evidence = {
+        all_evidence = {} if compact else {
             reference_id: item.public(detail_level=validated["detail_level"])
             for reference_id, item in evidence_by_model.items()
         }
@@ -595,10 +672,19 @@ class ConfigurationIntegrityAnalysisService:
         page_fits: Callable[[IntegrityAnalysisOutput], bool] | None,
         timing_details: dict[str, Any] | None = None,
     ) -> IntegrityAnalysisOutput:
-        """Advance only by findings delivered in a complete bounded envelope."""
+        """Advance only by findings delivered in a complete bounded envelope.
+
+        HAMCP-473: when the requested page does not fit the response limit,
+        search for the largest page that does, so a page holds as many
+        findings as the limit allows.
+        """
         effective_limit, clamp_reason = _effective_limit(
             limit, snapshot.detail_level
         )
+        # ``fits_below`` is the largest page size known to fit and
+        # ``fails_at`` the smallest known not to; neither is known at first.
+        fits_below: tuple[int, IntegrityAnalysisOutput] | None = None
+        fails_at: int | None = None
         while True:
             page = snapshot.findings[offset : offset + effective_limit]
             references = {
@@ -665,22 +751,32 @@ class ConfigurationIntegrityAnalysisService:
                 partial=partial,
             )
 
-            if page_fits is None or page_fits(output):
+            if page_fits is None or fails_at is None and page_fits(output):
                 # The full final page has been serialized successfully. Do not
                 # retire a snapshot merely because an attempted page was final.
                 if not has_more:
                     self.pagination_snapshots.remove(snapshot_id)
                 return output
-            if len(page) <= 1:
-                # Do not loop or recollect when even one complete finding and
-                # its disclosures cannot fit a custom response budget.
-                raise GovernanceError(
-                    ErrorCode.ANALYSIS_UNAVAILABLE,
-                    details=_details(
-                        "response_limit", "complete_page_exceeds_response_budget"
-                    ),
-                )
-            effective_limit = max(1, len(page) // 2)
+            if fails_at is not None and page_fits(output):
+                fits_below = (len(page), output)
+            else:
+                fails_at = len(page)
+            low = fits_below[0] if fits_below else 0
+            if fails_at - low <= 1:
+                if fits_below is None:
+                    # Do not loop or recollect when even one complete finding
+                    # and its disclosures cannot fit a custom response budget.
+                    raise GovernanceError(
+                        ErrorCode.ANALYSIS_UNAVAILABLE,
+                        details=_details(
+                            "response_limit",
+                            "complete_page_exceeds_response_budget",
+                        ),
+                    )
+                # Successful probes only grow, so the wrapper's last accepted
+                # rendering is this page. A smaller page always has more.
+                return fits_below[1]
+            effective_limit = (low + fails_at) // 2
             clamp_reason = "response_size_limit"
 
     def _encode_cursor(self, **values) -> str:
@@ -761,7 +857,9 @@ def _validate_inputs(**values) -> dict[str, Any]:
             )
         )
     detail_level = values.get("detail_level")
-    if detail_level not in {item.value for item in DetailLevel}:
+    if detail_level not in {item.value for item in DetailLevel} | {
+        COMPACT_DETAIL_LEVEL
+    }:
         raise InvalidRequestError(
             details={
                 **_details("detail_level", "unsupported_value"),
@@ -792,9 +890,13 @@ def _validate_inputs(**values) -> dict[str, Any]:
                 "refresh_index", "first_page_only_when_cursor_absent"
             )
         )
+    severities = _validate_enum_array(
+        "severities", values.get("severities"), SEVERITIES, operation
+    )
     return {
         "source_types": source_types,
         "finding_types": finding_types,
+        "severities": severities,
         "include_orphan_candidates": values["include_orphan_candidates"],
         "detail_level": detail_level,
         "limit": limit,
@@ -845,6 +947,29 @@ def _query_fingerprint(*parts) -> str:
             parts, sort_keys=True, separators=(",", ":"), default=str
         ).encode("utf-8")
     ).hexdigest()
+
+
+def _provider_detail_level(detail_level: str) -> DetailLevel:
+    """Compact pages need no more provider evidence than summary pages."""
+
+    if detail_level == COMPACT_DETAIL_LEVEL:
+        return DetailLevel.SUMMARY
+    return DetailLevel(detail_level)
+
+
+def _public_finding(item, include_evidence: bool, compact: bool) -> dict[str, Any]:
+    value = item.public(include_evidence=include_evidence)
+    if not compact:
+        return value
+    value = {key: value[key] for key in COMPACT_FINDING_KEYS if key in value}
+    if "configuration_paths" in value:
+        # The count is taken before the compact slice, so a client can tell
+        # when a standard read would return more paths.
+        value["configuration_path_count"] = len(value["configuration_paths"])
+        value["configuration_paths"] = value["configuration_paths"][
+            :COMPACT_CONFIGURATION_PATHS
+        ]
+    return value
 
 
 def _effective_limit(requested: int, detail_level: str) -> tuple[int, str | None]:
