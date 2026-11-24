@@ -44,7 +44,7 @@ final release pull request binds their evidence.
 | --- | --- | --- |
 | HAMCP-456 | Version-gate lint with a `ci/` allow-list (tests only) | landed, #487 |
 | HAMCP-458 | Release tooling: refuse a guessed base, check the test venv, readiness sweep (tooling only) | landed, #486 |
-| HAMCP-472 | `ha_search` domain-filtered wrong-empty result and always-partial warning | moved to native search (not reproduced in the HA Admin replay; no 2.9.1 code) |
+| HAMCP-472 | `ha_search` domain-filtered wrong-empty result and always-partial warning | moved to native search (the HA Admin replay's domain-only and query-plus-domain calls returned entities; a call that passes `search_types` still skips entities on ha-mcp 9.2.0, and that path stays until the native provider ships; no 2.9.1 code either way) |
 | HAMCP-481 | Native search design only ([`HAMCP_481_NATIVE_SEARCH_DESIGN.md`](HAMCP_481_NATIVE_SEARCH_DESIGN.md)); the build is planned for the next release | not landed |
 | HAMCP-473 | `configuration_integrity_analysis` paging and filters | not landed |
 | HAMCP-474 | Analysis coverage gaps | not landed |
