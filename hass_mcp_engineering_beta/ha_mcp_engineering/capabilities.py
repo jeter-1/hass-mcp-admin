@@ -222,6 +222,13 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
         "fallback": "none", "policy": "history_slices_read_v1", "direct_write_allowed": False,
     },
     {
+        "tool": "get_automation_run_counts", "category": "evidence",
+        "status": "beta_native", "risk": "read", "additive": True,
+        "operation_class": "read", "routing": "engineering_native",
+        "provider": "engineering", "data_providers": ["direct_ha_api"],
+        "fallback": "none", "policy": "automation_run_counts_read_v1", "direct_write_allowed": False,
+    },
+    {
         "tool": "control_power", "category": "ordinary_runtime_action",
         "status": "beta_native", "risk": "physical_action", "additive": True,
         "operation_class": "typed_power", "routing": "engineering_native",
@@ -1079,6 +1086,15 @@ CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (
         "completeness": "partial_with_reasons_when_limited_redacted_or_upstream_failed",
         "security_justification": "Only the admitted ha_get_history route with Engineering-built absolute bounds, ascending minimal order and bounded offset paging; gateway sanitization plus the strict sanitizer at one exit; versions 8.5.0/8.6.0 only; no direct Home Assistant fallback.",
         "trust_mode": "reviewed_native_read", "trust_profile": "history-slices-read-v1",
+    },
+    {
+        "tool": "get_automation_run_counts", "capability": "automation_run_counts",
+        "required_semantics": "Runs (automation_triggered rows) per named automation, or for every current automation ranked by runs, over a bounded window with first and last run times; partial with the uncovered automations and intervals when a budget is spent or a window cannot be split further.",
+        "standard_ha_mcp_coverage": "semantically_unsuitable", "direct_ha_coverage": "reviewed_fixed_reads",
+        "selected_provider": "engineering", "fallback_policy": "none",
+        "completeness": "partial_with_reasons_when_budget_spent_or_window_unsplittable",
+        "security_justification": "Fixed reads: GET /api/logbook for at most 10 automation entities per request, bisected within a fixed GET and time budget, and in all mode one GET /api/states; only automation IDs, counts and times are returned, never names, messages, sources or context IDs; the logbook slot is held for the call; no write or fallback.",
+        "trust_mode": "reviewed_native_read", "trust_profile": "automation-run-counts-read-v1",
     },
     {
         "tool": "control_power", "capability": "typed_power_execution",

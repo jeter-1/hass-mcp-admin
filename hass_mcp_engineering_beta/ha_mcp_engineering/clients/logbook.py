@@ -296,14 +296,15 @@ def _valid_hours(hours):
             and math.isfinite(hours))
 
 
-def resolve_window(now, hours, start_time, end_time):
+def resolve_window(now, hours, start_time, end_time, *, default_hours=DEFAULT_HOURS):
     """Requested and effective windows; refuse before any request or slot."""
     if start_time is not None and hours is not None:
         # The public hours default stays 12 (v1.1.2 parity), so an explicit
         # start takes precedence over that default; any other hours conflicts.
-        if not (_valid_hours(hours) and hours == DEFAULT_HOURS):
+        # HAMCP-476 passes its own 24-hour default.
+        if not (_valid_hours(hours) and hours == default_hours):
             raise InvalidRequestError(
-                "hours must be omitted (default 12) when start_time is set.")
+                f"hours must be omitted (default {default_hours}) when start_time is set.")
         hours = None
     if hours is not None and not _valid_hours(hours):
         raise InvalidRequestError("hours must be finite, positive, and no greater than 168.")
@@ -312,7 +313,7 @@ def resolve_window(now, hours, start_time, end_time):
         start = _timestamp(start_time, "start_time")
     else:
         try:
-            start = end - timedelta(hours=DEFAULT_HOURS if hours is None else hours)
+            start = end - timedelta(hours=default_hours if hours is None else hours)
         except OverflowError:
             raise InvalidRequestError("end_time is out of range.") from None
     if start >= end:
@@ -358,6 +359,29 @@ def resolve_filter(entity_id, entity_ids, name):
     if entity_id:
         return {"kind": "entity_id", "entity_ids": [entity_id]}
     return {"kind": "none", "entity_ids": []}
+
+
+def decode_records(text):
+    """HAMCP-476: the bounded, validated row list of one logbook body."""
+    return _decode(text)
+
+
+def record_when(record):
+    """HAMCP-476: a row's ``when`` as an aware UTC time, or None."""
+    return _when(record)
+
+
+async def fetch_text(client, start_iso, end_iso, entity_ids):
+    """HAMCP-476: one bounded logbook GET for the slot holder.
+
+    The same route, query keys and transport bounds as ``read``; the caller
+    must hold the slot (``acquire``) and always names its entities.
+    """
+    if not entity_ids:
+        raise ValueError("invalid_internal_logbook_request")
+    query = [("end_time", end_iso), ("entity", ",".join(entity_ids))]
+    path = rest_path("/logbook/{}", start_iso, kinds=("timestamp",), query=query)
+    return await client.request("GET", path, raw=True, logbook_read=True)
 
 
 def _states_error():
@@ -414,6 +438,19 @@ class LogbookReader:
 
     def __init__(self):
         self._active = False
+
+    def acquire(self):
+        """HAMCP-476: take the one slot for a multi-read caller; busy refuses."""
+        if self._active:
+            raise GovernanceError(ErrorCode.LOGBOOK_BUSY)
+        self._active = True
+
+    def release(self, worker=None):
+        """Free the slot, or after a still-running worker drains."""
+        if worker is not None and not worker.done():
+            worker.add_done_callback(self._finished)
+        else:
+            self._active = False
 
     def _finished(self, worker):
         try:

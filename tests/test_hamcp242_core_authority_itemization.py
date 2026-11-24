@@ -262,6 +262,7 @@ EXPECTED_AFFECTED_TOOLS = {
         "capture_automation_baseline",
         "create_home_assistant_restart_plan",
         "dashboard_integrity_analysis",
+        "get_automation_run_counts",  # HAMCP-476
         "get_configuration_definitions",
         "get_history",
         "get_history_slices",

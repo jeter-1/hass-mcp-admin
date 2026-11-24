@@ -2711,7 +2711,7 @@ class SignedGatewayReadmissionTests(
             {generation},
         )
         registered = gateway._registered_tool_registry.snapshot()
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 86)  # HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 87)  # HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
         # HAMCP-290: the delegated ha_get_hacs_info is retired (Josh,
         # 2026-11-08), so 25 matched reads expose 24 (85 + 24 = 109; HAMCP-134: +1 static; HAMCP-297: +1 static).
         self.assertEqual(len(registered), 24)

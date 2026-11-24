@@ -558,7 +558,7 @@ class AdmissionTests(Harness):
         return self.exposed(gateway)
 
     async def test_stock_catalog_is_optional_absent_with_87_public_tools(self):
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 86)  # HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 87)  # HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
         for version in VERSIONS:
             for mode in ("A", "B"):
                 with self.subTest(version=version, mode=mode):
