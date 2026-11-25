@@ -133,6 +133,22 @@ path-level finding. Standard and evidence modes retain linked path findings and
 stable pagination. Root-cause severity and counts are based on unique causes,
 not reference multiplicity.
 
+Each summary group also gives the cause's location and state where the evidence
+has them (HAMCP-493):
+
+- `affected_step` is the group's trace step: the failing step of a repeated trace
+  or action failure, or the condition a repeated condition stop ended at. A
+  `mode_concurrency_conflict` finding names no step itself, so the group takes the
+  first trace step cited by its evidence references. It is `null` when no member
+  or evidence reference has a trace step, as for an entity reference or a
+  correlated System Log error.
+- `current_state` is `missing`, `unavailable`, `unknown` or `disabled` for a
+  referenced-entity cause, and `disabled` for `automation_disabled` (the automation
+  is off or disabled). It is `null` for a cause whose evidence carries no state,
+  such as a trace failure or a System Log error.
+- `representative_configuration_paths` lists at most three member configuration
+  paths, and is empty when no member has one.
+
 `home_assistant_ms` remains the shared cumulative duration of all HA attempts for
 compatibility. The unambiguous companion fields are
 `home_assistant_cumulative_attempt_ms`, `home_assistant_wall_clock_span_ms`,
@@ -277,8 +293,8 @@ provider, fallback, or write path.
 - Each root-cause summary carries the values the single tool returns for that group at
   `detail_level` `summary` (HAMCP-474 D6): `root_cause_group_id`, `title`,
   `affected_dependency`, `severity`, `reference_count`, `confidence`, `current_state`,
-  `representative_configuration_paths` (at most three), `recommended_investigation` and
-  `governed_change_required`. Finding IDs, evidence references and
+  `representative_configuration_paths` (at most three), `affected_step` (HAMCP-493),
+  `recommended_investigation` and `governed_change_required`. Finding IDs, evidence references and
   `intentional_trigger_context` stay with the single tool.
 - `root_cause_detail` is `full` when every analyzed digest fits the response bound with
   that detail. Otherwise it is `reduced`: every summary keeps only the first five keys
