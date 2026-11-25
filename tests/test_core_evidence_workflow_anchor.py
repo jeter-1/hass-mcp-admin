@@ -5,7 +5,7 @@ only from committed reviewed data (D5): the 2026.11.3 provenance fixture, its RE
 entry and the four per-lane source-hash records. Every new or changed guard has a refusal here, and
 2026.11.0's local and renewal paths are shown unchanged.
 """
-from dataclasses import asdict
+from dataclasses import asdict, replace
 import copy
 import hashlib
 import io
@@ -75,6 +75,21 @@ def fixture(version=ANCHOR):
 def signed(version):
     journal, _ = w.journal(JOURNAL.read_bytes())
     return next(x.to_mapping() for x in journal.accepted.entries if x.version == version)
+
+
+REAL_JOURNAL = w.journal
+
+
+def signed_versions(journal):
+    return {x.version for x in journal.accepted.entries}
+
+
+def at_sequence_18(raw):
+    """HAMCP-462: sequence 19 signed 2026.11.3. Prepare cases for the unsigned 2026.11.3 anchor
+    read the same verified journal with its sequence-18 envelope accepted, as HAMCP-489 saw it."""
+    value, key = REAL_JOURNAL(raw)
+    assert [x.sequence for x in value.envelopes[-2:]] == [18, 19]
+    return replace(value, envelopes=value.envelopes[:-1]), key
 
 
 def main_ctx(**changes):
@@ -431,6 +446,7 @@ class Prepare(unittest.TestCase):
 
     def run_prepare(self, version=ANCHOR, *, after=None, image=None):
         directory = scratch(self) / "prepared"
+        self.assertEqual(max(signed_versions(at_sequence_18(JOURNAL.read_bytes())[0]), key=e.version_key), PREDECESSOR)
         before = e.read_json(CORE_SOURCES / "2026.11.0.json"); before["tag_commit"] = before["commit"]
         after = e.read_json(CORE_SOURCES / "2026.11.3.json") if after is None else after
         tag = {"tag_name": version, "published_at": "2026-11-20T00:00:00Z"}
@@ -450,6 +466,7 @@ class Prepare(unittest.TestCase):
                "GITHUB_STEP_SUMMARY": str(directory.parent / "summary")}
         with mock.patch.dict(os.environ, env, clear=True), \
                 mock.patch.object(w, "registry_input", return_value=(JOURNAL.read_bytes(), True)), \
+                mock.patch.object(w, "journal", side_effect=at_sequence_18), \
                 mock.patch.object(w, "github", side_effect=api), \
                 mock.patch.object(w, "source", side_effect=[before, after]) as source, \
                 mock.patch.object(w, "image_provenance", provenance):
@@ -507,6 +524,28 @@ class Prepare(unittest.TestCase):
                 self.assertRaisesRegex(ValueError, "reviewed_binding_mismatch"):
             self.run_prepare()
         self.assertFalse((self.last / "release.json").exists())
+
+    def test_at_the_sequence_19_tip_2026_11_3_is_published_and_prepare_runs_nothing(self):
+        # HAMCP-462: the committed journal itself, unmasked, signs 2026.11.3.
+        self.assertEqual(max(signed_versions(w.journal(JOURNAL.read_bytes())[0]), key=e.version_key), ANCHOR)
+        directory = scratch(self) / "prepared"
+        tag = {"tag_name": ANCHOR, "published_at": "2026-11-20T00:00:00Z"}
+        def api(endpoint, **_kwargs):
+            if endpoint == "repos/home-assistant/core/releases/tags/" + ANCHOR:
+                return tag
+            raise AssertionError(endpoint)
+        env = {**RUN, "GITHUB_REF": "refs/heads/main", "GITHUB_REPOSITORY": w.REPOSITORY,
+               "GITHUB_EVENT_NAME": "workflow_dispatch", "GITHUB_OUTPUT": str(directory.parent / "outputs"),
+               "GITHUB_STEP_SUMMARY": str(directory.parent / "summary")}
+        with mock.patch.dict(os.environ, env, clear=True), \
+                mock.patch.object(w, "registry_input", return_value=(JOURNAL.read_bytes(), True)), \
+                mock.patch.object(w, "github", side_effect=api), \
+                mock.patch.object(w, "source", side_effect=Reached("source")), \
+                mock.patch.object(w, "image_provenance", side_effect=Reached("image_provenance")):
+            w.prepare(directory, False, ANCHOR)
+        self.assertFalse((directory / "release.json").exists())
+        out = self.outputs(directory)
+        self.assertEqual((out["refused"], out["run"], out["release"]), ("false", "false", "none"))
 
     def test_an_unreviewed_version_still_takes_the_o3_refusal(self):
         after = {**e.read_json(CORE_SOURCES / "2026.11.3.json"), "version": "2026.11.99"}

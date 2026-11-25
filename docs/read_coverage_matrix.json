@@ -8,8 +8,8 @@
  "notes": [
   "Deployed Home Assistant Core and ha-mcp versions cannot be determined from source. Every admission statement here is conditional on the observed versions (ADR-021).",
   "The signed Core registry is disabled by default (ha_core_release_registry_enabled: false in hass_mcp_engineering_beta/config.yaml). Runtime-only Core profiles admit nothing until it is enabled and a signed envelope covers the observed Core release; the deployed option value is unknown from source.",
-  "Signed registry sequence 15 carries three exact Core releases, and sequences 16 to 18 carry them unchanged. 2026.10.0: 22 profiles, including core.entity_registry_metadata_operation. 2026.10.1: 26, adding core.configuration_delete_operation, core.entity_registry_availability_operation, core.entity_assistant_exposure_operation and core.label_registry_operation (first signed for 2026.10.1 in sequence 13; sequences 14 and 15 carry them, and add 2026.10.3). 2026.10.3: all 31, adding core.config_entry_helper_options_operation, core.typed_input_select_option_operation, core.script_trace_read, core.dashboard_metadata_operation and core.scene_configuration_operation (sequence 15). Runtime enablement and current Core authority still apply to every one. Each exact Core release, including each patch release, needs its own signed entry. A row that cites sequence 15 describes these 2026.10.x entries, and its 'only' ranges over them; sequence 16 also signs the same 31 profiles for Core 2026.11.0 (next note). Per-source version-coverage gaps are not repeated.",
-  "Sequence 18 (sha256 e792670dd22586cfa3d2fbbfaacf6165feb85bcb435e33f69bc712f7db27b092, generated 2026-11-14) is the journal tip in upstream-trust/ha-core-release-registry.json. It signs Core 2026.11.0 with 38 profiles: sequence 16 signed the same 31 as 2026.10.3, sequence 17 added core.typed_helper_value_operation, and sequence 18 added core.marketplace_read, core.security_metadata_read, core.device_configuration_entity_operation, core.scene_create_delete_operation, core.created_helper_delete_operation and core.thread_matter_topology_read. Tests and the pull-request acceptance path read this in-repo journal; the runtime fetches the registry from the registry branch (CORE_REGISTRY_URL in ha_core_readmission/registry.py), so the deployed registry state is unknown from source.",
+  "Signed registry sequence 15 carries three exact Core releases, and sequences 16 to 19 carry them unchanged. 2026.10.0: 22 profiles, including core.entity_registry_metadata_operation. 2026.10.1: 26, adding core.configuration_delete_operation, core.entity_registry_availability_operation, core.entity_assistant_exposure_operation and core.label_registry_operation (first signed for 2026.10.1 in sequence 13; sequences 14 and 15 carry them, and add 2026.10.3). 2026.10.3: all 31, adding core.config_entry_helper_options_operation, core.typed_input_select_option_operation, core.script_trace_read, core.dashboard_metadata_operation and core.scene_configuration_operation (sequence 15). Runtime enablement and current Core authority still apply to every one. Each exact Core release, including each patch release, needs its own signed entry. A row that cites sequence 15 describes these 2026.10.x entries, and its 'only' ranges over them; sequence 16 also signs the same 31 profiles for Core 2026.11.0, and sequence 19 for Core 2026.11.3 (next note). Per-source version-coverage gaps are not repeated.",
+  "Sequence 19 (sha256 d30648e42eec2ea8e2306ebc17971f3ec766ff1f5de82db5e90653fb97b06fb1, generated 2026-11-25) is the journal tip in upstream-trust/ha-core-release-registry.json (HAMCP-462). It signs Core 2026.11.3 with the same 38 profiles as Core 2026.11.0, and carries the 2026.11.0 entry unchanged. For 2026.11.0: sequence 16 signed the same 31 as 2026.10.3, sequence 17 added core.typed_helper_value_operation, and sequence 18 added core.marketplace_read, core.security_metadata_read, core.device_configuration_entity_operation, core.scene_create_delete_operation, core.created_helper_delete_operation and core.thread_matter_topology_read. Tests and the pull-request acceptance path read this in-repo journal; the runtime fetches the registry from the registry branch (CORE_REGISTRY_URL in ha_core_readmission/registry.py), so the deployed registry state is unknown from source.",
   "core.scene_configuration_operation is already in sequence 15 for Core 2026.10.3. Text that says it awaits sequence 16 (for example the comment in governance/scene_configuration.py) is stale.",
   "On ha-mcp 9.2.0, the only reviewed release, add-on restart, Home Assistant restart and reload are admitted and backup creation stays held (HAMCP-401, HAMCP-381). The rows for 7.14.1 to 9.1.2, including 8.6.0 (formerly on HOLD, HAMCP-156), are retired (HAMCP-437) and refuse as unknown versions.",
   "ha-mcp tools classified mixed_or_requires_wrapper without an adapter (ha_get_logs, ha_manage_backup, ha_manage_energy_prefs, ha_manage_updates) are unreachable and appear only in gaps.",
@@ -174,7 +174,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
-       "line": 5430,
+       "line": 5437,
        "anchor": "def create_plan"
       },
       {
@@ -201,12 +201,12 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
-       "line": 477,
+       "line": 482,
        "anchor": "SUPPORTED_CONFIGURATION_RESOURCES"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
-       "line": 479,
+       "line": 484,
        "anchor": "SUPPORTED_CONFIGURATION_ACTIONS"
       },
       {
@@ -469,12 +469,12 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
-       "line": 477,
+       "line": 482,
        "anchor": "SUPPORTED_CONFIGURATION_RESOURCES"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
-       "line": 479,
+       "line": 484,
        "anchor": "SUPPORTED_CONFIGURATION_ACTIONS"
       },
       {
@@ -582,7 +582,7 @@
    "name": "Scenes",
    "group": "Automations, scripts, scenes, groups and blueprints",
    "completeness": "partial",
-   "completeness_reason": "Single-scene delegated read plus loaded-membership references; no list of stored scene configs. Write edits existing UI scenes; scene create and the delete of a created scene are implemented under a runtime-only profile that registry sequence 18 signs for Core 2026.11.0 only (HAMCP-329; deployed registry state unknown).",
+   "completeness_reason": "Single-scene delegated read plus loaded-membership references; no list of stored scene configs. Write edits existing UI scenes; scene create and the delete of a created scene are implemented under a runtime-only profile that registry sequence 19 signs for Core 2026.11.0 and 2026.11.3 only (HAMCP-329; deployed registry state unknown).",
    "read_paths": [
     {
      "tool": "ha_config_get_scene",
@@ -643,7 +643,7 @@
       "create"
      ],
      "policy": "OPERATIONAL_ADMINISTRATION; action update (default): exactly one existing UI-managed scene by exact config id; action create: one new UI scene under a config id no scene uses; saving never activates the scene",
-     "admission": "update: signed:core.scene_configuration_operation (state: compiled-runtime-only; signed in registry seq 15 for Core 2026.10.3 only; dormant on 2026.10.0/.1; docs still say planned seq 16 - stale vs registry data; deployment unknown). create: core.scene_create_delete_operation (runtime-only, compiled for Core 2026.11.0; signed in registry seq 18 for Core 2026.11.0 only; elsewhere refuses with pending_signed_registry_admission; deployment unknown)",
+     "admission": "update: signed:core.scene_configuration_operation (state: compiled-runtime-only; signed in registry seq 15 for Core 2026.10.3 only; dormant on 2026.10.0/.1; docs still say planned seq 16 - stale vs registry data; deployment unknown). create: core.scene_create_delete_operation (runtime-only, compiled for Core 2026.11.0; signed in registry seq 19 for Core 2026.11.0 and 2026.11.3 only; elsewhere refuses with pending_signed_registry_admission; deployment unknown)",
      "detail": "Update edits name/icon/entities of one existing UI scene. Create (HAMCP-329) requires name and entities, refuses entity_id and null values, rechecks absence at preflight and awaits registration by a bounded poll; Home Assistant assigns the entity_id. The scene services scene.create, scene.apply, scene.delete, scene.reload and scene.turn_on are never sent. DELETE config is never sent by an update or a create; the only DELETE is the separately approved rollback_change of a verified create, under the same runtime-only profile. YAML/integration/disabled scenes refused. Verification scope is stored_configuration_and_registry_identity; loaded state not verified.",
      "refs": [
       {
@@ -710,9 +710,9 @@
    "gaps": [
     {
      "id": "RCG-004",
-     "missing": "Scene create (new scene): registry sequence 18 signs core.scene_create_delete_operation for Core 2026.11.0 only; it stays refused on Core 2026.10.x (deployed registry state unknown)",
+     "missing": "Scene create (new scene): registry sequence 19 signs core.scene_create_delete_operation for Core 2026.11.0 and 2026.11.3 only; it stays refused on Core 2026.10.x (deployed registry state unknown)",
      "requirement_type": "new_signed_profile",
-     "requirement": "HAMCP-329 (HAMCP-071 Part 3): create_scene_configuration_plan action=create (new config id, absence check, exact readback, never activated) runs only once a signed Core registry entry for Core 2026.11.0 admits core.scene_create_delete_operation (registry sequence 18 carries that entry; deployed registry state unknown); until then it refuses with pending_signed_registry_admission. scene.create is never sent and the update profile still covers update only.",
+     "requirement": "HAMCP-329 (HAMCP-071 Part 3): create_scene_configuration_plan action=create (new config id, absence check, exact readback, never activated) runs only once a signed Core registry entry for Core 2026.11.0 or 2026.11.3 admits core.scene_create_delete_operation (registry sequence 19 carries that entry for 2026.11.0 and 2026.11.3; deployed registry state unknown); until then it refuses with pending_signed_registry_admission. scene.create is never sent and the update profile still covers update only.",
      "register": [
       "HAMCP-071",
       "HAMCP-329"
@@ -732,9 +732,9 @@
     },
     {
      "id": "RCG-005",
-     "missing": "Scene delete: only the rollback of a governed scene create, signed in registry sequence 18 for Core 2026.11.0 only",
+     "missing": "Scene delete: only the rollback of a governed scene create, signed in registry sequence 19 for Core 2026.11.0 and 2026.11.3 only",
      "requirement_type": "new_signed_profile",
-     "requirement": "HAMCP-329/298: the only scene DELETE is the separately approved rollback_change of a scene Engineering created, under core.scene_create_delete_operation, which registry sequence 18 signs for Core 2026.11.0 only. create_configuration_delete_plan and core.configuration_delete_operation still cover automation and script only; a delete plan for a scene Engineering did not create needs its own scope decision and signed profile.",
+     "requirement": "HAMCP-329/298: the only scene DELETE is the separately approved rollback_change of a scene Engineering created, under core.scene_create_delete_operation, which registry sequence 19 signs for Core 2026.11.0 and 2026.11.3 only. create_configuration_delete_plan and core.configuration_delete_operation still cover automation and script only; a delete plan for a scene Engineering did not create needs its own scope decision and signed profile.",
      "register": [
       "HAMCP-071",
       "HAMCP-329",
@@ -928,12 +928,12 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
-       "line": 477,
+       "line": 482,
        "anchor": "SUPPORTED_CONFIGURATION_RESOURCES"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
-       "line": 479,
+       "line": 484,
        "anchor": "SUPPORTED_CONFIGURATION_ACTIONS"
       },
       {
@@ -1345,7 +1345,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
-       "line": 477,
+       "line": 482,
        "anchor": "SUPPORTED_CONFIGURATION_RESOURCES"
       }
      ]
@@ -1483,7 +1483,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
-       "line": 477,
+       "line": 482,
        "anchor": "SUPPORTED_CONFIGURATION_RESOURCES"
       }
      ]
@@ -1606,7 +1606,7 @@
    "name": "input_boolean and input_number helpers",
    "group": "UI helpers",
    "completeness": "partial",
-   "completeness_reason": "Storage definitions readable through the delegated helper list and the governed plan baseline; YAML-defined definitions only through the held YAML reader. Governed create and update exist; the only delete is the rollback of a governed create, under a runtime-only profile that registry sequence 18 signs for Core 2026.11.0 only (HAMCP-298).",
+   "completeness_reason": "Storage definitions readable through the delegated helper list and the governed plan baseline; YAML-defined definitions only through the held YAML reader. Governed create and update exist; the only delete is the rollback of a governed create, under a runtime-only profile that registry sequence 19 signs for Core 2026.11.0 and 2026.11.3 only (HAMCP-298).",
    "read_paths": [
     {
      "tool": "ha_config_list_helpers",
@@ -1713,7 +1713,7 @@
      ],
      "policy": "governed_configuration_operation: immutable plan, exact-hash external approval, ordered governed apply, exact read-back; create preceded by name-subset check, GET /states absence check, generated-id identity match",
      "admission": "signed:core.governed_configuration_operation (compiled profile)",
-     "detail": "operations[].resource_type=helper, helper_type=input_boolean; actions limited to create/update (SUPPORTED_ACTIONS). Rollback of a verified create is the separately approved delete of exactly that helper through rollback_change, under runtime-only core.created_helper_delete_operation (signed in registry seq 18 for Core 2026.11.0 only; HAMCP-298); no delete plan tool accepts a helper. (Researched for: input_boolean, input_number.)",
+     "detail": "operations[].resource_type=helper, helper_type=input_boolean; actions limited to create/update (SUPPORTED_ACTIONS). Rollback of a verified create is the separately approved delete of exactly that helper through rollback_change, under runtime-only core.created_helper_delete_operation (signed in registry seq 19 for Core 2026.11.0 and 2026.11.3 only; HAMCP-298); no delete plan tool accepts a helper. (Researched for: input_boolean, input_number.)",
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
@@ -1829,9 +1829,9 @@
     },
     {
      "id": "RCG-023",
-     "missing": "No governed delete plan for input_boolean and input_number definitions: create_configuration_delete_plan accepts automation and script only. The only helper delete is the rollback of a governed create, and its profile is signed in registry sequence 18 for Core 2026.11.0 only.",
+     "missing": "No governed delete plan for input_boolean and input_number definitions: create_configuration_delete_plan accepts automation and script only. The only helper delete is the rollback of a governed create, and its profile is signed in registry sequence 19 for Core 2026.11.0 and 2026.11.3 only.",
      "requirement_type": "new_signed_profile",
-     "requirement": "HAMCP-298: rollback_change of a verified governed helper create plans a separately approved delete of exactly that helper under core.created_helper_delete_operation, which registry sequence 18 signs for Core 2026.11.0 only (elsewhere pending_signed_registry_admission). A delete plan for a helper Engineering did not create still needs an owner scope decision and its own signed profile with pre-image capture, consumer disclosure, recreate rollback and negative tests.",
+     "requirement": "HAMCP-298: rollback_change of a verified governed helper create plans a separately approved delete of exactly that helper under core.created_helper_delete_operation, which registry sequence 19 signs for Core 2026.11.0 and 2026.11.3 only (elsewhere pending_signed_registry_admission). A delete plan for a helper Engineering did not create still needs an owner scope decision and its own signed profile with pre-image capture, consumer disclosure, recreate rollback and negative tests.",
      "register": [
       "HAMCP-155"
      ],
@@ -2322,12 +2322,12 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/schemas.py",
-       "line": 49,
+       "line": 50,
        "anchor": "TEMPLATE_ENTITY_KEYS = MappingProxyType"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/schemas.py",
-       "line": 95,
+       "line": 96,
        "anchor": "LEGACY_PLATFORM_KEYS = MappingProxyType"
       }
      ]
@@ -2622,7 +2622,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/schemas.py",
-       "line": 61,
+       "line": 62,
        "anchor": "SENSOR_PLATFORM_KEYS = MappingProxyType"
       }
      ]
@@ -2683,12 +2683,12 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/schemas.py",
-       "line": 85,
+       "line": 86,
        "anchor": "GROUP_KEYS = frozenset"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/schemas.py",
-       "line": 61,
+       "line": 62,
        "anchor": "SENSOR_PLATFORM_KEYS = MappingProxyType"
       }
      ]
@@ -4064,7 +4064,7 @@
      "tool": "get_marketplace_inventory",
      "provider": "direct_ha_api",
      "purpose_binding": "marketplace_inventory_read_v1",
-     "admission": "signed:core.marketplace_read (state: dormant-until-signed; signed in registry seq 18 for Core 2026.11.0 only; deployed registry state unknown)",
+     "admission": "signed:core.marketplace_read (state: dormant-until-signed; signed in registry seq 19 for Core 2026.11.0 and 2026.11.3 only; deployed registry state unknown)",
      "completeness": "partial",
      "detail": "Installed-only Marketplace (HACS) inventory and search via WS marketplace/repositories/list; hacs/repositories/list on the same connection only when Core answers exactly unknown_command. Paginated, sanitized, backend-attributed; never lists uninstalled catalog repositories and reaches no management command. The delegated ha-mcp ha_get_hacs_info read is retired: never exposed or dispatched on any reviewed release, with no alias and no fallback.",
      "refs": [
@@ -4094,7 +4094,7 @@
      "tool": "get_thread_matter_topology",
      "provider": "direct_ha_api",
      "purpose_binding": "thread_matter_topology_read_v1",
-     "admission": "signed:core.thread_matter_topology_read (state: dormant-until-signed; signed in registry seq 18 for Core 2026.11.0 only; deployed registry state unknown)",
+     "admission": "signed:core.thread_matter_topology_read (state: dormant-until-signed; signed in registry seq 19 for Core 2026.11.0 and 2026.11.3 only; deployed registry state unknown)",
      "completeness": "partial",
      "detail": "Thread datasets via WS thread/list_datasets and the Matter network topology via WS matter/network_topology with refresh always the literal false (cached graph only, no diagnostic re-read). Bounded, sanitized; PAN identifiers, channel, network name and RLOC16 kept raw by design, every other identifier opaque, and a whole section is refused if a TLV, network key or PSKc key appears. Reaches no Thread or Matter write, commissioning or refresh command.",
      "refs": [
@@ -4380,7 +4380,7 @@
       "state: one Matter device-configuration entity (select option, switch on/off, number value) matched to a signed (domain, platform, translation_key) triple"
      ],
      "policy": "authenticated_exact_device_configuration_operation",
-     "admission": "Core profile core.device_configuration_entity_operation (signed only; registry seq 18 names it for Core 2026.11.0 only; deployed registry state unknown; no legacy Core path)",
+     "admission": "Core profile core.device_configuration_entity_operation (signed only; registry seq 19 names it for Core 2026.11.0 and 2026.11.3 only; deployed registry state unknown; no legacy Core path)",
      "detail": "One exact config-category entity change with a composite registry/device/state check before dispatch; exact reported-state readback only, physical feedback not verified.",
      "refs": [
       {
@@ -5327,7 +5327,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/automation_runs/service.py",
-       "line": 103,
+       "line": 117,
        "anchor": "async def count_runs"
       },
       {
@@ -5787,7 +5787,7 @@
      "tool": "get_security_metadata",
      "provider": "direct_ha_api",
      "purpose_binding": "security_metadata_read_v1",
-     "admission": "signed:core.security_metadata_read (state: dormant-until-signed; signed in registry seq 18 for Core 2026.11.0 only; deployed registry state unknown)",
+     "admission": "signed:core.security_metadata_read (state: dormant-until-signed; signed in registry seq 19 for Core 2026.11.0 and 2026.11.3 only; deployed registry state unknown)",
      "completeness": "partial",
      "detail": "Ten fixed read-only WebSocket commands on Core 2026.11.0 (auth/current_user, config/auth/list, http/config, get_config, homeassistant/expose_new_entities/get x3, assist_pipeline/pipeline/list, conversation/agent/list, get_panels); constant payloads, no token, session or MFA mutation command is ever sent. Fields the source does not provide are not_provided, never inferred. Sanitized, bounded, section-attributed.",
      "refs": [
@@ -6976,14 +6976,14 @@
    "used_by": [
     "entity_states"
    ],
-   "note": "Runtime-only and signed-only: needs signed Core registry admission for the observed Core release; registry sequence 17 names it for Core 2026.11.0 only, and no legacy Core path exists."
+   "note": "Runtime-only and signed-only: needs signed Core registry admission for the observed Core release; registry sequence 19 names it for Core 2026.11.0 and 2026.11.3 only, and no legacy Core path exists."
   },
   "core.device_configuration_entity_operation": {
    "probe_profile": false,
    "used_by": [
     "entity_states"
    ],
-   "note": "Runtime-only and signed-only: needs signed Core registry admission for Core 2026.11.0, which registry sequence 18 signs; no legacy Core path exists."
+   "note": "Runtime-only and signed-only: needs signed Core registry admission for Core 2026.11.0 or 2026.11.3, which registry sequence 19 signs; no legacy Core path exists."
   },
   "core.integration_inspection_metadata_read": {
    "probe_profile": false,
@@ -7067,7 +7067,7 @@
    "used_by": [
     "config_entries_and_integrations"
    ],
-   "note": "Runtime-only: needs signed Core registry admission for the observed Core release; registry sequence 18 signs it for Core 2026.11.0 only."
+   "note": "Runtime-only: needs signed Core registry admission for the observed Core release; registry sequence 19 signs it for Core 2026.11.0 and 2026.11.3 only."
   },
   "core.dashboard_metadata_operation": {
    "probe_profile": false,
@@ -7090,21 +7090,21 @@
    "used_by": [
     "security_metadata"
    ],
-   "note": "Runtime-only and signed-only (HAMCP-134 security metadata read): needs signed Core registry admission for 2026.11.0, which registry sequence 18 signs."
+   "note": "Runtime-only and signed-only (HAMCP-134 security metadata read): needs signed Core registry admission for 2026.11.0 or 2026.11.3, which registry sequence 19 signs."
   },
   "core.scene_create_delete_operation": {
    "probe_profile": false,
    "used_by": [
     "scenes"
    ],
-   "note": "Runtime-only (HAMCP-329): scene create and the scene DELETE of a governed scene-create rollback; signed in registry sequence 18 for Core 2026.11.0 only."
+   "note": "Runtime-only (HAMCP-329): scene create and the scene DELETE of a governed scene-create rollback; signed in registry sequence 19 for Core 2026.11.0 and 2026.11.3 only."
   },
   "core.created_helper_delete_operation": {
    "probe_profile": false,
    "used_by": [
     "helpers_input_boolean_number"
    ],
-   "note": "Runtime-only (HAMCP-298): delete of an Engineering-created input_boolean/input_number helper as the rollback of its governed create; signed in registry sequence 18 for Core 2026.11.0 only."
+   "note": "Runtime-only (HAMCP-298): delete of an Engineering-created input_boolean/input_number helper as the rollback of its governed create; signed in registry sequence 19 for Core 2026.11.0 and 2026.11.3 only."
   },
   "core.thread_matter_topology_read": {
    "probe_profile": false,
@@ -7112,7 +7112,7 @@
     "config_entries_and_integrations",
     "device_registry"
    ],
-   "note": "Runtime-only: needs signed Core registry admission for the observed Core release; registry sequence 18 signs it for Core 2026.11.0 only. HAMCP-231 Thread dataset and Matter topology read, served by the static get_thread_matter_topology route."
+   "note": "Runtime-only: needs signed Core registry admission for the observed Core release; registry sequence 19 signs it for Core 2026.11.0 and 2026.11.3 only. HAMCP-231 Thread dataset and Matter topology read, served by the static get_thread_matter_topology route."
   }
  },
  "reader_purpose_index": {

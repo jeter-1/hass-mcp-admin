@@ -1,11 +1,11 @@
-"""Port of Home Assistant Core's recorder entity filter (2026.10.1).
+"""Port of Home Assistant Core's recorder entity filter (2026.11.3).
 
 Source: ``homeassistant/helpers/entityfilter.py`` (``_convert_globs_to_pattern``
 and ``_generate_filter_from_sets_and_pattern_lists``), ``homeassistant/core.py``
 (``VALID_ENTITY_ID``, ``split_entity_id``) and the ``boolean``, ``string``,
 ``entity_id`` and ``_entity_ids`` validators of
 ``homeassistant/helpers/config_validation.py`` at Core commit
-``abe1fdd7cd6b4de1715c87b6fd87d92699514ef9``.
+``92da9f154079459b9e547126f9bd9fce726de16a``.
 
 The port is a cross-check only. Core's ``recorder/entity_options/get`` answer
 from the loaded filter is primary; a disagreement is reported as
@@ -21,11 +21,11 @@ import re
 from typing import Any
 
 
-CORE_PIN = "2026.10.1"
+CORE_PIN = "2026.11.3"
 
 _OBJECT_ID = r"(?!_)[\da-z_]+(?<!_)"
 _DOMAIN = r"(?!.+__)" + _OBJECT_ID
-VALID_ENTITY_ID = re.compile(r"^" + _DOMAIN + r"\." + _OBJECT_ID + r"$")
+VALID_ENTITY_ID = re.compile(r"^" + _DOMAIN + r"\." + _OBJECT_ID + r"\Z")
 
 # The six evaluation branches of ``_generate_filter_from_sets_and_pattern_lists``.
 NO_FILTER = "no_filter"            # case 1
@@ -190,7 +190,7 @@ def generate_filter(
             domain = split_entity_id(entity_id)[0]
             if domain in exclude_d or bool(exclude_eg and exclude_eg.match(entity_id)):
                 return entity_id in include_e
-            return entity_id not in exclude_e
+            return entity_id in include_e or entity_id not in exclude_e
         return entity_filter_4b
     return include_e.__contains__
 
