@@ -53,7 +53,11 @@ INVALID = _Invalid()
 
 @dataclass(frozen=True, slots=True)
 class ReadResult:
-    """One read's closed outcome and its projected value."""
+    """One read's closed outcome and its projected value.
+
+    ``observed`` is set only on ``inventory_bound_exceeded``: the length of
+    the list Core returned, whose body is withheld (design section 6.3).
+    """
 
     read: str
     status: str
@@ -62,6 +66,7 @@ class ReadResult:
     partial: tuple[str, ...] = ()
     dropped: int = 0
     items: MappingProxyType = field(default_factory=lambda: MappingProxyType({}))
+    observed: int | None = None
 
 
 def utc_now() -> datetime:
@@ -128,7 +133,8 @@ def project_rows(name: str, raw: Any) -> ReadResult:
     if type(raw) is not list:
         return _unavailable(name, "invalid_response")
     if len(raw) > c.MAX_ITEMS:
-        return _unavailable(name, "inventory_bound_exceeded")
+        # The body is withheld; only its length is reported.
+        return ReadResult(name, c.UNAVAILABLE, "inventory_bound_exceeded", observed=len(raw))
     fields = c.ROW_FIELDS[name]
     optional = c.OPTIONAL_FIELDS.get(name, frozenset())
     rows: dict[str, dict] = {}
@@ -325,7 +331,8 @@ class CoreReadSession:
     def _record(self, result: ReadResult) -> ReadResult:
         self.sources.append({
             "source": result.read, "status": result.status, "reason": result.reason,
-            "partial": list(result.partial), "observed_at": iso(self.clock()),
+            "partial": list(result.partial), "observed": result.observed,
+            "observed_at": iso(self.clock()),
         })
         return result
 
