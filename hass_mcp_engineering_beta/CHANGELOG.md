@@ -10,7 +10,7 @@ release pull request completes this entry.
   so item pull requests carry no version change. The release transition is
   from 2.4.2-beta.13 to 2.4.2-beta.14.
 - Landed: `get_history` and the incident activity reads (history and
-  logbook) now send an end time (HAMCP-502, #PR502NUM). Without one, Core
+  logbook) now send an end time (HAMCP-502, #505). Without one, Core
   ends the window a day after its start, so a read over 24 hours returned
   only its first day and read complete. The 168 hour limit is unchanged.
 - Planned (plan approved 2026-11-25): the Core 2026.11.3 must-carry
