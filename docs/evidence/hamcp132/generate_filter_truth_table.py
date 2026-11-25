@@ -14,9 +14,9 @@ Configurations are already schema-validated lists (Core's
 ``FILTER_SCHEMA``/``INCLUDE_EXCLUDE_FILTER_SCHEMA`` output); schema coercion
 is tested separately.
 
-Usage (Core source tree at tag 2026.10.1):
+Usage (Core source tree at tag 2026.11.3):
     python docs/evidence/hamcp132/generate_filter_truth_table.py \
-        --core <core-2026.10.1>/homeassistant/helpers/entityfilter.py \
+        --core <core-2026.11.3>/homeassistant/helpers/entityfilter.py \
         --output docs/evidence/hamcp132/filter-truth-table.json
 """
 
@@ -31,10 +31,10 @@ import json
 from pathlib import Path
 import re
 
-CORE_VERSION = "2026.10.1"
-CORE_COMMIT = "abe1fdd7cd6b4de1715c87b6fd87d92699514ef9"
+CORE_VERSION = "2026.11.3"
+CORE_COMMIT = "92da9f154079459b9e547126f9bd9fce726de16a"
 CORE_PATH = "homeassistant/helpers/entityfilter.py"
-CORE_SHA256 = "0ce66e76729c568f4c23d90166f378524cf7a6ebd67b11110ab2c6a20a1136c2"
+CORE_SHA256 = "0611e7ee2949264518363e1611f23e7da8e0134ffc1bae9280c89f46767fb4c0"
 FUNCTIONS = ("_convert_globs_to_pattern", "generate_filter", "_generate_filter_from_sets_and_pattern_lists")
 
 ENTITIES = (
@@ -72,6 +72,9 @@ CONFIGURATIONS = {
                                                       lists(domains=["sensor"])),
     "case4b_exclude_glob_include_entity": ("4b", lists(entities=["sensor.excluded_power", "light.porch"]),
                                            lists(entity_globs=["sensor.excluded_*"], entities=["light.porch"])),
+    "case4b_exclude_domain_include_entity_beats_exclude_entity": (
+        "4b", lists(entities=["switch.pump", "light.kitchen"]),
+        lists(domains=["light"], entities=["switch.pump", "switch.heater"])),
     "case6_include_entities_with_exclude_entities": ("6", lists(entities=["switch.heater", "light.kitchen"]),
                                                      lists(entities=["light.kitchen", "switch.pump"])),
 }

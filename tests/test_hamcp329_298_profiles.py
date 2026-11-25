@@ -75,6 +75,9 @@ ADDED_AFTER_PIN = ("core.thread_matter_topology_read",)
 SIGNED_REGISTRY = ROOT / "upstream-trust" / "ha-core-release-registry.json"
 TARGET_CORE = "2026.11.0"
 OLDER_CORES = ("2026.10.0", "2026.10.1", "2026.10.3")
+# HAMCP-462: the sequence-19 signing adds 2026.11.3 with the same references
+# as TARGET_CORE, so it names the new profiles too.
+NEWER_CORES = ("2026.11.3",)
 # Computed from this branch's compiled contracts.  A change to either
 # contract text moves its fingerprint and must be re-reported for signing.
 PINNED = {
@@ -148,6 +151,7 @@ class ProfileContractTests(unittest.TestCase):
         # Core release.  HAMCP-437: the sequence-18 signing (design §0 H1)
         # names the new profiles in the TARGET_CORE entry only; NEW and
         # ADDED_AFTER_PIN are compared with their own compiled references.
+        # HAMCP-462: sequence 19 also names them in NEWER_CORES.
         compiled = {p.capability_id: reference(p) for p in CORE_RUNTIME_CAPABILITY_PROFILES}
         versions = []
         for entry in signed_tip_entries():
@@ -156,8 +160,8 @@ class ProfileContractTests(unittest.TestCase):
                 for item in entry["capabilities"]:
                     self.assertEqual(item, compiled[item["capability_id"]])
                 named = {item["capability_id"] for item in entry["capabilities"]} & set(NEW)
-                self.assertEqual(named, set(NEW) if entry["version"] == TARGET_CORE else set())
-        self.assertEqual(versions, [*OLDER_CORES, TARGET_CORE])
+                self.assertEqual(named, set(NEW) if entry["version"] in (TARGET_CORE, *NEWER_CORES) else set())
+        self.assertEqual(versions, [*OLDER_CORES, TARGET_CORE, *NEWER_CORES])
 
     def test_4_older_compiled_releases_never_carry_the_new_profiles(self):
         for version, _commit, _digest in core_profiles.SUPPORTED_CORE_RELEASES:

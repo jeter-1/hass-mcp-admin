@@ -44,14 +44,14 @@ WINDOW = support_window.load(ROOT)
 ALARMO_SLOTS = support_window.core_slots(WINDOW, support_window.ALARMO_SLOTS)
 SLOT_VERSIONS = {slot: WINDOW["core"][slot]["version"] for slot in ALARMO_SLOTS}
 SLOT_OF = {version: slot for slot, version in SLOT_VERSIONS.items()}
-# Single-slot checks use the current slot (Core 2026.11.0 today).
+# Single-slot checks use the current slot (Core 2026.11.3 today).
 CORE = WINDOW["core"]["current"]["version"]
-# HAMCP-406 empties the Core rollback; HAMCP-489 fills the candidate. Substitution
+# HAMCP-462 fills the Core rollback and empties the candidate. Substitution
 # checks use an exact Core outside the window with a well-formed binding of its
 # own (a former slot, a distinct digest and the empty slot's name); every
 # verifier must refuse it.
 OTHER_CORE = "2026.10.3"
-OTHER_BINDING = {"slot": "rollback", "version": OTHER_CORE, "lane": "ha-" + OTHER_CORE.replace(".", "-"),
+OTHER_BINDING = {"slot": "candidate", "version": OTHER_CORE, "lane": "ha-" + OTHER_CORE.replace(".", "-"),
                  "image": f"{support_window.CORE_IMAGE}:{OTHER_CORE}@sha256:{'1' * 64}",
                  "image_index_digest": "sha256:" + "1" * 64}
 CI = ROOT / ".github/workflows/ci.yml"
@@ -2224,8 +2224,9 @@ class SlotBindingTests(unittest.TestCase):
         # Derived from the committed window's non-empty slots (an empty Core
         # candidate has no binding and no Alarmo job).
         self.assertEqual(ALARMO_SLOTS, support_window.core_slots(WINDOW, support_window.SLOTS))
-        # HAMCP-406 empties the rollback; HAMCP-489 binds Core 2026.11.3 as the candidate.
-        self.assertEqual(ALARMO_SLOTS, ("current", "candidate"))
+        # HAMCP-462 rotates Core 2026.11.3 to current and 2026.11.0 to rollback;
+        # the candidate is empty.
+        self.assertEqual(ALARMO_SLOTS, ("current", "rollback"))
         self.assertIn(CORE, SLOT_VERSIONS.values())
         for slot, version in SLOT_VERSIONS.items():
             provenance = json.loads(provenance_path(ROOT, version).read_text(encoding="utf-8"))

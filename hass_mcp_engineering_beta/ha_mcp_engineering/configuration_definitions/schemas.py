@@ -1,30 +1,30 @@
-"""Positive per-integration key allowlists, pinned to Core 2026.10.1.
+"""Positive per-integration key allowlists, pinned to Core 2026.11.3.
 
 Every key the report can copy from a YAML definition is named here; any
 other key is counted, never copied. ``db_url`` is not in any allowlist and is
 withheld in every position (``contracts.WITHHELD_KEYS``).
 
 Sources (``homeassistant/`` package of Core
-``abe1fdd7cd6b4de1715c87b6fd87d92699514ef9``):
+``92da9f154079459b9e547126f9bd9fce726de16a``):
 
 - sql: ``components/sql/__init__.py:46-70`` ``QUERY_SCHEMA``;
-- template: ``components/template/config.py:237-315`` (block),
-  ``schemas.py:43-71`` (entity), ``sensor.py:66-90``,
-  ``binary_sensor.py:58-79``;
-- filter ``sensor.py:153-176``; derivative ``sensor.py:102-120``;
-  statistics ``sensor.py:572-597``; group ``__init__.py:87-105``,
-  ``sensor.py:96-111``, ``binary_sensor.py:40-48``; integration
-  ``sensor.py:88-109``; min_max ``sensor.py:67-77``; history_stats
-  ``sensor.py:90-117``; threshold ``binary_sensor.py:74-89``; trend
-  ``binary_sensor.py:81-96``; utility_meter ``__init__.py:86-115``;
-- the shared platform keys ``helpers/config_validation.py:1257-1263``.
+- template: ``components/template/config.py:261-349`` (block),
+  ``schemas.py:43-71`` (entity), ``sensor.py:67-91``,
+  ``binary_sensor.py:59-80``;
+- filter ``sensor.py:153-179``; derivative ``sensor.py:101-119``;
+  statistics ``sensor.py:581-606``; group ``__init__.py:67-85``,
+  ``sensor.py:95-110``, ``binary_sensor.py:40-48``; integration
+  ``sensor.py:91-113``; min_max ``sensor.py:69-79``; history_stats
+  ``sensor.py:90-117``; threshold ``binary_sensor.py:68-83``; trend
+  ``binary_sensor.py:76-91``; utility_meter ``__init__.py:102-131``;
+- the shared platform keys ``helpers/config_validation.py:1290-1296``.
 """
 
 from __future__ import annotations
 
 from types import MappingProxyType
 
-CORE_PIN = "2026.10.1@abe1fdd7cd6b4de1715c87b6fd87d92699514ef9"
+CORE_PIN = "2026.11.3@92da9f154079459b9e547126f9bd9fce726de16a"
 
 SQL_KEYS = frozenset({
     "name", "query", "column", "unit_of_measurement", "value_template", "unique_id",
@@ -36,11 +36,12 @@ TEMPLATE_MARKERS = ("{{", "{%", "{#")
 
 TEMPLATE_BLOCK_KEYS = frozenset({
     "unique_id", "triggers", "trigger", "conditions", "condition", "actions", "action", "variables",
+    "trigger_variables",
 })
 TEMPLATE_PLATFORMS = (
     "alarm_control_panel", "binary_sensor", "button", "climate", "cover", "device_tracker", "event",
-    "fan", "image", "light", "lock", "number", "select", "sensor", "switch", "update", "vacuum",
-    "weather",
+    "fan", "image", "light", "lock", "media_player", "number", "select", "sensor", "switch", "update",
+    "vacuum", "water_heater", "weather",
 )
 TEMPLATE_COMMON_KEYS = frozenset({
     "name", "unique_id", "default_entity_id", "availability", "icon", "picture", "attributes",
@@ -68,7 +69,7 @@ SENSOR_PLATFORM_KEYS = MappingProxyType({
     "group": frozenset({"entities", "type", "name", "unique_id", "ignore_non_numeric",
                         "unit_of_measurement", "device_class", "state_class"}),
     "integration": frozenset({"source", "name", "unique_id", "round", "unit_prefix", "unit_time",
-                              "max_sub_interval", "method"}),
+                              "device_class", "max_sub_interval", "method"}),
     "min_max": frozenset({"entity_ids", "type", "name", "round_digits", "unique_id"}),
     "history_stats": frozenset({"entity_id", "state", "start", "end", "duration",
                                 "min_state_duration", "type", "name", "unique_id", "state_class"}),
@@ -88,9 +89,9 @@ UTILITY_METER_KEYS = frozenset({
     "periodically_resetting", "tariffs", "cron", "always_available",
 })
 
-# ``<domain>: - platform: X`` forms Core 2026.10.1 rejects with a repair issue
-# and no entity (sql ``sensor.py:71-80``, template ``helpers.py:190-222``,
-# utility_meter ``sensor.py:216-225``). They are projected so the owner can
+# ``<domain>: - platform: X`` forms Core 2026.11.3 rejects with a repair issue
+# and no entity (sql ``sensor.py:71-80``, template ``helpers.py:196-228``,
+# utility_meter ``sensor.py:185-194``). They are projected so the owner can
 # find them, and flagged ``unsupported_legacy_platform``.
 LEGACY_PLATFORM_KEYS = MappingProxyType({
     "sql": SQL_KEYS,
@@ -112,16 +113,16 @@ DEPENDENCY_KEYS = MappingProxyType({
 # Fixed default names (``name`` absent) that drive the entity ID. A callable
 # default depends on other keys of the same definition.
 SENSOR_DEFAULT_NAMES = MappingProxyType({
-    "statistics": "Statistical characteristic",  # statistics/sensor.py:529
+    "statistics": "Statistical characteristic",  # statistics/sensor.py:538
     "history_stats": "unnamed statistics",       # history_stats/sensor.py:90-117
-    # group/sensor.py:367-369 replaces this default with "Sensor group <type>".
+    # group/sensor.py:366-368 replaces this default with "Sensor group <type>".
     "group": "Sensor Group",
 })
 BINARY_SENSOR_DEFAULT_NAMES = MappingProxyType({
-    "threshold": "Threshold",                     # threshold/binary_sensor.py:63
+    "threshold": "Threshold",                     # threshold/binary_sensor.py:57
     "group": "Binary Sensor Group",               # group/binary_sensor.py:40-48
 })
-# A nameless entity without a unique_id (helpers/entity_platform.py:1149-1166,
+# A nameless entity without a unique_id (helpers/entity_platform.py:1178-1195,
 # DEVICE_DEFAULT_NAME const.py:49).
 DEVICE_DEFAULT_NAME = "Unnamed Device"
 
