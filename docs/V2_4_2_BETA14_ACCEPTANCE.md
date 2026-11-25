@@ -42,7 +42,7 @@ final release pull request binds their evidence.
 | Item | Scope | State |
 | --- | --- | --- |
 | HAMCP-502 | `get_history` and incident activity reads bounded with an end time, so windows over 24 hours are complete | not landed |
-| HAMCP-462 | Core mirror pins refreshed to 2026.11.3, the trust-root seq 19 copy and the support-window rotation | landed (#PR462NUM) |
+| HAMCP-462 | Core mirror pins refreshed to 2026.11.3, the trust-root seq 19 copy and the support-window rotation | landed (#508) |
 | HAMCP-490, HAMCP-491 | Configuration integrity compact finding identity and filtered counts | not landed |
 | HAMCP-493 | Reliability analysis current state and configuration paths | not landed |
 | HAMCP-497, HAMCP-498 | Health build identity, registry refresh time and the Core-unavailable retryable flag | not landed |

@@ -9,7 +9,7 @@ release pull request completes this entry.
 - Version materialized on `release/2.10.0`, created from `main` at f48c6fb9,
   so item pull requests carry no version change. The release transition is
   from 2.4.2-beta.13 to 2.4.2-beta.14.
-- Landed: the Core 2026.11.3 must-carry (HAMCP-462, #PR462NUM). The
+- Landed: the Core 2026.11.3 must-carry (HAMCP-462, #508). The
   recorder entity filter, configuration-definition schemas and naming
   mirrors are pinned to Core 2026.11.3; the signed Core registry trust root
   is copied at sequence 19, which signs 2026.11.3 with the same 38 profiles
