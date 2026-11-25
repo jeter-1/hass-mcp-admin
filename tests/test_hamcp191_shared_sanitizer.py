@@ -656,6 +656,9 @@ SANITIZER_SITES = {
     ("request_context.py", "request_id_is_safe", "sanitize_untrusted_data"): (1, "identifier"),
     # HAMCP-134: the native get_security_metadata read (direct Core metadata).
     ("security_metadata.py", "sanitize_sections", "sanitize_untrusted_data"): (1, "analysis"),
+    # HAMCP-481: the native ha_search reply (HAMCP-501 W3), which serves the delegated
+    # ha_search contract and carries the delegated dashboard and helper sub-call rows.
+    ("search/reply.py", "_Cleaner.__call__", "sanitize_untrusted_data"): (1, "delegated"),
     # HAMCP-231: the native get_thread_matter_topology free-text screen.
     ("thread_matter_topology.py", "_Screen.apply", "sanitize_untrusted_data"): (1, "identifier"),
     ("tools/compatibility.py", "get_error_log.action", "sanitize_untrusted_data"): (1, "logs"),
