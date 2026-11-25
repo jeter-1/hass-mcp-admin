@@ -421,6 +421,9 @@ class ConfigurationIntegrityAnalysisService:
                 "unique_source_object_count": "unique_source_type_and_source_id_pairs_with_findings",
                 "unique_target_entity_count": "unique_confirmed_target_ids_across_reference_and_candidate_findings",
                 "unique_orphan_candidate_count": "registry_candidates_only",
+                # HAMCP-491: the raw in-scope count, taken before any
+                # severities filter and before equal references coalesce.
+                "unresolved_dynamic_reference_count": "in_scope_dynamic_references_before_severity_filter",
                 "pagination_changes_whole_analysis_totals": False,
             },
             "pagination": {
