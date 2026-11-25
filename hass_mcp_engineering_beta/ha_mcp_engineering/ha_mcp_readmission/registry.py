@@ -426,6 +426,9 @@ class SignedReleaseRegistry:
         self._retired_cache_incomplete = False
         self._surface_denied = False
         self._last_refresh_monotonic: float | None = None
+        # HAMCP-497: wall-clock start of the last refresh attempt, for health
+        # only.  Scheduling stays on the monotonic clock above.
+        self._last_refresh_at: datetime | None = None
         self._missing_release_refreshes: dict[
             tuple[str, str], float
         ] = {}
@@ -533,6 +536,10 @@ class SignedReleaseRegistry:
         async with self._lock:
             self._last_refresh_monotonic = time.monotonic()
             self._last_refresh_status = "refreshing"
+            try:
+                self._last_refresh_at = self.evaluated_at()
+            except ReleaseRegistryOperationalError:
+                self._last_refresh_at = None
             witness_started = False
             candidate_validated = False
             try:
@@ -760,6 +767,16 @@ class SignedReleaseRegistry:
             ),
             "registry_location": "fixed_repository_https",
             "surface_denied": authority.surface_denied,
+            # HAMCP-497: when the last refresh attempt started (its outcome
+            # is refresh_status) and the scheduled interval between attempts.
+            "last_refresh_at": (
+                self._last_refresh_at.strftime("%Y-%m-%dT%H:%M:%SZ")
+                if self._last_refresh_at is not None
+                else None
+            ),
+            "refresh_interval_seconds": (
+                REFRESH_INTERVAL_SECONDS if self._enabled else None
+            ),
         }
 
     async def _fetch_bytes(self, url: str, maximum: int) -> bytes:

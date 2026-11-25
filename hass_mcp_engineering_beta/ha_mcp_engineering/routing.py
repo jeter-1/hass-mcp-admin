@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import OrderedDict
+from datetime import datetime
 import hashlib
 import ipaddress
 import json
@@ -71,6 +72,9 @@ UPSTREAM_VERSION_AUDIT_PATTERN = re.compile(
 
 
 _DELEGATED_CORE_ROUTE = StaticCoreRoute(CORE_ROUTE_DELEGATED)
+# HAMCP-498: the Core runtime's recovery states while withdrawn authority is
+# being re-verified after a connection movement (a Core restart or update).
+_CORE_TRANSIENT_RECOVERY_STATES = frozenset({"retrying", "backing_off", "confirming"})
 
 
 def _gateway_core_route(
@@ -529,6 +533,51 @@ class AuthenticatedMcpGateway:
             "resource_type": selected[0],
             "core_capability": selected[1],
             "plan_created": False,
+            "provider_dispatch_occurred": False,
+        }
+
+    def _core_recovery_details(self) -> dict:
+        """Name an open Core restart window (HAMCP-498), or return ``{}``.
+
+        Admitted Core authority that a connection movement withdrew (a Core
+        restart or update) is re-verified on recovery pacing, and the
+        runtime's public health projection names that window.  Only an open
+        window is reported: a runtime that was never admitted, is
+        incompatible, stable or restored, or whose projection cannot be read
+        keeps the non-retryable refusal.
+        """
+
+        projection = getattr(self._core_runtime, "health_projection", None)
+        if not callable(projection):
+            return {}
+        try:
+            recovery = projection().get("recovery")
+        except Exception:  # noqa: BLE001 - the generic refusal stands
+            return {}
+        if not isinstance(recovery, dict):
+            return {}
+        state = recovery.get("recovery_state")
+        retired_at = recovery.get("retired_at")
+        restored_at = recovery.get("last_restored_at")
+        if state not in _CORE_TRANSIENT_RECOVERY_STATES:
+            return {}
+        try:
+            # ``retired_at`` is set only when admitted authority is
+            # withdrawn, and a later restoration closes that window.  Both
+            # have one-second precision, so an equal pair is a new window.
+            retired = datetime.fromisoformat(retired_at)
+            if restored_at is not None and datetime.fromisoformat(restored_at) > retired:
+                return {}
+        except (TypeError, ValueError):
+            return {}
+        return {
+            "reason": "core_authority_recovering",
+            "reason_code": "core_authority_recovering",
+            "recovery_state": state,
+            "retired_at": retired_at,
+            "next_recovery_attempt_at": recovery.get("next_recovery_attempt_at"),
+            "confirmations": recovery.get("confirmations"),
+            "confirmations_required": recovery.get("confirmations_required"),
             "provider_dispatch_occurred": False,
         }
 
@@ -1242,15 +1291,19 @@ class AuthenticatedMcpGateway:
                     telemetry.result_status = "failure"
                     telemetry.completeness = "failed"
                     telemetry.response_status = 200
+                    details = self._pending_admission_details(
+                        tool_name, parameters
+                    )
+                    # HAMCP-498: a pending signed admission keeps precedence;
+                    # otherwise an open Core restart window is retryable.
+                    recovery = {} if details else self._core_recovery_details()
                     failure = FailureResponse(
                         operation=tool_name,
                         error="CoreCapabilityUnavailable",
                         error_code=telemetry.error_code,
                         message=definition.message,
-                        details=self._pending_admission_details(
-                            tool_name, parameters
-                        ),
-                        retryable=definition.retryable,
+                        details=details or recovery,
+                        retryable=bool(recovery) or definition.retryable,
                         timing=Timing(
                             total_ms=telemetry.total_duration_ms
                         ),

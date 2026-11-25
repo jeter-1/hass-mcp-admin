@@ -31,8 +31,8 @@ release pull request completes this entry.
   is copied at sequence 19, which signs 2026.11.3 with the same 38 profiles
   as 2026.11.0; and the support window rotates to 2026.11.3 current and
   2026.11.0 rollback, with the Core candidate empty.
-- Planned (plan approved 2026-11-25): the health fixes (HAMCP-497,
-  498) and native search (HAMCP-481). None has landed yet.
+- Planned (plan approved 2026-11-25): native search (HAMCP-481). None has
+  landed yet.
 - Landed: `configuration_integrity_analysis` gives each dynamic finding its
   own `finding_id` (HAMCP-490, #510). Two references at one path that differ
   in evidence used to share one ID, so compact rows repeated. The first
@@ -47,6 +47,12 @@ release pull request completes this entry.
   rejection names its step only on its trace evidence, so the summary takes
   it from there. A disabled automation's group reports `current_state`
   `disabled` instead of null. Standard and evidence groups are unchanged.
+- Landed: `get_server_health` reports the running build (`server.build_sha`,
+  `server.build_dirty`), and `release_registry` reports `last_refresh_at` and
+  `refresh_interval_seconds` (HAMCP-497, #512). A Core-bound call refused
+  during a Core restart window, while admitted authority is re-verified, is
+  now retryable and names the window (`core_authority_recovering`); every
+  other `CoreCapabilityUnavailable` is unchanged (HAMCP-498, #512).
 - New in-progress `V2_4_2_BETA14` release notes and acceptance contract.
 - Rollback: pending; stated by the final release pull request.
 
