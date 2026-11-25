@@ -54,7 +54,7 @@ release pull request completes this entry.
   now retryable and names the window (`core_authority_recovering`); every
   other `CoreCapabilityUnavailable` is unchanged (HAMCP-498, #512).
 - Landed: bounded reads say they are bounded (HAMCP-508 SI-1 to SI-4, SI-6
-  and SI-7, #TBD508). Output keys are added only; none is removed.
+  and SI-7, #515). Output keys are added only; none is removed.
   - `list_automations`, `list_devices` and `list_entity_registry` keep their
     default page of 100 and add `returned`, `total` (every match) and
     `truncated`.
