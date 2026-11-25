@@ -174,6 +174,45 @@ sanitized public-output pagination snapshot (maximum 16, five-minute TTL); it ca
 serve a new analysis and is removed after the final page. This prevents repeated HA
 reads and aggregate counter inflation without concealing new evidence on a new call.
 
+## Core trace retention (HAMCP-503)
+
+Home Assistant Core keeps only the newest `trace.stored_traces` traces per
+automation and evicts the oldest first. The default is 5 (Core 2026.11.3
+`homeassistant/components/trace/const.py:19`, `DEFAULT_STORED_TRACES`), and Core
+validates the setting with `cv.positive_int`, so 0 is allowed. Core keeps two
+separate rings of that size: runs, and not-triggered traces (list items with
+`"not_triggered": true`). Before HAMCP-503, an automation that ran more often than
+its ring held inside the lookback returned a `complete` trace source, although
+older runs inside the lookback had been evicted.
+
+Reliability collection now reads the cap from the automation configuration it
+already fetches, with no extra Home Assistant read
+(`reliability/provider.py`, `_stored_traces_cap` and `_ring_retention`):
+
+- A missing `trace` block or a missing `stored_traces` key means Core's default of 5.
+  A whole-number value, numeric string, float or boolean is coerced as Core
+  coerces it. Anything else, including a negative value, a non-dict `trace`
+  block or an unreadable configuration, makes the cap unknown.
+- A ring is full when it holds at least the cap and its oldest trace starts after
+  the lookback cutoff. Each ring is checked on its own.
+- `collection_state` adds three values. Malformed and truncated lists keep
+  precedence over all three.
+  - `retention_limited`: at least one ring is full. The source is `partial`, its
+    `retention_coverage` is `partial`, and the batch reason is `retention_partial`.
+  - `retention_disabled`: the cap is 0, so Core keeps no traces. The source is
+    `partial`, so an empty list is no longer a trustworthy empty and cannot
+    produce `no_recent_execution_evidence`.
+  - `retention_unknown`: the cap could not be read. The source is `partial` with
+    `retention_coverage` `unknown`, and the batch reason is `retention_unknown`.
+- Each state adds one warning that names `trace.stored_traces`.
+- Coverage counts add `runs_ring_returned`, `not_triggered_ring_returned`,
+  `stored_traces_cap` (when known) and `rings_full_inside_lookback` (when the
+  cap is above 0). The public counts stay within their 20-key bound.
+
+A full ring whose oldest run Core happened not to evict is still reported as
+`retention_limited`. Without the evicted runs, the two cases cannot be told
+apart, so the result fails toward partial.
+
 ## Known limitations
 
 - Static extraction cannot resolve every dynamic Jinja target.
