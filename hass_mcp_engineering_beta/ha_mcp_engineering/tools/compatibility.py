@@ -70,6 +70,9 @@ WEBSOCKET_CLIENT = HomeAssistantWebSocketClient(SETTINGS)
 MAX_CHARS = 60_000
 MAX_ERROR_LOG_ENTRIES = 200
 MAX_ERROR_LOG_PAYLOAD_CHARS = 40_000
+# HAMCP-502 TB-5: Core system_log keeps a ring of DEFAULT_MAX_ENTRIES (50)
+# entries; a full ring means older entries may have been evicted.
+CORE_SYSTEM_LOG_DEFAULT_MAX_ENTRIES = 50
 MAX_AUDIT_RECORD_CHARS = 64 * 1024
 LOGGER = get_logger("compatibility")
 
@@ -414,8 +417,12 @@ async def get_history(entity_id: str, hours: float = 24, minimal: bool = True) -
     # Both bounds come from one instant.
     end = datetime.now(timezone.utc)
     query = [("end_time", end.isoformat()), ("filter_entity_id", entity_id)]
+    # HAMCP-502 TB-4: Core drops attribute-only changes unless this is "0",
+    # so a full read sends it off and a minimal read sends it on, explicitly.
     if minimal:
-        query += [("minimal_response", None), ("no_attributes", None)]
+        query += [("minimal_response", None), ("no_attributes", None), ("significant_changes_only", "1")]
+    else:
+        query.append(("significant_changes_only", "0"))
     path = rest_path(
         "/history/period/{}",
         (end - timedelta(hours=hours)).isoformat(),
@@ -590,11 +597,15 @@ async def get_error_log(tail_lines: int = 200) -> str:
             entries.append(safe_entry)
 
         limit_truncated = len(safe_result) > tail_lines
+        # A full default ring may have evicted entries; a lower configured
+        # max_entries cannot be detected from system_log/list.
+        retention_unknown = len(result) >= CORE_SYSTEM_LOG_DEFAULT_MAX_ENTRIES
         truncated = (
             payload_truncated
             or limit_truncated
             or field_truncated
             or sanitation.failed_closed
+            or retention_unknown
         )
         reasons = []
         if limit_truncated:
@@ -605,6 +616,8 @@ async def get_error_log(tail_lines: int = 200) -> str:
             reasons.append("entry_field_limit")
         if sanitation.failed_closed:
             reasons.append("sanitization_failure")
+        if retention_unknown:
+            reasons.append("system_log_retention_unknown")
         return {
             "source": "home_assistant_system_log",
             "semantics": "deduplicated_warning_and_error_entries",

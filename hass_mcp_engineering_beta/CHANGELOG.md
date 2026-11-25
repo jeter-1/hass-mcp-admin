@@ -13,6 +13,18 @@ release pull request completes this entry.
   logbook) now send an end time (HAMCP-502, #505). Without one, Core
   ends the window a day after its start, so a read over 24 hours returned
   only its first day and read complete. The 168 hour limit is unchanged.
+  The same pull request makes three related reads say what they miss:
+  - `get_history` with `minimal=False` sends `significant_changes_only=0`,
+    so attribute-only changes are returned; a minimal read sends `1`
+    explicitly. The incident history read sends `1`, and its coverage row
+    says so.
+  - The incident `automation_reliability` row is partial when the
+    reliability bundle is partial or the trace read is incomplete, and
+    names the limitations. A missing bundle still reads failed.
+  - `get_error_log` reports `system_log_retention_unknown` when Core's
+    system log holds 50 or more entries (its default ring size), since
+    older entries may have been evicted. A lower configured ring size
+    cannot be detected.
 - Planned (plan approved 2026-11-25): the Core 2026.11.3 must-carry
   (HAMCP-462), the integrity, reliability and health fixes (HAMCP-490, 491,
   493, 497, 498) and native search (HAMCP-481). None has landed yet.
