@@ -31,9 +31,14 @@ release pull request completes this entry.
   is copied at sequence 19, which signs 2026.11.3 with the same 38 profiles
   as 2026.11.0; and the support window rotates to 2026.11.3 current and
   2026.11.0 rollback, with the Core candidate empty.
-- Planned (plan approved 2026-11-25): the integrity, reliability and health
-  fixes (HAMCP-490, 491, 493, 497, 498) and native search (HAMCP-481). None
-  has landed yet.
+- Planned (plan approved 2026-11-25): the reliability and health fixes
+  (HAMCP-493, 497, 498) and native search (HAMCP-481). None has landed yet.
+- Landed: `configuration_integrity_analysis` gives each dynamic finding its
+  own `finding_id` (HAMCP-490, #510). Two references at one path that differ
+  in evidence used to share one ID, so compact rows repeated. The first
+  finding at a path keeps its old ID. The same pull request labels
+  `unresolved_dynamic_reference_count` in `counter_semantics` as counted
+  before the severities filter (HAMCP-491); its value is unchanged.
 - Added 2026-11-25 (Josh's approval relayed by the architect) and landed:
   Core trace retention in reliability analysis and the trace watch
   retention-gap counter (HAMCP-503 TB-1 and TB-3, #509).
