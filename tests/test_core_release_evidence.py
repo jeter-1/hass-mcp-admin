@@ -1261,6 +1261,105 @@ class PrepareWithhold(unittest.TestCase):
                 self.assertEqual(row['context_sha256'], e.digest((root / 'prepared' / (row['case'] + '.json')).read_bytes()))
 
 
+
+class AcceptanceTarget(unittest.TestCase):
+    """HAMCP-505: pull_request acceptance follows the support window's current Core."""
+
+    @classmethod
+    def setUpClass(cls):
+        (ROOT / '.artifacts').mkdir(exist_ok=True)
+
+    @staticmethod
+    def window(version):
+        return {'core': {'current': {'version': version}}}
+
+    @staticmethod
+    def entries(*versions):
+        return [{'version': v, 'source_commit': 'c' * 40} for v in versions]
+
+    def prepare(self, source=None):
+        import core_evidence_workflow as w
+        def committed(version, *args):
+            return e.read_json(ROOT / 'docs/evidence/hamcp315/core-sources' / (version + '.json'))
+        tmp = tempfile.TemporaryDirectory(dir=ROOT / '.artifacts'); self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        env = {**RUN, 'GITHUB_EVENT_NAME': 'pull_request', 'GITHUB_OUTPUT': str(root / 'out'),
+               'GITHUB_STEP_SUMMARY': str(root / 'summary')}
+        with patch.dict(os.environ, env, clear=True), patch.object(w, 'source', side_effect=source or committed):
+            w.prepare(root / 'prepared', True, None, w.withhold_input(''))
+        values = dict(line.split('=', 1) for line in (root / 'out').read_text().splitlines())
+        return root / 'prepared', values
+
+    def test_committed_window_selects_current_core_over_its_signed_predecessor(self):
+        prepared, values = self.prepare()
+        self.assertEqual(values['release'], '2026.11.3')
+        negative = e.read_json(prepared / 'negative.json')
+        self.assertEqual((negative['predecessor'], negative['release'], negative['inherited']), ('2026.11.0', '2026.11.3', False))
+        self.assertEqual(len(negative['differing_files']), 7)
+        coverage, fixture = e.read_json(prepared / 'coverage.json'), e.read_json(prepared / 'fixture.json')
+        self.assertEqual((coverage['provenance']['version'], coverage['predecessor'], coverage['mode']), ('2026.11.3', '2026.11.3', 'main'))
+        self.assertEqual((fixture['predecessor'], fixture['mode'], fixture['fixture']), ('2026.11.2', 'derived', True))
+        self.assertEqual(fixture['provenance']['version'], '2026.11.3')
+        self.assertEqual(e.read_json(prepared / 'baseline.json')['version'], '2026.11.3')
+        self.assertEqual({r['ha_version'] for r in json.loads(values['matrix'])['include']}, {'2026.11.3'})
+
+    def test_synthetic_version_lies_strictly_between_and_is_unsigned(self):
+        import core_evidence_workflow as w
+        for current, signed, expected in [
+                ('2026.11.3', ('2026.10.3', '2026.11.0', '2026.11.3'), ('2026.11.0', '2026.11.2')),
+                ('2026.11.0', ('2026.10.0', '2026.10.1', '2026.10.3', '2026.11.0'), ('2026.10.3', '2026.10.4')),
+                ('2026.11.3', ('2026.11.1', '2026.11.3'), ('2026.11.1', '2026.11.2')),
+                ('2026.11.2', ('2026.11.0', '2026.11.2'), ('2026.11.0', '2026.11.1')),
+                ('2026.12.0', ('2026.11.3', '2026.12.0'), ('2026.11.3', '2026.11.4'))]:
+            with self.subTest(current=current, signed=signed):
+                target, predecessor, synthetic = w.acceptance_target(self.entries(*signed), self.window(current))
+                self.assertEqual((target['version'], predecessor['version'], synthetic), (current, *expected))
+                self.assertNotIn(synthetic, signed)
+
+    def test_refuses_missing_malformed_unsigned_or_unbracketed_current(self):
+        import core_evidence_workflow as w
+        signed, W = self.entries('2026.10.3', '2026.11.0', '2026.11.3'), "support window's current Core"
+        for window, entries, message in [
+                ([], signed, W), ('core', signed, W), ({}, signed, W),
+                ({'core': None}, signed, W), ({'core': {}}, signed, W),
+                ({'core': {'current': None}}, signed, W), ({'core': {'current': {}}}, signed, W),
+                (self.window('2026.11'), signed, W), (self.window('2026.11.3b0'), signed, W),
+                (self.window(20261103), signed, W),
+                (self.window('2026.12.0'), signed, 'signed current Core'),
+                (self.window('2026.10.3'), signed, 'signed predecessor'),
+                (self.window('2026.11.3'), self.entries('2026.11.2', '2026.11.3'), 'no free synthetic'),
+                (self.window('2026.11.1'), self.entries('2026.11.0', '2026.11.1'), 'no free synthetic')]:
+            with self.subTest(window=window, entries=[x['version'] for x in entries]):
+                with self.assertRaisesRegex(ValueError, message):
+                    w.acceptance_target(entries, window)
+
+    def test_window_load_refusal_propagates_from_prepare(self):
+        import support_window
+        with patch.object(support_window, 'load', side_effect=support_window.Refusal('support window malformed')):
+            with self.assertRaisesRegex(ValueError, 'support window malformed'):
+                self.prepare()
+
+    def test_window_naming_an_unsigned_current_refuses_prepare(self):
+        import support_window
+        with patch.object(support_window, 'load', return_value=self.window('2026.12.0')):
+            with self.assertRaisesRegex(ValueError, 'signed current Core: 2026.12.0'):
+                self.prepare()
+
+    def test_inherited_negative_refuses(self):
+        same = e.read_json(ROOT / 'docs/evidence/hamcp315/core-sources/2026.11.3.json')
+        def source(version, *args):
+            real = e.read_json(ROOT / 'docs/evidence/hamcp315/core-sources' / (version + '.json'))
+            return {**same, **{k: real[k] for k in ('version', 'commit', 'tag_commit')}}
+        with self.assertRaisesRegex(ValueError, 'real negative unexpectedly inherited'):
+            self.prepare(source)
+
+    def test_predecessor_tag_sha_mismatch_refuses(self):
+        def source(version, *args):
+            value = e.read_json(ROOT / 'docs/evidence/hamcp315/core-sources' / (version + '.json'))
+            return {**value, 'commit': 'd' * 40} if version == '2026.11.0' else value
+        with self.assertRaisesRegex(ValueError, 'signed predecessor tag SHA mismatch'):
+            self.prepare(source)
+
 class ManifestAndWorkflow(unittest.TestCase):
     def test_every_signed_profile_has_source_mapping(self):
         m=e.manifest();self.assertEqual({r['capability_id'] for r in refs()} | {'core.typed_helper_value_operation', 'core.marketplace_read',
