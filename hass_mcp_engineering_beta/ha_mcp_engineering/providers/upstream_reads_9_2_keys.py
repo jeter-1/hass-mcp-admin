@@ -487,3 +487,31 @@ def completeness(inner: Callable, texts: dict | None = None) -> Callable:
         return partial, warnings
 
     return rule
+
+
+def bucket_withheld_names(payload: Any, bucket: str) -> frozenset:
+    """The names Row 25 withholds from one ``ha_search`` bucket's records.
+
+    HAMCP-501 W4 (decision D1, as relayed by the architect): the native search
+    dashboard and flow-helper sub-calls disclose the record fields Row 25
+    withheld from their pages. This is :func:`projection`'s distinct-name walk
+    over ``payload[bucket]`` only, so page-level names (``partial_reason``)
+    are not record names. A value of a type its key does not admit counts
+    under its own key. The names stay in Engineering's memory; a reply emits
+    only their count. Raises ``ValueError`` (``invalid_response``) on any
+    other shape.
+    """
+
+    row = ROWS["ha_search"]
+    if type(payload) is not dict or bucket not in ("dashboards", "helpers"):
+        raise ValueError("invalid_response")
+    records = payload.get(bucket)
+    if type(records) is not list:
+        raise ValueError("invalid_response")
+    names = {
+        name[0] if type(name) is tuple else name
+        for name in _names(records, row, set()) - row.admitted - row.drops
+    }
+    if not all(type(name) is str for name in names):
+        raise ValueError("invalid_response")
+    return frozenset(names)

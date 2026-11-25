@@ -79,6 +79,13 @@ from ..sanitization import (
     redaction_summary,
     sanitize_untrusted_data,
 )
+from ..search.subcalls import (
+    BUCKETS as SEARCH_SUBCALL_BUCKETS,
+    MAX_SCAN_ROWS as SEARCH_SUBCALL_MAX_ROWS,
+    PAGE_SIZE as SEARCH_SUBCALL_PAGE_SIZE,
+    PageResult as SearchPageResult,
+    page_arguments as search_page_arguments,
+)
 from ..tool_framework import timing_since
 from ..upstream_tool_policy import (
     EXACT_RUNTIME_TOOL_ORDER_FINGERPRINTS,
@@ -108,6 +115,7 @@ from .upstream_reads_8_6 import (
 from .upstream_search_8_6 import search_catalog_view
 from . import upstream_reads_9_1 as reads_9_1
 from . import upstream_reads_9_2 as reads_9_2
+from . import upstream_reads_9_2_keys as keys_9_2
 from .upstream_history_9_2 import HistoryTimeOffsetRequired
 from .upstream_device_projection import project_device_result
 from .upstream_blueprint import (
@@ -866,6 +874,127 @@ class HistoryReader:
     provenance: str
     version: str
     contract: str
+
+
+@dataclass(frozen=True)
+class SearchSubcallReader:
+    """One fixed admitted ``ha_search`` generation for native search sub-calls.
+
+    HAMCP-501 W4: ``readers`` maps ``dashboard`` and ``helper`` to a page
+    reader that takes exactly the fixed page arguments and returns one
+    ``search.subcalls.PageResult`` or raises.
+    """
+
+    readers: MappingProxyType
+    current: Callable[[], bool]
+    provenance: str
+    version: str
+    contract: str
+
+
+class SearchSubcallPageFailure(Exception):
+    """A native search sub-call page failed; ``category`` is a fixed code.
+
+    The scan records the page as failed; no text reaches the reply.
+    """
+
+    def __init__(self, category: str) -> None:
+        super().__init__(category)
+        self.category = category
+
+
+class _SearchPageCapture:
+    """HAMCP-501 W4 (D1): one sub-call page's withheld names, in memory only."""
+
+    __slots__ = ("bucket", "withheld_names")
+
+    def __init__(self, bucket: str) -> None:
+        self.bucket = bucket
+        self.withheld_names: frozenset | None = None
+
+
+# The record buckets of a 9.2.0 ``ha_search`` reply. On a sub-call page every
+# bucket but the requested one is absent or empty.
+_SEARCH_PAGE_BUCKETS = (
+    "entities", "automations", "scripts", "scenes", "helpers", "dashboards",
+)
+
+
+def _search_page_arguments(search_type: str, arguments: Any) -> dict[str, Any] | None:
+    """A fresh copy of exactly ``search_page_arguments(...)``, or None."""
+
+    if type(arguments) is not dict:
+        return None
+    query = arguments.get("query")
+    exact_match = arguments.get("exact_match")
+    offset = arguments.get("offset")
+    if (
+        type(query) is not str or not query.strip() or type(exact_match) is not bool
+        or type(offset) is not int or not 0 <= offset < SEARCH_SUBCALL_MAX_ROWS
+        or offset % SEARCH_SUBCALL_PAGE_SIZE
+    ):
+        return None
+    expected = search_page_arguments(
+        search_type, query, exact_match, offset // SEARCH_SUBCALL_PAGE_SIZE
+    )
+    if set(arguments) != set(expected) or arguments != expected:
+        return None
+    if any(type(arguments[key]) is not type(value) for key, value in expected.items()):
+        return None
+    if type(arguments["search_types"][0]) is not str:
+        return None
+    return expected
+
+
+def _search_page_result(
+    result: Any, capture: _SearchPageCapture, offset: int
+) -> SearchPageResult:
+    """The scan's ``PageResult`` from one successful projected page.
+
+    ``partial`` is the projected ``partial`` field, never the delegated
+    completeness overlay. Paging follows ``config_has_more``, which must equal
+    the flat ``has_more`` (D3). A page that claims more rows is full and ends
+    before the total, so the next offset neither skips nor repeats a row; a
+    last page ends at the total.
+    """
+
+    if type(result) is not dict or result.get("success") is not True:
+        details = result.get("details") if type(result) is dict else None
+        category = details.get("failure_category") if type(details) is dict else None
+        raise SearchSubcallPageFailure(
+            category if type(category) is str else "invalid_response"
+        )
+    data = result.get("data")
+    if type(data) is not dict or type(capture.withheld_names) is not frozenset:
+        raise SearchSubcallPageFailure("invalid_response")
+    rows = data.get(capture.bucket)
+    partial = data.get("partial")
+    has_more = data.get("config_has_more")
+    flat_has_more = data.get("has_more")
+    total = data.get("config_total_matches")
+    if (
+        type(rows) is not list or len(rows) > SEARCH_SUBCALL_PAGE_SIZE
+        or type(partial) is not bool
+        or type(has_more) is not bool or type(flat_has_more) is not bool
+        or has_more is not flat_has_more
+        or type(total) is not int or total < 0
+    ):
+        raise SearchSubcallPageFailure("invalid_response")
+    for bucket in _SEARCH_PAGE_BUCKETS:
+        if bucket != capture.bucket and data.get(bucket, []) != []:
+            raise SearchSubcallPageFailure("invalid_response")
+    if has_more:
+        consistent = (
+            len(rows) == SEARCH_SUBCALL_PAGE_SIZE and offset + len(rows) < total
+        )
+    else:
+        consistent = offset + len(rows) == total or (not rows and offset >= total)
+    if not consistent:
+        raise SearchSubcallPageFailure("invalid_response")
+    return SearchPageResult(
+        rows=tuple(rows), partial=partial, has_more=has_more,
+        config_total_matches=total, withheld_names=capture.withheld_names,
+    )
 
 
 @dataclass(frozen=True)
@@ -4128,6 +4257,106 @@ class UpstreamReadGateway:
             version=route.server_version, contract=route.contract_fingerprint,
         ) if current() else None
 
+    def search_subcall_reader(self, *, audit=None) -> SearchSubcallReader | None:
+        """Capture the admitted ``ha_search`` route for native search sub-calls.
+
+        HAMCP-501 W4 (HAMCP-481 design sections 2.4 to 2.6): one page reader
+        each for the dashboard and flow-helper sub-calls. A page takes exactly
+        the fixed ``search.subcalls.page_arguments``; anything else is refused
+        before dispatch. Each page passes the gateway's argument validation,
+        live catalog revalidation, Core gate, Row 25 projection, sanitizer and
+        size check unchanged, with the parent request's authority rechecked at
+        dispatch. A page the sanitizer redacted or bounded fails (D2). A
+        failure raises ``SearchSubcallPageFailure``. Only the 9.2.0 Row 25
+        projection is accepted. No fallback and no other upstream tool.
+        """
+
+        with self._lock:
+            routes = [
+                (name, route) for name, route in self._exposed.items()
+                if route.entry.upstream_name == "ha_search"
+                and route.entry.classification == "automatic_read"
+            ]
+            if len(routes) != 1:
+                return None
+            name, route = routes[0]
+            core_epoch = self._core_reconciliation_epoch
+        if _reads(route.entry) is not reads_9_2 or not reads_9_2.is_adapter(route.entry):
+            return None
+
+        current = self._bounded_route_current(name, route, core_epoch)
+
+        def page_reader(search_type: str) -> Callable[[dict], Awaitable[SearchPageResult]]:
+            bucket = SEARCH_SUBCALL_BUCKETS[search_type]
+
+            async def read(arguments: dict) -> SearchPageResult:
+                page_arguments = _search_page_arguments(search_type, arguments)
+                if page_arguments is None:
+                    raise SearchSubcallPageFailure("argument_validation")
+                if not current():
+                    raise SearchSubcallPageFailure("provider_authority_changed")
+                parent = current_telemetry()
+                telemetry, token = begin_request()
+                telemetry.tool_name = "search_subcall_page_read"
+                if parent is not None:
+                    telemetry.caller_id = parent.caller_id
+                    telemetry.core_dispatch_authorizer = parent.core_dispatch_authorizer
+                    telemetry.audit_context["parent_request_id"] = parent.request_id
+                status, category = "failed_or_cancelled", None
+                try:
+                    if not telemetry.authorize_core_dispatch():
+                        raise SearchSubcallPageFailure("provider_authority_changed")
+                    capture = _SearchPageCapture(bucket)
+                    result = json.loads(await self.execute(
+                        exposed_name=name, arguments=page_arguments,
+                        reviewed_schema=route.observed_tool["inputSchema"],
+                        policy_entry=route.entry, admission_generation=route.generation,
+                        contract_fingerprint=route.contract_fingerprint,
+                        search_page=capture,
+                    ))
+                    if not current() or not telemetry.authorize_core_dispatch():
+                        raise SearchSubcallPageFailure("provider_authority_changed")
+                    page = _search_page_result(result, capture, page_arguments["offset"])
+                    status = "success"
+                    return page
+                except SearchSubcallPageFailure as failure:
+                    category = failure.category
+                    raise
+                except ValueError:
+                    category = "invalid_response"
+                    raise SearchSubcallPageFailure(category) from None
+                finally:
+                    try:
+                        if audit is not None:
+                            audit.write({
+                                "event": "search_subcall_page_read",
+                                "request_id": telemetry.request_id,
+                                "parent_request_id": parent.request_id if parent else None,
+                                "provider": PROVIDER_ID, "upstream_tool": "ha_search",
+                                "search_type": search_type,
+                                "offset": page_arguments["offset"],
+                                "upstream_version": route.server_version,
+                                "contract_fingerprint": route.contract_fingerprint,
+                                "result_status": status,
+                                "failure_category": category,
+                                "provider_dispatch_count": telemetry.provider_dispatch_count,
+                                "fallback_occurred": False,
+                            })
+                    finally:
+                        end_request(token)
+
+            return read
+
+        return SearchSubcallReader(
+            readers=MappingProxyType({
+                search_type: page_reader(search_type) for search_type in SEARCH_SUBCALL_BUCKETS
+            }),
+            current=current,
+            provenance=(f"ha-mcp {route.server_version}; contract {route.contract_fingerprint}; "
+                        "fixed sub-call pages; Row 25 projection; no fallback"),
+            version=route.server_version, contract=route.contract_fingerprint,
+        ) if current() else None
+
     async def execute(
         self,
         *,
@@ -4138,6 +4367,7 @@ class UpstreamReadGateway:
         admission_generation: int,
         contract_fingerprint: str,
         require_unmodified_script: bool = False,
+        search_page: _SearchPageCapture | None = None,
     ) -> str:
         started = time.perf_counter()
         mapping: _AdmittedRoute | None = None
@@ -4158,6 +4388,15 @@ class UpstreamReadGateway:
             telemetry, telemetry_token = begin_request()
         try:
             if require_unmodified_script and policy_entry.upstream_name != "ha_config_get_script":
+                raise _GatewayFailure("prohibited_delegation", dispatched=False)
+            if search_page is not None and (
+                type(search_page) is not _SearchPageCapture
+                or require_unmodified_script
+                or policy_entry.upstream_name != "ha_search"
+                or _reads(policy_entry) is not reads_9_2
+                or not reads_9_2.is_adapter(policy_entry)
+            ):
+                # HAMCP-501 W4: a sub-call page is only the 9.2.0 Row 25 route.
                 raise _GatewayFailure("prohibited_delegation", dispatched=False)
             yaml_route = is_yaml_adapter(policy_entry)
             yaml_path: str | None = None
@@ -4232,7 +4471,9 @@ class UpstreamReadGateway:
                 telemetry=telemetry,
                 route_context=route_context,
                 live_contract_failure=live_contract_failure,
-                require_parent_authority=require_unmodified_script,
+                require_parent_authority=(
+                    require_unmodified_script or search_page is not None
+                ),
             )
             route_was_admitted = True
             if yaml_route and exchange.call_result.get("isError") is True:
@@ -4316,6 +4557,17 @@ class UpstreamReadGateway:
                             dispatched=True,
                             details=exc.details,
                         ) from None
+                    except ValueError:
+                        raise _GatewayFailure(
+                            "invalid_response", dispatched=True
+                        ) from None
+                if search_page is not None:
+                    # HAMCP-501 W4 (D1): the record names Row 25 withholds
+                    # from this page, held in memory; only a count leaves.
+                    try:
+                        search_page.withheld_names = keys_9_2.bucket_withheld_names(
+                            payload, search_page.bucket
+                        )
                     except ValueError:
                         raise _GatewayFailure(
                             "invalid_response", dispatched=True
@@ -4414,6 +4666,12 @@ class UpstreamReadGateway:
                     raise _GatewayFailure("sanitization_failed", dispatched=True)
                 if require_unmodified_script and sanitation.redaction_applied:
                     record_marker_collision_refusal(sanitation)
+                    raise _GatewayFailure("sanitization_failed", dispatched=True)
+                if search_page is not None and (
+                    sanitation.redaction_applied or sanitation.truncated_field_count
+                ):
+                    # HAMCP-501 W4 (D2): a sub-call page row the sanitizer
+                    # changed is never merged; the page fails.
                     raise _GatewayFailure("sanitization_failed", dispatched=True)
                 encoded_size = len(
                     json.dumps(
