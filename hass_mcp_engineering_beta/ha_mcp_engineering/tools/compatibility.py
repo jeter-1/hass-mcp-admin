@@ -74,6 +74,9 @@ MAX_ERROR_LOG_PAYLOAD_CHARS = 40_000
 # HAMCP-502 TB-5: Core system_log keeps a ring of DEFAULT_MAX_ENTRIES (50)
 # entries; a full ring means older entries may have been evicted.
 CORE_SYSTEM_LOG_DEFAULT_MAX_ENTRIES = 50
+# HAMCP-508 SI-5: Core 2026.11.3 DEFAULT_STORED_TRACES (``trace/const.py:19``);
+# each automation keeps that many runs and that many not-triggered traces.
+CORE_DEFAULT_STORED_TRACES = 5
 MAX_AUDIT_RECORD_CHARS = 64 * 1024
 LOGGER = get_logger("compatibility")
 
@@ -669,14 +672,37 @@ async def render_template(template: str) -> str:
 async def list_automation_traces(automation_id: str) -> str:
     """List recent execution traces for an automation. automation_id is the
     internal id (the 'id' attribute, not the entity_id) — get it from
-    list_automations. Returns run_ids, timestamps, and last_step."""
+    list_automations. Returns run_ids, timestamps, and last_step.
+    Returns an object: traces, returned, source_truncated and retention. Core
+    keeps only each automation's newest traces (default 5), so older runs are
+    not listed."""
     normalized = await fetch_normalized_trace_list(
         ws_command,
         automation_id,
         known_secrets=(ACCESS_SECRET, HA_TOKEN),
     )
     slim = [header.public() for header in normalized.headers]
-    return dump(slim)
+    # HAMCP-508 SI-5: the list is Core's stored ring, not every recent run.
+    runs = sum(not header.not_triggered for header in normalized.headers)
+    not_triggered = len(slim) - runs
+    return dump({
+        "traces": slim,
+        "returned": len(slim),
+        "source_truncated": normalized.source_truncated,
+        "retention": {
+            "source": "core_stored_trace_ring",
+            "default_stored_traces": CORE_DEFAULT_STORED_TRACES,
+            "stored_traces_read": False,
+            "runs_ring_returned": runs,
+            "not_triggered_ring_returned": not_triggered,
+            "ring_full": max(runs, not_triggered) >= CORE_DEFAULT_STORED_TRACES,
+            "note": (
+                "Core keeps only the newest traces per ring for each automation "
+                "(default 5; the automation's trace.stored_traces overrides it). "
+                "Older runs are not in this list."
+            ),
+        },
+    })
 
 
 @mcp.tool()

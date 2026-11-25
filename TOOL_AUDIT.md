@@ -2,6 +2,16 @@
 
 Date: 2026-07-10
 
+## Automation trace list shape (2.4.2-beta.14, HAMCP-508 SI-5)
+
+Breaking output change: `list_automation_traces` returns
+`{"traces", "returned", "source_truncated", "retention"}` instead of a bare
+header list. The headers in `traces` are unchanged, and the input
+(`automation_id`) is unchanged. `retention` says the list is Core's stored
+trace ring (default 5 per ring), so older runs are not listed. The tool still
+sends only `trace/list`. See
+[`docs/AUTOMATION_RELIABILITY_ANALYSIS.md`](docs/AUTOMATION_RELIABILITY_ANALYSIS.md).
+
 ## Automation run counts (2.9.1, HAMCP-476)
 
 `get_automation_run_counts` is a native, read-only, Engineering-owned evidence

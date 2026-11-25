@@ -53,8 +53,9 @@ release pull request completes this entry.
   during a Core restart window, while admitted authority is re-verified, is
   now retryable and names the window (`core_authority_recovering`); every
   other `CoreCapabilityUnavailable` is unchanged (HAMCP-498, #512).
-- Landed: bounded reads say they are bounded (HAMCP-508 SI-1 to SI-4, SI-6
-  and SI-7, #515). Output keys are added only; none is removed.
+- Landed: bounded reads say they are bounded (HAMCP-508 SI-1 to SI-7, #515).
+  SI-1 to SI-4, SI-6 and SI-7 add output keys only; none is removed. SI-5 is
+  a breaking output change.
   - `list_automations`, `list_devices` and `list_entity_registry` keep their
     default page of 100 and add `returned`, `total` (every match) and
     `truncated`.
@@ -68,8 +69,12 @@ release pull request completes this entry.
     (`pagination.total_complete` false); `unresolved_dynamic_reference_count`
     counts every in-scope reference, with the ones past 10 in
     `unresolved_dynamic_reference_withheld`.
-  - SI-5 (`list_automation_traces`) changes the output shape and waits for
-    Josh's decision.
+  - **Breaking (SI-5):** `list_automation_traces` returns an object, not a
+    bare list: `traces` (the unchanged headers), `returned`,
+    `source_truncated` and `retention`. `retention` says the list is Core's
+    stored trace ring (default 5 per ring, overridable per automation), so
+    older runs are not listed, and `ring_full` is true when a ring holds at
+    least the default cap. Clients that read the list must read `traces`.
 - New in-progress `V2_4_2_BETA14` release notes and acceptance contract.
 - Rollback: pending; stated by the final release pull request.
 

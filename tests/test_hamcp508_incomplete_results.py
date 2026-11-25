@@ -3,7 +3,8 @@
 The silent-incompleteness audit (SI-1 to SI-7) found reads that cut rows at an
 Engineering bound and still read complete. Each case below fills a source one
 past its bound, checks that the output names what was left out, and checks the
-exact bound stays complete. Output keys are additive only.
+exact bound stays complete. Output keys are additive only, except SI-5, which
+wraps the `list_automation_traces` list in an object (a breaking change).
 """
 
 from __future__ import annotations
@@ -40,6 +41,7 @@ from ha_mcp_engineering.reliability.models import (  # noqa: E402
     ReliabilitySourceCoverage,
 )
 from ha_mcp_engineering.tools import compatibility  # noqa: E402
+from ha_mcp_engineering.trace_normalization import normalize_trace_list  # noqa: E402
 
 
 # ----- SI-1: the list tools ------------------------------------------------
@@ -102,6 +104,79 @@ class ListToolTotals(unittest.IsolatedAsyncioTestCase):
         data = await self.call("list_entity_registry", _registry(30), query="s01", limit=5)
         # sensor.s010..s019 match.
         self.assertEqual((data["returned"], data["total"], data["truncated"]), (5, 10, True))
+
+
+# ----- SI-5: list_automation_traces --------------------------------------------
+
+
+def _trace_rows(count, *, not_triggered=0, start=0):
+    """Core trace/list headers, oldest first; the last ``not_triggered`` are not-triggered."""
+
+    rows = []
+    for index in range(start, start + count):
+        started = ANALYSIS_TIME - timedelta(minutes=100 + start + count - index)
+        rows.append({"run_id": f"r{index}", "state": "stopped", "script_execution": "finished",
+                     "last_step": "action/0",
+                     "timestamp": {"start": started.isoformat(), "finish": started.isoformat()}})
+    for row in rows[len(rows) - not_triggered:] if not_triggered else ():
+        row["not_triggered"] = True
+    return rows
+
+
+class TraceListShape(unittest.IsolatedAsyncioTestCase):
+    async def call(self, rows):
+        command = AsyncMock(return_value=rows)
+        with patch.object(compatibility, "ws_command", new=command):
+            payload = json.loads(await compatibility.list_automation_traces(automation_id="a1"))
+        # The one trace/list read; no automation config read for stored_traces.
+        command.assert_awaited_once_with({"type": "trace/list", "domain": "automation", "item_id": "a1"})
+        # SI-5 changes only ``data``: it was the bare header list.
+        self.assertEqual(payload["operation"], "list_automation_traces")
+        return payload["data"]
+
+    async def test_the_reply_is_an_object_whose_traces_are_the_unchanged_headers(self):
+        rows = _trace_rows(2)
+        payload = await self.call(rows)
+        self.assertEqual(set(payload), {"traces", "returned", "source_truncated", "retention"})
+        # The headers are exactly what the bare list held before SI-5.
+        self.assertEqual(payload["traces"], [header.public() for header in normalize_trace_list(rows).headers])
+        self.assertEqual(set(payload["traces"][0]), {"run_id", "timestamp", "started_at", "finished_at", "state",
+                                                     "script_execution", "last_step", "error"})
+        self.assertEqual((payload["returned"], payload["source_truncated"]), (2, False))
+        retention = payload["retention"]
+        self.assertEqual(retention["source"], "core_stored_trace_ring")
+        self.assertEqual((retention["default_stored_traces"], retention["stored_traces_read"]), (5, False))
+        self.assertEqual((retention["runs_ring_returned"], retention["not_triggered_ring_returned"]), (2, 0))
+        self.assertFalse(retention["ring_full"])
+
+    async def test_six_runs_under_the_default_cap_say_the_ring_is_full_and_the_oldest_is_absent(self):
+        stored = _trace_rows(6)
+        # Core keeps the newest DEFAULT_STORED_TRACES (5) runs: r0 was evicted.
+        payload = await self.call(stored[-5:])
+        run_ids = {trace["run_id"] for trace in payload["traces"]}
+        self.assertEqual(run_ids, {"r1", "r2", "r3", "r4", "r5"})
+        self.assertNotIn("r0", run_ids)
+        self.assertEqual((payload["returned"], payload["source_truncated"]), (5, False))
+        retention = payload["retention"]
+        self.assertTrue(retention["ring_full"])
+        self.assertEqual(retention["runs_ring_returned"], 5)
+        self.assertIn("Older runs are not in this list.", retention["note"])
+
+    async def test_four_runs_leave_the_ring_short_of_the_cap(self):
+        payload = await self.call(_trace_rows(4))
+        self.assertFalse(payload["retention"]["ring_full"])
+
+    async def test_a_full_not_triggered_ring_is_full_on_its_own(self):
+        payload = await self.call(_trace_rows(6, not_triggered=5))
+        retention = payload["retention"]
+        self.assertEqual((retention["runs_ring_returned"], retention["not_triggered_ring_returned"]), (1, 5))
+        self.assertTrue(retention["ring_full"])
+
+    async def test_more_than_100_headers_set_source_truncated(self):
+        payload = await self.call(_trace_rows(101))
+        self.assertEqual((payload["returned"], payload["source_truncated"]), (100, True))
+        payload = await self.call(_trace_rows(100))
+        self.assertEqual((payload["returned"], payload["source_truncated"]), (100, False))
 
 
 # ----- SI-2 and SI-6: the incident provider ---------------------------------
