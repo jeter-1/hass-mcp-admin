@@ -168,6 +168,9 @@ def classify_integrity(
         )
 
     if "unresolved_dynamic_reference" in selected_types:
+        # HAMCP-490: the first evidence reference seen for each path-based
+        # finding ID, so distinct evidence at one path keeps a distinct ID.
+        dynamic_finding_references: dict[str, str] = {}
         for item in sorted(
             bundle.dynamic_references,
             key=lambda value: (
@@ -211,15 +214,31 @@ def classify_integrity(
                 reference = replace(reference, reference_id=reference_id)
                 collision += 1
             evidence[reference_id] = reference
+            finding_id = stable_id(
+                "integrity",
+                "unresolved_dynamic_reference",
+                source_type,
+                source_id,
+                path,
+            )
+            first_reference = dynamic_finding_references.setdefault(
+                finding_id, reference_id
+            )
+            if first_reference != reference_id:
+                # The first deterministic entry keeps the path-based ID; other
+                # evidence at the same path is qualified by its reference ID.
+                # An exact duplicate shares the reference ID and coalesces.
+                finding_id = stable_id(
+                    "integrity",
+                    "unresolved_dynamic_reference",
+                    source_type,
+                    source_id,
+                    path,
+                    reference_id,
+                )
             findings.append(
                 IntegrityFinding(
-                    finding_id=stable_id(
-                        "integrity",
-                        "unresolved_dynamic_reference",
-                        source_type,
-                        source_id,
-                        path,
-                    ),
+                    finding_id=finding_id,
                     rule_id="unresolved_dynamic_reference",
                     finding_type="unresolved_dynamic_reference",
                     severity="medium",

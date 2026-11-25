@@ -156,8 +156,10 @@ class SharedTraceParityTests(unittest.IsolatedAsyncioTestCase):
 
         analyzer_ws = TraceWebSocket(five_live_shape_headers())
         provider = DirectHaReliabilityProvider(object(), analyzer_ws)
+        # HAMCP-503: a cap above five keeps all five runs inside one ring
+        # that has not filled, so no eviction is possible.
         traces, coverage = await provider._collect_traces(
-            AUTOMATION_ID, 168, 10, ANALYSIS_INSTANT
+            AUTOMATION_ID, 168, 10, ANALYSIS_INSTANT, stored_traces=10
         )
         analyzer_ids = {trace["run_id"] for trace in traces}
 
@@ -209,8 +211,10 @@ class LookbackAndCoverageTests(unittest.IsolatedAsyncioTestCase):
         provider = DirectHaReliabilityProvider(
             object(), TraceWebSocket(listing, fail_details=fail_details, list_error=list_error)
         )
+        # HAMCP-503: a cap above the listing size isolates these cases from
+        # Core's trace retention (tests/test_hamcp503_trace_retention.py).
         return await provider._collect_traces(
-            AUTOMATION_ID, 168, limit, ANALYSIS_INSTANT
+            AUTOMATION_ID, 168, limit, ANALYSIS_INSTANT, stored_traces=20
         )
 
     async def test_cutoff_is_inclusive_and_offset_aware(self):

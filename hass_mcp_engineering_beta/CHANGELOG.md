@@ -9,15 +9,44 @@ release pull request completes this entry.
 - Version materialized on `release/2.10.0`, created from `main` at f48c6fb9,
   so item pull requests carry no version change. The release transition is
   from 2.4.2-beta.13 to 2.4.2-beta.14.
+- Landed: `get_history` and the incident activity reads (history and
+  logbook) now send an end time (HAMCP-502, #505). Without one, Core
+  ends the window a day after its start, so a read over 24 hours returned
+  only its first day and read complete. The 168 hour limit is unchanged.
+  The same pull request makes three related reads say what they miss:
+  - `get_history` with `minimal=False` sends `significant_changes_only=0`,
+    so attribute-only changes are returned; a minimal read sends `1`
+    explicitly. The incident history read sends `1`, and its coverage row
+    says so.
+  - The incident `automation_reliability` row is partial when the
+    reliability bundle is partial or the trace read is incomplete, and
+    names the limitations. A missing bundle still reads failed.
+  - `get_error_log` reports `system_log_retention_unknown` when Core's
+    system log holds 50 or more entries (its default ring size), since
+    older entries may have been evicted. A lower configured ring size
+    cannot be detected.
 - Landed: the Core 2026.11.3 must-carry (HAMCP-462, #508). The
   recorder entity filter, configuration-definition schemas and naming
   mirrors are pinned to Core 2026.11.3; the signed Core registry trust root
   is copied at sequence 19, which signs 2026.11.3 with the same 38 profiles
   as 2026.11.0; and the support window rotates to 2026.11.3 current and
   2026.11.0 rollback, with the Core candidate empty.
-- Planned (plan approved 2026-11-25): the `get_history` end-time fix
-  (HAMCP-502), the integrity, reliability and health fixes (HAMCP-490, 491,
-  493, 497, 498) and native search (HAMCP-481). None has landed yet.
+- Planned (plan approved 2026-11-25): the health fixes (HAMCP-497,
+  498) and native search (HAMCP-481). None has landed yet.
+- Landed: `configuration_integrity_analysis` gives each dynamic finding its
+  own `finding_id` (HAMCP-490, #510). Two references at one path that differ
+  in evidence used to share one ID, so compact rows repeated. The first
+  finding at a path keeps its old ID. The same pull request labels
+  `unresolved_dynamic_reference_count` in `counter_semantics` as counted
+  before the severities filter (HAMCP-491); its value is unchanged.
+- Added 2026-11-25 (Josh's approval relayed by the architect) and landed:
+  Core trace retention in reliability analysis and the trace watch
+  retention-gap counter (HAMCP-503 TB-1 and TB-3, #509).
+- Landed: summary root causes in `automation_reliability_analysis` and
+  the batch digest carry `affected_step` (HAMCP-493, #511). A concurrency
+  rejection names its step only on its trace evidence, so the summary takes
+  it from there. A disabled automation's group reports `current_state`
+  `disabled` instead of null. Standard and evidence groups are unchanged.
 - New in-progress `V2_4_2_BETA14` release notes and acceptance contract.
 - Rollback: pending; stated by the final release pull request.
 

@@ -323,7 +323,7 @@ class AutomationReliabilityAnalysisService:
             "root_cause_counts_by_severity": {severity: root_cause_severity_counts.get(severity, 0) for severity in ("info", "low", "medium", "high", "critical")},
             "root_cause_groups": (
                 [
-                    _summary_root_cause_group(group, findings_by_id)
+                    _summary_root_cause_group(group, findings_by_id, bundle.evidence)
                     for group in root_cause_groups[:100]
                 ]
                 if detail_level == DetailLevel.SUMMARY.value
@@ -519,21 +519,32 @@ class AutomationReliabilityAnalysisService:
         )
 
 
-def _summary_root_cause_group(group, findings_by_id: dict) -> dict:
+def _summary_root_cause_group(group, findings_by_id: dict, evidence: dict) -> dict:
     members = [
         findings_by_id[finding_id]
         for finding_id in group.member_finding_ids
         if finding_id in findings_by_id
     ]
     primary = findings_by_id.get(group.primary_finding_id)
+    # HAMCP-493: a trace step the findings omit can still be on their evidence
+    # (a concurrency rejection cites its step only there).
+    references = [
+        evidence[reference_id]
+        for reference_id in group.evidence_references
+        if reference_id in evidence
+    ]
     paths = list(dict.fromkeys(
         item.configuration_path for item in members if item.configuration_path
     ))[:3]
+    affected_step = group.affected_step or next(
+        (item.trace_step for item in references if item.trace_step), None
+    )
     state_by_rule = {
         "missing_referenced_entity": "missing",
         "unavailable_referenced_entity": "unavailable",
         "unknown_referenced_entity": "unknown",
         "disabled_referenced_entity": "disabled",
+        "automation_disabled": "disabled",
     }
     return {
         "root_cause_group_id": group.root_cause_group_id,
@@ -544,6 +555,7 @@ def _summary_root_cause_group(group, findings_by_id: dict) -> dict:
         "current_state": state_by_rule.get(primary.rule_id) if primary else None,
         "reference_count": group.affected_reference_count,
         "representative_configuration_paths": paths,
+        "affected_step": affected_step,
         "finding_ids": list(group.member_finding_ids)[:10],
         "evidence_references": list(group.evidence_references)[:5],
         "intentional_trigger_context": False,
