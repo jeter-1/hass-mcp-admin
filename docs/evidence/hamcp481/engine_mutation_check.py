@@ -8,7 +8,8 @@ changed). For each mutant the five modules and
 module and the suite see the same classes, and the suite must fail at least
 one test. The mutants remove or weaken a guard: an argument check, a refusal,
 a fail-closed source rule, a hidden-entity rule, a bound, a partial-reason
-disclosure, a projection or a fit rule.
+disclosure, a projection, a fit rule, the final sanitizer check, the
+exception rule or the labels read rule.
 
 The suite's AST reachability tests parse the files on disk, so a mutant does
 not reach them; every mutant in ``MUTANTS`` is killed by a behavior test.
@@ -76,6 +77,15 @@ MUTANTS = {
         'source = "core_reads"'),
     "by_domain_withheld_uncounted": ("engine", 'names.add("by_domain")', "pass"),
     "alias_read_dropped": ("engine", 'names.add("entity_registry_entries")', "pass"),
+    # W3-H2 (Cursor r1): an exception other than CoreReadError propagates.
+    "unexpected_error_succeeds": (
+        "engine", '        raise SearchError("source_unavailable", source=source) from None\n',
+        '        raise SearchError("source_unavailable", source=source) from None\n'
+        '    except Exception:\n        return {"success": True}\n'),
+    "unexpected_error_mapped": (
+        "engine", '        raise SearchError("source_unavailable", source=source) from None\n',
+        '        raise SearchError("source_unavailable", source=source) from None\n'
+        '    except Exception:\n        raise SearchError("source_unavailable", source="core_reads") from None\n'),
     # entities.py: fail-closed sources, hidden entities and projection.
     "inventory_bound_not_refused": ("entities", 'if result.reason == "inventory_bound_exceeded":', "if False:"),
     "dropped_registry_rows_accepted": (
@@ -119,6 +129,12 @@ MUTANTS = {
     "result_fields_unprojected": (
         "entities", "record = {key: value for key, value in record.items() if key in keep}",
         "record = dict(record)"),
+    # W3-M1 (Cursor r1): labels are read only for a labels request read valid.
+    "labels_read_unrequested": (
+        "entities", 'if "labels" in self.requested and "labels" not in self.null:', "if True:"),
+    "labels_read_when_null": (
+        "entities", 'if "labels" in self.requested and "labels" not in self.null:',
+        'if "labels" in self.requested:'),
     # configs.py: body reads, the time budget, the graph and the sub-calls.
     "unavailable_batch_used": (
         "configs", "if type(result) is not ReadResult or result.status == c.UNAVAILABLE:\n            return [None]",
@@ -203,6 +219,21 @@ MUTANTS = {
         "reply", "emitted = any(other.record is not None for other in kept[surface.name])", "emitted = True"),
     "fields_unprojected": (
         "reply", "        reply = {key: value for key, value in reply.items() if key in keep}\n", "        pass\n"),
+    # W3-H1 (Cursor r1): the final pass over the assembled reply changes nothing.
+    "final_check_removed": (
+        "reply", "    check = clean(reply, None)\n"
+        "    if check.redacted_field_count or check.truncated_field_count or check.value != reply:\n"
+        '        raise SearchError("sanitization_failed")\n    return check.value\n',
+        "    return reply\n"),
+    "final_redaction_ignored": (
+        "reply", "if check.redacted_field_count or check.truncated_field_count or check.value != reply:",
+        "if check.truncated_field_count or check.value != reply:"),
+    "final_truncation_ignored": (
+        "reply", "if check.redacted_field_count or check.truncated_field_count or check.value != reply:",
+        "if check.redacted_field_count or check.value != reply:"),
+    "final_change_ignored": (
+        "reply", "if check.redacted_field_count or check.truncated_field_count or check.value != reply:",
+        "if check.redacted_field_count or check.truncated_field_count:"),
 }
 # Run and reported, but not required to fail a test.
 EQUIVALENT = {

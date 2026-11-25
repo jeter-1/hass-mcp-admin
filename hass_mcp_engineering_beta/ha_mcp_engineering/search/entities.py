@@ -498,11 +498,15 @@ class _Enricher:
         area = areas.get(area_id) if area_id else None
         floor_id = area.get("floor_id") if area else None
         floor = floors.get(floor_id) if floor_id else None
-        label_ids = set(entry.get("labels") or ())
-        device_id = entry.get("device_id")
-        device = devices.get(device_id) if device_id else None
-        if device:
-            label_ids |= set(device.get("labels") or ())
+        label_ids: set = set()
+        # Labels are read only when requested and their sources were read
+        # valid for them; another projection may carry drifted labels.
+        if "labels" in self.requested and "labels" not in self.null:
+            label_ids = set(entry.get("labels") or ())
+            device_id = entry.get("device_id")
+            device = devices.get(device_id) if device_id else None
+            if device:
+                label_ids |= set(device.get("labels") or ())
         known = aliases.get(entity_id)
         full = {
             "area": area.get("name") if area else None,

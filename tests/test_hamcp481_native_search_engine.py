@@ -580,6 +580,33 @@ class EntityModeTests(World):
         self.assertEqual(result["entities"], [{"entity_id": "sensor.temperature", "area": None}])
         self.assertEqual(reasons_of(result), {("source_unavailable", "entity", "area_registry"): 1})
 
+    async def test_drifted_labels_are_read_only_for_a_labels_request(self):
+        # Labels another projection carries are never iterated; a labels
+        # request still needs them valid.
+        entry = next(row for row in self.values["config/entity_registry/list"]
+                     if row["entity_id"] == "sensor.temperature")
+        entry["labels"] = 7
+        for fields, enrichment in ((["entity_id", "area"], {"area": "Kitchen"}),
+                                   (["entity_id", "aliases"], {"aliases": []})):
+            with self.subTest(fields=fields):
+                result = await self.go(query="temperature", result_fields=fields)
+                self.assertEqual(result["entities"], [{"entity_id": "sensor.temperature", **enrichment}])
+                self.assertEqual(reasons_of(result), {})
+        error = await self.refused("source_unavailable", {"query": "temperature",
+                                                           "result_fields": ["entity_id", "labels"]})
+        self.assertEqual(error.details, {"reason": "source_unavailable", "source": "entity_registry"})
+
+    async def test_drifted_device_labels_never_reach_area_enrichment(self):
+        self.values["config/device_registry/list"][0]["labels"] = 7
+        result = await self.go(query="temperature", result_fields=["entity_id", "area"])
+        self.assertEqual(result["entities"], [{"entity_id": "sensor.temperature", "area": "Kitchen"}])
+        self.assertEqual(reasons_of(result), {})
+        # The device rows are read valid for the area, not for the labels.
+        both = await self.go(query="temperature", result_fields=["entity_id", "area", "labels"])
+        self.assertEqual(both["entities"], [{"entity_id": "sensor.temperature", "area": "Kitchen",
+                                             "labels": None}])
+        self.assertEqual(reasons_of(both), {("source_unavailable", "entity", "device_registry"): 1})
+
     async def test_membership(self):
         result = await self.go(query="downstairs", result_fields=["entity_id", "member_entity_ids"])
         self.assertEqual(result["entities"], [{"entity_id": "group.downstairs", "is_group": True,
@@ -714,6 +741,22 @@ class SourceFailureTests(World):
     async def test_an_inventory_over_the_bound(self):
         self.values["states"] = [st(f"sensor.s{i:05}", "1", "S") for i in range(c.MAX_ITEMS + 1)]
         await self.assertSource("states", {"query": "kitchen", "search_types": None}, observed=c.MAX_ITEMS + 1)
+
+    async def test_an_unexpected_exception_propagates(self):
+        # Only CoreReadError is mapped. Anything else a read raises propagates
+        # as itself: never a success and never a mapped SearchError.
+        for method, arguments in (
+                ("inventory", {"query": "light.kitchen"}),
+                ("entity_entries", {"query": "veranda", "exact_match": False, "search_types": None}),
+                ("batch", {"query": "light.kitchen", "search_types": ["automation"]}),
+                ("scene_config", {"query": "movie", "search_types": ["scene"]})):
+            boom = RuntimeError(MARKER)
+            read = AsyncMock(side_effect=boom)
+            with self.subTest(method=method), patch.object(CoreReadSession, method, read):
+                with self.assertRaises(RuntimeError) as error:
+                    await self.search(arguments)
+                self.assertIs(error.exception, boom)
+                self.assertTrue(read.await_count)
 
 
 class RefusalTests(World):
@@ -1143,6 +1186,33 @@ class ReplyTests(World):
             with self.subTest(patched=list(patched)), patch.object(reply, "sanitize_untrusted_data", **patched):
                 error = await self.refused("sanitization_failed", {"query": "light.kitchen"})
             self.assertEqual(error.details, {"reason": "sanitization_failed"})
+
+    async def test_the_final_pass_withholds_a_reply_it_would_change(self):
+        # The final pass, over the assembled reply, is the only one with no
+        # string limit. It must change nothing; a change withholds the reply.
+        real = reply.sanitize_untrusted_data
+        final: list = []
+
+        def final_pass(change):
+            def sanitize(value, *, max_string, **kwargs):
+                out = real(value, max_string=max_string, **kwargs)
+                if max_string is not None:
+                    return out
+                final.append(value)
+                return dataclasses.replace(out, **change)
+            return sanitize
+
+        with patch.object(reply, "sanitize_untrusted_data", side_effect=final_pass({})):
+            result = await self.go(query="light.kitchen")
+        self.assertEqual(final, [result])
+        for change in ({"failed_closed": True}, {"redacted_field_count": 1}, {"truncated_field_count": 1},
+                       {"value": {**result, "query": MARKER}}):
+            final.clear()
+            with self.subTest(change=list(change)), \
+                    patch.object(reply, "sanitize_untrusted_data", side_effect=final_pass(change)):
+                error = await self.refused("sanitization_failed", {"query": "light.kitchen"})
+            self.assertEqual(error.details, {"reason": "sanitization_failed"})
+            self.assertEqual(len(final), 1)
 
     async def test_group_by_domain_is_withheld(self):
         result = await self.go(query="light.kitchen", group_by_domain=True)
