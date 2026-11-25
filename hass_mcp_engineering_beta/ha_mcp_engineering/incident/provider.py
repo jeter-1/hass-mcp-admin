@@ -187,6 +187,7 @@ class DirectHaIncidentProvider(EngineeringEvidenceProvider):
             logbook_failed += logbook_meta[1]
             logbook_duration += logbook_meta[2]
         history_coverage = _coverage("entity_history", "history_read", bool(entity_ids), history_examined, history_failed, history_duration)
+        _note_significant_changes_only(history_coverage)
         logbook_coverage = _coverage("logbook", "logbook_read", bool(entity_ids), logbook_examined, logbook_failed, logbook_duration)
         coverage.extend((history_coverage, logbook_coverage))
 
@@ -229,6 +230,7 @@ class DirectHaIncidentProvider(EngineeringEvidenceProvider):
                         events.extend(normalize_logbook(logbook, entity_id, evidence))
                         _merge_activity_coverage(history_coverage, history_meta)
                         _merge_activity_coverage(logbook_coverage, logbook_meta)
+                    _note_significant_changes_only(history_coverage)
             except Exception:
                 coverage.append(_failed_coverage("automation_config", "automation_config", True))
                 coverage.append(_failed_coverage("automation_traces", "automation_trace", True))
@@ -378,10 +380,7 @@ class DirectHaIncidentProvider(EngineeringEvidenceProvider):
             coverage.append(_not_requested("configuration_integrity", "configuration_integrity_analysis"))
 
         if query.get("include_reliability_context") and automation_id:
-            coverage.append(IncidentSourceCoverage("automation_reliability", "engineering", "reliability_analysis",
-                "complete" if reliability_bundle is not None else "failed", True, False, len(reliability_findings),
-                0 if reliability_bundle is not None else 1, [], 0.0, reliability_bundle is not None,
-                None if reliability_bundle is not None else "provider_upstream_error", reliability_bundle is not None))
+            coverage.append(_reliability_context_coverage(reliability_bundle, len(reliability_findings)))
         else:
             coverage.append(_not_requested("automation_reliability", "reliability_analysis"))
 
@@ -487,6 +486,9 @@ class DirectHaIncidentProvider(EngineeringEvidenceProvider):
 
     async def _entity_activity(self, entity_id, lookback_hours, instant, semaphore):
         start = normalize_timestamp(instant - timedelta(hours=lookback_hours))
+        # HAMCP-502: without end_time Core ends both windows one day after
+        # start, which cut a lookback over 24 hours short.
+        end = normalize_timestamp(instant)
         async def call(bind):
             began = time.perf_counter()
             try:
@@ -508,9 +510,11 @@ class DirectHaIncidentProvider(EngineeringEvidenceProvider):
                     start,
                     kinds=("timestamp",),
                     query=[
+                        ("end_time", end),
                         ("filter_entity_id", entity_id),
                         ("minimal_response", None),
                         ("no_attributes", None),
+                        ("significant_changes_only", "1"),
                     ],
                 )
             ),
@@ -519,7 +523,7 @@ class DirectHaIncidentProvider(EngineeringEvidenceProvider):
                     "/logbook/{}",
                     start,
                     kinds=("timestamp",),
-                    query=[("entity", entity_id)],
+                    query=[("end_time", end), ("entity", entity_id)],
                 )
             ),
         )
@@ -613,6 +617,53 @@ def _coverage(source_type, capability, requested, examined, failed, duration):
     )
 
 
+# HAMCP-502 TB-4: the incident history read asks Core for significant
+# changes only, so attribute-only changes are not evidence here.
+HISTORY_SIGNIFICANT_ONLY_WARNING = (
+    "History reads significant state changes only (significant_changes_only=1); "
+    "attribute-only changes are not read."
+)
+# HAMCP-502 TB-2: trace collection states that leave the trace read whole.
+COMPLETE_TRACE_COLLECTION_STATES = {None, "complete", "zero_upstream", "outside_lookback"}
+
+
+def _note_significant_changes_only(item):
+    if item.requested and HISTORY_SIGNIFICANT_ONLY_WARNING not in item.warnings:
+        item.warnings = [HISTORY_SIGNIFICANT_ONLY_WARNING, *item.warnings]
+
+
+def _reliability_context_coverage(bundle, findings):
+    if bundle is None:
+        return IncidentSourceCoverage("automation_reliability", "engineering", "reliability_analysis",
+            "failed", True, False, findings, 1, [], 0.0, False, "provider_upstream_error", False)
+    limitations = []
+    for item in bundle.coverage:
+        if item.affects_result_status and item.completeness not in {"complete", "not_requested"}:
+            row = _from_reliability(item.source_type, item, True)
+            limitations.extend(row.coverage_limitations or [f"{item.source_type}_{row.completeness}"])
+    trace = next((item for item in bundle.coverage if item.source_type == "automation_traces"), None)
+    if trace is None:
+        limitations.append("automation_traces_coverage_missing")
+    elif trace.collection_state not in COMPLETE_TRACE_COLLECTION_STATES:
+        limitations.append(f"automation_traces_{trace.collection_state}")
+    partial = bundle.partial or bool(limitations)
+    normalized = normalize_coverage(
+        source_type="automation_reliability",
+        completeness="partial" if partial else "complete",
+        requested=True,
+        required=False,
+        items_examined=findings,
+        limitation_ids=limitations,
+    )
+    warnings = (
+        [f"Reliability evidence was partial: {', '.join(normalized.coverage_limitations)}."]
+        if partial else []
+    )
+    return IncidentSourceCoverage("automation_reliability", "engineering", "reliability_analysis",
+        normalized.completeness, True, False, findings, 0, warnings, 0.0, True, None, True,
+        list(normalized.coverage_limitations))
+
+
 def _merge_activity_coverage(item, values):
     examined, failed, duration = values
     item.requested = True
@@ -633,7 +684,8 @@ def _merge_activity_coverage(item, values):
     item.failed_items = normalized.failed_items
     item.failure_category = normalized.failure_category
     item.coverage_limitations = list(normalized.coverage_limitations)
-    item.warnings = [f"{item.failed_items} bounded request(s) failed."] if item.failed_items else []
+    kept = [HISTORY_SIGNIFICANT_ONLY_WARNING] if HISTORY_SIGNIFICANT_ONLY_WARNING in item.warnings else []
+    item.warnings = kept + ([f"{item.failed_items} bounded request(s) failed."] if item.failed_items else [])
 
 
 def _failed_coverage(
