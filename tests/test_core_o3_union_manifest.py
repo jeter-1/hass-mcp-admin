@@ -80,10 +80,11 @@ class UnionComparison(unittest.TestCase):
             with self.assertRaises(ValueError):
                 evidence.verify_proof(proof, old["version"], old["version"], old["commit"])
 
-    def test_derived_acceptance_preparation_uses_real_october_hashes(self):
+    def test_derived_acceptance_preparation_uses_real_release_hashes(self):
         import core_evidence_workflow as workflow
-        # HAMCP-437: the acceptance anchor is 2026.11.0 (child_consumer 9.2.0).
-        old, new = source("2026.10.3"), source("2026.11.0")
+        # HAMCP-505: acceptance follows the support window's current Core (2026.11.3 over the
+        # signed 2026.11.0); the fixture proof still covers every manifest path.
+        old, new = source("2026.11.0"), source("2026.11.3")
         (ROOT / ".artifacts").mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory(dir=ROOT / ".artifacts") as tmp:
             root = Path(tmp)
