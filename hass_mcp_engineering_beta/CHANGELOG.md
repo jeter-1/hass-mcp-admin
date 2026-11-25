@@ -9,10 +9,13 @@ release pull request completes this entry.
 - Version materialized on `release/2.10.0`, created from `main` at f48c6fb9,
   so item pull requests carry no version change. The release transition is
   from 2.4.2-beta.13 to 2.4.2-beta.14.
-- Planned (plan approved 2026-11-25): the `get_history` end-time fix
-  (HAMCP-502), the Core 2026.11.3 must-carry (HAMCP-462), the integrity,
-  reliability and health fixes (HAMCP-490, 491, 493, 497, 498) and native
-  search (HAMCP-481). None has landed yet.
+- Landed: `get_history` and the incident activity reads (history and
+  logbook) now send an end time (HAMCP-502, #PR502NUM). Without one, Core
+  ends the window a day after its start, so a read over 24 hours returned
+  only its first day and read complete. The 168 hour limit is unchanged.
+- Planned (plan approved 2026-11-25): the Core 2026.11.3 must-carry
+  (HAMCP-462), the integrity, reliability and health fixes (HAMCP-490, 491,
+  493, 497, 498) and native search (HAMCP-481). None has landed yet.
 - New in-progress `V2_4_2_BETA14` release notes and acceptance contract.
 - Rollback: pending; stated by the final release pull request.
 

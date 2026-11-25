@@ -95,10 +95,6 @@ def dump(data: Any) -> str:
     return out
 
 
-def _utc(hours_ago: float) -> str:
-    return (datetime.now(timezone.utc) - timedelta(hours=hours_ago)).isoformat()
-
-
 # Preserve the legacy helper name while routing serialization through the v2
 # response-model boundary.
 dump = dump_json
@@ -413,11 +409,18 @@ async def get_history(entity_id: str, hours: float = 24, minimal: bool = True) -
             "Chunk the range into multiple calls to stay inside gateway timeouts."
         )
     require_entity_id(entity_id)
-    query = [("filter_entity_id", entity_id)]
+    # HAMCP-502: Core ends a window with no end_time one day after its start,
+    # so a longer read came back as its first 24 hours, reading complete.
+    # Both bounds come from one instant.
+    end = datetime.now(timezone.utc)
+    query = [("end_time", end.isoformat()), ("filter_entity_id", entity_id)]
     if minimal:
         query += [("minimal_response", None), ("no_attributes", None)]
     path = rest_path(
-        "/history/period/{}", _utc(hours), kinds=("timestamp",), query=query
+        "/history/period/{}",
+        (end - timedelta(hours=hours)).isoformat(),
+        kinds=("timestamp",),
+        query=query,
     )
     data = await rest("GET", path)
     return _bounded_history(entity_id, data)

@@ -41,7 +41,7 @@ final release pull request binds their evidence.
 
 | Item | Scope | State |
 | --- | --- | --- |
-| HAMCP-502 | `get_history` and incident activity reads bounded with an end time, so windows over 24 hours are complete | not landed |
+| HAMCP-502 | `get_history` and incident activity reads bounded with an end time, so windows over 24 hours are complete | landed (#PR502NUM); `tests/test_hamcp502_history_end_time.py` |
 | HAMCP-462 | Core mirror pins refreshed to 2026.11.3, the trust-root seq 19 copy and the support-window rotation | not landed |
 | HAMCP-490, HAMCP-491 | Configuration integrity compact finding identity and filtered counts | not landed |
 | HAMCP-493 | Reliability analysis current state and configuration paths | not landed |

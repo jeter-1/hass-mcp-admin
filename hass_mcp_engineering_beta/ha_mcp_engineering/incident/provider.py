@@ -487,6 +487,9 @@ class DirectHaIncidentProvider(EngineeringEvidenceProvider):
 
     async def _entity_activity(self, entity_id, lookback_hours, instant, semaphore):
         start = normalize_timestamp(instant - timedelta(hours=lookback_hours))
+        # HAMCP-502: without end_time Core ends both windows one day after
+        # start, which cut a lookback over 24 hours short.
+        end = normalize_timestamp(instant)
         async def call(bind):
             began = time.perf_counter()
             try:
@@ -508,6 +511,7 @@ class DirectHaIncidentProvider(EngineeringEvidenceProvider):
                     start,
                     kinds=("timestamp",),
                     query=[
+                        ("end_time", end),
                         ("filter_entity_id", entity_id),
                         ("minimal_response", None),
                         ("no_attributes", None),
@@ -519,7 +523,7 @@ class DirectHaIncidentProvider(EngineeringEvidenceProvider):
                     "/logbook/{}",
                     start,
                     kinds=("timestamp",),
-                    query=[("entity", entity_id)],
+                    query=[("end_time", end), ("entity", entity_id)],
                 )
             ),
         )
