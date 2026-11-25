@@ -9,8 +9,8 @@ Onboarding, readiness and lane-specific containers stay in the harness.
 The harness's --mode argument chooses the mode; nothing here reads the
 environment to choose one. CI mode refuses off Actions, without the
 run's verified context (core_release_evidence.context, the check the
-run_specialized groups use), on a lane whose reviewed data is keyed to another
-anchor, or on a checkout that is not the run's own commit. A Lane is bound to
+run_specialized groups use), on an anchor the lane has no reviewed data for
+(its REVIEWED_ANCHORS), or on a checkout that is not the run's own commit. A Lane is bound to
 its harness module and resolves every name through it at call time, so a
 harness's own names stay its interface.
 """
@@ -162,6 +162,20 @@ RUNTIME_TREE = "HEAD:hass_mcp_engineering_beta/ha_mcp_engineering"
 PULL_TIMEOUT = 900
 
 
+def lane_provenance(ctx):
+    """The context anchor's committed lane provenance fixture: reviewed data only, never a runner input (D5).
+    In main mode the release is the anchor, so the fixture must equal the context's provenance; in derived
+    mode the release inherits the anchor's sources, so its own provenance differs by design (HAMCP-489)."""
+    from core_lane_bindings import provenance_name
+    anchor = ctx["anchor"]
+    if anchor not in REVIEWED_CORE_BINDINGS:
+        raise ValueError("lane_anchor_unreviewed")
+    provenance = release.read_json(ROOT / "tests/fixtures" / provenance_name(anchor))
+    if ctx["mode"] == "main" and canonical(provenance) != canonical(ctx["provenance"]):
+        raise ValueError("lane_provenance_mismatch")
+    return provenance
+
+
 def utc():
     return datetime.now(timezone.utc).isoformat()
 
@@ -218,10 +232,11 @@ class Lane:
             raise m.Refusal("host_command_failed")
         return result
 
-    def images(self, *, upstream):
-        """The exact Core image, the reviewed ha-mcp child when the lane runs one, and the fixture writer."""
+    def images(self, *, upstream, anchor=None):
+        """The exact Core image, the reviewed ha-mcp child when the lane runs one, and the fixture writer.
+        The binding is the lane's own VERSION's, or in CI mode the context's anchor's."""
         m = self.module
-        binding = REVIEWED_CORE_BINDINGS[m.VERSION]
+        binding = REVIEWED_CORE_BINDINGS[m.VERSION if anchor is None else anchor]
         core = f"ghcr.io/home-assistant/home-assistant:{m.VERSION}@{binding.image_index_digest}"
         if not upstream:
             return core, host.FIXTURE_IMAGE
@@ -299,14 +314,14 @@ class Lane:
 
     def ci_context(self):
         """The run's verified context and its commit (D2): Actions only, this run's own checkout,
-        and an anchor equal to the lane's, since its reviewed data is keyed to that anchor (D5)."""
+        and an anchor the lane has reviewed data for, since that data is keyed to the anchor (D5)."""
         m = self.module
         if os.environ.get("GITHUB_ACTIONS") != "true":
             raise m.Refusal("ci_mode_requires_actions")
         ctx = release.context()
         if ctx is None:
             raise m.Refusal("ci_context_required")
-        if ctx["anchor"] != m.VERSION:
+        if ctx["anchor"] not in m.REVIEWED_ANCHORS or ctx["anchor"] not in REVIEWED_CORE_BINDINGS:
             raise m.Refusal("lane_anchor_unreviewed")
         revision = self.clean_revision()
         if revision != ctx["run"]["GITHUB_SHA"]:
@@ -325,7 +340,7 @@ class Lane:
         """The release Core from the context's slot, then the anchor's reviewed child and the fixture
         writer, each pulled by digest and verified; the lane itself still runs ``--pull never``."""
         m = self.module
-        images = (release.slot(ctx)["image"], *self.images(upstream=upstream)[1:])
+        images = (release.slot(ctx)["image"], *self.images(upstream=upstream, anchor=ctx["anchor"])[1:])
         for image in images:
             m.command("docker", "pull", image, timeout=PULL_TIMEOUT)
             m.cached_image(image)

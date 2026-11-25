@@ -37,6 +37,9 @@ CAPABILITY = "core.marketplace_read"
 CONTRACT_FINGERPRINT = "sha256:9393b59801d97786e3ac8cf2b44c1aec121198568bfb017cabaa5691acc0cfeb"
 MANIFEST = ROOT / "ci/core-contract-read-files.json"
 SOURCE_HASHES = ROOT / "docs/evidence/hamcp290/lane/core-marketplace-source-hashes.json"
+# CI mode's other reviewed anchors (HAMCP-489): each record is generated from that anchor's exact archive.
+ANCHOR_SOURCE_HASHES = {"2026.11.3": ROOT / "docs/evidence/hamcp290/lane/core-marketplace-source-hashes-2026.11.3.json"}
+REVIEWED_ANCHORS = frozenset({VERSION, *ANCHOR_SOURCE_HASHES})
 LANE = "ha-2026-11-0-marketplace"
 CORE = "beta25-real-ha-" + LANE
 NETWORK = "beta-rc2-contract-" + LANE
@@ -69,16 +72,19 @@ def compiled_reference():
 
 
 @diagnostics.checked("image_verify", "journal_inputs")
-def source_manifest(archive_path, provenance, *, release_commit=None):
+def source_manifest(archive_path, provenance, *, release_commit=None, anchor=None):
     """Bind the manifest profile, committed source hashes and exact archive. CI mode reads the release's
-    archive (``release_commit``) against the anchor's committed hashes, so any drift refuses."""
+    archive (``release_commit``) against the anchor's committed hashes, so any drift refuses; an anchor
+    without a committed record refuses."""
+    anchor = VERSION if anchor is None else anchor
+    hashes = SOURCE_HASHES if anchor == VERSION else ANCHOR_SOURCE_HASHES.get(anchor)
     profile = read_json(MANIFEST).get("profiles", {}).get(CAPABILITY)
-    if not profile or not SOURCE_HASHES.is_file():
+    if not profile or hashes is None or not hashes.is_file():
         raise Refusal("marketplace_manifest_missing")
-    record = read_json(SOURCE_HASHES)
+    record = read_json(hashes)
     rows = {row["path"]: row["sha256"] for row in record["files"]}
     if (record["core_version"], record["source_commit"], record["source_archive_sha256"]) != (
-            VERSION, provenance["source_commit"], provenance["source_archive_sha256"]):
+            anchor, provenance["source_commit"], provenance["source_archive_sha256"]):
         raise Refusal("marketplace_source_provenance_mismatch")
     if [row["path"] for row in record["files"]] != profile or len(rows) != len(profile):
         raise Refusal("marketplace_manifest_mismatch")
@@ -91,7 +97,7 @@ def source_manifest(archive_path, provenance, *, release_commit=None):
                 observed[name] = hashlib.sha256(tar.extractfile(member).read()).hexdigest()
     if observed != rows:
         raise Refusal("marketplace_source_hash_mismatch")
-    return {"manifest_sha256": sha256(MANIFEST), "source_hashes_sha256": sha256(SOURCE_HASHES),
+    return {"manifest_sha256": sha256(MANIFEST), "source_hashes_sha256": sha256(hashes),
             "profile_paths": len(profile)}
 
 
@@ -134,8 +140,8 @@ def ci_inputs(ctx, archive_path):
     reference = compiled_reference()
     if reference.get("capability_id") != CAPABILITY or reference.get("contract_fingerprint") != CONTRACT_FINGERPRINT:
         raise Refusal("profile_fingerprint_mismatch")
-    sources = source_manifest(archive_path, read_json(core_lane_host.LANE_PROVENANCE),
-                              release_commit=ctx["provenance"]["source_commit"])
+    sources = source_manifest(archive_path, core_lane_host.lane_provenance(ctx),
+                              release_commit=ctx["provenance"]["source_commit"], anchor=ctx["anchor"])
     return entry, reference, sources
 
 

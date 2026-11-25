@@ -513,7 +513,7 @@ class TopologySuccessTests(unittest.TestCase):
 
     def test_an_unreviewed_anchor_refuses_before_reading_the_registry(self):
         # The identifier pattern is the anchor's (HAMCP-443 D5): no reviewed pattern, no mapping.
-        self.assertEqual(set(a2.NODE_DEVICE_IDENTIFIER), {"2026.11.0"})
+        self.assertEqual(set(a2.NODE_DEVICE_IDENTIFIER), {"2026.11.0", "2026.11.3"})
         for anchor in ("2026.12.0", "2026.11", " 2026.11.0", "2026.11.0 ", "", None, b"2026.11.0", 2026):
             with self.subTest(anchor=anchor), self.assertRaises(ValueError) as caught:
                 a2.registry_node_devices(iter(()), anchor=anchor)
