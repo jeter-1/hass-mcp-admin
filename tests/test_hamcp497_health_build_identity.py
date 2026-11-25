@@ -21,6 +21,7 @@ BETA_DIR = ROOT / "hass_mcp_engineering_beta"
 sys.path.insert(0, str(BETA_DIR))
 sys.path.insert(0, str(ROOT / "tests"))
 
+from ha_mcp_engineering import secret_paths  # noqa: E402
 from ha_mcp_engineering.application import create_application  # noqa: E402
 from ha_mcp_engineering.ha_core_readmission import CoreRuntime  # noqa: E402
 from ha_mcp_engineering.ha_core_readmission.registry import CoreReleaseRegistry  # noqa: E402
@@ -164,6 +165,13 @@ class RegistryRefreshFieldTests(unittest.IsolatedAsyncioTestCase):
         registry = runtime.health_projection()["release_registry"]
         self.assertEqual(registry["last_refresh_at"], NOW.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
         self.assertEqual(registry["refresh_interval_seconds"], REFRESH_INTERVAL_SECONDS)
+
+
+def tearDownModule():
+    # HAMCP-288: create_application installs the process-wide secret-path
+    # redaction; reset it so it does not reach another module in the same
+    # test process.
+    secret_paths.reset()
 
 
 if __name__ == "__main__":
