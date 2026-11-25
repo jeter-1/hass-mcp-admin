@@ -1198,6 +1198,13 @@ class TraceSnapshotService:
         held = ({w["automation_id"] for w in index["watches"]}
                 | {r["automation_id"] for r in index["lifecycle"]["lapsed"]})
         self.watch_sources = {key: raw for key, raw in self.watch_sources.items() if key in held}
+        # HAMCP-503 TB-3: an ended watch's gap count goes with it, and a
+        # reinstated watch keeps its ID but starts a fresh baseline, so its
+        # count starts again at zero (review M1).
+        active = {w["watch_id"] for w in index["watches"]}
+        fresh = {item["watch_id"] for item in renewed or () if item["outcome"] == "reinstated"}
+        self.retention_gaps = {key: gap for key, gap in self.retention_gaps.items()
+                               if key in active and key not in fresh}
         now_ms = _ms(now)
         result = {
             "action": action,

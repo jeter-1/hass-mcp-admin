@@ -143,6 +143,52 @@ class RetentionGapTests(RetentionGapCase):
         await self.poll(40)
         self.assertEqual((await self.row())["retention_gap_polls"], 0)
 
+    async def test_after_a_restart_a_gap_is_measured_from_the_stored_poll(self):
+        await self.add_watch()
+        await self.poll(1)  # baselined; the stored last poll is minute 1
+        self.service = TraceSnapshotService(self.root, self.core.command, self.runtime, self.audit,
+                                            known_secrets=(KNOWN,), clock=self.clock)
+        self.add_runs(10, c.MAX_CAPTURES)
+        await self.poll(30)  # all five runs started after the stored poll
+        row = await self.row()
+        self.assertEqual(row["retention_gap_polls"], 1)
+        self.assertEqual(row["last_retention_gap_at"], c.utc_text(at(30)))
+
+    async def test_a_reinstated_watch_starts_again_at_zero(self):
+        added = await self.add_watch()
+        watch_id = added["watch"]["watch_id"]
+        await self.poll(1)
+        self.add_runs(10, 5)
+        await self.poll(30)
+        self.assertEqual((await self.row())["retention_gap_polls"], 1)
+        # The watch lapses in a list sweep and is reinstated before any poll.
+        self.clock.now = at(30) + 48 * 3600
+        value, _ = await self.service.watch(action="list")
+        self.assertEqual(value["watches"], [])
+        self.assertNotIn(watch_id, self.service.retention_gaps)
+        value, _ = await self.service.watch(action="renew", automation_id="a1")
+        item = value["renewed"][0]
+        self.assertEqual((item["outcome"], item["watch_id"]), ("reinstated", watch_id))
+        row = value["watches"][0]
+        self.assertEqual(row["status"], "awaiting_first_poll")
+        self.assertEqual(row["retention_gap_polls"], 0)
+        self.assertIsNone(row["last_retention_gap_at"])
+
+    async def test_reinstating_drops_a_count_the_list_sweep_did_not(self):
+        added = await self.add_watch()
+        watch_id = added["watch"]["watch_id"]
+        await self.poll(1)
+        self.add_runs(10, 5)
+        await self.poll(30)
+        # The lapse and the reinstate happen in one renew call.
+        self.clock.now = at(30) + 48 * 3600
+        value, _ = await self.service.watch(action="renew", automation_id="a1")
+        item = value["renewed"][0]
+        self.assertEqual((item["outcome"], item["watch_id"]), ("reinstated", watch_id))
+        self.assertEqual(value["watches"][0]["retention_gap_polls"], 0)
+        self.assertIsNone(value["watches"][0]["last_retention_gap_at"])
+        self.assertNotIn(watch_id, self.service.retention_gaps)
+
     async def test_a_removed_watch_drops_its_entry(self):
         await self.add_watch()
         await self.poll(1)
