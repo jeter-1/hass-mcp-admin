@@ -67,7 +67,8 @@ follow `next_cursor` until it is `null`. Narrow the walk with `severities`,
   pages, each full except the last, from one provider read.
 - **Severity filter.** The filter applies after classification and before the
   2,000-finding whole-analysis bound. `finding_count`, `findings_by_severity`,
-  and the other totals describe the filtered result, and a narrowed query says
+  and the other finding totals describe the filtered result (the dynamic
+  reference count does not; see below), and a narrowed query says
   so: `counter_semantics.finding_count` is
   `selected_severity_findings_within_whole_bounded_analysis` and
   `counter_semantics.findings_by_severity` is `selected_severities_only`. A
@@ -75,6 +76,16 @@ follow `next_cursor` until it is `null`. Narrow the walk with `severities`,
   "not counted", not "none found"; read `severity_filter.excluded_by_severity`
   for those. A filtered walk still reads the same evidence: the provider call
   is unchanged.
+- **Dynamic reference count under a filter.** `unresolved_dynamic_reference_count`
+  and `dynamic_reference_summary.unresolved_in_requested_scope_count` are not
+  filtered: they count every in-scope dynamic reference, before the severities
+  filter and before equal references coalesce (HAMCP-491). They feed the
+  assessment, which is taken before the filter too, so
+  `severities=["high"]` can return `finding_count: 0` with a nonzero dynamic
+  count. `counter_semantics.unresolved_dynamic_reference_count` is
+  `in_scope_dynamic_references_before_severity_filter` on every response, with
+  or without a filter. `dynamic_reference_summary.reported_finding_count` is
+  the filtered finding count.
 - **Assessment under a filter.** Findings the filter hides still need review.
   `final_assessment` and `manual_review_required` are taken before the filter,
   so `severities=["info"]` over a result with only high findings returns no
@@ -296,7 +307,13 @@ Exact findings are deterministically grouped by finding type, target entity,
 source type, and source ID. All unique bounded configuration paths remain on
 that one finding. Different source objects remain different findings. Orphan
 candidates are one per registry entry. Dynamic findings are one per source
-object and path. Finding IDs and ordering are deterministic.
+object, path, and distinct evidence: equal references at one path coalesce,
+and references at one path that differ (for example in excerpt or upstream
+evidence ID) stay separate findings. Every finding has its own `finding_id`
+(HAMCP-490). The first dynamic finding at a path keeps the path-based ID; each
+other finding at that path adds its evidence reference ID to the hash, so
+compact rows, which omit evidence, still differ by `finding_id`. Finding IDs and
+ordering are deterministic.
 
 Whole-analysis fields are:
 
@@ -304,7 +321,9 @@ Whole-analysis fields are:
 - `unique_source_object_count`;
 - `unique_target_entity_count`;
 - `unique_orphan_candidate_count`;
-- `unresolved_dynamic_reference_count`;
+- `unresolved_dynamic_reference_count`, the in-scope dynamic references as
+  read, before equal references coalesce, so it can exceed the number of
+  `unresolved_dynamic_reference` findings;
 - `manual_review_required`, `final_assessment`, and `result_status`.
 
 Severity and type totals each sum to `finding_count`. Source totals cover only
