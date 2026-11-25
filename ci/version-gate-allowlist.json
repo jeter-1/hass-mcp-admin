@@ -111,21 +111,10 @@
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/naming.py",
       "symbol": "SLUGIFY_PIN",
       "literals": {
-        "2026.10.1": 1,
-        "9.1.2": 1
+        "9.1.3": 1
       },
       "finding": "copied-source pin",
-      "reason": "Provenance pin of source copied from Core 2026.10.1 (SLUGIFY_PIN also ha-mcp 9.1.2); see the G1 mirror-manifest design note",
-      "expiry": "G1 mirror manifest (2.9.1)"
-    },
-    {
-      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/configuration_definitions/schemas.py",
-      "symbol": "CORE_PIN",
-      "literals": {
-        "2026.10.1": 1
-      },
-      "finding": "copied-source pin",
-      "reason": "Provenance pin of source copied from Core 2026.10.1 (SLUGIFY_PIN also ha-mcp 9.1.2); see the G1 mirror-manifest design note",
+      "reason": "Provenance pin: python-slugify 9.1.3 from the Core 2026.11.3 package_constraints.txt (HAMCP-462); the slugify version matches the ha-mcp-like pattern, it is not an ha-mcp version",
       "expiry": "G1 mirror manifest (2.9.1)"
     },
     {
@@ -961,16 +950,6 @@
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
       "expiry": "Phase 6 (ha-mcp removal)"
-    },
-    {
-      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings/entity_filter.py",
-      "symbol": "CORE_PIN",
-      "literals": {
-        "2026.10.1": 1
-      },
-      "finding": "copied-source pin",
-      "reason": "Provenance pin of source copied from Core 2026.10.1 (SLUGIFY_PIN also ha-mcp 9.1.2); see the G1 mirror-manifest design note",
-      "expiry": "G1 mirror manifest (2.9.1)"
     },
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy.py",

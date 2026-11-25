@@ -28,7 +28,7 @@ Planned, in this order:
 | Item | Scope | State |
 | --- | --- | --- |
 | HAMCP-502 | `get_history` returns only the first 24 hours of a longer window and marks it complete; the incident activity reads have the same gap. Both send an end time | not landed |
-| HAMCP-462 | Core mirror pins refreshed to 2026.11.3, the signed trust-root seq 19 copied into `main`, and the support window rotated (2026.11.3 current, 2026.11.0 rollback) | not landed |
+| HAMCP-462 | Core mirror pins refreshed to 2026.11.3, the signed trust-root seq 19 copied into `main`, and the support window rotated (2026.11.3 current, 2026.11.0 rollback) | landed (#PR462NUM) |
 | HAMCP-490, HAMCP-491 | `configuration_integrity_analysis` compact finding identity and counts that follow the filter | not landed |
 | HAMCP-493 | `automation_reliability_analysis` current state and configuration paths | not landed |
 | HAMCP-497, HAMCP-498 | `get_server_health` build identity and registry refresh time; Core unavailability reported as retryable | not landed |

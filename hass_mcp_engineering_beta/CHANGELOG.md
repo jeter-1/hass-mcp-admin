@@ -9,10 +9,15 @@ release pull request completes this entry.
 - Version materialized on `release/2.10.0`, created from `main` at f48c6fb9,
   so item pull requests carry no version change. The release transition is
   from 2.4.2-beta.13 to 2.4.2-beta.14.
+- Landed: the Core 2026.11.3 must-carry (HAMCP-462, #PR462NUM). The
+  recorder entity filter, configuration-definition schemas and naming
+  mirrors are pinned to Core 2026.11.3; the signed Core registry trust root
+  is copied at sequence 19, which signs 2026.11.3 with the same 38 profiles
+  as 2026.11.0; and the support window rotates to 2026.11.3 current and
+  2026.11.0 rollback, with the Core candidate empty.
 - Planned (plan approved 2026-11-25): the `get_history` end-time fix
-  (HAMCP-502), the Core 2026.11.3 must-carry (HAMCP-462), the integrity,
-  reliability and health fixes (HAMCP-490, 491, 493, 497, 498) and native
-  search (HAMCP-481). None has landed yet.
+  (HAMCP-502), the integrity, reliability and health fixes (HAMCP-490, 491,
+  493, 497, 498) and native search (HAMCP-481). None has landed yet.
 - New in-progress `V2_4_2_BETA14` release notes and acceptance contract.
 - Rollback: pending; stated by the final release pull request.
 
