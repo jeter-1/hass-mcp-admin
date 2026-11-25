@@ -418,7 +418,7 @@ class InventoryTests(Base):
         self.assertEqual([source["source"] for source in session.sources],
                          [name for name, read in c.READS.items() if read.shape == "rows"])
         self.assertTrue(all(source["status"] == c.COMPLETE and source["observed_at"] == "2026-11-25T12:00:00Z"
-                            for source in session.sources))
+                            and source["observed"] is None for source in session.sources))
 
     async def test_projection_keeps_only_the_fixed_fields(self):
         session = self.session()
@@ -503,13 +503,19 @@ class InventoryTests(Base):
 
     async def test_wrong_top_level_shapes_and_the_inventory_bound_fail_closed(self):
         session = self.session("states", "label_registry")
-        for value, reason in (({"entity_id": "light.kitchen"}, "invalid_response"), (None, "invalid_response"),
-                              ([state(f"sensor.s{i}") for i in range(c.MAX_ITEMS + 1)], "inventory_bound_exceeded")):
+        for value, reason, observed in (
+                ({"entity_id": "light.kitchen"}, "invalid_response", None), (None, "invalid_response", None),
+                ([state(f"sensor.s{i}") for i in range(c.MAX_ITEMS + 1)], "inventory_bound_exceeded",
+                 c.MAX_ITEMS + 1)):
             self.values["states"] = value
             result = await session.inventory("states")
-            self.assertEqual((result.status, result.reason, result.value), (c.UNAVAILABLE, reason, None))
+            self.assertEqual((result.status, result.reason, result.value, result.observed, result.dropped),
+                             (c.UNAVAILABLE, reason, None, observed, 0))
+            self.assertEqual((session.sources[-1]["reason"], session.sources[-1]["observed"]), (reason, observed))
         self.values["states"] = [state(f"sensor.s{i}") for i in range(c.MAX_ITEMS)]
-        self.assertEqual(len((await session.inventory("states")).value), c.MAX_ITEMS)
+        result = await session.inventory("states")
+        self.assertEqual((result.status, len(result.value), result.observed), (c.COMPLETE, c.MAX_ITEMS, None))
+        self.assertIsNone(session.sources[-1]["observed"])
         self.values["config/label_registry/list"] = []
         result = await session.inventory("label_registry")
         self.assertEqual((result.status, dict(result.value)), (c.COMPLETE, {}))

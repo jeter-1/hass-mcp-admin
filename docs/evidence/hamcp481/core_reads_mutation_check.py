@@ -59,6 +59,13 @@ MUTANTS = {
     "duplicate_reads_allowed": (
         "core_reads", "                or len(set(names)) != len(names)):", "                ):"),
     "no_inventory_bound": ("core_reads", "    if len(raw) > c.MAX_ITEMS:", "    if False:"),
+    "inventory_bound_count_dropped": (
+        "core_reads", '"inventory_bound_exceeded", observed=len(raw))', '"inventory_bound_exceeded")'),
+    "inventory_bound_count_off_by_one": (
+        "core_reads", '"inventory_bound_exceeded", observed=len(raw))',
+        '"inventory_bound_exceeded", observed=c.MAX_ITEMS)'),
+    "observed_not_recorded": (
+        "core_reads", '"observed": result.observed,', '"observed": None,'),
     "row_key_unchecked": (
         "core_reads", "        if not _row_key_valid(read, identity):", "        if identity is None:"),
     "duplicate_row_overwrites": ("core_reads", "        if identity in rows:", "        if False:"),
