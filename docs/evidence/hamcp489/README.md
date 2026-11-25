@@ -102,11 +102,69 @@ real-HA contract lane, Alarmo and the automation baseline on the exact
 
 ## Publication after merge
 
-The automated Core evidence workflow always compares against the newest signed
-predecessor (2026.11.0) and runs O3, so after merge a dispatch for 2026.11.3
-still refuses with `binding PR required`. Publication of 2026.11.3 therefore
-uses the [manual flow](../../CORE_RELEASE_REGISTRY.md#manual-flow-for-each-publication)
-and is a separate owner step.
+Before the anchor change, the automated Core evidence workflow derived every
+release from the newest signed predecessor (2026.11.0) through O3, so a
+dispatch for 2026.11.3 refused with `binding PR required`. The anchor change
+makes a release with a reviewed binding its own main anchor:
+
+- `prepare` builds a `main` context for 2026.11.3 over the signed 2026.11.0.
+  The context's provenance is the committed fixture, and `prepare` refuses with
+  `reviewed_binding_mismatch` unless the fixture's version, commit, tree,
+  archive hash, OCI index and platform manifests equal the release it fetched.
+  O3 still runs and is recorded, as disclosure only.
+- The baseline is the newest signed entry below the anchor
+  (`baseline_not_newest` otherwise). The anchor's own provenance comes only
+  from committed reviewed data; there is no runner override or environment
+  variable.
+- Each lane harness admits 2026.11.3 only when it has the anchor's reviewed
+  source hashes and a reviewed binding (`lane_anchor_unreviewed` otherwise),
+  and reads them against the release archive.
+- The candidate entry is named `ha-core-2026.11.3-reviewed-v1`. The
+  2026.11.0 renewal path is unchanged.
+
+Publication is still a separate owner step: a dispatch after merge, then
+signing behind the owner's environment approval.
+
+## Lane source-hash records
+
+Four lane harnesses pin their own per-file hash records. Each new 2026.11.3
+record lists the same paths as its 2026.11.0 sibling (the lane's profile in
+`ci/core-contract-read-files.json`), hashed from the archive above:
+
+| Record | SHA-256 | Files | Differs from 2026.11.0 |
+|---|---|---|---|
+| [marketplace](../hamcp290/lane/core-marketplace-source-hashes-2026.11.3.json) | `42863229650473af9649255ad52ede547d9ead79616fdf1d0d887410f0e4cccf` | 75 | `components/marketplace/base.py`, `components/marketplace/repositories/base.py`, `const.py` |
+| [security metadata](../hamcp134/lane/core-security-metadata-source-hashes-2026.11.3.json) | `db8384e78c5418372241770ed3720c16af8ddb93e6a32a4d6f357ab1cfd8ef22` | 33 | `core_config.py` |
+| [Thread/Matter](../hamcp231/lane/core-thread-matter-source-hashes-2026.11.3.json) | `fd03a8e356371c7ac9210bd929359cc12ccaffdead62b31f8f1f10f60dbcd2c5` | 38 | `const.py` |
+| [device configuration](../hamcp297/lane/core-device-configuration-source-hashes-2026.11.3.json) | `a31e3717124369e88c06148e396f8fce2579873ce836f3884c40a3c53778ebca` | 42 | `const.py` |
+
+Every differing file is one judged above. The created-object lanes read the
+[source record](../hamcp315/core-sources/2026.11.3.json) directly, and the
+helper-value and A2 lanes have no per-file record.
+
+The records were generated from the archive with the committed HAMCP-290
+generator's `archive_hashes` and `render`
+([generate_source_records.py](../hamcp290/lane/generate_source_records.py)),
+without changing that generator. `archive_hashes` checks the archive's SHA-256
+against the fixture, and the run also checked that it reproduces
+`core-sources/2026.11.3.json` byte for byte:
+
+```python
+g = <load docs/evidence/hamcp290/lane/generate_source_records.py>
+manifest = json.loads(g.MANIFEST.read_text())
+fixture, record = g.archive_hashes("2026.11.3", archive, manifest["paths"])
+assert g.render(record) == (g.RECORDS / "2026.11.3.json").read_bytes()
+for capability, path in LANES.items():  # the four records above
+    profile = manifest["profiles"][capability]
+    path.write_bytes(g.render({
+        "core_version": "2026.11.3", "source_commit": fixture["source_commit"],
+        "source_archive_sha256": fixture["source_archive_sha256"],
+        "files": [{"path": p, "sha256": record["hashes"][p]} for p in profile]}))
+```
+
+`tests/test_core_evidence_workflow_anchor.py` checks each record's identity,
+paths, SHA-256 and differing files, and, when the archive is present locally,
+re-hashes it against every record.
 
 ## Known gap (HAMCP-367)
 

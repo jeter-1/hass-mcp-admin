@@ -246,6 +246,11 @@ def verify_context(value, expected=None):
     if value["binding"] != fields:
         raise ValueError("derived binding changes semantics")
     if value["mode"] == "main":
+        # The anchor's own renewal, or a new reviewed anchor over a lower stable release (HAMCP-489).
+        predecessor = value["predecessor"]
+        if predecessor != anchor and not (stable_version(predecessor) and stable_version(anchor)
+                                          and version_key(predecessor) < version_key(anchor)):
+            raise ValueError("main_predecessor_invalid")
         committed = read_json(ROOT / "tests/fixtures" / ("core_" + anchor.replace(".", "_") + "_lane_provenance.json"))
         if provenance != committed or value["binding"] != asdict(base):
             raise ValueError("main binding provenance mismatch")

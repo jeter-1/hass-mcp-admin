@@ -38,6 +38,9 @@ JOURNAL_SHA256 = "3f79fce76484ff9f9a9c070defe4d1d13865ccbfd24fda0ab8724515c8cc6a
 MANIFEST = ROOT / "ci/core-contract-read-files.json"
 GROUPS = ROOT / "ci/core-evidence-groups.json"
 SOURCE_HASHES = ROOT / "docs/evidence/hamcp315/core-sources/2026.11.0.json"
+# CI mode's other reviewed anchors (HAMCP-489): each record is that anchor's exact-archive source hashes.
+ANCHOR_SOURCE_HASHES = {"2026.11.3": ROOT / "docs/evidence/hamcp315/core-sources/2026.11.3.json"}
+REVIEWED_ANCHORS = frozenset({VERSION, *ANCHOR_SOURCE_HASHES})
 # group -> (capability, the reviewed compiled fingerprint this lane proves, lane name).
 # A changed profile must be re-proven: the fingerprint here is the signing fingerprint.
 LANES = {
@@ -82,16 +85,19 @@ def compiled_reference(group):
 
 
 @diagnostics.checked("image_verify", "journal_inputs")
-def source_manifest(group, archive_path, provenance, *, release_commit=None):
+def source_manifest(group, archive_path, provenance, *, release_commit=None, anchor=None):
     """Bind the manifest profile, committed source hashes and exact archive. CI mode reads the release's
-    archive (``release_commit``) against the anchor's committed hashes, so any drift refuses."""
+    archive (``release_commit``) against the anchor's committed hashes, so any drift refuses; an anchor
+    without a committed record refuses."""
+    anchor = VERSION if anchor is None else anchor
+    hashes = SOURCE_HASHES if anchor == VERSION else ANCHOR_SOURCE_HASHES.get(anchor)
     capability = LANES[group][0]
     profile = read_json(MANIFEST).get("profiles", {}).get(capability)
-    if not profile or not SOURCE_HASHES.is_file() or read_json(GROUPS).get(group) != [capability]:
+    if not profile or hashes is None or not hashes.is_file() or read_json(GROUPS).get(group) != [capability]:
         raise Refusal("created_object_manifest_missing")
-    record = read_json(SOURCE_HASHES)
+    record = read_json(hashes)
     if (record["version"], record["commit"], record["tree"], record["archive_sha256"]) != (
-            VERSION, provenance["source_commit"], provenance["source_tree"],
+            anchor, provenance["source_commit"], provenance["source_tree"],
             provenance["source_archive_sha256"]):
         raise Refusal("created_object_source_provenance_mismatch")
     if len(set(profile)) != len(profile) or not set(profile) <= set(record["hashes"]):
@@ -106,7 +112,7 @@ def source_manifest(group, archive_path, provenance, *, release_commit=None):
                 observed[name] = hashlib.sha256(tar.extractfile(member).read()).hexdigest()
     if observed != rows:
         raise Refusal("created_object_source_hash_mismatch")
-    return {"manifest_sha256": sha256(MANIFEST), "source_hashes_sha256": sha256(SOURCE_HASHES),
+    return {"manifest_sha256": sha256(MANIFEST), "source_hashes_sha256": sha256(hashes),
             "profile_paths": len(profile)}
 
 
@@ -151,8 +157,8 @@ def ci_inputs(group, ctx, archive_path):
     reference = compiled_reference(group)
     if reference.get("capability_id") != capability or reference.get("contract_fingerprint") != fingerprint:
         raise Refusal("profile_fingerprint_mismatch")
-    sources = source_manifest(group, archive_path, read_json(core_lane_host.LANE_PROVENANCE),
-                              release_commit=ctx["provenance"]["source_commit"])
+    sources = source_manifest(group, archive_path, core_lane_host.lane_provenance(ctx),
+                              release_commit=ctx["provenance"]["source_commit"], anchor=ctx["anchor"])
     return entry, reference, sources
 
 

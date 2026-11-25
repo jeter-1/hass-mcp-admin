@@ -46,6 +46,9 @@ RECEIPT = GROUP + ".json"
 CAPABILITY = "core.device_configuration_entity_operation"
 MANIFEST = ROOT / "ci/core-contract-read-files.json"
 SOURCE_HASHES = ROOT / "docs/evidence/hamcp297/lane/core-device-configuration-source-hashes.json"
+# CI mode's other reviewed anchors (HAMCP-489): each record is generated from that anchor's exact archive.
+ANCHOR_SOURCE_HASHES = {"2026.11.3": ROOT / "docs/evidence/hamcp297/lane/core-device-configuration-source-hashes-2026.11.3.json"}
+REVIEWED_ANCHORS = frozenset({VERSION, *ANCHOR_SOURCE_HASHES})
 # The profile reference recorded for signing. A build whose compiled profile
 # differs in any of these values is not the signed build and does not run.
 PROFILE = {
@@ -93,16 +96,19 @@ verify_port_mapping = LANE_HOST.verify_port_mapping
 
 
 @diagnostics.checked("image_verify", "journal_inputs")
-def source_manifest(archive_path, provenance, *, release_commit=None):
+def source_manifest(archive_path, provenance, *, release_commit=None, anchor=None):
     """Bind the manifest profile, committed source hashes and exact archive. CI mode reads the release's
-    archive (``release_commit``) against the anchor's committed hashes, so any drift refuses."""
+    archive (``release_commit``) against the anchor's committed hashes, so any drift refuses; an anchor
+    without a committed record refuses."""
+    anchor = VERSION if anchor is None else anchor
+    hashes = SOURCE_HASHES if anchor == VERSION else ANCHOR_SOURCE_HASHES.get(anchor)
     profile = read_json(MANIFEST).get("profiles", {}).get(CAPABILITY)
-    if not profile or not SOURCE_HASHES.is_file():
+    if not profile or hashes is None or not hashes.is_file():
         raise Refusal("device_configuration_manifest_missing")
-    record = read_json(SOURCE_HASHES)
+    record = read_json(hashes)
     rows = {row["path"]: row["sha256"] for row in record["files"]}
     if (record["core_version"], record["source_commit"], record["source_archive_sha256"]) != (
-            VERSION, provenance["source_commit"], provenance["source_archive_sha256"]):
+            anchor, provenance["source_commit"], provenance["source_archive_sha256"]):
         raise Refusal("device_configuration_source_provenance_mismatch")
     if [row["path"] for row in record["files"]] != profile or len(rows) != len(profile):
         raise Refusal("device_configuration_manifest_mismatch")
@@ -115,7 +121,7 @@ def source_manifest(archive_path, provenance, *, release_commit=None):
                 observed[name] = hashlib.sha256(tar.extractfile(member).read()).hexdigest()
     if observed != rows:
         raise Refusal("device_configuration_source_hash_mismatch")
-    return {"manifest_sha256": sha256(MANIFEST), "source_hashes_sha256": sha256(SOURCE_HASHES),
+    return {"manifest_sha256": sha256(MANIFEST), "source_hashes_sha256": sha256(hashes),
             "profile_paths": len(profile)}
 
 
@@ -249,7 +255,8 @@ def ci_inputs(ctx, archive_path):
     """CI mode's inputs: the release's signed entry and exact archive, the anchor's source hashes and dumps (D5)."""
     commit = ctx["provenance"]["source_commit"]
     entry = LANE_HOST.ci_entry(ctx, archive_path)
-    sources = source_manifest(archive_path, read_json(CORE_PROVENANCE), release_commit=commit)
+    sources = source_manifest(archive_path, core_lane_host.lane_provenance(ctx), release_commit=commit,
+                              anchor=ctx["anchor"])
     return entry, sources, stub_assets(archive_path, release_commit=commit)
 
 
@@ -259,7 +266,7 @@ def images():
 
 @diagnostics.checked("helper_setup", "helper_contract")
 async def exercise(run_dir, entry, core_image, upstream_image, run_id, memory, stub_hashes, *, version=VERSION,
-                   mode="local"):
+                   mode="local", anchor=VERSION):
     # Import only after the closed disposable endpoints have been set.
     import real_ha_contract_tests as harness
     import device_configuration_contract_acceptance as acceptance
@@ -295,7 +302,7 @@ async def exercise(run_dir, entry, core_image, upstream_image, run_id, memory, s
         await acceptance.stub_ready(control)
     result = await acceptance.run(configured, entry, run_dir, mode=mode, stub_url=control, stub_hashes={
         key: stub_hashes[key] for key in ("stub_sha256", "entry_sha256", "dump_hashes")},
-        upstream_version=REVIEWED_CORE_BINDINGS[VERSION].child_consumer)
+        upstream_version=REVIEWED_CORE_BINDINGS[anchor].child_consumer)
     return {**result, "images": identities}
 
 
@@ -325,7 +332,7 @@ def _main(argv=None):
             args.run_dir, lambda ctx: (loaded_profile(), ci_inputs(ctx, args.source_archive)),
             upstream=True, containers=(CORE, UPSTREAM, STUB), network=NETWORK)
         core_image, upstream_image, fixture_image = pulled
-        admission, version = None, ctx["provenance"]["version"]
+        admission, version, anchor = None, ctx["provenance"]["version"], ctx["anchor"]
     else:
         if os.environ.get("GITHUB_ACTIONS") == "true" or os.environ.get("CORE_EVIDENCE_CONTEXT"):
             raise Refusal("local_only_closed_lane")
@@ -342,7 +349,7 @@ def _main(argv=None):
         admission = LANE_HOST.admit(run_dir, RECEIPT, revision, (CORE, UPSTREAM, STUB), NETWORK)
         if admission is None:
             return 1
-        version = VERSION
+        version = anchor = VERSION
     run_id = uuid4().hex
     # Refusal fixture (test-only custom integration); committed, hashed above.
     owned = LANE_HOST.configuration(run_dir, CORE, CONFIG,
@@ -353,7 +360,7 @@ def _main(argv=None):
         HA_CONTRACT_LANE=LANE, HA_FIXTURE_WRITER_IMAGE=fixture_image,
         HA_CONTRACT_CONTAINER=CORE, HA_CONTRACT_NETWORK=NETWORK,
         REAL_HA_URL=f"http://127.0.0.1:{CORE_PORT}", REAL_HA_EXPECTED_VERSION=version,
-        REAL_HA_UPSTREAM_IMAGE=upstream_image, REAL_HA_UPSTREAM_VERSION=REVIEWED_CORE_BINDINGS[VERSION].child_consumer,
+        REAL_HA_UPSTREAM_IMAGE=upstream_image, REAL_HA_UPSTREAM_VERSION=REVIEWED_CORE_BINDINGS[anchor].child_consumer,
         REAL_HA_UPSTREAM_CONTAINER=UPSTREAM, REAL_HA_UPSTREAM_PORT=str(UPSTREAM_PORT))
     result = {"model": "core-device-configuration-local-evidence-v1", "group": GROUP,
               "result": "WITHHELD", "started_utc": utc(), "source_commit": revision,
@@ -377,7 +384,7 @@ def _main(argv=None):
         async def bounded():
             async with asyncio.timeout(1800):
                 return await exercise(run_dir, entry, core_image, upstream_image, run_id, limits,
-                                      stub_hashes, version=version, mode=args.mode)
+                                      stub_hashes, version=version, mode=args.mode, anchor=anchor)
         outcome = asyncio.run(bounded())
         # A receipt for any other profile, or for other stub bytes, is not this lane's receipt.
         if outcome.get("profile") != profile or outcome.get("stub") != {

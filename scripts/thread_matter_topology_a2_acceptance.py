@@ -61,8 +61,9 @@ STUB_TOPOLOGY_COMMAND = "get_network_topology"
 EXPECTATIONS_MODEL = "hamcp231-a2-stub-expectations-v2"
 GRAPH_REF = re.compile(r"g[1-9][0-9]*")
 # Version-specific, so keyed to the reviewed anchor (HAMCP-443 D5); an anchor without a reviewed pattern refuses.
-# Core 2026.11.0 components/matter/helpers.py:137-146 get_node_device_identifier.
-NODE_DEVICE_IDENTIFIER = {"2026.11.0": re.compile(r"deviceid_[0-9A-F]{16}-([0-9A-F]{16})-MatterNodeDevice")}
+MATTER_NODE_DEVICE = r"deviceid_[0-9A-F]{16}-([0-9A-F]{16})-MatterNodeDevice"
+# Core 2026.11.0 and 2026.11.3 (identical) components/matter/helpers.py:137-146 get_node_device_identifier.
+NODE_DEVICE_IDENTIFIER = {"2026.11.0": re.compile(MATTER_NODE_DEVICE), "2026.11.3": re.compile(MATTER_NODE_DEVICE)}
 TOPOLOGY_READS = 2  # the default read and the topology-only read
 SHA256 = re.compile(r"[0-9a-f]{64}")
 REQUIRED_STUB_FILES = ("stub.py", "provenance.json")

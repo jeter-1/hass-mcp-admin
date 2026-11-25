@@ -332,6 +332,29 @@ def prepare(directory, acceptance, requested, withhold=()):
         raise ValueError("signed predecessor tag SHA mismatch")
     proof = compare_sources(before, after)
     write(directory / "comparison.json", proof)
+    from core_lane_bindings import REVIEWED_CORE_BINDINGS, provenance_name
+    if version in REVIEWED_CORE_BINDINGS:
+        # A reviewed binding PR (HAMCP-489): the release is its own main anchor, pinned by its committed
+        # fixture, which must equal the live source and image. Any disagreement refuses; never derived.
+        fixture = read_json(ROOT / "tests/fixtures" / provenance_name(version))
+        index, platforms, receipts = image_provenance(version, after["commit"])
+        if (fixture["version"], fixture["source_commit"], fixture["source_tree"], fixture["source_archive_sha256"],
+                fixture["image_index_digest"], fixture["architecture_manifests"]) != (
+                version, after["commit"], after["tree"], after["archive_sha256"], index, platforms):
+            raise ValueError("reviewed_binding_mismatch")
+        ctx = new_context(version, {"binding": asdict(REVIEWED_CORE_BINDINGS[version]), "provenance": fixture},
+                          predecessor["version"], "main")
+        write(directory / "release.json", ctx); write(directory / "oci.json", receipts)
+        write(directory / "baseline.json", predecessor)
+        write(directory / "state.json", {"registry_exists": exists, "acceptance": False, "withhold": withhold})
+        if withhold:
+            summary(withhold_consequence(withhold))
+        summary("Reviewed binding " + version + " (main) over " + predecessor["version"]
+                + ("; pre-cutover: artifact only" if not exists else ""))
+        row = matrix_row(ctx, "release")
+        output(refused=False, run=True, release=version, matrix=json.dumps({"include": [row]}),
+               groups=group_matrix([row], withhold), registry_exists=exists)
+        return
     if not proof["inherited"]:
         summary(refusal_message(proof))
         output(refused=True, run=False, release=version, matrix='{"include":[]}', groups='{"include":[]}', registry_exists=exists)
@@ -471,6 +494,9 @@ def assemble(directory, receipts, case):
     if state["acceptance"]:
         # Existing add renews the exact .3 entry; its original entry_id is retained.
         entry["entry_id"] = baseline["entry_id"]
+    elif ctx["mode"] == "main" and ctx["predecessor"] != ctx["provenance"]["version"]:
+        # A new reviewed anchor (HAMCP-489): a reviewed name, never the fixture's disposable entry_id.
+        entry["entry_id"] = "ha-core-" + ctx["provenance"]["version"] + "-reviewed-v1"
     out = receipts / "candidate"; out.mkdir()
     write(out / "entry.json", entry); write(out / "core-review-evidence.json", evidence)
     subprocess.run([sys.executable, str(ROOT / "scripts/prepare_core_release_registry.py"), "add",

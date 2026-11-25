@@ -11,7 +11,7 @@ digest equal the context's) is the CI lane host's. Refusal codes are code-owned.
 import os
 from pathlib import Path
 
-from core_release_evidence import CONTEXT_ENV, canonical, groups, read_json
+from core_release_evidence import CONTEXT_ENV, canonical, groups, read_json, version_key
 
 PROVENANCE_KEYS = ("server_name", "version", "source_commit", "source_tree", "source_archive_sha256",
                    "image_index_digest", "architecture_manifests")
@@ -38,9 +38,16 @@ def authenticated_baseline(ctx, directory=None):
     expected = provenance["version"] if ctx["fixture"] else ctx["predecessor"]
     if baseline.get("version") != expected:
         raise ProofRefusal("baseline_version_mismatch")
-    if ctx["mode"] == "main" or ctx["fixture"]:
+    if ctx["fixture"] or (ctx["mode"] == "main" and ctx["predecessor"] == provenance["version"]):
+        # A renewal: the signed entry is the release itself.
         if any(not same(baseline.get(k), provenance[k]) for k in PROVENANCE_KEYS):
             raise ProofRefusal("baseline_provenance_mismatch")
+    elif ctx["mode"] == "main":
+        # A new reviewed anchor (HAMCP-489): its provenance is pinned by its committed fixture
+        # (verify_context), and B must be the newest signed entry below it.
+        if any(version_key(baseline["version"]) < version_key(entry.version) < version_key(provenance["version"])
+               for entry in signed.accepted.entries):
+            raise ProofRefusal("baseline_not_newest")
     if ctx["mode"] == "derived" and baseline.get("source_commit") != ctx["proof"]["predecessor_commit"]:
         raise ProofRefusal("baseline_commit_mismatch")
     return baseline

@@ -27,6 +27,8 @@ from core_release_evidence import canonical, read_json
 
 # signal, subprocess, resources and canonical stay reachable here: the lane's tests patch them through it.
 VERSION = "2026.11.0"
+# CI mode's reviewed anchors (HAMCP-489); this lane has no anchor-keyed source hashes, only the child.
+REVIEWED_ANCHORS = frozenset({VERSION, "2026.11.3"})
 JOURNAL_SHA256 = "8df3665c8c27222541f99682dcc3b65b8f65d590b726f2f5bb0e74b55e71b82c"
 LANE = "ha-2026-11-0-helper"
 CORE = "beta25-real-ha-" + LANE
@@ -140,7 +142,7 @@ def _main(argv=None):
         ctx, revision, entry, (core_image, upstream_image, fixture_image), run_dir = LANE_HOST.ci_admission(
             args.run_dir, lambda ctx: LANE_HOST.ci_entry(ctx, args.source_archive),
             upstream=True, containers=(CORE, UPSTREAM), network=NETWORK)
-        admission, version = None, ctx["provenance"]["version"]
+        admission, version, anchor = None, ctx["provenance"]["version"], ctx["anchor"]
     else:
         if os.environ.get("GITHUB_ACTIONS") == "true" or os.environ.get("CORE_EVIDENCE_CONTEXT"):
             raise Refusal("local_only_closed_lane")
@@ -154,14 +156,14 @@ def _main(argv=None):
         admission = LANE_HOST.admit(run_dir, RECEIPT, revision, (CORE, UPSTREAM), NETWORK)
         if admission is None:
             return 1
-        version = VERSION
+        version = anchor = VERSION
     run_id = uuid4().hex
     owned = LANE_HOST.configuration(run_dir, CORE, CONFIG)
     os.environ.update(CORE_EVIDENCE_HOST_MODE="actions" if args.mode == "ci" else "local", RUNNER_TEMP=str(run_dir),
         HA_CONTRACT_LANE=LANE, HA_FIXTURE_WRITER_IMAGE=fixture_image,
         HA_CONTRACT_CONTAINER=CORE, HA_CONTRACT_NETWORK=NETWORK,
         REAL_HA_URL="http://127.0.0.1:18123", REAL_HA_EXPECTED_VERSION=version,
-        REAL_HA_UPSTREAM_IMAGE=upstream_image, REAL_HA_UPSTREAM_VERSION=REVIEWED_CORE_BINDINGS[VERSION].child_consumer,
+        REAL_HA_UPSTREAM_IMAGE=upstream_image, REAL_HA_UPSTREAM_VERSION=REVIEWED_CORE_BINDINGS[anchor].child_consumer,
         REAL_HA_UPSTREAM_CONTAINER=UPSTREAM, REAL_HA_UPSTREAM_PORT="18086")
     result = {"model": "core-helper-value-local-evidence-v1", "group": "helper_value",
               "result": "WITHHELD", "started_utc": utc(), "source_commit": revision,

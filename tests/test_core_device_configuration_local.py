@@ -807,13 +807,14 @@ class StubAssets(unittest.TestCase):
         self.assertEqual(caught.exception.args, ("stub_dump_source_mismatch",))
 
     def test_ci_inputs_name_the_context_release_commit(self):
-        ctx = {"provenance": {"source_commit": "1" * 40}}
+        ctx = {"anchor": "2026.11.0", "mode": "derived", "provenance": {"source_commit": "1" * 40}}
         with patch.object(lane.LANE_HOST, "ci_entry", return_value="entry") as entry, \
                 patch.object(lane, "source_manifest", return_value="sources") as sources, \
                 patch.object(lane, "stub_assets", return_value="stub") as stub:
             self.assertEqual(lane.ci_inputs(ctx, "archive"), ("entry", "sources", "stub"))
         entry.assert_called_once_with(ctx, "archive")
-        self.assertEqual(sources.call_args.kwargs, {"release_commit": "1" * 40})
+        self.assertEqual(sources.call_args.kwargs, {"release_commit": "1" * 40, "anchor": "2026.11.0"})
+        self.assertEqual(sources.call_args.args[1]["version"], "2026.11.0")
         stub.assert_called_once_with("archive", release_commit="1" * 40)
 
 
@@ -3307,8 +3308,10 @@ class StrictFullUpstreamForm(unittest.TestCase):
 
     def test_the_lane_passes_the_reviewed_child_and_sets_the_same_child_for_the_harness(self):
         source = Path(lane.__file__).read_text(encoding="utf-8")
-        self.assertEqual(source.count("upstream_version=REVIEWED_CORE_BINDINGS[VERSION].child_consumer)"), 1)
-        self.assertEqual(source.count("REAL_HA_UPSTREAM_VERSION=REVIEWED_CORE_BINDINGS[VERSION].child_consumer"), 1)
+        # Keyed by the anchor (HAMCP-489): VERSION in local mode, the context's reviewed anchor in CI.
+        self.assertEqual(source.count("upstream_version=REVIEWED_CORE_BINDINGS[anchor].child_consumer)"), 1)
+        self.assertEqual(source.count("REAL_HA_UPSTREAM_VERSION=REVIEWED_CORE_BINDINGS[anchor].child_consumer"), 1)
+        self.assertNotIn("REVIEWED_CORE_BINDINGS[VERSION]", source)
 
     def test_the_release_set_and_the_suffix_are_engineerings_own_objects(self):
         self.assertIs(acceptance.STRICT_FULL_SELECTOR_RELEASES, ha_mcp_endpoint.STRICT_FULL_SELECTOR_RELEASES)
