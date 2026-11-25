@@ -229,6 +229,17 @@ class IncidentBounds(unittest.TestCase):
         self.assertIn("entity_history_malformed_rows", row.coverage_limitations)
         self.assertEqual(row.public()["items_malformed"], 3)
 
+    def test_kept_counts_timeline_records_when_malformed_rows_precede_an_over_bound_tail(self):
+        # 3 non-records then 510 states: the 500-row window holds 497 records.
+        bundle = self.collect(history=_history(510, malformed=3), logbook=_logbook(5))
+        row = self.row(bundle, "entity_history")
+        self.assertEqual((row.completeness, row.items_withheld, row.items_malformed), ("partial", 13, 3))
+        warning = next(item for item in row.warnings if item.startswith("entity_history_row_limit_exceeded"))
+        self.assertIn("13 of 513", warning)
+        self.assertIn("497 kept", warning)
+        history = [item for item in bundle.events if item.source_type == "history"]
+        self.assertEqual(len(history), 497)
+
     def test_trace_service_calls_past_20_are_partial_with_kept_and_available(self):
         trace = {"run_id": "r1", "started_at": ANALYSIS_TIME.isoformat(),
                  "services": [f"light.turn_on_{index}" for index in range(21)]}

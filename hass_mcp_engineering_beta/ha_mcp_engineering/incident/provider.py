@@ -701,14 +701,16 @@ def _note_bound(item, noun, limitation, *, available, withheld, bound, malformed
     """Mark ``item`` partial for rows an Engineering bound left out.
 
     HAMCP-508: the warning names kept against available and goes first, so the
-    ten-warning public bound keeps it.
+    ten-warning public bound keeps it. Kept is the records placed on the
+    timeline: malformed rows inside the bound are not kept.
     """
+    kept = available - withheld - malformed
     if withheld:
         item.items_withheld += withheld
         item.coverage_limitations.append(limitation)
         item.warnings.insert(0, (
             f"{limitation}: {withheld} of {available} {noun} withheld beyond the bounded "
-            f"{bound}; {available - withheld} kept."))
+            f"{bound}; {kept} kept."))
     if malformed:
         item.items_malformed += malformed
         item.coverage_limitations.append(malformed_id)
