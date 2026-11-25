@@ -32,11 +32,16 @@ release pull request completes this entry.
   as 2026.11.0; and the support window rotates to 2026.11.3 current and
   2026.11.0 rollback, with the Core candidate empty.
 - Planned (plan approved 2026-11-25): the integrity, reliability and health
-  fixes (HAMCP-490, 491, 493, 497, 498) and native search (HAMCP-481). None
+  fixes (HAMCP-490, 491, 497, 498) and native search (HAMCP-481). None
   has landed yet.
 - Added 2026-11-25 (Josh's approval relayed by the architect) and landed:
   Core trace retention in reliability analysis and the trace watch
   retention-gap counter (HAMCP-503 TB-1 and TB-3, #509).
+- Landed: summary root causes in `automation_reliability_analysis` and
+  the batch digest carry `affected_step` (HAMCP-493, #511). A concurrency
+  rejection names its step only on its trace evidence, so the summary takes
+  it from there. A disabled automation's group reports `current_state`
+  `disabled` instead of null. Standard and evidence groups are unchanged.
 - New in-progress `V2_4_2_BETA14` release notes and acceptance contract.
 - Rollback: pending; stated by the final release pull request.
 
