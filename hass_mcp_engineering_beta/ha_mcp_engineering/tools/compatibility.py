@@ -47,6 +47,7 @@ from ..trace_normalization import (
     trace_sanitization_warning,
 )
 from ..tool_framework import run_structured
+from ..version import BUILD_DIRTY, BUILD_SHA
 from ..providers.upstream_dashboard import UPSTREAM_DASHBOARD
 
 # ---------------------------------------------------------------------------
@@ -308,6 +309,12 @@ async def get_server_health(
         from ..trace_snapshots.runtime import TRACE_SNAPSHOTS
 
         snapshot["trace_watches"] = TRACE_SNAPSHOTS.watch_health()
+        # HAMCP-497: the build identity server_info reports, so a health
+        # check alone names the running image.
+        server = snapshot.get("server")
+        if isinstance(server, dict):
+            server["build_sha"] = BUILD_SHA
+            server["build_dirty"] = BUILD_DIRTY
         return snapshot
 
     return await run_structured(
