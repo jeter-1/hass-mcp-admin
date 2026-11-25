@@ -131,7 +131,10 @@ output.
 3. Read Core health. `release_registry` must show `registry_id_status:
    accepted`, `freshness_status: current`, a `refresh_status` of `accepted` or
    `idempotent`, and the same `sequence` as `registry` (sequence 16).
-   *(Executed at sequence 15; see Status.)*
+   *(Executed at sequence 15; see Status.)* From 2.10.0 (HAMCP-497),
+   `release_registry` also shows `last_refresh_at`, the UTC start of the last
+   refresh attempt, and `refresh_interval_seconds` (21600), so a stale refresh
+   is visible without reading logs.
 
 At cutover, `main` and `registry` hold the same bytes, so this check shows the
 new build accepts `registry`. The first publication in step 10 is the definitive
