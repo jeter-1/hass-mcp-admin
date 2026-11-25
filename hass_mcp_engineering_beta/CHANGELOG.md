@@ -25,9 +25,15 @@ release pull request completes this entry.
     system log holds 50 or more entries (its default ring size), since
     older entries may have been evicted. A lower configured ring size
     cannot be detected.
-- Planned (plan approved 2026-11-25): the Core 2026.11.3 must-carry
-  (HAMCP-462), the integrity, reliability and health fixes (HAMCP-490, 491,
-  493, 497, 498) and native search (HAMCP-481). None has landed yet.
+- Landed: the Core 2026.11.3 must-carry (HAMCP-462, #508). The
+  recorder entity filter, configuration-definition schemas and naming
+  mirrors are pinned to Core 2026.11.3; the signed Core registry trust root
+  is copied at sequence 19, which signs 2026.11.3 with the same 38 profiles
+  as 2026.11.0; and the support window rotates to 2026.11.3 current and
+  2026.11.0 rollback, with the Core candidate empty.
+- Planned (plan approved 2026-11-25): the integrity, reliability and health
+  fixes (HAMCP-490, 491, 493, 497, 498) and native search (HAMCP-481). None
+  has landed yet.
 - New in-progress `V2_4_2_BETA14` release notes and acceptance contract.
 - Rollback: pending; stated by the final release pull request.
 

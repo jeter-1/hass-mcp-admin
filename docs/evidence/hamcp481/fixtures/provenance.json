@@ -1,0 +1,31 @@
+{
+  "command": "unshare -rn <venv>/bin/python -I docs/evidence/hamcp481/fixtures/generate_scoring_fixtures.py --upstream <ha-mcp-51e3aac7> --output-dir docs/evidence/hamcp481/fixtures",
+  "generator": {
+    "path": "docs/evidence/hamcp481/fixtures/generate_scoring_fixtures.py",
+    "sha256": "8df4a13282b0564e58311dc7cbc64166230342505c222f301a464565ab7f9ff1"
+  },
+  "golden": {
+    "path": "docs/evidence/hamcp481/fixtures/scoring-golden.json",
+    "sha256": "c50e5d000659d3e13e21c9ecb164a38e03929f0df38fea0c38a3917ce05cec43"
+  },
+  "inputs": "synthetic, defined in the generator",
+  "isolation": "python -I in a venv with no packages, under unshare -rn (no network)",
+  "python": "3.13.5",
+  "schema": "hamcp481-scoring-provenance-v1",
+  "source": {
+    "commit": "51e3aac788482a081807591cd5d58d07dc4e540b",
+    "executed": [
+      "src/ha_mcp/utils/fuzzy_search.py",
+      "src/ha_mcp/tools/smart_search/_scoring.py"
+    ],
+    "files": {
+      "src/ha_mcp/tools/smart_search/_scoring.py": "09232b092f2cc41aa2d143f5b5bacfbca6952b22d339d52984b694b83cb73682",
+      "src/ha_mcp/utils/fuzzy_search.py": "6759bdd4223bf3221456be84250b23e67d87dd1a783660eb2dbd3f8bee54a207"
+    },
+    "repository": "https://github.com/homeassistant-ai/ha-mcp",
+    "stubbed": {
+      "ha_mcp.tools.smart_search._base": "_SearchBase with settings only"
+    },
+    "version": "9.2.0"
+  }
+}

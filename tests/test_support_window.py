@@ -124,14 +124,14 @@ class CommittedWindowTests(SupportWindowFixture):
                 self.assertNotIn("addon_runtime", self.window["ha_mcp"][slot])
         self.assertNotIn("admission", self.window)
 
-    def test_committed_window_is_the_deployed_2026_11_0_and_9_2_0_pair(self):
-        # HAMCP-437 (release 2.9.0): the deployed pair, with every rollback empty
-        # (HAMCP-406, restore-first recovery). HAMCP-489: Core 2026.11.3 is the
-        # Core candidate under evaluation; the ha-mcp candidate stays empty.
-        self.assertEqual(self.window["core"]["current"]["version"], "2026.11.0")
+    def test_committed_window_is_the_rotated_2026_11_3_and_9_2_0_pair(self):
+        # HAMCP-462 (release 2.10.0): the HAMCP-489 Core candidate 2026.11.3 is
+        # current and the former current 2026.11.0 is the Core rollback. The
+        # Core candidate and both ha-mcp spare slots are empty (HAMCP-406).
+        self.assertEqual(self.window["core"]["current"]["version"], "2026.11.3")
         self.assertEqual(self.window["ha_mcp"]["current"]["version"], "9.2.0")
-        self.assertEqual(self.window["core"]["candidate"]["version"], "2026.11.3")
-        for component, slot in (("core", "rollback"), ("ha_mcp", "candidate"), ("ha_mcp", "rollback")):
+        self.assertEqual(self.window["core"]["rollback"]["version"], "2026.11.0")
+        for component, slot in (("core", "candidate"), ("ha_mcp", "candidate"), ("ha_mcp", "rollback")):
             with self.subTest(component=component, slot=slot):
                 self.assertIsNone(self.window[component][slot])
         reviewed = {r["upstream_version"]: r for r in registry_matrix()["include"]}["9.2.0"]
@@ -174,9 +174,13 @@ class CommittedWindowTests(SupportWindowFixture):
             self.assertEqual(row["peers"], {"candidate": by_version[ha_mcp]})
 
     def test_full_tier_adds_exactly_the_rollback_slot(self):
-        # The committed window has no rollback, so the full tier adds nothing.
+        # The committed Core rollback (2026.11.0, HAMCP-462) adds its real-HA row
+        # only; the ha-mcp rollback is empty, so the registry rows do not change.
         pr, full = self.derive("pr"), self.derive("full")
-        self.assertEqual(full, pr)
+        self.assertEqual(full["real_ha"][: len(pr["real_ha"])], pr["real_ha"])
+        self.assertEqual([(r["support_slot"], r["ha_version"]) for r in full["real_ha"][len(pr["real_ha"]):]],
+                         [("rollback", "2026.11.0")])
+        self.assertEqual((full["registry"], full["strict_full"]), (pr["registry"], pr["strict_full"]))
         # A populated rollback adds exactly its real-HA row and its registry
         # cross-check; the strict-full lane stays on ha_mcp.current.
         window = copy.deepcopy(self.window)
@@ -734,6 +738,10 @@ class EmptyRollbackTests(TempRootFixture):
 
     def setUp(self):
         super().setUp()
+        # HAMCP-462 rotated 2026.11.0 into the committed Core rollback; this
+        # class starts from a window whose Core rollback is empty again.
+        self.base["core"]["rollback"] = None
+        self.write(self.base)
         # A synthetic Core later than the committed current, reviewed only while
         # patched in, so a rotation can fill the empty rollback (HAMCP-159 R2).
         self.later = core_bindings.unreviewed_version("2026.11.1")
@@ -744,7 +752,7 @@ class EmptyRollbackTests(TempRootFixture):
             "source_archive_sha256": "e" * 64, "provenance": "synthetic offline rotation fixture; not a real Core"}),
             encoding="utf-8")
 
-    def test_committed_window_has_null_rollbacks_and_loads(self):
+    def test_a_window_with_null_rollbacks_loads(self):
         # Ruling 1 positive: both rollbacks are null and the window loads.
         window = self.sw.load(self.root)
         self.assertIsNone(window["core"]["rollback"])
