@@ -53,6 +53,23 @@ release pull request completes this entry.
   during a Core restart window, while admitted authority is re-verified, is
   now retryable and names the window (`core_authority_recovering`); every
   other `CoreCapabilityUnavailable` is unchanged (HAMCP-498, #512).
+- Landed: bounded reads say they are bounded (HAMCP-508 SI-1 to SI-4, SI-6
+  and SI-7, #TBD508). Output keys are added only; none is removed.
+  - `list_automations`, `list_devices` and `list_entity_registry` keep their
+    default page of 100 and add `returned`, `total` (every match) and
+    `truncated`.
+  - Incident correlation: history rows past 500 and logbook rows past 300 per
+    entity, trace service calls past 20 and reliability findings past 100
+    make their row partial, with `items_withheld` and a limitation; rows that
+    are not records are counted in `items_malformed`. Coverage rows add
+    `warnings_omitted` and `coverage_limitations_omitted`.
+  - `entity_dependency_analysis`: a group or template walk stopped at 500
+    makes the result partial and names `indirect_dependency_limit_exceeded`
+    (`pagination.total_complete` false); `unresolved_dynamic_reference_count`
+    counts every in-scope reference, with the ones past 10 in
+    `unresolved_dynamic_reference_withheld`.
+  - SI-5 (`list_automation_traces`) changes the output shape and waits for
+    Josh's decision.
 - New in-progress `V2_4_2_BETA14` release notes and acceptance contract.
 - Rollback: pending; stated by the final release pull request.
 

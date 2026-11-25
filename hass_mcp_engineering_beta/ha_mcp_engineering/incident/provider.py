@@ -42,6 +42,9 @@ from ..sanitization import sanitize_untrusted_data
 from ..source_coverage import normalize_coverage
 from .models import IncidentEvidenceBundle, IncidentSourceCoverage
 from .normalization import (
+    MAX_HISTORY_ROWS,
+    MAX_LOGBOOK_ROWS,
+    MAX_TRACE_SERVICES,
     deduplicate_and_sort,
     event,
     normalize_history,
@@ -55,6 +58,7 @@ MAX_TIMELINE_EVENTS = 1_000
 MAX_EVIDENCE_REFERENCES = 1_000
 MAX_SYSTEM_LOG_ENTRIES = 200
 MAX_INTEGRITY_FINDINGS = 200
+MAX_RELIABILITY_FINDINGS = 100
 
 
 class DirectHaIncidentProvider(EngineeringEvidenceProvider):
@@ -177,9 +181,12 @@ class DirectHaIncidentProvider(EngineeringEvidenceProvider):
         entity_results = await asyncio.gather(*entity_tasks)
         history_examined = logbook_examined = history_failed = logbook_failed = 0
         history_duration = logbook_duration = 0.0
+        # HAMCP-508 SI-2: rows the per-entity bounds leave out, counted.
+        history_rows: dict[str, int] = {}
+        logbook_rows: dict[str, int] = {}
         for entity_id, history, logbook, history_meta, logbook_meta in entity_results:
-            events.extend(normalize_history(history, entity_id, evidence))
-            events.extend(normalize_logbook(logbook, entity_id, evidence))
+            events.extend(normalize_history(history, entity_id, evidence, history_rows))
+            events.extend(normalize_logbook(logbook, entity_id, evidence, logbook_rows))
             history_examined += history_meta[0]
             history_failed += history_meta[1]
             history_duration += history_meta[2]
@@ -193,6 +200,7 @@ class DirectHaIncidentProvider(EngineeringEvidenceProvider):
 
         reliability_bundle = None
         reliability_findings: list[dict[str, Any]] = []
+        reliability_available = 0
         if automation_id:
             try:
                 reliability_bundle = await self.reliability_provider.collect(
@@ -201,13 +209,23 @@ class DirectHaIncidentProvider(EngineeringEvidenceProvider):
                     trace_limit=int(query["trace_limit"]),
                     analysis_instant=analysis_instant,
                 )
-                events.extend(normalize_traces(reliability_bundle.traces, automation_id, evidence))
+                trace_services: dict[str, int] = {}
+                events.extend(normalize_traces(reliability_bundle.traces, automation_id, evidence, trace_services))
                 trace_coverage = next((item for item in reliability_bundle.coverage if item.source_type == "automation_traces"), None)
                 config_coverage = next((item for item in reliability_bundle.coverage if item.source_type == "automation_config"), None)
                 coverage.append(_from_reliability("automation_config", config_coverage, True))
-                coverage.append(_from_reliability("automation_traces", trace_coverage, True))
+                trace_row = _from_reliability("automation_traces", trace_coverage, True)
+                # HAMCP-508 SI-6: service calls past the per-trace bound are not events.
+                _note_bound(
+                    trace_row, "trace service call(s)", "automation_traces_service_limit_exceeded",
+                    available=trace_services.get("services_available", 0),
+                    withheld=trace_services.get("services_withheld", 0), bound=f"{MAX_TRACE_SERVICES} per trace",
+                )
+                coverage.append(trace_row)
                 if query.get("include_reliability_context"):
-                    reliability_findings = [item.public() for item in evaluate_rules(reliability_bundle)][:100]
+                    all_findings = [item.public() for item in evaluate_rules(reliability_bundle)]
+                    reliability_available = len(all_findings)
+                    reliability_findings = all_findings[:MAX_RELIABILITY_FINDINGS]
                     for item in reliability_findings:
                         events.append(event(evidence, source_type="automation_reliability", source_object=str(item.get("finding_id") or automation_id),
                             event_type="reliability_finding", summary=item.get("title") or item.get("explanation"),
@@ -226,8 +244,8 @@ class DirectHaIncidentProvider(EngineeringEvidenceProvider):
                         for entity_id in inferred_entities
                     ])
                     for entity_id, history, logbook, history_meta, logbook_meta in inferred_results:
-                        events.extend(normalize_history(history, entity_id, evidence))
-                        events.extend(normalize_logbook(logbook, entity_id, evidence))
+                        events.extend(normalize_history(history, entity_id, evidence, history_rows))
+                        events.extend(normalize_logbook(logbook, entity_id, evidence, logbook_rows))
                         _merge_activity_coverage(history_coverage, history_meta)
                         _merge_activity_coverage(logbook_coverage, logbook_meta)
                     _note_significant_changes_only(history_coverage)
@@ -237,6 +255,14 @@ class DirectHaIncidentProvider(EngineeringEvidenceProvider):
         else:
             coverage.append(_not_requested("automation_config", "automation_config"))
             coverage.append(_not_requested("automation_traces", "automation_trace"))
+        # After the inferred entities: their merge recomputes these rows.
+        for item, rows, noun, prefix, bound in (
+            (history_coverage, history_rows, "history state row(s)", "entity_history", MAX_HISTORY_ROWS),
+            (logbook_coverage, logbook_rows, "logbook row(s)", "logbook", MAX_LOGBOOK_ROWS),
+        ):
+            _note_bound(item, noun, f"{prefix}_row_limit_exceeded", available=rows.get("available", 0),
+                withheld=rows.get("withheld", 0), bound=f"{bound} per entity",
+                malformed=rows.get("malformed", 0), malformed_id=f"{prefix}_malformed_rows")
 
         system_log_started = time.perf_counter()
         system_log_failed = False
@@ -380,7 +406,14 @@ class DirectHaIncidentProvider(EngineeringEvidenceProvider):
             coverage.append(_not_requested("configuration_integrity", "configuration_integrity_analysis"))
 
         if query.get("include_reliability_context") and automation_id:
-            coverage.append(_reliability_context_coverage(reliability_bundle, len(reliability_findings)))
+            reliability_row = _reliability_context_coverage(reliability_bundle, len(reliability_findings))
+            # HAMCP-508 SI-6: findings past the bound are not events.
+            _note_bound(
+                reliability_row, "reliability finding(s)", "automation_reliability_finding_limit_exceeded",
+                available=reliability_available,
+                withheld=max(0, reliability_available - len(reliability_findings)), bound=MAX_RELIABILITY_FINDINGS,
+            )
+            coverage.append(reliability_row)
         else:
             coverage.append(_not_requested("automation_reliability", "reliability_analysis"))
 
@@ -662,6 +695,26 @@ def _reliability_context_coverage(bundle, findings):
     return IncidentSourceCoverage("automation_reliability", "engineering", "reliability_analysis",
         normalized.completeness, True, False, findings, 0, warnings, 0.0, True, None, True,
         list(normalized.coverage_limitations))
+
+
+def _note_bound(item, noun, limitation, *, available, withheld, bound, malformed=0, malformed_id=None):
+    """Mark ``item`` partial for rows an Engineering bound left out.
+
+    HAMCP-508: the warning names kept against available and goes first, so the
+    ten-warning public bound keeps it.
+    """
+    if withheld:
+        item.items_withheld += withheld
+        item.coverage_limitations.append(limitation)
+        item.warnings.insert(0, (
+            f"{limitation}: {withheld} of {available} {noun} withheld beyond the bounded "
+            f"{bound}; {available - withheld} kept."))
+    if malformed:
+        item.items_malformed += malformed
+        item.coverage_limitations.append(malformed_id)
+        item.warnings.insert(0, f"{malformed_id}: {malformed} {noun} were not records and were skipped.")
+    if (withheld or malformed) and item.completeness == "complete":
+        item.completeness = "partial"
 
 
 def _merge_activity_coverage(item, values):

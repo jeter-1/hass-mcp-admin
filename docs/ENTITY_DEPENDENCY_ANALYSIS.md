@@ -394,6 +394,18 @@ Every detail level honors `limit` from 1 through 100. Pagination reports
 count, total, and cursor state; no detail level silently substitutes a lower cap.
 Evidence mode adds bounded redacted excerpts and static indirect paths.
 
+Two bounds are disclosed (HAMCP-508). The static group and template walk stops
+at 500 indirect findings; when it stops with more to read, the result is
+partial, `overview.indirect_reference_gaps` lists
+`indirect_dependency_limit_exceeded`, a warning names it, and
+`pagination.total_complete` is false, so `total` is not the full set. A walk
+that ends exactly at 500 with nodes still queued reports the gap, since more
+may exist. `overview.unresolved_dynamic_reference_count` counts every in-scope
+dynamic reference; at most 10 are listed as warnings, and
+`unresolved_dynamic_reference_withheld` counts the rest, which make the result
+partial and add an `unresolved_dynamic_reference_limit_exceeded` warning.
+`change_impact_analysis` shares the walk but does not yet report the gap.
+
 Assessment values are deliberately cautious:
 
 - `not_safe`: a direct reference exists;

@@ -158,6 +158,10 @@ class IncidentSourceCoverage:
     failure_category: str | None = None
     upstream_attempted: bool = False
     coverage_limitations: list[str] = field(default_factory=list)
+    # HAMCP-508: items an Engineering bound left out, and rows that were
+    # not usable records. Neither is a read failure.
+    items_withheld: int = 0
+    items_malformed: int = 0
 
     @property
     def assessment_complete(self) -> bool:
@@ -171,6 +175,8 @@ class IncidentSourceCoverage:
         return bool(self.failure_category or self.failed_items)
 
     def public(self) -> dict[str, Any]:
+        # HAMCP-508 SI-7: the lists stay bounded; the counts say what was cut.
+        limitations = sorted(dict.fromkeys(self.coverage_limitations))
         return {
             "source_type": self.source_type,
             "provider": self.provider,
@@ -182,14 +188,15 @@ class IncidentSourceCoverage:
             "items_examined": max(0, int(self.items_examined)),
             "failed_items": max(0, int(self.failed_items)),
             "warnings": [str(item)[:240] for item in self.warnings[:10]],
+            "warnings_omitted": max(0, len(self.warnings) - 10),
             "duration_ms": round(max(0.0, float(self.duration_ms)), 3),
             "cached_provenance": self.cached_provenance,
             "failure_category": self.failure_category,
             "upstream_attempted": self.upstream_attempted,
-            "coverage_limitations": [
-                str(item)[:128]
-                for item in sorted(dict.fromkeys(self.coverage_limitations))[:10]
-            ],
+            "coverage_limitations": [str(item)[:128] for item in limitations[:10]],
+            "coverage_limitations_omitted": max(0, len(limitations) - 10),
+            "items_withheld": max(0, int(self.items_withheld)),
+            "items_malformed": max(0, int(self.items_malformed)),
         }
 
 

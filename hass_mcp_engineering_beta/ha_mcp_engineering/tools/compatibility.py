@@ -725,9 +725,14 @@ async def list_automations(query: str = "", limit: int = 100) -> str:
     """Automations with entity_id, friendly_name, state, last_triggered, and
     the internal id needed for config edits and traces. Optional substring
     filter on entity_id/friendly_name — prefer filtering over full dumps to
-    save context."""
+    save context.
+    Returns at most limit rows; total counts every match and truncated is
+    true when more matched than were returned."""
     states = await rest("GET", rest_path("/states"))
     q = query.lower()
+    # HAMCP-508 SI-1: keep counting past the page so a short page says so.
+    page_size = max(1, limit)
+    total = 0
     autos = []
     for s in states:
         if not s["entity_id"].startswith("automation."):
@@ -735,6 +740,9 @@ async def list_automations(query: str = "", limit: int = 100) -> str:
         attrs = s.get("attributes", {})
         name = attrs.get("friendly_name") or ""
         if q and q not in s["entity_id"].lower() and q not in name.lower():
+            continue
+        total += 1
+        if len(autos) >= page_size:
             continue
         autos.append(
             {
@@ -745,9 +753,8 @@ async def list_automations(query: str = "", limit: int = 100) -> str:
                 "id": attrs.get("id"),
             }
         )
-        if len(autos) >= limit:
-            break
-    return dump({"count": len(autos), "automations": autos})
+    return dump({"count": len(autos), "automations": autos,
+                 "returned": len(autos), "total": total, "truncated": total > len(autos)})
 
 
 @mcp.tool()
@@ -879,15 +886,22 @@ async def list_areas() -> str:
 async def list_devices(query: str = "", limit: int = 100) -> str:
     """The device registry (manufacturer, model, area, connections), with
     optional substring filter on name/manufacturer/model. Use this to find
-    orphaned or stale devices."""
+    orphaned or stale devices.
+    Returns at most limit rows; total counts every match and truncated is
+    true when more matched than were returned."""
     devices = await ws_command({"type": "config/device_registry/list"})
     q = query.lower()
+    page_size = max(1, limit)
+    total = 0
     out = []
     for d in devices:
         blob = " ".join(
             str(d.get(k) or "") for k in ("name", "name_by_user", "manufacturer", "model")
         ).lower()
         if q and q not in blob:
+            continue
+        total += 1
+        if len(out) >= page_size:
             continue
         out.append(
             {
@@ -899,22 +913,28 @@ async def list_devices(query: str = "", limit: int = 100) -> str:
                 "disabled_by": d.get("disabled_by"),
             }
         )
-        if len(out) >= limit:
-            break
-    return dump({"count": len(out), "devices": out})
+    return dump({"count": len(out), "devices": out,
+                 "returned": len(out), "total": total, "truncated": total > len(out)})
 
 
 @mcp.tool()
 async def list_entity_registry(query: str = "", limit: int = 100) -> str:
     """The entity registry: platform, device_id, area, disabled/hidden
     status. This is where stale entity references and orphaned entities
-    show up. Optional substring filter on entity_id/name."""
+    show up. Optional substring filter on entity_id/name.
+    Returns at most limit rows; total counts every match and truncated is
+    true when more matched than were returned."""
     entities = await ws_command({"type": "config/entity_registry/list"})
     q = query.lower()
+    page_size = max(1, limit)
+    total = 0
     out = []
     for e in entities:
         blob = f"{e.get('entity_id','')} {e.get('name') or ''} {e.get('original_name') or ''}".lower()
         if q and q not in blob:
+            continue
+        total += 1
+        if len(out) >= page_size:
             continue
         out.append(
             {
@@ -927,9 +947,8 @@ async def list_entity_registry(query: str = "", limit: int = 100) -> str:
                 "hidden_by": e.get("hidden_by"),
             }
         )
-        if len(out) >= limit:
-            break
-    return dump({"count": len(out), "entities": out})
+    return dump({"count": len(out), "entities": out,
+                 "returned": len(out), "total": total, "truncated": total > len(out)})
 
 
 @mcp.tool()
