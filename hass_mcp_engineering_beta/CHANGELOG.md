@@ -34,6 +34,9 @@ release pull request completes this entry.
 - Planned (plan approved 2026-11-25): the integrity, reliability and health
   fixes (HAMCP-490, 491, 493, 497, 498) and native search (HAMCP-481). None
   has landed yet.
+- Added 2026-11-25 (Josh's approval relayed by the architect) and landed:
+  Core trace retention in reliability analysis and the trace watch
+  retention-gap counter (HAMCP-503 TB-1 and TB-3, #509).
 - New in-progress `V2_4_2_BETA14` release notes and acceptance contract.
 - Rollback: pending; stated by the final release pull request.
 

@@ -34,6 +34,11 @@ from .timestamps import normalize_timestamp, parse_timestamp
 MAX_REFERENCED_ENTITIES = 100
 MAX_SYSTEM_LOG_MATCHES = 20
 MAX_TRACE_ERROR_CHARS = 500
+# HAMCP-503 TB-1: Core 2026.11.3 ``trace/const.py:19`` DEFAULT_STORED_TRACES.
+# Core keeps that many run traces, and separately that many not-triggered
+# traces, per automation (``trace/util.py:79-96``), unless the automation's
+# ``trace.stored_traces`` sets another non-negative count.
+CORE_DEFAULT_STORED_TRACES = 5
 
 
 class DirectHaReliabilityProvider(EngineeringEvidenceProvider):
@@ -251,7 +256,8 @@ class DirectHaReliabilityProvider(EngineeringEvidenceProvider):
         coverage.extend(reference_coverage)
 
         traces, trace_coverage = await self._collect_traces(
-            automation_id, lookback_hours, trace_limit, analysis_instant
+            automation_id, lookback_hours, trace_limit, analysis_instant,
+            stored_traces=_stored_traces_cap(configuration),
         )
         coverage.append(trace_coverage)
 
@@ -349,7 +355,8 @@ class DirectHaReliabilityProvider(EngineeringEvidenceProvider):
         return records, [state_coverage, registry_coverage]
 
     async def _collect_traces(
-        self, automation_id, lookback_hours, trace_limit, analysis_instant
+        self, automation_id, lookback_hours, trace_limit, analysis_instant,
+        *, stored_traces=CORE_DEFAULT_STORED_TRACES,
     ):
         started = time.perf_counter()
         cutoff = analysis_instant - timedelta(hours=lookback_hours)
@@ -366,6 +373,9 @@ class DirectHaReliabilityProvider(EngineeringEvidenceProvider):
             ]
             selected = eligible[:trace_limit]
             truncated = normalized.source_truncated or len(eligible) > trace_limit
+            retention_state, ring_counts = _ring_retention(
+                normalized.headers, stored_traces, cutoff
+            )
             semaphore = asyncio.Semaphore(self.concurrency)
 
             async def fetch(header):
@@ -399,12 +409,15 @@ class DirectHaReliabilityProvider(EngineeringEvidenceProvider):
                 or detail_failures
                 or detail_sanitation_failures
                 or len(eligible) > trace_limit
+                or retention_state is not None
             )
             completeness = "partial" if material_loss else "complete"
             if normalized.malformed_entries:
                 collection_state = "malformed_entries"
             elif normalized.source_truncated or len(eligible) > trace_limit:
                 collection_state = "truncated"
+            elif retention_state is not None:
+                collection_state = retention_state
             elif detail_failures or detail_sanitation_failures:
                 collection_state = "partial_detail"
             elif normalized.upstream_runs_returned == 0:
@@ -419,6 +432,8 @@ class DirectHaReliabilityProvider(EngineeringEvidenceProvider):
             warnings = list(normalized.warnings)
             if len(eligible) > trace_limit:
                 warnings.append("Eligible trace evidence reached the requested trace_limit.")
+            if retention_state is not None:
+                warnings.append(RETENTION_WARNINGS[retention_state].format(cap=stored_traces))
             if detail_failures:
                 warnings.append(
                     f"{detail_failures} trace detail request(s) failed; normalized headers were retained."
@@ -437,6 +452,7 @@ class DirectHaReliabilityProvider(EngineeringEvidenceProvider):
                 trustworthy_empty=trustworthy_empty,
                 lookback_cutoff=cutoff_text,
                 lookback_inclusive=True,
+                retention_coverage=RETENTION_COVERAGE.get(retention_state),
                 counts={
                     "runs_returned_by_upstream": normalized.upstream_runs_returned,
                     "runs_considered": normalized.runs_considered,
@@ -450,6 +466,7 @@ class DirectHaReliabilityProvider(EngineeringEvidenceProvider):
                     "malformed_start_entries": normalized.malformed_start_entries,
                     "malformed_finish_entries": normalized.malformed_finish_entries,
                     "duplicate_run_ids": normalized.duplicate_run_ids,
+                    **ring_counts,
                 },
             )
             self._record_source(coverage)
@@ -575,6 +592,83 @@ def _required_instant(value: Any) -> datetime:
     if parsed is None:
         raise ValueError("analysis timestamp is invalid")
     return parsed
+
+
+RETENTION_WARNINGS = {
+    "retention_limited": (
+        "Core keeps only the newest {cap} traces per ring for this automation "
+        "(trace.stored_traces), and a full ring's oldest trace starts after the "
+        "lookback cutoff; older runs inside the lookback may have been evicted."
+    ),
+    "retention_disabled": (
+        "This automation's trace.stored_traces is 0, so Core keeps no traces; "
+        "an empty trace list is not evidence that it did not run."
+    ),
+    "retention_unknown": (
+        "This automation's trace.stored_traces could not be read, so Core's "
+        "trace retention for the lookback is unknown."
+    ),
+}
+
+
+RETENTION_COVERAGE = {
+    "retention_limited": "partial",
+    "retention_disabled": "partial",
+    "retention_unknown": "unknown",
+}
+
+
+def _stored_traces_cap(configuration: Any) -> int | None:
+    """Core's per-ring trace cap for this automation; ``None`` when unreadable.
+
+    Core validates ``trace.stored_traces`` with ``cv.positive_int``
+    (``trace/__init__.py:34-38``): coerced to ``int`` and non-negative, with
+    the default when the key or the ``trace`` block is absent.
+    """
+
+    if not isinstance(configuration, dict):
+        return None
+    if "trace" not in configuration:
+        return CORE_DEFAULT_STORED_TRACES
+    block = configuration["trace"]
+    if not isinstance(block, dict):
+        return None
+    value = block.get("stored_traces", CORE_DEFAULT_STORED_TRACES)
+    if not isinstance(value, (bool, int, float, str)):
+        return None
+    try:
+        cap = int(value)
+    except (ValueError, OverflowError):
+        return None
+    return cap if cap >= 0 else None
+
+
+def _ring_retention(headers, stored_traces, cutoff):
+    """``(collection_state or None, counts)`` for Core's two trace rings.
+
+    Core evicts the oldest trace first. A ring holding ``stored_traces``
+    traces whose oldest starts after the cutoff may have dropped runs inside
+    the lookback; a ring below the cap, or reaching back to the cutoff, has
+    not.
+    """
+
+    rings = {
+        "runs": [h for h in headers if not h.not_triggered],
+        "not_triggered": [h for h in headers if h.not_triggered],
+    }
+    counts = {f"{name}_ring_returned": len(ring) for name, ring in rings.items()}
+    if stored_traces is None:
+        return "retention_unknown", counts
+    counts["stored_traces_cap"] = stored_traces
+    if stored_traces == 0:
+        return "retention_disabled", counts
+    full = [
+        name for name, ring in rings.items()
+        if len(ring) >= stored_traces
+        and min(h.started_instant for h in ring) > cutoff
+    ]
+    counts["rings_full_inside_lookback"] = len(full)
+    return ("retention_limited" if full else None), counts
 
 
 def _empty_trace_counts() -> dict[str, int]:
