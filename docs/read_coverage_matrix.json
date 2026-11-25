@@ -31,7 +31,7 @@
      "purpose_binding": "bounded_automation_inventory_read (DIRECT_HA_READ_POLICIES)",
      "admission": "native (DIRECT_HA_TOOL_EXCEPTIONS); core.automation_configuration_read (compiled-active; signed in registry seq 15 for Core 2026.10.0/.1/.3 (deployed registry state unknown))",
      "completeness": "partial",
-     "detail": "GET /states filtered to automation.*; returns entity_id, friendly_name, state, last_triggered, id only - no stored config. Runtime state, not configuration; automations absent from the state machine are not listed.",
+     "detail": "GET /states filtered to automation.*; returns entity_id, friendly_name, state, last_triggered, id only - no stored config. Runtime state, not configuration; automations absent from the state machine are not listed. Returns `returned`, `total` (every match) and `truncated` (HAMCP-508).",
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py",
@@ -40,7 +40,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 701,
+       "line": 724,
        "anchor": "async def list_automations"
       },
       {
@@ -65,7 +65,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 731,
+       "line": 761,
        "anchor": "async def get_automation_config"
       },
       {
@@ -75,7 +75,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 91,
+       "line": 95,
        "anchor": "def dump(data: Any) -> str:"
       }
      ]
@@ -292,7 +292,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 796,
+       "line": 826,
        "anchor": "async def upsert_automation"
       }
      ]
@@ -313,7 +313,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 813,
+       "line": 843,
        "anchor": "async def delete_automation"
       }
      ]
@@ -1025,7 +1025,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 766,
+       "line": 796,
        "anchor": "async def get_blueprint"
       },
       {
@@ -1035,7 +1035,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 791,
+       "line": 821,
        "anchor": "text = text[:MAX_CHARS] + \"\\n... [truncated]\""
       }
      ]
@@ -1055,7 +1055,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 755,
+       "line": 785,
        "anchor": "async def list_blueprints"
       },
       {
@@ -1065,7 +1065,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 91,
+       "line": 95,
        "anchor": "def dump(data: Any) -> str:"
       }
      ]
@@ -1130,7 +1130,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 822,
+       "line": 852,
        "anchor": "async def check_config"
       },
       {
@@ -3364,7 +3364,7 @@
      "purpose_binding": "DIRECT_HA_READ_POLICIES bounded_entity_registry_read",
      "admission": "transitional_direct exception; signed:core.non_device_registry_read compiled-active (CORE_CAPABILITY_PROFILES; compiled_exact_authority for SUPPORTED_CORE_RELEASES 2026.7.2/8.0/8.1/9.0/9.1)",
      "completeness": "partial",
-     "detail": "Slim projection only: entity_id, name, platform, device_id, area_id, disabled_by, hidden_by; substring filter and caller limit (default 100, no validated maximum in the function). Omits labels, categories, aliases, icon, entity_category, config_entry_id, unique_id. Not listed in CAPABILITY_PROVIDER_MATRIX.",
+     "detail": "Slim projection only: entity_id, name, platform, device_id, area_id, disabled_by, hidden_by; substring filter and caller limit (default 100, no validated maximum in the function). Omits labels, categories, aliases, icon, entity_category, config_entry_id, unique_id. Not listed in CAPABILITY_PROVIDER_MATRIX. Returns `returned`, `total` (every match) and `truncated` (HAMCP-508).",
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
@@ -3373,7 +3373,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 885,
+       "line": 921,
        "anchor": "async def list_entity_registry"
       },
       {
@@ -3508,7 +3508,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 885,
+       "line": 921,
        "anchor": "async def list_entity_registry"
       }
      ]
@@ -3542,7 +3542,7 @@
      "purpose_binding": "DIRECT_HA_READ_POLICIES bounded_device_registry_read",
      "admission": "transitional_direct exception; signed:core.direct_device_registry_read compiled-active (CORE_CAPABILITY_PROFILES; compiled_exact_authority for SUPPORTED_CORE_RELEASES 2026.7.2/8.0/8.1/9.0/9.1)",
      "completeness": "partial",
-     "detail": "Projection id, name(name_by_user or name), manufacturer, model, area_id, disabled_by; substring filter; limit default 100 caller supplied. Omits labels, identifiers, connections, config entries, parent_device_id. Not in CAPABILITY_PROVIDER_MATRIX. Core 2026.8 composite-device shape handling is in the readmission profile (child reduced shape, parent integrity, effective area, MAX_DEVICE_RECORDS=4096).",
+     "detail": "Projection id, name(name_by_user or name), manufacturer, model, area_id, disabled_by; substring filter; limit default 100 caller supplied. Omits labels, identifiers, connections, config entries, parent_device_id. Not in CAPABILITY_PROVIDER_MATRIX. Core 2026.8 composite-device shape handling is in the readmission profile (child reduced shape, parent integrity, effective area, MAX_DEVICE_RECORDS=4096). Returns `returned`, `total` (every match) and `truncated` (HAMCP-508).",
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
@@ -3551,7 +3551,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 856,
+       "line": 886,
        "anchor": "async def list_devices"
       },
       {
@@ -3627,7 +3627,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 856,
+       "line": 886,
        "anchor": "async def list_devices"
       }
      ]
@@ -3656,7 +3656,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 850,
+       "line": 880,
        "anchor": "async def list_areas"
       },
       {
@@ -3671,7 +3671,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 91,
+       "line": 95,
        "anchor": "def dump(data: Any) -> str:"
       }
      ]
@@ -4165,7 +4165,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 326,
+       "line": 332,
        "anchor": "async def get_entity"
       },
       {
@@ -4190,7 +4190,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 344,
+       "line": 350,
        "anchor": "async def search_entities"
       },
       {
@@ -4280,7 +4280,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 639,
+       "line": 662,
        "anchor": "async def render_template"
       },
       {
@@ -4441,12 +4441,12 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 962,
+       "line": 1004,
        "anchor": "async def list_services"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 969,
+       "line": 1011,
        "anchor": "maximum_services = 50"
       },
       {
@@ -4471,7 +4471,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 913,
+       "line": 955,
        "anchor": "async def search_services"
       },
       {
@@ -4513,7 +4513,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 969,
+       "line": 1011,
        "anchor": "maximum_services = 50"
       }
      ]
@@ -4633,12 +4633,12 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 71,
+       "line": 72,
        "anchor": "MAX_ERROR_LOG_ENTRIES = 200"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 514,
+       "line": 531,
        "anchor": "async def get_error_log"
       }
      ]
@@ -4958,7 +4958,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 646,
+       "line": 669,
        "anchor": "async def list_automation_traces"
       }
      ]
@@ -4978,7 +4978,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 660,
+       "line": 683,
        "anchor": "async def get_automation_trace"
       }
      ]
@@ -5197,7 +5197,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 406,
+       "line": 412,
        "anchor": "async def get_history"
       }
      ]
@@ -5941,7 +5941,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-       "line": 822,
+       "line": 852,
        "anchor": "async def check_config"
       }
      ]
@@ -6526,7 +6526,7 @@
    "refs": [
     {
      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/compatibility.py",
-     "line": 1121,
+     "line": 1163,
      "anchor": "async def get_audit_log"
     }
    ]
