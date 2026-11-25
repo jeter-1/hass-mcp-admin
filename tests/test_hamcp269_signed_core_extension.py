@@ -24,10 +24,10 @@ from ha_mcp_engineering.signed_registry import canonical_json
 
 EVIDENCE = ROOT / "docs/evidence/hamcp269"
 PUBLIC_KEY = ROOT / "docs/evidence/hamcp222/core-public-key.txt"
-# HAMCP-437: the committed journal is now the sequence-18 tip (registry@917bfa2a).
+# HAMCP-437/HAMCP-462: the committed journal is now the sequence-19 tip (registry@a6c1606e).
 # Sequence 15 is checked as the envelope it still carries, unchanged.
-SIGNED_SHA256 = "e792670dd22586cfa3d2fbbfaacf6165feb85bcb435e33f69bc712f7db27b092"
-SIGNED_SEQUENCE = 18
+SIGNED_SHA256 = "d30648e42eec2ea8e2306ebc17971f3ec766ff1f5de82db5e90653fb97b06fb1"
+SIGNED_SEQUENCE = 19
 ADDITIONS = (
     "core.config_entry_helper_options_operation",
     "core.typed_input_select_option_operation",

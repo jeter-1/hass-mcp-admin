@@ -1,6 +1,6 @@
 """HAMCP-132 slice 2: read-only configuration definitions (``get_configuration_definitions``).
 
-Fixtures model the pinned Home Assistant Core 2026.10.1 surfaces
+Fixtures model the pinned Home Assistant Core 2026.11.3 surfaces
 (``schemas.py`` names each source line), the reviewed ``ha_config_get_yaml``
 envelope through the gateway's ``configuration_definitions`` purpose, and
 Core's own ``config_entries/get`` and ``manifest/get`` reads. Everything is
@@ -211,7 +211,7 @@ def owner_core():
 class SyntheticCore:
     def __init__(self):
         self.available, self.generation = True, 1
-        self.current_observation = SimpleNamespace(version="2026.10.1")
+        self.current_observation = SimpleNamespace(version="2026.11.3")
 
     def route_status(self, requirements):
         assert requirements == c.CORE_REQUIREMENTS
@@ -386,7 +386,7 @@ def entity_row(domain, unique_id, derived, derivation, limit=None):
 
 
 class PinnedShapeTests(unittest.TestCase):
-    """One pinned YAML shape per supported integration (Core 2026.10.1)."""
+    """One pinned YAML shape per supported integration (Core 2026.11.3)."""
 
     def by_id(self, **paths):
         definitions, collector = project(**paths)
@@ -441,6 +441,25 @@ class PinnedShapeTests(unittest.TestCase):
         self.assertEqual(self.collector.unprojected, {"template:not_a_mapping": 1})
         for row in rows.values():
             self.assertEqual((row["integration"], row["yaml_path"]), ("template", "template"))
+
+    def test_core_2026_11_3_template_and_integration_keys(self):
+        rows = self.by_id(
+            template=[{"triggers": [{"trigger": "event", "event_type": "synthetic"}],
+                       "trigger_variables": {"room": "kitchen"},
+                       "media_player": [{"name": "Kitchen Speaker", "unique_id": "speaker", "state": "on"}],
+                       "water_heater": [{"name": "Tank", "unique_id": "tank", "state": "eco"}]}],
+            sensor=[{"platform": "integration", "source": "sensor.power", "name": "Energy",
+                     "device_class": "energy"}],
+        )
+        speaker = rows["template[0].media_player[0]"]
+        self.assertEqual(speaker["block"]["fields"]["trigger_variables"], {"room": "kitchen"})
+        self.assertTrue(speaker["block"]["trigger_based"])
+        self.assertEqual(expected(speaker), [entity_row("media_player", "speaker", "media_player.kitchen_speaker",
+                                                        "name")])
+        self.assertEqual(expected(rows["template[0].water_heater[0]"]),
+                         [entity_row("water_heater", "tank", "water_heater.tank", "name")])
+        self.assertEqual(rows["sensor[0]"]["fields"]["device_class"], "energy")
+        self.assertEqual(rows["sensor[0]"]["unrecognized_key_count"], 0)
 
     def test_sql_integration_key(self):
         rows = self.by_id(sql=[*owner_sql(), {"name": "{{ 'templated' }}", "query": "SELECT 1;", "column": "x"},

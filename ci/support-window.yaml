@@ -48,10 +48,11 @@
 # The 2026.7.2 migration-fixture writer image in ci.yml is a deliberate constant
 # (it writes the persisted fixture), not a window slot.
 #
-# Current slots (HAMCP-437, release 2.9.0): Core 2026.11.0 with ha-mcp 9.2.0, the
-# deployed pair. Core and ha-mcp rollback are empty (HAMCP-406), as is the ha-mcp
-# candidate. HAMCP-489 adds Core 2026.11.3 as the Core candidate (evaluation only;
-# its signed entry is a separate step). The
+# Current slots (HAMCP-462, release 2.10.0): the Core rotation moves candidate
+# 2026.11.3 (bound in HAMCP-489, signed in registry sequence 19) to current and
+# current 2026.11.0 to rollback; the Core candidate is empty. ha-mcp stays 9.2.0
+# with no candidate or rollback (HAMCP-406). The deployed versions are not known
+# from source. The
 # ha-mcp 9.2.0 source_archive_sha256 is the codeload legacy.tar.gz digest of the
 # registry source_commit, whose extracted content equals that commit's tree
 # (registry source_tree 377909bd).
@@ -59,12 +60,12 @@ schema_version: 1
 
 core:
   current:
-    version: "2026.11.0"
-    image_index_digest: sha256:c6c1ca9931036bf3a2c4cc088d8db25dfea3b33935a5ecc83c40349462e2f69e
-  candidate:
     version: "2026.11.3"
     image_index_digest: sha256:24e541ddae5818bf8eb27898b9ba00d0c344a655aa5097e9e9bd4b19356be847
-  rollback: null
+  candidate: null
+  rollback:
+    version: "2026.11.0"
+    image_index_digest: sha256:c6c1ca9931036bf3a2c4cc088d8db25dfea3b33935a5ecc83c40349462e2f69e
 
 ha_mcp:
   current:
