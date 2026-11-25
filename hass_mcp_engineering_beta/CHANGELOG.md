@@ -31,12 +31,17 @@ release pull request completes this entry.
   is copied at sequence 19, which signs 2026.11.3 with the same 38 profiles
   as 2026.11.0; and the support window rotates to 2026.11.3 current and
   2026.11.0 rollback, with the Core candidate empty.
-- Planned (plan approved 2026-11-25): the integrity, reliability and health
-  fixes (HAMCP-490, 491, 493, 497, 498) and native search (HAMCP-481). None
-  has landed yet.
+- Planned (plan approved 2026-11-25): the integrity and reliability fixes
+  (HAMCP-490, 491, 493) and native search (HAMCP-481). None has landed yet.
 - Added 2026-11-25 (Josh's approval relayed by the architect) and landed:
   Core trace retention in reliability analysis and the trace watch
   retention-gap counter (HAMCP-503 TB-1 and TB-3, #509).
+- Landed: `get_server_health` reports the running build (`server.build_sha`,
+  `server.build_dirty`), and `release_registry` reports `last_refresh_at` and
+  `refresh_interval_seconds` (HAMCP-497, #512). A Core-bound call refused
+  during a Core restart window, while admitted authority is re-verified, is
+  now retryable and names the window (`core_authority_recovering`); every
+  other `CoreCapabilityUnavailable` is unchanged (HAMCP-498, #512).
 - New in-progress `V2_4_2_BETA14` release notes and acceptance contract.
 - Rollback: pending; stated by the final release pull request.
 

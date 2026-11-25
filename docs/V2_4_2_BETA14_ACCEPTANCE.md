@@ -46,7 +46,7 @@ final release pull request binds their evidence.
 | HAMCP-490, HAMCP-491 | Configuration integrity compact finding identity and filtered counts | not landed |
 | HAMCP-493 | Reliability analysis current state and configuration paths | not landed |
 | HAMCP-503 | Reliability trace retention reported as partial, and the trace watch retention-gap counter | landed (#509); `tests/test_hamcp503_trace_retention.py`, `tests/test_hamcp503_trace_watch_retention_gap.py` |
-| HAMCP-497, HAMCP-498 | Health build identity, registry refresh time and the Core-unavailable retryable flag | not landed |
+| HAMCP-497, HAMCP-498 | `get_server_health` `server.build_sha` and `build_dirty`; `release_registry` `last_refresh_at` and `refresh_interval_seconds`; a Core-bound refusal in an open Core restart window is retryable and names the window | landed (#512); `tests/test_hamcp497_health_build_identity.py`, `tests/test_hamcp498_core_restart_retryable.py` |
 | HAMCP-481 | Native search (entities, automations and scripts) | not landed |
 
 ## 1. Source and offline acceptance
