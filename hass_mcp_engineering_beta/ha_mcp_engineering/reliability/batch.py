@@ -64,7 +64,7 @@ _BASIC_ROOT_CAUSE_KEYS = (
 )
 _DETAIL_ROOT_CAUSE_KEYS = (
     "confidence", "current_state", "representative_configuration_paths",
-    "recommended_investigation", "governed_change_required",
+    "affected_step", "recommended_investigation", "governed_change_required",
 )
 ROOT_CAUSE_DETAIL_LEVELS = ("full", "reduced")
 # HAMCP-474 D5: the closed sets of the batch-level ``source_limitations`` list.
