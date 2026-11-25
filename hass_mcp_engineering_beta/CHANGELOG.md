@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.4.2-beta.14 - 2.10.0 build, in progress (HAMCP-500)
+
+Builds on 2.4.2-beta.13 (2.9.1 build, HAMCP-455, #500). In progress: items
+land through reviewed pull requests into `release/2.10.0`, and the final
+release pull request completes this entry.
+
+- Version materialized on `release/2.10.0`, created from `main` at f48c6fb9,
+  so item pull requests carry no version change. The release transition is
+  from 2.4.2-beta.13 to 2.4.2-beta.14.
+- Planned (plan approved 2026-11-25): the `get_history` end-time fix
+  (HAMCP-502), the Core 2026.11.3 must-carry (HAMCP-462), the integrity,
+  reliability and health fixes (HAMCP-490, 491, 493, 497, 498) and native
+  search (HAMCP-481). None has landed yet.
+- New in-progress `V2_4_2_BETA14` release notes and acceptance contract.
+- Rollback: pending; stated by the final release pull request.
+
 ## 2.4.2-beta.13 - 2.9.1 build, in progress (HAMCP-455)
 
 Builds on 2.4.2-beta.12 (2.9.0.1 hotfix, HAMCP-470, #488). In progress: every
