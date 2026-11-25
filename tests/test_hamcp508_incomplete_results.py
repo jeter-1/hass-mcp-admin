@@ -93,6 +93,16 @@ class ListToolTotals(unittest.IsolatedAsyncioTestCase):
         # a010..a019 match.
         self.assertEqual((data["returned"], data["total"], data["truncated"]), (5, 10, True))
 
+    async def test_device_total_counts_filtered_matches_only(self):
+        data = await self.call("list_devices", _devices(30), query="Device 1", limit=5)
+        # Device 1 and Device 10..19 match.
+        self.assertEqual((data["returned"], data["total"], data["truncated"]), (5, 11, True))
+
+    async def test_entity_registry_total_counts_filtered_matches_only(self):
+        data = await self.call("list_entity_registry", _registry(30), query="s01", limit=5)
+        # sensor.s010..s019 match.
+        self.assertEqual((data["returned"], data["total"], data["truncated"]), (5, 10, True))
+
 
 # ----- SI-2 and SI-6: the incident provider ---------------------------------
 
@@ -230,6 +240,9 @@ class IncidentBounds(unittest.TestCase):
         self.assertIn("20 kept", row.warnings[0])
         services = [item for item in bundle.events if item.event_type == "service_call_observed"]
         self.assertEqual(len(services), 20)
+        # The trace row is required, so its gap makes the whole bundle partial.
+        self.assertFalse(row.public()["assessment_complete"])
+        self.assertTrue(bundle.source_partial)
 
     def test_trace_service_calls_at_20_stay_complete(self):
         trace = {"run_id": "r1", "started_at": ANALYSIS_TIME.isoformat(),
@@ -244,6 +257,8 @@ class IncidentBounds(unittest.TestCase):
         self.assertIn("automation_reliability_finding_limit_exceeded", row.coverage_limitations)
         self.assertIn("1 of 101", row.warnings[0])
         self.assertIn("100 kept", row.warnings[0])
+        # The reliability row is optional context: alone it does not make the bundle partial.
+        self.assertFalse(bundle.source_partial)
 
     def test_reliability_findings_at_100_stay_complete(self):
         row = self.row(self.collect(traces=[], findings=100), "automation_reliability")
@@ -352,6 +367,14 @@ class DependencyBounds(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(overview["coverage_complete"])
         self.assertFalse(data["pagination"]["total_complete"])
         self.assertIn("indirect_dependency_limit_exceeded", " ".join(data["warnings"]))
+
+    async def test_an_indirect_walk_that_stops_at_500_with_nodes_queued_names_the_gap(self):
+        data = await self.walk(500)
+        overview = data["overview"]
+        self.assertEqual(overview["indirect_reference_count"], 500)
+        self.assertEqual(overview["indirect_reference_gaps"], ["indirect_dependency_limit_exceeded"])
+        self.assertFalse(overview["coverage_complete"])
+        self.assertFalse(data["pagination"]["total_complete"])
 
     async def test_an_indirect_walk_inside_the_bound_is_complete(self):
         data = await self.walk(499)
