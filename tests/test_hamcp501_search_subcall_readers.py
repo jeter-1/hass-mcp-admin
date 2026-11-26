@@ -104,6 +104,11 @@ def arguments(search_type="helper", page=0, query="kitchen", exact_match=True, s
     return subcalls.page_arguments(search_type, query, exact_match, page, size)
 
 
+def probe_arguments(query="kitchen", exact_match=True):
+    """W6 F1: the helper probe page read before and after the scans."""
+    return arguments("helper", 0, query, exact_match, subcalls.PROBE_SIZE)
+
+
 def refused(error):
     """A 9.2.0 ``raise_tool_error`` reply: an MCP error whose one text block is
     the ``create_error_response`` JSON (``tools/helpers.py``, 51e3aac7)."""
@@ -411,8 +416,10 @@ class EngineTests(Readers):
         # The default types are automation, script, scene and helper, in that
         # order; not dashboard.
         await self.go(query="kitchen")
-        self.assertEqual(self.sent(), [("ha_search", arguments(search_type))
-                                       for search_type in ("automation", "script", "scene", "helper")])
+        # W6 F1: a helper probe brackets the scans.
+        self.assertEqual(self.sent(), [("ha_search", probe_arguments()), *(
+            ("ha_search", arguments(search_type))
+            for search_type in ("automation", "script", "scene", "helper")), ("ha_search", probe_arguments())])
 
     async def test_a_failed_page_is_incomplete_and_the_other_sub_call_is_served(self):
         self.served[("dashboard", 0)] = {"isError": True, "content": [{"type": "text", "text": MARKER}]}
@@ -828,14 +835,34 @@ class RefusalTests(Readers):
             with self.subTest(flag=flag):
                 capture_ = gw._SearchPageCapture("helpers")
                 capture_.withheld_names, capture_.too_large = frozenset(), flag
+                capture_.scrub = "clean"
                 with self.assertRaises(Failure) as raised:
                     gw._search_page_result({"success": True, "data": data}, capture_, 0, PAGE)
                 self.assertEqual(raised.exception.category, "invalid_response")
                 self.assertNotIsInstance(raised.exception, subcalls.PageTooLarge)
-        capture_ = gw._SearchPageCapture("helpers")
-        capture_.withheld_names = frozenset()
-        page = gw._search_page_result({"success": True, "data": data}, capture_, 0, PAGE)
-        self.assertEqual(page.rows, (flow(0),))
+        # W6 F1: a capture whose scrub state was not read, or is not one, is
+        # refused too.
+        for scrub in (None, "", "Clean", "partial", 0, True):
+            with self.subTest(scrub=scrub):
+                capture_ = gw._SearchPageCapture("helpers")
+                capture_.withheld_names, capture_.scrub = frozenset(), scrub
+                with self.assertRaises(Failure) as raised:
+                    gw._search_page_result({"success": True, "data": data}, capture_, 0, PAGE)
+                self.assertEqual(raised.exception.category, "invalid_response")
+        # A capture whose withheld names were not read as a frozenset is
+        # refused, whatever its scrub state and size flag show.
+        for names in (None, set(), (), [], frozenset):
+            with self.subTest(names=names):
+                capture_ = gw._SearchPageCapture("helpers")
+                capture_.withheld_names, capture_.scrub = names, "clean"
+                with self.assertRaises(Failure) as raised:
+                    gw._search_page_result({"success": True, "data": data}, capture_, 0, PAGE)
+                self.assertEqual(raised.exception.category, "invalid_response")
+        for scrub in ("clean", "degraded", "unverified"):
+            capture_ = gw._SearchPageCapture("helpers")
+            capture_.withheld_names, capture_.scrub = frozenset(), scrub
+            page = gw._search_page_result({"success": True, "data": data}, capture_, 0, PAGE)
+            self.assertEqual((page.rows, page.scrub), ((flow(0),), scrub))
 
     async def test_error_and_invalid_replies_fail_the_page(self):
         valid = body("helper", [flow(0)])
@@ -916,6 +943,7 @@ class RefusalTests(Readers):
         async def execute(**kwargs):
             if state["filled"]:
                 kwargs["search_page"].withheld_names = frozenset()
+                kwargs["search_page"].scrub = "clean"
             return json.dumps({"success": True, "data": state["data"]})
 
         cases = [

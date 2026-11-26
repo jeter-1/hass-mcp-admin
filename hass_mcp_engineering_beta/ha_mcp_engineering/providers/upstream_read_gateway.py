@@ -936,15 +936,17 @@ class SearchSubcallPageTooLarge(SearchSubcallPageFailure, SearchPageTooLarge):
 
 
 class _SearchPageCapture:
-    """HAMCP-501 W4 (D1): one sub-call page's withheld names, and (W6 S1)
-    whether the reply size bound alone refused it, in memory only."""
+    """HAMCP-501 W4 (D1): one sub-call page's withheld names, (W6 S1)
+    whether the reply size bound alone refused it, and (W6 F1) its scrub
+    state, in memory only."""
 
-    __slots__ = ("bucket", "withheld_names", "too_large")
+    __slots__ = ("bucket", "withheld_names", "too_large", "scrub")
 
     def __init__(self, bucket: str) -> None:
         self.bucket = bucket
         self.withheld_names: frozenset | None = None
         self.too_large = False
+        self.scrub: str | None = None
 
 
 # The record buckets of a 9.2.0 ``ha_search`` reply. On a sub-call page every
@@ -1014,6 +1016,7 @@ def _search_page_result(
     if (
         type(data) is not dict or type(capture.withheld_names) is not frozenset
         or capture.too_large is not False
+        or type(capture.scrub) is not str or capture.scrub not in keys_9_2.SCRUB_STATES
     ):
         raise SearchSubcallPageFailure("invalid_response")
     rows = data.get(capture.bucket)
@@ -1043,6 +1046,7 @@ def _search_page_result(
     return SearchPageResult(
         rows=tuple(rows), partial=partial, has_more=has_more,
         config_total_matches=total, withheld_names=capture.withheld_names,
+        scrub=capture.scrub,
     )
 
 
@@ -4520,6 +4524,7 @@ class UpstreamReadGateway:
                 raise _GatewayFailure("prohibited_delegation", dispatched=False)
             if search_page is not None and (
                 search_page.too_large is not False
+                or search_page.scrub is not None
                 or type(search_page.bucket) is not str
                 or search_page.bucket not in _SEARCH_PAGE_TYPES
                 or _search_page_arguments(_SEARCH_PAGE_TYPES[search_page.bucket], arguments)
@@ -4699,6 +4704,9 @@ class UpstreamReadGateway:
                         search_page.withheld_names = keys_9_2.bucket_withheld_names(
                             payload, search_page.bucket
                         )
+                        # HAMCP-501 W6 F1: whether the page shows that its
+                        # bodies were matched scrubbed; held, never emitted.
+                        search_page.scrub = keys_9_2.page_scrub_state(payload)
                     except ValueError:
                         raise _GatewayFailure(
                             "invalid_response", dispatched=True

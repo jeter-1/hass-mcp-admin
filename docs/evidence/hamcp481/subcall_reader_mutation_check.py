@@ -219,10 +219,11 @@ MUTANTS = {
     "too_large_category_dropped": (
         GATEWAY, '{"provider_authority_changed", "page_too_large"}', '{"provider_authority_changed"}'),
     "flagged_success_accepted": (
-        GATEWAY, "\n        or capture.too_large is not False\n    ):", "\n    ):"),
+        GATEWAY, "\n        or capture.too_large is not False\n        or type(capture.scrub)",
+        "\n        or type(capture.scrub)"),
     "preset_flag_accepted": (
-        GATEWAY, "                search_page.too_large is not False\n                or type(search_page.bucket)",
-        "                type(search_page.bucket)"),
+        GATEWAY, "                search_page.too_large is not False\n                or search_page.scrub is not None",
+        "                search_page.scrub is not None"),
     "size_flag_unset": (
         GATEWAY, "                        # HAMCP-501 W6 S1: the size bound alone refused the page.\n"
         "                        search_page.too_large = True\n", "                        pass\n"),

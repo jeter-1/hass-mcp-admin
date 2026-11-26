@@ -165,8 +165,15 @@ def reasons_of(result):
 FIRST = subcalls.PAGE_SIZE_LADDER[0]
 
 
-def page(rows=(), partial=False, has_more=False, total=0, withheld=frozenset()):
-    return subcalls.PageResult(tuple(rows), partial, has_more, total, frozenset(withheld))
+def probe(query, exact=True):
+    """W6 F1: the helper probe page read before and after the scans."""
+    return subcalls.page_arguments("helper", query, exact, 0, subcalls.PROBE_SIZE)
+
+
+def page(rows=(), partial=False, has_more=False, total=0, withheld=frozenset(),
+         scrub=subcalls.SCRUB_CLEAN):
+    # W6 F1: a synthetic page is clean unless a test says otherwise.
+    return subcalls.PageResult(tuple(rows), partial, has_more, total, frozenset(withheld), scrub)
 
 
 class World(Base):
@@ -653,8 +660,8 @@ class ReachabilityTests(unittest.TestCase):
         "configs": {"..entity_ids", ".:core_contracts", ".:scoring", ".:subcalls", ".core_reads",
                     ".entities", ".reply", "__future__", "asyncio", "dataclasses", "math", "re", "time",
                     "types", "typing"},
-        "subcalls": {"..entity_ids", ".:core_contracts", "__future__", "asyncio", "dataclasses", "time",
-                     "types", "typing"},
+        "subcalls": {"..entity_ids", ".:core_contracts", ".:scoring", "__future__", "asyncio",
+                     "dataclasses", "time", "types", "typing"},
         "reply": {"..errors", "..sanitization", "__future__", "dataclasses", "json", "typing"},
     }
     FORBIDDEN_CALLS = {"request", "command", "command_batch", "call_service", "send_json", "subscribe",
@@ -767,8 +774,10 @@ class GoldenTests(World):
         self.assertEqual(self.batches("search/related"),
                          [[{"type": "search/related", "item_type": "entity", "item_id": "light.kitchen"}]])
         self.assertEqual([call[2] for call in self.calls if call[0] == "rest"], ["/states"])
-        self.assertEqual(self.pages, [subcalls.page_arguments(search_type, "light.kitchen", True, 0, FIRST)
-                                      for search_type in ("automation", "script", "scene", "helper")])
+        # W6 F1: a helper probe brackets the scans.
+        self.assertEqual(self.pages, [probe("light.kitchen"), *(
+            subcalls.page_arguments(search_type, "light.kitchen", True, 0, FIRST)
+            for search_type in ("automation", "script", "scene", "helper")), probe("light.kitchen")])
 
     async def test_search_entities_oracle_match_sets(self):
         # Design section 8.3 as G-d (as relayed by the architect): match sets
@@ -1161,7 +1170,9 @@ class RefusalTests(World):
         self.assertEqual(result["search_types"], ["automation", "automation"])
         self.assertEqual(result["applied"]["search_types"], ["automation"])
         self.assertEqual(result["warnings"], [reply.WARNING_ENTITY_SKIPPED])
-        self.assertEqual(self.pages[-1], subcalls.page_arguments("automation", "routine", True, 0, FIRST))
+        self.assertEqual(self.pages[-3:], [probe("routine"),
+                                           subcalls.page_arguments("automation", "routine", True, 0, FIRST),
+                                           probe("routine")])
         # A JSON list is never split on its commas.
         result = await self.go(query="light.kitchen", result_fields='["entity_id", "labels"]')
         self.assertEqual(result["entities"], [{"entity_id": "light.kitchen", "labels": ["Food"]}])
@@ -1169,7 +1180,9 @@ class RefusalTests(World):
         self.assertEqual(set(result) - reply.ALWAYS_KEPT, {"entities"})
         await self.go(query="routine", config_time_budget=0.001, search_types=["script"])
         await self.go(query="routine", config_time_budget=300, search_types=["script"])
-        self.assertEqual(self.pages[-1], subcalls.page_arguments("script", "routine", True, 0, FIRST))
+        self.assertEqual(self.pages[-3:], [probe("routine"),
+                                           subcalls.page_arguments("script", "routine", True, 0, FIRST),
+                                           probe("routine")])
 
 
 class ConfigTests(World):
@@ -1377,7 +1390,9 @@ class RouteEntityTests(World):
         self.assertEqual(result["automations"], [{
             "entity_id": "automation.morning", "friendly_name": "Morning routine", "score": 100,
             "match_in_name": True, "match_in_config": True, "match_in_references": False}])
-        self.assertEqual(self.pages, [subcalls.page_arguments("automation", "routine", True, 0, FIRST)])
+        self.assertEqual(self.pages, [probe("routine"),
+                                      subcalls.page_arguments("automation", "routine", True, 0, FIRST),
+                                      probe("routine")])
         self.assertEqual(self.reads, [("states",)])
         self.assertEqual([call[2] for call in self.calls if call[0] == "rest"], ["/states"])
         self.assertEqual([call for call in self.calls if call[0] != "rest"], [])
@@ -1478,8 +1493,10 @@ class RouteEntityTests(World):
         result = await self.go(query="routine", search_types=["automation"], limit=1)
         self.assertEqual(result["config_total_matches"], extra + 1)
         self.assertEqual([record["entity_id"] for record in result["automations"]], ["automation.morning"])
-        self.assertEqual([arguments["offset"] for arguments in self.pages],
-                         [0, FIRST])
+        self.assertEqual([arguments["offset"] for arguments in self.pages
+                          if arguments["search_types"] == ["automation"]], [0, FIRST])
+        self.assertEqual((self.pages[0], self.pages[-1], len(self.pages)),
+                         (probe("routine"), probe("routine"), 4))
 
     async def test_entity_rows_are_checked(self):
         good = {"entity_id": "automation.morning", "friendly_name": "Morning routine", "score": 100,
@@ -1548,8 +1565,9 @@ class RouteEntityTests(World):
                 self.assertEqual({b: result[b] for b in ("automations", "scripts")},
                                  {b: plain[b] for b in ("automations", "scripts")})
                 self.assertEqual(reasons_of(result), {})
-                self.assertEqual(self.pages, [subcalls.page_arguments(search_type, "routine", True, 0, FIRST)
-                                              for search_type in ("automation", "script")])
+                self.assertEqual(self.pages, [probe("routine"), *(
+                    subcalls.page_arguments(search_type, "routine", True, 0, FIRST)
+                    for search_type in ("automation", "script")), probe("routine")])
         codes = set().union(*reply.REASON_CODES.values())
         self.assertFalse({"time_budget", "not_readable"} & codes)
 

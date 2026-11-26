@@ -3,9 +3,9 @@
 The tool replaces the delegated ``ha_mcp__ha_search`` read. The engine
 (:mod:`..search.engine`) reads Home Assistant Core through one
 ``CoreReadSession`` under this request's Core lease, and reaches the
-dashboard and flow-helper sub-calls only through the gateway's fixed
-internal-only ``ha_search`` page readers (G1). There is no fallback to the
-delegated route.
+automation, script, scene, dashboard and flow-helper sub-calls only through
+the gateway's fixed internal-only ``ha_search`` page readers (G1). There is
+no fallback to the delegated route.
 
 The public schema is ha-mcp 9.2.0's ``ha_search`` schema
 (``upstream_reads_9_2.PUBLIC_SCHEMAS``) with one change: the
@@ -25,6 +25,7 @@ from mcp.types import ToolAnnotations
 from ..errors import ErrorCode, GovernanceError
 from ..providers.routing import native_search_policy_allows_read
 from ..providers.upstream_reads_9_2 import PUBLIC_SCHEMAS
+from ..request_context import current_telemetry
 from ..search import engine
 from ..search.reply import SearchError
 from ..tool_framework import run_structured
@@ -126,6 +127,12 @@ async def ha_search(arguments: Any) -> str:
             known_secrets=runtime.known_secrets,
         )
         metadata["completeness"] = "partial" if reply["partial"] else "complete"
+        # The audit keeps the delegated route's status: a partial reply is
+        # audited "partial", not "success".
+        telemetry = current_telemetry()
+        if telemetry:
+            telemetry.completeness = metadata["completeness"]
+            telemetry.result_status = "partial" if reply["partial"] else "success"
         return reply
 
     return await run_structured(NAME, SUMMARY, action, metadata=metadata,

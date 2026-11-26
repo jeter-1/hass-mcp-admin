@@ -20,6 +20,17 @@ not admitted or did not finish is ``source_unavailable`` for its own bucket,
 and an upstream ``partial`` page is ``not_searched`` ``upstream_partial`` for
 its own bucket; the other buckets are unaffected.
 
+Body matching (HAMCP-501 W6 F1). A delegated row keeps the route's body match
+only when the page shows that it was matched against the scrubbed corpus.
+For the automation, script, scene and helper sub-calls, a query the A'+
+trigger names (:func:`.subcalls.body_match_unsafe`, decided by Josh as
+relayed by the architect, 2026-11-26), or a scan whose pages or bracketing
+helper probes are not ``clean``, keeps only the component name tier of each
+row and the graph references: ``match_in_config`` is False, a row with no
+name match is dropped, and the bucket is ``not_searched`` with
+``body_numeric_query``, ``body_scrub_degraded`` or ``body_scrub_unverified``.
+Native storage helpers and dashboards are unaffected.
+
 Ported from ha-mcp 9.2.0, commit 51e3aac788482a081807591cd5d58d07dc4e540b:
 
 - ``src/ha_mcp/tools/smart_search/_deep.py`` (sha256
@@ -327,6 +338,69 @@ def _merge_graph(results: dict, hits: Mapping, request: ConfigRequest, states: S
             records.append((record, False))
 
 
+# ``search_score.py``'s ``FUZZY_THRESHOLD`` (``constants.py``).
+ROUTE_FUZZY_THRESHOLD = 70
+# The names Row 25 withholds from a reviewed flow-helper row; a collection
+# helper, automation, script or scene row withholds none.
+_FLOW_HELPER_WITHHELD = frozenset({"entry_id", "options_withheld"})
+
+
+def _route_name_tier(query_lower: str, texts: tuple, *, exact: bool) -> int | None:
+    """ha-mcp 9.2.0's component name tier: ``_name_tier`` in
+    ``custom_components/ha_mcp_tools/websocket_api/search_score.py`` (sha256
+    ba034030b149091fba1e2777ac6c0c4d9c442fa33148b7d92441cba3feca43de), over
+    a row's entity id and name only."""
+
+    query_norm = "" if exact else " ".join(scoring.tokenize(query_lower))
+    best = 0
+    for text in texts:
+        if not text:
+            continue
+        text_lower = str(text).lower()
+        if query_lower in text_lower:
+            return 100
+        if not exact:
+            if query_norm and query_norm in " ".join(scoring.tokenize(text_lower)):
+                return 100
+            best = max(best, scoring.ratio(query_lower, text_lower))
+    if not exact and best >= ROUTE_FUZZY_THRESHOLD:
+        return best
+    return None
+
+
+def _name_only(row: dict, request: ConfigRequest) -> dict | None:
+    """A sub-call row with the route's body match removed: the name tier's
+    score, or None when the row's entity id and name do not match. The graph
+    merge may add a dropped row back as a reference."""
+
+    score = _route_name_tier(request.query_lower,
+                             (row.get("entity_id"), row.get("friendly_name") or row.get("name")),
+                             exact=request.exact_match)
+    if score is None:
+        return None
+    return {**row, "score": score, "match_in_name": True, "match_in_config": False}
+
+
+def _kept_withheld(search_type: str, rows: tuple) -> frozenset:
+    """The withheld names a bucket discloses under a body code: its kept rows'
+    only, so a dropped row leaves no trace (``options_withheld`` is counted
+    for any kept flow-helper row)."""
+
+    if search_type == "helper" and any("entity_id" not in row for row in rows):
+        return _FLOW_HELPER_WITHHELD
+    return frozenset()
+
+
+def _body_code(unsafe_query: bool, scrub: str) -> str | None:
+    if unsafe_query:
+        return "body_numeric_query"
+    if scrub == subcalls.SCRUB_DEGRADED:
+        return "body_scrub_degraded"
+    if scrub != subcalls.SCRUB_CLEAN:
+        return "body_scrub_unverified"
+    return None
+
+
 def _disclose(outcome: subcalls.SubcallOutcome, reasons: Reasons) -> None:
     search_type = outcome.search_type
     if outcome.status == subcalls.NOT_ADMITTED:
@@ -355,6 +429,17 @@ async def search_configs(request: ConfigRequest, *, states: StateRows, sources: 
     results: dict[str, list] = {search_type: [] for search_type in CONFIG_TYPES}
     bucket_withheld: dict[str, frozenset] = {}
     dashboard_held = dashboard_total = 0
+    # HAMCP-501 W6 F1: under the A'+ trigger no probe is read; otherwise a
+    # helper probe before and after the scans brackets the automation, script
+    # and scene pages, which carry no degraded flag of their own.
+    unsafe_query = subcalls.body_match_unsafe(request.query, request.exact_match)
+    probed = not unsafe_query and any(t in types for t in subcalls.ENTITY_TYPES)
+    probes = []
+    if probed:
+        probes.append(await subcalls.probe_scrub(subcall_readers.get("helper"),
+                                                 query=request.query,
+                                                 exact_match=request.exact_match))
+    outcomes: dict[str, subcalls.SubcallOutcome] = {}
     # One scan per requested type, in category order, one after another; each
     # scan has its own deadline.
     for search_type in CONFIG_TYPES:
@@ -366,17 +451,33 @@ async def search_configs(request: ConfigRequest, *, states: StateRows, sources: 
                                       query=request.query, exact_match=request.exact_match,
                                       needed=request.offset + request.limit, monotonic=monotonic)
         _disclose(outcome, reasons)
-        if outcome.withheld_names:
-            bucket_withheld[BUCKET_OF[search_type]] = outcome.withheld_names
+        outcomes[search_type] = outcome
+    if probed:
+        probes.append(await subcalls.probe_scrub(subcall_readers.get("helper"),
+                                                 query=request.query,
+                                                 exact_match=request.exact_match))
+    code = _body_code(unsafe_query, subcalls.worst_scrub(
+        *probes, *(outcome.scrub for search_type, outcome in outcomes.items()
+                   if search_type in subcalls.BODY_TYPES)))
+    for search_type, outcome in outcomes.items():
+        rows, withheld = outcome.rows, outcome.withheld_names
+        if (code is not None and search_type in subcalls.BODY_TYPES
+                and outcome.status != subcalls.NOT_ADMITTED):
+            reasons.add("not_searched", search_type, code, None)
+            rows = tuple(kept for kept in (_name_only(row, request) for row in rows)
+                         if kept is not None)
+            withheld = _kept_withheld(search_type, rows)
+        if withheld:
+            bucket_withheld[BUCKET_OF[search_type]] = withheld
         if search_type in subcalls.ENTITY_TYPES:
             # The route scored the body; ``include_config`` is never
             # forwarded, so the reply discloses each body as withheld.
             results[search_type].extend((_entity_record(search_type, row, slug_map), True)
-                                        for row in outcome.rows)
+                                        for row in rows)
         else:
-            results[search_type].extend((row, False) for row in outcome.rows)
+            results[search_type].extend((row, False) for row in rows)
         if search_type == "dashboard":
-            dashboard_held = len(outcome.rows)
+            dashboard_held = len(rows)
             dashboard_total = max(outcome.total, dashboard_held)
     if hits:
         _merge_graph(results, hits, request, states, slug_map)

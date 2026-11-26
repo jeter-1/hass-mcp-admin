@@ -9,6 +9,13 @@ before it scores a body, and on the legacy route a secret-bearing file fails
 that item closed (a name-only row, and the page is ``partial``). Native search
 reads no automation, script or scene body itself.
 
+Each page also carries its scrub state (HAMCP-501 W6 F1): whether it shows
+that its bodies were matched scrubbed. ha-mcp 9.2.0's scrub leaves a numeric
+body leaf in the match corpus, and a degraded scrub leaves every leaf in it,
+so the caller keeps a body match only for a query outside
+:func:`body_match_unsafe` and a scan whose pages, and the helper probes
+(:func:`probe_scrub`) that bracket it, are ``clean``.
+
 This module does not reach that route itself: the caller injects one page
 reader per sub-call type, wired to the admitted internal-only delegated
 ``ha_search`` route, whose Row 25 projection every page passes through. An
@@ -30,6 +37,7 @@ from typing import Any, Awaitable, Callable
 
 from ..entity_ids import STRICT_ENTITY_ID
 from . import core_contracts as c
+from . import scoring
 
 # The whole-scan deadline of one sub-call, in seconds (design section 2.6).
 SCAN_DEADLINE_SECONDS = 60.0
@@ -117,6 +125,21 @@ COMPLETE = "complete"
 INCOMPLETE = "incomplete"
 NOT_ADMITTED = "not_admitted"
 
+# HAMCP-501 W6 F1: a page's scrub state, as the gateway reads it from the raw
+# page (``upstream_reads_9_2_keys.page_scrub_state``; the same values).
+SCRUB_CLEAN = "clean"
+SCRUB_DEGRADED = "degraded"
+SCRUB_UNVERIFIED = "unverified"
+SCRUB_STATES = (SCRUB_CLEAN, SCRUB_DEGRADED, SCRUB_UNVERIFIED)
+_SCRUB_ORDER = MappingProxyType({SCRUB_CLEAN: 0, SCRUB_UNVERIFIED: 1, SCRUB_DEGRADED: 2})
+# The sub-calls whose rows the route matched by body against the scrubbed
+# corpus: a dashboard is not on ha-mcp's scrub surface (disclosed).
+BODY_TYPES = ("automation", "script", "scene", "helper")
+# A probe is one helper page of one row: only a helper search reads the scrub
+# with its degraded flag (``search.py`` ``_search_prep``).
+PROBE_SIZE = 1
+PROBE_TIMEOUT_SECONDS = 15.0
+
 
 @dataclass(frozen=True, slots=True)
 class PageResult:
@@ -124,7 +147,8 @@ class PageResult:
 
     ``rows`` are the page's records of its one bucket after the Row 25
     projection; ``withheld_names`` are the names that projection
-    withheld from the page.
+    withheld from the page; ``scrub`` is the page's scrub state, unverified
+    unless the reader read it.
     """
 
     rows: tuple
@@ -132,6 +156,7 @@ class PageResult:
     has_more: bool
     config_total_matches: int
     withheld_names: frozenset = frozenset()
+    scrub: str = SCRUB_UNVERIFIED
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,7 +165,8 @@ class SubcallOutcome:
 
     ``total`` is what the scan adds to ``config_total_matches``: the first
     page's total for dashboards, and the rows held for every other type (a
-    helper scan holds its flow-helper rows only).
+    helper scan holds its flow-helper rows only). ``scrub`` is the worst
+    scrub state of the scan's valid pages.
     """
 
     search_type: str
@@ -150,6 +176,7 @@ class SubcallOutcome:
     upstream_partial: bool = False
     withheld_names: frozenset = frozenset()
     pages: int = 0
+    scrub: str = SCRUB_CLEAN
 
 
 class PageTooLarge(Exception):
@@ -213,6 +240,8 @@ def _page_valid(search_type: str, page: Any, size: int) -> bool:
         and len(page.rows) <= size
         and type(page.withheld_names) is frozenset
         and all(type(name) is str for name in page.withheld_names)
+        and type(page.scrub) is str
+        and page.scrub in SCRUB_STATES
         and all(_row_valid(search_type, row) for row in page.rows)
         # A page that claims more rows is full, so the next offset neither
         # skips nor repeats a row.
@@ -249,6 +278,7 @@ async def scan(
     first_total: int | None = None
     upstream_partial = False
     withheld: set[str] = set()
+    worst = SCRUB_CLEAN
     seen: set[str] = set()
     scanned = 0
     calls = 0
@@ -264,7 +294,7 @@ async def scan(
         else:
             total = len(rows)
         return SubcallOutcome(search_type, status, tuple(rows), total, upstream_partial,
-                              frozenset(withheld), calls)
+                              frozenset(withheld), calls, worst)
 
     while True:
         remaining = deadline_seconds - (monotonic() - started)
@@ -302,6 +332,7 @@ async def scan(
         seen.update(page_ids)
         upstream_partial = upstream_partial or page.partial
         withheld |= page.withheld_names
+        worst = worst_scrub(worst, page.scrub)
         scanned += len(page.rows)
         if search_type == "helper":
             rows.extend(dict(row) for row in page.rows
@@ -318,3 +349,66 @@ async def scan(
             # The span is read again: back to the larger size.
             span_ends.pop()
             level -= 1
+
+
+def worst_scrub(*states: str) -> str:
+    """The worst of ``states``: degraded, then unverified, then clean. A value
+    that is not a scrub state is unverified."""
+
+    worst = SCRUB_CLEAN
+    for state in states:
+        if type(state) is not str or state not in _SCRUB_ORDER:
+            state = SCRUB_UNVERIFIED
+        if _SCRUB_ORDER[state] > _SCRUB_ORDER[worst]:
+            worst = state
+    return worst
+
+
+async def probe_scrub(reader: PageReader | None, *, query: str, exact_match: bool,
+                      timeout_seconds: float = PROBE_TIMEOUT_SECONDS) -> str:
+    """The scrub state of one helper probe page (HAMCP-501 W6 F1).
+
+    ha-mcp 9.2.0 reports a degraded scrub only on a helper search, and loads
+    its secrets for each call, so the caller reads one probe before and one
+    after the automation, script and scene scans (the race between them is
+    disclosed). The probe's rows are never used. No reader, a failed, timed
+    out or invalid page is unverified.
+    """
+
+    if reader is None:
+        return SCRUB_UNVERIFIED
+    arguments = page_arguments("helper", query, exact_match, 0, PROBE_SIZE)
+    try:
+        page = await asyncio.wait_for(reader(arguments), timeout=timeout_seconds)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        return SCRUB_UNVERIFIED
+    return page.scrub if _page_valid("helper", page, PROBE_SIZE) else SCRUB_UNVERIFIED
+
+
+# The A'+ trigger (decided by Josh as relayed by the architect, 2026-11-26).
+# ha-mcp 9.2.0 scores a numeric body leaf by its ``str()`` with no scrub
+# (``search_score.py`` ``_leaf_exact_score`` and ``_collect_string_leaves``),
+# and ``str()`` of a YAML number, date or time uses these characters (after
+# ``lower()``); the "inf" and "nan" forms are narrowed out (disclosed).
+_NUMERIC_CHARS = frozenset("0123456789.+-e:t ")
+
+
+def body_match_unsafe(query: str, exact_match: bool) -> bool:
+    """Whether a route body match could confirm an unscrubbed numeric secret.
+
+    Exact mode: the stripped, lowercased query is non-empty and every
+    character is a number's. Fuzzy mode: that, or any query token holds a
+    digit (the ratio of a digit-free token to a number's tokens stays under
+    the fuzzy threshold, "inf" and "nan" aside).
+    """
+
+    q = query.strip().lower()
+    if not q:
+        return False
+    if all(char in _NUMERIC_CHARS for char in q):
+        return True
+    return not exact_match and any(
+        any("0" <= char <= "9" for char in token) for token in scoring.tokenize(q)
+    )

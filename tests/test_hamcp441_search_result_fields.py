@@ -76,7 +76,9 @@ RECORDS = [
      "labels": [], "aliases": [], "is_group": True,
      "member_entity_ids": ["light.hamcp441_a", "light.hamcp441_b"]},
 ]
-# The Real HA lane's child_effective_area call (scripts/real_ha_contract_tests.py).
+# The Real HA lane's child_effective_area record shape. HAMCP-501 W6: the lane
+# now calls native ha_search (scripts/real_ha_contract_tests.py); this case
+# keeps Row 25's area key on the internal page route.
 LANE = ({"entity_id": "switch.hamcp441_child", "area": "HAMCP441 kitchen"},)
 # response_helpers.py:245-268: free text naming upstream record keys.
 RESULT_FIELDS_WARNING = (

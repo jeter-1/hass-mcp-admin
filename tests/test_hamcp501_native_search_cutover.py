@@ -190,8 +190,10 @@ class NativeTests(NativeBase):
         self.transport.sent.clear()
         # The default types are automation, script, scene and helper; not dashboard.
         await self.ok(query="kitchen")
-        self.assertEqual(self.sent(), [("ha_search", w4.arguments(search_type))
-                                       for search_type in ("automation", "script", "scene", "helper")])
+        # W6 F1: a helper probe brackets the scans.
+        self.assertEqual(self.sent(), [("ha_search", w4.probe_arguments()), *(
+            ("ha_search", w4.arguments(search_type))
+            for search_type in ("automation", "script", "scene", "helper")), ("ha_search", w4.probe_arguments())])
 
     async def test_an_unadmitted_sub_call_route_is_disclosed_with_zero_dispatch(self):
         with patch.object(search_module.SEARCH, "reader_factory", lambda: None):
@@ -267,7 +269,11 @@ class ScorerTests(NativeBase):
         self.transport.sent.clear()
         data = await self.same("  MORNING Routine ", "morning routine", search_types=["automation"])
         self.assertEqual([row["entity_id"] for row in data["automations"]], ["automation.morning"])
-        self.assertEqual([value["query"] for _, value in self.sent()], ["MORNING Routine", "morning routine"])
+        # W6 F1: each search's page is bracketed by a helper probe.
+        self.assertEqual([value["query"] for _, value in self.sent()],
+                         ["MORNING Routine"] * 3 + ["morning routine"] * 3)
+        self.assertEqual([(value["search_types"], value["limit"]) for _, value in self.sent()],
+                         [(["helper"], 1), (["automation"], w4.PAGE), (["helper"], 1)] * 2)
         # The deep path: an entity-id-shaped query reads Core's search graph
         # once, lowered and stripped (design section 8 step 5). No page
         # carries the automation, so its row is the graph's.
@@ -553,6 +559,30 @@ class RoutedTests(NativeBase):
         for needle in ("synthetic-needle-query", "synthetic-needle-area"):
             self.assertNotIn(needle, audit)
 
+    async def test_a_complete_reply_is_audited_success(self):
+        self.serve("helper", w4.pages_of("helper", [w4.flow(index) for index in range(8)]))
+        result, _, record, _ = await self.post({"query": "kitchen", "search_types": ["helper"]})
+        self.assertIs(result["success"], True, result)
+        self.assertIs(result["data"]["partial"], False)
+        self.assertEqual(result["metadata"]["completeness"], "complete")
+        self.assertEqual((record["result_status"], record.get("error_code")), ("success", None))
+
+    async def test_a_partial_reply_is_audited_partial(self):
+        # The delegated route audited a partial search "partial"; the
+        # native tool keeps that status (and its public success).
+        self.serve("helper", w4.pages_of("helper", [w4.flow(index) for index in range(320)]))
+        revoked = {"value": False}
+        core = self.lease(revalidate=Mock(side_effect=lambda *args, **kwargs: not revoked["value"]))
+        self.after = lambda: revoked.update(value=True)
+        result, _, record, _ = await self.post({"query": "kitchen", "search_types": ["helper"]},
+                                               core=core)
+        self.assertIs(result["success"], True, result)
+        self.assertIs(result["data"]["partial"], True)
+        self.assertEqual(result["metadata"]["completeness"], "partial")
+        self.assertEqual((record["result_status"], record.get("error_code")), ("partial", None))
+        # The page's own record keeps its own status.
+        self.assertEqual([record["result_status"] for record in self.audits()], ["failed_or_cancelled"])
+
     async def test_invalid_arguments_are_refused_before_the_lease(self):
         for arguments in ({"query": "synthetic-needle-query", "synthetic_unreviewed": True},
                           {"query": "synthetic-needle-query", "limit": 0}, {}):
@@ -563,6 +593,8 @@ class RoutedTests(NativeBase):
                 core.acquire.assert_not_called()
                 self.assertEqual(self.parents, [])
                 self.assertEqual(record["parameters"]["validation"], "rejected")
+                self.assertEqual((record["result_status"], record.get("error_code")),
+                                 ("failure", ErrorCode.VALIDATION_FAILURE.value))
                 self.assertNotIn("synthetic-needle-query", audit)
                 self.assertNotIn("synthetic-needle-query", json.dumps(result))
         self.assertEqual((self.calls, self.reads, self.transport.calls), ([], [], 0))

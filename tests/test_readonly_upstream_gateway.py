@@ -2013,7 +2013,10 @@ class PolicyInventoryTests(unittest.TestCase):
             self.assertIn(f'"{tool_name}"', acceptance)
         self.assertIn('"ha_get_logs" not in names', acceptance)
         self.assertIn('"ha_call_service" not in names', acceptance)
-        self.assertIn('"ha_search_partial"', acceptance)
+        # HAMCP-501 W6: the partial search runs through native ha_search.
+        self.assertIn("async def inspect_native_search(", acceptance)
+        self.assertIn("native_search = await inspect_native_search(", acceptance)
+        self.assertIn('"native_search": native_search', acceptance)
         self.assertIn('partial_data.get("partial") is True', acceptance)
         self.assertIn('item.get("entity_id") == "automation.gateway_fixture"', acceptance)
         self.assertIn("len(error_call_contracts)", acceptance)
@@ -2028,7 +2031,8 @@ class PolicyInventoryTests(unittest.TestCase):
         ):
             self.assertIn(f'"{metric_name}"', acceptance)
         self.assertIn('record.get("tool_name") == "ha_search"', acceptance)
-        self.assertIn('record.get("result_status") == "partial"', acceptance)
+        self.assertIn('record.get("result_status") == expected_status', acceptance)
+        self.assertIn('("partial", "partial", None)', acceptance)
         for error_name in (
             "provider_failure",
             "validation",

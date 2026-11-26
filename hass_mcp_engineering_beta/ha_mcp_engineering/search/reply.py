@@ -127,7 +127,11 @@ REASON_CODES = {
     "paged": frozenset({"response_budget", "more_matches"}),
     "truncated": frozenset({"record_strings", "record_lists", "query_echo", "domain_filter_echo"}),
     "filtered": frozenset({"sanitizer_redaction", "config_bodies_withheld"}),
-    "not_searched": frozenset({"read_failed", "upstream_partial", "graph_unavailable"}),
+    "not_searched": frozenset({
+        "read_failed", "upstream_partial", "graph_unavailable",
+        # HAMCP-501 W6 F1: a sub-call bucket's route body match withheld.
+        "body_numeric_query", "body_scrub_degraded", "body_scrub_unverified",
+    }),
     "source_unavailable": frozenset({
         "automation_subcall_incomplete", "script_subcall_incomplete",
         "scene_subcall_incomplete", "dashboard_subcall_incomplete",
