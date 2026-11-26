@@ -182,20 +182,13 @@ def label(label_id, name):
             "name": name, "modified_at": 1.0}
 
 
-def bodies_reply(bodies):
-    def answer(payloads):
-        return [(True, {"config": copy.deepcopy(bodies[payload["entity_id"]])})
-                if payload["entity_id"] in bodies else (False, "not_found") for payload in payloads]
-    return answer
-
-
 def related_reply(related):
     def answer(payloads):
         return [(True, copy.deepcopy(related.get(payload["item_id"], {}))) for payload in payloads]
     return answer
 
 
-def inventory(rows, areas, floors, labels, devices, bodies=None, related=None, aliases=None):
+def inventory(rows, areas, floors, labels, devices, related=None, aliases=None):
     aliases = aliases or {}
     return {
         "states": [st(entity_id, value, name) for entity_id, value, name, _ in rows],
@@ -208,8 +201,6 @@ def inventory(rows, areas, floors, labels, devices, bodies=None, related=None, a
         **{f"{domain}/list": [] for domain in OTHER_INPUTS},
         "config/entity_registry/get_entries": lambda payload: {
             entity_id: {"aliases": list(aliases.get(entity_id, []))} for entity_id in payload["entity_ids"]},
-        "automation/config": bodies_reply(bodies or {}),
-        "script/config": bodies_reply({}),
         "search/related": related_reply(related or {}),
     }
 
@@ -228,7 +219,7 @@ def house():
          device("door_sensor", "North Bath Door Sensor", "north_bath", manufacturer="Acme",
                 model="DS-10"),
          device("leak_hub", "Spare Leak Probe", "workshop", manufacturer="Generic", model="WL-1")],
-        HOUSE_BODIES, HOUSE_RELATED)
+        HOUSE_RELATED)
 
 
 # The synthetic world of the P-cases.
@@ -281,6 +272,9 @@ class House(World):
         super().setUp()
         self.values.clear()
         self.values.update(house())
+        # S1 b+: the synthetic delegated route matches these bodies; native
+        # search reads none.
+        self.bodies = copy.deepcopy(HOUSE_BODIES)
 
 
 class GoldenTests(House):
@@ -338,8 +332,9 @@ class GoldenTests(House):
             "entity_id": DOOR, "friendly_name": "North Bath Door", "domain": "binary_sensor",
             "state": "off", "score": 100, "match_type": "exact_match",
             "name": "North Bath Door Sensor Door"}])
-        # The automations whose bodies hold the id. match_in_references is
-        # native's graph read ("improved"; live serves false).
+        # The automations whose bodies hold the id, as the route matched
+        # them (S1 b+). match_in_references is native's graph read
+        # ("improved"; live serves false).
         self.assertEqual([(r["entity_id"], r["score"], r["match_in_name"], r["match_in_config"],
                            r["match_in_references"]) for r in result["automations"]], [
             (entity_id, 100, False, True, entity_id == "automation.north_bath_fan_on")
@@ -580,14 +575,15 @@ class TierTests(Synthetic):
 
 class ConfigNameTests(World):
     """P8, the configuration name tier (search_score.py 103-125), as W6's
-    configuration search scores it."""
+    configuration search scores it: over the native storage helpers. Under
+    S1 b+ an automation, script or scene name is the delegated route's."""
 
     async def test_separator_normalized_names(self):
-        fuzzy = await self.go(query="porch-lights", search_types=["automation"], exact_match=False)
-        self.assertEqual([(r["entity_id"], r["score"]) for r in fuzzy["automations"] if r["match_in_name"]],
-                         [("automation.porch_lights", 100)])
-        exact = await self.go(query="porch-lights", search_types=["automation"])
-        self.assertEqual(exact["automations"], [])
+        fuzzy = await self.go(query="guest-mode", search_types=["helper"], exact_match=False)
+        self.assertEqual([(r["entity_id"], r["score"]) for r in fuzzy["helpers"] if r["match_in_name"]],
+                         [("input_boolean.guest_mode", 100)])
+        exact = await self.go(query="guest-mode", search_types=["helper"])
+        self.assertEqual(exact["helpers"], [])
 
 
 class DriftTests(Synthetic):
