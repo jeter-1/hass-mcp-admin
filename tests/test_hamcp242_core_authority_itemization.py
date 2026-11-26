@@ -248,6 +248,7 @@ EXPECTED_AFFECTED_TOOLS = {
     "core.automation_configuration_read": [
         "capture_automation_baseline",
         "get_automation_config",
+        "ha_search",  # HAMCP-501 W6
         "list_automations",
     ],
     "core.automation_trace_read": [
@@ -269,6 +270,7 @@ EXPECTED_AFFECTED_TOOLS = {
         "get_logbook",
         "get_recorder_settings",
         "get_unregistered_entities",
+        "ha_search",  # HAMCP-501 W6
     ],
     "core.basic_websocket_read": [
         "capture_automation_baseline",
@@ -280,6 +282,7 @@ EXPECTED_AFFECTED_TOOLS = {
         "get_integration_inspection",
         "get_recorder_settings",
         "get_unregistered_entities",
+        "ha_search",  # HAMCP-501 W6
         "list_blueprints",
     ],
     "core.config_entry_helper_options_operation": ["create_helper_options_plan"],
@@ -320,6 +323,7 @@ EXPECTED_AFFECTED_TOOLS = {
     ],
     "core.direct_device_registry_read": [
         "capture_automation_baseline",
+        "ha_search",  # HAMCP-501 W6
         "list_devices",
     ],
     "core.direct_entity_state_read": ["get_entity", "search_entities"],
@@ -340,6 +344,7 @@ EXPECTED_AFFECTED_TOOLS = {
         "dashboard_integrity_analysis",
         "get_configuration_definitions",
         "get_unregistered_entities",
+        "ha_search",  # HAMCP-501 W6
         "list_areas",
         "list_entity_registry",
     ],
@@ -1074,7 +1079,10 @@ class AffectedToolsTests(unittest.TestCase):
     def test_delegated_and_unknown_names_are_not_listed(self):
         self.assertEqual(static_tools_requiring("core.unsupported_f3_operation"), ())
         self.assertEqual(static_tools_requiring("core.typed_fan_operation"), ())
-        delegated = set(DELEGATED_CORE_REQUIREMENTS)
+        # HAMCP-501 W6: an internal-only delegated route shares its name with
+        # the native tool that replaces it; every other delegated name stays out.
+        delegated = set(DELEGATED_CORE_REQUIREMENTS) - routes.INTERNAL_ONLY_DELEGATED_READS
+        self.assertTrue(routes.INTERNAL_ONLY_DELEGATED_READS <= set(DELEGATED_CORE_REQUIREMENTS))
         for profile in CORE_RUNTIME_CAPABILITY_PROFILES:
             self.assertFalse(set(static_tools_requiring(profile.capability_id)) & delegated)
 

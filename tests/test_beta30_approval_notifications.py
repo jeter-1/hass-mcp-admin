@@ -588,7 +588,7 @@ class Beta30ReleaseBoundaryTests(unittest.TestCase):
         )
 
     def test_scope_adds_no_tool_or_provider_fallback(self):
-        self.assertEqual(len(BETA_NATIVE_CAPABILITIES), 62)  # HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
+        self.assertEqual(len(BETA_NATIVE_CAPABILITIES), 63)  # HAMCP-501 W6: + native ha_search; HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
         source = (
             BETA_DIR
             / "ha_mcp_engineering"
