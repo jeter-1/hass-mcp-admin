@@ -26,6 +26,7 @@ from unittest.mock import Mock, patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "hass_mcp_engineering_beta"), str(ROOT), str(ROOT / "tests")]
 
+from jsonschema import Draft202012Validator  # noqa: E402
 from mcp.server.fastmcp import FastMCP  # noqa: E402
 from tests import test_hamcp481_native_search_engine as w3  # noqa: E402
 from tests.test_hamcp481_native_search_engine import MARKER, World, reasons_of  # noqa: E402
@@ -134,11 +135,27 @@ UNSEARCHED = ("1 custom helper integration entry not scanned (a search opens no 
               "match status is unknown; this result is not exhaustive.")
 
 
+PAIR_FILE = ROOT / "docs/evidence/hamcp371/sr/d6-search-pair-9.2.0.json"
+
+
+def unified_catalog():
+    """The committed 9.2.0 catalog with D6's trimmed ``unified`` ha_search
+    descriptor, the variant a component with unified search advertises."""
+
+    unified = json.loads(PAIR_FILE.read_text(encoding="utf-8"))["variants"]["unified"]["descriptor"]
+    return [unified if tool["name"] == "ha_search" else tool for tool in capture("9.2.0")["tools"]]
+
+
 class Readers(World):
     """The 9.2.0 gateway's page readers over the receipt transport."""
 
+    # HAMCP-501 W6: the subclasses below rerun these readers under the
+    # ``unified`` descriptor.
+    UNIFIED = False
+
     async def asyncSetUp(self):
-        self.gateway, self.transport = await gateway_920(url=URL)
+        self.gateway, self.transport = await gateway_920(
+            tools=unified_catalog() if self.UNIFIED else None, url=URL)
         self.audit = Mock()
         self.served: dict = {}
         self.children: list = []
@@ -601,8 +618,10 @@ class RefusalTests(Readers):
     def internal_call(self):
         (name, route) = [(name, route) for name, route in self.gateway._internal.items()
                          if route.entry.upstream_name == "ha_search"][0]
+        # The schema the page reader validates with (W6).
         return {"exposed_name": name, "arguments": arguments(),
-                "reviewed_schema": route.observed_tool["inputSchema"], "policy_entry": route.entry,
+                "reviewed_schema": gw._public_read_schema(route.entry, route.observed_tool["inputSchema"]),
+                "policy_entry": route.entry,
                 "admission_generation": route.generation, "contract_fingerprint": route.contract_fingerprint}
 
     async def test_the_reader_checks_the_page_behind_the_gateway(self):
@@ -794,7 +813,8 @@ class AdmissionTests(Readers):
         (name, route) = [(name, route) for name, route in routes.items()
                          if route.entry.upstream_name == upstream_name][0]
         return json.loads(await self.gateway.execute(
-            exposed_name=name, arguments=arguments, reviewed_schema=route.observed_tool["inputSchema"],
+            exposed_name=name, arguments=arguments,
+            reviewed_schema=gw._public_read_schema(route.entry, route.observed_tool["inputSchema"]),
             policy_entry=entry or route.entry, admission_generation=route.generation,
             contract_fingerprint=route.contract_fingerprint, search_page=search_page))
 
@@ -884,3 +904,57 @@ class ReachabilityTests(Readers):
                    and any(isinstance(key, ast.Constant) and key.value == "event" for key in node.keys)]
         self.assertEqual(len(records), 1)
         self.assertEqual({key.value for key in records[0].keys}, AUDIT_KEYS)
+
+
+class UnifiedDescriptorTests(Readers):
+    """HAMCP-501 W6: the readers under the trimmed ``unified`` descriptor.
+
+    Its raw input schema omits ``search_types`` and ``include_config``, which
+    the same 9.2.0 callable accepts. The W4 reader validated a page against
+    that raw schema, so under ``unified`` every page was refused before
+    dispatch. A page is validated with the published read's public schema.
+    """
+
+    UNIFIED = True
+
+    def route(self):
+        with self.gateway._lock:
+            return self.gateway._internal["ha_search"]
+
+    async def test_the_route_is_unified_and_a_page_passes_the_public_schema_only(self):
+        route = self.route()
+        self.assertEqual(reads_9_2.search_variant_name(route.entry, route.runtime_contract_fingerprint),
+                         "unified")
+        raw = route.observed_tool["inputSchema"]
+        for search_type in subcalls.SUBCALL_TYPES:
+            with self.subTest(search_type=search_type):
+                page = arguments(search_type)
+                self.assertFalse(Draft202012Validator(raw).is_valid(page))
+                self.assertTrue(Draft202012Validator(gw._public_read_schema(route.entry, raw)).is_valid(page))
+
+    async def test_a_unified_page_dispatches_the_fixed_arguments_once(self):
+        self.serve("helper", [reply_of(body("helper", [flow(0)]))])
+        page = await self.readers["helper"](arguments())
+        self.assertEqual(page.rows, (flow(0),))
+        self.assertEqual(self.sent(), [("ha_search", arguments())])
+        self.assertEqual([record["result_status"] for record in self.audits()], ["success"])
+
+    async def test_the_raw_schema_still_bounds_nothing_else(self):
+        # The public schema still refuses a key no 9.2.0 variant accepts,
+        # before dispatch.
+        route = self.route()
+        schema = gw._public_read_schema(route.entry, route.observed_tool["inputSchema"])
+        self.assertFalse(Draft202012Validator(schema).is_valid({**arguments(), "synthetic_extra": 1}))
+        self.assertFalse(Draft202012Validator(schema).is_valid({**arguments(), "limit": 0}))
+
+
+class UnifiedReaderShapeTests(ReaderShapeTests):
+    UNIFIED = True
+
+
+class UnifiedEngineTests(EngineTests):
+    UNIFIED = True
+
+
+class UnifiedRefusalTests(RefusalTests):
+    UNIFIED = True

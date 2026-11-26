@@ -36,18 +36,27 @@ def is_internal_only(name):
 
 
 async def execute_page(gateway, name="ha_search", arguments=None, *, bucket="helpers",
-                       authorizer=lambda: True, caller="synthetic-w6-internal-page"):
-    """One sub-call page through the internal route; the decoded reply."""
+                       authorizer=lambda: True, caller="synthetic-w6-internal-page",
+                       route=None):
+    """One sub-call page through the internal route; the decoded reply.
 
-    with gateway._lock:
-        route = gateway._internal[name]
+    ``route`` pins an earlier admitted route (a flip or drift test); by
+    default the route currently admitted.
+    """
+
+    if route is None:
+        with gateway._lock:
+            route = gateway._internal[name]
     telemetry, token = begin_request(caller)
     telemetry.core_dispatch_authorizer = authorizer
     try:
         return json.loads(await gateway.execute(
             exposed_name=name,
             arguments=deepcopy(PAGE_ARGUMENTS if arguments is None else arguments),
-            reviewed_schema=route.observed_tool["inputSchema"], policy_entry=route.entry,
+            # The schema the gateway's own page reader validates with.
+            reviewed_schema=gateway_module._public_read_schema(
+                route.entry, route.observed_tool["inputSchema"]),
+            policy_entry=route.entry,
             admission_generation=route.generation,
             contract_fingerprint=route.contract_fingerprint,
             search_page=gateway_module._SearchPageCapture(bucket),

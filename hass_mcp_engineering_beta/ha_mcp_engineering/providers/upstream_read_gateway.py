@@ -4343,6 +4343,11 @@ class UpstreamReadGateway:
             return None
 
         current = self._bounded_route_current(name, route, core_epoch)
+        # HAMCP-501 W6: the schema the published delegated read validated
+        # with. The trimmed ``unified`` descriptor's raw input schema omits
+        # ``search_types`` and ``include_config``, which the same upstream
+        # callable accepts; validating a page against it refused every page.
+        page_schema = _public_read_schema(route.entry, route.observed_tool["inputSchema"])
 
         def page_reader(search_type: str) -> Callable[[dict], Awaitable[SearchPageResult]]:
             bucket = SEARCH_SUBCALL_BUCKETS[search_type]
@@ -4371,7 +4376,7 @@ class UpstreamReadGateway:
                     capture = _SearchPageCapture(bucket)
                     result = json.loads(await self.execute(
                         exposed_name=name, arguments=page_arguments,
-                        reviewed_schema=route.observed_tool["inputSchema"],
+                        reviewed_schema=page_schema,
                         policy_entry=route.entry, admission_generation=route.generation,
                         contract_fingerprint=route.contract_fingerprint,
                         search_page=capture,
