@@ -39,7 +39,7 @@ each landed item's behavior from the landed source.
 | HAMCP-481 W3 | Native search: the engine, landed inert | landed (#513) |
 | HAMCP-481 W4 | Native search: the page readers | [fill: #516 state] |
 | HAMCP-481 W6 | Native search: the `ha_search` cutover; the tool keeps its name | [fill: PR and state] |
-| HAMCP-481 W7 | Native search: its rows in these notes, the acceptance and the design doc | [fill: PR and state] |
+| HAMCP-481 W7 | Native search: the design doc update (these release rows are HAMCP-509's) | [fill: PR and state] |
 
 Not in this build:
 - object lifecycle, response compaction, history paging, plan withdraw, list

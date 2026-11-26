@@ -38,7 +38,7 @@ release pull request completes this entry.
   - Landed inert: the engine (W3, #513).
   - The page readers (W4, #516): [fill: state].
   - The `ha_search` cutover (W6, [fill: PR]): [fill: state].
-  - The native search docs rows (W7, [fill: PR]): [fill: state].
+  - The native search design doc update (W7, [fill: PR]): [fill: state].
 - Landed: the Core-evidence workflow takes its pull request acceptance
   target from the support window's current Core, 2026.11.3, instead of a
   fixed 2026.11.0 (HAMCP-505, #514). CI scripts and tests only; no runtime

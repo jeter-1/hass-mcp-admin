@@ -1369,7 +1369,7 @@ path.
 The `2.4.2-beta.14` items outside native search (HAMCP-502, 462, 490, 491,
 493, 497, 498, 503, 505 and 508) add no tool, permission, add-on option, HTTP
 client, Supervisor call, WebSocket command, upstream route, fallback or write
-path. The native search section comes with W7 (HAMCP-501).
+path. Native search is the last bullet below.
 
 - **Changed query parameters, same routes.** `get_history` and the incident
   history and logbook reads add `end_time`, and the history reads add an

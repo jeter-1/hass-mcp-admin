@@ -55,7 +55,7 @@ final release pull request binds their evidence.
 | HAMCP-481 W3 | Native search engine, inert | landed (#513) |
 | HAMCP-481 W4 | Native search page readers | [fill: #516 state] |
 | HAMCP-481 W6 | The `ha_search` cutover to native search | [fill: PR and state] |
-| HAMCP-481 W7 | Native search docs rows | [fill: PR and state] |
+| HAMCP-481 W7 | Native search: the design doc update | [fill: PR and state] |
 
 ## 1. Source and offline acceptance
 
@@ -127,7 +127,8 @@ which steps are reads.
      `truncated`, and `list_automation_traces` on the automation above returns
      `traces`, `returned`, `source_truncated` and `retention`, with
      `ring_full` `true`.
-   - **HAMCP-481.** [fill: W7 adds the native search parity steps.]
+   - **HAMCP-481.** [fill after W7: the native search steps, compared with the
+     HA Admin baseline captured on beta.13.]
 
    Not checked live:
    - HAMCP-498 needs an open Core restart window, and causing one is not a
