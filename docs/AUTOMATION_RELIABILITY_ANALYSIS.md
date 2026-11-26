@@ -172,6 +172,21 @@ intervals. Valid starts are converted to UTC instants before comparison. A missi
 finish is allowed; missing, malformed, or naive starts are counted as parsing loss and
 never replaced with the current time. Runs exactly on the cutoff are included.
 
+**Breaking in 2.4.2-beta.14 (HAMCP-508 SI-5).** `list_automation_traces` returns an
+object instead of a bare list. Clients that read the list must read `traces`:
+
+- `traces`: the headers, unchanged (`run_id`, `timestamp`, `started_at`, `finished_at`,
+  `state`, `script_execution`, `last_step`, `error`).
+- `returned`: how many headers are in `traces`.
+- `source_truncated`: true when Core sent more than the normalizer's 100-header bound.
+- `retention`: the list is Core's stored trace ring, not every recent run. Core keeps
+  each automation's newest traces in two rings, runs and not-triggered, of
+  `default_stored_traces` (5) each unless the automation's `trace.stored_traces`
+  overrides it. The tool reads only `trace/list`, so `stored_traces_read` is false and
+  the override is not known. `runs_ring_returned` and `not_triggered_ring_returned`
+  count each ring, and `ring_full` is true when either holds at least the default cap,
+  which means older runs were probably evicted and are not in the list.
+
 Normalized headers are deduplicated by run ID, ordered by instant and run ID, bounded
 before detail retrieval, filtered before `trace/get`, and capped by `trace_limit`.
 Coverage reports `collection_state`, `trustworthy_empty`, the normalized cutoff, and
