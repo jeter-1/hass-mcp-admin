@@ -281,12 +281,22 @@ class ReachabilityTests(unittest.TestCase):
                 if hits:
                     importers.append((str(relative), tuple(sorted(hits))))
         # HAMCP-501 W4: the gateway's sub-call page readers take the fixed W3
-        # page contract, and nothing else outside search imports the package.
+        # page contract. W6: the application composes CoreReadSession with no
+        # I/O, and the native tool reaches only the engine and SearchError.
+        # Nothing else outside search imports the package.
         subcalls = "ha_mcp_engineering.search.subcalls"
-        self.assertEqual(importers, [("ha_mcp_engineering/providers/upstream_read_gateway.py", (
-            subcalls, f"{subcalls}.BUCKETS", f"{subcalls}.MAX_SCAN_ROWS", f"{subcalls}.PAGE_SIZE",
-            f"{subcalls}.PageResult", f"{subcalls}.page_arguments",
-        ))])
+        self.assertEqual(sorted(importers), [
+            ("ha_mcp_engineering/application.py", (
+                "ha_mcp_engineering.search.core_reads",
+                "ha_mcp_engineering.search.core_reads.CoreReadSession")),
+            ("ha_mcp_engineering/providers/upstream_read_gateway.py", (
+                subcalls, f"{subcalls}.BUCKETS", f"{subcalls}.MAX_SCAN_ROWS",
+                f"{subcalls}.PAGE_SIZE", f"{subcalls}.PageResult", f"{subcalls}.page_arguments")),
+            ("ha_mcp_engineering/tools/search.py", (
+                "ha_mcp_engineering.search", "ha_mcp_engineering.search.engine")),
+            ("ha_mcp_engineering/tools/search.py", (
+                "ha_mcp_engineering.search.reply", "ha_mcp_engineering.search.reply.SearchError")),
+        ])
 
 
 if __name__ == "__main__":

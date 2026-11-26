@@ -5,9 +5,11 @@
 9.2.0 Row 25 route (HAMCP-481 design sections 2.4 to 2.6; decisions D1 to D3
 as relayed by the architect). Everything is synthetic and offline: the
 committed 9.2.0 catalog, the receipt transport of ``support.ha_mcp_captures``
-and the synthetic Core of ``tests.test_hamcp481_core_reads``. Nothing
-registers or routes the readers yet (W6), so these tests drive them directly
-and through ``search.engine``.
+and the synthetic Core of ``tests.test_hamcp481_core_reads``. W6 wires the
+readers to native ``ha_search`` through the application's no-I/O composition
+and keeps the route internal-only (G1); these tests drive the readers
+directly and through ``search.engine``
+(``tests.test_hamcp501_native_search_cutover`` drives the registered tool).
 """
 
 from __future__ import annotations
@@ -191,7 +193,10 @@ class ReaderShapeTests(Readers):
         with self.assertRaises(dataclasses.FrozenInstanceError):
             reader.current = lambda: True
         self.assertTrue(reader.current())
-        (route,) = [route for route in self.gateway._exposed.values()
+        # HAMCP-501 W6 (G1): the Row 25 route is internal-only, never listed.
+        self.assertEqual([route for route in self.gateway._exposed.values()
+                          if route.entry.upstream_name == "ha_search"], [])
+        (route,) = [route for route in self.gateway._internal.values()
                     if route.entry.upstream_name == "ha_search"]
         self.assertEqual((reader.version, reader.contract), (route.server_version, route.contract_fingerprint))
         self.assertEqual(reader.version, "9.2.0")
@@ -581,18 +586,20 @@ class RefusalTests(Readers):
     async def test_a_page_is_partial_only_when_the_upstream_says_so(self):
         # The gateway's own completeness reads partial for every 9.2.0
         # ha_search result (its fixed visibility-coverage warning); a page
-        # takes the upstream ``partial`` flag, not that metadata.
+        # takes the upstream ``partial`` flag, not that metadata. W6 (G1): the
+        # internal route is executed only with a page capture.
         for partial in (False, True):
             with self.subTest(partial=partial):
                 self.served[("helper", 0)] = reply_of(body("helper", [flow(0)], partial=partial, warnings=[]))
-                result = json.loads(await self.gateway.execute(**self.public_call()))
+                result = json.loads(await self.gateway.execute(
+                    **self.internal_call(), search_page=gw._SearchPageCapture("helpers")))
                 self.assertEqual((result["metadata"]["completeness"], result["data"]["partial"]),
                                  ("partial", partial))
                 page = await self.readers["helper"](arguments())
                 self.assertIs(page.partial, partial)
 
-    def public_call(self):
-        (name, route) = [(name, route) for name, route in self.gateway._exposed.items()
+    def internal_call(self):
+        (name, route) = [(name, route) for name, route in self.gateway._internal.items()
                          if route.entry.upstream_name == "ha_search"][0]
         return {"exposed_name": name, "arguments": arguments(),
                 "reviewed_schema": route.observed_tool["inputSchema"], "policy_entry": route.entry,
@@ -733,9 +740,9 @@ class AdmissionTests(Readers):
 
     def swap_entry(self, entry):
         with self.gateway._lock:
-            (name,) = [name for name, route in self.gateway._exposed.items()
+            (name,) = [name for name, route in self.gateway._internal.items()
                        if route.entry.upstream_name == "ha_search"]
-            self.gateway._exposed[name] = dataclasses.replace(self.gateway._exposed[name], entry=entry)
+            self.gateway._internal[name] = dataclasses.replace(self.gateway._internal[name], entry=entry)
 
     async def test_a_foreign_release_route_supplies_no_reader(self):
         for version in ("9.1.2", "8.6.0"):
@@ -756,8 +763,8 @@ class AdmissionTests(Readers):
         gateway, transport = await gateway_920(tools=tools, url=URL)
         self.assertIn("ha_search", {item.get("upstream_name")
                                     for item in gateway.health_snapshot().get("quarantined_tools", [])})
-        self.assertEqual([route for route in gateway._exposed.values() if route.entry.upstream_name == "ha_search"],
-                         [])
+        self.assertEqual([route for routes in (gateway._exposed, gateway._internal)
+                          for route in routes.values() if route.entry.upstream_name == "ha_search"], [])
         self.assertIsNone(gateway.search_subcall_reader())
         self.readers = {}
         result = await self.go(query="kitchen", search_types=["helper"])
@@ -768,16 +775,23 @@ class AdmissionTests(Readers):
         with patch.object(reads_9_2, "is_adapter", return_value=False):
             self.assertIsNone(self.gateway.search_subcall_reader())
         with self.gateway._lock:
-            duplicate = dict(self.gateway._exposed)
+            duplicate = dict(self.gateway._internal)
         (name, route) = [(name, route) for name, route in duplicate.items()
                          if route.entry.upstream_name == "ha_search"][0]
         with self.gateway._lock:
-            self.gateway._exposed[name + "_copy"] = route
+            self.gateway._internal[name + "_copy"] = route
+        self.assertIsNone(self.gateway.search_subcall_reader())
+        # W6 (G1): a listed ha_search route is never a reader's route.
+        with self.gateway._lock:
+            del self.gateway._internal[name + "_copy"]
+            self.gateway._exposed[name] = self.gateway._internal.pop(name)
         self.assertIsNone(self.gateway.search_subcall_reader())
         self.assertEqual(self.transport.calls, 0)
 
     async def execute(self, upstream_name, search_page, arguments, entry=None):
-        (name, route) = [(name, route) for name, route in self.gateway._exposed.items()
+        with self.gateway._lock:
+            routes = {**self.gateway._exposed, **self.gateway._internal}
+        (name, route) = [(name, route) for name, route in routes.items()
                          if route.entry.upstream_name == upstream_name][0]
         return json.loads(await self.gateway.execute(
             exposed_name=name, arguments=arguments, reviewed_schema=route.observed_tool["inputSchema"],
@@ -805,15 +819,20 @@ class AdmissionTests(Readers):
         self.assertEqual(result["details"]["failure_category"], "prohibited_delegation")
         self.assertEqual(self.transport.calls, 0)
         self.assertIsNone(capture_.withheld_names)
-        # Without a capture the public route is unchanged.
+        # W6 (G1): without a capture the internal route refuses, zero calls;
+        # with one it serves the page.
         self.served[("helper", 0)] = reply_of(body("helper", [flow(0)]))
         result = await self.execute("ha_search", None, arguments())
+        self.assertEqual(result["details"]["failure_category"], "prohibited_delegation")
+        self.assertEqual(self.transport.calls, 0)
+        result = await self.execute("ha_search", gw._SearchPageCapture("helpers"), arguments())
         self.assertIs(result["success"], True)
         self.assertEqual(self.transport.calls, 1)
 
 
 class ReachabilityTests(Readers):
-    """W4 adds no route: nothing outside the gateway reaches the readers."""
+    """Nothing outside the gateway reaches the readers except the W6
+    application composition, which builds the native tool's reader factory."""
 
     NAMES = {"search_subcall_reader", "SearchSubcallReader", "SearchSubcallPageFailure",
              "_SearchPageCapture", "bucket_withheld_names", "search_page"}
@@ -830,15 +849,21 @@ class ReachabilityTests(Readers):
                 if label in self.NAMES:
                     found.append((relative, label))
         self.assertEqual({path for path, _ in found},
-                         {"providers/upstream_read_gateway.py", "providers/upstream_reads_9_2_keys.py"})
+                         {"providers/upstream_read_gateway.py", "providers/upstream_reads_9_2_keys.py",
+                          "application.py"})
         self.assertEqual({label for path, label in found if path.endswith("_keys.py")},
                          {"bucket_withheld_names"})
-        # The factory is defined once and never called inside the package.
-        calls = [node for node in ast.walk(ast.parse(
-                 (PACKAGE / "providers/upstream_read_gateway.py").read_text(encoding="utf-8")))
-                 if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
-                 and node.func.attr == "search_subcall_reader"]
-        self.assertEqual(calls, [])
+        self.assertEqual([label for path, label in found if path == "application.py"],
+                         ["search_subcall_reader"])
+        # The factory is defined once, in the gateway, and called once: the
+        # application's reader factory for native ha_search (W6).
+        calls = []
+        for path in sorted(PACKAGE.rglob("*.py")):
+            calls += [str(path.relative_to(PACKAGE)) for node in ast.walk(ast.parse(
+                path.read_text(encoding="utf-8")))
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "search_subcall_reader"]
+        self.assertEqual(calls, ["application.py"])
 
     def test_the_audit_record_holds_no_query_or_row(self):
         source = (PACKAGE / "providers/upstream_read_gateway.py").read_text(encoding="utf-8")
