@@ -131,9 +131,11 @@ PLANNED_CAPABILITIES = ()
             'SERVER_VERSION = "2.0.0-rc2-dev1"\n',
         )
         # HAMCP-290: the retired delegated reads are read from routes.py.
+        # HAMCP-501 W6: so are the internal-only reads.
         self.write(
             "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-            'RETIRED_DELEGATED_READ_TOOLS: tuple[str, ...] = ("ha_get_hacs_info",)\n',
+            'RETIRED_DELEGATED_READ_TOOLS: tuple[str, ...] = ("ha_get_hacs_info",)\n'
+            'INTERNAL_ONLY_DELEGATED_READ_TOOLS: tuple[str, ...] = ("ha_search",)\n',
         )
         self.write(
             "scripts/validate_addon_metadata.py",
@@ -497,17 +499,18 @@ class ContextToolTests(unittest.TestCase):
         # HAMCP-437 I2a-D: the 9.2.0 policy file has 23 automatic_read
         # entries; it classifies the retired ha_get_hacs_info unsupported, so
         # none is subtracted, and the fixture has no platform-read adapter.
-        # The ha-mcp-9.2.0-blueprint-list-get-v1 binding (9.2.0, 51e3aac7,
-        # 6a09a0f2) matches the ha_manage_blueprints entry, adding one.
-        self.assertEqual(count(), 23)  # Policy data without compiled code is not a wrapper.
+        # HAMCP-501 W6 (G1): the internal-only ha_search read is subtracted,
+        # leaving 22. The ha-mcp-9.2.0-blueprint-list-get-v1 binding (9.2.0,
+        # 51e3aac7, 6a09a0f2) matches the ha_manage_blueprints entry, adding one.
+        self.assertEqual(count(), 22)  # Policy data without compiled code is not a wrapper.
         fixture.write(adapter_path, adapter_source + "\nraise RuntimeError('must not execute')\n")
-        self.assertEqual(count(), 24)
+        self.assertEqual(count(), 23)
         blueprint = next(item for item in policy["tools"]
                          if item["upstream_name"] == "ha_manage_blueprints")
         self.assertEqual(blueprint["classification"], "mixed_or_requires_wrapper")
         blueprint["argument_restrictions"] = ["uncompiled-wrapper"]
         fixture.write(runtime + "upstream_tool_policy.json", json.dumps(policy))
-        self.assertEqual(count(), 23)
+        self.assertEqual(count(), 22)
 
     def test_context_subtracts_retired_delegated_reads_from_source(self):
         # HAMCP-290: a retired name is subtracted only while it is an automatic
@@ -535,11 +538,49 @@ class ContextToolTests(unittest.TestCase):
         self.assertEqual(payload["expected_delegated_reads"], 1)
         self.assertEqual(payload["expected_connector_total"], 3)
         fixture.write(runtime + "ha_core_readmission/routes.py",
-                      "RETIRED_DELEGATED_READ_TOOLS = tuple(sorted(NAMES))\n")
+                      "RETIRED_DELEGATED_READ_TOOLS = tuple(sorted(NAMES))\n"
+                      "INTERNAL_ONLY_DELEGATED_READ_TOOLS = ('ha_search',)\n")
         payload = counts([hacs, state])
         self.assertEqual(payload["tool_counts"]["expected_delegated_reads"], "unknown")
         self.assertEqual(payload["tool_counts"]["expected_connector_total"], "unknown")
         self.assertIn("retired_delegated_reads",
+                      {item["field"] for item in payload["unknowns"]})
+        self.assertNotIn("internal_only_delegated_reads",
+                         {item["field"] for item in payload["unknowns"]})
+
+    def test_context_subtracts_internal_only_delegated_reads_from_source(self):
+        # HAMCP-501 W6 (G1): an internal-only name is subtracted only while it
+        # is an automatic read; an unreadable literal makes the totals unknown.
+        fixture = RepositoryFixture()
+        self.addCleanup(fixture.close)
+        runtime = "hass_mcp_engineering_beta/ha_mcp_engineering/"
+
+        def counts(tools):
+            fixture.write(runtime + "upstream_tool_policy.json", json.dumps({
+                "reviewed_upstream_version": "1.2.3",
+                "reviewed_stock_catalog_tool_count": len(tools),
+                "tools": tools,
+            }))
+            result = run([sys.executable, str(CONTEXT_SCRIPT), "--repo-root",
+                          str(fixture.root), "--format", "json"], cwd=fixture.root)
+            return json.loads(result.stdout)
+
+        search = {"upstream_name": "ha_search", "classification": "automatic_read"}
+        state = {"upstream_name": "ha_get_state", "classification": "automatic_read"}
+        baseline = counts([state])["tool_counts"]
+        payload = counts([search, state])["tool_counts"]
+        self.assertEqual(payload["expected_delegated_reads"], 1)
+        self.assertEqual(payload["expected_connector_total"],
+                         baseline["expected_connector_total"])
+        payload = counts([dict(search, classification="held_for_canary"), state])["tool_counts"]
+        self.assertEqual(payload["expected_delegated_reads"], 1)
+        fixture.write(runtime + "ha_core_readmission/routes.py",
+                      'RETIRED_DELEGATED_READ_TOOLS = ("ha_get_hacs_info",)\n'
+                      "INTERNAL_ONLY_DELEGATED_READ_TOOLS = tuple(sorted(NAMES))\n")
+        payload = counts([search, state])
+        self.assertEqual(payload["tool_counts"]["expected_delegated_reads"], "unknown")
+        self.assertEqual(payload["tool_counts"]["expected_connector_total"], "unknown")
+        self.assertIn("internal_only_delegated_reads",
                       {item["field"] for item in payload["unknowns"]})
 
     def test_tool_counts_use_newest_exact_reviewed_policy_not_legacy_default(self):

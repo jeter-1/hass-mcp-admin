@@ -1,11 +1,15 @@
-"""Fixed Home Assistant Core reads for native ``ha_search`` (HAMCP-481 W2).
+"""Fixed Home Assistant Core reads for native ``ha_search`` (HAMCP-481 W2;
+HAMCP-501 W6 S1).
 
 This is the closed table of every Core read native search may issue: the
 reads in design section 2.2, plus ``config/entity_registry/get_entries`` for
 entity aliases, which ``config/entity_registry/list`` does not carry (added
 by the architect on 2026-11-25). Nothing else exists here: no write, service
 call, reload, options flow or config flow, and no Supervisor or delegated
-call. The module is not registered or routed; a later step wires it.
+call. Under S1 = b+ (approved by Josh as relayed by the architect,
+2026-11-26), native search reads no automation, script or scene body: the
+``automation/config``, ``script/config`` and scene configuration reads are not
+in the table, and ``core.automation_configuration_read`` is not a requirement.
 
 Under J2' option A (as relayed by the architect), the reads use only existing
 signed Core profiles, and no profile, model or signed source changes. A read
@@ -24,9 +28,6 @@ relies on:
   (``helpers/entity_registry.py`` ``_serialize_aliases``).
 - ``config/entity_registry/list`` rows carry no ``aliases`` and no
   ``has_entity_name``; ``has_entity_name`` is therefore optional here.
-- ``automation/config``, ``script/config`` and the scene configuration GET are
-  ``require_admin`` in Core. Engineering already issues them with its own
-  token; this table adds no new privilege.
 - The six ``input_*/list`` collection commands are not admin-only and reply
   with the stored item dicts.
 """
@@ -40,12 +41,6 @@ from types import MappingProxyType
 from ..entity_ids import STRICT_ENTITY_ID
 from ..errors import ErrorCode, GovernanceError
 
-# Mirrors ``clients/websocket.py`` batch identities, so every batched payload
-# built here is one the client admits.
-AUTOMATION_ENTITY = re.compile(r"automation\.[a-z0-9_]{1,245}\Z", re.ASCII)
-SCRIPT_ENTITY = re.compile(r"script\.[a-z0-9_]{1,121}\Z", re.ASCII)
-# Mirrors ``governance/scene_configuration.py`` ``CONFIG_ID_PATTERN``.
-SCENE_CONFIG_ID = re.compile(r"[A-Za-z0-9_-]{1,64}\Z", re.ASCII)
 # A registry or collection row identity: non-empty, bounded, no control
 # character (``ha_core_readmission/device_registry.py`` ``_identifier``).
 ROW_ID = re.compile(r"[^\x00-\x1f\x7f]{1,255}\Z")
@@ -62,14 +57,11 @@ BASIC_REST = "core.basic_rest_read"
 BASIC_WEBSOCKET = "core.basic_websocket_read"
 NON_DEVICE_REGISTRY = "core.non_device_registry_read"
 DEVICE_REGISTRY = "core.direct_device_registry_read"
-AUTOMATION_CONFIGURATION = "core.automation_configuration_read"
 
 # Canonical order. ``core.direct_entity_state_read`` is not used: it attests
 # a single-entity read, and the states list is ``rest_states_list`` under
 # ``core.basic_rest_read``.
-CORE_REQUIREMENTS = (
-    BASIC_REST, BASIC_WEBSOCKET, NON_DEVICE_REGISTRY, DEVICE_REGISTRY, AUTOMATION_CONFIGURATION,
-)
+CORE_REQUIREMENTS = (BASIC_REST, BASIC_WEBSOCKET, NON_DEVICE_REGISTRY, DEVICE_REGISTRY)
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,7 +76,7 @@ class CoreRead:
     command: str
     requirement: str
     attested: bool
-    shape: str  # "rows", "config", "related", "mapping" or "entries"
+    shape: str  # "rows", "related" or "entries"
     key: str | None = None  # the identity field of a row
     argument: re.Pattern[str] | None = None  # the grammar of one argument
 
@@ -105,14 +97,8 @@ READS = MappingProxyType({
         _rows("label_registry", "config/label_registry/list", NON_DEVICE_REGISTRY, True, "label_id"),
         _rows("entity_registry", "config/entity_registry/list", NON_DEVICE_REGISTRY, True, "entity_id"),
         _rows("device_registry", "config/device_registry/list", DEVICE_REGISTRY, True, "id"),
-        CoreRead("automation_config", "websocket", "automation/config", AUTOMATION_CONFIGURATION, True,
-                 "config", argument=AUTOMATION_ENTITY),
-        CoreRead("script_config", "websocket", "script/config", BASIC_WEBSOCKET, False,
-                 "config", argument=SCRIPT_ENTITY),
         CoreRead("search_related", "websocket", "search/related", BASIC_WEBSOCKET, False,
                  "related", argument=STRICT_ENTITY_ID),
-        CoreRead("scene_config", "rest", "GET /config/scene/config/{}", BASIC_REST, False,
-                 "mapping", argument=SCENE_CONFIG_ID),
         *(_rows(f"{domain}_list", f"{domain}/list", BASIC_WEBSOCKET, False, "id")
           for domain in INPUT_DOMAINS),
         CoreRead("entity_registry_entries", "websocket", "config/entity_registry/get_entries",
@@ -121,7 +107,7 @@ READS = MappingProxyType({
 })
 
 # Reads dispatched as one pipelined ``command_batch``, one payload per item.
-BATCH_READS = frozenset({"automation_config", "script_config", "search_related"})
+BATCH_READS = frozenset({"search_related"})
 
 # Field kinds. A required field that is absent, or any field present with the
 # wrong kind, is drift. ``OPTIONAL_FIELDS`` may be absent.
@@ -169,7 +155,8 @@ RELATED_TYPES = frozenset({
 CORE_RELATED_TYPES = RELATED_TYPES | {"automation_blueprint", "script_blueprint"}
 
 # Closed result vocabulary.
-COMPLETE, PARTIAL, UNAVAILABLE, NOT_FOUND = "complete", "partial", "unavailable", "not_found"
+# S1 b+ removed the per-item ``not_found`` of the configuration reads.
+COMPLETE, PARTIAL, UNAVAILABLE = "complete", "partial", "unavailable"
 UNAVAILABLE_REASONS = frozenset({
     "permission_failure", "timeout", "home_assistant_unavailable", "command_failed",
     "source_unavailable", "invalid_response", "inventory_bound_exceeded",
@@ -205,12 +192,12 @@ def requirements_for(names) -> tuple[str, ...]:
 def batch_payload(name: str, item: str) -> dict:
     """The exact payload of one batched read; refuses an unknown item."""
 
-    read = READS[name]
-    if name not in BATCH_READS or type(item) is not str or read.argument.fullmatch(item) is None:
+    if name not in BATCH_READS or type(item) is not str:
         raise CoreReadError("invalid_arguments")
-    if name == "search_related":
-        return {"type": read.command, "item_type": "entity", "item_id": item}
-    return {"type": read.command, "entity_id": item}
+    read = READS[name]
+    if read.argument.fullmatch(item) is None:
+        raise CoreReadError("invalid_arguments")
+    return {"type": read.command, "item_type": "entity", "item_id": item}
 
 
 def entries_payload(entity_ids) -> dict:

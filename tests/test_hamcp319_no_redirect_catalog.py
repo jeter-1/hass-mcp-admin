@@ -57,6 +57,9 @@ from ha_mcp_engineering.providers.upstream_dashboard import (  # noqa: E402
 from ha_mcp_engineering.providers.upstream_read_gateway import (  # noqa: E402
     UpstreamReadGateway,
 )
+from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
+    INTERNAL_ONLY_DELEGATED_READS,
+)
 from support.ha_mcp_redirect_peer import RedirectPeer  # noqa: E402
 from test_hamcp319_endpoint_selector import (  # noqa: E402
     LOOPBACK_ROWS,
@@ -357,7 +360,10 @@ class OrderAcrossPagesTests(unittest.TestCase):
             self.assertEqual(health["compatibility_status"], "exact")
             self.assertEqual(health["quarantine_reason_counts"], {})
             self.assertEqual(exposed, baseline)
-            self.assertEqual(len(exposed - {OPTIONAL_READER}), 27)
+            # HAMCP-501 W6 (G1, as relayed by the architect): the delegated
+            # ha_search is admitted internal-only, never exposed (27 -> 26).
+            self.assertEqual(len(exposed - {OPTIONAL_READER}), 26)
+            self.assertFalse(INTERNAL_ONLY_DELEGATED_READS & exposed)
             self.assertGreaterEqual(counters.origin["tools/list:cursor"], 1)
             self.assertEqual(counters.origin["tools/call"], 0)
             self.assertEqual(counters.executions, 0)

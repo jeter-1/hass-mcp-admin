@@ -229,6 +229,13 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
         "fallback": "none", "policy": "automation_run_counts_read_v1", "direct_write_allowed": False,
     },
     {
+        "tool": "ha_search", "category": "discovery",
+        "status": "beta_native", "risk": "read", "additive": True,
+        "operation_class": "read", "routing": "engineering_native",
+        "provider": "engineering", "data_providers": ["direct_ha_api", "upstream_read_gateway"],
+        "fallback": "none", "policy": "native_search_read_v1", "direct_write_allowed": False,
+    },
+    {
         "tool": "control_power", "category": "ordinary_runtime_action",
         "status": "beta_native", "risk": "physical_action", "additive": True,
         "operation_class": "typed_power", "routing": "engineering_native",
@@ -1095,6 +1102,15 @@ CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (
         "completeness": "partial_with_reasons_when_budget_spent_or_window_unsplittable",
         "security_justification": "Fixed reads: GET /api/logbook for at most 10 automation entities per request, bisected within a fixed GET and time budget, and in all mode one GET /api/states; only automation IDs, counts and times are returned, never names, messages, sources or context IDs; the logbook slot is held for the call; no write or fallback.",
         "trust_mode": "reviewed_native_read", "trust_profile": "automation-run-counts-read-v1",
+    },
+    {
+        "tool": "ha_search", "capability": "native_search",
+        "required_semantics": "The 9.2.0 ha_search arguments and reply keys, answered from fixed Core reads: entity matching, area and state filters, configuration and reference matching, ordering and paging, with partial and its reasons whenever a source, a sub-call page or a budget cannot cover the request.",
+        "standard_ha_mcp_coverage": "reviewed_argument_constrained", "direct_ha_coverage": "reviewed_fixed_reads",
+        "selected_provider": "engineering", "fallback_policy": "none",
+        "completeness": "partial_with_reasons_when_source_unavailable_subcall_incomplete_or_budget_spent",
+        "security_justification": "Fixed Core REST and WebSocket reads under the native request's Core lease; automation, script, scene, dashboard and flow-helper matches (the route scrubs or withholds secret-bearing bodies) only through fixed internal ha_search sub-call pages on the 9.2.0 Row 25 route, which is never listed or aliased and is checked against the same lease at each page; known secrets withheld and the strict sanitizer at one exit; no write, service call or fallback.",
+        "trust_mode": "reviewed_native_read", "trust_profile": "native-search-read-v1",
     },
     {
         "tool": "control_power", "capability": "typed_power_execution",

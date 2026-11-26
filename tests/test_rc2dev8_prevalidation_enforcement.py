@@ -522,14 +522,14 @@ class McpOutcomeClassificationTests(unittest.TestCase):
             tool.name: tool
             for tool in registered_tools(get_registered_server()).values()
         }
-        self.assertEqual(len(tools), 87)  # HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
+        self.assertEqual(len(tools), 88)  # HAMCP-501 W6: + native ha_search; HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
         # The counts below are the static catalog; start from the module's
         # initial empty dynamic snapshot rather than whatever an earlier test
         # module's gateway published in this process.
         replace_dynamic_upstream_capabilities((), {})
         self.addCleanup(replace_dynamic_upstream_capabilities, (), {})
         catalog = build_capability_catalog()
-        self.assertEqual(catalog["registered_count"], 87)  # HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
+        self.assertEqual(catalog["registered_count"], 88)  # HAMCP-501 W6: + native ha_search; HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
         self.assertEqual(catalog["count"], 25)
         self.assertEqual(catalog["planned"], [])
         self.assertEqual(

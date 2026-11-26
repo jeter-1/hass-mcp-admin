@@ -51,7 +51,10 @@ from ha_mcp_engineering.clients.mcp import (  # noqa: E402
     DashboardTransportError,
     McpDashboardHandshake,
 )
-from ha_mcp_engineering.ha_core_readmission.routes import RETIRED_DELEGATED_READS  # noqa: E402
+from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
+    INTERNAL_ONLY_DELEGATED_READS,
+    RETIRED_DELEGATED_READS,
+)
 from ha_mcp_engineering.ha_mcp_readmission import ha_mcp as readmission  # noqa: E402
 from ha_mcp_engineering.ha_mcp_readmission.registry import (  # noqa: E402
     TRUST_ANCHOR_KEY_ID,
@@ -423,6 +426,8 @@ async def _gateway(version, tools, handler=None, *, call=None, settings=None, si
             await asyncio.wait_for(gateway.initialize(FastMCP("x")), DEADLINE)
             health = gateway.health_snapshot()
             exposed = frozenset(gateway._registered_tool_registry.snapshot())
+            # HAMCP-501 W6: the internal-only routes, recorded for the caller.
+            peer.internal_routes = frozenset(gateway._internal)
             result = None
             if call is not None:
                 _telemetry, token = begin_request("synthetic-hamcp371")
@@ -438,7 +443,10 @@ async def _gateway(version, tools, handler=None, *, call=None, settings=None, si
 
 
 def _delegated(version):
-    return {e.exposed_name for e in _policy(version).tools if e.is_read_route} - RETIRED_DELEGATED_READS
+    # HAMCP-501 W6 (G1, as relayed by the architect): the delegated ha_search is
+    # admitted internal-only for the native search page readers, never published.
+    return ({e.exposed_name for e in _policy(version).tools if e.is_read_route}
+            - RETIRED_DELEGATED_READS - INTERNAL_ONLY_DELEGATED_READS)
 
 
 class GatewaySurfaceTests(unittest.TestCase):
@@ -452,6 +460,8 @@ class GatewaySurfaceTests(unittest.TestCase):
         self.assertEqual(peer.calls, [])
         self.assertFalse(set(BLOCKED) & exposed)
         self.assertLessEqual(_delegated("9.2.0") - {yaml_reader.TOOL_NAME}, exposed)
+        self.assertFalse(INTERNAL_ONLY_DELEGATED_READS & exposed)
+        self.assertEqual(peer.internal_routes, INTERNAL_ONLY_DELEGATED_READS)
 
     def test_920_delegated_read_dispatches_through_the_92_module(self):
         case = useful.NoRedirectUseful._delegated_read_case(None, "9.2.0")

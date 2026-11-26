@@ -2,9 +2,11 @@
 
 Fixtures model the Home Assistant Core 2026.11.3 (92da9f15) reply shapes of
 ``GET /api/states``, the area, floor, label, entity and device registry
-lists, ``config/entity_registry/get_entries``, ``automation/config``,
-``script/config``, ``search/related``, the scene configuration GET and the
-six ``input_*/list`` collections. Everything is synthetic; no live Home
+lists, ``config/entity_registry/get_entries``, ``search/related`` and the six
+``input_*/list`` collections. HAMCP-501 W6 S1 b+ (approved by Josh as relayed
+by the architect) removed the ``automation/config``, ``script/config`` and
+scene configuration reads: those bodies are searched only through the
+delegated sub-call, which scrubs them. Everything is synthetic; no live Home
 Assistant. The module is not registered or routed, so these tests drive it
 directly.
 """
@@ -26,7 +28,6 @@ sys.path[:0] = [str(ROOT / "hass_mcp_engineering_beta"), str(ROOT)]
 
 from ha_mcp_engineering.clients import websocket as ws  # noqa: E402
 from ha_mcp_engineering.clients.paths import require_route  # noqa: E402
-from ha_mcp_engineering.clients.rest import ExpectedHttpStatus  # noqa: E402
 from ha_mcp_engineering.errors import (  # noqa: E402
     AuthorizationError,
     ErrorCode,
@@ -34,7 +35,6 @@ from ha_mcp_engineering.errors import (  # noqa: E402
     HomeAssistantTimeoutError,
     HomeAssistantUnavailableError,
 )
-from ha_mcp_engineering.governance import scene_configuration  # noqa: E402
 from ha_mcp_engineering.ha_core_readmission.profiles import CORE_CAPABILITY_PROFILES  # noqa: E402
 from ha_mcp_engineering.ha_core_readmission.source import MAX_CORE_PROBE_ITEMS  # noqa: E402
 from ha_mcp_engineering.request_context import begin_request, end_request  # noqa: E402
@@ -61,11 +61,7 @@ EXPECTED_TABLE = {
                         "rows"),
     "device_registry": ("websocket", "config/device_registry/list", "core.direct_device_registry_read", True,
                         "rows"),
-    "automation_config": ("websocket", "automation/config", "core.automation_configuration_read", True,
-                          "config"),
-    "script_config": ("websocket", "script/config", "core.basic_websocket_read", False, "config"),
     "search_related": ("websocket", "search/related", "core.basic_websocket_read", False, "related"),
-    "scene_config": ("rest", "GET /config/scene/config/{}", "core.basic_rest_read", False, "mapping"),
     **{f"{domain}_list": ("websocket", f"{domain}/list", "core.basic_websocket_read", False, "rows")
        for domain in ("input_boolean", "input_number", "input_select", "input_text", "input_datetime",
                       "input_button")},
@@ -80,8 +76,9 @@ ATTESTING_CHECK = {
     "label_registry": "websocket_label_registry_list",
     "entity_registry": "websocket_entity_registry_list",
     "device_registry": "websocket_device_registry_list",
-    "automation_config": "automation_configuration_command_contract",
 }
+# HAMCP-501 W6 S1 b+: the body reads native search no longer has.
+REMOVED_READS = ("automation_config", "script_config", "scene_config")
 
 
 def state(entity_id, value="on"):
@@ -220,7 +217,10 @@ class ContractTableTests(unittest.TestCase):
         # The states list is ``rest_states_list``; the single-entity profile is unused.
         self.assertNotIn("core.direct_entity_state_read", c.CORE_REQUIREMENTS)
         self.assertEqual(c.requirements_for(c.READS), c.CORE_REQUIREMENTS)
-        self.assertEqual(c.requirements_for(["scene_config", "states"]), ("core.basic_rest_read",))
+        self.assertEqual(c.requirements_for(["search_related", "states"]),
+                         ("core.basic_rest_read", "core.basic_websocket_read"))
+        # HAMCP-501 W6 S1 b+: no read needs the automation configuration profile.
+        self.assertNotIn("core.automation_configuration_read", c.CORE_REQUIREMENTS)
 
     def test_attested_reads_are_pinned_by_their_profile_and_the_rest_ride_basic_transport(self):
         profiles = {profile.capability_id: profile for profile in CORE_CAPABILITY_PROFILES}
@@ -234,7 +234,7 @@ class ContractTableTests(unittest.TestCase):
     def test_every_read_is_read_only(self):
         for read in c.READS.values():
             last = read.command.rsplit("/", 1)[-1]
-            self.assertIn(last, {"states", "list", "config", "related", "get_entries", "{}"}, read.name)
+            self.assertIn(last, {"states", "list", "related", "get_entries"}, read.name)
         source = (PACKAGE / "search/core_reads.py").read_text(encoding="utf-8")
         tree = ast.parse(source)
         methods = []
@@ -246,45 +246,42 @@ class ContractTableTests(unittest.TestCase):
         self.assertEqual(set(methods), {"GET"})
 
     def test_batched_payloads_are_ones_the_client_admits(self):
-        self.assertEqual(c.AUTOMATION_ENTITY.pattern, ws._AUTOMATION_ENTITY.pattern)
-        self.assertEqual(c.SCRIPT_ENTITY.pattern, ws._SCRIPT_ENTITY.pattern)
-        self.assertEqual(c.BATCH_READS, {"automation_config", "script_config", "search_related"})
-        for name, item in (("automation_config", "automation.morning"), ("script_config", "script.wake"),
-                           ("search_related", "light.kitchen")):
-            payload = c.batch_payload(name, item)
-            self.assertTrue(ws.batch_command_allowed(payload), payload)
-        self.assertEqual(c.batch_payload("search_related", "light.kitchen"),
-                         {"type": "search/related", "item_type": "entity", "item_id": "light.kitchen"})
-        self.assertEqual(c.batch_payload("script_config", "script.wake"),
-                         {"type": "script/config", "entity_id": "script.wake"})
+        # HAMCP-501 W6 S1 b+: ``search/related`` is the only batched read.
+        self.assertEqual(c.BATCH_READS, {"search_related"})
+        payload = c.batch_payload("search_related", "light.kitchen")
+        self.assertTrue(ws.batch_command_allowed(payload), payload)
+        self.assertEqual(payload, {"type": "search/related", "item_type": "entity", "item_id": "light.kitchen"})
         # Collections and ``get_entries`` are single commands, never batched.
         for name in ("input_boolean_list", "entity_registry_entries", "states"):
             self.assertFalse(ws.batch_command_allowed({"type": c.READS[name].command}))
-        for name, item in (("automation_config", "script.wake"), ("script_config", "automation.morning"),
-                           ("search_related", "Light.Kitchen"), ("search_related", 7),
-                           ("states", "light.kitchen"), ("automation_config", "automation." + "a" * 246)):
+        for name, item in (("automation_config", "automation.morning"), ("script_config", "script.wake"),
+                           ("scene_config", "abc_1"), ("search_related", "Light.Kitchen"),
+                           ("search_related", 7), ("states", "light.kitchen"), (7, "light.kitchen")):
             with self.assertRaises(c.CoreReadError) as error:
                 c.batch_payload(name, item)
             self.assertEqual(error.exception.reason, "invalid_arguments")
 
-    def test_scene_config_ids_match_the_scene_gateway(self):
-        for config_id in ("1700000000000", "abc_DEF-9", "a" * 64):
-            self.assertTrue(c.SCENE_CONFIG_ID.fullmatch(config_id))
-            self.assertTrue(scene_configuration.config_id_valid(config_id))
-        for config_id in ("", "a" * 65, "../x", "a.b", "a/b", "a b"):
-            self.assertIsNone(c.SCENE_CONFIG_ID.fullmatch(config_id))
-            self.assertFalse(scene_configuration.config_id_valid(config_id))
+    def test_s1_body_reads_are_gone_from_the_contract(self):
+        # HAMCP-501 W6 S1 b+ (approved by Josh as relayed by the architect):
+        # no automation, script or scene configuration body is read natively.
+        for name in REMOVED_READS:
+            self.assertNotIn(name, c.READS)
+        for attribute in ("AUTOMATION_ENTITY", "SCRIPT_ENTITY", "SCENE_CONFIG_ID", "AUTOMATION_CONFIGURATION"):
+            self.assertFalse(hasattr(c, attribute), attribute)
+        for attribute in ("project_config", "project_scene_config"):
+            self.assertFalse(hasattr(r, attribute), attribute)
+        self.assertFalse(hasattr(CoreReadSession, "scene_config"))
+        self.assertEqual({read.shape for read in c.READS.values()}, {"rows", "related", "entries"})
+        for read in c.READS.values():
+            self.assertNotIn(read.command, {"automation/config", "script/config", "GET /config/scene/config/{}"})
 
     def test_rest_routes_are_already_reviewed_get_routes(self):
-        # No ``clients/paths.py`` change: both REST reads pass the existing route table.
-        for name, arguments in (("states", ()), ("scene_config", ("abc_1",))):
-            route = require_route(r.rest_route(name, *arguments), "GET")
-            self.assertEqual(c.READS[name].command, f"GET {route.template}")
-        self.assertEqual(require_route(r.rest_route("states"), "GET").template, "/states")
-        self.assertEqual(require_route(r.rest_route("scene_config", "abc_1"), "GET").template,
-                         "/config/scene/config/{}")
-        # Only the two fixed REST reads have a route, each with its own arity.
-        for name, arguments in (("states", ("x",)), ("scene_config", ()), ("scene_config", ("a", "b")),
+        # No ``clients/paths.py`` change: the one REST read passes the existing route table.
+        route = require_route(r.rest_route("states"), "GET")
+        self.assertEqual(c.READS["states"].command, f"GET {route.template}")
+        self.assertEqual(route.template, "/states")
+        # Only ``states`` has a route; S1 b+ removed the scene configuration GET.
+        for name, arguments in (("states", ("x",)), ("scene_config", ()), ("scene_config", ("abc_1",)),
                                 ("area_registry", ()), ("search_related", ("light.kitchen",))):
             with self.subTest(name=name, arguments=arguments), self.assertRaises(c.CoreReadError) as error:
                 r.rest_route(name, *arguments)
@@ -335,7 +332,7 @@ class AuthorityTests(Base):
         self.assertEqual(self.calls, [])
 
     async def test_only_the_declared_reads_requirements_are_checked(self):
-        self.session("states", "scene_config")
+        self.session("states")
         self.session("entity_registry", "device_registry", "entity_registry_entries")
         self.assertEqual(self.core.route_calls, [
             ("core.basic_rest_read",),
@@ -388,12 +385,12 @@ class AuthorityTests(Base):
         self.assertEqual(session.sources, [])
 
     async def test_an_undeclared_read_or_wrong_method_refuses(self):
-        session = self.session("states", "automation_config")
+        session = self.session("states", "search_related")
         for call in (lambda: session.inventory("entity_registry"),
-                     lambda: session.inventory("automation_config"),
+                     lambda: session.inventory("search_related"),
                      lambda: session.batch("states", ["light.kitchen"]),
+                     lambda: session.batch("automation_config", ["automation.morning"]),
                      lambda: session.batch("script_config", ["script.wake"]),
-                     lambda: session.scene_config("abc"),
                      lambda: session.entity_entries(["light.kitchen"])):
             with self.assertRaises(c.CoreReadError) as error:
                 await call()
@@ -548,41 +545,31 @@ class InventoryTests(Base):
 
 
 class BatchTests(Base):
-    async def test_automation_and_script_configs_keep_per_item_outcomes(self):
-        session = self.session("automation_config", "script_config")
-        self.values["automation/config"] = [
-            (True, {"config": {"id": "1", "alias": "Morning"}}), (False, "not_found"), (False, "home_assistant_error"),
-            (True, {"config": ["not", "a", "mapping"]}), (True, {"config": {"id": "2"}, "extra": 1})]
-        items = ["automation.morning", "automation.gone", "automation.broken", "automation.list", "automation.extra"]
-        result = await session.batch("automation_config", items)
-        self.assertEqual(self.calls, [("batch", [c.batch_payload("automation_config", item) for item in items])])
-        self.assertEqual((result.status, result.partial), (c.PARTIAL, ("field_drift", "item_failures")))
-        self.assertEqual({item: (outcome.status, outcome.reason) for item, outcome in result.items.items()}, {
-            "automation.morning": (c.COMPLETE, None), "automation.gone": (c.NOT_FOUND, "not_found"),
-            "automation.broken": (c.UNAVAILABLE, "command_failed"),
-            "automation.list": (c.UNAVAILABLE, "invalid_response"), "automation.extra": (c.PARTIAL, None)})
-        self.assertEqual(result.items["automation.morning"].value, {"id": "1", "alias": "Morning"})
-        self.values["script/config"] = [(True, {"config": {"sequence": []}})]
-        result = await session.batch("script_config", ("script.wake",))
-        self.assertEqual((result.status, result.items["script.wake"].value), (c.COMPLETE, {"sequence": []}))
+    async def test_body_reads_are_not_reads(self):
+        # HAMCP-501 W6 S1 b+: a session cannot even declare a removed body read.
+        for name in REMOVED_READS:
+            with self.subTest(name), self.assertRaises(c.CoreReadError) as error:
+                self.session("states", name)
+            self.assertRefused("invalid_arguments", error)
+        self.assertEqual((self.core.route_calls, self.calls), ([], []))
 
     async def test_a_batch_that_fails_everywhere_or_changes_length_is_unavailable(self):
-        session = self.session("automation_config")
-        self.values["automation/config"] = [(False, "unknown_error"), "bad"]
-        result = await session.batch("automation_config", ["automation.a", "automation.b"])
+        session = self.session("search_related")
+        self.values["search/related"] = [(False, "unknown_error"), "bad"]
+        result = await session.batch("search_related", ["light.a", "light.b"])
         self.assertEqual((result.status, result.reason), (c.UNAVAILABLE, "command_failed"))
-        self.values["automation/config"] = [(True, {"config": {}})]
-        result = await session.batch("automation_config", ["automation.a", "automation.b"])
+        self.values["search/related"] = [(True, {})]
+        result = await session.batch("search_related", ["light.a", "light.b"])
         self.assertEqual((result.status, result.reason), (c.UNAVAILABLE, "invalid_response"))
-        self.values["automation/config"] = HomeAssistantTimeoutError()
-        result = await session.batch("automation_config", ["automation.a"])
+        self.values["search/related"] = HomeAssistantTimeoutError()
+        result = await session.batch("search_related", ["light.a"])
         self.assertEqual((result.status, result.reason), (c.UNAVAILABLE, "timeout"))
 
     async def test_bad_items_refuse_before_dispatch(self):
-        session = self.session("automation_config", "search_related")
-        for name, items in (("automation_config", ["automation.ok", "script.wrong"]),
-                            ("automation_config", ["automation.a", "automation.a"]),
-                            ("automation_config", "automation.a"),
+        session = self.session("search_related")
+        for name, items in (("search_related", ["light.ok", "Light.Wrong"]),
+                            ("search_related", ["light.a", "light.a"]),
+                            ("search_related", "light.a"),
                             ("search_related", [f"light.l{i}" for i in range(c.MAX_BATCH_ITEMS + 1)]),
                             ("search_related", ["light.ok", None]),
                             ("search_related", ["light.ok", ["light.unhashable"]])):
@@ -624,30 +611,6 @@ class BatchTests(Base):
             outcome = result.items["light.a"]
             self.assertIs(outcome.value["automation"], INVALID, bucket)
             self.assertEqual((outcome.status, result.partial), (c.PARTIAL, ("field_drift",)))
-
-
-class SceneConfigTests(Base):
-    async def test_scene_config_get_and_not_found(self):
-        session = self.session("scene_config")
-        self.rest.values["/config/scene/config/abc_1"] = {"id": "abc_1", "name": "Movie", "entities": {}}
-        result = await session.scene_config("abc_1")
-        self.assertEqual(self.calls, [("rest", "GET", "/config/scene/config/abc_1",
-                                       {"expected_statuses": frozenset({404})})])
-        self.assertEqual((result.status, result.value), (c.COMPLETE, {"id": "abc_1", "name": "Movie", "entities": {}}))
-        self.rest.values["/config/scene/config/gone"] = ExpectedHttpStatus(404)
-        result = await session.scene_config("gone")
-        self.assertEqual((result.status, result.reason, result.value), (c.NOT_FOUND, "not_found", None))
-        self.rest.values["/config/scene/config/odd"] = ["not", "a", "mapping"]
-        result = await session.scene_config("odd")
-        self.assertEqual((result.status, result.reason), (c.UNAVAILABLE, "invalid_response"))
-
-    async def test_bad_config_ids_refuse_before_dispatch(self):
-        session = self.session("scene_config")
-        for config_id in ("../states", "a.b", "a" * 65, "", None, 1):
-            with self.assertRaises(c.CoreReadError) as error:
-                await session.scene_config(config_id)
-            self.assertRefused("invalid_arguments", error)
-        self.assertEqual(self.calls, [])
 
 
 class EntityEntriesTests(Base):
@@ -755,7 +718,7 @@ class ReachabilityTests(unittest.TestCase):
         for module, allowed in (
             ("core_contracts", {"__future__", "dataclasses", "re", "types", "entity_ids", "errors"}),
             ("core_reads", {"__future__", "asyncio", "dataclasses", "datetime", "types", "typing",
-                            "clients.paths", "clients.rest", "entity_ids", "errors", "observability",
+                            "clients.paths", "entity_ids", "errors", "observability",
                             "request_context", None}),
         ):
             imported = set()
@@ -781,10 +744,28 @@ class ReachabilityTests(unittest.TestCase):
                     base = package[:len(package) - node.level + 1] if node.level else []
                     module = ".".join(base + ([node.module] if node.module else []))
                     names = [module] + [f"{module}.{alias.name}" for alias in node.names]
-                if any(n == "ha_mcp_engineering.search" or n.startswith("ha_mcp_engineering.search.")
-                       for n in names):
-                    importers.append(str(relative))
-        self.assertEqual(importers, [])
+                hits = [n for n in names
+                        if n == "ha_mcp_engineering.search" or n.startswith("ha_mcp_engineering.search.")]
+                if hits:
+                    importers.append((str(relative), tuple(sorted(hits))))
+        # HAMCP-501 W4: the gateway's sub-call page readers take the fixed W3
+        # page contract. W6: the application composes CoreReadSession with no
+        # I/O, and the native tool reaches only the engine and SearchError.
+        # Nothing else outside search imports the package.
+        subcalls = "ha_mcp_engineering.search.subcalls"
+        self.assertEqual(sorted(importers), [
+            ("ha_mcp_engineering/application.py", (
+                "ha_mcp_engineering.search.core_reads",
+                "ha_mcp_engineering.search.core_reads.CoreReadSession")),
+            ("ha_mcp_engineering/providers/upstream_read_gateway.py", (
+                subcalls, f"{subcalls}.BUCKETS", f"{subcalls}.MAX_SCAN_ROWS",
+                f"{subcalls}.PAGE_SIZE_LADDER", f"{subcalls}.PageResult",
+                f"{subcalls}.PageTooLarge", f"{subcalls}.page_arguments")),
+            ("ha_mcp_engineering/tools/search.py", (
+                "ha_mcp_engineering.search", "ha_mcp_engineering.search.engine")),
+            ("ha_mcp_engineering/tools/search.py", (
+                "ha_mcp_engineering.search.reply", "ha_mcp_engineering.search.reply.SearchError")),
+        ])
 
 
 if __name__ == "__main__":

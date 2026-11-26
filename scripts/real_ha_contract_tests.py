@@ -103,6 +103,10 @@ from ha_mcp_engineering.request_context import (  # noqa: E402
 )
 from ha_mcp_engineering.trace_normalization import fetch_normalized_trace_list  # noqa: E402
 from ha_mcp_engineering.ha_core_readmission import CoreRuntime  # noqa: E402
+from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
+    INTERNAL_ONLY_DELEGATED_READS,
+    static_tool_requirements,
+)
 from ha_mcp_engineering.ha_core_readmission.device_registry import (  # noqa: E402
     DeviceRegistrySchema,
     assess_device_registry,
@@ -110,7 +114,9 @@ from ha_mcp_engineering.ha_core_readmission.device_registry import (  # noqa: E4
 from ha_mcp_engineering.providers.upstream_read_gateway import (  # noqa: E402
     UpstreamReadGateway,
 )
+from ha_mcp_engineering.search.core_reads import CoreReadSession  # noqa: E402
 from ha_mcp_engineering.tools import registered_tools  # noqa: E402
+from ha_mcp_engineering.tools import search as native_search  # noqa: E402
 from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
     load_reviewed_upstream_release_registry,
 )
@@ -3727,6 +3733,62 @@ def _device_contract_phase(version: str) -> str:
     return MIGRATION_CONTRACT_PHASE
 
 
+async def _call_native_search(
+    configured: Settings,
+    core_runtime: CoreRuntime,
+    read_gateway: UpstreamReadGateway,
+    arguments: dict[str, Any],
+) -> str:
+    """Run Engineering's native ``ha_search`` once (HAMCP-501 W6).
+
+    Composed as ``application.py`` composes it. The call holds its own
+    Core lease for the static route's exact requirements, committed on
+    the first dispatch and revalidated before each later one, as the
+    authenticated gateway does (D5). The delegated ``ha_search`` route is
+    internal-only: native search reaches it only through the gateway's
+    page readers.
+    """
+
+    native_search.SEARCH.configure(
+        configured,
+        session_factory=lambda reads: CoreReadSession(
+            HomeAssistantRestClient(configured),
+            HomeAssistantWebSocketClient(configured),
+            core_runtime,
+            reads,
+        ),
+        reader_factory=lambda: read_gateway.search_subcall_reader(),
+    )
+    requirements = tuple(
+        sorted(set(static_tool_requirements(native_search.NAME, arguments)))
+    )
+    authority = core_runtime.acquire(requirements)
+    if authority is None:
+        raise RuntimeError("native_search_core_lease_unavailable")
+    commits = None
+
+    def authorize_core_dispatch() -> bool:
+        nonlocal commits
+        if commits is not None:
+            return core_runtime.revalidate(authority, commits)
+        commits = core_runtime.consume(authority)
+        return commits is not None
+
+    telemetry, context = begin_request()
+    telemetry.caller_id = "real-ha-native-search-caller"
+    telemetry.core_dispatch_authorizer = authorize_core_dispatch
+    try:
+        return await native_search.registered_tool().run(arguments)
+    finally:
+        # The lease closes with the request.
+        telemetry.core_dispatch_authorizer = lambda: False
+        if commits is not None:
+            core_runtime.finish(commits)
+        else:
+            core_runtime.release(authority)
+        end_request(context)
+
+
 async def _run_core_2026_9_child_contract(
     websocket: HomeAssistantWebSocketClient,
     token: str,
@@ -3943,11 +4005,12 @@ async def _run_core_2026_9_child_contract(
             for item in core_assessment["authority_profiles"]
             if not str(item["disposition"]).startswith("admitted")
         ]
-        # HAMCP-437: ha-mcp 9.2.0 exposes its 27 exact-matched automatic reads;
+        # HAMCP-437: ha-mcp 9.2.0 has 27 exact-matched automatic reads;
         # the retired delegated ha_get_hacs_info (HAMCP-290) is unsupported on
-        # 9.2.0 and never matched.
+        # 9.2.0 and never matched. HAMCP-501 W6: the internal-only reads are
+        # matched but not exposed; Engineering's native tool owns each name.
         _assert_device_contract(
-            len(tools) == 27,
+            len(tools) == 27 - len(INTERNAL_ONLY_DELEGATED_READS),
             "child_consumer_catalog",
             missing_key="delegated_tool_count",
             diagnostic={
@@ -3984,6 +4047,11 @@ async def _run_core_2026_9_child_contract(
             "child_consumer_catalog",
             missing_key="held_tool_absence",
         )
+        _assert_device_contract(
+            not INTERNAL_ONLY_DELEGATED_READS & set(tools),
+            "child_consumer_catalog",
+            missing_key="internal_only_not_listed",
+        )
         calls = {
             "ha_get_device": {"device_id": child_id},
             "ha_get_overview": {
@@ -4005,14 +4073,23 @@ async def _run_core_2026_9_child_contract(
         results: dict[str, dict[str, Any]] = {}
         for name, arguments in calls.items():
             consumer_scenario = f"child_consumer_{name}"
-            tool = tools.get(name)
-            _assert_device_contract(
-                tool is not None,
-                consumer_scenario,
-                missing_key="registration",
-            )
-            assert tool is not None
-            encoded = json.loads(await tool.run(arguments))
+            if name == native_search.NAME:
+                # HAMCP-501 W6: Engineering's native ha_search, which
+                # reaches the delegated route only internally.
+                encoded = json.loads(
+                    await _call_native_search(
+                        configured, core_runtime, read_gateway, arguments
+                    )
+                )
+            else:
+                tool = tools.get(name)
+                _assert_device_contract(
+                    tool is not None,
+                    consumer_scenario,
+                    missing_key="registration",
+                )
+                assert tool is not None
+                encoded = json.loads(await tool.run(arguments))
             _assert_device_contract(
                 encoded.get("success") is True,
                 consumer_scenario,
@@ -4021,9 +4098,15 @@ async def _run_core_2026_9_child_contract(
             metadata = encoded.get("metadata")
             _assert_device_contract(
                 isinstance(metadata, dict)
-                and metadata.get("provider") == "upstream_read_gateway"
-                and metadata.get("upstream_version") == UPSTREAM_VERSION
-                and metadata.get("fallback") == "none",
+                and metadata.get("fallback") == "none"
+                and (
+                    metadata.get("provider") == "engineering"
+                    and metadata.get("fallback_occurred") is False
+                    and metadata.get("subcall_route") == "admitted"
+                    if name == native_search.NAME
+                    else metadata.get("provider") == "upstream_read_gateway"
+                    and metadata.get("upstream_version") == UPSTREAM_VERSION
+                ),
                 consumer_scenario,
                 missing_key="engineering_metadata",
             )
