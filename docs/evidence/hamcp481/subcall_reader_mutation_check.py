@@ -112,28 +112,28 @@ MUTANTS = {
                  '                        raise SearchSubcallPageFailure("provider_authority_changed")\n'
                  "                    page = ",
         "                    page = "),
+    "parent_authority_missing_allowed": (
+        GATEWAY, "                if parent is None or parent.core_dispatch_authorizer is None:\n",
+        "                if False:\n"),
+    "missing_authorizer_allowed": (
+        GATEWAY, "if parent is None or parent.core_dispatch_authorizer is None:", "if parent is None:"),
     "caller_not_inherited": (
-        GATEWAY, "                if parent is not None:\n                    telemetry.caller_id = parent.caller_id\n"
-                 "                    telemetry.core_dispatch_authorizer = parent.core_dispatch_authorizer\n"
-                 '                    telemetry.audit_context["parent_request_id"] = parent.request_id\n'
-                 '                status, category = "failed_or_cancelled", None\n',
-        "                if parent is not None:\n"
-        "                    telemetry.core_dispatch_authorizer = parent.core_dispatch_authorizer\n"
-        '                    telemetry.audit_context["parent_request_id"] = parent.request_id\n'
-        '                status, category = "failed_or_cancelled", None\n'),
+        GATEWAY, '                telemetry.tool_name = "search_subcall_page_read"\n'
+                 "                telemetry.caller_id = parent.caller_id\n",
+        '                telemetry.tool_name = "search_subcall_page_read"\n'),
     "authorizer_not_inherited": (
-        GATEWAY, "                    telemetry.core_dispatch_authorizer = parent.core_dispatch_authorizer\n"
-                 '                    telemetry.audit_context["parent_request_id"] = parent.request_id\n'
+        GATEWAY, "                telemetry.core_dispatch_authorizer = parent.core_dispatch_authorizer\n"
+                 '                telemetry.audit_context["parent_request_id"] = parent.request_id\n'
                  '                status, category = "failed_or_cancelled", None\n',
-        '                    telemetry.audit_context["parent_request_id"] = parent.request_id\n'
+        '                telemetry.audit_context["parent_request_id"] = parent.request_id\n'
         '                status, category = "failed_or_cancelled", None\n'),
     "child_parent_dropped": (
-        GATEWAY, '                    telemetry.audit_context["parent_request_id"] = parent.request_id\n'
+        GATEWAY, '                telemetry.audit_context["parent_request_id"] = parent.request_id\n'
                  '                status, category = "failed_or_cancelled", None\n',
         '                status, category = "failed_or_cancelled", None\n'),
     "child_unnamed": (GATEWAY, 'telemetry.tool_name = "search_subcall_page_read"\n', "pass\n"),
     "audit_parent_dropped": (
-        GATEWAY, '"parent_request_id": parent.request_id if parent else None,\n'
+        GATEWAY, '"parent_request_id": parent.request_id,\n'
                  '                                "provider": PROVIDER_ID, "upstream_tool": "ha_search",',
         '"parent_request_id": None,\n'
         '                                "provider": PROVIDER_ID, "upstream_tool": "ha_search",'),

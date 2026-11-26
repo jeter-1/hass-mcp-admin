@@ -4266,7 +4266,8 @@ class UpstreamReadGateway:
         before dispatch. Each page passes the gateway's argument validation,
         live catalog revalidation, Core gate, Row 25 projection, sanitizer and
         size check unchanged, with the parent request's authority rechecked at
-        dispatch. A page the sanitizer redacted or bounded fails (D2). A
+        dispatch; a page with no parent request or no parent authorizer is
+        refused before any request starts. A page the sanitizer redacted or bounded fails (D2). A
         failure raises ``SearchSubcallPageFailure``. Only the 9.2.0 Row 25
         projection is accepted. No fallback and no other upstream tool.
         """
@@ -4296,12 +4297,16 @@ class UpstreamReadGateway:
                 if not current():
                     raise SearchSubcallPageFailure("provider_authority_changed")
                 parent = current_telemetry()
+                if parent is None or parent.core_dispatch_authorizer is None:
+                    # No parent request or no authority to inherit: refused
+                    # before a request starts (``search.core_reads`` applies
+                    # the same rule to Core reads).
+                    raise SearchSubcallPageFailure("provider_authority_changed")
                 telemetry, token = begin_request()
                 telemetry.tool_name = "search_subcall_page_read"
-                if parent is not None:
-                    telemetry.caller_id = parent.caller_id
-                    telemetry.core_dispatch_authorizer = parent.core_dispatch_authorizer
-                    telemetry.audit_context["parent_request_id"] = parent.request_id
+                telemetry.caller_id = parent.caller_id
+                telemetry.core_dispatch_authorizer = parent.core_dispatch_authorizer
+                telemetry.audit_context["parent_request_id"] = parent.request_id
                 status, category = "failed_or_cancelled", None
                 try:
                     if not telemetry.authorize_core_dispatch():
@@ -4331,7 +4336,7 @@ class UpstreamReadGateway:
                             audit.write({
                                 "event": "search_subcall_page_read",
                                 "request_id": telemetry.request_id,
-                                "parent_request_id": parent.request_id if parent else None,
+                                "parent_request_id": parent.request_id,
                                 "provider": PROVIDER_ID, "upstream_tool": "ha_search",
                                 "search_type": search_type,
                                 "offset": page_arguments["offset"],

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import ast
 import asyncio
+import contextvars
 import dataclasses
 import json
 from pathlib import Path
@@ -678,6 +679,26 @@ class RefusalTests(Readers):
         self.assertEqual([record["provider_dispatch_count"] for record in self.audits()], [0, 0, 0, 1, 1])
         for child in self.children:
             self.assertEqual(child.upstream_active_requests, 0)
+
+    async def test_a_page_without_parent_authority_refuses_without_dispatch(self):
+        self.serve("helper", [reply_of(body("helper", [flow(0)]))])
+        # No parent request: the page is read in an empty context.
+        orphan = asyncio.create_task(self.readers["helper"](arguments()), context=contextvars.Context())
+        with self.assertRaises(Failure) as raised:
+            await orphan
+        self.assertEqual(raised.exception.args, ("provider_authority_changed",))
+        # A parent request with no authorizer is refused the same way.
+        self.telemetry.core_dispatch_authorizer = None
+        await self.failed("provider_authority_changed")
+        # Refused before a request starts: no child request, no audit, nothing sent.
+        self.assertEqual((self.transport.calls, self.children, self.sent()), (0, [], []))
+        self.audit.write.assert_not_called()
+        self.assertIs(current_telemetry(), self.telemetry)
+        # With the authorizer back, the same page is served.
+        self.telemetry.core_dispatch_authorizer = lambda: self.authorized
+        page = await self.readers["helper"](arguments())
+        self.assertEqual(page.rows, (flow(0),))
+        self.assertEqual(self.transport.calls, 1)
 
     async def test_a_stale_route_refuses_without_dispatch(self):
         tools = [tool for tool in capture("9.2.0")["tools"] if tool["name"] != "ha_search"]
