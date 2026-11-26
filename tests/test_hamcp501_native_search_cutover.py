@@ -30,12 +30,14 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "hass_mcp_engineering_beta"), str(ROOT), str(ROOT / "tests")]
 
 import httpx  # noqa: E402
+from jsonschema import Draft202012Validator  # noqa: E402
 from mcp.server.fastmcp import FastMCP  # noqa: E402
 from tests import test_hamcp481_native_search_engine as w3  # noqa: E402
 from tests import test_hamcp501_search_subcall_readers as w4  # noqa: E402
 from tests.test_hamcp481_native_search_engine import MARKER, reasons_of  # noqa: E402
 from tests.test_hamcp476_automation_run_counts import settings as gateway_settings  # noqa: E402
 from support import ha_mcp_captures as captures  # noqa: E402
+import test_hamcp162_yaml_admission as yaml_admission  # noqa: E402
 from ha_mcp_engineering import capabilities  # noqa: E402
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
 from ha_mcp_engineering.errors import ErrorCode, HomeAssistantApiError  # noqa: E402
@@ -43,7 +45,8 @@ from ha_mcp_engineering.ha_core_readmission import routes  # noqa: E402
 from ha_mcp_engineering.mcp_sdk_compatibility import McpSdkToolRegistry  # noqa: E402
 from ha_mcp_engineering.providers import upstream_read_gateway as gw  # noqa: E402
 from ha_mcp_engineering.providers import upstream_reads_9_2 as reads_9_2  # noqa: E402
-from ha_mcp_engineering.request_context import current_telemetry  # noqa: E402
+from ha_mcp_engineering.providers import upstream_yaml_reader as yaml_reader  # noqa: E402
+from ha_mcp_engineering.request_context import begin_request, current_telemetry, end_request  # noqa: E402
 from ha_mcp_engineering.routing import AuthenticatedMcpGateway  # noqa: E402
 from ha_mcp_engineering.search import core_contracts as c, scoring  # noqa: E402
 from ha_mcp_engineering.tools import search as search_module  # noqa: E402
@@ -786,6 +789,68 @@ class ReachabilityTests(unittest.TestCase):
                 self.assertNotIn("_SearchPageCapture", attributes)
                 names = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
                 self.assertNotIn("_SearchPageCapture", names)
+
+
+
+class InternalReaderSchemaSweepTests(unittest.IsolatedAsyncioTestCase):
+    """The W4 defect class, swept: an internal reader that validates with a
+    schema other than the reviewed one. The three other internal readers pass
+    the raw observed schema. On the admitted 9.2.0 routes it is the reviewed
+    schema (script) or a superset whose extra keys the reader never sends and
+    the dispatch shape pins (history: ``upstream_history_9_1.dispatch_arguments``;
+    YAML: ``yaml_reader.validate_arguments`` and ``upstream_arguments``). The
+    arguments each reader really sends validate the same under both."""
+
+    RAW_ONLY = {"ha_config_get_script": set(),
+                "ha_get_history": {"core_options", "include_schema", "summary"},
+                yaml_reader.TOOL_NAME: {"include_content", "include_parsed"}}
+    TIME = "2026-01-01T00:00:00.000000+00:00"
+
+    async def test_each_internal_reader_validates_the_same_under_both_schemas(self):
+        gateway, _ = await captures.gateway_920(tools=yaml_admission.captured("9.2.0"))
+        with gateway._lock:
+            routes = {route.entry.upstream_name: route for route in gateway._exposed.values()
+                      if route.entry.upstream_name in self.RAW_ONLY}
+        self.assertEqual(set(routes), set(self.RAW_ONLY))
+        readers = {"ha_config_get_script": (gateway.script_dependency_reader(), [("script.synthetic",)]),
+                   "ha_get_history": (gateway.history_reader(),
+                                      [("sensor.synthetic", self.TIME, self.TIME, 0, 10)])}
+        for purpose, (paths, _event) in gw.YAML_READER_PURPOSES.items():
+            readers[f"{yaml_reader.TOOL_NAME}:{purpose}"] = (
+                gateway.yaml_config_reader(purpose=purpose), [(path,) for path in sorted(paths)])
+        sent = []
+
+        async def execute(**kwargs):
+            sent.append(kwargs)
+            return json.dumps({"success": True})
+
+        telemetry, token = begin_request("synthetic-w6-sweep")
+        telemetry.core_dispatch_authorizer = lambda: True
+        try:
+            with patch.object(gateway, "execute", execute):
+                for key, (reader, calls) in readers.items():
+                    with self.subTest(reader=key):
+                        self.assertIsNotNone(reader)
+                        for call in calls:
+                            sent.clear()
+                            self.assertIs((await reader.read(*call))["success"], True)
+                            (kwargs,) = sent
+                            route = routes[key.split(":")[0]]
+                            raw = route.observed_tool["inputSchema"]
+                            public = gw._public_read_schema(route.entry, raw)
+                            self.assertIs(kwargs["reviewed_schema"], raw)
+                            extra = self.RAW_ONLY[route.entry.upstream_name]
+                            self.assertEqual(set(raw["properties"]) - set(public["properties"]), extra)
+                            self.assertEqual(set(public["properties"]) - set(raw["properties"]), set())
+                            self.assertIs(raw["additionalProperties"], False)
+                            self.assertIs(public["additionalProperties"], False)
+                            if not extra:
+                                self.assertEqual(schema_fingerprint(raw), schema_fingerprint(public))
+                            self.assertFalse(set(kwargs["arguments"]) & extra)
+                            for schema in (raw, public):
+                                self.assertEqual(list(Draft202012Validator(schema).iter_errors(kwargs["arguments"])), [])
+        finally:
+            end_request(token)
 
 
 if __name__ == "__main__":
