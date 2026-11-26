@@ -933,6 +933,10 @@ class _SearchPageCapture:
 _SEARCH_PAGE_BUCKETS = (
     "entities", "automations", "scripts", "scenes", "helpers", "dashboards",
 )
+# HAMCP-501 W6: a page capture's bucket names its one sub-call search type.
+_SEARCH_PAGE_TYPES = MappingProxyType({
+    bucket: search_type for search_type, bucket in SEARCH_SUBCALL_BUCKETS.items()
+})
 
 
 def _search_page_arguments(search_type: str, arguments: Any) -> dict[str, Any] | None:
@@ -4468,6 +4472,16 @@ class UpstreamReadGateway:
                 or not reads_9_2.is_adapter(policy_entry)
             ):
                 # HAMCP-501 W4: a sub-call page is only the 9.2.0 Row 25 route.
+                raise _GatewayFailure("prohibited_delegation", dispatched=False)
+            if search_page is not None and (
+                type(search_page.bucket) is not str
+                or search_page.bucket not in _SEARCH_PAGE_TYPES
+                or _search_page_arguments(_SEARCH_PAGE_TYPES[search_page.bucket], arguments)
+                is None
+            ):
+                # HAMCP-501 W6: a sub-call page carries exactly the fixed page
+                # arguments of its bucket's search type, as the page reader
+                # builds them; anything else is not a sub-call page.
                 raise _GatewayFailure("prohibited_delegation", dispatched=False)
             yaml_route = is_yaml_adapter(policy_entry)
             yaml_path: str | None = None

@@ -38,6 +38,10 @@ from ha_mcp_engineering.providers import upstream_reads_9_2_keys as keys
 from ha_mcp_engineering.providers.upstream_read_gateway import (
     REDACTION_WARNING, UpstreamReadGateway,
 )
+from ha_mcp_engineering.ha_core_readmission.routes import INTERNAL_ONLY_DELEGATED_READS
+from ha_mcp_engineering.providers import upstream_read_gateway as gateway_module
+from ha_mcp_engineering.search import subcalls
+from ha_mcp_engineering.tools import search as native_search
 from ha_mcp_engineering.request_context import begin_request, end_request
 from test_ha_mcp_production_readmission import _GatewayTransport, _settings
 import support.ha_mcp_captures as previous  # HAMCP-437: helpers moved from the retired 8.5 module
@@ -158,8 +162,22 @@ class ParityBase(unittest.IsolatedAsyncioTestCase):
     async def call(self, name, args, upstream=None):
         self.transport.override = upstream
         self.transport.sent.clear()
-        _telemetry, token = begin_request('synthetic-hamcp319-ent')
+        telemetry, token = begin_request('synthetic-hamcp319-ent')
         try:
+            if name in INTERNAL_ONLY_DELEGATED_READS:
+                # HAMCP-501 W6 (G1, as relayed by the architect): the delegated
+                # ha_search is internal-only. Its Row 25 binding is reached
+                # only as a native search sub-call page: the page reader's
+                # execute, with a page capture, inside a request that carries
+                # a Core lease (a synthetic authorizer here).
+                telemetry.core_dispatch_authorizer = lambda: True
+                route = self.gateway._internal[name]
+                return json.loads(await self.gateway.execute(
+                    exposed_name=name, arguments=deepcopy(args),
+                    reviewed_schema=route.observed_tool['inputSchema'], policy_entry=route.entry,
+                    admission_generation=route.generation,
+                    contract_fingerprint=route.contract_fingerprint,
+                    search_page=gateway_module._SearchPageCapture('helpers')))
             tool = self.gateway._registered_tool_registry.snapshot()[name]
             return json.loads(await tool.run(deepcopy(args)))
         finally:
@@ -543,8 +561,41 @@ class Parity92Tests(ParityBase):
         await self.assert_invalid_response('ha_list_services', {}, {'success': True, 'services': []})
 
     # Row 24 ha_search ----------------------------------------------------------
+    # HAMCP-501 W6 (G1): the public ha_search is native (pinned in
+    # tests.test_hamcp501_native_search_cutover). These Row 24 projection,
+    # disclosure and refusal guards now run on the internal-only route, as a
+    # sub-call page with the fixed page arguments (see ParityBase.call).
+    PAGE = subcalls.page_arguments('helper', 'synthetic lamp', True, 0)
+
+    async def test_92_parity_row_24_search_is_internal_only(self):
+        # Never published, never a direct read: zero dispatch either way.
+        registered = self.gateway._registered_tool_registry.snapshot()
+        exposed = {tool.name for tool in await self.server.list_tools()}
+        for name in ('ha_search', 'ha_mcp__ha_search'):
+            self.assertNotIn(name, registered)
+            self.assertNotIn(name, exposed)
+        route = self.gateway._internal['ha_search']
+        self.transport.override = wrap(V92['ha_search']['no_warnings'])
+        self.transport.sent.clear()
+        telemetry, token = begin_request('synthetic-hamcp319-ent')
+        telemetry.core_dispatch_authorizer = lambda: True
+        try:
+            for args, page in ((self.PAGE, None), ({'query': 'synthetic lamp'}, 'helpers'),
+                               (self.PAGE, 'dashboards'),
+                               ({**self.PAGE, 'synthetic_unreviewed': 1}, 'helpers')):
+                with self.subTest(args=sorted(args), page=page):
+                    result = json.loads(await self.gateway.execute(
+                        exposed_name='ha_search', arguments=deepcopy(args),
+                        reviewed_schema=route.observed_tool['inputSchema'],
+                        policy_entry=route.entry, admission_generation=route.generation,
+                        contract_fingerprint=route.contract_fingerprint,
+                        search_page=None if page is None else gateway_module._SearchPageCapture(page)))
+                    self.assert_refused_unsent(result, 'prohibited_delegation')
+        finally:
+            end_request(token)
+
     async def test_92_parity_row_24_search(self):
-        args = {'query': 'synthetic lamp'}
+        args = self.PAGE
         template = V92['ha_search']['no_warnings']
         self.assertNotIn('warnings', template)
         result = await self.call('ha_search', args, wrap(template))
@@ -560,7 +611,7 @@ class Parity92Tests(ParityBase):
 
     async def test_92_parity_row_24_search_partial_disclosed(self):
         template = V92['ha_search']['partial']
-        result = await self.call('ha_search', {'query': 'synthetic lamp'}, wrap(template))
+        result = await self.call('ha_search', self.PAGE, wrap(template))
         self.assertTrue(result['success'], result)
         # partial_reason is outside the key set; the unreviewed upstream
         # warning text is replaced by the fixed code and disclosed.
@@ -574,7 +625,7 @@ class Parity92Tests(ParityBase):
         self.assert_fixed_warnings(result)
         # The partial flag alone is disclosed (re-pinned from the retired 8.5.0 case).
         flagged = {**V92['ha_search']['no_warnings'], 'partial': True}
-        result = await self.call('ha_search', {'query': 'synthetic lamp'}, wrap(flagged))
+        result = await self.call('ha_search', self.PAGE, wrap(flagged))
         self.assertTrue(result['success'], result)
         self.assert_counts(result)
         self.assertEqual(result['metadata']['completeness'], 'partial')
@@ -582,8 +633,10 @@ class Parity92Tests(ParityBase):
         self.assert_fixed_warnings(result)
 
     async def test_92_parity_row_24_search_refusals(self):
-        args = {'query': 'synthetic lamp'}
-        await self.assert_unknown_key_refused('ha_search', args)
+        args = self.PAGE
+        # An unknown key is not a sub-call page: refused before dispatch.
+        result = await self.call('ha_search', {**args, 'synthetic_unreviewed': 1}, wrap({'success': True}))
+        self.assert_refused_unsent(result, 'prohibited_delegation')
         # All-legs failure raises upstream: a failure, never an empty success.
         await self.assert_upstream_error_fails('ha_search', args, 'SERVICE_CALL_FAILED')
         await self.assert_invalid_response('ha_search', args, {**V92['ha_search']['no_warnings'], 'success': False})
@@ -670,9 +723,22 @@ class Parity92Tests(ParityBase):
         self.assertEqual(SURFACE_85['label'], SURFACE_85_LABEL)
         ours = {t.name: t for t in await self.server.list_tools() if t.name in ENT_TOOLS}
         theirs = {t['name']: t for t in SURFACE_85['tools']}
-        self.assertEqual(set(ours), set(ENT_TOOLS))
+        # HAMCP-501 W6 (G1): the gateway no longer publishes ha_search; the
+        # public ha_search is the native tool, compared below.
+        self.assertEqual(set(ours), set(ENT_TOOLS) - INTERNAL_ONLY_DELEGATED_READS)
         self.assertEqual(set(theirs), set(ENT_TOOLS))
-        for name in ENT_TOOLS:
+        native = native_search.registered_tool()
+        # Kept: the 8.5 schema with one appended search_types sentence, and
+        # the annotations. Improved: an Engineering-owned, complete description
+        # (the 8.5 text is cut at its 500-character bound).
+        schema = deepcopy(theirs['ha_search']['inputSchema'])
+        search_types = schema['properties']['search_types']
+        search_types['description'] = f"{search_types['description']} {native_search.SEARCH_TYPES_SENTENCE}"
+        self.assertEqual(native.parameters, schema)
+        self.assertEqual(native.annotations.model_dump(mode='json'), theirs['ha_search']['annotations'])
+        self.assertEqual(len(theirs['ha_search']['description']), 500)
+        self.assertNotEqual(native.description, theirs['ha_search']['description'])
+        for name in sorted(ours):
             self.assertEqual(ours[name].inputSchema, theirs[name]['inputSchema'], name)
             self.assertEqual(ours[name].annotations.model_dump(mode='json'), theirs[name]['annotations'], name)
             if name != 'ha_get_skill_guide':
@@ -812,7 +878,10 @@ class F3ReplayTests(ParityBase):
             record = receipt(name, pointer)
             self.assertEqual(record['structuredContent']['entities'], [])
             self.assertIs(record['structuredContent']['partial'], False)
-            args = {'query': query, 'domain_filter': 'input_boolean'}
+            # HAMCP-501 W6 (G1): the frozen receipt replays through the
+            # internal-only route as a sub-call page (config-only arguments);
+            # native entity search's hidden handling is the W3 engine's.
+            args = subcalls.page_arguments('helper', query, True, 0)
             result = await self.call('ha_search', args, record)
             self.assert_sent('ha_search', args)
             self.assertTrue(result['success'], result)

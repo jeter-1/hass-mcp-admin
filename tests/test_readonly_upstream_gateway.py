@@ -38,6 +38,7 @@ from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
 from ha_mcp_engineering.configuration import Settings  # noqa: E402
 from ha_mcp_engineering.errors import HomeAssistantUnavailableError  # noqa: E402
 from ha_mcp_engineering.observability import METRICS  # noqa: E402
+from ha_mcp_engineering.providers import upstream_read_gateway as gateway_module  # noqa: E402
 from ha_mcp_engineering.providers.upstream_read_gateway import (  # noqa: E402
     PROVIDER_ID,
     REDACTION_WARNING,
@@ -417,7 +418,9 @@ class SuspendedIdentityTransport(FakeTransport):
 
 
 class CommittedSlowTransport(FakeTransport):
-    def __init__(self, tools, *, slow_tool="ha_search"):
+    # HAMCP-501 W6 (G1): a delegated ha_search route is internal-only, so the
+    # slow example read is ha_get_history.
+    def __init__(self, tools, *, slow_tool="ha_get_history"):
         super().__init__(tools)
         self.slow_tool = slow_tool
         self.slow_call_committed = asyncio.Event()
@@ -1333,6 +1336,9 @@ class ReadGatewayTransportTests(unittest.IsolatedAsyncioTestCase):
 
 class GenericReadAuditTests(unittest.IsolatedAsyncioTestCase):
     async def test_audit_distinguishes_delegated_failure_classes(self):
+        # HAMCP-501 W6: ha_search is the native Engineering tool, audited by
+        # its own branch (tests.test_hamcp501_native_search_cutover); a
+        # generic delegated read carries the delegated failure classes.
         cases = (
             ("invalid_request", "validation-audit"),
             ("unsupported_operation", "capability-audit"),
@@ -1358,7 +1364,7 @@ class GenericReadAuditTests(unittest.IsolatedAsyncioTestCase):
                                         "text": json.dumps(
                                             {
                                                 "success": False,
-                                                "operation": "ha_search",
+                                                "operation": "ha_get_history",
                                                 "error_code": error_code,
                                                 "message": (
                                                     f"safe response {SECRET}"
@@ -1391,8 +1397,8 @@ class GenericReadAuditTests(unittest.IsolatedAsyncioTestCase):
                 replace_dynamic_upstream_capabilities(
                     (
                         {
-                            "tool": "ha_search",
-                            "upstream_tool": "ha_search",
+                            "tool": "ha_get_history",
+                            "upstream_tool": "ha_get_history",
                             "status": "delegated",
                             "category": "upstream_read_gateway",
                             "risk": "read",
@@ -1419,8 +1425,8 @@ class GenericReadAuditTests(unittest.IsolatedAsyncioTestCase):
                             "id": request_id,
                             "method": "tools/call",
                             "params": {
-                                "name": "ha_search",
-                                "arguments": {"search_types": []},
+                                "name": "ha_get_history",
+                                "arguments": {"entity_id": "sun.sun"},
                             },
                         }
                         delivered = False
@@ -1463,7 +1469,7 @@ class GenericReadAuditTests(unittest.IsolatedAsyncioTestCase):
                 finally:
                     replace_dynamic_upstream_capabilities((), {})
 
-                self.assertEqual(record["tool_name"], "ha_search")
+                self.assertEqual(record["tool_name"], "ha_get_history")
                 self.assertEqual(record["result_status"], "failure")
                 self.assertEqual(record["error_code"], error_code)
                 self.assertEqual(
@@ -1476,7 +1482,7 @@ class GenericReadAuditTests(unittest.IsolatedAsyncioTestCase):
                 )
                 self.assertEqual(
                     record["parameters"]["argument_fields"],
-                    ["search_types"],
+                    ["entity_id"],
                 )
                 self.assertNotIn(SECRET, serialized)
 
@@ -1891,7 +1897,7 @@ class PolicyInventoryTests(unittest.TestCase):
         self.assertTrue(all(not item.destructive for item in automatic_annotations.values()))
 
     def test_engineering_catalog_is_52_without_upstream_discovery(self):
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 87)  # HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 88)  # HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts; HAMCP-501 W6: + native ha_search
         self.assertEqual(
             len(registered_tools(get_registered_server()).values()),
             ENGINEERING_STATIC_TOOL_COUNT,
@@ -2837,7 +2843,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         )
         catalog = build_capability_catalog()
         self.assertEqual(catalog["dynamic_upstream_count"], 1)
-        self.assertEqual(catalog["engineering_registered_count"], 87)  # HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
+        self.assertEqual(catalog["engineering_registered_count"], 88)  # HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts; HAMCP-501 W6: + native ha_search
         route = capability_for_tool("ha_get_state")
         self.assertEqual(route["provider"], "upstream_read_gateway")
         self.assertEqual(route["operation_class"], "automatic_read")
@@ -3063,17 +3069,79 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
             entry,
         )
 
-    async def _search_case(self, payload):
-        entry = policy_entry("ha_search")
+    @staticmethod
+    def _search_completeness(payload):
+        # HAMCP-501 W6 (G1): a delegated ha_search route is internal-only. It
+        # executes only as a 9.2.0 Row 25 sub-call page, whose redacted or
+        # bounded rows fail the page (W4 D2) and whose partial flag the page
+        # reader checks (tests.test_hamcp501_search_subcall_readers). The
+        # gateway's own ha_search completeness rule is pinned here directly.
+        return gateway_module._upstream_completeness(policy_entry("ha_search"), payload)
+
+    async def _generic_read(self, payload, *, upstream=None):
+        # A generic read carries the execute mechanics the retired delegated
+        # search tests proved: redaction, bounding and an upstream partial.
         result = {"structuredContent": payload, "isError": False}
-        transport = FakeTransport([catalog_tool("ha_search")], result=result)
-        gateway, server, _ = await initialize(
-            [entry], [catalog_tool("ha_search")], transport=transport
+        _gateway, tool, transport, _entry = await self._case(result=result)
+        if upstream is None:
+            encoded = await tool.run({"entity_id": "sun.sun"})
+        else:
+            with patch.object(
+                gateway_module, "_upstream_completeness", return_value=upstream
+            ):
+                encoded = await tool.run({"entity_id": "sun.sun"})
+        self.assertEqual(len(transport.calls), 1)
+        return json.loads(encoded)
+
+    async def test_w6_a_delegated_ha_search_is_internal_only(self):
+        # HAMCP-501 W6 (G1), on every version: a reviewed ha_search route is
+        # admitted internal-only, with no tool, alias or capability, and
+        # execute refuses it, before any dispatch, unless it is the 9.2.0
+        # Row 25 route serving a page capture under a Core authorizer.
+        entries = [policy_entry("ha_search"), policy_entry("ha_get_state")]
+        tools = [catalog_tool(entry.upstream_name) for entry in entries]
+        transport = FakeTransport(tools)
+        gateway, server, _ = await initialize(entries, tools, transport=transport)
+        registered = registered_tools(server)
+        self.assertIsNone(registered.get("ha_search"))
+        self.assertIsNone(registered.get("ha_mcp__ha_search"))
+        self.assertIsNotNone(registered.get("ha_get_state"))
+        health = gateway.health_snapshot()
+        self.assertEqual(health["exposed_tools"], ["ha_get_state"])
+        self.assertEqual(health["dynamically_exposed_count"], 1)
+        self.assertEqual(health["exact_matched_automatic_read_count"], 2)
+        dynamic = build_capability_catalog()["dynamic_upstream"]
+        self.assertEqual([item["tool"] for item in dynamic], ["ha_get_state"])
+        self.assertEqual(
+            [item for item in dynamic if item.get("upstream_tool") == "ha_search"], []
         )
-        encoded = await registered_tools(server).get("ha_search").run(
-            {"entity_id": "sun.sun"}
-        )
-        return json.loads(encoded), gateway
+        with gateway._lock:
+            route = gateway._internal["ha_search"]
+        call = {
+            "exposed_name": "ha_search",
+            "arguments": {"entity_id": "sun.sun"},
+            "reviewed_schema": route.observed_tool["inputSchema"],
+            "policy_entry": route.entry,
+            "admission_generation": route.generation,
+            "contract_fingerprint": route.contract_fingerprint,
+        }
+        refused = [json.loads(await gateway.execute(**call))]
+        telemetry, token = begin_request("w6-internal-only")
+        try:
+            refused.append(json.loads(await gateway.execute(**call)))
+            telemetry.core_dispatch_authorizer = lambda: True
+            refused.append(json.loads(await gateway.execute(
+                **call, search_page=gateway_module._SearchPageCapture("helpers")
+            )))
+        finally:
+            end_request(token)
+        for value in refused:
+            self.assertIs(value["success"], False)
+            self.assertEqual(
+                value["details"]["failure_category"], "prohibited_delegation"
+            )
+        self.assertEqual(transport.calls, [])
+        self.assertEqual(transport.attempts, [])
 
     async def test_arguments_are_validated_before_dispatch(self):
         _gateway, tool, transport, _entry = await self._case()
@@ -3759,7 +3827,7 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_slow_read_does_not_block_unrelated_read(self):
         entries = [
-            policy_entry("ha_search"),
+            policy_entry("ha_get_history"),
             policy_entry("ha_get_state"),
         ]
         tools = [catalog_tool(entry.upstream_name) for entry in entries]
@@ -3767,7 +3835,7 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
         gateway, server, _ = await initialize(
             entries, tools, transport=transport
         )
-        slow_tool = registered_tools(server).get("ha_search")
+        slow_tool = registered_tools(server).get("ha_get_history")
         fast_tool = registered_tools(server).get("ha_get_state")
 
         slow_task = asyncio.create_task(
@@ -3793,7 +3861,7 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_committed_slow_read_does_not_block_discovery_publication(self):
-        entry = policy_entry("ha_search")
+        entry = policy_entry("ha_get_history")
         tools = [catalog_tool(entry.upstream_name)]
         transport = CommittedSlowTransport(tools)
         gateway, server, _ = await initialize(
@@ -3826,7 +3894,7 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_inflight_retired_route_cannot_revive_quarantined_route(self):
         entries = [
-            policy_entry("ha_search"),
+            policy_entry("ha_get_history"),
             policy_entry("ha_get_state"),
         ]
         tools = [catalog_tool(entry.upstream_name) for entry in entries]
@@ -3834,21 +3902,21 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
         gateway, server, _ = await initialize(
             entries, tools, transport=transport
         )
-        old_search = registered_tools(server).get("ha_search")
+        old_history = registered_tools(server).get("ha_get_history")
         slow_task = asyncio.create_task(
-            old_search.run({"entity_id": "sun.sun"})
+            old_history.run({"entity_id": "sun.sun"})
         )
         await asyncio.wait_for(
             transport.slow_call_committed.wait(), timeout=1
         )
 
-        changed_search = catalog_tool(
-            "ha_search", reviewed_schema=schema("changed")
+        changed_history = catalog_tool(
+            "ha_get_history", reviewed_schema=schema("changed")
         )
         transport.catalog = replace(
             transport.catalog,
             tools=(
-                changed_search,
+                changed_history,
                 catalog_tool("ha_get_state"),
             ),
         )
@@ -3856,7 +3924,7 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
             gateway.initialize(server), timeout=1
         )
         self.assertEqual(refreshed["admission_status"], "partially_admitted")
-        self.assertIsNone(registered_tools(server).get("ha_search"))
+        self.assertIsNone(registered_tools(server).get("ha_get_history"))
         self.assertIsNotNone(registered_tools(server).get("ha_get_state"))
 
         transport.release_slow_call.set()
@@ -3866,25 +3934,39 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(final["admission_status"], "partially_admitted")
         self.assertEqual(final["dynamically_exposed_count"], 1)
         self.assertEqual(final["quarantined_automatic_read_count"], 1)
-        self.assertIsNone(registered_tools(server).get("ha_search"))
+        self.assertIsNone(registered_tools(server).get("ha_get_history"))
 
     async def test_search_preserves_upstream_partial_semantics(self):
-        value, _gateway = await self._search_case(
-            {"results": [{"entity_id": "sun.sun"}], "partial": True}
+        self.assertEqual(
+            self._search_completeness(
+                {"results": [{"entity_id": "sun.sun"}], "partial": True}
+            ),
+            (True, ["The upstream search reported partial coverage."]),
+        )
+        value = await self._generic_read(
+            {"results": [{"entity_id": "sun.sun"}], "partial": True},
+            upstream=(True, ["The upstream search reported partial coverage."]),
         )
         self.assertTrue(value["success"])
         self.assertTrue(value["data"]["partial"])
         self.assertEqual(value["metadata"]["completeness"], "partial")
-        self.assertIn(
-            "The upstream search reported partial coverage.", value["warnings"]
+        self.assertEqual(
+            value["warnings"], ["The upstream search reported partial coverage."]
         )
 
     async def test_search_complete_false_remains_complete(self):
-        value, _gateway = await self._search_case(
-            {"results": [{"entity_id": "sun.sun"}], "partial": False}
+        self.assertEqual(
+            self._search_completeness(
+                {"results": [{"entity_id": "sun.sun"}], "partial": False}
+            ),
+            (False, []),
+        )
+        value = await self._generic_read(
+            {"results": [{"entity_id": "sun.sun"}], "partial": False},
+            upstream=(False, []),
         )
         self.assertEqual(value["metadata"]["completeness"], "complete")
-        self.assertNotIn("unverified", " ".join(value["warnings"]).lower())
+        self.assertEqual(value["warnings"], [])
 
     async def test_search_missing_or_malformed_partial_fails_closed_as_partial(self):
         missing = object()
@@ -3893,19 +3975,24 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
                 payload = {"results": []}
                 if marker is not missing:
                     payload["partial"] = marker
-                value, _gateway = await self._search_case(payload)
-                self.assertEqual(value["metadata"]["completeness"], "partial")
-                self.assertIn(
-                    "The upstream search completeness could not be verified.",
-                    value["warnings"],
+                self.assertEqual(
+                    self._search_completeness(payload),
+                    (True, ["The upstream search completeness could not be verified."]),
+                )
+        for payload in (None, [], "partial", 0):
+            with self.subTest(payload=payload):
+                self.assertEqual(
+                    self._search_completeness(payload),
+                    (True, ["The upstream search completeness could not be verified."]),
                 )
 
     async def test_search_partial_remains_truthful_after_secret_redaction(self):
-        value, _gateway = await self._search_case(
+        value = await self._generic_read(
             {
                 "results": [{"entity_id": "sun.sun", "access_token": SECRET}],
                 "partial": True,
-            }
+            },
+            upstream=(True, ["The upstream search reported partial coverage."]),
         )
         encoded = json.dumps(value, sort_keys=True)
         self.assertNotIn(SECRET, encoded)
@@ -3918,8 +4005,9 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_search_local_bounding_remains_partial(self):
-        value, _gateway = await self._search_case(
-            {"results": [{"description": "x" * 25_000}], "partial": False}
+        value = await self._generic_read(
+            {"results": [{"description": "x" * 25_000}], "partial": False},
+            upstream=(False, []),
         )
         self.assertEqual(value["metadata"]["completeness"], "partial")
         self.assertIn(
@@ -3930,8 +4018,9 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
         METRICS.reset()
         telemetry, token = begin_request("search-partial-test")
         try:
-            value, _gateway = await self._search_case(
-                {"results": [], "partial": True}
+            value = await self._generic_read(
+                {"results": [], "partial": True},
+                upstream=(True, ["The upstream search reported partial coverage."]),
             )
         finally:
             end_request(token)
@@ -3991,16 +4080,18 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
             "required": ["query"],
             "additionalProperties": False,
         }
-        entry = policy_entry("ha_search", reviewed_schema=reviewed_schema)
+        # HAMCP-501 W6 (G1): ha_search is internal-only; the validation codes
+        # are not tool-keyed, so any generic read proves the class.
+        entry = policy_entry("ha_get_history", reviewed_schema=reviewed_schema)
         transport = FakeTransport(
-            [catalog_tool("ha_search", reviewed_schema)], result=result
+            [catalog_tool("ha_get_history", reviewed_schema)], result=result
         )
         gateway, server, _transport = await initialize(
             [entry],
-            [catalog_tool("ha_search", reviewed_schema)],
+            [catalog_tool("ha_get_history", reviewed_schema)],
             transport=transport,
         )
-        tool = registered_tools(server).get("ha_search")
+        tool = registered_tools(server).get("ha_get_history")
         telemetry, token = begin_request("delegated-validation")
         try:
             encoded = await tool.run(
@@ -4280,8 +4371,12 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(health["fallback_count"], 0)
 
     async def test_unreviewed_domain_tool_code_combinations_fail_closed(self):
+        for key in (("ha_search", "ENTITY_NOT_FOUND"), ("ha_get_history", "ENTITY_NOT_FOUND")):
+            self.assertNotIn(key, gateway_module._UPSTREAM_DOMAIN_OUTCOMES)
         cases = (
-            ("ha_search", "ENTITY_NOT_FOUND"),
+            # HAMCP-501 W6 (G1): ha_search is internal-only; ha_get_history
+            # has no reviewed ENTITY_NOT_FOUND outcome either.
+            ("ha_get_history", "ENTITY_NOT_FOUND"),
             ("ha_get_state", "RESOURCE_NOT_FOUND"),
             ("ha_config_list_helpers", "CONFIG_NOT_FOUND"),
             ("ha_get_state", "ENTITY_INVALID_ID"),
@@ -5471,12 +5566,12 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(health["dynamically_exposed_count"], 26)
         self.assertEqual(len(health["exposed_tools"]), 26)
         self.assertEqual(catalog["dynamic_upstream_count"], 26)
-        self.assertEqual(catalog["registered_count"], 113)  # HAMCP-253, HAMCP-311, HAMCP-229; HAMCP-290; HAMCP-134; HAMCP-297; HAMCP-231; HAMCP-476: 87 static + 26
+        self.assertEqual(catalog["registered_count"], 114)  # HAMCP-253, HAMCP-311, HAMCP-229; HAMCP-290; HAMCP-134; HAMCP-297; HAMCP-231; HAMCP-476; HAMCP-501 W6 (+ native ha_search): 88 static + 26
         self.assertEqual(
             catalog["upstream_read_gateway"]["dynamically_exposed_count"], 26
         )
         self.assertEqual(metadata["dynamic_upstream_tool_count"], 26)
-        self.assertEqual(metadata["tool_count"], 113)  # HAMCP-229 + HAMCP-290 + HAMCP-134 + HAMCP-297 + HAMCP-231 + HAMCP-476: 87 static + 26
+        self.assertEqual(metadata["tool_count"], 114)  # HAMCP-229 + HAMCP-290 + HAMCP-134 + HAMCP-297 + HAMCP-231 + HAMCP-476 + HAMCP-501 W6 (+ native ha_search): 88 static + 26
         self.assertEqual(capability_for_tool("ha_read_0")["fallback"], "none")
 
         task.cancel()

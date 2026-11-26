@@ -51,6 +51,7 @@ from ha_mcp_engineering.ha_core_readmission.profiles import (  # noqa: E402
     CORE_RUNTIME_CAPABILITY_PROFILES,
 )
 from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
+    INTERNAL_ONLY_DELEGATED_READS,
     DELEGATED_CORE_REQUIREMENTS,
     F3_ENTRY_ADMISSION_PROFILES,
     PENDING_ADMISSION_TOOLS,
@@ -1490,9 +1491,14 @@ class GatewayRetirementTests(unittest.IsolatedAsyncioTestCase):
                     # Mode A also exposes the optional YAML reader, which is
                     # not an automatic read; OFF does not.
                     optional = 1 if label == "A" else 0
+                    # HAMCP-501 W6 (G1): the delegated ha_search is matched
+                    # but admitted internal-only, so it is never exposed.
+                    self.assertIn("ha_search", gateway._internal)
+                    self.assertNotIn("ha_search", health["exposed_tools"])
                     self.assertEqual(health["dynamically_exposed_count"],
                                      health["exact_matched_automatic_read_count"]
-                                     - health["core_withheld_read_count"] + optional)
+                                     - health["core_withheld_read_count"] + optional
+                                     - len(INTERNAL_ONLY_DELEGATED_READS))
                     self.assertEqual(health["core_withheld_read_count"], 0)
                     if native:
                         self.assertIsNotNone(registered_tools(server).get(TOOL))

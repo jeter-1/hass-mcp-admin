@@ -808,6 +808,16 @@ class AdmissionTests(Readers):
             ("ha_search", {"bucket": "helpers", "withheld_names": None}, arguments(), None),
             ("ha_search", capture_, arguments(),
              foreign.registry().by_version["9.1.2"].policy.by_name["ha_search"]),
+            # W6: a page capture carries exactly its bucket's fixed page
+            # arguments; anything else is not a sub-call page.
+            ("ha_search", capture_, {**arguments(), "synthetic_unreviewed": 1}, None),
+            ("ha_search", capture_, {"query": "kitchen"}, None),
+            ("ha_search", capture_, {**arguments(), "offset": 5}, None),
+            ("ha_search", capture_, {**arguments(), "limit": 10}, None),
+            ("ha_search", capture_, arguments(search_type="dashboard"), None),
+            ("ha_search", gw._SearchPageCapture("dashboards"), arguments(), None),
+            ("ha_search", gw._SearchPageCapture("entities"), arguments(), None),
+            ("ha_search", gw._SearchPageCapture(["helpers"]), arguments(), None),
         ]
         for upstream_name, page, value, entry in refusals:
             with self.subTest(upstream_name=upstream_name, page=type(page).__name__, entry=bool(entry)):

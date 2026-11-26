@@ -22,6 +22,7 @@ from mcp.server.fastmcp import FastMCP  # noqa: E402
 from ha_mcp_engineering.capabilities import build_capability_catalog  # noqa: E402
 from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
     DELEGATED_CORE_REQUIREMENTS,
+    INTERNAL_ONLY_DELEGATED_READS,
     RETIRED_DELEGATED_READS,
     delegated_requirements,
 )
@@ -593,8 +594,13 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
                 tools = g._registered_tool_registry.snapshot()
                 # HAMCP-290: the retired delegated ha_get_hacs_info is withheld
                 # on every reviewed release (Josh decision 2026-11-08).
-                self.assertEqual(set(tools), EXACT_READS - RETIRED_DELEGATED_READS, g.health_snapshot())
-                self.assertEqual(len(tools), EXACT_READ_COUNT)
+                # HAMCP-501 W6 (G1): the delegated ha_search is admitted
+                # internal-only (the native search sub-call route), never
+                # published.
+                self.assertEqual(set(tools), EXACT_READS - RETIRED_DELEGATED_READS - INTERNAL_ONLY_DELEGATED_READS,
+                                 g.health_snapshot())
+                self.assertEqual(len(tools), EXACT_READ_COUNT - len(INTERNAL_ONLY_DELEGATED_READS))
+                self.assertEqual(set(g._internal), set(INTERNAL_ONLY_DELEGATED_READS))
                 upstream = {item["name"]: item for item in capture(version)["tools"]}
                 for name in TOOLS:
                     self.assertEqual(tools[name].parameters, platform.PUBLIC_SCHEMAS[name])
@@ -1295,7 +1301,11 @@ class AdmissionTests(unittest.IsolatedAsyncioTestCase):
                         g, t = await make_gateway(version, tools)
                         exposed = set(g._registered_tool_registry.snapshot())
                         # HAMCP-290: the retired read is never exposed.
-                        self.assertEqual(exposed, EXACT_READS - RETIRED_DELEGATED_READS - {tool}, g.health_snapshot())
+                        # HAMCP-501 W6 (G1): internal-only reads are never exposed.
+                        self.assertEqual(exposed, EXACT_READS - RETIRED_DELEGATED_READS
+                                         - INTERNAL_ONLY_DELEGATED_READS - {tool}, g.health_snapshot())
+                        # A platform-read drift leaves the internal route admitted.
+                        self.assertEqual(set(g._internal), set(INTERNAL_ONLY_DELEGATED_READS))
                         self.assertIn(tool, {item["upstream_name"] for item in g.health_snapshot()["quarantined_tools"]})
                         self.assertEqual(t.sent, [])
 
