@@ -1,11 +1,10 @@
 # HAMCP-481 native search — design
 
-Status: **implementation record, revision 5; not yet marked implemented.**
-Docs only. The build is HAMCP-501 on `release/2.10.0`: W1 #506, W2 #507,
-W3 #513, W4 #516 and W6 #517 are merged; W7 (this revision) and W6b #519 are
-open. W5 is dropped (§3.7). The "Implemented in 2.10.0 (Engineering
-2.4.2-beta.14)" mark is added only after #519 merges, as the architect
-directed. Revision 5 notes in §0 to §9 are marked *Rev 5* and point to the
+Status: **Implemented in 2.10.0 (Engineering 2.4.2-beta.14).** This is the
+implementation record, revision 5, and it is docs only. The build is
+HAMCP-501 on `release/2.10.0`: W1 #506, W2 #507, W3 #513, W4 #516, W6 #517,
+W6b #519 and W7 #520 (this revision). W5 is dropped (§3.7). Revision 5
+notes in §0 to §9 are marked *Rev 5* and point to the
 implementation record in §10. Where a revision 4 text and §10 differ, §10
 describes what was built.
 
@@ -64,6 +63,7 @@ supersedes it (§9, §10.2).
   - Engineering citations are relative to
     `hass_mcp_engineering_beta/ha_mcp_engineering/` at that base.
   - ha-mcp citations are 9.2.0 (`51e3aac7`), relative to `src/ha_mcp/`.
+  - *Rev 5 / W6b* notes cite `d3da5b07`, the #519 merge (§10.14).
 
 ## 0. Summary
 
@@ -525,6 +525,19 @@ Inputs are stripped first (`tools_search.py:355-362`). Then:
     installed ha-mcp overrides the setting is unknown and is a build input.
 
   `score` and `match_type` are kept.
+- *Rev 5 / W6b (#519, §10.14):* native scores on the route live 9.2.0
+  serves, the `ha_mcp_tools` component's tier scorer. Citations are at
+  `d3da5b07`.
+  - BM25 and the typo fallback are retired. `text_tier`
+    (`search/scoring.py:144`) is 100 on an equal text, 80 on a substring,
+    and in fuzzy mode the best ratio when it reaches 70 (`:80`).
+    Configuration names use `name_tier` (`:190`), where a substring is 100.
+  - The exact-mode texts add the composed name, aliases, labels, device
+    texts, area and floor (`_Joins.texts`, `search/entities.py:650`).
+  - `match_type` adds `alias_match` and has no `typo_fallback`
+    (`search/scoring.py:211-262`).
+  - The area-plus-query mode scores entities with the same tier scorer, in
+    place of BM25 at a threshold of 80.
 - **Attribution.** ha-mcp is MIT-licensed, "Copyright (c) 2024 Julien"
   (`LICENSE:3`). The ported module keeps that notice and names the source
   commit `51e3aac7`.
@@ -574,6 +587,14 @@ when step 1 did not match, because the floor steps are then needed (§6.2).
   Native keeps that behavior at parity. The note's fact becomes a reviewed
   warning text, because the `state_filter_note` key stays withheld
   (HAMCP-447).
+
+  *Rev 5 / W6b (#519, §10.14):* the page-only behavior above is the legacy
+  path's. The component route filters by state before scoring and paging,
+  and native now does the same in every mode: `kept()`
+  (`search/entities.py:727` at `d3da5b07`) runs the domain, hidden and
+  state filters first, and `PAGE_FILTERED_MODES` is empty (`:169`). The
+  page-only warning, `WARNING_STATE_PAGE_ONLY`, is removed
+  (`search/reply.py`).
 
 ### 3.5 Configuration and reference matching
 
@@ -767,8 +788,8 @@ the build stops.
 | `search_types` | Configuration types `automation`, `script`, `scene`, `helper`, `dashboard`. The default is the first four. Any explicit value skips entities. The public description omits that | The 9.2.0 meaning is kept. The description gains the wire sentence: "Explicitly providing this selects configuration-only search and skips entities. Omit it for entity discovery." The R-A warning explains the empty bucket. An explicit `search_types` with no query is refused as `no_criteria` (`search/engine.py:232-233`) before the warning is added (`:347-348`), so every successful explicit reply carries it (§10.12). `dashboard` routes per §2.4 | Redefined (description only), decided as relayed: reading (i), confirmed as relayed (J3) |
 | `domain_filter` | Entity search only; does not affect configuration search | The same | Kept |
 | `area_filter` | The ladder in §3.3, with floor expansion | The same, plus the effective-area rule (§2.3) | Kept |
-| `state_filter` | Case-insensitive; standalone enumerates; page-only in the two modes of §3.4 | The same (§3.4) | Kept |
-| `exact_match` | true: substring. false: fuzzy | The same, with the scorer ported (§3.2) | Kept |
+| `state_filter` | Case-insensitive; standalone enumerates; page-only in the two modes of §3.4 | The same, except that since W6b the filter runs before paging in every mode (§3.4, §10.14) | Kept |
+| `exact_match` | true: substring. false: fuzzy | The same, with the component's tier scorer since W6b (§3.2, §10.14) | Kept |
 | `limit` | Default 10, minimum 1, no maximum, per surface | The same, with no cap. A page the response budget ends early is `paged` with the next offset (§6.3) | Kept, decided as relayed (J1, no caps) |
 | `offset` | Minimum 0 | The same | Kept |
 | `group_by_domain` | Adds the `by_domain` map of page records. Withheld today | The same. `by_domain` stays withheld until HAMCP-447 releases it, and is counted in `fields_withheld` | Kept |
@@ -855,10 +876,11 @@ On the legacy path, the `name` opt-in carries no composed value, only its note
 (`_COMPOSED_NAME_UNAVAILABLE`, `tools/search/entities.py:81`, used at `:117`).
 The component path composes it. Natively, `name` is composed by the pinned
 Core naming rule (ADR-021). If the build cannot pin that rule, `name` is
-served as the legacy path serves it, with the note. *Rev 5:* native composes
-`name` once W6b (#519) lands, and W7 merges after #519. Without #519, the
-native reply does not compose `name` and warns that it is not served
-(§10.10).
+served as the legacy path serves it, with the note. *Rev 5 / W6b:* #519
+landed. `composed_name` (`search/entities.py:464` at `d3da5b07`) ports
+Core 2026.11.3's `_async_get_full_entity_name`, and entity rows serve it,
+or the friendly name when it composes empty (`:734-737`).
+`WARNING_COMPOSED_NAME` is removed (`search/reply.py`; §10.10, §10.14).
 
 No new record field is added in this revision. Revision 1 proposed `device_id`,
 `device_name`, `area_id`, `hidden`, `entity_category`, `device_class`,
@@ -984,8 +1006,9 @@ requested. Native never treats a null as "not hidden" or "not in this area".
 The closed warning set also has reviewed texts for:
 
 - an ambiguous fuzzy floor;
-- the `state_filter` page-only note (§3.4);
-- the composed-`name` note (§5.2);
+- *(rev 5 / W6b: removed, §10.14)* the `state_filter` page-only note
+  (§3.4);
+- *(rev 5 / W6b: removed, §10.14)* the composed-`name` note (§5.2);
 - *(rev 5: not built, §3.7)* ha-mcp's own visibility filter failed open, so
   no filter applied (§3.7). The warnings as built are in §10.10.
 
@@ -1079,6 +1102,11 @@ Notes for the build's security section:
    corpus. It has provenance naming the commit and the command. Native scores,
    match types and order must equal it, including the typo, alias and
    area-plus-query (threshold 80) cases.
+   *Rev 5 / W6b:* the golden is now generated from the component's scorer
+   (`custom_components/ha_mcp_tools/websocket_api/search_score.py` at
+   `51e3aac7`), and
+   `docs/evidence/hamcp481/fixtures/component-scoring-golden.json` pins
+   it. The W1 golden fixtures stay as history (§10.14).
 5. **Kept capabilities (C2):**
    - an exact `entity_id` referenced by an automation returns that
      automation with `match_in_references` true, with bodies absent. With
@@ -1390,10 +1418,11 @@ configuration, not an argument, so no argument is retired.
 Revision 5 records what HAMCP-501 built on `release/2.10.0`, from the merged
 source at `c2b68911`, the merged pull requests and their reviews. Source paths
 are under `hass_mcp_engineering_beta/ha_mcp_engineering/` unless a path says
-otherwise, and line numbers are at `c2b68911`. Where this section and an
-earlier section differ, this section describes the build. The labels G-b to
-G-j, R-A and the plan corrections in §10.12 are the architect's W7 review
-labels.
+otherwise, and line numbers are at `c2b68911`, except where a citation names
+`d3da5b07`, the #519 merge (§10.10's warnings and §10.14). Where this
+section and an earlier section differ, this section describes the build.
+The labels G-b to G-j, R-A and the plan corrections in §10.12 are the
+architect's W7 review labels.
 
 ### 10.1 Pull requests and reviews
 
@@ -1405,8 +1434,8 @@ labels.
 | W4 | #516 | `cc1c5bb2` | 2026-11-25 20:39 CST |
 | W5 | none | dropped (§10.2) | not applicable |
 | W6 | #517 | `c2b68911` (head `9e68614d`) | 2026-11-26 14:36 CST |
-| W7 | this revision | open | not merged |
-| W6b | #519 | open | not merged |
+| W6b | #519 | `d3da5b07` (head `a4cfdb0a`) | 2026-11-26 16:06 CST |
+| W7 | #520 (this revision) | open | not merged |
 
 - W6 (#517) is the cutover to native `ha_search`. Its reviews:
   - Codex r1: F1 High (§10.6) and F2 Medium, both corrected in one batch.
@@ -1416,11 +1445,15 @@ labels.
     and verified the fix.
 - The architect accepted the CI lane as W6's real Home Assistant evidence.
   Real Home Assistant stays CI-only.
-- W6b (#519) serves the composed device and entity name (X12, §10.13), split
-  from W6 by the architect. Until it merges, the native reply warns that the
-  composed name is not served (§10.10).
-- The "Implemented in 2.10.0 (Engineering 2.4.2-beta.14)" mark is added only
-  after #519 merges.
+- W6b (#519), split from W6 by the architect, moved native entity scoring to
+  the component route and serves the composed device and entity name (X12,
+  §10.13). It removed two warnings (§10.10). Its record is §10.14.
+  - Cursor r1 at `8fbbaee4`: READY_WITH_FOLLOW_UP, one Low finding, no
+    correction batch.
+  - The post-merge delta (`d6056c91`, `b7a42c2e` and `a4cfdb0a`) had no
+    Cursor r2. The architect verified it.
+- The "Implemented in 2.10.0 (Engineering 2.4.2-beta.14)" mark was added
+  after #519 merged, as the architect directed.
 
 ### 10.2 Superseding decision: visibility (2026-11-25)
 
@@ -1734,12 +1767,14 @@ Compared with §6.1:
 
 The other parts of the reply:
 
-- **Warnings.** `WARNINGS` (`search/reply.py:119`) holds five closed texts:
+- **Warnings.** `WARNINGS` (`search/reply.py:111` at `d3da5b07`) holds
+  three closed texts:
   - entity search skipped;
   - configuration search skipped;
-  - an ambiguous floor, so no area was selected;
-  - `state_filter` applied to this page only;
-  - `name` requested, but not composed (until W6b).
+  - an ambiguous floor, so no area was selected.
+
+  *Rev 5 / W6b:* W6 had five (`:119` at `c2b68911`). #519 removed
+  `WARNING_STATE_PAGE_ONLY` and `WARNING_COMPOSED_NAME` (§10.14).
 
   `upstream_warnings_replaced` is 0.
 - **Counts.** `ENGINEERING_COUNTS` (`search/reply.py:79`) holds three:
@@ -1771,7 +1806,8 @@ The other parts of the reply:
 - **Batch keys (§2.2).** `_BATCH_COMMAND_KEYS` is at
   `clients/websocket.py:32-38`. The cited `:24-28` is its comment.
 - **Scorer (§3.2).** 9.2.0 normalizes with `.lower().strip()`
-  (`utils/fuzzy_search.py:194`), not casefold.
+  (`utils/fuzzy_search.py:194`), not casefold. W6b retired that port for
+  the component's tier scorer (§10.14).
 - **Graph score (§3.5).** `_GRAPH_HIT_SCORE` is 100, at `_graph.py:371`.
 - **G-b (§3.5).** The chunked body-read approximation is superseded by S1 = b+
   (§10.4).
@@ -1843,8 +1879,8 @@ Changed, with the reason:
 
 - X7: there is no `VISIBLE_SCOPE` caveat. HAMCP-499's visibility filter is
   not ported, so an entity is hidden only through the registry `hidden_by`.
-- X12: the composed device and entity name is not served, and the reply
-  warns. W6b adds it.
+- X12: at W6, the composed device and entity name was not served, and the
+  reply warned. W6b serves it and removed the warning (§10.14).
 - An unusable floor or area registry gives `source_unavailable`.
 - The invalid-argument envelope is the native `SearchError`.
 - Arbitrary delegated projection is unreachable.
@@ -1868,3 +1904,48 @@ Changed, with the reason:
   same way (`body_scrub_degraded` or `body_scrub_unverified`).
 - The audit status of the native invalid-argument path is failure /
   `validation_failure`.
+
+### 10.14 W6b (#519): component-route parity
+
+From the W6b pull request (#519), merged at `d3da5b07` (head `a4cfdb0a`),
+against the route live 9.2.0 serves: the `ha_mcp_tools` custom
+component's in-process search. Line numbers here are at `d3da5b07`. W1
+ported the server's legacy scorers, which 9.2.0 reaches only when the
+component is missing or fails (`search/scoring.py:28-32`). W6b replaces
+them. Its parity items:
+
+- P1, `name`: `composed_name` (`search/entities.py:464`) ports Core
+  2026.11.3's `_async_get_full_entity_name`, pinned by the tag commit
+  `92da9f15`. Entity rows serve it, or the friendly name when it composes
+  empty (`:734-737`). `WARNING_COMPOSED_NAME` is removed (X12, §5.2).
+- P2, the exact-mode texts: `_Joins.texts` (`search/entities.py:637`,
+  `:650`) adds the composed name, aliases, labels, device texts, area and
+  floor to `entity_id` and the friendly name. The bare domain is not a
+  text.
+- P3, the fuzzy scorer: `text_tier` (`search/scoring.py:144`) is 100 on an
+  equal text, 80 on a substring, and otherwise the best ratio when it
+  reaches 70 (`FUZZY_THRESHOLD`, `:80`). BM25 and the typo fallback are
+  retired (§3.2).
+- P4, `match_type`: `entity_match_type`, `is_alias_driven` and
+  `match_type_tier` (`search/scoring.py:211-262`) read the composed and
+  friendly names, add `alias_match`, and drop `typo_fallback`.
+- P5, the state filter: `kept()` (`search/entities.py:727`) runs the
+  domain, hidden and state filters before scoring and paging in every
+  mode. `PAGE_FILTERED_MODES` is empty (`:169`), and
+  `WARNING_STATE_PAGE_ONLY` is removed (§3.4).
+- P6, the area-filtered query: the same tier scorer as an unfiltered
+  query, in place of BM25 at a threshold of 80.
+- P7, device texts: `name_by_user`, `name`, `manufacturer` and `model`. The
+  device registry `ROW_FIELDS` gains optional `manufacturer`, `model` and
+  `next_name_part`, and the entity registry gains optional
+  `next_name_part` (`search/core_contracts.py:132`, `:137`, `:148-149`).
+- P8, configuration fuzzy: the internals of `entity_name_score`,
+  `config_match_score` and `deep_match_score` become the component
+  scorer, with their signatures kept. Configuration names use `name_tier`
+  (`search/scoring.py:190`).
+- P9, configuration exact: kept.
+
+The reply's warnings are three (`search/reply.py:111`, §10.10). The golden
+is `docs/evidence/hamcp481/fixtures/component-scoring-golden.json`, and
+the W1 golden fixtures there stay as history (§8 item 4). The review is in
+§10.1.
