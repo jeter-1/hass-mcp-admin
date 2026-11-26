@@ -1,25 +1,64 @@
 """The entity surface of native ``ha_search`` (HAMCP-481 W3, design sections
-3.2 to 3.4 and 6.2).
+3.2 to 3.4 and 6.2; HAMCP-501 W6b component-route parity).
 
 Pure over the inventories the engine already read, plus one injected alias
 reader (``CoreReadSession.entity_entries``). It reads nothing else, and it
 never falls back to the delegated route.
 
-Failure (design section 6.2). A source that a requested filter depends on
-must be usable, or the search fails with a closed ``SearchError``. A usable
-source finished with no dropped row and no drifted field that the search
-uses. The states read is the exception (G-f): :func:`state_rows` parses it
-once for both surfaces, its malformed rows are left out everywhere, and the
-engine counts them as one ``source_unavailable`` ``malformed_state_row``
-reason. A source that only an enrichment field needs makes that field
-null, counted as ``source_unavailable``. A failed alias read never fails the
-search (G-h): the entities whose aliases are unknown are counted as
-``source_unavailable`` ``entity_aliases``, and their ``aliases`` field is
-null. Any inventory over its bound fails the search (design section 6.3).
+Failure (design section 6.2). A source that a requested filter or a scored
+text depends on must be usable, or the search fails with a closed
+``SearchError``. A usable source finished with no dropped row and no drifted
+field that the search uses. The states read is the exception (G-f):
+:func:`state_rows` parses it once for both surfaces, its malformed rows are
+left out everywhere, and the engine counts them as one ``source_unavailable``
+``malformed_state_row`` reason. A source that only an enrichment field needs
+makes that field null, counted as ``source_unavailable``; in a listing, an
+unusable device registry makes ``name`` null the same way. A failed alias
+read never fails the search (G-h): the entities whose aliases are unknown
+are counted as ``source_unavailable`` ``entity_aliases``, are scored without
+aliases, and their ``aliases`` field is null. Any inventory over its bound
+fails the search (design section 6.3).
 
 ha-mcp 9.2.0's visibility filter is not ported (HAMCP-499). The only hidden
 set is the entity registry's ``hidden_by``, and ``include_hidden`` false
 removes it.
+
+Live ha-mcp 9.2.0 answers ``ha_search`` on the ``ha_mcp_tools`` component
+route, so that route is the parity basis (HAMCP-501 W6b). From ha-mcp
+51e3aac788482a081807591cd5d58d07dc4e540b:
+
+- ``custom_components/ha_mcp_tools/websocket_api/search.py`` (sha256
+  5f1a1e312884494245f71c4720c5ddd3ac3d4211f9c8257e9be9460be36781a8): the
+  domain, hidden, state and area filters before scoring and paging
+  (``_search_entities`` 340-392), the registry join (``_registry_enrichment``
+  475-527), the scored texts (``_entity_record`` 530-587) and the match types
+  (395-472, ported in :mod:`scoring`);
+- ``custom_components/ha_mcp_tools/websocket_api/registry.py`` (sha256
+  7a40b10626f042de644aa88c6b06342ecfd525b3d7ac3bbf49dd1bbcbc0cb0bc): the
+  composed name (``_composed_entity_name`` 456-467), the label names
+  (``_label_names`` 362-368) and the effective area (621-631);
+- ``custom_components/ha_mcp_tools/search_locations.py`` (sha256
+  4567798ee26475efd88e9ed14f9261262e84132d4f453bd6f32789c038c30fd3): the
+  area query ladder (``_resolve_area_query`` 172-218, whose area sets equal
+  the server's below);
+- ``src/ha_mcp/tools/search/component.py`` (sha256
+  bf14215be89494d531f0876973ffa2056e18b5813e0446fd2b97652dccaad7d3): the
+  record shape, the six keys then ``name`` (``_shape_component_search_response``
+  556-640), and the listing labels (``_component_listing_metadata`` 536-553).
+
+The composed ``name`` is Core 2026.11.3's ``async_get_full_entity_name``
+(commit 92da9f154079459b9e547126f9bd9fce726de16a,
+``homeassistant/helpers/entity_registry.py``, sha256
+a16d82bb68ceb680875c9fd8905d7c6f30d0cd39ed7ee7a12ded2c4a9d565088: 663-682,
+527-630; ``_entity_next_name_part`` 252-260; the wire ``original_name``,
+already unprefixed, ``as_partial_dict`` 393-425), over
+``homeassistant/helpers/device_registry.py`` (sha256
+b5a1ea7b8c622f9dffb1463b954f7899ab1345e260a53079a2574d94dd647f11: the main
+device's ``next_name_part`` 735-738 and its ``parent_device_id`` of None 785;
+the child device's 884-889, and its row without manufacturer or model
+891-910). :func:`composed_name` derives each ``next_name_part`` from
+``area_id``, ``device_id`` and ``parent_device_id``; a wire
+``next_name_part``, when present, must equal it, or the registry is unusable.
 
 Ported from ha-mcp 9.2.0, commit 51e3aac788482a081807591cd5d58d07dc4e540b:
 
@@ -43,20 +82,27 @@ Ported from ha-mcp 9.2.0, commit 51e3aac788482a081807591cd5d58d07dc4e540b:
 Changes from the source:
 
 - there is no fuzzy-to-exact fallback and no suggestion list;
-- a registry a filter needs fails the search instead of degrading with a
-  warning; the floor registry fails it only once the area ladder passes its
-  exact-area step;
+- a registry a filter or a scored text needs fails the search instead of
+  degrading with a warning; in the area-only mode the floor registry fails
+  it only once the area ladder passes its exact-area step;
 - the floor-expansion, area-and-floor and enrichment-incomplete warnings are
-  not emitted, and the composed ``name`` is never served (a closed warning
-  says so);
+  not emitted;
 - a state row whose ``friendly_name`` is present but not a string is
   malformed;
 - enrichment reads the entity registry list row and the ``get_entries``
   aliases;
-- in the area-plus-query mode, paging comes from the page before the state
-  filter, as in the fuzzy mode (the source counts the filtered page);
-- the fuzzy threshold is 60, the source's setting default;
 - records list their keys in one canonical order.
+
+Changes from the component route:
+
+- the area modes list the registry entities of the matched areas, with or
+  without a state row, as 9.2.0's server-side area set does; the component
+  iterates the states only;
+- an entity is hidden when ``hidden_by`` is not None (the component tests
+  its truth; Core sets an enum or None);
+- a device registry with a dropped or duplicate row is unusable, so a query
+  fails, where the component drops the conflicting identity;
+- composite devices are not modelled.
 
 The ported code carries the source's license notice:
 
@@ -95,8 +141,6 @@ from . import scoring
 from .core_reads import INVALID, ReadResult
 from .reply import (
     WARNING_AMBIGUOUS_FLOOR,
-    WARNING_COMPOSED_NAME,
-    WARNING_STATE_PAGE_ONLY,
     ENTITY_BUCKET,
     Reasons,
     SearchError,
@@ -106,6 +150,7 @@ from .reply import (
 RECORD_KEYS = ("entity_id", "friendly_name", "domain", "state", "score", "match_type")
 ENRICHMENT_FIELDS = ("area", "floor", "labels", "aliases")
 MEMBERSHIP_FIELDS = ("is_group", "member_entity_ids")
+# Every record carries it, right after ``match_type`` (component.py 586-602).
 COMPOSED_NAME_FIELD = "name"
 # ``search/entities.py`` ``_ALLOWED_RESULT_FIELDS``.
 RESULT_FIELDS = frozenset((*RECORD_KEYS, *ENRICHMENT_FIELDS, *MEMBERSHIP_FIELDS,
@@ -117,15 +162,20 @@ AREA_FILTERED_QUERY = "area_filtered_query"
 AREA_ONLY = "area_only"
 DOMAIN_LISTING = "domain_listing"
 STATE_LISTING = "state_listing"
-# Modes whose state filter applies to the returned page only (design
-# section 3.4).
-PAGE_FILTERED_MODES = frozenset({FUZZY_SEARCH, AREA_FILTERED_QUERY})
+QUERY_MODES = frozenset({EXACT_MATCH, FUZZY_SEARCH, AREA_FILTERED_QUERY})
+# Modes whose state filter applies to the returned page only. None: the
+# component route filters by state before scoring and paging (search.py
+# 361-372).
+PAGE_FILTERED_MODES = frozenset()
 AREA_MODES = frozenset({AREA_FILTERED_QUERY, AREA_ONLY})
 
 # The registry fields each read must carry, valid, for a use.
 _AREA_LADDER_FIELDS = ("name", "aliases", "floor_id")
 _FLOOR_LADDER_FIELDS = ("name", "aliases")
 _DEVICE_AREA_FIELDS = ("area_id", "parent_device_id")
+_ENTITY_NAME_FIELDS = ("name", "original_name", "area_id", "device_id", "next_name_part")
+_DEVICE_NAME_FIELDS = ("name", "name_by_user", "area_id", "parent_device_id", "next_name_part")
+_DEVICE_TEXT_FIELDS = (*_DEVICE_NAME_FIELDS, "labels", "manufacturer", "model")
 # The sources of each enrichment field, and the fields each must carry.
 FIELD_SOURCES = {
     "area": (("area_registry", ("name",)), ("device_registry", _DEVICE_AREA_FIELDS)),
@@ -224,11 +274,8 @@ def _requested(request: EntityRequest, names: tuple) -> tuple:
 
 
 def _entity_registry_fields(request: EntityRequest) -> tuple:
-    fields = ["hidden_by"]
-    enrichment = _requested(request, ENRICHMENT_FIELDS)
-    if mode(request) in AREA_MODES or set(enrichment) & {"area", "floor", "labels"}:
-        fields += ["area_id", "device_id"]
-    if "labels" in enrichment:
+    fields = ["hidden_by", *_ENTITY_NAME_FIELDS]
+    if mode(request) in QUERY_MODES or "labels" in _requested(request, ENRICHMENT_FIELDS):
         fields.append("labels")
     return tuple(fields)
 
@@ -237,10 +284,12 @@ def reads_for(request: EntityRequest) -> tuple:
     """The inventories one entity search reads, in a fixed order. Aliases are
     read separately, through the alias reader."""
 
-    names = {"states", "entity_registry"}
+    names = {"states", "entity_registry", "device_registry"}
     current = mode(request)
+    if current in QUERY_MODES:
+        names |= {"area_registry", "floor_registry", "label_registry"}
     if current in AREA_MODES:
-        names |= {"area_registry", "device_registry", "floor_registry"}
+        names |= {"area_registry", "floor_registry"}
     for field_name in _requested(request, ENRICHMENT_FIELDS):
         names |= {source for source, _ in FIELD_SOURCES.get(field_name, ())}
     order = ("states", "entity_registry", "area_registry", "floor_registry",
@@ -251,7 +300,7 @@ def reads_for(request: EntityRequest) -> tuple:
 def reads_aliases(request: EntityRequest) -> bool:
     """Whether the search reads ``get_entries`` aliases."""
 
-    return mode(request) in PAGE_FILTERED_MODES or "aliases" in _requested(request, ENRICHMENT_FIELDS)
+    return mode(request) in QUERY_MODES or "aliases" in _requested(request, ENRICHMENT_FIELDS)
 
 
 def source_result(sources: Mapping, name: str) -> ReadResult:
@@ -373,7 +422,72 @@ def _membership(record: dict, attributes: Any, requested: tuple, denied: frozens
         record["member_entity_ids"] = members
 
 
-# --- The area ladder (``smart_search/_entities.py`` ``_resolve_area_query``).
+# --- The composed name (Core 2026.11.3 ``async_get_full_entity_name``).
+
+def _entity_part(row: Mapping) -> str | None:
+    """``entity_registry.py`` ``_entity_next_name_part`` (252-260)."""
+
+    if row["area_id"] is not None:
+        return "area"
+    return "device" if row["device_id"] is not None else None
+
+
+def _device_part(row: Mapping) -> str | None:
+    """``device_registry.py`` ``next_name_part``: a main device's (735-738),
+    whose row sends a ``parent_device_id`` of None (785), or a child's
+    (884-889)."""
+
+    if row["area_id"] is not None:
+        return "area"
+    return None if row["parent_device_id"] is None else "parent_device"
+
+
+def _parts_agree(rows: Mapping, derive: Callable[[Mapping], str | None]) -> bool:
+    """A wire ``next_name_part``, when sent, equals the derived one."""
+
+    return all("next_name_part" not in row or row["next_name_part"] == derive(row)
+               for row in rows.values())
+
+
+def _naming_devices(sources: Mapping, fields: tuple, required: bool) -> Mapping | None:
+    """The device rows the composed name reads, or None when they are not
+    usable and ``required`` is false."""
+
+    result = source_result(sources, "device_registry")
+    if _usable(result, fields) and _parts_agree(result.value, _device_part):
+        return result.value
+    if required:
+        raise SearchError("source_unavailable", source="device_registry")
+    return None
+
+
+def composed_name(entry: Mapping | None, devices: Mapping) -> str:
+    """``_async_get_full_entity_name`` (527-630) with the parts parent device,
+    device and entity and ``use_next_name_part``; "" when every part is empty.
+
+    The device part applies while the entity's next part is the device; the
+    parent part while that device is a child whose next part is its parent,
+    and the parent is a main device. The wire ``original_name`` is already
+    the unprefixed name (``as_partial_dict`` 421).
+    """
+
+    if entry is None:
+        return ""
+    entity_name = entry["name"] if entry["name"] is not None else entry["original_name"]
+    device_name = parent_name = None
+    if _entity_part(entry) == "device":
+        device = devices.get(entry["device_id"])
+        if device is not None:
+            device_name = device["name_by_user"] or device["name"]
+            if _device_part(device) == "parent_device":
+                parent = devices.get(device["parent_device_id"])
+                if parent is not None and parent["parent_device_id"] is None:
+                    parent_name = parent["name_by_user"] or parent["name"]
+    return " ".join(part for part in (parent_name, device_name, entity_name) if part)
+
+
+# --- The area ladder (``search_locations.py`` ``_resolve_area_query``, and
+# ``smart_search/_entities.py``'s, which resolves the same areas).
 
 def _exact_registry_ids(rows: Mapping, query_lower: str) -> set:
     return {
@@ -520,23 +634,59 @@ class _Enricher:
         return {field_name: full[field_name] for field_name in self.requested}
 
 
+class _Joins:
+    """``websocket_api/search.py`` ``_registry_enrichment`` and ``_entity_record``
+    (475-564): the texts one entity is scored on."""
+
+    def __init__(self, registry: Mapping, devices: Mapping, areas: Mapping, floors: Mapping,
+                 labels: Mapping) -> None:
+        self.registry = registry
+        self.devices = devices
+        self.areas = areas
+        self.floors = floors
+        self.labels = labels
+        self.device_areas = _device_areas(devices)
+
+    def texts(self, entity_id: str, name: str, friendly_name: str, aliases: tuple) -> list:
+        """The entity id, the name, the friendly name, the aliases, the label
+        names, the device texts, then the area and floor names. The bare
+        domain is not a text."""
+
+        entry = self.registry.get(entity_id)
+        area_id = None
+        label_ids: set = set()
+        device_texts: list = []
+        if entry is not None:
+            area_id = effective_entity_area_id(entry, self.device_areas)
+            label_ids = set(entry["labels"])
+            device_id = entry["device_id"]
+            device = self.devices.get(device_id) if device_id else None
+            if device is not None:
+                label_ids |= set(device["labels"])
+                # A child device's row has no manufacturer or model.
+                device_texts = [device.get(key) for key in
+                                ("name_by_user", "name", "manufacturer", "model")]
+        area = self.areas.get(area_id) if area_id else None
+        floor_id = area["floor_id"] if area is not None else None
+        floor = self.floors.get(floor_id) if floor_id else None
+        texts = [entity_id, name, friendly_name, *sorted(aliases),
+                 *((self.labels.get(label_id) or {}).get("name") or label_id
+                   for label_id in sorted(label_ids)),
+                 *(text for text in device_texts if text)]
+        if area is not None and area["name"]:
+            texts.append(area["name"])
+        if floor is not None and floor["name"]:
+            texts.append(floor["name"])
+        return texts
+
+
 # --- The search.
 
 def _record(entity_id: str, friendly_name: str, domain: str, state: str, score: int,
-            match_type: str) -> dict:
+            match_type: str, name: str | None) -> dict:
     return {"entity_id": entity_id, "friendly_name": friendly_name, "domain": domain,
-            "state": state, "score": score, "match_type": match_type}
-
-
-def _from_match(match: scoring.EntityMatch, state: str) -> dict:
-    return _record(match.entity_id, match.friendly_name, match.domain, state, match.score,
-                   match.match_type)
-
-
-def _state_matches(record: dict, state_filter: str) -> bool:
-    """``search/entities.py`` ``_state_matches``."""
-
-    return (record.get("state") or "").lower() == state_filter
+            "state": state, "score": score, "match_type": match_type,
+            COMPOSED_NAME_FIELD: name}
 
 
 def _order(records: list) -> list:
@@ -557,6 +707,11 @@ async def search_entities(request: EntityRequest, sources: Mapping, states: Stat
     malformed_ids = states.malformed
     states = states.rows
     registry = required_rows(sources, "entity_registry", _entity_registry_fields(request))
+    if not _parts_agree(registry, _entity_part):
+        raise SearchError("source_unavailable", source="entity_registry")
+    query_mode = current in QUERY_MODES
+    devices = _naming_devices(sources, _DEVICE_TEXT_FIELDS if query_mode else _DEVICE_NAME_FIELDS,
+                              query_mode)
     hidden = frozenset(entity_id for entity_id, row in registry.items()
                        if row["hidden_by"] is not None)
     denied = frozenset() if request.include_hidden else hidden
@@ -565,105 +720,92 @@ async def search_entities(request: EntityRequest, sources: Mapping, states: Stat
     warnings: list[str] = []
     alias_map: dict | None = None
 
-    def in_domain(entity_id: str) -> bool:
-        return domain is None or scoring.entity_domain(entity_id) == domain
-
     def state_of(entity_id: str) -> _State:
         # An area entity with no usable state row is listed from the registry.
         return states.get(entity_id) or _State("unknown", {}, entity_id)
 
-    if current == EXACT_MATCH:
-        query_lower = request.query.lower().strip()
-        records = []
-        for entity_id, row in states.items():
-            if entity_id in denied or not in_domain(entity_id):
-                continue
-            match = scoring.exact_entity_match(
-                scoring.ScoringEntity(entity_id, row.friendly_name, (), entity_id in hidden),
-                query_lower)
-            if match is not None:
-                records.append(_from_match(match, row.state))
-    elif current == FUZZY_SEARCH:
-        candidates = [entity_id for entity_id in states
-                      if entity_id not in denied and in_domain(entity_id)]
-        alias_map = await _read_aliases(candidates, aliases, reasons)
-        corpus = [scoring.ScoringEntity(entity_id, states[entity_id].friendly_name,
-                                        alias_map.get(entity_id, ()), entity_id in hidden)
-                  for entity_id in candidates]
-        records = [_from_match(match, states[match.entity_id].state)
-                   for match in scoring.fuzzy_entity_matches(corpus, request.query)]
-    elif current in AREA_MODES:
+    def kept(entity_id: str, state: str) -> bool:
+        # ``_search_entities`` 361-372: the domain, hidden and state filters
+        # run before scoring and paging.
+        return (entity_id not in denied
+                and (domain is None or scoring.entity_domain(entity_id) == domain)
+                and (state_filter is None or (state or "").lower() == state_filter))
+
+    def name_of(entity_id: str, friendly_name: str) -> str | None:
+        if devices is None:
+            return None
+        return composed_name(registry.get(entity_id), devices) or friendly_name
+
+    if current in AREA_MODES:
         areas = required_rows(sources, "area_registry", _AREA_LADDER_FIELDS)
-        devices = required_rows(sources, "device_registry", _DEVICE_AREA_FIELDS)
+        area_devices = required_rows(sources, "device_registry", _DEVICE_AREA_FIELDS)
         matched, ambiguous = resolve_area(
             request.area_filter, areas,
             lambda: required_rows(sources, "floor_registry", _FLOOR_LADDER_FIELDS))
         if ambiguous:
             warnings.append(WARNING_AMBIGUOUS_FLOOR)
-        device_areas = _device_areas(devices)
-        members = [entity_id for entity_id, row in registry.items()
-                   if entity_id not in denied and entity_id not in malformed_ids
-                   and in_domain(entity_id)
-                   and effective_entity_area_id(row, device_areas) in matched]
-        if current == AREA_ONLY:
-            records = [_record(entity_id, state_of(entity_id).friendly_name,
-                               scoring.entity_domain(entity_id), state_of(entity_id).state,
-                               scoring.apply_hidden_penalty(100, entity_id in hidden), "area_match")
-                       for entity_id in members]
-        else:
-            members.sort()
-            alias_map = await _read_aliases(members, aliases, reasons)
-            corpus = [scoring.ScoringEntity(entity_id, state_of(entity_id).friendly_name,
-                                            alias_map.get(entity_id, ()), entity_id in hidden)
-                      for entity_id in members]
-            records = [_from_match(match, state_of(match.entity_id).state)
-                       for match in scoring.fuzzy_entity_matches(
-                           corpus, request.query, scoring.AREA_QUERY_FUZZY_THRESHOLD)]
-    elif current == DOMAIN_LISTING:
-        records = [_record(entity_id, row.friendly_name, domain, row.state,
-                           scoring.apply_hidden_penalty(100, entity_id in hidden), DOMAIN_LISTING)
-                   for entity_id, row in states.items()
-                   if scoring.entity_domain(entity_id) == domain and entity_id not in denied]
+        device_areas = _device_areas(area_devices)
+        candidates = [entity_id for entity_id, row in registry.items()
+                      if entity_id not in malformed_ids and kept(entity_id, state_of(entity_id).state)
+                      and effective_entity_area_id(row, device_areas) in matched]
     else:
-        records = [_record(entity_id, row.friendly_name, scoring.entity_domain(entity_id),
-                           row.state, scoring.apply_hidden_penalty(100, entity_id in hidden),
-                           STATE_LISTING)
-                   for entity_id, row in states.items()
-                   if entity_id not in denied and _state_matches({"state": row.state}, state_filter)]
+        candidates = [entity_id for entity_id, row in states.items() if kept(entity_id, row.state)]
 
-    offset, limit = request.offset, request.limit
-    if current in PAGE_FILTERED_MODES:
-        # 9.2.0 pages the matches, then filters the page by state.
-        ordered = _order(records)
-        window = ordered[offset:offset + limit]
-        page_end = offset + len(window)
-        page = [(offset + index, record) for index, record in enumerate(window)
-                if state_filter is None or _state_matches(record, state_filter)]
-        total = len(ordered)
-        if state_filter is not None:
-            warnings.append(WARNING_STATE_PAGE_ONLY)
+    if query_mode:
+        query_lower = request.query.strip().lower()
+        joins = _Joins(registry, devices,
+                       required_rows(sources, "area_registry", ("name", "floor_id")),
+                       required_rows(sources, "floor_registry", ("name",)),
+                       required_rows(sources, "label_registry", ("name",)))
+        alias_map = await _read_aliases(candidates, aliases, reasons)
+        records = []
+        for entity_id in candidates:
+            row = state_of(entity_id)
+            name = name_of(entity_id, row.friendly_name)
+            known = alias_map.get(entity_id, ())
+            tier = scoring.text_tier(query_lower,
+                                     joins.texts(entity_id, name, row.friendly_name, known),
+                                     fuzzy=not request.exact_match)
+            if tier is None:
+                continue
+            entity_domain = scoring.entity_domain(entity_id)
+            match_type = scoring.entity_match_type(
+                query_lower, entity_id, (name, row.friendly_name), entity_domain, known,
+                exact=request.exact_match)
+            records.append(_record(entity_id, row.friendly_name, entity_domain, row.state,
+                                   scoring.apply_hidden_penalty(tier, entity_id in hidden),
+                                   match_type, name))
     else:
-        ordered = _order([record for record in records
-                          if state_filter is None or _state_matches(record, state_filter)])
-        window = ordered[offset:offset + limit]
-        page_end = offset + len(window)
-        page = [(offset + index, record) for index, record in enumerate(window)]
-        total = len(ordered)
+        # ``_component_listing_metadata`` (component.py 536-553).
+        label = "area_match" if current == AREA_ONLY else current
+        records = []
+        for entity_id in candidates:
+            row = state_of(entity_id)
+            records.append(_record(entity_id, row.friendly_name, scoring.entity_domain(entity_id),
+                                   row.state, scoring.apply_hidden_penalty(100, entity_id in hidden),
+                                   label, name_of(entity_id, row.friendly_name)))
+
+    ordered = _order(records)
+    offset, limit = request.offset, request.limit
+    window = ordered[offset:offset + limit]
+    page_end = offset + len(window)
+    page = [(offset + index, record) for index, record in enumerate(window)]
 
     enricher = _Enricher(request, sources, registry)
-    if enricher.requested:
-        if "aliases" in enricher.requested and alias_map is None:
-            alias_map = await _read_aliases([record["entity_id"] for _, record in page],
-                                            aliases, reasons)
-        enricher.disclose(len(page), reasons)
+    if "aliases" in enricher.requested and alias_map is None:
+        alias_map = await _read_aliases([record["entity_id"] for _, record in page],
+                                        aliases, reasons)
+    if devices is None and (request.result_fields is None
+                            or COMPOSED_NAME_FIELD in request.result_fields):
+        # A listing serves a null ``name`` when the device rows are unusable.
+        enricher.unusable.add("device_registry")
+    enricher.disclose(len(page), reasons)
     membership = _requested(request, MEMBERSHIP_FIELDS)
     keep = None
     if request.result_fields is not None:
         keep = set(request.result_fields)
         if "member_entity_ids" in keep:
             keep.add("is_group")
-        if COMPOSED_NAME_FIELD in keep:
-            warnings.append(WARNING_COMPOSED_NAME)
     emitted = []
     for _, record in page:
         entity_id = record["entity_id"]
@@ -674,5 +816,5 @@ async def search_entities(request: EntityRequest, sources: Mapping, states: Stat
             record = {key: value for key, value in record.items() if key in keep}
         emitted.append((ENTITY_BUCKET, record, False))
     surface = Surface("entity", tuple(emitted), tuple(position for position, _ in page),
-                      total, page_end)
+                      len(ordered), page_end)
     return EntityOutcome(surface, current, tuple(warnings))
