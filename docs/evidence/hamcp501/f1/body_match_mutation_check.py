@@ -86,6 +86,16 @@ MUTANTS = {
     "helper_not_a_body_type": (
         "subcalls", 'BODY_TYPES = ("automation", "script", "scene", "helper")',
         'BODY_TYPES = ("automation", "script", "scene")'),
+    # Cursor r2 R2-F1: each other body type dropped alone.
+    "automation_not_a_body_type": (
+        "subcalls", 'BODY_TYPES = ("automation", "script", "scene", "helper")',
+        'BODY_TYPES = ("script", "scene", "helper")'),
+    "script_not_a_body_type": (
+        "subcalls", 'BODY_TYPES = ("automation", "script", "scene", "helper")',
+        'BODY_TYPES = ("automation", "scene", "helper")'),
+    "scene_not_a_body_type": (
+        "subcalls", 'BODY_TYPES = ("automation", "script", "scene", "helper")',
+        'BODY_TYPES = ("automation", "script", "helper")'),
     # The helper probe.
     "probe_no_reader_clean": (
         "subcalls", "    if reader is None:\n        return SCRUB_UNVERIFIED\n",
@@ -101,6 +111,12 @@ MUTANTS = {
         'arguments = page_arguments("automation", query, exact_match, 0, PROBE_SIZE)'),
     "probes_not_read": (
         "configs", "    probed = not unsafe_query and any(", "    probed = False and any("),
+    "probe_skips_script": (
+        "configs", "any(t in types for t in subcalls.ENTITY_TYPES)",
+        'any(t in types for t in ("automation", "scene"))'),
+    "probe_skips_scene": (
+        "configs", "any(t in types for t in subcalls.ENTITY_TYPES)",
+        'any(t in types for t in ("automation", "script"))'),
     "probe_before_skipped": (
         "configs", "    probes = []\n    if probed:\n", "    probes = []\n    if False:\n"),
     "probe_after_skipped": (

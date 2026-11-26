@@ -545,6 +545,51 @@ class AcceptanceTests(w4.Readers):
                 finally:
                     self.readers = original
 
+    def entity_rows(self, search_type):
+        """Two route rows served as body matches (score 85, no name match):
+        one whose name holds the queries below, one whose name does not."""
+
+        flags = {"score": 85, "match_in_name": False, "match_in_config": True,
+                 "match_in_references": False}
+        return [{"entity_id": f"{search_type}.front_gate_2468",
+                 "friendly_name": "Front gate 2468", **flags},
+                {"entity_id": f"{search_type}.porch_lamp", "friendly_name": "Porch lamp",
+                 **flags}]
+
+    async def test_script_and_scene_bodies_close_like_automation(self):
+        # Cursor r2 R2-F1: the script and scene buckets are body types too.
+        # Under a body code a row keeps only its name tier (100: the query is
+        # in its name) and a row whose name does not match is dropped; with no
+        # code both keep the route's body match.
+        unreviewed = [w4.SKIP, "a synthetic unreviewed warning"]
+        cases = (
+            ("2468", True, [w4.SKIP], "body_numeric_query"),
+            ("gate 2468", False, [w4.SKIP], "body_numeric_query"),
+            ("gate", True, [w4.SKIP, MATCH_TEXT], "body_scrub_degraded"),
+            ("gate", False, unreviewed, "body_scrub_unverified"),
+            ("gate", True, [w4.SKIP], None),
+        )
+        for search_type in ("script", "scene"):
+            bucket = subcalls.BUCKETS[search_type]
+            kept, other = (f"{search_type}.front_gate_2468", f"{search_type}.porch_lamp")
+            for query, exact, warnings, code in cases:
+                with self.subTest(search_type=search_type, query=query, exact=exact, code=code):
+                    self.assertEqual(trigger(query, exact), code == "body_numeric_query")
+                    probe = self.page("helper", [], query, warnings, limit=subcalls.PROBE_SIZE)
+                    self.stage(query, search_type, self.entity_rows(search_type), probe=probe)
+                    native = await self.go(query=query, search_types=[search_type],
+                                           exact_match=exact)
+                    self.assertEqual(self.body_codes(native),
+                                     {("not_searched", search_type, code): None} if code else {})
+                    got = {record["entity_id"]: (record["score"], record["match_in_name"],
+                                                 record["match_in_config"])
+                           for record in native[bucket]}
+                    self.assertEqual(got, {kept: (100, True, False)} if code
+                                     else {kept: (85, False, True), other: (85, False, True)})
+                    self.assertEqual(self.probes(query, exact),
+                                     0 if code == "body_numeric_query" else 2)
+                    self.assertFalse(self.emitted(native), "a scrub-degraded text was emitted")
+
     async def test_a_cancelled_probe_propagates(self):
         async def cancelled(arguments):
             raise asyncio.CancelledError
