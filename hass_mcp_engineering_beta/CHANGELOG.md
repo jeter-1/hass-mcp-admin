@@ -108,7 +108,7 @@ release pull request completes this entry.
     older runs are not listed, and `ring_full` is true when a ring holds at
     least the default cap. Clients that read the list must read `traces`.
 - New in-progress `V2_4_2_BETA14` release notes and acceptance contract
-  (HAMCP-500, #504), and their item rows (HAMCP-509, [fill: PR]).
+  (HAMCP-500, #504), and their item rows (HAMCP-509, #521).
 - Not in this build: object lifecycle, response compaction, history paging,
   plan withdraw, list paging, trace-watch renewal and the dashboard items
   (planned for 2.11); the ha-mcp visibility filter for native search
