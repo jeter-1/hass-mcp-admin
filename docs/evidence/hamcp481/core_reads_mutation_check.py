@@ -164,7 +164,27 @@ MUTANTS = {
     "rest_scene_any_arity": (
         "core_reads", '    if name == "scene_config" and len(values) == 1:', '    if name == "scene_config":'),
     "has_entity_name_required": (
-        "core_contracts", 'frozenset({"has_entity_name"})', "frozenset()"),
+        "core_contracts", 'frozenset({"has_entity_name", "next_name_part"})', 'frozenset({"next_name_part"})'),
+    # HAMCP-501 W6b: the naming fields of the registry rows.
+    "entity_next_name_part_required": (
+        "core_contracts", 'frozenset({"has_entity_name", "next_name_part"})', 'frozenset({"has_entity_name"})'),
+    "entity_next_name_part_unprojected": (
+        "core_contracts", '"entity_category": OPTIONAL_STR, "next_name_part": OPTIONAL_STR,',
+        '"entity_category": OPTIONAL_STR,'),
+    "device_manufacturer_required": (
+        "core_contracts", 'frozenset({"manufacturer", "model", "next_name_part"})',
+        'frozenset({"model", "next_name_part"})'),
+    "device_model_required": (
+        "core_contracts", 'frozenset({"manufacturer", "model", "next_name_part"})',
+        'frozenset({"manufacturer", "next_name_part"})'),
+    "device_next_name_part_required": (
+        "core_contracts", 'frozenset({"manufacturer", "model", "next_name_part"})',
+        'frozenset({"manufacturer", "model"})'),
+    "device_naming_fields_unprojected": (
+        "core_contracts", '"manufacturer": OPTIONAL_STR, "model": OPTIONAL_STR, "next_name_part": OPTIONAL_STR,', ""),
+    "device_model_null_refused": (
+        "core_contracts", '"manufacturer": OPTIONAL_STR, "model": OPTIONAL_STR,',
+        '"manufacturer": OPTIONAL_STR, "model": STR,'),
 }
 # Equivalent: ``asyncio.CancelledError`` is a ``BaseException`` (Python 3.8+),
 # so ``except Exception`` never catches it; the explicit re-raise is defensive.

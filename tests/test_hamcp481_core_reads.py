@@ -91,10 +91,13 @@ def state(entity_id, value="on"):
 
 def entity_row(entity_id, **values):
     # Core 2026.11.3 ``as_partial_dict``: no ``aliases`` and no ``has_entity_name``.
+    # ``next_name_part`` is ``_entity_next_name_part`` (entity_registry.py 252-260).
+    part = ("area" if values.get("area_id") is not None
+            else "device" if values.get("device_id") is not None else None)
     return {"area_id": None, "categories": {}, "config_entry_id": "01JSYNTHETICENTRY", "config_subentry_id": None,
             "created_at": 1.0, "device_id": None, "disabled_by": None, "entity_category": None,
             "entity_id": entity_id, "hidden_by": None, "icon": None, "id": "01JSYNTHETICID" + entity_id,
-            "labels": [], "modified_at": 1.0, "name": None, "next_name_part": None, "options": {},
+            "labels": [], "modified_at": 1.0, "name": None, "next_name_part": part, "options": {},
             "original_name": entity_id.title(), "platform": "synthetic", "translation_key": None,
             "unique_id": entity_id + "_uid", **values}
 
@@ -114,11 +117,14 @@ def healthy():
              "name": "Food", "modified_at": 1.0}],
         "config/entity_registry/list": [entity_row("light.kitchen", area_id="kitchen"),
                                         entity_row("sensor.temperature", device_id="dev1")],
+        # Core 2026.11.3 ``DeviceEntry.dict_repr`` and the child row
+        # (device_registry.py 750-791, 891-910): no manufacturer or model on a child.
         "config/device_registry/list": [
             {"area_id": "kitchen", "id": "dev1", "labels": [], "name": "Thermo", "name_by_user": None,
-             "parent_device_id": None, "disabled_by": None, "manufacturer": "Synthetic"},
+             "parent_device_id": None, "disabled_by": None, "manufacturer": "Synthetic",
+             "model": "Synthetic model", "next_name_part": "area"},
             {"area_id": None, "id": "dev2", "labels": [], "name": "Probe", "name_by_user": "Probe 2",
-             "parent_device_id": "dev1", "disabled_by": None}],
+             "parent_device_id": "dev1", "disabled_by": None, "next_name_part": "parent_device"}],
         **{f"{domain}/list": [{"id": "guest_mode", "name": "Guest mode", "icon": "mdi:account"}]
            for domain in ("input_boolean", "input_number", "input_select", "input_text", "input_datetime",
                           "input_button")},
@@ -429,16 +435,21 @@ class InventoryTests(Base):
         self.assertEqual(entities.value["light.kitchen"], {
             "entity_id": "light.kitchen", "name": None, "original_name": "Light.Kitchen",
             "platform": "synthetic", "unique_id": "light.kitchen_uid", "area_id": "kitchen", "device_id": None,
-            "labels": (), "hidden_by": None, "disabled_by": None, "entity_category": None})
+            "labels": (), "hidden_by": None, "disabled_by": None, "entity_category": None,
+            "next_name_part": "area"})
         areas = await session.inventory("area_registry")
         self.assertEqual(areas.value["kitchen"], {"area_id": "kitchen", "name": "Kitchen", "aliases": ("Cookhouse",),
                                                   "floor_id": "ground", "labels": ("food",)})
         floors = await session.inventory("floor_registry")
         self.assertEqual(floors.value["ground"], {"floor_id": "ground", "name": "Ground", "aliases": (), "level": 0})
         devices = await session.inventory("device_registry")
+        self.assertEqual(devices.value["dev1"], {
+            "id": "dev1", "name": "Thermo", "name_by_user": None, "area_id": "kitchen",
+            "parent_device_id": None, "labels": (), "disabled_by": None, "manufacturer": "Synthetic",
+            "model": "Synthetic model", "next_name_part": "area"})
         self.assertEqual(devices.value["dev2"], {
             "id": "dev2", "name": "Probe", "name_by_user": "Probe 2", "area_id": None,
-            "parent_device_id": "dev1", "labels": (), "disabled_by": None})
+            "parent_device_id": "dev1", "labels": (), "disabled_by": None, "next_name_part": "parent_device"})
         # Helper rows are kept whole for body search.
         helpers = await session.inventory("input_select_list")
         self.assertEqual(helpers.value["guest_mode"], {"id": "guest_mode", "name": "Guest mode", "icon": "mdi:account"})
@@ -457,6 +468,36 @@ class InventoryTests(Base):
         result = await session.inventory("entity_registry")
         self.assertEqual((result.status, result.partial), (c.PARTIAL, ("field_drift",)))
         self.assertIs(result.value["light.a"]["has_entity_name"], INVALID)
+
+    async def test_naming_wire_fields_are_optional_but_typed(self):
+        # HAMCP-501 W6b: an absent ``next_name_part`` is derived by the search,
+        # and a child device has no manufacturer or model. A present value
+        # must still be a string or null.
+        session = self.session("entity_registry", "device_registry")
+        bare = {key: value for key, value in entity_row("light.b").items() if key != "next_name_part"}
+        self.values["config/entity_registry/list"] = [entity_row("light.a"), bare]
+        result = await session.inventory("entity_registry")
+        self.assertEqual(result.status, c.COMPLETE)
+        self.assertNotIn("next_name_part", result.value["light.b"])
+        device = {"area_id": None, "id": "dev9", "labels": [], "name": "Synthetic", "name_by_user": None,
+                  "parent_device_id": None, "disabled_by": None, "manufacturer": "Synthetic",
+                  "model": None, "next_name_part": None}
+        self.values["config/device_registry/list"] = [
+            {key: value for key, value in device.items() if key != absent} | {"id": f"dev{index}"}
+            for index, absent in enumerate(("manufacturer", "model", "next_name_part"))]
+        result = await session.inventory("device_registry")
+        self.assertEqual(result.status, c.COMPLETE)
+        for index, absent in enumerate(("manufacturer", "model", "next_name_part")):
+            self.assertNotIn(absent, result.value[f"dev{index}"])
+        for field_name in ("manufacturer", "model", "next_name_part"):
+            self.values["config/device_registry/list"] = [{**device, field_name: 7}]
+            result = await session.inventory("device_registry")
+            self.assertEqual((result.status, result.partial), (c.PARTIAL, ("field_drift",)))
+            self.assertIs(result.value["dev9"][field_name], INVALID)
+        self.values["config/entity_registry/list"] = [entity_row("light.a", next_name_part=["area"])]
+        result = await session.inventory("entity_registry")
+        self.assertEqual((result.status, result.partial), (c.PARTIAL, ("field_drift",)))
+        self.assertIs(result.value["light.a"]["next_name_part"], INVALID)
 
     async def test_field_drift_is_partial_never_silent(self):
         session = self.session("area_registry", "floor_registry", "entity_registry")

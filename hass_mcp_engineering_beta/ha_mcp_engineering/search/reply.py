@@ -108,18 +108,7 @@ WARNING_AMBIGUOUS_FLOOR = (
     "area_filter matches more than one floor by close spelling, so no area was selected; "
     "pass an exact floor or area name or ID."
 )
-WARNING_STATE_PAGE_ONLY = (
-    "state_filter applied to this page only; entity_total_matches and entity_has_more "
-    "reflect the unfiltered matches, so a page may be empty."
-)
-WARNING_COMPOSED_NAME = (
-    "name was requested, but Engineering's native search does not compose entity names; "
-    "the records carry friendly_name, the legacy name."
-)
-WARNINGS = (
-    WARNING_ENTITY_SKIPPED, WARNING_CONFIG_SKIPPED, WARNING_AMBIGUOUS_FLOOR,
-    WARNING_STATE_PAGE_ONLY, WARNING_COMPOSED_NAME,
-)
+WARNINGS = (WARNING_ENTITY_SKIPPED, WARNING_CONFIG_SKIPPED, WARNING_AMBIGUOUS_FLOOR)
 
 # Closed ``partial_reasons`` vocabulary (design section 6.1).
 REASON_ORDER = ("paged", "truncated", "filtered", "not_searched", "source_unavailable")

@@ -143,18 +143,25 @@ ROW_FIELDS = MappingProxyType({
         "name": OPTIONAL_STR, "original_name": OPTIONAL_STR, "has_entity_name": BOOL,
         "platform": STR, "unique_id": STR, "area_id": OPTIONAL_STR, "device_id": OPTIONAL_STR,
         "labels": STR_LIST, "hidden_by": OPTIONAL_STR, "disabled_by": OPTIONAL_STR,
-        "entity_category": OPTIONAL_STR,
+        "entity_category": OPTIONAL_STR, "next_name_part": OPTIONAL_STR,
     }),
     "device_registry": MappingProxyType({
         "name": OPTIONAL_STR, "name_by_user": OPTIONAL_STR, "area_id": OPTIONAL_STR,
         "parent_device_id": OPTIONAL_STR, "labels": STR_LIST, "disabled_by": OPTIONAL_STR,
+        "manufacturer": OPTIONAL_STR, "model": OPTIONAL_STR, "next_name_part": OPTIONAL_STR,
     }),
     # Helper rows are kept whole: body search reads every stored field.
     **{f"{domain}_list": MappingProxyType({"name": STR}) for domain in INPUT_DOMAINS},
 })
 # Core 2026.11 removed ``has_entity_name`` from the registry wire dicts
-# (HAMCP-251); a present value must still be a bool.
-OPTIONAL_FIELDS = MappingProxyType({"entity_registry": frozenset({"has_entity_name"})})
+# (HAMCP-251); a present value must still be a bool. Core 2026.11.3 sends
+# ``next_name_part`` (entity_registry.py 419; device_registry.py 784, 908),
+# and a child device's row has no manufacturer or model (device_registry.py
+# 891-910). A present value must still be of its kind.
+OPTIONAL_FIELDS = MappingProxyType({
+    "entity_registry": frozenset({"has_entity_name", "next_name_part"}),
+    "device_registry": frozenset({"manufacturer", "model", "next_name_part"}),
+})
 # Rows whose reply is reduced to the fields above; the others keep every field.
 WHOLE_ROWS = frozenset(f"{domain}_list" for domain in INPUT_DOMAINS)
 

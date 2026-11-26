@@ -385,7 +385,8 @@ class GoldenTests(World):
         expected = {
             "success": True, "query": "light.kitchen",
             "entities": [{"entity_id": "light.kitchen", "friendly_name": "Kitchen ceiling", "domain": "light",
-                          "state": "on", "score": 100, "match_type": "exact_match"}],
+                          "state": "on", "score": 100, "match_type": "exact_match",
+                          "name": "Light.Kitchen"}],
             "entity_total_matches": 1,
             "automations": [{"entity_id": "automation.morning", "friendly_name": "Morning routine",
                              "score": result["automations"][0]["score"], "match_in_name": False,
@@ -410,11 +411,13 @@ class GoldenTests(World):
         self.assertEqual(list(result), list(expected))
         self.assertGreaterEqual(result["automations"][0]["score"], 1)
         self.assertGreaterEqual(result["scenes"][0]["score"], 1)
-        # One session; the reads this call needs, in READS order.
+        # One session; the reads this call needs, in READS order. W6b: a
+        # query scores the component's joined texts (search.py 548-564).
         self.assertEqual(self.reads, [(
-            "states", "entity_registry", "automation_config", "script_config", "search_related",
+            "states", "area_registry", "floor_registry", "label_registry", "entity_registry",
+            "device_registry", "automation_config", "script_config", "search_related",
             "scene_config", "input_boolean_list", "input_number_list", "input_select_list",
-            "input_text_list", "input_datetime_list", "input_button_list")])
+            "input_text_list", "input_datetime_list", "input_button_list", "entity_registry_entries")])
         # Graph-confirmed bodies are read last (``_fetch.py``).
         self.assertEqual([p["entity_id"] for p in self.batches("automation/config")[0]],
                          ["automation.porch_lights", "automation.morning"])
@@ -429,7 +432,13 @@ class GoldenTests(World):
     async def test_search_entities_oracle_match_sets(self):
         # Design section 8.3 as G-d (as relayed by the architect): match sets
         # and per-record fields on a well-formed ASCII fixture, not order.
+        # W6b: the substring oracle is a subset; the component route also
+        # scores the area, floor, label and device texts (search.py 548-564).
         states = copy.deepcopy(self.values["states"])
+        joined = {"kitchen": {("light.hall", "off", "Hall light"), ("sensor.probe", "5", "Probe reading"),
+                              ("sensor.temperature", "21", "Temperature")},
+                  # Garden's floor "Outside", through dev3's parent dev4.
+                  "s": {("light.porch", "on", "Porch light")}}
         for query in ("light", "kitchen", "temp", "LIGHT ", "xyz", "Sensor", "s"):
             with self.subTest(query=query):
                 with patch.object(compatibility, "rest", new=AsyncMock(return_value=states)):
@@ -437,6 +446,8 @@ class GoldenTests(World):
                 expected = {(row["entity_id"], row["state"], row["friendly_name"])
                             for row in oracle["data"]["results"]}
                 self.assertFalse(oracle["data"]["truncated"])
+                self.assertFalse(expected & joined.get(query, set()))
+                expected |= joined.get(query, set())
                 result = await self.go(query=query, limit=100, search_types=None)
                 self.assertEqual({(record["entity_id"], record["state"], record["friendly_name"])
                                   for record in result["entities"]}, expected)
@@ -466,9 +477,14 @@ class EntityModeTests(World):
         exact = await self.go(query="light.hall", include_hidden=False)
         self.assertEqual((exact["entities"], exact["entity_total_matches"]), ([], 0))
 
-    async def test_exact_mode_reads_no_aliases(self):
-        await self.go(query="kitchen")
-        self.assertNotIn("entity_registry_entries", self.reads[0])
+    async def test_exact_mode_reads_aliases_and_a_listing_reads_none(self):
+        # W6b: the exact tier compares aliases too (search.py 548-564).
+        exact = await self.go(query="veranda", search_types=None)
+        self.assertEqual([(r["entity_id"], r["score"]) for r in exact["entities"]], [("light.porch", 100)])
+        self.assertIn("entity_registry_entries", self.reads[-1])
+        self.calls.clear()
+        await self.go(domain_filter="light")
+        self.assertNotIn("entity_registry_entries", self.reads[-1])
         self.assertFalse([call for call in self.calls if call[0] == "command"
                           and call[1]["type"] == "config/entity_registry/get_entries"])
 
@@ -524,7 +540,7 @@ class EntityModeTests(World):
         entries = next(call[1] for call in self.calls if call[0] == "command"
                        and call[1]["type"] == "config/entity_registry/get_entries")
         self.assertEqual(entries["entity_ids"],
-                         ["light.hall", "light.kitchen", "sensor.probe", "sensor.temperature"])
+                         ["light.kitchen", "sensor.temperature", "light.hall", "sensor.probe"])
 
     async def test_domain_and_state_listings(self):
         result = await self.go(domain_filter=" LIGHT ")
@@ -546,25 +562,38 @@ class EntityModeTests(World):
         result = await self.go(query="kitchen", domain_filter="light")
         self.assertEqual(result["warnings"], [reply.WARNING_CONFIG_SKIPPED])
         self.assertFalse(result["applied"]["config_search_ran"])
-        self.assertEqual([r["entity_id"] for r in result["entities"]], ["light.kitchen"])
+        self.assertEqual([(r["entity_id"], r["score"]) for r in result["entities"]],
+                         [("light.kitchen", 100), ("light.hall", 80)])
         self.assertNotIn("automation_config", self.reads[0])
 
-    async def test_state_filter_on_a_fuzzy_page_is_page_only(self):
-        unfiltered = await self.go(query="light", exact_match=False, limit=2, search_types=None)
-        filtered = await self.go(query="light", exact_match=False, limit=2, state_filter="off")
-        self.assertEqual(filtered["entity_total_matches"], unfiltered["entity_total_matches"])
-        self.assertEqual(filtered["entity_has_more"], unfiltered["entity_has_more"])
-        self.assertTrue(all(r["state"] == "off" for r in filtered["entities"]))
-        self.assertEqual(filtered["warnings"], [reply.WARNING_CONFIG_SKIPPED, reply.WARNING_STATE_PAGE_ONLY])
-        self.assertEqual(filtered["fields_withheld"], 1)  # state_filter_note
+    async def test_the_state_filter_applies_before_paging(self):
+        # W6b P5: the component route filters by state before scoring and
+        # paging (search.py 361-372), so totals count the filtered matches.
+        for exact_match in (True, False):
+            with self.subTest(exact_match=exact_match):
+                unfiltered = await self.go(query="a", exact_match=exact_match, limit=100, search_types=None)
+                off = [r["entity_id"] for r in unfiltered["entities"] if r["state"] == "off"]
+                self.assertGreater(len(unfiltered["entities"]), len(off))
+                self.assertGreater(len(off), 1)
+                filtered = await self.go(query="a", exact_match=exact_match, limit=1, state_filter="OFF")
+                self.assertEqual(filtered["entity_total_matches"], len(off))
+                self.assertIs(filtered["entity_has_more"], True)
+                self.assertEqual([r["entity_id"] for r in filtered["entities"]], off[:1])
+                self.assertEqual(filtered["warnings"], [reply.WARNING_CONFIG_SKIPPED])
+                self.assertEqual(filtered["fields_withheld"], 0)  # no state_filter_note
+                rest = await self.go(query="a", exact_match=exact_match, limit=100, offset=1,
+                                     state_filter="off")
+                self.assertEqual([r["entity_id"] for r in rest["entities"]], off[1:])
         exact = await self.go(query="light", state_filter="off")
         self.assertEqual([r["entity_id"] for r in exact["entities"]], ["light.hall"])
-        self.assertNotIn(reply.WARNING_STATE_PAGE_ONLY, exact["warnings"])
+        self.assertEqual(exact["entity_total_matches"], 1)
 
     async def test_enrichment_only_when_requested(self):
         plain = await self.go(query="light.kitchen")
-        self.assertNotIn("area_registry", self.reads[0])
-        self.assertEqual(set(plain["entities"][0]), set(entities.RECORD_KEYS))
+        self.assertEqual(list(plain["entities"][0]), [*entities.RECORD_KEYS, entities.COMPOSED_NAME_FIELD])
+        listing = await self.go(domain_filter="light")
+        self.assertEqual(list(listing["entities"][0]), [*entities.RECORD_KEYS, entities.COMPOSED_NAME_FIELD])
+        self.assertFalse({"area_registry", "floor_registry", "label_registry"} & set(self.reads[-1]))
         result = await self.go(query="temperature", result_fields=["entity_id", "area", "floor", "labels",
                                                                      "aliases"])
         self.assertEqual(result["entities"], [{"entity_id": "sensor.temperature", "area": "Kitchen",
@@ -576,9 +605,13 @@ class EntityModeTests(World):
 
     async def test_an_unusable_enrichment_source_is_null_and_disclosed(self):
         self.values["config/area_registry/list"] = HomeAssistantApiError()
-        result = await self.go(query="temperature", result_fields=["entity_id", "area"])
+        result = await self.go(state_filter="21", result_fields=["entity_id", "area"])
         self.assertEqual(result["entities"], [{"entity_id": "sensor.temperature", "area": None}])
         self.assertEqual(reasons_of(result), {("source_unavailable", "entity", "area_registry"): 1})
+        # W6b: a query scores the area name, so it needs the registry.
+        error = await self.refused("source_unavailable", {"query": "temperature",
+                                                           "result_fields": ["entity_id", "area"]})
+        self.assertEqual(error.details, {"reason": "source_unavailable", "source": "area_registry"})
 
     async def test_drifted_labels_are_read_only_for_a_labels_request(self):
         # Labels another projection carries are never iterated; a labels
@@ -589,23 +622,30 @@ class EntityModeTests(World):
         for fields, enrichment in ((["entity_id", "area"], {"area": "Kitchen"}),
                                    (["entity_id", "aliases"], {"aliases": []})):
             with self.subTest(fields=fields):
-                result = await self.go(query="temperature", result_fields=fields)
+                result = await self.go(state_filter="21", result_fields=fields)
                 self.assertEqual(result["entities"], [{"entity_id": "sensor.temperature", **enrichment}])
                 self.assertEqual(reasons_of(result), {})
-        error = await self.refused("source_unavailable", {"query": "temperature",
-                                                           "result_fields": ["entity_id", "labels"]})
-        self.assertEqual(error.details, {"reason": "source_unavailable", "source": "entity_registry"})
+        for arguments in ({"state_filter": "21", "result_fields": ["entity_id", "labels"]},
+                          # W6b: a query scores the label names (search.py 548-564).
+                          {"query": "temperature", "result_fields": ["entity_id", "area"]}):
+            with self.subTest(arguments=arguments):
+                error = await self.refused("source_unavailable", arguments)
+                self.assertEqual(error.details, {"reason": "source_unavailable", "source": "entity_registry"})
 
     async def test_drifted_device_labels_never_reach_area_enrichment(self):
         self.values["config/device_registry/list"][0]["labels"] = 7
-        result = await self.go(query="temperature", result_fields=["entity_id", "area"])
-        self.assertEqual(result["entities"], [{"entity_id": "sensor.temperature", "area": "Kitchen"}])
+        result = await self.go(state_filter="21", result_fields=["entity_id", "area", "name"])
+        self.assertEqual(result["entities"], [{"entity_id": "sensor.temperature", "area": "Kitchen",
+                                               "name": "Dev1 Sensor.Temperature"}])
         self.assertEqual(reasons_of(result), {})
         # The device rows are read valid for the area, not for the labels.
-        both = await self.go(query="temperature", result_fields=["entity_id", "area", "labels"])
+        both = await self.go(state_filter="21", result_fields=["entity_id", "area", "labels"])
         self.assertEqual(both["entities"], [{"entity_id": "sensor.temperature", "area": "Kitchen",
                                              "labels": None}])
         self.assertEqual(reasons_of(both), {("source_unavailable", "entity", "device_registry"): 1})
+        # W6b: a query scores the device labels (search.py 548-564).
+        error = await self.refused("source_unavailable", {"query": "temperature"})
+        self.assertEqual(error.details, {"reason": "source_unavailable", "source": "device_registry"})
 
     async def test_membership(self):
         result = await self.go(query="downstairs", result_fields=["entity_id", "member_entity_ids"])
@@ -629,10 +669,11 @@ class EntityModeTests(World):
                 result = await self.go(query=entity_id, result_fields=["entity_id", "member_entity_ids"])
                 self.assertEqual(result["entities"], [expected])
 
-    async def test_a_composed_name_is_never_produced(self):
+    async def test_the_composed_name_is_produced(self):
+        # W6b P1: Core's composed name (entity_registry.py 663-682).
         result = await self.go(query="light.kitchen", result_fields=["entity_id", "name"])
-        self.assertEqual(result["entities"], [{"entity_id": "light.kitchen"}])
-        self.assertEqual(result["warnings"], [reply.WARNING_COMPOSED_NAME])
+        self.assertEqual(result["entities"], [{"entity_id": "light.kitchen", "name": "Light.Kitchen"}])
+        self.assertNotIn("warnings", result)
 
 
 class PartialSourceTests(World):
@@ -864,6 +905,14 @@ class ConfigTests(World):
         self.values["input_boolean/list"].append({"id": "guest_mode", "name": "Duplicate"})
         result = await self.go(query="guest", search_types=["helper"])
         self.assertEqual(reasons_of(result), {("not_searched", "helper", "read_failed"): 1})
+
+    async def test_a_helper_with_a_drifted_field_is_skipped(self):
+        # HAMCP-501 W6b: the tier scorer reads any text, so a drifted name
+        # must be refused before scoring, not by a scorer error.
+        self.values["input_boolean/list"].append({"id": "guest_drifted", "name": 7})
+        result = await self.go(query="guest", search_types=["helper"])
+        self.assertEqual(reasons_of(result), {("not_searched", "helper", "read_failed"): 1})
+        self.assertEqual([helper["entity_id"] for helper in result["helpers"]], ["input_boolean.guest_mode"])
 
     async def test_the_helper_sub_call(self):
         flow = {"entity_id": "sensor.guest_template", "helper_type": "template", "name": "Guest template",
