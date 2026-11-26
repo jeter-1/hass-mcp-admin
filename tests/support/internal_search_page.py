@@ -37,11 +37,12 @@ def is_internal_only(name):
 
 async def execute_page(gateway, name="ha_search", arguments=None, *, bucket="helpers",
                        authorizer=lambda: True, caller="synthetic-w6-internal-page",
-                       route=None):
+                       route=None, with_telemetry=False):
     """One sub-call page through the internal route; the decoded reply.
 
     ``route`` pins an earlier admitted route (a flip or drift test); by
-    default the route currently admitted.
+    default the route currently admitted. ``with_telemetry`` also returns the
+    page request's telemetry.
     """
 
     if route is None:
@@ -50,7 +51,7 @@ async def execute_page(gateway, name="ha_search", arguments=None, *, bucket="hel
     telemetry, token = begin_request(caller)
     telemetry.core_dispatch_authorizer = authorizer
     try:
-        return json.loads(await gateway.execute(
+        reply = json.loads(await gateway.execute(
             exposed_name=name,
             arguments=deepcopy(PAGE_ARGUMENTS if arguments is None else arguments),
             # The schema the gateway's own page reader validates with.
@@ -63,3 +64,4 @@ async def execute_page(gateway, name="ha_search", arguments=None, *, bucket="hel
         ))
     finally:
         end_request(token)
+    return (reply, telemetry) if with_telemetry else reply

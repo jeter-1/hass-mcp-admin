@@ -83,7 +83,8 @@ def run(version, cases):
     """[(tool, call, result, structuredContent)] -> gateway client outputs."""
 
     return [out for out, _sent in replay.replay(version, [
-        (tool, call["public_arguments"], replay._with(result, content))
+        # HAMCP-501 W6 (G1): ha_search replays as one internal sub-call page.
+        (tool, replay._arguments(call), replay._with(result, content))
         for tool, call, result, content in cases])]
 
 

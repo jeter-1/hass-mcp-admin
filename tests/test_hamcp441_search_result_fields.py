@@ -22,6 +22,13 @@ with no ``result_fields`` call, so it withheld all six and counted them only in
 
 Records are synthetic and injected into in-memory copies of the hash-checked
 search receipts. No endpoint is contacted.
+
+HAMCP-501 W6 (G1, as relayed by the architect): the delegated ``ha_search`` is
+internal-only, reached only as one native search sub-call page. Row 25's key
+set reads no argument, so the receipts replay through that route with the
+fixed page arguments and the same projection. Public ``result_fields`` reach
+only native search (``test_hamcp481_native_search_engine``); on the internal
+route they are refused before dispatch.
 """
 from __future__ import annotations
 
@@ -98,11 +105,20 @@ def calls(sets=("A/9.2.0", "B/9.2.0")):
                 yield set_name, call, rec["exchange"]["response"]["result"]
 
 
-def run(cases, result_fields=RESULT_FIELDS):
+def run(cases):
+    # HAMCP-501 W6: one sub-call page per receipt (Row 25 reads no argument).
     return [out for out, _sent in replay.replay("9.2.0", [
+        (SEARCH, replay._arguments(call), replay._with(result, content))
+        for call, result, content in cases])]
+
+
+def run_public(cases, result_fields=RESULT_FIELDS):
+    """The recorded public arguments with ``result_fields``: (reply, sent)."""
+
+    return replay.replay("9.2.0", [
         (SEARCH, {**call["public_arguments"], "result_fields": list(result_fields)},
          replay._with(result, content))
-        for call, result, content in cases])]
+        for call, result, content in cases])
 
 
 def with_entities(content, records, warnings=None):
@@ -164,9 +180,9 @@ class Search(unittest.TestCase):
         self.addCleanup(Guard.restore, Guard().capture())
         self.assertTrue(self.cases)
 
-    def outputs(self, records, warnings=None, result_fields=RESULT_FIELDS):
+    def outputs(self, records, warnings=None):
         return zip(self.cases, run([(c, r, with_entities(sc, records, warnings))
-                                    for _s, c, r, sc in self.cases], result_fields), self.plain)
+                                    for _s, c, r, sc in self.cases]), self.plain)
 
     def test_enriched_records_reach_the_client_uncounted(self):
         for (set_name, call, _r, _c), out, plain in self.outputs(RECORDS):
@@ -178,7 +194,7 @@ class Search(unittest.TestCase):
                 self.assertNotIn(keys.COLLECTION_WITHHELD, json.dumps(out))
 
     def test_lane_area_projection_keeps_area(self):
-        for (set_name, call, _r, _c), out, plain in self.outputs(LANE, result_fields=("entity_id", "area")):
+        for (set_name, call, _r, _c), out, plain in self.outputs(LANE):
             with self.subTest(set=set_name, call=call["id"]):
                 self.assertIs(out["success"], True, out.get("details"))
                 self.assertEqual(out["data"]["entities"], list(LANE))
@@ -198,6 +214,19 @@ class Search(unittest.TestCase):
                 lane = with_entities(content, LANE)
                 self.assertEqual(project(lane, without_admission())["entities"],
                                  [{"entity_id": "switch.hamcp441_child"}])
+
+    def test_public_result_fields_never_reach_the_internal_route(self):
+        # HAMCP-501 W6 (G1): a public result_fields call is not a sub-call
+        # page; it is refused before dispatch, enriched content or not.
+        cases = [(c, r, with_entities(sc, RECORDS)) for _s, c, r, sc in self.cases]
+        for result_fields in (RESULT_FIELDS, ("entity_id", "area")):
+            for ((set_name, call, _r, _c), (out, sent)) in zip(
+                    self.cases, run_public(cases, result_fields)):
+                with self.subTest(set=set_name, call=call["id"], result_fields=result_fields):
+                    self.assertEqual(sent, [])
+                    self.assertIs(out["success"], False)
+                    self.assertEqual(out["details"]["failure_category"], "prohibited_delegation")
+                    self.assertNotIn("HAMCP441", json.dumps(out))
 
     def test_receipt_shape_is_unchanged(self):
         for set_name, call, result in calls():
