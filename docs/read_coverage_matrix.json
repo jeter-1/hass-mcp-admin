@@ -336,7 +336,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 3976,
+       "line": 4105,
        "anchor": "def yaml_config_reader(self, *, audit=None"
       }
      ]
@@ -415,7 +415,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 3949,
+       "line": 4078,
        "anchor": "require_unmodified_script"
       }
      ]
@@ -430,7 +430,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 838,
+       "line": 846,
        "anchor": "\"dependency_index\": (DEPENDENCY_YAML_PATHS"
       },
       {
@@ -849,7 +849,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 835,
+       "line": 843,
        "anchor": "YAML_READER_PURPOSES = MappingProxyType"
       },
       {
@@ -982,7 +982,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 3976,
+       "line": 4105,
        "anchor": "def yaml_config_reader(self, *, audit=None"
       }
      ]
@@ -1189,7 +1189,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 835,
+       "line": 843,
        "anchor": "YAML_READER_PURPOSES = MappingProxyType"
       },
       {
@@ -1259,7 +1259,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 838,
+       "line": 846,
        "anchor": "\"dependency_index\": (DEPENDENCY_YAML_PATHS"
       },
       {
@@ -1331,7 +1331,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 3976,
+       "line": 4105,
        "anchor": "def yaml_config_reader(self, *, audit=None"
       }
      ]
@@ -1404,7 +1404,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 835,
+       "line": 843,
        "anchor": "YAML_READER_PURPOSES = MappingProxyType"
       },
       {
@@ -1424,12 +1424,12 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 836,
+       "line": 844,
        "anchor": "\"recorder_settings\": (YAML_CONFIG_PATHS"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 843,
+       "line": 851,
        "anchor": "class YamlConfigReader"
       }
      ]
@@ -1453,7 +1453,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 3976,
+       "line": 4105,
        "anchor": "def yaml_config_reader(self, *, audit=None"
       }
      ]
@@ -1542,7 +1542,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 835,
+       "line": 843,
        "anchor": "YAML_READER_PURPOSES = MappingProxyType"
       },
       {
@@ -1796,7 +1796,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 821,
+       "line": 829,
        "anchor": "DEFINITION_YAML_PATHS = frozenset"
       },
       {
@@ -2040,7 +2040,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 821,
+       "line": 829,
        "anchor": "DEFINITION_YAML_PATHS = frozenset"
       },
       {
@@ -2221,7 +2221,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 821,
+       "line": 829,
        "anchor": "DEFINITION_YAML_PATHS = frozenset"
       },
       {
@@ -2312,7 +2312,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 821,
+       "line": 829,
        "anchor": "DEFINITION_YAML_PATHS = frozenset"
       },
       {
@@ -2404,6 +2404,36 @@
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
        "line": 48,
        "anchor": "\"tool\": \"search_entities\""
+      }
+     ]
+    },
+    {
+     "tool": "internal:native_search_helper_subcall_pages",
+     "provider": "upstream_read_gateway search_subcall_reader [gateway_reader:search_subcall_reader]",
+     "purpose_binding": "HAMCP-501 W4 fixed ha_search helper sub-call pages for native search; not wired to a tool until W6",
+     "admission": "upstream:ha_search 9.2.0 Row 25 (reads_9_2 adapter) only; parent request's Core authority rechecked at dispatch; no fallback",
+     "completeness": "partial",
+     "detail": "Fixed page arguments (search_types [helper], include_config false, limit 150, offset a multiple of 150 below 20,000); each page passes the gateway's validation, Row 25 projection, sanitizer and size check; a redacted or bounded page fails (D2) and config_has_more must equal has_more (D3); Row 25 withholds unadmitted record names, counted by name only (D1). The W3 scan reads at most 20,000 rows and marks the helpers incomplete on any failed page.",
+     "refs": [
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+       "line": 4260,
+       "anchor": "def search_subcall_reader"
+      },
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_2_keys.py",
+       "line": 492,
+       "anchor": "def bucket_withheld_names"
+      },
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/search/subcalls.py",
+       "line": 28,
+       "anchor": "PAGE_SIZE = 150"
+      },
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/search/subcalls.py",
+       "line": 87,
+       "anchor": "def page_arguments"
       }
      ]
     }
@@ -2563,7 +2593,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 285,
+       "line": 293,
        "anchor": "_UPSTREAM_CAPABILITY_CODES = frozenset"
       },
       {
@@ -2612,7 +2642,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 821,
+       "line": 829,
        "anchor": "DEFINITION_YAML_PATHS = frozenset"
       },
       {
@@ -2644,6 +2674,36 @@
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
        "line": 263,
        "anchor": "\"ha_config_list_helpers\""
+      }
+     ]
+    },
+    {
+     "tool": "internal:native_search_helper_subcall_pages",
+     "provider": "upstream_read_gateway search_subcall_reader [gateway_reader:search_subcall_reader]",
+     "purpose_binding": "HAMCP-501 W4 fixed ha_search helper sub-call pages for native search; not wired to a tool until W6",
+     "admission": "upstream:ha_search 9.2.0 Row 25 (reads_9_2 adapter) only; parent request's Core authority rechecked at dispatch; no fallback",
+     "completeness": "partial",
+     "detail": "Fixed page arguments (search_types [helper], include_config false, limit 150, offset a multiple of 150 below 20,000); each page passes the gateway's validation, Row 25 projection, sanitizer and size check; a redacted or bounded page fails (D2) and config_has_more must equal has_more (D3); Row 25 withholds unadmitted record names, counted by name only (D1). The W3 scan reads at most 20,000 rows and marks the helpers incomplete on any failed page.",
+     "refs": [
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+       "line": 4260,
+       "anchor": "def search_subcall_reader"
+      },
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_2_keys.py",
+       "line": 492,
+       "anchor": "def bucket_withheld_names"
+      },
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/search/subcalls.py",
+       "line": 28,
+       "anchor": "PAGE_SIZE = 150"
+      },
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/search/subcalls.py",
+       "line": 87,
+       "anchor": "def page_arguments"
       }
      ]
     }
@@ -2963,6 +3023,36 @@
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dependency/provider.py",
        "line": 1888,
        "anchor": "dashboards = await collect_dashboard_sources(dashboard_reader, secret=self.secret)"
+      }
+     ]
+    },
+    {
+     "tool": "internal:native_search_dashboard_subcall_pages",
+     "provider": "upstream_read_gateway search_subcall_reader [gateway_reader:search_subcall_reader]",
+     "purpose_binding": "HAMCP-501 W4 fixed ha_search dashboard sub-call pages for native search; not wired to a tool until W6",
+     "admission": "upstream:ha_search 9.2.0 Row 25 (reads_9_2 adapter) only; parent request's Core authority rechecked at dispatch; no fallback",
+     "completeness": "partial",
+     "detail": "Fixed page arguments (search_types [dashboard], include_config false, limit 150, offset a multiple of 150 below 20,000); each page passes the gateway's validation, Row 25 projection, sanitizer and size check; a redacted or bounded page fails (D2) and config_has_more must equal has_more (D3); Row 25 withholds every 9.2.0 dashboard name (url_path, title), counted by name only (D1). The W3 scan reads at most 20,000 rows and marks the dashboards incomplete on any failed page.",
+     "refs": [
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+       "line": 4260,
+       "anchor": "def search_subcall_reader"
+      },
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_2_keys.py",
+       "line": 492,
+       "anchor": "def bucket_withheld_names"
+      },
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/search/subcalls.py",
+       "line": 28,
+       "anchor": "PAGE_SIZE = 150"
+      },
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/search/subcalls.py",
+       "line": 87,
+       "anchor": "def page_arguments"
       }
      ]
     }
@@ -3311,7 +3401,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 814,
+       "line": 822,
        "anchor": "YAML_CONFIG_PATHS"
       }
      ]
@@ -4030,7 +4120,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 821,
+       "line": 829,
        "anchor": "DEFINITION_YAML_PATHS"
       }
      ]
@@ -4085,7 +4175,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 1608,
+       "line": 1737,
        "anchor": "\"disposition\": \"retired_delegated_read\""
       }
      ]
@@ -5222,7 +5312,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4050,
+       "line": 4179,
        "anchor": "def history_reader"
       }
      ]
@@ -5383,7 +5473,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 836,
+       "line": 844,
        "anchor": "\"recorder_settings\": (YAML_CONFIG_PATHS"
       },
       {
@@ -7128,6 +7218,14 @@
    ],
    "note": "Backs dependency analysis of stored scripts (ha_config_get_script)."
   },
+  "gateway_reader:search_subcall_reader": {
+   "used_by": [
+    "dashboards_content",
+    "helpers_options_supported",
+    "helpers_options_other"
+   ],
+   "note": "HAMCP-501 W4: fixed ha_search dashboard and flow-helper sub-call pages on the 9.2.0 Row 25 route for native search; unwired until W6."
+  },
   "gateway_reader:yaml_config_reader": {
    "used_by": [
     "packages_and_yaml_files",
@@ -7360,10 +7458,11 @@
    }
   },
   "reader_purposes": {
-   "fingerprint": "eca1cca7679fcdcc0bd860d4733cff71395156a3f09ac06030fccecbe211f9ec",
+   "fingerprint": "0e0702ced8852d773adfadce92bb385d3cf048e09cc1d3ac1eb965c2ea660777",
    "items": {
     "gateway_reader:history_reader": "582b3e70f6cee161",
     "gateway_reader:script_dependency_reader": "79620f269679ebec",
+    "gateway_reader:search_subcall_reader": "6bae0be593ca86b3",
     "gateway_reader:yaml_config_reader": "d9f8474b3be0833c",
     "yaml_reader:configuration_definitions": "982e03f73dd4b6b1",
     "yaml_reader:dependency_index": "af2231dde4475776",

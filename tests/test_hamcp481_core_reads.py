@@ -781,10 +781,17 @@ class ReachabilityTests(unittest.TestCase):
                     base = package[:len(package) - node.level + 1] if node.level else []
                     module = ".".join(base + ([node.module] if node.module else []))
                     names = [module] + [f"{module}.{alias.name}" for alias in node.names]
-                if any(n == "ha_mcp_engineering.search" or n.startswith("ha_mcp_engineering.search.")
-                       for n in names):
-                    importers.append(str(relative))
-        self.assertEqual(importers, [])
+                hits = [n for n in names
+                        if n == "ha_mcp_engineering.search" or n.startswith("ha_mcp_engineering.search.")]
+                if hits:
+                    importers.append((str(relative), tuple(sorted(hits))))
+        # HAMCP-501 W4: the gateway's sub-call page readers take the fixed W3
+        # page contract, and nothing else outside search imports the package.
+        subcalls = "ha_mcp_engineering.search.subcalls"
+        self.assertEqual(importers, [("ha_mcp_engineering/providers/upstream_read_gateway.py", (
+            subcalls, f"{subcalls}.BUCKETS", f"{subcalls}.MAX_SCAN_ROWS", f"{subcalls}.PAGE_SIZE",
+            f"{subcalls}.PageResult", f"{subcalls}.page_arguments",
+        ))])
 
 
 if __name__ == "__main__":
