@@ -333,10 +333,18 @@ def fingerprint_check(root: Path, receipt: dict, sums: dict) -> dict:
         pages = [sse_payload_result(page["body_text"]) for page in json.loads(raw)["tools_list_pages"]]
         tools = tuple(tool for page in pages for tool in page["tools"])
         health, exposed, _result, peer = asyncio.run(core._gateway(setup, tools))
-        fingerprint = schema_fingerprint({name: health.get(name, []) for name in PROJECTION_FIELDS})
+        # HAMCP-501 W6 (G1, as relayed by the architect): the head admits the
+        # delegated ha_search internal-only behind native ha_search, so it is
+        # no longer published. Admission is unchanged; the recovered names are
+        # the admitted set (published plus internal-only), as the lane
+        # recorded them before the cutover.
+        admitted = sorted(set(exposed) | set(peer.internal_routes))
+        projection = {name: health.get(name, []) for name in PROJECTION_FIELDS}
+        projection["exposed_tools"] = sorted(set(projection["exposed_tools"]) | set(peer.internal_routes))
+        fingerprint = schema_fingerprint(projection)
         recorded = lane_fingerprint(root, sums, setup)
         out[setup] = {"catalog": f"{RUN}/{rel}", "catalog_tools": len(tools),
-                      "exposed_count": len(exposed), "exposed_tools": sorted(exposed),
+                      "exposed_count": len(admitted), "exposed_tools": admitted,
                       "held_tools": sorted(health.get("held_tools", [])),
                       "blocked_count": len(health.get("blocked_tools", [])),
                       "collision_count": len(health.get("collision_mappings", [])),

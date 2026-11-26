@@ -41,7 +41,12 @@ from ha_mcp_engineering.tools import (  # noqa: E402
     registered_tools,
 )
 from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
+    INTERNAL_ONLY_DELEGATED_READS,
     RETIRED_DELEGATED_READS,
+)
+from ha_mcp_engineering.tools.search import (  # noqa: E402
+    ANNOTATIONS as NATIVE_SEARCH_ANNOTATIONS,
+    NATIVE_SEARCH_SCHEMA_FINGERPRINT,
 )
 from ha_mcp_engineering.clients.websocket import (  # noqa: E402
     HomeAssistantWebSocketClient,
@@ -84,7 +89,6 @@ from ha_mcp_engineering.providers.supervisor_self import (  # noqa: E402
 )
 from ha_mcp_engineering.providers import (  # noqa: E402
     upstream_reads_9_1,
-    upstream_reads_9_1_entities,
     upstream_reads_9_2,
     upstream_yaml_reader,
 )
@@ -113,6 +117,9 @@ class EngineeringExpectation(NamedTuple):
     version: str
     static_names: frozenset[str]
     retired_upstream: frozenset[str]
+    # HAMCP-501 W6: reviewed reads the gateway keeps internal-only for
+    # Engineering's native tool of the same name.
+    internal_only_upstream: frozenset[str]
 
 
 def reported_engineering_version(health: dict[str, Any]) -> Any:
@@ -133,6 +140,7 @@ def engineering_expectation(
             SERVER_VERSION,
             frozenset(current_static_names),
             frozenset(RETIRED_DELEGATED_READS),
+            frozenset(INTERNAL_ONLY_DELEGATED_READS),
         )
     raise AcceptanceFailure(
         "The Engineering image reported an unreviewed Engineering version.",
@@ -154,6 +162,18 @@ def retired_exposed_names(policy: Any, retired_upstream: frozenset[str]) -> set[
         entry.exposed_name
         for entry in policy.tools
         if entry.is_read_route and entry.upstream_name in retired_upstream
+    }
+
+
+def internal_only_exposed_names(
+    policy: Any, internal_upstream: frozenset[str]
+) -> set[str]:
+    """Policy read routes the image under test keeps internal-only."""
+
+    return {
+        entry.exposed_name
+        for entry in policy.tools
+        if entry.is_read_route and entry.upstream_name in internal_upstream
     }
 # Releases whose exact evidence carries the app-tool transition (no
 # ha_get_addon). Their operational dispositions come from each registry row:
@@ -1421,6 +1441,299 @@ def bounded_audit_outcome_diagnostics(
     return {"audit_error_outcomes": values}
 
 
+# HAMCP-501 W6: the delegated ha_search calls this harness made, now made
+# to Engineering's native ha_search (the listing, the fixture-induced
+# partial and the search_types [] validation refusal).
+NATIVE_SEARCH_LISTING_ARGUMENTS = MappingProxyType(
+    {"domain_filter": "sun", "limit": 5}
+)
+NATIVE_SEARCH_PARTIAL_ARGUMENTS = MappingProxyType(
+    {"query": "gateway_fixture", "search_types": ("automation",), "limit": 5}
+)
+NATIVE_SEARCH_REFUSAL_ARGUMENTS = MappingProxyType({"search_types": ()})
+NATIVE_SEARCH_FALLBACK_METRICS = (
+    "fallback_attempts",
+    "fallback_successes",
+    "prohibited_fallback_attempts",
+)
+
+
+def _call_arguments(arguments: MappingProxyType) -> dict[str, Any]:
+    return {
+        key: list(value) if isinstance(value, tuple) else value
+        for key, value in arguments.items()
+    }
+
+
+def _routing_counters(health: dict[str, Any]) -> dict[str, Any]:
+    routing = next(
+        (
+            item
+            for item in find_values(health, "provider_routing")
+            if isinstance(item, dict)
+        ),
+        {},
+    )
+    require(bool(routing), "provider-routing metrics missing around native ha_search")
+    return routing
+
+
+def _provider_delta(
+    before: dict[str, Any], after: dict[str, Any], metric: str
+) -> dict[str, int]:
+    old = before.get(metric) if isinstance(before.get(metric), dict) else {}
+    new = after.get(metric) if isinstance(after.get(metric), dict) else {}
+    require(isinstance(after.get(metric), dict), f"provider-routing metric missing: {metric}")
+    return {
+        str(name)[:64]: int(new.get(name, 0)) - int(old.get(name, 0))
+        for name in sorted(set(old) | set(new))
+        if int(new.get(name, 0)) != int(old.get(name, 0))
+    }
+
+
+def _partial_reason_codes(data: dict[str, Any]) -> list[list[Any]]:
+    reasons = data.get("partial_reasons")
+    if not isinstance(reasons, list):
+        return []
+    return [
+        [
+            str(item.get("reason"))[:64],
+            str(item.get("search_type"))[:64],
+            str(item.get("code"))[:64],
+        ]
+        for item in reasons[:32]
+        if isinstance(item, dict)
+    ]
+
+
+async def inspect_native_search(
+    session: ClientSession,
+    fixture_stats_url: str,
+    *,
+    subcall_admitted: bool,
+) -> dict[str, Any]:
+    """Engineering's native ha_search, checked in its own health bracket.
+
+    The equivalents of the delegated ha_search checks: the listing
+    succeeds; the fixture-induced partial keeps the usable automation
+    and reports partial; ``search_types: []`` is refused before any
+    read; the audit keeps each outcome; and no fallback occurs.
+    """
+
+    expected_route = "admitted" if subcall_admitted else "not_admitted"
+    health_before = decode_tool_result(
+        await session.call_tool("get_server_health", {}),
+        context="engineering_health_before_native_search",
+    )
+    routing_before = _routing_counters(health_before)
+    gateway_failures_before = next(
+        (
+            item.get("failure_counts") or {}
+            for item in find_values(health_before, "upstream_read_gateway")
+            if isinstance(item, dict)
+        ),
+        {},
+    )
+    calls: dict[str, dict[str, Any]] = {}
+    replies: dict[str, dict[str, Any]] = {}
+    for label, arguments in (
+        ("listing", NATIVE_SEARCH_LISTING_ARGUMENTS),
+        ("partial", NATIVE_SEARCH_PARTIAL_ARGUMENTS),
+    ):
+        value = decode_tool_result(
+            await session.call_tool("ha_search", _call_arguments(arguments)),
+            context=f"native_search:{label}",
+        )
+        metadata = value.get("metadata") or {}
+        data = value.get("data") or {}
+        require(value.get("success") is True, f"native ha_search {label} failed")
+        require(
+            metadata.get("provider") == "engineering",
+            f"native ha_search {label} provider mismatch",
+        )
+        require(
+            metadata.get("fallback") == "none"
+            and metadata.get("fallback_occurred") is False,
+            f"native ha_search {label} fallback mismatch",
+        )
+        require(
+            metadata.get("subcall_route") == expected_route,
+            f"native ha_search {label} sub-call route mismatch",
+        )
+        require(
+            isinstance(data.get("partial"), bool),
+            f"native ha_search {label} did not return an exact partial boolean",
+        )
+        require(
+            metadata.get("completeness")
+            == ("partial" if data["partial"] else "complete"),
+            f"native ha_search {label} completeness mismatch",
+        )
+        replies[label] = data
+        calls[label] = {
+            "tool": "ha_search",
+            "request_id": value.get("request_id"),
+            "provider": metadata.get("provider"),
+            "completeness": metadata.get("completeness"),
+            "subcall_route": metadata.get("subcall_route"),
+            "partial_reasons": _partial_reason_codes(data),
+        }
+    listing_entities = replies["listing"].get("entities")
+    require(
+        isinstance(listing_entities, list)
+        and any(
+            isinstance(item, dict) and item.get("entity_id") == "sun.sun"
+            for item in listing_entities
+        ),
+        "native ha_search listing lost the fixture's sun.sun entity",
+    )
+    partial_data = replies["partial"]
+    require(partial_data.get("partial") is True, "fixture did not induce partial native ha_search")
+    partial_automations = partial_data.get("automations")
+    require(
+        isinstance(partial_automations, list)
+        and any(
+            isinstance(item, dict)
+            and item.get("entity_id") == "automation.gateway_fixture"
+            for item in partial_automations
+        ),
+        "partial native ha_search did not retain the known usable automation evidence",
+    )
+
+    # The refusal: before the Core lease and any read, so neither the HA
+    # fixture nor any provider counter moves.
+    health_before_refusal = decode_tool_result(
+        await session.call_tool("get_server_health", {}),
+        context="engineering_health_before_native_search_refusal",
+    )
+    stats_before_refusal = fixture_stats(fixture_stats_url)
+    refused = decode_tool_result(
+        await session.call_tool(
+            "ha_search", _call_arguments(NATIVE_SEARCH_REFUSAL_ARGUMENTS)
+        ),
+        context="native_search:refusal",
+    )
+    require(
+        fixture_stats(fixture_stats_url) == stats_before_refusal,
+        "native ha_search refusal reached Home Assistant",
+    )
+    require(refused.get("success") is False, "native ha_search search_types [] succeeded")
+    require(
+        refused.get("error_code") == "validation_failure",
+        "native ha_search search_types [] classification mismatch",
+    )
+    refused_details = refused.get("details") or {}
+    require(
+        refused_details.get("reason") == "empty_search_types"
+        and refused_details.get("parameter") == "search_types",
+        "native ha_search search_types [] refusal reason mismatch",
+    )
+    refused_metadata = refused.get("metadata") or {}
+    require(
+        refused_metadata.get("provider") == "none"
+        and refused_metadata.get("fallback") == "none"
+        and refused_metadata.get("fallback_occurred") is False,
+        "native ha_search refusal provider or fallback mismatch",
+    )
+    calls["refusal"] = {
+        "tool": "ha_search",
+        "request_id": refused.get("request_id"),
+        "public_error_code": refused.get("error_code"),
+        "reason": refused_details.get("reason"),
+    }
+    health_after = decode_tool_result(
+        await session.call_tool("get_server_health", {}),
+        context="engineering_health_after_native_search",
+    )
+    routing_after = _routing_counters(health_after)
+    routing_before_refusal = _routing_counters(health_before_refusal)
+    for metric in (
+        "requests_by_provider",
+        "successful_requests_by_provider",
+        "failures_by_provider",
+    ):
+        require(
+            not _provider_delta(routing_before_refusal, routing_after, metric),
+            f"native ha_search refusal moved a provider counter: {metric}",
+        )
+
+    audit = decode_tool_result(
+        await session.call_tool(
+            "get_audit_log",
+            {"event": "tool_call", "lines": 200},
+        ),
+        context="engineering_audit_after_native_search",
+    )
+    records = find_dicts(audit)
+    for label, expected_status, expected_error in (
+        ("listing", "success", None),
+        ("partial", "partial", None),
+        ("refusal", "failure", "validation_failure"),
+    ):
+        request_id = calls[label]["request_id"]
+        require(bool(request_id), f"native ha_search {label} omitted its request ID")
+        require(
+            any(
+                record.get("request_id") == request_id
+                and record.get("tool_name") == "ha_search"
+                and record.get("result_status") == expected_status
+                and record.get("error_code") == expected_error
+                and (record.get("parameters") or {}).get("provider")
+                == "engineering"
+                for record in records
+            ),
+            f"audit did not preserve the native ha_search {label} outcome",
+        )
+    native_ids = {calls[label]["request_id"] for label in calls}
+    native_text = json.dumps(
+        [record for record in records if record.get("request_id") in native_ids],
+        sort_keys=True,
+    )
+    for unsafe_value in ("gateway_fixture", "VALIDATION_FAILED"):
+        require(
+            unsafe_value not in native_text,
+            "audit copied native ha_search query or upstream error text",
+        )
+
+    for metric in NATIVE_SEARCH_FALLBACK_METRICS:
+        require(
+            routing_after.get(metric) == routing_before.get(metric),
+            f"native ha_search moved a fallback metric: {metric}",
+        )
+    gateway_after = next(
+        (
+            item
+            for item in find_values(health_after, "upstream_read_gateway")
+            if isinstance(item, dict)
+        ),
+        {},
+    )
+    require(gateway_after.get("fallback_count") == 0, "gateway fallback occurred")
+    failures = _provider_delta(routing_before, routing_after, "failures_by_provider")
+    require(
+        not failures.get("upstream_read_gateway"),
+        "native ha_search sub-calls failed at the read gateway",
+    )
+    gateway_failures_after = gateway_after.get("failure_counts") or {}
+    require(
+        gateway_failures_after == gateway_failures_before,
+        "native ha_search moved a gateway failure category",
+    )
+    return {
+        "calls": calls,
+        "provider_routing_deltas": {
+            metric: _provider_delta(routing_before, routing_after, metric)
+            for metric in (
+                "requests_by_provider",
+                "successful_requests_by_provider",
+                "failures_by_provider",
+            )
+        },
+        "partial_results_delta": int(routing_after.get("partial_results", 0))
+        - int(routing_before.get("partial_results", 0)),
+    }
+
+
 def fixture_stats(url: str) -> dict[str, Any]:
     with urlopen(harness_url(url), timeout=5) as response:  # noqa: S310 - fixed CI fixture URL
         return json.load(response)
@@ -1599,6 +1912,21 @@ async def inspect_engineering(
             # or dispatched, whether or not a native route is registered.
             retired = retired_exposed_names(policy, expectation.retired_upstream)
             automatic -= retired
+            # HAMCP-501 W6: the gateway keeps these reviewed reads internal-only
+            # for Engineering's native tool of the same name: never exposed,
+            # never aliased, and the listed name is the native tool.
+            internal = internal_only_exposed_names(
+                policy, expectation.internal_only_upstream
+            )
+            require(
+                internal <= base_names,
+                "an internal-only delegated read has no native Engineering owner",
+            )
+            automatic -= internal
+            require(
+                "ha_search" not in automatic,
+                "delegated ha_search is still automatically exposed",
+            )
             held = {
                 entry.exposed_name
                 for entry in policy.tools
@@ -1630,7 +1958,6 @@ async def inspect_engineering(
                 set(delegated_read_calls) | expected_error_tools == automatic,
                 "the exact-image harness does not exercise every admitted read",
             )
-            partial_search_enabled = "ha_search" in automatic
             expected_operational_error_calls = sum(
                 1
                 for value in error_call_contracts.values()
@@ -1674,8 +2001,33 @@ async def inspect_engineering(
                 len(names) == len(base_names | automatic | optional_exposed),
                 "unexpected tool exposed",
             )
+            # HAMCP-501 W6: the native tool's own schema and annotations.
+            native_search_tool = advertised_by_name.get("ha_search") or {}
+            require(
+                schema_fingerprint(native_search_tool.get("inputSchema") or {})
+                == NATIVE_SEARCH_SCHEMA_FINGERPRINT,
+                "native ha_search schema mismatch",
+            )
+            native_annotations = native_search_tool.get("annotations") or {}
+            require(
+                all(
+                    native_annotations.get(key)
+                    == getattr(NATIVE_SEARCH_ANNOTATIONS, key)
+                    for key in (
+                        "readOnlyHint",
+                        "destructiveHint",
+                        "idempotentHint",
+                        "openWorldHint",
+                    )
+                ),
+                "native ha_search annotation mismatch",
+            )
             for entry in policy.tools:
-                if not entry.is_read_route or entry.exposed_name in retired:
+                if (
+                    not entry.is_read_route
+                    or entry.exposed_name in retired
+                    or entry.exposed_name in internal
+                ):
                     continue
                 annotations = advertised_by_name[entry.exposed_name].get("annotations", {})
                 expected_annotations = {
@@ -1720,89 +2072,11 @@ async def inspect_engineering(
                     == expected_upstream_version,
                     f"{name} version mismatch",
                 )
-                if name == "ha_search":
-                    data = value.get("data") or {}
-                    upstream_partial = data.get("partial")
-                    require(
-                        isinstance(upstream_partial, bool),
-                        "ha_search did not return an exact partial boolean",
-                    )
-                    locally_bounded = (
-                        "The untrusted upstream response was safely bounded."
-                        in (value.get("warnings") or [])
-                    )
-                    visible_scope_only = (
-                        expected_upstream_version in upstream_reads_9_1.RELEASES
-                        or expected_upstream_version in upstream_reads_9_2.RELEASES
-                    )
-                    if visible_scope_only:
-                        # HAMCP-319 design F3: 9.1.0 hides filtered entities
-                        # from search without a marker, so every 9.1 search
-                        # result is qualified as visible scope (partial).
-                        require(
-                            upstream_reads_9_1_entities.VISIBLE_SCOPE
-                            in (value.get("warnings") or []),
-                            "9.1 ha_search lost its visible-scope qualification",
-                        )
-                    expected = (
-                        "partial"
-                        if upstream_partial or locally_bounded or visible_scope_only
-                        else "complete"
-                    )
-                    require(
-                        metadata.get("completeness") == expected,
-                        "ha_search completeness did not preserve upstream semantics",
-                    )
                 calls[name] = {
                     "tool": name,
                     "request_id": value.get("request_id"),
                     "provider": metadata.get("provider"),
                     "completeness": metadata.get("completeness"),
-                }
-
-            if partial_search_enabled:
-                partial_search = decode_tool_result(
-                    await session.call_tool(
-                        "ha_search",
-                        {
-                            "query": "gateway_fixture",
-                            "search_types": ["automation"],
-                            "limit": 5,
-                        },
-                    ),
-                    context="delegated_read:ha_search_partial",
-                )
-                partial_metadata = partial_search.get("metadata") or {}
-                partial_data = partial_search.get("data") or {}
-                require(partial_search.get("success") is True, "partial ha_search failed")
-                require(partial_data.get("partial") is True, "fixture did not induce partial ha_search")
-                partial_automations = partial_data.get("automations")
-                require(
-                    isinstance(partial_automations, list)
-                    and any(
-                        isinstance(item, dict)
-                        and item.get("entity_id") == "automation.gateway_fixture"
-                        for item in partial_automations
-                    ),
-                    "partial ha_search did not retain the known usable automation evidence",
-                )
-                require(
-                    partial_metadata.get("completeness") == "partial",
-                    "Engineering reported partial ha_search as complete",
-                )
-                require(
-                    partial_metadata.get("provider") == "upstream_read_gateway",
-                    "partial ha_search provider mismatch",
-                )
-                require(
-                    partial_metadata.get("fallback") == "none",
-                    "partial ha_search fallback mismatch",
-                )
-                calls["ha_search_partial"] = {
-                    "tool": "ha_search",
-                    "request_id": partial_search.get("request_id"),
-                    "provider": partial_metadata.get("provider"),
-                    "completeness": partial_metadata.get("completeness"),
                 }
 
             stats_before_invalid = fixture_stats(fixture_stats_url)
@@ -1955,17 +2229,6 @@ async def inspect_engineering(
                 request_id = evidence["request_id"]
                 require(request_id and request_id in audit_text, f"audit missing {name} request")
                 require(evidence["tool"] in audit_text, f"audit missing {name} tool name")
-            if partial_search_enabled:
-                partial_request_id = calls["ha_search_partial"]["request_id"]
-                require(
-                    any(
-                        record.get("request_id") == partial_request_id
-                        and record.get("tool_name") == "ha_search"
-                        and record.get("result_status") == "partial"
-                        for record in find_dicts(audit)
-                    ),
-                    "audit did not preserve partial ha_search status",
-                )
             for error_name, evidence in error_calls.items():
                 require(
                     evidence["request_id"],
@@ -2032,7 +2295,6 @@ async def inspect_engineering(
             )
             expected_delegated_calls = (
                 len(delegated_read_calls)
-                + int(partial_search_enabled)
                 + len(error_call_contracts)
             )
             expected_successful_calls = expected_successful_delegated_calls(
@@ -2092,7 +2354,9 @@ async def inspect_engineering(
                     )
                     if expected_upstream_version in upstream_reads_9_1.RELEASES
                     or expected_upstream_version in upstream_reads_9_2.RELEASES
-                    else int(partial_search_enabled)
+                    # HAMCP-501 W6: the only other partial read was the
+                    # delegated ha_search, now internal-only.
+                    else 0
                 ),
                 "partial delegated-read accounting mismatch",
             )
@@ -2300,6 +2564,13 @@ async def inspect_engineering(
                     == stats_before_offset_free,
                     "offset-free ha_get_history reached upstream",
                 )
+            # HAMCP-501 W6: after every delegated-read accounting check
+            # above, in its own health bracket.
+            native_search = await inspect_native_search(
+                session,
+                fixture_stats_url,
+                subcall_admitted="ha_search" in internal,
+            )
 
     stats = fixture_stats(fixture_stats_url)
     require(not stats["http_mutations"], "an HTTP mutation reached the HA fixture")
@@ -2310,6 +2581,8 @@ async def inspect_engineering(
         "base_engineering_tool_count": len(base_names),
         "dynamic_tool_count": len(automatic),
         "delegated_read_calls": calls,
+        "internal_only_delegated_reads": sorted(internal),
+        "native_search": native_search,
         "error_calls": error_calls,
         "error_counter_snapshots": {
             "provider_routing_before": routing_before_errors,

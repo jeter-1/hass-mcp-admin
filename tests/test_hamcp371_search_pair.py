@@ -51,6 +51,8 @@ from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
     schema_fingerprint,
     validate_reviewed_release_catalog,
 )
+from ha_mcp_engineering.tools import search as search_tool  # noqa: E402
+from support import internal_search_page  # noqa: E402
 from support.ha_mcp_redirect_peer import RedirectPeer  # noqa: E402
 import test_hamcp319_no_redirect_useful as useful  # noqa: E402
 import test_hamcp371_admission_core as core  # noqa: E402
@@ -322,7 +324,10 @@ class AdmissionTests(unittest.TestCase):
                     core._gateway("9.2.0", catalog(name)))
                 self.assertEqual(health["admission_status"], "admitted_exact")
                 self.assertEqual(health["catalog_comparison_status"], "exact")
-                self.assertIn(SEARCH, exposed_names)
+                # HAMCP-501 W6 (G1, as relayed by the architect): admitted
+                # internal-only for the native search page readers.
+                self.assertNotIn(SEARCH, exposed_names)
+                self.assertEqual(peer.internal_routes, {SEARCH})
                 self.assertEqual(health.get("quarantined_tools", []), [])
                 self.assertEqual(peer.calls, [])
                 surfaces[name] = exposed_names
@@ -334,6 +339,7 @@ class AdmissionTests(unittest.TestCase):
                 async def check():
                     async with session(catalog(search=tool)) as (gateway, peer):
                         self.assertNotIn(SEARCH, exposed(gateway))
+                        self.assertNotIn(SEARCH, gateway._internal)  # HAMCP-501 W6
                         self.assertIn(SEARCH, quarantined(gateway))
                         self.assertNotEqual(gateway.health_snapshot()["admission_status"],
                                             "admitted_exact")
@@ -345,13 +351,36 @@ class AdmissionTests(unittest.TestCase):
 
 
 class CallTests(unittest.TestCase):
-    def call(self, variant, arguments):
+    # HAMCP-501 W6 (G1, as relayed by the architect): the delegated ha_search is
+    # internal-only. Its one caller is the native search page reader, which
+    # sends the fixed page arguments; every other argument set is refused
+    # before dispatch, and the public native ha_search refuses invalid
+    # arguments before any read.
+    def call(self, variant, arguments=None):
         async def go():
             async with session(catalog(variant)) as (gateway, peer):
-                return await run(exposed(gateway)[SEARCH], arguments), list(peer.calls)
+                self.assertNotIn(SEARCH, exposed(gateway))
+                return (await internal_search_page.execute_page(gateway, SEARCH, arguments),
+                        list(peer.calls))
         return asyncio.run(go())
 
-    def test_arguments_are_forwarded_unchanged_and_the_warning_is_unified_only(self):
+    def test_page_arguments_are_forwarded_unchanged_and_carry_no_budget_warning(self):
+        for name in ("legacy", "unified"):
+            with self.subTest(variant=name):
+                result, sent = self.call(name)
+                self.assertIs(result["success"], True, result)
+                self.assertEqual(sent, [(SEARCH, internal_search_page.PAGE_ARGUMENTS)])
+                self.assertEqual(result["metadata"]["search_descriptor_variant"], name)
+                self.assertEqual(result["metadata"]["fallback"], "none")
+                # A page never carries config_time_budget, so R-D6-3 adds no
+                # warning on either variant (test_the_warning_condition).
+                self.assertNotIn("config_time_budget", internal_search_page.PAGE_ARGUMENTS)
+                self.assertEqual(result["metadata"]["warning_codes"], [])
+                self.assertEqual(result["warnings"].count(reads_9_2.SEARCH_BUDGET_WARNING), 0)
+
+    def test_caller_argument_sets_are_refused_before_dispatch(self):
+        # The retired forwarding cases: a caller-chosen argument set no longer
+        # reaches the delegated route at all.
         cases = (FULL, {"query": "HAMCP371", "config_time_budget": 300},
                  {"query": "HAMCP371", "search_types": ["automation", "script"]},
                  {"query": "HAMCP371", "include_config": False}, {"query": "HAMCP371"})
@@ -359,60 +388,84 @@ class CallTests(unittest.TestCase):
             for arguments in cases:
                 with self.subTest(variant=name, arguments=arguments):
                     result, sent = self.call(name, arguments)
-                    self.assertIs(result["success"], True, result)
-                    self.assertEqual(sent, [(SEARCH, arguments)])
-                    self.assertEqual(result["metadata"]["search_descriptor_variant"], name)
-                    self.assertEqual(result["metadata"]["fallback"], "none")
-                    budget = name == "unified" and "config_time_budget" in arguments
-                    self.assertEqual(result["metadata"]["warning_codes"],
-                                     ["search_budget_legacy_path_only"] if budget else [])
-                    self.assertEqual(result["warnings"].count(reads_9_2.SEARCH_BUDGET_WARNING),
-                                     1 if budget else 0)
+                    self.assertIs(result["success"], False, result)
+                    self.assertEqual(result["details"]["failure_category"], "prohibited_delegation")
+                    self.assertFalse(result["metadata"]["upstream_dispatch_occurred"])
+                    self.assertEqual(sent, [])
+
+    INVALID = ({"query": "x", "config_time_budget": 0},
+               {"query": "x", "config_time_budget": 301},
+               {"query": "x", "include_config": "false"},
+               {"query": "x", "search_types": 2},
+               {"query": "x", "limit": 0},
+               {"query": "x", "offset": -1},
+               {"query": "x", "unknown": True})
 
     def test_the_public_schema_still_refuses_invalid_legacy_arguments_before_dispatch(self):
         for name in ("legacy", "unified"):
-            for arguments in ({"query": "x", "config_time_budget": 0},
-                              {"query": "x", "config_time_budget": 301},
-                              {"query": "x", "include_config": "false"},
-                              {"query": "x", "search_types": 2},
-                              {"query": "x", "limit": 0},
-                              {"query": "x", "offset": -1},
-                              {"query": "x", "unknown": True}):
+            for arguments in self.INVALID:
                 with self.subTest(variant=name, arguments=arguments):
                     result, sent = self.call(name, arguments)
                     self.assertIs(result["success"], False, result)
                     self.assertFalse(result["metadata"]["upstream_dispatch_occurred"])
                     self.assertEqual(sent, [])
 
+    def test_native_search_refuses_invalid_legacy_arguments_before_any_read(self):
+        # The gateway renders this refusal before it acquires the Core lease.
+        for arguments in self.INVALID:
+            with self.subTest(arguments=arguments):
+                rendered = asyncio.run(search_tool.refusal(deepcopy(arguments)))
+                self.assertIsNotNone(rendered)
+                result = json.loads(rendered)
+                self.assertIs(result["success"], False, result)
+                self.assertEqual(result["metadata"]["provider"], "none")
+        self.assertIsNone(asyncio.run(search_tool.refusal(dict(FULL))))
+
 
 class FlipTests(unittest.TestCase):
+    # HAMCP-501 W6: the flip guard holds on the internal-only route. A page on
+    # the route pinned to the old descriptor refuses before dispatch and is
+    # quarantined; the sibling is unaffected; the next fresh discovery admits
+    # the other variant, internal-only again.
     def test_a_flip_refuses_the_pinned_route_until_the_next_discovery(self):
         for first, second in (("legacy", "unified"), ("unified", "legacy")):
             with self.subTest(first=first, second=second):
                 async def check():
                     async with session(catalog(first)) as (gateway, peer):
-                        old_search = exposed(gateway)[SEARCH]
+                        self.assertNotIn(SEARCH, exposed(gateway))
+                        with gateway._lock:
+                            old_search = gateway._internal[SEARCH]
+
+                        async def page(route):
+                            return await internal_search_page.execute_page(
+                                gateway, SEARCH, route=route)
+
                         sibling = exposed(gateway)[SIBLING.public_tool]
-                        result = await run(old_search, {"query": "HAMCP371"})
+                        result = await page(old_search)
+                        self.assertIs(result["success"], True, result)
                         self.assertEqual(result["metadata"]["search_descriptor_variant"], first)
                         peer.tools = catalog(second)
                         self.assertIs((await run(sibling, SIBLING.public_arguments))["success"], True)
                         count = len(peer.calls)
-                        result = await run(old_search, {"query": "HAMCP371"})
+                        result = await page(old_search)
                         self.assertIs(result["success"], False, result)
                         self.assertFalse(result["metadata"]["upstream_dispatch_occurred"])
                         self.assertNotIn("search_descriptor_variant", result["metadata"])
                         self.assertEqual(len(peer.calls), count)
                         self.assertIn(SEARCH, quarantined(gateway))
+                        self.assertNotIn(SEARCH, gateway._internal)
                         self.assertIs((await run(sibling, SIBLING.public_arguments))["success"], True)
                         await asyncio.wait_for(gateway.initialize(FastMCP("refresh")), core.DEADLINE)
-                        self.assertIs((await run(old_search, {"query": "HAMCP371"}))["success"], False)
+                        self.assertIs((await page(old_search))["success"], False)
                         self.assertEqual(gateway.health_snapshot()["admission_status"],
                                          "admitted_exact")
-                        result = await run(exposed(gateway)[SEARCH], FULL)
+                        self.assertNotIn(SEARCH, exposed(gateway))
+                        with gateway._lock:
+                            new_search = gateway._internal[SEARCH]
+                        result = await page(new_search)
                         self.assertIs(result["success"], True, result)
                         self.assertEqual(result["metadata"]["search_descriptor_variant"], second)
-                        self.assertEqual(peer.calls[-1], (SEARCH, FULL))
+                        self.assertEqual(peer.calls[-1], (SEARCH, internal_search_page.PAGE_ARGUMENTS))
                         self.assertEqual([n for n, _a in peer.calls].count(SEARCH), 2)
                 asyncio.run(check())
 

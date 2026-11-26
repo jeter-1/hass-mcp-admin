@@ -21,6 +21,7 @@ from tests import test_ha_core_2026_9_integration as core_tests
 from tests import test_rc3_postcore_regressions as postcore
 from tests import test_dependency_build_authority as dependency_tests
 from tests.support import ha_mcp_920_receipts
+from tests.support import internal_search_page
 from tests.support.core_gate import reconcile_through_gate
 from ha_mcp_engineering.ha_core_readmission.device_registry import (
     MAX_DEVICE_ID_CHARS, MAX_DEVICE_RECORD_BYTES, MAX_DEVICE_RECORDS,
@@ -225,8 +226,10 @@ class IdentifierAuthorityTests(unittest.IsolatedAsyncioTestCase):
             [by_name[name] for name in review["runtime_catalog"]["runtime_tool_order"]],
             version="9.2.0")
         gateway = core_tests.UpstreamReadGateway()
-        gateway.configure(self.settings, transport=transport,
-                          release_registry=reviewed, core_runtime=self.core)
+        # HAMCP-501 W6: an endpoint no sub-call page collides with (W4 D2).
+        gateway.configure(internal_search_page.page_settings(self.settings),
+                          transport=transport, release_registry=reviewed,
+                          core_runtime=self.core)
         server = postcore.FastMCP("synthetic-rc4-identifiers")
         static = postcore.registered_tools(postcore.get_registered_server())
         postcore.McpSdkToolRegistry(server).replace(
@@ -242,7 +245,14 @@ class IdentifierAuthorityTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(self.core, "finish", wraps=self.core.finish) as finish:
             for name, (args, _receipt, _change) in cases.items():
                 transport.result = postcore.device_read_result(name)
-                result = json.loads(await postcore.registered_tools(server)[name].run(dict(args)))
+                if internal_search_page.is_internal_only(name):
+                    # HAMCP-501 W6 (G1): the delegated ha_search is a
+                    # sub-call route only; it still takes its own Core
+                    # lease (G2), so finish() counts it.
+                    result = await internal_search_page.execute_page(gateway, name)
+                else:
+                    result = json.loads(
+                        await postcore.registered_tools(server)[name].run(dict(args)))
                 self.assertTrue(result["success"], result)
                 if name in postcore.DEVICE_PROJECTION_TOOLS:
                     self.assertTrue(core_tests._contains_projection(result["data"], "child-door"))
@@ -253,7 +263,7 @@ class IdentifierAuthorityTests(unittest.IsolatedAsyncioTestCase):
         self.network.records[2]["identifiers"] = [["test", 1]]
         await reconcile_through_gate(self.core)
         await gateway.initialize(server)
-        self.assertEqual(len(postcore.registered_tools(server)), 109)  # HAMCP-134: +1; HAMCP-253: +1; HAMCP-165 + HAMCP-155: +2 static; HAMCP-225: +4; HAMCP-228: +1 baseline compare tool; HAMCP-232/145: +4; HAMCP-106: +1; HAMCP-071: +1; HAMCP-311: +1; HAMCP-229: +1; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: +1
+        self.assertEqual(len(postcore.registered_tools(server)), 110)  # HAMCP-501 W6: + native ha_search (static, stays registered; the internal route is withheld); HAMCP-134: +1; HAMCP-253: +1; HAMCP-165 + HAMCP-155: +2 static; HAMCP-225: +4; HAMCP-228: +1 baseline compare tool; HAMCP-232/145: +4; HAMCP-106: +1; HAMCP-071: +1; HAMCP-311: +1; HAMCP-229: +1; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: +1
         self.assertEqual(len(transport.calls), calls)
         transport.result = ha_mcp_920_receipts.result(postcore.STATE_RECEIPT)
         result = json.loads(await postcore.registered_tools(server)["ha_get_state"].run(

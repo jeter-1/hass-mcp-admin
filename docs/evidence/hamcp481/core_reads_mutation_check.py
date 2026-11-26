@@ -6,6 +6,13 @@ one, and the mutant must fail at least one test. The mutants remove or weaken
 a guard: an authority check, an argument grammar, a bound, a projection rule
 or a closed vocabulary.
 
+HAMCP-501 W6 S1 = b+ (approved by Josh as relayed by the architect,
+2026-11-26) removed the ``automation/config``, ``script/config`` and scene
+configuration reads, and with them the mutants config_extra_keys_silent,
+any_error_is_not_found, scene_reply_unchecked, scene_id_unchecked,
+scene_404_not_expected, scene_id_widened and rest_scene_any_arity.
+batch_argument_unchecked is re-anchored to the split batch-payload check.
+
 Usage, from the repository root::
 
     python -I docs/evidence/hamcp481/core_reads_mutation_check.py
@@ -79,10 +86,6 @@ MUTANTS = {
         '                    projected[field_name] = INVALID\n                    partial.add("field_drift")\n',
         "                    projected[field_name] = INVALID\n"),
     "populated_but_unusable_is_complete": ("core_reads", "    if raw and not rows:", "    if False:"),
-    "config_extra_keys_silent": (
-        "core_reads", '{"field_drift"} if set(value) != {"config"} else set()', "set()"),
-    "any_error_is_not_found": (
-        "core_reads", 'if ok is False and value == "not_found":', "if ok is False:"),
     "unknown_related_type_silent": (
         "core_reads",
         '        if item_type not in c.CORE_RELATED_TYPES:\n            partial.add("field_drift")',
@@ -91,15 +94,6 @@ MUTANTS = {
         "core_reads",
         "elif type(items) is list and all(type(item) is str and c.ROW_ID.fullmatch(item) for item in items):",
         "elif type(items) is list:"),
-    "scene_reply_unchecked": (
-        "core_reads",
-        '    if type(raw) is not dict:\n        return _unavailable(name, "invalid_response")\n'
-        "    return _finished(name, raw, set())",
-        "    return _finished(name, raw, set())"),
-    "scene_id_unchecked": (
-        "core_reads", "if type(config_id) is not str or read.argument.fullmatch(config_id) is None:",
-        "if type(config_id) is not str:"),
-    "scene_404_not_expected": ("core_reads", "expected_statuses=frozenset({404})", "expected_statuses=frozenset()"),
     "aliases_keep_sentinel": (
         "core_reads", "return tuple(item for item in aliases if type(item) is str)", "return tuple(aliases)"),
     "aliases_unchecked": (
@@ -139,9 +133,11 @@ MUTANTS = {
     "partial_reason_open": (
         "core_reads", '        partial = (partial & c.PARTIAL_REASONS) | {"field_drift"}', "        pass"),
     "batch_argument_unchecked": (
-        "core_contracts",
-        "if name not in BATCH_READS or type(item) is not str or read.argument.fullmatch(item) is None:",
-        "if name not in BATCH_READS or type(item) is not str:"),
+        "core_contracts", '    if read.argument.fullmatch(item) is None:\n        raise CoreReadError("invalid_arguments")\n',
+        ""),
+    "batch_read_unlisted": (
+        "core_contracts", "    if name not in BATCH_READS or type(item) is not str:",
+        "    if type(item) is not str:"),
     "entries_chunk_unbounded": (
         "core_contracts", "not 1 <= len(entity_ids) <= GET_ENTRIES_CHUNK", "not 1 <= len(entity_ids)"),
     "entries_ids_unchecked": (
@@ -153,16 +149,11 @@ MUTANTS = {
     "device_requirement_downgraded": (
         "core_contracts", '"config/device_registry/list", DEVICE_REGISTRY, True,',
         '"config/device_registry/list", NON_DEVICE_REGISTRY, True,'),
-    "scene_id_widened": (
-        "core_contracts", 'SCENE_CONFIG_ID = re.compile(r"[A-Za-z0-9_-]{1,64}\\Z", re.ASCII)',
-        'SCENE_CONFIG_ID = re.compile(r"[A-Za-z0-9_./-]{1,64}\\Z", re.ASCII)'),
     "row_id_allows_control": (
         "core_contracts", 'ROW_ID = re.compile(r"[^\\x00-\\x1f\\x7f]{1,255}\\Z")',
         'ROW_ID = re.compile(r"[\\s\\S]{1,255}\\Z")'),
     "rest_states_any_arity": (
         "core_reads", '    if name == "states" and not values:', '    if name == "states":'),
-    "rest_scene_any_arity": (
-        "core_reads", '    if name == "scene_config" and len(values) == 1:', '    if name == "scene_config":'),
     "has_entity_name_required": (
         "core_contracts", 'frozenset({"has_entity_name"})', "frozenset()"),
 }

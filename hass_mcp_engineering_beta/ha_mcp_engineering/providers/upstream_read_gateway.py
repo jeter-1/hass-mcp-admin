@@ -46,6 +46,7 @@ from ..mcp_sdk_compatibility import (
     install_catalog_generation_gate,
 )
 from ..models import FailureResponse, SuccessResponse, Timing, dump_json
+from ..models.responses import dump_json_with_truncation
 from ..ha_mcp_readmission import (
     CapabilityAdmissionCoordinator,
     DecisionGeneration,
@@ -64,6 +65,7 @@ from ..ha_mcp_readmission.registry import (
     SignedReleaseRegistry,
 )
 from ..ha_core_readmission.routes import (
+    INTERNAL_ONLY_DELEGATED_READS,
     RETIRED_DELEGATED_READS,
     delegated_requirements,
 )
@@ -82,8 +84,9 @@ from ..sanitization import (
 from ..search.subcalls import (
     BUCKETS as SEARCH_SUBCALL_BUCKETS,
     MAX_SCAN_ROWS as SEARCH_SUBCALL_MAX_ROWS,
-    PAGE_SIZE as SEARCH_SUBCALL_PAGE_SIZE,
+    PAGE_SIZE_LADDER as SEARCH_SUBCALL_PAGE_SIZE_LADDER,
     PageResult as SearchPageResult,
+    PageTooLarge as SearchPageTooLarge,
     page_arguments as search_page_arguments,
 )
 from ..tool_framework import timing_since
@@ -278,6 +281,12 @@ _FAILURE_CATEGORIES = frozenset(
         "sanitization_failed",
         "internal_error",
     }
+)
+# HAMCP-501 W6 (F2): the fixed failure codes a native search sub-call page may
+# carry: a gateway failure category, the reader's own authority refusal, or
+# (S1) a page the reply size bound alone refused.
+_SEARCH_PAGE_FAILURE_CATEGORIES = _FAILURE_CATEGORIES | frozenset(
+    {"provider_authority_changed", "page_too_large"}
 )
 # Exact codes from the compiled, reviewed ha-mcp 7.14.1 profile. They select
 # Engineering-owned categories only; upstream messages, metadata, suggestions,
@@ -880,9 +889,11 @@ class HistoryReader:
 class SearchSubcallReader:
     """One fixed admitted ``ha_search`` generation for native search sub-calls.
 
-    HAMCP-501 W4: ``readers`` maps ``dashboard`` and ``helper`` to a page
-    reader that takes exactly the fixed page arguments and returns one
-    ``search.subcalls.PageResult`` or raises.
+    HAMCP-501 W4: ``readers`` maps each sub-call type in
+    ``search.subcalls.SUBCALL_TYPES`` (automation, script, scene, dashboard
+    and flow helper since W6 S1 b+) to a page reader that takes exactly the
+    fixed page arguments and returns one ``search.subcalls.PageResult`` or
+    raises.
     """
 
     readers: MappingProxyType
@@ -895,22 +906,47 @@ class SearchSubcallReader:
 class SearchSubcallPageFailure(Exception):
     """A native search sub-call page failed; ``category`` is a fixed code.
 
-    The scan records the page as failed; no text reaches the reply.
+    The scan records the page as failed; no text reaches the reply. HAMCP-501
+    W6 (F2): the category is mapped to the fixed set here, the one point both
+    the page result and the page audit read it from; anything else, including
+    a non-string, becomes ``invalid_response``.
     """
 
-    def __init__(self, category: str) -> None:
-        super().__init__(category)
-        self.category = category
+    def __init__(self, category: object) -> None:
+        fixed = (
+            category
+            if type(category) is str
+            and category in _SEARCH_PAGE_FAILURE_CATEGORIES
+            else "invalid_response"
+        )
+        super().__init__(fixed)
+        self.category = fixed
+
+
+class SearchSubcallPageTooLarge(SearchSubcallPageFailure, SearchPageTooLarge):
+    """HAMCP-501 W6 S1: a page the reply size bound alone refused.
+
+    Raised only from the page capture's ``too_large`` flag, which the size
+    branches set, never from a page's text or another category; the scan
+    reads the page's span again at the next ladder size.
+    """
+
+    def __init__(self) -> None:
+        super().__init__("page_too_large")
 
 
 class _SearchPageCapture:
-    """HAMCP-501 W4 (D1): one sub-call page's withheld names, in memory only."""
+    """HAMCP-501 W4 (D1): one sub-call page's withheld names, (W6 S1)
+    whether the reply size bound alone refused it, and (W6 F1) its scrub
+    state, in memory only."""
 
-    __slots__ = ("bucket", "withheld_names")
+    __slots__ = ("bucket", "withheld_names", "too_large", "scrub")
 
     def __init__(self, bucket: str) -> None:
         self.bucket = bucket
         self.withheld_names: frozenset | None = None
+        self.too_large = False
+        self.scrub: str | None = None
 
 
 # The record buckets of a 9.2.0 ``ha_search`` reply. On a sub-call page every
@@ -918,25 +954,33 @@ class _SearchPageCapture:
 _SEARCH_PAGE_BUCKETS = (
     "entities", "automations", "scripts", "scenes", "helpers", "dashboards",
 )
+# HAMCP-501 W6: a page capture's bucket names its one sub-call search type.
+_SEARCH_PAGE_TYPES = MappingProxyType({
+    bucket: search_type for search_type, bucket in SEARCH_SUBCALL_BUCKETS.items()
+})
 
 
 def _search_page_arguments(search_type: str, arguments: Any) -> dict[str, Any] | None:
-    """A fresh copy of exactly ``search_page_arguments(...)``, or None."""
+    """A fresh copy of exactly ``search_page_arguments(...)``, or None.
+
+    The limit is a ``PAGE_SIZE_LADDER`` size and the offset a multiple of it
+    (HAMCP-501 W6 S1); any other limit or offset is refused.
+    """
 
     if type(arguments) is not dict:
         return None
     query = arguments.get("query")
     exact_match = arguments.get("exact_match")
     offset = arguments.get("offset")
+    size = arguments.get("limit")
     if (
         type(query) is not str or not query.strip() or type(exact_match) is not bool
+        or type(size) is not int or size not in SEARCH_SUBCALL_PAGE_SIZE_LADDER
         or type(offset) is not int or not 0 <= offset < SEARCH_SUBCALL_MAX_ROWS
-        or offset % SEARCH_SUBCALL_PAGE_SIZE
+        or offset % size
     ):
         return None
-    expected = search_page_arguments(
-        search_type, query, exact_match, offset // SEARCH_SUBCALL_PAGE_SIZE
-    )
+    expected = search_page_arguments(search_type, query, exact_match, offset // size, size)
     if set(arguments) != set(expected) or arguments != expected:
         return None
     if any(type(arguments[key]) is not type(value) for key, value in expected.items()):
@@ -947,25 +991,33 @@ def _search_page_arguments(search_type: str, arguments: Any) -> dict[str, Any] |
 
 
 def _search_page_result(
-    result: Any, capture: _SearchPageCapture, offset: int
+    result: Any, capture: _SearchPageCapture, offset: int, size: int
 ) -> SearchPageResult:
     """The scan's ``PageResult`` from one successful projected page.
 
     ``partial`` is the projected ``partial`` field, never the delegated
     completeness overlay. Paging follows ``config_has_more``, which must equal
-    the flat ``has_more`` (D3). A page that claims more rows is full and ends
-    before the total, so the next offset neither skips nor repeats a row; a
-    last page ends at the total.
+    the flat ``has_more`` (D3). A page that claims more rows is full (its
+    ``size``, the validated limit) and ends before the total, so the next
+    offset neither skips nor repeats a row; a last page ends at the total.
+    A failure the reply size bound alone caused, as the capture's flag
+    records it, is ``SearchSubcallPageTooLarge`` (HAMCP-501 W6 S1).
     """
 
     if type(result) is not dict or result.get("success") is not True:
         details = result.get("details") if type(result) is dict else None
         category = details.get("failure_category") if type(details) is dict else None
+        if capture.too_large is True and category == "response_too_large":
+            raise SearchSubcallPageTooLarge()
         raise SearchSubcallPageFailure(
             category if type(category) is str else "invalid_response"
         )
     data = result.get("data")
-    if type(data) is not dict or type(capture.withheld_names) is not frozenset:
+    if (
+        type(data) is not dict or type(capture.withheld_names) is not frozenset
+        or capture.too_large is not False
+        or type(capture.scrub) is not str or capture.scrub not in keys_9_2.SCRUB_STATES
+    ):
         raise SearchSubcallPageFailure("invalid_response")
     rows = data.get(capture.bucket)
     partial = data.get("partial")
@@ -973,7 +1025,7 @@ def _search_page_result(
     flat_has_more = data.get("has_more")
     total = data.get("config_total_matches")
     if (
-        type(rows) is not list or len(rows) > SEARCH_SUBCALL_PAGE_SIZE
+        type(rows) is not list or len(rows) > size
         or type(partial) is not bool
         or type(has_more) is not bool or type(flat_has_more) is not bool
         or has_more is not flat_has_more
@@ -985,7 +1037,7 @@ def _search_page_result(
             raise SearchSubcallPageFailure("invalid_response")
     if has_more:
         consistent = (
-            len(rows) == SEARCH_SUBCALL_PAGE_SIZE and offset + len(rows) < total
+            len(rows) == size and offset + len(rows) < total
         )
     else:
         consistent = offset + len(rows) == total or (not rows and offset >= total)
@@ -994,6 +1046,7 @@ def _search_page_result(
     return SearchPageResult(
         rows=tuple(rows), partial=partial, has_more=has_more,
         config_total_matches=total, withheld_names=capture.withheld_names,
+        scrub=capture.scrub,
     )
 
 
@@ -1118,6 +1171,10 @@ class UpstreamReadGateway:
         self._registered_tool_registry: McpSdkToolRegistry | None = None
         self._registered_names: set[str] = set()
         self._exposed: dict[str, _AdmittedRoute] = {}
+        # HAMCP-501 W6 (G1): admitted routes a registered native tool uses
+        # internally, keyed by upstream name; never listed, aliased or
+        # capability-recorded.
+        self._internal: dict[str, _AdmittedRoute] = {}
         self._held_canaries: dict[str, _HeldCanaryRoute] = {}
         self._dynamic_capabilities: tuple[dict[str, Any], ...] = ()
         self._admission_generation = 0
@@ -1674,6 +1731,7 @@ class UpstreamReadGateway:
             )
             with self._lock:
                 previous_exposed = dict(self._exposed)
+                previous_internal = dict(self._internal)
                 previous_held_canaries = dict(self._held_canaries)
                 if (
                     readmission_selection is None
@@ -1712,6 +1770,7 @@ class UpstreamReadGateway:
                 selected_policy.reviewed_runtime_output_schema_fingerprints_by_name
             )
             exposed: dict[str, _AdmittedRoute] = {}
+            internal: dict[str, _AdmittedRoute] = {}
             dynamic_tools: dict[str, ReviewedUpstreamReadTool] = {}
             capabilities: list[dict[str, Any]] = []
             collisions: list[dict[str, str]] = []
@@ -1765,8 +1824,17 @@ class UpstreamReadGateway:
                             }
                         )
                         continue
+                # HAMCP-501 W6 (G1 = A): a read a registered native tool
+                # replaces keeps its Core gate above, but is admitted only as
+                # an internal route under its upstream name: no client tool,
+                # alias, collision or capability record, on any version.
+                internal_only = (
+                    entry.upstream_name in INTERNAL_ONLY_DELEGATED_READS
+                )
                 exposed_name = entry.exposed_name
-                if exposed_name in base_names:
+                if internal_only:
+                    exposed_name = entry.upstream_name
+                elif exposed_name in base_names:
                     exposed_name = f"{ALIAS_PREFIX}{entry.upstream_name}"
                     if exposed_name in base_names or exposed_name in exposed:
                         raise DashboardTransportError("schema_mismatch")
@@ -1776,15 +1844,15 @@ class UpstreamReadGateway:
                             "exposed_name": exposed_name,
                         }
                     )
-                dynamic_tool = ReviewedUpstreamReadTool.build(
-                    gateway=self,
-                    entry=entry,
-                    exposed_name=exposed_name,
-                    observed_tool=tool,
-                    admission_generation=generation,
-                    contract_fingerprint=decision.expected_fingerprint,
-                )
-                dynamic_tools[exposed_name] = dynamic_tool
+                if not internal_only:
+                    dynamic_tools[exposed_name] = ReviewedUpstreamReadTool.build(
+                        gateway=self,
+                        entry=entry,
+                        exposed_name=exposed_name,
+                        observed_tool=tool,
+                        admission_generation=generation,
+                        contract_fingerprint=decision.expected_fingerprint,
+                    )
                 candidate_route = _AdmittedRoute(
                     entry=entry,
                     observed_tool=tool,
@@ -1849,6 +1917,13 @@ class UpstreamReadGateway:
                         else None
                     ),
                 )
+                if internal_only:
+                    internal[exposed_name] = (
+                        previous_internal[exposed_name]
+                        if previous_internal.get(exposed_name) == candidate_route
+                        else candidate_route
+                    )
+                    continue
                 exposed[exposed_name] = (
                     previous_exposed[exposed_name]
                     if previous_exposed.get(exposed_name) == candidate_route
@@ -2050,7 +2125,8 @@ class UpstreamReadGateway:
                 selected_policy.classification_counts["automatic_read"]
             )
             # The optional reader never changes stock accounting (HAMCP-162).
-            stock_exposed = any(
+            # HAMCP-501 W6: an internal-only route is a stock route too.
+            stock_exposed = bool(internal) or any(
                 not is_yaml_adapter(route.entry) for route in exposed.values()
             )
             compatibility_status = (
@@ -2136,6 +2212,7 @@ class UpstreamReadGateway:
                     server=server,
                     dynamic_tools=dynamic_tools,
                     exposed=exposed,
+                    internal=internal,
                     held_canaries=held_canaries,
                     capabilities=tuple(capabilities),
                     generation=generation,
@@ -2196,6 +2273,17 @@ class UpstreamReadGateway:
             )
             return generation, tuple(sorted(self._exposed))
 
+    def _route_locked(self, name: str) -> _AdmittedRoute | None:
+        """Return the admitted route for one name, listed or internal-only.
+
+        The caller holds ``self._lock``. A listed route wins; an internal-only
+        route (HAMCP-501 W6, G1) is keyed by its upstream name and is never
+        listed, aliased or capability-recorded.
+        """
+
+        route = self._exposed.get(name)
+        return route if route is not None else self._internal.get(name)
+
     def _arm_missing_release_retry(self, delay: float | None) -> None:
         if delay is None:
             return
@@ -2221,6 +2309,7 @@ class UpstreamReadGateway:
         held_canaries: dict[str, _HeldCanaryRoute],
         capabilities: tuple[dict[str, Any], ...],
         generation: int,
+        internal: dict[str, _AdmittedRoute] | None = None,
         catalog: McpReadCatalog,
         evaluation: _CatalogEvaluation,
         observed_fingerprint: str | None,
@@ -2269,6 +2358,7 @@ class UpstreamReadGateway:
         self._replace_registered_tools(server, dynamic_tools)
         self._registered_names = set(dynamic_tools)
         self._exposed = dict(exposed)
+        self._internal = dict(internal or {})
         self._held_canaries = dict(held_canaries)
         self._dynamic_capabilities = capabilities
         self._admission_generation = generation
@@ -3474,7 +3564,7 @@ class UpstreamReadGateway:
 
         owner_task = asyncio.current_task()
         with self._lock:
-            mapping = self._exposed.get(exposed_name)
+            mapping = self._route_locked(exposed_name)
             if (
                 not mapping
                 or not mapping.entry.is_read_route
@@ -3552,7 +3642,7 @@ class UpstreamReadGateway:
                     raise DashboardTransportError("schema_mismatch")
                 with self._lock:
                     route_is_current = (
-                        self._exposed.get(exposed_name) is mapping
+                        self._route_locked(exposed_name) is mapping
                     )
                 if not route_is_current:
                     raise DashboardTransportError(
@@ -3927,7 +4017,7 @@ class UpstreamReadGateway:
                     lease.readmission_commit = commit
                 else:
                     with self._lock:
-                        if self._exposed.get(exposed_name) is not mapping:
+                        if self._route_locked(exposed_name) is not mapping:
                             raise DashboardTransportError(
                                 "prohibited_delegation"
                             )
@@ -4009,7 +4099,7 @@ class UpstreamReadGateway:
         def current() -> bool:
             try:
                 with self._lock:
-                    if (self._exposed.get(name) is not route
+                    if (self._route_locked(name) is not route
                             or self._core_reconciliation_epoch != core_epoch):
                         return False
                     _policy, _release, selection = self._validate_identity(
@@ -4261,20 +4351,28 @@ class UpstreamReadGateway:
         """Capture the admitted ``ha_search`` route for native search sub-calls.
 
         HAMCP-501 W4 (HAMCP-481 design sections 2.4 to 2.6): one page reader
-        each for the dashboard and flow-helper sub-calls. A page takes exactly
-        the fixed ``search.subcalls.page_arguments``; anything else is refused
-        before dispatch. Each page passes the gateway's argument validation,
-        live catalog revalidation, Core gate, Row 25 projection, sanitizer and
-        size check unchanged, with the parent request's authority rechecked at
-        dispatch; a page with no parent request or no parent authorizer is
-        refused before any request starts. A page the sanitizer redacted or bounded fails (D2). A
-        failure raises ``SearchSubcallPageFailure``. Only the 9.2.0 Row 25
-        projection is accepted. No fallback and no other upstream tool.
+        for each sub-call type in ``search.subcalls.SUBCALL_TYPES``
+        (automation, script, scene, dashboard and flow helper; W6 S1 b+). A
+        page takes exactly the fixed ``search.subcalls.page_arguments`` at a
+        size in ``search.subcalls.PAGE_SIZE_LADDER``, its offset a multiple
+        of its size (W6 S1); anything else is refused before dispatch. Each
+        page passes the gateway's argument validation, live catalog
+        revalidation, Core gate, Row 25 projection, sanitizer and size check
+        unchanged, with the parent request's authority rechecked at dispatch;
+        a page with no parent request or no parent authorizer is refused
+        before any request starts. A page the sanitizer redacted or bounded
+        fails (D2). A failure raises ``SearchSubcallPageFailure``; a page
+        whose data exceeds the size check, or whose escaped reply exceeds the
+        render bound, raises its subclass ``SearchSubcallPageTooLarge``
+        (category ``page_too_large``), the scan's only step-down signal. Only
+        the 9.2.0 Row 25 projection is accepted. No fallback and no other
+        upstream tool.
         """
 
         with self._lock:
+            # HAMCP-501 W6 (G1): the route is internal-only, never listed.
             routes = [
-                (name, route) for name, route in self._exposed.items()
+                (name, route) for name, route in self._internal.items()
                 if route.entry.upstream_name == "ha_search"
                 and route.entry.classification == "automatic_read"
             ]
@@ -4286,6 +4384,11 @@ class UpstreamReadGateway:
             return None
 
         current = self._bounded_route_current(name, route, core_epoch)
+        # HAMCP-501 W6: the schema the published delegated read validated
+        # with. The trimmed ``unified`` descriptor's raw input schema omits
+        # ``search_types`` and ``include_config``, which the same upstream
+        # callable accepts; validating a page against it refused every page.
+        page_schema = _public_read_schema(route.entry, route.observed_tool["inputSchema"])
 
         def page_reader(search_type: str) -> Callable[[dict], Awaitable[SearchPageResult]]:
             bucket = SEARCH_SUBCALL_BUCKETS[search_type]
@@ -4314,14 +4417,16 @@ class UpstreamReadGateway:
                     capture = _SearchPageCapture(bucket)
                     result = json.loads(await self.execute(
                         exposed_name=name, arguments=page_arguments,
-                        reviewed_schema=route.observed_tool["inputSchema"],
+                        reviewed_schema=page_schema,
                         policy_entry=route.entry, admission_generation=route.generation,
                         contract_fingerprint=route.contract_fingerprint,
                         search_page=capture,
                     ))
                     if not current() or not telemetry.authorize_core_dispatch():
                         raise SearchSubcallPageFailure("provider_authority_changed")
-                    page = _search_page_result(result, capture, page_arguments["offset"])
+                    page = _search_page_result(
+                        result, capture, page_arguments["offset"], page_arguments["limit"]
+                    )
                     status = "success"
                     return page
                 except SearchSubcallPageFailure as failure:
@@ -4340,6 +4445,7 @@ class UpstreamReadGateway:
                                 "provider": PROVIDER_ID, "upstream_tool": "ha_search",
                                 "search_type": search_type,
                                 "offset": page_arguments["offset"],
+                                "limit": page_arguments["limit"],
                                 "upstream_version": route.server_version,
                                 "contract_fingerprint": route.contract_fingerprint,
                                 "result_status": status,
@@ -4394,6 +4500,19 @@ class UpstreamReadGateway:
         try:
             if require_unmodified_script and policy_entry.upstream_name != "ha_config_get_script":
                 raise _GatewayFailure("prohibited_delegation", dispatched=False)
+            if (
+                policy_entry.upstream_name in INTERNAL_ONLY_DELEGATED_READS
+                and search_page is None
+            ):
+                # HAMCP-501 W6 (G1): an internal-only route is dispatched only
+                # as a native search sub-call page, never as a direct read.
+                raise _GatewayFailure("prohibited_delegation", dispatched=False)
+            if search_page is not None and (
+                telemetry is None or telemetry.core_dispatch_authorizer is None
+            ):
+                # HAMCP-501 W6: a sub-call page always runs inside a request
+                # that carries the parent's Core lease; none, no dispatch.
+                raise _GatewayFailure("prohibited_delegation", dispatched=False)
             if search_page is not None and (
                 type(search_page) is not _SearchPageCapture
                 or require_unmodified_script
@@ -4402,6 +4521,18 @@ class UpstreamReadGateway:
                 or not reads_9_2.is_adapter(policy_entry)
             ):
                 # HAMCP-501 W4: a sub-call page is only the 9.2.0 Row 25 route.
+                raise _GatewayFailure("prohibited_delegation", dispatched=False)
+            if search_page is not None and (
+                search_page.too_large is not False
+                or search_page.scrub is not None
+                or type(search_page.bucket) is not str
+                or search_page.bucket not in _SEARCH_PAGE_TYPES
+                or _search_page_arguments(_SEARCH_PAGE_TYPES[search_page.bucket], arguments)
+                is None
+            ):
+                # HAMCP-501 W6: a sub-call page carries exactly the fixed page
+                # arguments of its bucket's search type, as the page reader
+                # builds them; anything else is not a sub-call page.
                 raise _GatewayFailure("prohibited_delegation", dispatched=False)
             yaml_route = is_yaml_adapter(policy_entry)
             yaml_path: str | None = None
@@ -4573,6 +4704,9 @@ class UpstreamReadGateway:
                         search_page.withheld_names = keys_9_2.bucket_withheld_names(
                             payload, search_page.bucket
                         )
+                        # HAMCP-501 W6 F1: whether the page shows that its
+                        # bodies were matched scrubbed; held, never emitted.
+                        search_page.scrub = keys_9_2.page_scrub_state(payload)
                     except ValueError:
                         raise _GatewayFailure(
                             "invalid_response", dispatched=True
@@ -4689,6 +4823,9 @@ class UpstreamReadGateway:
                     ).encode("utf-8")
                 )
                 if encoded_size + 8_000 > response_limit:
+                    if search_page is not None:
+                        # HAMCP-501 W6 S1: the size bound alone refused the page.
+                        search_page.too_large = True
                     raise _GatewayFailure("response_too_large", dispatched=True)
                 upstream_partial, completeness_warnings = _upstream_completeness(
                     policy_entry, sanitation.value
@@ -4711,7 +4848,7 @@ class UpstreamReadGateway:
                 # failure counts stay available, but only the currently admitted route
                 # may clear its own transient failure. A call from a removed generation
                 # must not erase a newer discovery failure.
-                if self._exposed.get(exposed_name) is mapping:
+                if self._route_locked(exposed_name) is mapping:
                     self._state["generic_delegation_available"] = bool(self._exposed)
                     self._state["last_call_failure_category"] = None
                     if self._state["last_discovery_failure_category"] is None:
@@ -4791,6 +4928,17 @@ class UpstreamReadGateway:
                         "sanitization_failed", dispatched=True
                     ) from None
                 return dump_json(sealed_body, limit=response_limit)
+            if search_page is not None:
+                # HAMCP-501 W6 S1: a sub-call page is rendered as every reply
+                # is, and one the bound would cut fails as too large instead of
+                # reaching its reader cut. The flag is the branch taken.
+                rendered, truncated = dump_json_with_truncation(
+                    success.as_dict(), response_limit
+                )
+                if truncated:
+                    search_page.too_large = True
+                    raise _GatewayFailure("response_too_large", dispatched=True)
+                return rendered
             return success.to_json(response_limit)
         except _GatewayFailure as exc:
             mapping = route_context.get("mapping")
@@ -4811,7 +4959,7 @@ class UpstreamReadGateway:
                 route_is_current = (
                     route_was_admitted
                     and mapping is not None
-                    and self._exposed.get(exposed_name) is mapping
+                    and self._route_locked(exposed_name) is mapping
                 )
             if not route_was_admitted or route_is_current:
                 if category in _EXPECTED_PROVIDER_OUTCOMES:
@@ -5590,6 +5738,7 @@ class UpstreamReadGateway:
                 self._replace_registered_tools(self._registered_server, {})
             self._registered_names = set()
             self._exposed = {}
+            self._internal = {}
             self._held_canaries = {}
             self._dynamic_capabilities = ()
 
@@ -5644,7 +5793,7 @@ class UpstreamReadGateway:
                     UpstreamSurface.HA_MCP
                 )
             with self._lock:
-                if self._exposed.get(exposed_name) is not mapping:
+                if self._route_locked(exposed_name) is not mapping:
                     return False
                 self._remove_registered_tools()
                 self._active_release = None
@@ -5685,23 +5834,34 @@ class UpstreamReadGateway:
             return True
 
         with self._lock:
-            if self._exposed.get(exposed_name) is not mapping:
+            if self._route_locked(exposed_name) is not mapping:
                 return False
-            if self._registered_tool_registry is not None:
-                replacement = dict(self._registered_tool_registry.snapshot())
-                replacement.pop(exposed_name, None)
-                self._registered_tool_registry.replace(replacement)
-            registered_names = set(self._registered_names)
-            registered_names.discard(exposed_name)
-            self._registered_names = registered_names
-            exposed = dict(self._exposed)
-            exposed.pop(exposed_name, None)
-            self._exposed = exposed
-            self._dynamic_capabilities = tuple(
-                item
-                for item in self._dynamic_capabilities
-                if item.get("tool") != exposed_name
-            )
+            if self._internal.get(exposed_name) is mapping:
+                # HAMCP-501 W6 (G1): an internal-only route has no client
+                # tool, registered name or capability record. Withdrawing it
+                # must never touch the registry, where the same name is the
+                # native Engineering tool.
+                internal = dict(self._internal)
+                internal.pop(exposed_name, None)
+                self._internal = internal
+            else:
+                if self._registered_tool_registry is not None:
+                    replacement = dict(
+                        self._registered_tool_registry.snapshot()
+                    )
+                    replacement.pop(exposed_name, None)
+                    self._registered_tool_registry.replace(replacement)
+                registered_names = set(self._registered_names)
+                registered_names.discard(exposed_name)
+                self._registered_names = registered_names
+                exposed = dict(self._exposed)
+                exposed.pop(exposed_name, None)
+                self._exposed = exposed
+                self._dynamic_capabilities = tuple(
+                    item
+                    for item in self._dynamic_capabilities
+                    if item.get("tool") != exposed_name
+                )
 
             disposition = failure.get("disposition")
             missing = set(self._state["missing_tools"])
@@ -5773,7 +5933,7 @@ class UpstreamReadGateway:
                 )
                 reason_counts[reason] += 1
 
-            matched_count = len(self._exposed)
+            matched_count = len(self._exposed) + len(self._internal)
             missing_count = len(missing)
             quarantined_count = len(quarantined)
             accounted = (
@@ -5783,7 +5943,9 @@ class UpstreamReadGateway:
                 "reviewed_automatic_read_count"
             ]
             compatibility_status = (
-                "partial" if self._exposed else "incompatible"
+                "partial"
+                if self._exposed or self._internal
+                else "incompatible"
             )
             collision_mappings = [
                 item
@@ -5796,7 +5958,7 @@ class UpstreamReadGateway:
                     "generic_delegation_available": bool(self._exposed),
                     "admission_complete": False,
                     "exact_matched_automatic_read_count": matched_count,
-                    "dynamically_exposed_count": matched_count,
+                    "dynamically_exposed_count": len(self._exposed),
                     "schema_mismatch_count": reason_counts.get(
                         "input_schema_mismatch", 0
                     ),
@@ -5846,7 +6008,7 @@ class UpstreamReadGateway:
                     "compatibility_status": compatibility_status,
                     "admission_status": (
                         "partially_admitted"
-                        if self._exposed
+                        if self._exposed or self._internal
                         else "blocked_incompatible_upstream"
                     ),
                     "reconciliation_status": "reprobe_requested",
@@ -5903,7 +6065,7 @@ class UpstreamReadGateway:
         trigger = False
         publish = False
         with self._lock:
-            if self._exposed.get(exposed_name) is not mapping:
+            if self._route_locked(exposed_name) is not mapping:
                 return False
             safe_name = self._safe_identity_evidence(catalog.server_name)
             safe_version = self._safe_version_evidence(
@@ -5993,7 +6155,7 @@ class UpstreamReadGateway:
                 UpstreamSurface.HA_MCP
             )
         with self._lock:
-            if self._exposed.get(exposed_name) is not mapping:
+            if self._route_locked(exposed_name) is not mapping:
                 return False
             self._remove_registered_tools()
             self._reset_contract_accounting_locked()

@@ -493,17 +493,20 @@ def bucket_withheld_names(payload: Any, bucket: str) -> frozenset:
     """The names Row 25 withholds from one ``ha_search`` bucket's records.
 
     HAMCP-501 W4 (decision D1, as relayed by the architect): the native search
-    dashboard and flow-helper sub-calls disclose the record fields Row 25
-    withheld from their pages. This is :func:`projection`'s distinct-name walk
-    over ``payload[bucket]`` only, so page-level names (``partial_reason``)
-    are not record names. A value of a type its key does not admit counts
-    under its own key. The names stay in Engineering's memory; a reply emits
-    only their count. Raises ``ValueError`` (``invalid_response``) on any
-    other shape.
+    sub-calls disclose the record fields Row 25 withheld from their pages. W6
+    S1 b+ (approved by Josh as relayed by the architect) adds the automation,
+    script and scene sub-calls to the dashboard and flow-helper ones. This is
+    :func:`projection`'s distinct-name walk over ``payload[bucket]`` only, so
+    page-level names (``partial_reason``) are not record names. A value of a
+    type its key does not admit counts under its own key. The names stay in
+    Engineering's memory; a reply emits only their count. Raises
+    ``ValueError`` (``invalid_response``) on any other shape.
     """
 
     row = ROWS["ha_search"]
-    if type(payload) is not dict or bucket not in ("dashboards", "helpers"):
+    if type(payload) is not dict or bucket not in (
+        "automations", "scripts", "scenes", "dashboards", "helpers",
+    ):
         raise ValueError("invalid_response")
     records = payload.get(bucket)
     if type(records) is not list:
@@ -515,3 +518,93 @@ def bucket_withheld_names(payload: Any, bucket: str) -> frozenset:
     if not all(type(name) is str for name in names):
         raise ValueError("invalid_response")
     return frozenset(names)
+
+
+# HAMCP-501 W6 F1 (Codex r1 F1): the scrub state of one native search
+# sub-call page. It is read from the raw page before the Row 25 projection,
+# held in Engineering's memory and never emitted. The two scrub-degraded
+# texts are used for this internal check only (approved by Josh, "Approve
+# A+", as relayed by the architect, 2026-11-26); Row 25's key set and the
+# output-key contract are unchanged. Verbatim from ha-mcp 9.2.0, commit
+# 51e3aac788482a081807591cd5d58d07dc4e540b:
+#   ``custom_components/ha_mcp_tools/websocket_api/secrets.py`` (sha256
+#   9f4b00dc2dfc2d1d3167e70dc6793b58e5d58065d1203c283813e34b616a7958):
+#   ``SCRUB_DEGRADED_WARNING`` and ``SCRUB_DEGRADED_MATCH_WARNING``;
+#   ``custom_components/ha_mcp_tools/websocket_api/flow_domains.py`` (sha256
+#   f371892fbbbb7f77dd7938eb8239133d6538e43922c0e7fc1c154fbda319bccd):
+#   ``HELPER_FLOWS_DEGRADED_WARNING``;
+#   ``src/ha_mcp/tools/search/response.py`` (sha256
+#   fe776978341246e12a2ddcfd8a7ec3f66f8bbee5712d9697d4b8edc6d43af07c):
+#   ``_new_search_response``'s explicit ``search_types`` notice and
+#   ``_mirror_partial_to_warnings``' prefix;
+#   ``src/ha_mcp/tools/search/entities.py`` (sha256
+#   650dcd0ea85c63541f6220696767e7db568d097214627496c09d2129762b7500):
+#   the two empty-search hints.
+SEARCH_SCRUB_DEGRADED_WARNINGS = (
+    (
+        "secrets.yaml could not be read, so flow-helper options in this "
+        "response were not scrubbed of resolved !secret values, and a "
+        "match_in_config hit may confirm a secret value."
+    ),
+    (
+        "secrets.yaml could not be read, so this search matched config "
+        "bodies without the !secret scrub; a match_in_config hit may "
+        "confirm a secret value."
+    ),
+)
+# Page warnings that say nothing about the scrub (builder design, disclosed):
+# the notice every explicit-``search_types`` page carries, the two
+# empty-search hints and the helper-flow loader notice.
+SEARCH_NEUTRAL_PAGE_WARNINGS = frozenset({
+    (
+        "entity search skipped: explicit search_types selects "
+        "configuration-only search; omit search_types to search entities."
+    ),
+    (
+        "No ha_mcp_tools component detected; for full search "
+        "functionality, install it via HACS (the Marketplace on Home "
+        "Assistant 2026.11+)."
+    ),
+    (
+        "The installed ha_mcp_tools component is out of date; for full "
+        "search functionality, update it."
+    ),
+    (
+        "Home Assistant's loader could not list its helper flows, so "
+        "custom helper integrations are missing from this response."
+    ),
+})
+# A partial page's own reason, mirrored into its warnings.
+SEARCH_PARTIAL_MIRROR_PREFIX = "incomplete results: "
+SCRUB_CLEAN = "clean"
+SCRUB_DEGRADED = "degraded"
+SCRUB_UNVERIFIED = "unverified"
+SCRUB_STATES = (SCRUB_CLEAN, SCRUB_DEGRADED, SCRUB_UNVERIFIED)
+
+
+def page_scrub_state(payload: Any) -> str:
+    """One raw ``ha_search`` sub-call page's scrub state (HAMCP-501 W6 F1).
+
+    ``degraded``: a warning carries one of ha-mcp's scrub-degraded texts, so
+    the page matched its bodies unscrubbed. ``clean``: the page has a
+    ``warnings`` list (every explicit-``search_types`` page does) and each
+    warning is a reviewed neutral text or the page's own partial-reason
+    mirror. Anything else, an absent or unreadable ``warnings`` field
+    included, is ``unverified``: the page does not show that its bodies were
+    matched scrubbed. Never raises.
+    """
+
+    if type(payload) is not dict:
+        return SCRUB_UNVERIFIED
+    warnings = payload.get("warnings")
+    if type(warnings) is not list or not all(type(text) is str for text in warnings):
+        return SCRUB_UNVERIFIED
+    if any(degraded in text for text in warnings for degraded in SEARCH_SCRUB_DEGRADED_WARNINGS):
+        return SCRUB_DEGRADED
+    reason = payload.get("partial_reason")
+    mirror = (SEARCH_PARTIAL_MIRROR_PREFIX + reason
+              if payload.get("partial") is True and type(reason) is str and reason else None)
+    if warnings and all(text in SEARCH_NEUTRAL_PAGE_WARNINGS or text == mirror
+                        for text in warnings):
+        return SCRUB_CLEAN
+    return SCRUB_UNVERIFIED

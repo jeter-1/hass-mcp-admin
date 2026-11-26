@@ -1,4 +1,5 @@
 import ast
+import asyncio
 import copy
 from contextlib import redirect_stderr
 import dataclasses
@@ -10,7 +11,7 @@ import re
 import sys
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import yaml
 
@@ -1527,6 +1528,7 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
                 "reconcile_until_initialized",
                 "registered_tools",
                 "load_reviewed_upstream_release_registry",
+                "_call_native_search",
             }.issubset(call_names)
         )
         source = ast.get_source_segment(self.source, runner) or ""
@@ -1540,7 +1542,15 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
             self.assertIn(f'"{tool_name}"', source)
         self.assertIn('"config/device_registry/update"', source)
         self.assertIn('"config/area_registry/delete"', source)
-        self.assertIn('len(tools) == 27,', source)
+        # HAMCP-501 W6: the count comes from Engineering source, and the
+        # internal-only name is never listed by the delegated catalog.
+        self.assertIn("len(tools) == 27 - len(INTERNAL_ONLY_DELEGATED_READS),", source)
+        self.assertIn("not INTERNAL_ONLY_DELEGATED_READS & set(tools),", source)
+        self.assertIn('"internal_only_not_listed"', source)
+        self.assertIn("if name == native_search.NAME:", source)
+        self.assertIn('metadata.get("provider") == "engineering"', source)
+        self.assertIn('metadata.get("subcall_route") == "admitted"', source)
+        self.assertIn('"child_effective_area"', source)
         self.assertIn('"ha_get_operation_status" not in tools', source)
         self.assertIn('metadata.get("fallback") == "none"', source)
         self.assertIn('"lovelace/config/save"', source)
@@ -1550,6 +1560,86 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
         self.assertIn('handle.write("MCP_HEALTHZ=true\\n")', upstream_source)
         self.assertIn('f"http://127.0.0.1:{UPSTREAM_PORT}/healthz"', upstream_source)
         self.assertNotIn("_call_exact_upstream_tool", upstream_source)
+
+    def native_search_call(self, tool, *, authority="synthetic-authority"):
+        core = SimpleNamespace(
+            acquire=Mock(return_value=authority),
+            consume=Mock(return_value=("synthetic-commit",)),
+            revalidate=Mock(return_value=True),
+            finish=Mock(return_value=True),
+            release=Mock(return_value=True),
+        )
+        gateway = SimpleNamespace(search_subcall_reader=Mock(return_value=None))
+        configured = object()
+        native = self.contract.native_search
+        with patch.object(native, "SEARCH") as search, patch.object(
+            native, "registered_tool", return_value=tool
+        ) as registered:
+            try:
+                rendered = asyncio.run(self.contract._call_native_search(
+                    configured, core, gateway, {"query": "synthetic"}))
+            except RuntimeError as error:
+                rendered = error
+        return rendered, core, gateway, configured, search, registered
+
+    def test_native_search_runs_under_its_own_core_lease(self):
+        # HAMCP-501 W6: the lane's native call acquires the static route's
+        # exact requirements, commits on the first dispatch, revalidates
+        # before the next, and closes the authorizer with the request.
+        from ha_mcp_engineering.ha_core_readmission.routes import STATIC_TOOL_CORE_REQUIREMENTS
+        from ha_mcp_engineering.request_context import current_telemetry
+
+        observed = []
+
+        class Tool:
+            async def run(self, arguments):
+                telemetry = current_telemetry()
+                observed.append((dict(arguments), telemetry.core_dispatch_authorizer(),
+                                 telemetry.core_dispatch_authorizer(), telemetry))
+                return json.dumps({"success": True})
+
+        rendered, core, gateway, configured, search, _ = self.native_search_call(Tool())
+        self.assertEqual(json.loads(rendered), {"success": True})
+        core.acquire.assert_called_once_with(
+            tuple(sorted(set(STATIC_TOOL_CORE_REQUIREMENTS["ha_search"]))))
+        ((arguments, first, second, telemetry),) = observed
+        self.assertEqual((arguments, first, second), ({"query": "synthetic"}, True, True))
+        core.consume.assert_called_once_with("synthetic-authority")
+        core.revalidate.assert_called_once_with("synthetic-authority", ("synthetic-commit",))
+        core.finish.assert_called_once_with(("synthetic-commit",))
+        core.release.assert_not_called()
+        self.assertIs(telemetry.core_dispatch_authorizer(), False)
+        (configure,) = search.configure.call_args_list
+        self.assertIs(configure.args[0], configured)
+        self.assertIsNone(configure.kwargs["reader_factory"]())
+        gateway.search_subcall_reader.assert_called_once_with()
+
+    def test_native_search_without_a_lease_is_refused_before_the_tool(self):
+        tool = SimpleNamespace(run=AsyncMock())
+        rendered, core, _, _, _, registered = self.native_search_call(tool, authority=None)
+        self.assertEqual(str(rendered), "native_search_core_lease_unavailable")
+        registered.assert_not_called()
+        tool.run.assert_not_called()
+        core.consume.assert_not_called()
+        core.finish.assert_not_called()
+
+    def test_native_search_failure_releases_an_uncommitted_lease(self):
+        from ha_mcp_engineering.request_context import current_telemetry
+
+        seen = []
+
+        class Tool:
+            async def run(self, arguments):
+                seen.append(current_telemetry())
+                raise RuntimeError("synthetic_tool_failure")
+
+        rendered, core, _, _, _, _ = self.native_search_call(Tool())
+        self.assertEqual(str(rendered), "synthetic_tool_failure")
+        core.consume.assert_not_called()
+        core.finish.assert_not_called()
+        core.release.assert_called_once_with("synthetic-authority")
+        (telemetry,) = seen
+        self.assertIs(telemetry.core_dispatch_authorizer(), False)
 
     def test_response_adapter_is_bound_to_the_exact_reviewed_ha_release(self):
         expected_adapter = self.contract._expected_device_response_adapter
