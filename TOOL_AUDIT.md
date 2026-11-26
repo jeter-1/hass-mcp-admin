@@ -44,6 +44,9 @@ native search rows come with W7 (HAMCP-501).
   `truncated`; incident correlation and `entity_dependency_analysis` report
   their caps as partial with withheld counts. Output keys only; the reads are
   unchanged.
+- **`ha_search` (HAMCP-481, W1 to W7).** [fill: the native search rows after
+  W6, checked against the merged source: the reads it sends, sub-calls,
+  filters, `result_fields` and partial semantics.]
 
 ## Automation run counts (2.9.1, HAMCP-476)
 

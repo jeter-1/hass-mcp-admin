@@ -1394,6 +1394,11 @@ path. The native search section comes with W7 (HAMCP-501).
   `trace/list`; its reply is now an object (breaking, SI-5).
 - **CI only (HAMCP-505).** The Core-evidence workflow's pull request
   acceptance target comes from the support window; no runtime change.
+- **Native search (HAMCP-481, W1 to W7).** [fill after W6, each checked
+  against the merged source: the W4 sub-call page path is unreachable until
+  W6 wires it; W6 passes the native tool's lease as `core_dispatch_authorizer`
+  (D5); a sub-call page the sanitizer redacted or truncated fails and is never
+  merged (D2); and the reads, routes and limits it adds.]
 
 The `2.4.1-beta.30` incident-window slice (HAMCP-131) adds two read-only tools.
 Neither adds a permission, add-on option, role, fallback or write path.
