@@ -412,6 +412,24 @@ class ExecuteHardeningTests(NativeBase):
         self.assertIs(result["success"], False)
         self.assertEqual(self.transport.calls, 1)
 
+    async def test_a_direct_read_of_the_internal_route_is_refused_with_zero_dispatch(self):
+        # G1: without a page capture the internal-only route is never a read,
+        # inside an authorized request, with the fixed page arguments or any
+        # other, under the reviewed or the raw schema.
+        self.serve("helper", [w4.reply_of(w4.body("helper", [w4.flow(0)]))])
+        with self.gateway._lock:
+            route = self.gateway._internal["ha_search"]
+        for arguments in (w4.arguments(), {"query": "synthetic"}):
+            for schema in (gw._public_read_schema(route.entry, route.observed_tool["inputSchema"]),
+                           route.observed_tool["inputSchema"]):
+                result = json.loads(await self.gateway.execute(
+                    exposed_name="ha_search", arguments=deepcopy(arguments), reviewed_schema=schema,
+                    policy_entry=route.entry, admission_generation=route.generation,
+                    contract_fingerprint=route.contract_fingerprint))
+                self.assertIs(result["success"], False)
+                self.assertEqual(result["details"]["failure_category"], "prohibited_delegation")
+        self.assertEqual(self.transport.calls, 0)
+
 
 class RoutedTests(NativeBase):
     """Through ``AuthenticatedMcpGateway``: the static-tool Core lease is the
