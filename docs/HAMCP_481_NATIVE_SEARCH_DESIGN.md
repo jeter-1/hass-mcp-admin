@@ -17,7 +17,8 @@ Revision 3 was the correction batch for Cursor's round-2 review of revision 2
 (head `3ace9227`). Revision 2 was the correction batch for the Cursor review
 and the architect review of revision 1 (head `4cd3a430`), with J2 applied as
 decided. The build was planned for the release after 2.9.1, not for 2.9.1
-(2.4.2-beta.13). It is built in 2.10.0 (§10). Nothing here authorizes a runtime, schema, routing,
+(2.4.2-beta.13). It is built in 2.10.0 (§10). Nothing here authorizes a
+runtime, schema, routing,
 protected-path, version or release change, deployment, or live Home Assistant
 or Engineering access. No decision is open for Josh in this revision. The
 build gate added in revision 3 (the source of the ha-mcp visibility state,
@@ -217,8 +218,9 @@ Admitted as a command, with a profile still to be named at build:
 
 - `script/config` and `search/related` are in the fixed WebSocket allowlist
   (`clients/websocket.py:24-28`; *rev 5 correction:* `_BATCH_COMMAND_KEYS` is
-  at `:32-38`, and `:24-28` is its comment). Today, `ha_config_get_script` declares
-  `core.basic_websocket_read` (`ha_core_readmission/routes.py:257`). The build
+  at `:32-38`, and `:24-28` is its comment). Today, `ha_config_get_script`
+  declares `core.basic_websocket_read` (`ha_core_readmission/routes.py:257`).
+  The build
   names the profile that attests each command for a native provider. If none
   does, the read is new (below).
 
@@ -226,7 +228,8 @@ New reviewed reads that the build needs. Each is a protected-path change and
 needs Josh's named OK in the build task:
 
 - scene configuration `GET /api/config/scene/config/{config_id}` as a read
-  contract. *Rev 5:* not built (S1 = b+, §10.4). Today it is admitted only inside the scene configuration and
+  contract. *Rev 5:* not built (S1 = b+, §10.4). Today it is admitted only
+  inside the scene configuration and
   write profiles (`profiles.py:149`, `core.scene_configuration_operation` at
   `:814-834`, and `SCENE_CREATE_DELETE_REQUESTS` at `:1183-1189`);
 - `input_boolean/list`, `input_number/list`, `input_select/list`,
