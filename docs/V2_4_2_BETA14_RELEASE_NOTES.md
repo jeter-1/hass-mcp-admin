@@ -39,7 +39,7 @@ each landed item's behavior from the landed source.
 | HAMCP-481 W3 | Native search: the engine, landed inert | landed (#513) |
 | HAMCP-481 W4 | Native search: the sub-call page readers, landed inert; W6 fixed their page check, which refused every page under the live unified descriptor | landed (#516) |
 | HAMCP-481 W6 | Native search: the `ha_search` cutover; the tool keeps its name and arguments, plus one appended `search_types` sentence. The delegated 9.2.0 `ha_search` is internal-only (no `ha_mcp__ha_search`) and serves only the fixed sub-call pages under its own Core requirement. Automation, script and scene body matches come from ha-mcp's scrubbed sub-call (S1); a numeric-like query or an unproven scrub withholds them. Pages step down 150, 30, 6, 1 rows when too large | landed (#517) |
-| HAMCP-481 W6b | Native search: component-route parity | [fill: #519 state] |
+| HAMCP-481 W6b | Native search: component-route parity. Entity rows carry the composed device and entity `name`; the scored texts add the name, aliases, labels, device texts, area and floor; the component tier scorer (100, 80, ratio of at least 70) replaces BM25 and the typo fallback; the state filter runs before paging. Supersedes #518 (synthetic test fixtures) | landed (#519) |
 | HAMCP-481 W7 | Native search: the design doc update (these release rows are HAMCP-509's) | [fill: PR and state] |
 
 Not in this build:
@@ -56,13 +56,13 @@ Not in this build:
   YAML-mode dashboards, and no inf/nan arm in the numeric trigger;
 - the helper sub-call still opens and aborts options flows upstream, as
   before (HAMCP-233);
-- [fill: W6b and W7 deferrals].
+- [fill: W7 deferrals].
 
 ### Native search parity
 
 Copied verbatim from the W6 pull request (#517), measured against the live
-delegated component route (unified descriptor c1ca76bd). [fill: W6b's parity
-changes]
+delegated component route (unified descriptor c1ca76bd). W6b (#519) then
+closes X12; its parity list follows the block.
 
 ```
 Kept:
@@ -99,6 +99,27 @@ Changed (with reason):
 - F1 scrub check: when a one-row helper probe before or after the scans does not show a clean scrub, every body type in the call is treated the same way (body_scrub_degraded or body_scrub_unverified).
 - The audit status of the native invalid-argument path is failure / validation_failure.
 ```
+
+W6b (#519), measured against the same live component route (ha-mcp 9.2.0
+`ha_mcp_tools` search). Each item is kept: native now does what live does.
+- P1: every entity row carries `name`, the composed device and entity name
+  (Core 2026.11.3's rule); the composed-name warning is removed (X12).
+- P2: exact mode matches the entity ID, friendly name, composed name,
+  aliases, labels, device texts, area and floor.
+- P3: the fuzzy scorer is the component's tier scorer (100, 80, or a ratio
+  of at least 70). BM25 and the typo fallback are retired.
+- P4: `match_type` comes from the composed and friendly names, with
+  `alias_match` and no `typo_fallback`.
+- P5: the domain, hidden and state filters run before paging in every mode;
+  the page-only state warning is removed.
+- P6: an area-filtered query scores like any query.
+- P7: device texts add the main device's manufacturer and model.
+- P8: storage-helper names and bodies score on the component scorer;
+  automation, script and scene bodies stay on W6's sub-call. P9 (exact
+  configuration match) is unchanged.
+- Every entity search now reads the device registry, and every query also
+  reads the area, floor and label registries; exact mode reads aliases. No
+  new source is read.
 
 ## Evidence
 

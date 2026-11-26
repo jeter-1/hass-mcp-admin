@@ -55,7 +55,7 @@ final release pull request binds their evidence.
 | HAMCP-481 W3 | Native search engine, inert | landed (#513) |
 | HAMCP-481 W4 | Native search sub-call page readers, inert | landed (#516) |
 | HAMCP-481 W6 | The `ha_search` cutover to native search: the delegated `ha_search` internal-only, sub-call body matching (S1), the numeric and scrub withholding, and the page-size ladder | landed (#517); `tests/test_hamcp501_native_search_cutover.py`, `tests/test_hamcp481_native_search_engine.py`, `tests/test_hamcp501_w6_f1_body_matching.py` |
-| HAMCP-481 W6b | Native search component-route parity | [fill: #519 state] |
+| HAMCP-481 W6b | Native search component-route parity: the composed `name`, the scored texts, the tier scorer, and the state filter before paging | landed (#519); `tests/test_hamcp501_w6b_component_parity.py`, `tests/test_hamcp481_scoring_parity.py`, `tests/test_hamcp481_native_search_engine.py` |
 | HAMCP-481 W7 | Native search: the design doc update | [fill: PR and state] |
 
 ## 1. Source and offline acceptance
@@ -137,8 +137,9 @@ which steps are reads.
      - Entities: the domain, query, partial-id, area and state reads return
        the baseline's totals and first rows, with `score` and `match_type`
        where the baseline had them. A complete read reports
-       `metadata.completeness` `complete`, and the visibility caveat is
-       replaced by the disclosed no-filter note (HAMCP-499).
+       `metadata.completeness` `complete`. The reply has no visibility caveat
+       and no visibility note; the missing filter is disclosed in
+       `docs/SECURITY.md` and `TOOL_AUDIT.md` (HAMCP-499).
      - Configuration: a query for an entity used by automations returns the
        entity and the same automations, with `match_in_config` true and
        `match_in_references` true for those that use it. A paged query
@@ -152,7 +153,11 @@ which steps are reads.
        `partial` false.
      - The audit shows native attribution, and sub-call page events only for
        the buckets searched.
-     - [fill: W6b's parity reads (the composed `name` and the tier scorer).]
+     - Component parity (W6b): entity rows carry `name`, the composed
+       device and entity name, equal to the baseline's value for the same
+       entity (X12); the fuzzy partial-ID and domain reads score 80 with
+       the baseline's `match_type`; a state filter with a domain is a domain
+       listing with no `state_filter_note`.
 
    Not checked live:
    - HAMCP-498 needs an open Core restart window, and causing one is not a
@@ -173,8 +178,8 @@ which steps are reads.
 3. **Tool catalog.** A fresh `tools/list` matches the catalog the final
    release pull request declares, with exactly one `ha_search` and no
    `ha_mcp__ha_search`. At #517 the catalog is 114 tools: 88 Engineering
-   and 26 delegated (beta.13 as observed live: 115, 87 and 28). [fill:
-   confirm after W6b and W7]
+   and 26 delegated (beta.13 as observed live: 115, 87 and 28); W6b (#519)
+   does not change it. [fill: confirm after W7]
 
 PASS needs every check. If a step fails, record the response in the release
 task. Whether to roll back is Josh's decision.

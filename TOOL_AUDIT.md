@@ -72,7 +72,13 @@ or write path. The native search row is the last one below.
   - Partial semantics: each bucket reports its own `partial_reasons`, and a
     failed sub-call affects only its bucket. No visibility filter
     (HAMCP-499).
-  - Catalog: 114 tools, 88 Engineering and 26 delegated. [fill: W6b]
+  - Scoring (W6b, #519): the component route's tier scorer over the
+    composed name, aliases, labels, device texts, area and floor; every
+    entity row carries the composed `name`. Every entity search reads the
+    device registry, and every query the area, floor and label registries;
+    no new source (`test_the_reads_are_unchanged`).
+  - Catalog: 114 tools, 88 Engineering and 26 delegated, unchanged by W6b.
+    [fill: W7]
 
 ## Automation run counts (2.9.1, HAMCP-476)
 

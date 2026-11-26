@@ -51,7 +51,12 @@ release pull request completes this entry.
     `body_scrub_unverified`). A page too large for the reply bound is re-read
     at a smaller size (150, 30, 6, then 1 rows). The catalog is 114 tools
     (88 Engineering, 26 delegated).
-  - Component-route parity (W6b, #519): [fill: state].
+  - Landed: component-route parity (W6b, #519). Entity rows carry the
+    composed device and entity `name`; exact and fuzzy matching use the
+    component's scored texts (name, aliases, labels, device texts, area,
+    floor) and tier scorer (100, 80, ratio of at least 70), retiring BM25 and
+    the typo fallback; the state filter runs before paging. Every entity
+    search now reads the device registry. Supersedes #518.
   - The native search design doc update (W7, [fill: PR]): [fill: state].
 - Landed: the Core-evidence workflow takes its pull request acceptance
   target from the support window's current Core, 2026.11.3, instead of a
@@ -110,7 +115,7 @@ release pull request completes this entry.
   parent request (HAMCP-510); an engine cleanup after W6b (HAMCP-520); the
   disclosed body-match residuals (non-scalar and bool secrets, YAML-mode
   dashboards, no inf/nan arm); and the helper sub-call still opening and
-  aborting options flows upstream, as before (HAMCP-233). [fill: W6b and W7
+  aborting options flows upstream, as before (HAMCP-233). [fill: W7
   deferrals]
 - Rollback: pending; stated by the final release pull request.
 

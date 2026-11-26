@@ -1436,7 +1436,17 @@ path. Native search is the last bullet below.
   - Review on #517: Codex one round, CHANGES_REQUIRED (F1 High, F2 Medium),
     both fixed; Cursor r1 READY; Cursor r2 CHANGES_REQUIRED (R2-F1 High,
     script and scene body tests), fixed with tests only and verified by the
-    architect. [fill: W6b and W7]
+    architect.
+  - **Component parity (W6b, #519).** Scoring and projection only: no new
+    source, profile, route, tool or write. Every entity search now needs the
+    device registry read (`core.direct_device_registry_read`), and a query
+    refuses as `source_unavailable` on an unusable or drifted area, floor or
+    label registry. Test fixtures are synthetic (it supersedes #518, whose
+    fixtures held real house identifiers). Review: Cursor r1
+    READY_WITH_FOLLOW_UP, one Low finding (W6B-R1-001, an unreachable
+    `engine.py` branch), deferred to HAMCP-520; the post-merge delta
+    (test-only and an unprotected CI fixture field) was verified by the
+    architect. [fill: W7]
 
 The `2.4.1-beta.30` incident-window slice (HAMCP-131) adds two read-only tools.
 Neither adds a permission, add-on option, role, fallback or write path.
