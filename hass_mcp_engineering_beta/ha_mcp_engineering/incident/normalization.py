@@ -105,17 +105,36 @@ def event(
     )
 
 
+# HAMCP-508: per-entity row bounds. What they leave out is counted.
+MAX_HISTORY_ROWS = 500
+MAX_LOGBOOK_ROWS = 300
+MAX_TRACE_SERVICES = 20
+
+
+def _count(stats: dict[str, int] | None, rows: list[Any], cap: int) -> None:
+    """Add the available, kept, withheld and malformed row counts to ``stats``."""
+    if stats is None:
+        return
+    kept = rows[:cap]
+    stats["available"] = stats.get("available", 0) + len(rows)
+    stats["withheld"] = stats.get("withheld", 0) + max(0, len(rows) - cap)
+    stats["malformed"] = stats.get("malformed", 0) + sum(not isinstance(item, dict) for item in kept)
+    stats["kept"] = stats.get("kept", 0) + sum(isinstance(item, dict) for item in kept)
+
+
 def normalize_history(
     values: Any,
     entity_id: str,
     evidence: dict[str, IncidentEvidenceReference],
+    stats: dict[str, int] | None = None,
 ) -> list[IncidentEvent]:
     rows = values[0] if isinstance(values, list) and values and isinstance(values[0], list) else values
     if not isinstance(rows, list):
         return []
+    _count(stats, rows, MAX_HISTORY_ROWS)
     output: list[IncidentEvent] = []
     previous = None
-    for item in rows[:500]:
+    for item in rows[:MAX_HISTORY_ROWS]:
         if not isinstance(item, dict):
             continue
         state = str(item.get("state") or "")[:128]
@@ -147,11 +166,13 @@ def normalize_logbook(
     values: Any,
     entity_id: str,
     evidence: dict[str, IncidentEvidenceReference],
+    stats: dict[str, int] | None = None,
 ) -> list[IncidentEvent]:
     if not isinstance(values, list):
         return []
+    _count(stats, values, MAX_LOGBOOK_ROWS)
     output = []
-    for item in values[:300]:
+    for item in values[:MAX_LOGBOOK_ROWS]:
         if not isinstance(item, dict):
             continue
         context_entity = str(item.get("entity_id") or entity_id)[:128]
@@ -177,6 +198,7 @@ def normalize_traces(
     traces: Iterable[dict[str, Any]],
     automation_id: str,
     evidence: dict[str, IncidentEvidenceReference],
+    stats: dict[str, int] | None = None,
 ) -> list[IncidentEvent]:
     output: list[IncidentEvent] = []
     for trace in list(traces)[:50]:
@@ -203,7 +225,11 @@ def normalize_traces(
                 event_type="automation_completed", summary="Automation trace completed without a normalized action error.",
                 timestamp=trace.get("finished_at") or timestamp, automation_id=automation_id, run_id=run_id,
                 cluster_key=run_id or automation_id))
-        for service in list(trace.get("services") or [])[:20]:
+        services = list(trace.get("services") or [])
+        if stats is not None:
+            stats["services_available"] = stats.get("services_available", 0) + len(services)
+            stats["services_withheld"] = stats.get("services_withheld", 0) + max(0, len(services) - MAX_TRACE_SERVICES)
+        for service in services[:MAX_TRACE_SERVICES]:
             output.append(event(evidence, source_type="automation_trace", source_object=run_id or automation_id,
                 event_type="service_call_observed", summary=f"Trace recorded service {str(service)[:128]}.", timestamp=timestamp,
                 automation_id=automation_id, run_id=run_id, integration_domain=str(service).split(".", 1)[0],

@@ -119,6 +119,8 @@ class CatalogTests(unittest.IsolatedAsyncioTestCase):
         actual = without_hamcp298_descriptor_changes(self, actual)
         from hamcp379_descriptor_changes import without_hamcp379_descriptor_changes  # + HAMCP-379
         actual = without_hamcp379_descriptor_changes(self, actual)
+        from hamcp508_descriptor_changes import without_hamcp508_descriptor_changes  # + HAMCP-508
+        actual = without_hamcp508_descriptor_changes(self, actual)
         for name, digest in expected.items():
             self.assertEqual(hashlib.sha256(c.canonical(actual[name])).hexdigest(), digest, name)
         self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 87)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
