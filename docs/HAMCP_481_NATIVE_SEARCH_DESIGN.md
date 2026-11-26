@@ -1,17 +1,30 @@
 # HAMCP-481 native search — design
 
-Status: **draft for review; not approved.** Docs only. Revision 4, the
-architect's delta-check change to revision 3 (head `93175f3c`): the visibility
-filter gives one fixed note instead of a per-query `hidden` count (§3.7, §7).
+Status: **Implemented in 2.10.0 (Engineering 2.4.2-beta.14).** This is the
+implementation record, revision 5, and it is docs only. The build is
+HAMCP-501 on `release/2.10.0`: W1 #506, W2 #507, W3 #513, W4 #516, W6 #517,
+W6b #519 and W7 #520 (this revision). W5 is dropped (§3.7). Revision 5
+notes in §0 to §9 are marked *Rev 5* and point to the
+implementation record in §10. Where a revision 4 text and §10 differ, §10
+describes what was built.
+
+Revision 4 was the architect's delta-check change to revision 3 (head
+`93175f3c`): the visibility filter gives one fixed note instead of a
+per-query `hidden` count (§3.7, §7). Revision 5 supersedes that filter
+(§3.7, §10.2). Revision 5 also carries the correction batch for Cursor's r1
+review of this pull request (#520), R1-F1 to R1-F4, as the architect
+directed.
 Revision 3 was the correction batch for Cursor's round-2 review of revision 2
 (head `3ace9227`). Revision 2 was the correction batch for the Cursor review
 and the architect review of revision 1 (head `4cd3a430`), with J2 applied as
-decided. The build is planned for the release after 2.9.1, not for 2.9.1
-(2.4.2-beta.13). Nothing here authorizes a runtime, schema, routing,
+decided. The build was planned for the release after 2.9.1, not for 2.9.1
+(2.4.2-beta.13). It is built in 2.10.0 (§10). Nothing here authorizes a
+runtime, schema, routing,
 protected-path, version or release change, deployment, or live Home Assistant
 or Engineering access. No decision is open for Josh in this revision. The
-build gate added in revision 3 still applies: the source of the ha-mcp
-visibility state (§3.7).
+build gate added in revision 3 (the source of the ha-mcp visibility state,
+§3.7) is dropped: Josh's 2026-11-25 decision, as relayed by the architect,
+supersedes it (§9, §10.2).
 
 - Register: HAMCP-481. Related rows:
   - HAMCP-472, the `ha_search` audit finding this design absorbs;
@@ -22,7 +35,11 @@ visibility state (§3.7).
     until a redaction design exists;
   - HAMCP-233, where `ha_search` opens options flows;
   - HAMCP-403, the `search_unified` quarantine;
-  - HAMCP-485, a later `entity` value for `search_types` (Backlog).
+  - HAMCP-485, a later `entity` value for `search_types` (Backlog);
+  - HAMCP-501, the build (W1 to W7 and W6b, §10.1);
+  - HAMCP-499, the ha-mcp entity visibility filter, later (§3.7);
+  - HAMCP-509, the 2.10.0 release documents (security, tool audit,
+    release notes, acceptance and changelog), outside this document.
 - Scope source:
   - the 2.9.1 re-scope (architect design
     `2026-11-23-release-2.9.1-rescope-audit.md`, item B);
@@ -42,9 +59,11 @@ visibility state (§3.7).
     message, 2026-11-24): the author's additions 1 to 3 accepted, and
     addition 4, the `hidden` count, changed to the fixed visibility note (§9).
 - Base: `release/2.9.1` at `774328e0` (2.4.2-beta.13 declared).
+- Revision 5 base: `release/2.10.0` at `c2b68911` (#517 merged).
   - Engineering citations are relative to
     `hass_mcp_engineering_beta/ha_mcp_engineering/` at that base.
   - ha-mcp citations are 9.2.0 (`51e3aac7`), relative to `src/ha_mcp/`.
+  - *Rev 5 / W6b* notes cite `d3da5b07`, the #519 merge (§10.14).
 
 ## 0. Summary
 
@@ -77,17 +96,21 @@ It has these properties:
   scripts, scenes and helpers, including configuration-body and
   entity-reference matching.
 - **Identity-only results.** Configuration bodies are read for matching but
-  never returned.
+  never returned. *Rev 5 (S1 = b+, §10.4):* Engineering reads no
+  automation, script or scene body. Those rows come from fixed delegated
+  sub-calls, which match bodies inside ha-mcp.
 - **Dashboards stay delegated.** Dashboard search stays on the delegated
   ha-mcp route, through one fixed, paged internal sub-call (§2.4).
-- **Visibility kept.** The ha-mcp entity visibility filter and its enforce
-  mode keep their 9.2.0 effect on native results (§3.7).
+- **Visibility not ported (rev 5).** Superseded on 2026-11-25 by Josh's
+  decision, as relayed by the architect: native search ships without the
+  ha-mcp entity visibility filter, and HAMCP-499 follows later (§3.7,
+  §10.2). Revision 4 kept the filter and its enforce mode.
 - **Default is parity.** Every current argument behavior and reply key is
   kept unless Josh retires it by name. This revision retires nothing.
 - **Partial only with a reason.** `partial` is true only when Engineering
-  withheld, cut or could not search something, and it names the reason. The
-  kept visibility filter never sets it. An active filter is disclosed by one
-  fixed note that does not depend on the query (§3.7).
+  withheld, cut or could not search something, and it names the reason. Rev 5:
+  native has no visibility filter, so visibility never sets it, and
+  revision 4's fixed visibility note is not built (§3.7, §10.10).
 
 ## 1. Cause of HAMCP-472
 
@@ -149,9 +172,9 @@ HAMCP-403 quarantines `search_unified`.
 | Surface | Source | Result |
 | --- | --- | --- |
 | Entities | Core state list, joined with the entity, area, floor, label and device registries | Entity records (§5) |
-| Automations | `automation.*` states, plus each automation's configuration, read for matching | Identity-only records with match flags |
-| Scripts | `script.*` states, plus each script's configuration | The same, with `script_id` |
-| Scenes | `scene.*` states, plus each UI scene's configuration | The same, with `scene_id` |
+| Automations | Rev 5: the fixed delegated sub-call for this type (S1 = b+, §10.4). Revision 4: `automation.*` states, plus each automation's configuration, read for matching | Identity-only records with match flags |
+| Scripts | Rev 5: the fixed delegated sub-call for this type (S1 = b+, §10.4). Revision 4: `script.*` states, plus each script's configuration | The same, with `script_id` |
+| Scenes | Rev 5: the fixed delegated sub-call for this type (S1 = b+, §10.4). Revision 4: `scene.*` states, plus each UI scene's configuration | The same, with `scene_id` |
 | Storage helpers | the six `<type>/list` commands 9.2.0 searches: `input_boolean`, `input_number`, `input_select`, `input_text`, `input_datetime` and `input_button` (`tools/smart_search/_deep.py:927-934`), mapped to the current `entity_id` through the entity registry (`_deep.py:749`) | Identity-only records with `helper_type` |
 | Flow helpers | the delegated ha-mcp `ha_search`, through one fixed, paged helper sub-call (§2.5) | Identity-only records with `helper_type` and `name`, as today |
 | References | Core's reference graph, `search/related` for an entity, for an `entity_id`-shaped query when automations, scripts or scenes are requested (`tools/smart_search/_graph.py:374-390`) | `match_in_references` on the referencing records |
@@ -171,22 +194,35 @@ Every read is read-only. Native search makes no write, service call, reload,
 or options or config flow call. The delegated helper sub-call does open and
 abort options flows inside ha-mcp, as today (§2.5).
 
+*Rev 5 (§10.4):* the reads were built under J2' option A, as relayed by the
+architect: only existing signed Core profiles, with no profile, model or
+signed-source change. `config/entity_registry/get_entries` was added for
+entity aliases (architect, 2026-11-25). Under S1 = b+ native reads no
+automation, script or scene configuration, so the configuration reads below
+were not built. The closed read table is `search/core_contracts.py`.
+
 Already admitted, with the profile that attests it:
 
 - states list (`GET /api/states`): `core.direct_entity_state_read`
-  (`ha_core_readmission/profiles.py:247-257`);
+  (`ha_core_readmission/profiles.py:247-257`); *rev 5 correction:* the
+  states list is in `core.basic_rest_read` (`profiles.py:159`,
+  `rest_states_list` at `:162`) and `core.state_service_discovery` (`:185`,
+  `:188`). `core.direct_entity_state_read` (`:248`) covers single-entity
+  reads only and is unused (`search/core_contracts.py:61-64`);
 - area, floor, label and entity registry lists: `core.non_device_registry_read`
   (`profiles.py:195-211`);
 - device registry list, with child-then-parent effective area:
   `core.direct_device_registry_read` (`profiles.py:213-229`);
 - automation configuration: `core.automation_configuration_read`
-  (`profiles.py:259-270`).
+  (`profiles.py:259-270`). *Rev 5:* not built (S1 = b+, §10.4).
 
 Admitted as a command, with a profile still to be named at build:
 
 - `script/config` and `search/related` are in the fixed WebSocket allowlist
-  (`clients/websocket.py:24-28`). Today, `ha_config_get_script` declares
-  `core.basic_websocket_read` (`ha_core_readmission/routes.py:257`). The build
+  (`clients/websocket.py:24-28`; *rev 5 correction:* `_BATCH_COMMAND_KEYS` is
+  at `:32-38`, and `:24-28` is its comment). Today, `ha_config_get_script`
+  declares `core.basic_websocket_read` (`ha_core_readmission/routes.py:257`).
+  The build
   names the profile that attests each command for a native provider. If none
   does, the read is new (below).
 
@@ -194,7 +230,8 @@ New reviewed reads that the build needs. Each is a protected-path change and
 needs Josh's named OK in the build task:
 
 - scene configuration `GET /api/config/scene/config/{config_id}` as a read
-  contract. Today it is admitted only inside the scene configuration and
+  contract. *Rev 5:* not built (S1 = b+, §10.4). Today it is admitted only
+  inside the scene configuration and
   write profiles (`profiles.py:149`, `core.scene_configuration_operation` at
   `:814-834`, and `SCENE_CREATE_DELETE_REQUESTS` at `:1183-1189`);
 - `input_boolean/list`, `input_number/list`, `input_select/list`,
@@ -223,12 +260,18 @@ The build makes these route edits together, in protected files:
 - Remove `ha_search` from `DEVICE_DEPENDENT_DELEGATED_TOOLS`
   (`ha_core_readmission/routes.py:16-24`). Otherwise
   `delegated_provider_compatibility` (`routes.py:681-714`) still requires an
-  ha-mcp child-device adapter before the tool runs.
+  ha-mcp child-device adapter before the tool runs. *Rev 5 (G2, §10.3):* not
+  done. The internal route stays in it (`routes.py:16`, entry `:22`),
+  fail-closed.
 - Move `ha_search` out of `DELEGATED_CORE_REQUIREMENTS`
   (`routes.py:251`, entry at `:285`, `core.delegated_device_effective_area`)
   into the static native requirements (`routes.py:288`). The new entry is the
   four profiles in §2.2, plus the profiles the build names for script
   configuration, the graph, scene configuration and the new helper reads.
+  *Rev 5 (G2, §10.3):* the internal route keeps its own entry
+  (`routes.py:292`), and native `ha_search` has its own static entry
+  (`routes.py:333-336`). G1 makes the delegated route internal-only
+  (§10.3).
 - Drop the ha-mcp `ha_search` error probe
   (`ha_mcp_readmission/ha_mcp.py:94-101`) from the native path. It stays only
   as the admission check for the dashboard and helper sub-calls.
@@ -245,7 +288,8 @@ The build makes these route edits together, in protected files:
 ### 2.4 Dashboards: how the tool routes them
 
 Dashboard search stays on the delegated ha-mcp route, as relayed from Josh.
-The routing:
+*Rev 5:* the reader as built is in §10.7 (W4 #516, extended by W6 #517). The
+page size is the §10.5 ladder, not one constant P. The routing:
 
 - If `search_types` does not contain `dashboard`, native makes **zero** ha-mcp
   calls for dashboards. (A search that covers helpers adds one helper
@@ -346,6 +390,12 @@ governs definition visibility.
   The effect is confined to the sub-call's pages. The native provider's
   command allowlist has no flow route (§2.2), and the §8
   negative-reachability tests assert that. HAMCP-233 stays open on this path.
+- **Rev 5: the F1 probes (inference).** Each F1 scrub probe (§10.6) is a
+  one-row helper page, so it is a whole ha-mcp helper search. It therefore
+  likely repeats the options-flow probes. That is two such searches per call
+  that searches automation, script or scene bodies, one before and one after
+  the scans. This is an inference from the page behavior above. It was not
+  stated in the W6 pull request and is not tested (§10.11).
 - **Until replaced.** The sub-call stays until HAMCP-484 (native UI helper
   reads, as the architect relayed) replaces it with matching that opens no
   flow. HAMCP-484's register row today scopes dependency and integrity
@@ -355,6 +405,8 @@ governs definition visibility.
 ### 2.6 Sub-call paging and reasons (r2-S1, r2-S2)
 
 This section applies to both sub-calls, dashboard (§2.4) and helper (§2.5).
+*Rev 5:* it applies to all five sub-calls: automation, script, scene,
+dashboard and helper (§10.4).
 
 **Paging (r2-S1).**
 
@@ -369,14 +421,17 @@ This section applies to both sub-calls, dashboard (§2.4) and helper (§2.5).
   pins it with a test, so that a page of P projected rows stays under the
   gateway check. For scale: Cursor's local simulation of projected helper rows
   was 49,121 bytes at 250 rows and 58,896 at 300. Page k asks
-  `offset` k × P and `limit` P.
+  `offset` k × P and `limit` P. *Rev 5:* superseded by the page-size
+  ladder, 150, 30, 6 and 1 (§10.5).
 - **Stop conditions.** The scan stops at the first of:
   - a page with `has_more` false (the scan is complete);
   - for the dashboard sub-call, holding the caller's `offset + limit` rows
     (the scan has what the reply needs);
   - a failed page;
-  - 20,000 rows scanned (`MAX_CORE_PROBE_ITEMS`, §6.3);
-  - a whole-scan deadline, a fixed constant the build names.
+  - 20,000 rows scanned (`MAX_CORE_PROBE_ITEMS`, §6.3; rev 5: `MAX_SCAN_ROWS`,
+    `search/subcalls.py:45`, plus 300 page calls, `MAX_PAGE_CALLS`, `:69`);
+  - a whole-scan deadline, a fixed constant the build names (rev 5: 60 s,
+    `SCAN_DEADLINE_SECONDS`, `search/subcalls.py:43`).
 
   None of these is caller-controlled. The last three make the scan
   incomplete.
@@ -420,6 +475,8 @@ For each sub-call that sends at least one page:
   paged and counted at `:378`). It reports no count and does not set
   `partial`. Native adds no partial reason for it either. The fixed
   visibility note covers it (§3.7).
+  *Rev 5:* no visibility note is built (§3.7). W4 disclosure 1 and the W4
+  notes on enforce-mode pages are in §10.7.
 
 A failed page gives only the `source_unavailable` entry above. It is not also
 `not_searched`.
@@ -444,7 +501,9 @@ Inputs are stripped first (`tools_search.py:355-362`). Then:
 
 ### 3.2 Entity matching
 
-- **`exact_match` true** (the default): the casefolded query must be a
+- **`exact_match` true** (the default; *rev 5 correction:* 9.2.0 normalizes
+  with `.lower().strip()`, `utils/fuzzy_search.py:194`, not casefold): the
+  casefolded query must be a
   substring of `entity_id` or the friendly name
   (`tools/search/entities.py:447-498`). Scores:
   - 100 on an equal match, else 80 (`entities.py:481`);
@@ -466,14 +525,34 @@ Inputs are stripped first (`tools_search.py:355-362`). Then:
     installed ha-mcp overrides the setting is unknown and is a build input.
 
   `score` and `match_type` are kept.
+- *Rev 5 / W6b (#519, §10.14):* native scores on the route live 9.2.0
+  serves, the `ha_mcp_tools` component's tier scorer. Citations are at
+  `d3da5b07`.
+  - BM25 and the typo fallback are retired. `text_tier`
+    (`search/scoring.py:144`) is 100 on an equal text, 80 on a substring,
+    and in fuzzy mode the best ratio when it reaches 70 (`:80`).
+    Configuration names use `name_tier` (`:190`), where a substring is 100.
+  - The exact-mode texts add the composed name, aliases, labels, device
+    texts, area and floor (`_Joins.texts`, `search/entities.py:650`).
+  - `match_type` adds `alias_match` and has no `typo_fallback`
+    (`search/scoring.py:211-262`).
+  - The area-plus-query mode scores entities with the same tier scorer, in
+    place of BM25 at a threshold of 80.
 - **Attribution.** ha-mcp is MIT-licensed, "Copyright (c) 2024 Julien"
   (`LICENSE:3`). The ported module keeps that notice and names the source
   commit `51e3aac7`.
 - **Ordering:** `(-score, entity_id)`, as the 9.2.0 legacy paths sort
   (`entities.py:606`, `fuzzy_search.py:233`, `modes.py:221`, `:423`, `:522`).
   The golden fixture in §8 pins it.
+- *Rev 5 (G-c):* the enumeration match types are `area_match`,
+  `domain_listing` and `state_listing`. With an empty query, the filters
+  select the mode (`search/entities.py:204-211`): `domain_filter` with no
+  `area_filter` gives `domain_listing`; `area_filter` gives area mode
+  (`area_match`); with neither, it is `state_listing`. Native has no
+  fuzzy-to-substring fallback.
 - Token-AND is dropped. The architect withdrew revision 1's O5 recommendation.
-- **Visibility filter.** Entities in the ha-mcp visibility hidden set are
+- **Visibility filter.** *Rev 5: superseded, not ported (§3.7).* Entities in
+  the ha-mcp visibility hidden set are
   excluded before scoring, counting and paging (§3.7). That is separate from
   `include_hidden` and its score penalty.
 
@@ -488,6 +567,10 @@ The 9.2.0 ladder is kept (`tools/smart_search/_entities.py:686-800`):
 4. A single fuzzy floor wins only if it scores above the best fuzzy area.
 5. Otherwise a fuzzy area match: whole-string ratio over id, name and
    aliases, at 80 or above.
+   *Rev 5 (G-j):* it is 9.2.0's `partial_ratio` (`_entities.py:856-860`,
+   native `search/entities.py:406-408`), not a whole-string ratio. Area plus
+   a query is always fuzzy at 80. *G-i:* area mode lists a registry entity
+   with no state as `unknown` (`search/entities.py:573`).
 
 The effective-area rule is §2.3. 9.2.0 degrades to exact-only with a warning
 when the floor registry is unavailable. Natively, that case fails the read
@@ -505,18 +588,29 @@ when step 1 did not match, because the floor steps are then needed (§6.2).
   warning text, because the `state_filter_note` key stays withheld
   (HAMCP-447).
 
+  *Rev 5 / W6b (#519, §10.14):* the page-only behavior above is the legacy
+  path's. The component route filters by state before scoring and paging,
+  and native now does the same in every mode: `kept()`
+  (`search/entities.py:727` at `d3da5b07`) runs the domain, hidden and
+  state filters first, and `PAGE_FILTERED_MODES` is empty (`:169`). The
+  page-only warning, `WARNING_STATE_PAGE_ONLY`, is removed
+  (`search/reply.py`).
+
 ### 3.5 Configuration and reference matching
 
 - **Configuration score:** 9.2.0's `_score_deep_match` and its exact and
   fuzzy dictionary walks (`tools/smart_search/_scoring.py:15-160`). The
   threshold is 100 with `exact_match` true, else the fuzzy threshold
   (`_scoring.py:39`). Native ports the same functions under the attribution
-  in §3.2.
+  in §3.2. *Rev 5 (S1 = b+, §10.4):* native does not score automation,
+  script or scene bodies; their body match is the route's own. G-b, the
+  chunked body-read approximation, is superseded.
 - **Match flags:** `match_in_name`, `match_in_config` and
   `match_in_references`, as 9.2.0 builds them (`_deep.py:593-594`,
   `:731-732`, `:878-883`; `_scenes.py:442-443`; `_flow_helpers.py:205-208`).
 - **References:** for an `entity_id`-shaped query with automations, scripts
-  or scenes requested, graph hit records have score `_GRAPH_HIT_SCORE` and
+  or scenes requested, graph hit records have score `_GRAPH_HIT_SCORE` (100,
+  `_graph.py:371`) and
   `match_in_references` true (`_graph.py:393-421`). A hit merges into an
   existing record by setting the flag (`_graph.py:431-481`). A referencing
   automation is returned even when its configuration could not be read, as
@@ -524,7 +618,10 @@ when step 1 did not match, because the floor steps are then needed (§6.2).
 - **`config_time_budget`:** kept. With null, the 9.2.0 defaults apply: 30 s
   for automations, 20 s for scripts, 20 s for scenes, and a 5 s per-item
   request timeout (`config_settings.py:167-216`). Items skipped by the budget
-  are counted (§6.1).
+  are counted (§6.1). *Rev 5:* validated but not forwarded; each sub-call
+  scan has its own 60 s deadline, and `time_budget` is not built (§10.9).
+- *Rev 5:* Engineering reads no automation, script or scene body (S1 = b+,
+  §10.4). The next item still holds for the storage-helper lists.
 - Bodies are read in memory for matching only. They are never returned,
   logged or put in the audit record.
 
@@ -542,7 +639,26 @@ when step 1 did not match, because the floor steps are then needed (§6.2).
   reports `config_has_more` and `config_next_offset`.
 - `limit` applies per surface (entities, configs), as in the public schema.
 
-### 3.7 Visibility filter (kept, r2-S3)
+### 3.7 Visibility filter (superseded 2026-11-25; not ported, HAMCP-499)
+
+**Superseded.** Josh decided on 2026-11-25, as relayed by the architect, in
+the ADR-022 way: native search ships in 2.10.0 without ha-mcp's entity
+visibility filter.
+
+- **Why.** The filter, its enforce mode and Assist exposure are all off in
+  this house (Josh's screenshots, 00:15 CST 2026-11-25, as relayed).
+- **Consequence.** In a house with the filter on, today's delegated
+  `ha_search` hides entities, and native search would not.
+- **Later.** HAMCP-499 follows ha-mcp's own approach.
+- **Dropped.** W5, the visibility read, and this section's build gate.
+- **No oracle.** The §7 no-oracle point holds trivially: with no filter
+  there is no visibility signal.
+- **Not built.** No visibility note and no fail-open warning (§10.10).
+- **Sub-calls.** The delegated sub-calls still run inside ha-mcp, so
+  ha-mcp applies its own filter to their pages where it is on. How native
+  classifies those pages is in §10.7.
+
+#### Superseded text (revision 4)
 
 ha-mcp 9.2.0 has an entity visibility filter. It is set in ha-mcp's own
 configuration, not by a call argument. Native keeps it, and its enforce mode,
@@ -669,11 +785,11 @@ the build stops.
 | Argument | Today (9.2.0 through Engineering) | Native | Status |
 | --- | --- | --- | --- |
 | `query` | Searches entities, configuration bodies and entity references | The same (§3.2, §3.5). No `maxLength` (J1, no caps) | Kept |
-| `search_types` | Configuration types `automation`, `script`, `scene`, `helper`, `dashboard`. The default is the first four. Any explicit value skips entities. The public description omits that | The 9.2.0 meaning is kept. The description gains the wire sentence: "Explicitly providing this selects configuration-only search and skips entities. Omit it for entity discovery." With a query, the R-A warning explains the empty bucket. `dashboard` routes per §2.4 | Redefined (description only), decided as relayed: reading (i), confirmed as relayed (J3) |
+| `search_types` | Configuration types `automation`, `script`, `scene`, `helper`, `dashboard`. The default is the first four. Any explicit value skips entities. The public description omits that | The 9.2.0 meaning is kept. The description gains the wire sentence: "Explicitly providing this selects configuration-only search and skips entities. Omit it for entity discovery." The R-A warning explains the empty bucket. An explicit `search_types` with no query is refused as `no_criteria` (`search/engine.py:232-233`) before the warning is added (`:347-348`), so every successful explicit reply carries it (§10.12). `dashboard` routes per §2.4 | Redefined (description only), decided as relayed: reading (i), confirmed as relayed (J3) |
 | `domain_filter` | Entity search only; does not affect configuration search | The same | Kept |
 | `area_filter` | The ladder in §3.3, with floor expansion | The same, plus the effective-area rule (§2.3) | Kept |
-| `state_filter` | Case-insensitive; standalone enumerates; page-only in the two modes of §3.4 | The same (§3.4) | Kept |
-| `exact_match` | true: substring. false: fuzzy | The same, with the scorer ported (§3.2) | Kept |
+| `state_filter` | Case-insensitive; standalone enumerates; page-only in the two modes of §3.4 | The same, except that since W6b the filter runs before paging in every mode (§3.4, §10.14) | Kept |
+| `exact_match` | true: substring. false: fuzzy | The same, with the component's tier scorer since W6b (§3.2, §10.14) | Kept |
 | `limit` | Default 10, minimum 1, no maximum, per surface | The same, with no cap. A page the response budget ends early is `paged` with the next offset (§6.3) | Kept, decided as relayed (J1, no caps) |
 | `offset` | Minimum 0 | The same | Kept |
 | `group_by_domain` | Adds the `by_domain` map of page records. Withheld today | The same. `by_domain` stays withheld until HAMCP-447 releases it, and is counted in `fields_withheld` | Kept |
@@ -682,10 +798,17 @@ the build stops.
 | `include_config` | Default false. With true, bodies are withheld by Row 25 | Bodies are still withheld (HAMCP-454). The reply is partial `filtered` with code `config_bodies_withheld` | Kept (named, not silent) |
 | `result_fields` | 13 allowed keys: `entity_id`, `friendly_name`, `domain`, `state`, `score`, `match_type`, `name`, `area`, `floor`, `labels`, `aliases`, `is_group`, `member_entity_ids`. Unknown or empty is rejected (`tools/search/entities.py:42-62`, `:139-160`) | The same set, default and refusal (S3) | Kept |
 | `fields` | Projects top-level keys; pagination and diagnostic keys always retained | The same, mapped exactly (S4). The added keys `applied` and `partial_reasons`, and `engineering_notes`, are diagnostic keys and are always retained (r2-M2, §5.1). A withheld key that is requested is counted in `fields_withheld`, as today | Kept |
-| `config_time_budget` | 0.001-300 or null; per-type configuration budget | The same (§3.5) | Kept |
-| Visibility filter (ha-mcp configuration, not an argument) | Hard-excludes the hidden set from entities and members; in enforce mode, scrubs configuration records and gates arguments and replies (§3.7) | The same, from a reviewed source of the visibility state (§3.7 build gate). An active filter gives the fixed `visibility_filter_active` note; an omission gives no count and no partial reason | Kept, as relayed (r2-S3, §9) |
+| `config_time_budget` | 0.001-300 or null; per-type configuration budget | Rev 5: validated but not forwarded; each sub-call scan has its own 60 s deadline (§10.9). Revision 4: the same (§3.5) | Kept as an argument; its effect changed (§10.9) |
+| Visibility filter (ha-mcp configuration, not an argument) | Hard-excludes the hidden set from entities and members; in enforce mode, scrubs configuration records and gates arguments and replies (§3.7) | Superseded (rev 5): not ported (§3.7, HAMCP-499). Revision 4: The same, from a reviewed source of the visibility state (§3.7 build gate). An active filter gives the fixed `visibility_filter_active` note; an omission gives no count and no partial reason | Superseded (§3.7) |
 
-The schema fingerprint (`SEARCH_PUBLIC_SCHEMA_FINGERPRINT`,
+*Rev 5 (as built, §10.8):* native search has its own schema copy, which
+differs from `PUBLIC_SCHEMAS["ha_search"]` only by the `search_types`
+description (J3), and its own pinned fingerprint,
+`NATIVE_SEARCH_SCHEMA_FINGERPRINT` (`tools/search.py:56`, checked at
+`:224`). `SEARCH_PUBLIC_SCHEMA_FINGERPRINT` is unchanged, because it binds
+the internal route. This replaces the revision 4 paragraph below.
+
+Revision 4: the schema fingerprint (`SEARCH_PUBLIC_SCHEMA_FINGERPRINT`,
 `upstream_reads_9_2.py:98`, checked at `:186`) changes only by the
 `search_types` description sentence. That is the declared delta and needs a
 reviewed fingerprint update in the build. Every other description and behavior
@@ -712,6 +835,9 @@ Engineering envelope keys are kept: `fields_withheld`,
 `fields_dropped_by_policy`, `upstream_warnings_replaced` (always 0 on a
 native reply) and `engineering_notes`
 (`providers/upstream_reads_9_2_keys.py:46-47`, `:456-458`).
+*Rev 5:* the native reply builds three counts (`ENGINEERING_COUNTS`,
+`search/reply.py:79`: `fields_withheld`, `fields_dropped_by_policy` and
+`upstream_warnings_replaced`) and no `engineering_notes` (§10.10).
 
 Added keys (additive):
 
@@ -729,7 +855,8 @@ Added keys (additive):
 `applied` and `partial_reasons` are diagnostic keys. Like `partial` and the
 paging keys, they are always retained, whatever `fields` asks for (r2-M2).
 `engineering_notes` is retained in the same way, so the fixed visibility note
-(§3.7) is never projected away.
+(§3.7) is never projected away. *Rev 5:* no note is built, and
+`ALWAYS_KEPT` (`search/reply.py:88-97`) has no `engineering_notes`.
 
 ### 5.2 Record keys
 
@@ -749,7 +876,11 @@ On the legacy path, the `name` opt-in carries no composed value, only its note
 (`_COMPOSED_NAME_UNAVAILABLE`, `tools/search/entities.py:81`, used at `:117`).
 The component path composes it. Natively, `name` is composed by the pinned
 Core naming rule (ADR-021). If the build cannot pin that rule, `name` is
-served as the legacy path serves it, with the note.
+served as the legacy path serves it, with the note. *Rev 5 / W6b:* #519
+landed. `composed_name` (`search/entities.py:464` at `d3da5b07`) ports
+Core 2026.11.3's `_async_get_full_entity_name`, and entity rows serve it,
+or the friendly name when it composes empty (`:734-737`).
+`WARNING_COMPOSED_NAME` is removed (`search/reply.py`; §10.10, §10.14).
 
 No new record field is added in this revision. Revision 1 proposed `device_id`,
 `device_name`, `area_id`, `hidden`, `entity_category`, `device_class`,
@@ -771,13 +902,16 @@ No new record field is added in this revision. Revision 1 proposed `device_id`,
   `config_bodies_withheld`).
 - `not_searched`: some configuration items were not searched. Each entry has
   a `search_type`, a count and one code:
-  - `time_budget`;
+  - `time_budget` (*rev 5:* not built, §10.10);
   - `read_failed`;
-  - `not_readable` (a YAML-defined item the per-item read cannot fetch);
+  - `not_readable` (a YAML-defined item the per-item read cannot fetch;
+    *rev 5:* not built, S1 = b+);
   - `upstream_partial` (a page of a delegated sub-call had its own
     `partial` true, for its `search_type`; count null, §2.6);
   - `graph_unavailable` (an `entity_id`-shaped query whose reference graph
     read failed).
+  - *rev 5, F1 (§10.6):* `body_numeric_query`, `body_scrub_degraded` and
+    `body_scrub_unverified`, each for one body type, with count null.
 
   These are the 9.2.0 per-type partial causes (`_deep.py:1234-1356`,
   `:1356-1420`, `:1541-1545`), named instead of summarized.
@@ -788,8 +922,15 @@ No new record field is added in this revision. Revision 1 proposed `device_id`,
   `subcall_not_admitted`), and malformed state rows (code
   `malformed_state_row`, count). A malformed row is never skipped silently. A
   failed sub-call page gives only `source_unavailable`, not `not_searched`.
+  *Rev 5:* the closed set as built is in §10.10. It adds the automation,
+  script and scene sub-call codes, the four registry codes and
+  `entity_aliases`, and names the `paged`, `truncated` and `filtered`
+  codes. A failed `get_entries` chunk gives a
+  partial reply with `source_unavailable` `entity_aliases`, in both
+  `exact_match` modes, never a failed read (G-h).
 
-Visibility is not a partial reason (architect delta check, §3.7). The closed
+Visibility is not a partial reason (architect delta check, §3.7). *Rev 5:*
+native has no visibility filter (§3.7). The closed
 set has no `hidden` reason. A visibility omission gives no count and no
 `partial` flip, and an active filter is disclosed only by the fixed note. The
 F3 qualifier is not a reason either. The caller's `include_hidden` false is
@@ -813,8 +954,12 @@ success, when:
 - floor resolution is needed (§3.3, steps 2-4) and the floor registry fails;
 - the sanitizer returns `failed_closed` for any output string;
 - an inventory bound is exceeded (§6.3);
-- the visibility state cannot be read from its reviewed source (§3.7), or an
-  enforce-mode gate refuses the call (§3.7).
+- *(rev 5: dropped; no visibility source is read, §3.7)* the visibility
+  state cannot be read from its reviewed source (§3.7), or an enforce-mode
+  gate refuses the call (§3.7).
+
+*Rev 5 (G-h):* an alias read (`get_entries` chunk) failure is never a failed
+read; it is partial (§6.1).
 
 A source failure that no requested filter depends on sets
 `source_unavailable`. Examples are the label registry with only the `labels`
@@ -861,9 +1006,11 @@ requested. Native never treats a null as "not hidden" or "not in this area".
 The closed warning set also has reviewed texts for:
 
 - an ambiguous fuzzy floor;
-- the `state_filter` page-only note (§3.4);
-- the composed-`name` note (§5.2);
-- ha-mcp's own visibility filter failed open, so no filter applied (§3.7).
+- *(rev 5 / W6b: removed, §10.14)* the `state_filter` page-only note
+  (§3.4);
+- *(rev 5 / W6b: removed, §10.14)* the composed-`name` note (§5.2);
+- *(rev 5: not built, §3.7)* ha-mcp's own visibility filter failed open, so
+  no filter applied (§3.7). The warnings as built are in §10.10.
 
 ## 7. Disclosure (D1)
 
@@ -873,6 +1020,10 @@ Drawn from the Row 25 admitted set (`upstream_reads_9_2_keys.py:313-327`).
 | --- | --- | --- |
 | Entity identity, friendly name, domain, state, score and match type; the HAMCP-441 keys `name`, `area`, `floor`, `labels`, `aliases`, `is_group` and `member_entity_ids`; configuration identity (`entity_id`, `friendly_name`, `script_id`, `scene_id`, `helper_type`, `name`); the match flags; all buckets and paging keys; the `query` and `domain_filter` echoes | Configuration bodies (`config`, HAMCP-454); flow-helper options bodies (HAMCP-454); dashboard `url_path` and `title`, `entry_id`, `options_withheld`, `by_domain`, the area and state echoes (HAMCP-447); `area_names`, `state_filter_note`, `message`, `partial_reason` | None in this design. Releasing the HAMCP-447 keys is that row's decision |
 
+*Rev 5:* Row 25 is unchanged. Dashboard `url_path` and `title` and helper
+`entry_id` are still withheld and counted, so a flow-helper row carries
+`helper_type` and `name` with no id. HAMCP-447 owns releasing them (§10.8).
+
 Notes for the build's security section:
 
 - `match_in_config` and a body score show whether a query string occurs in a
@@ -880,12 +1031,21 @@ Notes for the build's security section:
   native computes them over bodies Engineering itself reads. The security
   section records that this is a query oracle over bodies, already exposed
   today.
-- The new reads in §2.2 add sources, not record fields.
-- **Visibility filter, kept (r2-S3).** The ha-mcp visibility filter and its
+  *Rev 5:* superseded by S1 = b+ (§10.4). Engineering reads no automation,
+  script or scene body. The bits come from the delegated route, which
+  matches bodies inside ha-mcp, and F1 withholds them where the scrub is not
+  shown clean or the query is numeric-like (§10.6).
+- The new reads in §2.2 add sources, not record fields. *Rev 5:* the reads
+  as built are in §10.4.
+- **Visibility filter, kept (r2-S3).** *Superseded 2026-11-25 (§3.7, §10.2):
+  native has no visibility filter; HAMCP-499 follows.* The ha-mcp visibility
+  filter and its
   enforce mode keep their 9.2.0 effect (§3.7). Records the filter withholds
   today stay withheld, and no hidden entity id is returned. So the table above
   stands as it is.
-- **No visibility oracle** (architect delta check). This keeps 9.2.0's
+- **No visibility oracle** (architect delta check). *Superseded 2026-11-25
+  (§3.7): it holds trivially, since with no filter there is no visibility
+  signal.* This keeps 9.2.0's
   no-oracle property for visibility omissions. 9.2.0 reports no count and sets
   no `partial` flag when its filter excludes an entity or its enforce scrub
   omits a record (`tools/search/entities.py:460-461`,
@@ -904,6 +1064,9 @@ Notes for the build's security section:
   - A redaction count above zero sets `filtered`.
   - A `failed_closed` result fails the read. It is never returned as a
     redacted success or as the original string.
+- *Rev 5:* the as-built security facts are in §10: G1 and G2 (§10.3), the
+  F1 trigger, probe and residuals (§10.6), the reader checks (§10.7) and
+  HAMCP-233 (§10.11).
 - The build changes provider routing, the public schema description and read
   admission. It needs:
   - a security section;
@@ -927,16 +1090,23 @@ Notes for the build's security section:
    - It loads `PUBLIC_SCHEMAS["ha_search"]` and the Row 25 key set, and fails
      if §4 or §5 disagree with either.
    - The schema fingerprint differs from today's only by the declared
-     `search_types` description sentence.
+     `search_types` description sentence. *Rev 5:* the native copy has its
+     own pinned fingerprint, and the internal route's is unchanged (§10.8).
 3. **Domain-only and `exact_match` true substring:** equal to the
    `search_entities` fixture for the same domain and text. `search_entities`
    is the oracle only for these two.
+   *Rev 5 (G-d):* the comparison is of match sets, not order.
 4. **The `exact_match` false oracle:** a golden fixture generated by running
    the pinned 9.2.0 scorer (`utils/fuzzy_search.py` and
    `tools/smart_search/_scoring.py` at `51e3aac7`) offline over a fixed
    corpus. It has provenance naming the commit and the command. Native scores,
    match types and order must equal it, including the typo, alias and
    area-plus-query (threshold 80) cases.
+   *Rev 5 / W6b:* the golden is now generated from the component's scorer
+   (`custom_components/ha_mcp_tools/websocket_api/search_score.py` at
+   `51e3aac7`), and
+   `docs/evidence/hamcp481/fixtures/component-scoring-golden.json` pins
+   it. The W1 golden fixtures stay as history (§10.14).
 5. **Kept capabilities (C2):**
    - an exact `entity_id` referenced by an automation returns that
      automation with `match_in_references` true, with bodies absent. With
@@ -945,7 +1115,10 @@ Notes for the build's security section:
      `partial` true, it has exactly one reason, `not_searched`
      `upstream_partial` for `helper`, count null, and no other (r2-S2);
    - the same with that automation's configuration unreadable returns the
-     automation, plus `not_searched` `read_failed` for its body;
+     automation, plus `not_searched` `read_failed` for its body *(rev 5:
+     superseded by S1 = b+; Engineering reads no automation body, and a
+     sub-call that does not finish is `automation_subcall_incomplete`,
+     §10.4)*;
    - `result_fields` with `is_group` and `member_entity_ids` returns those
      keys;
    - a floor name, an area alias and a close-spelling floor each return that
@@ -953,7 +1126,8 @@ Notes for the build's security section:
    - an ambiguous fuzzy floor gives the warning and no entities;
    - `state_filter` `"ON"` equals `"on"`;
    - scenes and each of the six storage helper types match by name and by
-     body;
+     body *(rev 5: scenes match by body through the scene sub-call, S1 =
+     b+)*;
    - flow helpers match through the paged helper sub-call (§2.5, §2.6): its
      storage-type rows are dropped on each page, its flow-helper rows merge
      by score, each helper is counted once in `config_total_matches`, and a
@@ -1008,8 +1182,13 @@ Notes for the build's security section:
 11. **`include_config` true:** `filtered` with `config_bodies_withheld`, and
     no body.
 12. **Routes (R1):**
-    - `ha_search` is absent from `DEVICE_DEPENDENT_DELEGATED_TOOLS`;
-    - its requirement tuple equals the declared native profiles;
+    - `ha_search` is absent from `DEVICE_DEPENDENT_DELEGATED_TOOLS` *(rev 5,
+      G2: the internal route stays in it, fail-closed, and each page
+      acquires the route's requirement,
+      `tests/test_hamcp501_native_search_cutover.py:682`; §10.3)*;
+    - its requirement tuple equals the declared native profiles *(rev 5:
+      `CORE_REQUIREMENTS`, `search/core_contracts.py:64`, pinned by a
+      test)*;
     - the provider's command allowlist equals §2.2;
     - a dispatcher spy shows zero ha-mcp calls for an entity-only search,
       including when the device registry read fails.
@@ -1032,20 +1211,25 @@ Notes for the build's security section:
       `dashboard_subcall_incomplete`. A page whose `config_total_matches`
       differs from the first page's counts as failed;
     - a pinned page-size test: a page of P projected rows of the fixture's
-      largest row shape stays under the gateway check;
+      largest row shape stays under the gateway check *(rev 5: the §10.5
+      ladder replaces the single size)*;
     - a helper sub-call whose pages have `partial` false: the reply has no
-      partial reason from it, with enforce mode off and with it on;
+      partial reason from it, with enforce mode off *(rev 5: the
+      enforce-on case is dropped, HAMCP-499)*;
     - a page fixture with `helper_unsearched` set (custom helper entries not
       searched): the reply has `not_searched` `upstream_partial` for
       `helper` with count null, and no invented count;
-    - enforce mode on, with a non-empty hidden set: a sub-call that sent a
-      page adds no partial reason, and the reply carries the fixed visibility
-      note;
+    - *(rev 5: dropped, HAMCP-499)* enforce mode on, with a non-empty hidden
+      set: a sub-call that sent a page adds no partial reason, and the reply
+      carries the fixed visibility note;
     - a failed page adds `source_unavailable` only, not `not_searched`;
     - ha-mcp not admitted: no page is sent, and the reply has
       `source_unavailable` `subcall_not_admitted` for each sub-call it
       needed.
-15. **Visibility filter (r2-S3, architect delta check):**
+15. **Visibility filter (r2-S3, architect delta check): dropped in
+    revision 5.** Native has no visibility filter (§3.7, §10.2), so these
+    cases do not apply. HAMCP-499 owns them with the filter. The
+    revision 4 cases, superseded:
     - one entity in the hidden set and one automation whose body references
       it. With the filter on and enforce mode on, neither appears, the reply
       carries the fixed visibility note, no partial reason or count refers to
@@ -1107,7 +1291,8 @@ with fixed numbers.
 11. A query with no matches gives empty buckets and `applied`. `partial` is
     false, or it carries only `not_searched` `upstream_partial` when a helper
     page was itself partial (r2-S2). No other reason is accepted. The fixed
-    visibility note is on every step's reply or on none (§3.7).
+    visibility note is on every step's reply or on none (§3.7). *(rev 5:
+    dropped; no note is built, §3.7)*
 12. The audit log records native provider attribution, plus the delegated
     sub-call pages only where §2.4, §2.5 and §2.6 call for them: the
     dashboard pages for step 10, and the helper pages for each step that
@@ -1159,6 +1344,28 @@ I did not see Josh's words. These are the relayed texts.
   lose features", in which every capability is kept unless Josh retires it by
   name. So it is not a new decision for Josh. §3.7 has the behavior, §4 the
   row and §7 the disclosure, which stands as it is.
+  *Superseded 2026-11-25 (§3.7, §10.2).*
+
+### Decided for the build, as relayed by the architect (2026-11-25 and 2026-11-26)
+
+Josh's decisions, as relayed by the architect:
+
+- **Visibility supersession** (2026-11-25): native ships without the ha-mcp
+  entity visibility filter; HAMCP-499 follows (§3.7, §10.2).
+- **S1 = b+** (2026-11-26): native reads no automation, script or scene
+  body; the delegated sub-calls match them (§10.4).
+- **"Approve A+" and A'+** (both 2026-11-26): the F1 trigger and the scrub
+  probe (§10.6).
+
+The architect's decisions:
+
+- G1 and G2, the internal route and its requirement (§10.3);
+- the page-size ladder (§10.5);
+- J2' option A, and the `get_entries` alias read (2026-11-25, §10.4);
+- the reader rules D1 to D5 (§10.7);
+- the W6b split, with the composed name served by #519 (§10.1);
+- the CI-lane acceptance for W6, and R2-F1 as W6's last review round
+  (§10.1).
 
 ### Design choices from the reviews (not owner decisions)
 
@@ -1180,6 +1387,7 @@ I did not see Josh's words. These are the relayed texts.
   part of 9.2.0 enforce parity (§3.7). They go beyond Cursor's round-2 text,
   and the architect's delta check accepted them. Cursor's `hidden` count is
   replaced by the fixed visibility note (next item).
+  *Superseded 2026-11-25 (§3.7).*
 - **Architect delta check of revision 3** (relayed in an architect session
   message, 2026-11-24; an architect direction, not an owner decision). The
   author's additions 1 to 3 were accepted: a moved total is a failed page,
@@ -1201,3 +1409,543 @@ I did not see Josh's words. These are the relayed texts.
 None.
 
 No row in §4 or §5 is retired.
+
+Rev 5: the §4 visibility row is superseded (§3.7). It was ha-mcp
+configuration, not an argument, so no argument is retired.
+
+## 10. Implementation record (2.10.0)
+
+Revision 5 records what HAMCP-501 built on `release/2.10.0`, from the merged
+source at `c2b68911`, the merged pull requests and their reviews. Source paths
+are under `hass_mcp_engineering_beta/ha_mcp_engineering/` unless a path says
+otherwise, and line numbers are at `c2b68911`, except where a citation names
+`d3da5b07`, the #519 merge (§10.10's warnings and §10.14). Where this
+section and an earlier section differ, this section describes the build.
+The labels G-b to G-j, R-A and the plan corrections in §10.12 are the
+architect's W7 review labels.
+
+### 10.1 Pull requests and reviews
+
+| Step | Pull request | Merge commit | Merged (Central) |
+| --- | --- | --- | --- |
+| W1 | #506 | `6a72f12f` | 2026-11-25 06:21 CST |
+| W2 | #507 | `b7f7e0df` | 2026-11-25 06:42 CST |
+| W3 | #513 | `3f9f6177` | 2026-11-25 14:19 CST |
+| W4 | #516 | `cc1c5bb2` | 2026-11-25 20:39 CST |
+| W5 | none | dropped (§10.2) | not applicable |
+| W6 | #517 | `c2b68911` (head `9e68614d`) | 2026-11-26 14:36 CST |
+| W6b | #519 | `d3da5b07` (head `a4cfdb0a`) | 2026-11-26 16:06 CST |
+| W7 | #520 (this revision) | open | not merged |
+
+- W6 (#517) is the cutover to native `ha_search`. Its reviews:
+  - Codex r1: F1 High (§10.6) and F2 Medium, both corrected in one batch.
+  - Cursor delta r2 on that batch: one new finding, R2-F1 High. Script and
+    scene body matching was untested. It was fixed with tests and mutants
+    only (#517 Disclosure 19). The architect named it W6's last review round
+    and verified the fix.
+- The architect accepted the CI lane as W6's real Home Assistant evidence.
+  Real Home Assistant stays CI-only.
+- W6b (#519), split from W6 by the architect, moved native entity scoring to
+  the component route and serves the composed device and entity name (X12,
+  §10.13). It removed two warnings (§10.10). Its record is §10.14.
+  - Cursor r1 at `8fbbaee4`: READY_WITH_FOLLOW_UP, one Low finding, no
+    correction batch.
+  - The post-merge delta (`d6056c91`, `b7a42c2e` and `a4cfdb0a`) had no
+    Cursor r2. The architect verified it.
+- The "Implemented in 2.10.0 (Engineering 2.4.2-beta.14)" mark was added
+  after #519 merged, as the architect directed.
+
+### 10.2 Superseding decision: visibility (2026-11-25)
+
+Josh decided on 2026-11-25, as relayed by the architect, that native search
+ships without ha-mcp's entity visibility filter (§3.7). The filter, its
+enforce mode and Assist exposure are all off in this house (Josh's
+screenshots, 00:15 CST 2026-11-25, as relayed). In a house with the filter
+on, today's delegated `ha_search` hides entities and native would not.
+HAMCP-499 follows ha-mcp's approach later.
+
+Consequences in this document:
+
+- §3.7 keeps its revision 4 text under a "Superseded" heading.
+- W5 and the §3.7 build gate are dropped.
+- The §7 bullets "Visibility filter, kept (r2-S3)" and "No visibility oracle"
+  carry the note. The no-oracle point holds trivially.
+- §8.15 and the enforce-mode bullets of §8.14 are dropped, citing HAMCP-499.
+- No visibility note and no fail-open warning are built (§10.10).
+
+### 10.3 G1 and G2: the internal route and its requirement
+
+The architect's G1 and G2 replace the §2.3 plan (#517 Disclosure 4).
+
+G1, internal-only:
+
+- `ha_core_readmission/routes.py:249-250` makes the delegated `ha_search`
+  route internal-only whenever native `ha_search` is registered, which is
+  every build.
+- The route is admitted only for the fixed sub-call readers (§10.7). It is
+  never listed, aliased (there is no `ha_mcp__ha_search`) or
+  capability-recorded.
+- It is still Row 25 on ha-mcp 9.2.0. There is no policy JSON change and no
+  signing.
+- The mechanism is `execute(..., search_page=...)` under the lease (D5,
+  §10.7).
+- Catalog: 114 = 88 + 26 is the connector total, and it excludes the
+  internal `ha_search`. codex-context reports it as
+  `expected_connector_total` 114, with `expected_delegated_reads` 26
+  (`scripts/codex-context.py:895-910`).
+- The read gateway's health counters are separate
+  (`providers/upstream_read_gateway.py:5936`, `:5960-5961`).
+  `exact_matched_automatic_read_count` counts the exposed and the internal
+  routes, 27 when every reviewed read matches. `dynamically_exposed_count`
+  counts the exposed routes only, 26. The internal-only set is
+  `("ha_search",)` (`ha_core_readmission/routes.py:249`).
+
+G2, the route requirements:
+
+- The internal route keeps `DELEGATED_CORE_REQUIREMENTS["ha_search"]` =
+  `core.delegated_device_effective_area` (`routes.py:292`). It stays in
+  `DEVICE_DEPENDENT_DELEGATED_TOOLS` (`routes.py:16`, entry `:22`),
+  fail-closed.
+- Native `STATIC_TOOL_CORE_REQUIREMENTS["ha_search"]` (`routes.py:333-336`)
+  equals `CORE_REQUIREMENTS` (`search/core_contracts.py:64`):
+  `core.basic_rest_read`, `core.basic_websocket_read`,
+  `core.non_device_registry_read` and `core.direct_device_registry_read`. A
+  test pins the equality.
+- Each sub-call page acquires the route's requirement
+  (`tests/test_hamcp501_native_search_cutover.py:682`).
+
+### 10.4 S1 = b+ and the reads as built
+
+S1 = b+ was Josh's decision on 2026-11-26, as relayed by the architect.
+
+- Native search reads no automation, script or scene body.
+- Those rows come from the fixed delegated sub-calls (`search/subcalls.py`,
+  `ENTITY_TYPES` at `:56`). Their body match (`match_in_config`) is the
+  route's own, inside ha-mcp, except where F1 withholds it (§10.6).
+- The five sub-calls are automation, script, scene, dashboard and helper
+  (`SEARCH_SUBCALL_BUCKETS`, `providers/upstream_read_gateway.py:888-899`).
+  The helper sub-call carries flow helpers. Native search reads the six
+  storage helper types itself and matches them by name and body, in memory.
+- The injected Core read session serves the reference graph only. Nothing
+  falls back to the delegated route for a native bucket (`search/configs.py`
+  docstring).
+- A script or scene id that the route leaves empty is filled from the entity
+  id. For a scene, that goes through the registry storage key.
+- An unusable entity registry fails scene and helper search.
+- A helper list that cannot be read, its dropped rows and a row with an
+  invalid field, including a row without a valid name, count as
+  `read_failed` (`search/configs.py:291-296`).
+- The AST test `test_no_configuration_body_read_is_reachable`
+  (`tests/test_hamcp481_native_search_engine.py:695`) pins that no
+  configuration body read is reachable.
+
+The Core reads follow J2' option A (architect), whose closed table is
+`search/core_contracts.py`:
+
+- Only existing signed Core profiles are used. There is no profile, model or
+  signed-source change.
+- A read is "attested" when a profile pins its exact command and reply shape.
+  Otherwise it uses `core.basic_rest_read` or `core.basic_websocket_read` for
+  transport only.
+- The architect added `config/entity_registry/get_entries` for entity aliases
+  on 2026-11-25. On Core 2026.11.3 it has no `require_admin`, and the entity
+  registry list carries no aliases.
+- The six `input_*/list` commands are not admin-only.
+- The states list is `rest_states_list` under `core.basic_rest_read`.
+  `core.direct_entity_state_read` attests a single-entity read and is unused
+  (`search/core_contracts.py:61-64`).
+- Under S1 = b+, the automation, script and scene configuration reads are not
+  in the table, and `core.automation_configuration_read` is not a
+  requirement.
+
+### 10.5 The page-size ladder (architect)
+
+The ladder replaces the single page size P of §2.6 (#517 Disclosure 3).
+
+- The sizes are `PAGE_SIZE_LADDER` = 150, 30, 6, 1 (`search/subcalls.py:65`),
+  within a page budget of `PAGE_BUDGET_BYTES` = 37,000 (`:81`).
+- A scan steps down only when the gateway reports `page_too_large`. The
+  gateway sets it only when the reply-size bound alone refused the page: the
+  encoded-size check or `dump_json_with_truncation`.
+- `SearchSubcallPageTooLarge` is raised only for that, plus
+  `response_too_large`. It is never inferred from `invalid_response`.
+- Every other failure fails closed, with no retry.
+- The gateway accepts a page whose offset is a multiple of its size and whose
+  limit equals the size. It then checks the page arguments for exact equality
+  (§10.7).
+- A step-down re-reads only that span at the next size, then climbs back.
+- A row too large even at size 1 gives `<type>_subcall_incomplete`.
+- Scan limits:
+  - 20,000 rows (`MAX_SCAN_ROWS` = `MAX_ITEMS`, `:45`);
+  - 300 page calls (`MAX_PAGE_CALLS`, `:69`);
+  - a 60 s deadline per scan (`SCAN_DEADLINE_SECONDS`, `:43`).
+
+  Past any of these, the bucket is `<type>_subcall_incomplete`, for that
+  bucket only.
+- A dashboard scan completes early once it has enough rows.
+
+The costs (#517 Disclosure 3):
+
+- Each step-down adds one `response_too_large` to the health
+  `failure_counts` and one failed provider result.
+- The 2 MB transport bound gives no step-down.
+- The full-page rule is tightened.
+
+The sizing evidence (#517 Disclosure 3):
+
+- The row sizes are 3,470 bytes for automation, 6,560 for script, 6,560 for
+  scene, 90 for dashboard and 9,360 for helper.
+- The budget fits 10, 5, 5, 150 and 3 such rows. So the largest fitting
+  ladder size is 6, 1, 1, 150 and 1.
+- Before the ladder, a scene page took 58,115 of 60,000 bytes at 150 rows,
+  and 80-character names gave `scene_subcall_incomplete`.
+
+### 10.6 F1: the A'+ trigger, the scrub probe and the three reason codes
+
+F1 (Codex r1 on #517, High) found that the route's body match could confirm a
+value that ha-mcp's scrub is meant to hide (#517 Disclosure 17). Josh's
+decisions, as relayed by the architect, are "Approve A+" and A'+, both
+2026-11-26. Their relation is not recorded here. The build follows A'+.
+
+**Trigger.** `body_match_unsafe(query, exact_match)` (`search/subcalls.py:398`)
+names a numeric-like query:
+
+- with `exact_match` true, the lowercased query holds only `0-9 . + - e : t`
+  and spaces (`_NUMERIC_CHARS`);
+- with `exact_match` false, the same, or any query term holds a digit.
+
+The `inf` and `nan` forms are narrowed out.
+
+**Effect.** For each body type requested (automation, script, scene and
+helper; `BODY_TYPES`, `:137`):
+
+- a sub-call row keeps only a name rescore and its graph references, with
+  `match_in_config` false (`search/configs.py:381`);
+- a row with no name match is dropped;
+- the bucket gets `not_searched` `body_numeric_query`, count null;
+- no probe is read.
+
+**Scrub probe.**
+
+- When an automation, script or scene type is requested and the query is not
+  numeric-like, native reads a one-row helper page before the automation,
+  script and scene scans and again after them:
+  `page_arguments("helper", query, exact_match, 0, PROBE_SIZE)`
+  (`search/subcalls.py:380`; `PROBE_SIZE` 1 at `:140`;
+  `PROBE_TIMEOUT_SECONDS` 15.0 at `:141`).
+- The probe's rows are never used. Its warnings classify the scrub state as
+  clean, degraded or unverified (`:130-132`), with the worst winning:
+  degraded, then unverified, then clean.
+- The state is degraded when the page carries one of ha-mcp's two
+  scrub-degraded texts.
+- It is unverified when there is no reader, the page failed, timed out or was
+  invalid (`:387`), or the page carries a warning the build has not reviewed.
+- A probe that is not clean applies the F1 effect to every body type in the
+  call, with `body_scrub_degraded` or `body_scrub_unverified`.
+- The classifier order is numeric, then degraded, then unverified
+  (`search/configs.py:394-400`).
+- The scrub state can change between a probe and a page. The two probes
+  bracket the scans, and the race is disclosed (#517 Disclosure 17).
+- No scrub-degraded text reaches the reply.
+
+**Residuals (for 2.11).**
+
+- Lost: a legitimate numeric body match, such as `10:00` or `75`.
+- Narrowed: there is no arm for the `inf` and `nan` forms.
+- Not covered:
+  - non-scalar `!secret` values;
+  - YAML-mode dashboards;
+  - `bool` leaves.
+- Dashboards and native storage helpers get no body code.
+
+**Evidence.**
+
+- `docs/evidence/hamcp501/f1/`: `generate_body_match_fixtures.py`,
+  `body-match-golden.json` (228 rows), `provenance.json` and
+  `body_match_mutation_check.py`.
+- `tests/test_hamcp501_w6_f1_body_matching.py`: 40 tests.
+- Mutation: 50 mutants, all killed, at `9e68614d`.
+- R2-F1 added the script and scene cases and their mutants.
+
+### 10.7 The sub-call reader
+
+`gateway.search_subcall_reader()` returns a `SearchSubcallReader` whose
+`.readers` is a read-only map (`providers/upstream_read_gateway.py:4462`).
+W4 (#516) had dashboard and helper. W6 extended it to all five
+`SEARCH_SUBCALL_BUCKETS` (`:888-899`).
+
+Each page is checked:
+
+- the page arguments must be exact, checked by `_search_page_arguments`
+  (`:963`);
+- D2: a redacted or truncated page fails;
+- D1: withheld names are counted from the raw bucket;
+- D3: `config_has_more` must equal `has_more`, and a page without it fails;
+- W4-F1: with no parent request or authorizer, the reader refuses before
+  dispatch;
+- D5: the lease is the authorizer.
+
+Rows are rendered (projected to Row 25) only after the D2 check passes.
+
+The W4 defect fix (#517 Disclosure 1, `54e45720`):
+
+- The reader validated pages against the raw upstream schema. Under the
+  unified descriptor (`c1ca76bd`), every page was refused.
+- It now uses `_public_read_schema`. Reverting the fix gives 17 failures and
+  6 errors.
+- The class sweep (`dda85df4`) found that `script_dependency`, `history` and
+  `yaml_config` are not in the class.
+
+W4 disclosure 1:
+
+- On the component path in enforce mode, 9.2.0 scrubs after paging. A short
+  page that is not the last fails closed (`invalid_response`), so the
+  sub-call is incomplete.
+- The legacy path scrubs before paging.
+- Enforce mode is off in this house.
+
+W4 notes:
+
+- `ENTITY_VISIBILITY_ENFORCED`, or an `ENTITY_NOT_FOUND` that conceals, gives
+  `upstream_error`, so the sub-call is incomplete.
+- 9.2.0 omits `config_has_more` when its configs branch raised, so that page
+  fails closed (D3).
+
+The generic `_upstream_completeness` `ha_search` branch is unreachable
+(#517 Disclosure 6).
+
+### 10.8 Schema, fingerprint and Row 25
+
+- Native `ha_search` has its own schema copy. Only the `search_types`
+  description differs (J3), by the one appended sentence of §4.
+- Its own fingerprint is `NATIVE_SEARCH_SCHEMA_FINGERPRINT` `47b15a3e…`
+  (`tools/search.py:56`, checked at `:224`).
+- `SEARCH_PUBLIC_SCHEMA_FINGERPRINT` (`providers/upstream_reads_9_2.py:98`,
+  checked at `:186`) is unchanged, because it binds the internal route.
+- §7 Row 25 is unchanged. Dashboard `url_path` and `title` and helper
+  `entry_id` are still withheld and counted. So a flow-helper row carries
+  `helper_type` and `name` with no id.
+- HAMCP-447 owns releasing those fields.
+
+### 10.9 Arguments and audit
+
+- `config_time_budget` is validated but not forwarded to the pages. Each
+  sub-call scan has its own 60 s deadline (§10.5).
+- An invalid argument gives the native `SearchError` envelope, audited as
+  failure / `validation_failure`.
+- A partial reply is audited partial, as on the delegated route (#517
+  Disclosure 12).
+- Arbitrary delegated projection is unreachable.
+
+### 10.10 The reply as built
+
+The closed reason set (`search/reply.py:124-145`), in `REASON_ORDER`:
+
+- `paged`: `response_budget`, `more_matches`;
+- `truncated`: `record_strings`, `record_lists`, `query_echo`,
+  `domain_filter_echo`;
+- `filtered`: `sanitizer_redaction`, `config_bodies_withheld`;
+- `not_searched`: `read_failed`, `upstream_partial`, `graph_unavailable`,
+  `body_numeric_query`, `body_scrub_degraded`, `body_scrub_unverified`;
+- `source_unavailable`:
+  - `automation_subcall_incomplete`, `script_subcall_incomplete`,
+    `scene_subcall_incomplete`, `dashboard_subcall_incomplete`,
+    `helper_subcall_incomplete`;
+  - `subcall_not_admitted`;
+  - `malformed_state_row`;
+  - `area_registry`, `floor_registry`, `label_registry`, `device_registry`;
+  - `entity_aliases`.
+
+Compared with §6.1:
+
+- `time_budget` and `not_readable` are not built.
+- The three body codes are added (§10.6).
+- The automation, script and scene sub-call codes, the four registry codes
+  and `entity_aliases` are added.
+- A failed `get_entries` chunk gives a partial reply with `source_unavailable`
+  `entity_aliases`, in both `exact_match` modes, never a failed read (G-h).
+
+The other parts of the reply:
+
+- **Warnings.** `WARNINGS` (`search/reply.py:111` at `d3da5b07`) holds
+  three closed texts:
+  - entity search skipped;
+  - configuration search skipped;
+  - an ambiguous floor, so no area was selected.
+
+  *Rev 5 / W6b:* W6 had five (`:119` at `c2b68911`). #519 removed
+  `WARNING_STATE_PAGE_ONLY` and `WARNING_COMPOSED_NAME` (§10.14).
+
+  `upstream_warnings_replaced` is 0.
+- **Counts.** `ENGINEERING_COUNTS` (`search/reply.py:79`) holds three:
+  `fields_withheld`, `fields_dropped_by_policy` and
+  `upstream_warnings_replaced`.
+- **No notes.** Native builds no `engineering_notes`, and `ALWAYS_KEPT`
+  (`search/reply.py:88-97`) has none. There is no visibility note and no
+  fail-open warning (§10.2).
+
+### 10.11 HAMCP-233 and the probe inference
+
+- The internal helper sub-call is still delegated `ha_search`. ha-mcp's
+  `fetch_entry_options_with_status` still opens and aborts config-entry
+  options flows, as today. That is unchanged, not new, and 2.11 follows up.
+- **Inference, not tested:**
+  - Each F1 probe (§10.6) is a one-row helper page, so it is a whole ha-mcp
+    helper search. It therefore likely repeats those options-flow probes.
+  - That is two such searches per call that searches automation, script or
+    scene bodies, one before the scans and one after.
+  - The W6 pull request did not state this.
+
+### 10.12 Corrections to revision 4
+
+- **States list (§2.2).** It is `rest_states_list` in `core.basic_rest_read`
+  (`ha_core_readmission/profiles.py:159`, `:162`) and in
+  `core.state_service_discovery` (`:185`, `:188`).
+  `core.direct_entity_state_read` covers single-entity reads only and is
+  unused (`search/core_contracts.py:61-64`).
+- **Batch keys (§2.2).** `_BATCH_COMMAND_KEYS` is at
+  `clients/websocket.py:32-38`. The cited `:24-28` is its comment.
+- **Scorer (§3.2).** 9.2.0 normalizes with `.lower().strip()`
+  (`utils/fuzzy_search.py:194`), not casefold. W6b retired that port for
+  the component's tier scorer (§10.14).
+- **Graph score (§3.5).** `_GRAPH_HIT_SCORE` is 100, at `_graph.py:371`.
+- **G-b (§3.5).** The chunked body-read approximation is superseded by S1 = b+
+  (§10.4).
+- **G-c (§3.2).** The enumeration match types are `area_match`,
+  `domain_listing` and `state_listing`. An empty query takes
+  `domain_listing` only with `domain_filter` and no `area_filter`. With
+  `area_filter` it is area mode (`area_match`), and with neither it is
+  `state_listing` (`search/entities.py:204-211`). Native has no
+  fuzzy-to-substring fallback.
+- **G-d (§8.3).** The golden comparison is of match sets, not order
+  (`tests/test_hamcp481_native_search_engine.py:783`).
+- **G-h (§6.1, §6.2).** A failed `get_entries` chunk gives a partial
+  `source_unavailable` `entity_aliases`, in both modes, never a failed read.
+- **G-i (§3.3).** Area mode lists a registry entity with no state as
+  `unknown` (`search/entities.py:573`).
+- **G-j (§3.3).** The fuzzy area match is `partial_ratio`
+  (`_entities.py:856-860`, native `search/entities.py:406-408`), not a
+  whole-string ratio. Area plus a query is always fuzzy at 80.
+- **R-A (§4, §6.4).** An explicit `search_types` with no query is refused as
+  `no_criteria` (`search/engine.py:232-233`) before the R-A warning is added
+  (`:347-348`). So every successful explicit reply carries the warning
+  (`tests/test_hamcp481_native_search_engine.py:1143-1144`, `:1166-1172`).
+- **Plan corrections.** These are not in this document, so they are recorded
+  here only:
+  - `ha_core_readmission/websocket.py` does not exist;
+  - the manifest path is
+    `docs/evidence/hamcp315/manifest-compatibility.json`.
+
+### 10.13 W6 parity with the delegated route
+
+From the W6 pull request (#517), against 9.2.0's delegated `ha_search`.
+
+Kept:
+
+- The full 9.2.0 schema, plus one appended sentence: `per_domain_limit`,
+  `group_by_domain`, `fields`, `result_fields`, `config_time_budget`, and
+  `include_hidden` defaulting to true.
+- X1 eligibility: domain, area or state intent skips configuration search
+  unless `search_types` is explicit.
+- X5: the area match is a union. X6: an unknown area gives success with 0.
+- X10: the count is the sum, and the limit is per surface. X15: ties sort by
+  `entity_id`.
+- X3 and X4: the Row 25 projection for dashboard and helper rows.
+- Automation, script and scene body matching (`match_in_config`) is the
+  delegated route's own (S1 = b+), scrubbed upstream. The exceptions are the
+  F1 trigger and an unproven scrub (see Changed).
+- Audit status: a partial reply is audited partial, as on the delegated
+  route.
+- The `result_fields` enrichment: area, floor, labels, aliases, `is_group`
+  and `member_entity_ids`.
+
+Improved:
+
+- X9: the warnings are closed Engineering texts, and
+  `upstream_warnings_replaced` is 0.
+- X1 now warns `config_skipped`.
+- X11: `offset` and `limit` are always present.
+- X7: completeness reflects the real `partial_reasons`. A partial or failed
+  sub-call affects only its own bucket.
+- The description is served in full, with no truncation.
+- The combined `next_offset` is the minimum over the surfaces.
+- `match_in_references` comes from Core `search/related`, for an
+  `entity_id`-shaped query. The component route hard-codes it false. A graph
+  failure gives `not_searched` `graph_unavailable`.
+- A long-named row no longer fails the whole type. The page-size ladder
+  re-reads only its span at a smaller size.
+
+Changed, with the reason:
+
+- X7: there is no `VISIBLE_SCOPE` caveat. HAMCP-499's visibility filter is
+  not ported, so an entity is hidden only through the registry `hidden_by`.
+- X12: at W6, the composed device and entity name was not served, and the
+  reply warned. W6b serves it and removed the warning (§10.14).
+- An unusable floor or area registry gives `source_unavailable`.
+- The invalid-argument envelope is the native `SearchError`.
+- Arbitrary delegated projection is unreachable.
+- `config_time_budget` is validated but not forwarded to the pages. Each
+  sub-call scan has its own 60 s deadline.
+- Automation, script and scene matches need ha-mcp admitted. Without it, the
+  bucket is `source_unavailable` `subcall_not_admitted`.
+- An upstream partial page is `not_searched` `upstream_partial` for that
+  bucket only. The upstream `partial_reason` text and hint are not carried.
+- A row larger than the reply bound even at page size 1, or a bucket past
+  300 page calls, is `<type>_subcall_incomplete`.
+- The F1 trigger is a numeric-like query: for exact, only `0-9 . + - e : t`
+  and spaces; for fuzzy, that, or any query term holding a digit.
+  - Automation, script, scene and helper sub-call rows keep only a name
+    rescore and graph references, with `match_in_config` false.
+  - Rows with no name match are dropped, and the bucket is `not_searched`
+    `body_numeric_query`.
+  - A legitimate numeric body match (`10:00`, `75`) is lost.
+- The F1 scrub check: when a one-row helper probe, before or after the scans,
+  does not show a clean scrub, every body type in the call is treated the
+  same way (`body_scrub_degraded` or `body_scrub_unverified`).
+- The audit status of the native invalid-argument path is failure /
+  `validation_failure`.
+
+### 10.14 W6b (#519): component-route parity
+
+From the W6b pull request (#519), merged at `d3da5b07` (head `a4cfdb0a`),
+against the route live 9.2.0 serves: the `ha_mcp_tools` custom
+component's in-process search. Line numbers here are at `d3da5b07`. W1
+ported the server's legacy scorers, which 9.2.0 reaches only when the
+component is missing or fails (`search/scoring.py:28-32`). W6b replaces
+them. Its parity items:
+
+- P1, `name`: `composed_name` (`search/entities.py:464`) ports Core
+  2026.11.3's `_async_get_full_entity_name`, pinned by the tag commit
+  `92da9f15`. Entity rows serve it, or the friendly name when it composes
+  empty (`:734-737`). `WARNING_COMPOSED_NAME` is removed (X12, §5.2).
+- P2, the exact-mode texts: `_Joins.texts` (`search/entities.py:637`,
+  `:650`) adds the composed name, aliases, labels, device texts, area and
+  floor to `entity_id` and the friendly name. The bare domain is not a
+  text.
+- P3, the fuzzy scorer: `text_tier` (`search/scoring.py:144`) is 100 on an
+  equal text, 80 on a substring, and otherwise the best ratio when it
+  reaches 70 (`FUZZY_THRESHOLD`, `:80`). BM25 and the typo fallback are
+  retired (§3.2).
+- P4, `match_type`: `entity_match_type`, `is_alias_driven` and
+  `match_type_tier` (`search/scoring.py:211-262`) read the composed and
+  friendly names, add `alias_match`, and drop `typo_fallback`.
+- P5, the state filter: `kept()` (`search/entities.py:727`) runs the
+  domain, hidden and state filters before scoring and paging in every
+  mode. `PAGE_FILTERED_MODES` is empty (`:169`), and
+  `WARNING_STATE_PAGE_ONLY` is removed (§3.4).
+- P6, the area-filtered query: the same tier scorer as an unfiltered
+  query, in place of BM25 at a threshold of 80.
+- P7, device texts: `name_by_user`, `name`, `manufacturer` and `model`. The
+  device registry `ROW_FIELDS` gains optional `manufacturer`, `model` and
+  `next_name_part`, and the entity registry gains optional
+  `next_name_part` (`search/core_contracts.py:132`, `:137`, `:148-149`).
+- P8, configuration fuzzy: the internals of `entity_name_score`,
+  `config_match_score` and `deep_match_score` become the component
+  scorer, with their signatures kept. Configuration names use `name_tier`
+  (`search/scoring.py:190`).
+- P9, configuration exact: kept.
+
+The reply's warnings are three (`search/reply.py:111`, §10.10). The golden
+is `docs/evidence/hamcp481/fixtures/component-scoring-golden.json`, and
+the W1 golden fixtures there stay as history (§8 item 4). The review is in
+§10.1.
