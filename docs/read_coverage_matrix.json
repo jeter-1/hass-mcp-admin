@@ -45,7 +45,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 338,
+       "line": 339,
        "anchor": "\"list_automations\""
       }
      ]
@@ -70,7 +70,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 339,
+       "line": 340,
        "anchor": "\"get_automation_config\""
       },
       {
@@ -149,6 +149,36 @@
        "anchor": "rest_path(\"/config/automation/config/{}\", internal_id)"
       }
      ]
+    },
+    {
+     "tool": "internal:native_search_automation_subcall_pages",
+     "provider": "upstream_read_gateway search_subcall_reader [gateway_reader:search_subcall_reader]",
+     "purpose_binding": "HAMCP-501 fixed ha_search automation sub-call pages, wired to native ha_search (W6 S1 b+)",
+     "admission": "upstream:ha_search 9.2.0 Row 25 (reads_9_2 adapter) only, internal-only (never exposed or aliased); the native ha_search request's Core lease is passed as core_dispatch_authorizer and checked before, at and after each page's dispatch; the route's own Core requirement core.delegated_device_effective_area is acquired per page; no parent request refuses; no fallback",
+     "completeness": "partial",
+     "detail": "Fixed page arguments (search_types [automation], include_config false, limit one of the page-size ladder (150, 30, 6, 1), offset a multiple of the limit below 20,000); ha-mcp matches the automation configuration body upstream and returns its row fields only: entity_id, friendly_name, score and the match_in_name, match_in_config and match_in_references flags, never a configuration body. Each page passes the gateway's validation, Row 25 projection, sanitizer and size check; a redacted or bounded page fails (D2) and config_has_more must equal has_more (D3); Row 25 withholds unadmitted record names, counted by name only (D1). A row with any other key, or an entity_id outside the strict grammar or the automation domain, fails the page. A page the reply size bound alone refuses (page_too_large) is read again in pages of the next ladder size, which neither skip nor repeat a row; no other failure is retried. The W3 scan reads at most 20,000 rows in at most 300 page calls and marks the automations incomplete on any failed page; an incomplete bucket affects that bucket only.",
+     "refs": [
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+       "line": 4346,
+       "anchor": "def search_subcall_reader"
+      },
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_2_keys.py",
+       "line": 492,
+       "anchor": "def bucket_withheld_names"
+      },
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/search/subcalls.py",
+       "line": 57,
+       "anchor": "PAGE_SIZE_LADDER = (150, 30, 6, 1)"
+      },
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/search/subcalls.py",
+       "line": 167,
+       "anchor": "def page_arguments"
+      }
+     ]
     }
    ],
    "write_paths": [
@@ -169,7 +199,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 351,
+       "line": 352,
        "anchor": "\"create_change_plan\""
       },
       {
@@ -234,7 +264,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 1134,
+       "line": 1135,
        "anchor": "def f3_requirements"
       },
       {
@@ -336,7 +366,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4157,
+       "line": 4191,
        "anchor": "def yaml_config_reader(self, *, audit=None"
       }
      ]
@@ -415,7 +445,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4130,
+       "line": 4164,
        "anchor": "require_unmodified_script"
       }
      ]
@@ -430,7 +460,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 852,
+       "line": 855,
        "anchor": "\"dependency_index\": (DEPENDENCY_YAML_PATHS"
       },
       {
@@ -447,6 +477,36 @@
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/application.py",
        "line": 436,
        "anchor": "yaml_config_reader(audit=audit, purpose=\"dependency_index\")"
+      }
+     ]
+    },
+    {
+     "tool": "internal:native_search_script_subcall_pages",
+     "provider": "upstream_read_gateway search_subcall_reader [gateway_reader:search_subcall_reader]",
+     "purpose_binding": "HAMCP-501 fixed ha_search script sub-call pages, wired to native ha_search (W6 S1 b+)",
+     "admission": "upstream:ha_search 9.2.0 Row 25 (reads_9_2 adapter) only, internal-only (never exposed or aliased); the native ha_search request's Core lease is passed as core_dispatch_authorizer and checked before, at and after each page's dispatch; the route's own Core requirement core.delegated_device_effective_area is acquired per page; no parent request refuses; no fallback",
+     "completeness": "partial",
+     "detail": "Fixed page arguments (search_types [script], include_config false, limit one of the page-size ladder (150, 30, 6, 1), offset a multiple of the limit below 20,000); ha-mcp matches the script configuration body upstream and returns its row fields only: entity_id, friendly_name, script_id, score and the match_in_name, match_in_config and match_in_references flags, never a configuration body. Each page passes the gateway's validation, Row 25 projection, sanitizer and size check; a redacted or bounded page fails (D2) and config_has_more must equal has_more (D3); Row 25 withholds unadmitted record names, counted by name only (D1). A row with any other key, or an entity_id outside the strict grammar or the script domain, fails the page. A page the reply size bound alone refuses (page_too_large) is read again in pages of the next ladder size, which neither skip nor repeat a row; no other failure is retried. The W3 scan reads at most 20,000 rows in at most 300 page calls and marks the scripts incomplete on any failed page; an incomplete bucket affects that bucket only.",
+     "refs": [
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+       "line": 4346,
+       "anchor": "def search_subcall_reader"
+      },
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_2_keys.py",
+       "line": 492,
+       "anchor": "def bucket_withheld_names"
+      },
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/search/subcalls.py",
+       "line": 57,
+       "anchor": "PAGE_SIZE_LADDER = (150, 30, 6, 1)"
+      },
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/search/subcalls.py",
+       "line": 167,
+       "anchor": "def page_arguments"
       }
      ]
     }
@@ -502,7 +562,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 1134,
+       "line": 1135,
        "anchor": "def f3_requirements"
       },
       {
@@ -633,6 +693,36 @@
        "anchor": "def collect_membership_sources"
       }
      ]
+    },
+    {
+     "tool": "internal:native_search_scene_subcall_pages",
+     "provider": "upstream_read_gateway search_subcall_reader [gateway_reader:search_subcall_reader]",
+     "purpose_binding": "HAMCP-501 fixed ha_search scene sub-call pages, wired to native ha_search (W6 S1 b+)",
+     "admission": "upstream:ha_search 9.2.0 Row 25 (reads_9_2 adapter) only, internal-only (never exposed or aliased); the native ha_search request's Core lease is passed as core_dispatch_authorizer and checked before, at and after each page's dispatch; the route's own Core requirement core.delegated_device_effective_area is acquired per page; no parent request refuses; no fallback",
+     "completeness": "partial",
+     "detail": "Fixed page arguments (search_types [scene], include_config false, limit one of the page-size ladder (150, 30, 6, 1), offset a multiple of the limit below 20,000); ha-mcp matches the scene configuration body upstream and returns its row fields only: entity_id, friendly_name, scene_id, score and the match_in_name, match_in_config and match_in_references flags, never a configuration body. Each page passes the gateway's validation, Row 25 projection, sanitizer and size check; a redacted or bounded page fails (D2) and config_has_more must equal has_more (D3); Row 25 withholds unadmitted record names, counted by name only (D1). A row with any other key, or an entity_id outside the strict grammar or the scene domain, fails the page. A page the reply size bound alone refuses (page_too_large) is read again in pages of the next ladder size, which neither skip nor repeat a row; no other failure is retried. The W3 scan reads at most 20,000 rows in at most 300 page calls and marks the scenes incomplete on any failed page; an incomplete bucket affects that bucket only.",
+     "refs": [
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
+       "line": 4346,
+       "anchor": "def search_subcall_reader"
+      },
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_2_keys.py",
+       "line": 492,
+       "anchor": "def bucket_withheld_names"
+      },
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/search/subcalls.py",
+       "line": 57,
+       "anchor": "PAGE_SIZE_LADDER = (150, 30, 6, 1)"
+      },
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/search/subcalls.py",
+       "line": 167,
+       "anchor": "def page_arguments"
+      }
+     ]
     }
    ],
    "write_paths": [
@@ -691,7 +781,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 1134,
+       "line": 1135,
        "anchor": "def f3_requirements"
       },
       {
@@ -849,7 +939,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 849,
+       "line": 852,
        "anchor": "YAML_READER_PURPOSES = MappingProxyType"
       },
       {
@@ -982,7 +1072,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4157,
+       "line": 4191,
        "anchor": "def yaml_config_reader(self, *, audit=None"
       }
      ]
@@ -1030,7 +1120,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 431,
+       "line": 432,
        "anchor": "mounted_read_only_source"
       },
       {
@@ -1060,7 +1150,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 347,
+       "line": 348,
        "anchor": "\"list_blueprints\""
       },
       {
@@ -1189,7 +1279,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 849,
+       "line": 852,
        "anchor": "YAML_READER_PURPOSES = MappingProxyType"
       },
       {
@@ -1259,7 +1349,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 852,
+       "line": 855,
        "anchor": "\"dependency_index\": (DEPENDENCY_YAML_PATHS"
       },
       {
@@ -1331,7 +1421,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4157,
+       "line": 4191,
        "anchor": "def yaml_config_reader(self, *, audit=None"
       }
      ]
@@ -1404,7 +1494,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 849,
+       "line": 852,
        "anchor": "YAML_READER_PURPOSES = MappingProxyType"
       },
       {
@@ -1424,12 +1514,12 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 850,
+       "line": 853,
        "anchor": "\"recorder_settings\": (YAML_CONFIG_PATHS"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 857,
+       "line": 860,
        "anchor": "class YamlConfigReader"
       }
      ]
@@ -1453,7 +1543,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4157,
+       "line": 4191,
        "anchor": "def yaml_config_reader(self, *, audit=None"
       }
      ]
@@ -1542,7 +1632,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 849,
+       "line": 852,
        "anchor": "YAML_READER_PURPOSES = MappingProxyType"
       },
       {
@@ -1796,7 +1886,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 835,
+       "line": 838,
        "anchor": "DEFINITION_YAML_PATHS = frozenset"
       },
       {
@@ -2040,7 +2130,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 835,
+       "line": 838,
        "anchor": "DEFINITION_YAML_PATHS = frozenset"
       },
       {
@@ -2221,7 +2311,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 835,
+       "line": 838,
        "anchor": "DEFINITION_YAML_PATHS = frozenset"
       },
       {
@@ -2312,7 +2402,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 835,
+       "line": 838,
        "anchor": "DEFINITION_YAML_PATHS = frozenset"
       },
       {
@@ -2413,11 +2503,11 @@
      "purpose_binding": "HAMCP-501 fixed ha_search helper sub-call pages, wired to native ha_search (W6)",
      "admission": "upstream:ha_search 9.2.0 Row 25 (reads_9_2 adapter) only, internal-only (never exposed or aliased); the native ha_search request's Core lease is passed as core_dispatch_authorizer and checked before, at and after each page's dispatch; the route's own Core requirement core.delegated_device_effective_area is acquired per page; no parent request refuses; no fallback",
      "completeness": "partial",
-     "detail": "Fixed page arguments (search_types [helper], include_config false, limit 150, offset a multiple of 150 below 20,000); each page passes the gateway's validation, Row 25 projection, sanitizer and size check; a redacted or bounded page fails (D2) and config_has_more must equal has_more (D3); Row 25 withholds unadmitted record names, counted by name only (D1). The W3 scan reads at most 20,000 rows and marks the helpers incomplete on any failed page.",
+     "detail": "Fixed page arguments (search_types [helper], include_config false, limit one of the page-size ladder (150, 30, 6, 1), offset a multiple of the limit below 20,000); each page passes the gateway's validation, Row 25 projection, sanitizer and size check; a redacted or bounded page fails (D2) and config_has_more must equal has_more (D3); Row 25 withholds unadmitted record names, counted by name only (D1). A page the reply size bound alone refuses (page_too_large) is read again in pages of the next ladder size, which neither skip nor repeat a row; no other failure is retried. The W3 scan reads at most 20,000 rows in at most 300 page calls and marks the helpers incomplete on any failed page.",
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4312,
+       "line": 4346,
        "anchor": "def search_subcall_reader"
       },
       {
@@ -2427,12 +2517,12 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/search/subcalls.py",
-       "line": 28,
-       "anchor": "PAGE_SIZE = 150"
+       "line": 57,
+       "anchor": "PAGE_SIZE_LADDER = (150, 30, 6, 1)"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/search/subcalls.py",
-       "line": 87,
+       "line": 167,
        "anchor": "def page_arguments"
       }
      ]
@@ -2593,7 +2683,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 299,
+       "line": 302,
        "anchor": "_UPSTREAM_CAPABILITY_CODES = frozenset"
       },
       {
@@ -2642,7 +2732,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 835,
+       "line": 838,
        "anchor": "DEFINITION_YAML_PATHS = frozenset"
       },
       {
@@ -2683,11 +2773,11 @@
      "purpose_binding": "HAMCP-501 fixed ha_search helper sub-call pages, wired to native ha_search (W6)",
      "admission": "upstream:ha_search 9.2.0 Row 25 (reads_9_2 adapter) only, internal-only (never exposed or aliased); the native ha_search request's Core lease is passed as core_dispatch_authorizer and checked before, at and after each page's dispatch; the route's own Core requirement core.delegated_device_effective_area is acquired per page; no parent request refuses; no fallback",
      "completeness": "partial",
-     "detail": "Fixed page arguments (search_types [helper], include_config false, limit 150, offset a multiple of 150 below 20,000); each page passes the gateway's validation, Row 25 projection, sanitizer and size check; a redacted or bounded page fails (D2) and config_has_more must equal has_more (D3); Row 25 withholds unadmitted record names, counted by name only (D1). The W3 scan reads at most 20,000 rows and marks the helpers incomplete on any failed page.",
+     "detail": "Fixed page arguments (search_types [helper], include_config false, limit one of the page-size ladder (150, 30, 6, 1), offset a multiple of the limit below 20,000); each page passes the gateway's validation, Row 25 projection, sanitizer and size check; a redacted or bounded page fails (D2) and config_has_more must equal has_more (D3); Row 25 withholds unadmitted record names, counted by name only (D1). A page the reply size bound alone refuses (page_too_large) is read again in pages of the next ladder size, which neither skip nor repeat a row; no other failure is retried. The W3 scan reads at most 20,000 rows in at most 300 page calls and marks the helpers incomplete on any failed page.",
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4312,
+       "line": 4346,
        "anchor": "def search_subcall_reader"
       },
       {
@@ -2697,12 +2787,12 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/search/subcalls.py",
-       "line": 28,
-       "anchor": "PAGE_SIZE = 150"
+       "line": 57,
+       "anchor": "PAGE_SIZE_LADDER = (150, 30, 6, 1)"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/search/subcalls.py",
-       "line": 87,
+       "line": 167,
        "anchor": "def page_arguments"
       }
      ]
@@ -2886,7 +2976,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 348,
+       "line": 349,
        "anchor": "\"list_dashboards\""
       }
      ]
@@ -3032,11 +3122,11 @@
      "purpose_binding": "HAMCP-501 fixed ha_search dashboard sub-call pages, wired to native ha_search (W6)",
      "admission": "upstream:ha_search 9.2.0 Row 25 (reads_9_2 adapter) only, internal-only (never exposed or aliased); the native ha_search request's Core lease is passed as core_dispatch_authorizer and checked before, at and after each page's dispatch; the route's own Core requirement core.delegated_device_effective_area is acquired per page; no parent request refuses; no fallback",
      "completeness": "partial",
-     "detail": "Fixed page arguments (search_types [dashboard], include_config false, limit 150, offset a multiple of 150 below 20,000); each page passes the gateway's validation, Row 25 projection, sanitizer and size check; a redacted or bounded page fails (D2) and config_has_more must equal has_more (D3); Row 25 withholds every 9.2.0 dashboard name (url_path, title), counted by name only (D1). The W3 scan reads at most 20,000 rows and marks the dashboards incomplete on any failed page.",
+     "detail": "Fixed page arguments (search_types [dashboard], include_config false, limit one of the page-size ladder (150, 30, 6, 1), offset a multiple of the limit below 20,000); each page passes the gateway's validation, Row 25 projection, sanitizer and size check; a redacted or bounded page fails (D2) and config_has_more must equal has_more (D3); Row 25 withholds every 9.2.0 dashboard name (url_path, title), counted by name only (D1). A page the reply size bound alone refuses (page_too_large) is read again in pages of the next ladder size, which neither skip nor repeat a row; no other failure is retried. The W3 scan reads at most 20,000 rows in at most 300 page calls and marks the dashboards incomplete on any failed page.",
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4312,
+       "line": 4346,
        "anchor": "def search_subcall_reader"
       },
       {
@@ -3046,12 +3136,12 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/search/subcalls.py",
-       "line": 28,
-       "anchor": "PAGE_SIZE = 150"
+       "line": 57,
+       "anchor": "PAGE_SIZE_LADDER = (150, 30, 6, 1)"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/search/subcalls.py",
-       "line": 87,
+       "line": 167,
        "anchor": "def page_arguments"
       }
      ]
@@ -3269,7 +3359,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 383,
+       "line": 384,
        "anchor": "DASHBOARD_METADATA_TOOL: ("
       }
      ]
@@ -3401,7 +3491,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 828,
+       "line": 831,
        "anchor": "YAML_CONFIG_PATHS"
       }
      ]
@@ -3473,7 +3563,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 341,
+       "line": 342,
        "anchor": "\"list_entity_registry\""
       }
      ]
@@ -3656,7 +3746,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 340,
+       "line": 341,
        "anchor": "\"list_devices\""
       }
      ]
@@ -3756,7 +3846,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 346,
+       "line": 347,
        "anchor": "\"list_areas\""
       },
       {
@@ -4120,7 +4210,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 835,
+       "line": 838,
        "anchor": "DEFINITION_YAML_PATHS"
       }
      ]
@@ -4175,7 +4265,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 1758,
+       "line": 1792,
        "anchor": "\"disposition\": \"retired_delegated_read\""
       }
      ]
@@ -4314,7 +4404,7 @@
      "tool": "ha_search",
      "provider": "engineering native search (direct_ha_api Core reads + upstream_read_gateway search_subcall_reader pages)",
      "purpose_binding": "native-search-read-v1",
-     "admission": "Engineering-native (BETA_NATIVE ha_search); static Core route with the five search.core_contracts profiles under the request's Core lease; dashboard and flow-helper pages only through the internal-only ha_search 9.2.0 Row 25 route (never exposed or aliased); no delegated ha_mcp__ha_search and no fallback",
+     "admission": "Engineering-native (BETA_NATIVE ha_search); static Core route with the four search.core_contracts profiles under the request's Core lease; automation, script, scene, dashboard and flow-helper pages only through the internal-only ha_search 9.2.0 Row 25 route (never exposed or aliased); no delegated ha_mcp__ha_search and no fallback",
      "completeness": "partial",
      "detail": "Entity search (name, domain, area, state) and automation, script, scene, helper and dashboard configuration search in one call; 9.2.0 ha_search schema plus the search_types sentence; limit/offset paging; partial and partial_reasons report unsearched, truncated, filtered or unavailable sources; an unreadable source refuses instead of returning an empty result.",
      "refs": [
@@ -4823,7 +4913,7 @@
       },
       {
        "path": "tests/test_readonly_upstream_gateway.py",
-       "line": 1640,
+       "line": 1646,
        "anchor": "self.assertNotIn(\"ha_get_logs\", automatic)"
       }
      ]
@@ -5312,7 +5402,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4231,
+       "line": 4265,
        "anchor": "def history_reader"
       }
      ]
@@ -5473,7 +5563,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 850,
+       "line": 853,
        "anchor": "\"recorder_settings\": (YAML_CONFIG_PATHS"
       },
       {
@@ -7220,11 +7310,14 @@
   },
   "gateway_reader:search_subcall_reader": {
    "used_by": [
+    "automations",
+    "scripts",
+    "scenes",
     "dashboards_content",
     "helpers_options_supported",
     "helpers_options_other"
    ],
-   "note": "HAMCP-501: fixed ha_search dashboard and flow-helper sub-call pages on the internal-only 9.2.0 Row 25 route, read only by native ha_search (W6)."
+   "note": "HAMCP-501: fixed ha_search automation, script, scene, dashboard and flow-helper sub-call pages on the internal-only 9.2.0 Row 25 route, read only by native ha_search (W6; S1 b+ adds the automation, script and scene pages)."
   },
   "gateway_reader:yaml_config_reader": {
    "used_by": [
@@ -7514,7 +7607,7 @@
    }
   },
   "provider_registry": {
-   "fingerprint": "0472f6e53db30f9e01d1f2ee5db355fc77f8dc2105bb44e3449193c1782c63e3",
+   "fingerprint": "2f391243b28225a9086b2e0b6fe124766b44ccd68e7093e728dcef0bcaaa5c3a",
    "items": {
     "analytical_policy:automation_reliability_analysis": "94c8a4aabfe06038",
     "analytical_policy:automation_reliability_batch_analysis": "7233c3d17334b3e6",
@@ -7534,7 +7627,7 @@
     "analytical_policy:get_security_metadata": "77ed729169da7643",
     "analytical_policy:get_thread_matter_topology": "3bcb9754a1ba2abb",
     "analytical_policy:get_unregistered_entities": "b401c4783f904deb",
-    "analytical_policy:ha_search": "2d39aae2f071d600",
+    "analytical_policy:ha_search": "df91c6352460dba2",
     "analytical_policy:handoff_generation": "56fedd8926eb442c",
     "analytical_policy:incident_correlation": "294ec14845704317",
     "analytical_policy:list_script_traces": "91923db13fc390cc",
@@ -7583,7 +7676,7 @@
     "provider_matrix:ha_get_app": "a413244a16901b27",
     "provider_matrix:ha_get_integration": "2957899469f2bc3a",
     "provider_matrix:ha_get_system_health": "a1ce0ad9dd644c25",
-    "provider_matrix:ha_search": "a61146d8f3a31cce",
+    "provider_matrix:ha_search": "089312f1aed60185",
     "provider_matrix:handoff_generation": "a09ba7747e029885",
     "provider_matrix:incident_correlation": "333171d6247e731f",
     "provider_matrix:list_areas": "8f0fa6b1d409eabd",

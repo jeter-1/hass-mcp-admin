@@ -17,7 +17,8 @@ from ha_mcp_engineering.request_context import begin_request, end_request
 from ha_mcp_engineering.search import subcalls
 
 # One helper page; the sub-call pages are configuration-only.
-PAGE_ARGUMENTS = subcalls.page_arguments("helper", "synthetic", True, 0)
+PAGE_ARGUMENTS = subcalls.page_arguments("helper", "synthetic", True, 0,
+                                         subcalls.PAGE_SIZE_LADDER[0])
 # A synthetic endpoint whose parts occur in no page: a page the sanitizer
 # changed fails closed (W4 D2), and the default test endpoint's host occurs in
 # the Row 25 projection's own key names.

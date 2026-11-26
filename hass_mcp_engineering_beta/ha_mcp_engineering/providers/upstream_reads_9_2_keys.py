@@ -493,17 +493,20 @@ def bucket_withheld_names(payload: Any, bucket: str) -> frozenset:
     """The names Row 25 withholds from one ``ha_search`` bucket's records.
 
     HAMCP-501 W4 (decision D1, as relayed by the architect): the native search
-    dashboard and flow-helper sub-calls disclose the record fields Row 25
-    withheld from their pages. This is :func:`projection`'s distinct-name walk
-    over ``payload[bucket]`` only, so page-level names (``partial_reason``)
-    are not record names. A value of a type its key does not admit counts
-    under its own key. The names stay in Engineering's memory; a reply emits
-    only their count. Raises ``ValueError`` (``invalid_response``) on any
-    other shape.
+    sub-calls disclose the record fields Row 25 withheld from their pages. W6
+    S1 b+ (approved by Josh as relayed by the architect) adds the automation,
+    script and scene sub-calls to the dashboard and flow-helper ones. This is
+    :func:`projection`'s distinct-name walk over ``payload[bucket]`` only, so
+    page-level names (``partial_reason``) are not record names. A value of a
+    type its key does not admit counts under its own key. The names stay in
+    Engineering's memory; a reply emits only their count. Raises
+    ``ValueError`` (``invalid_response``) on any other shape.
     """
 
     row = ROWS["ha_search"]
-    if type(payload) is not dict or bucket not in ("dashboards", "helpers"):
+    if type(payload) is not dict or bucket not in (
+        "automations", "scripts", "scenes", "dashboards", "helpers",
+    ):
         raise ValueError("invalid_response")
     records = payload.get(bucket)
     if type(records) is not list:

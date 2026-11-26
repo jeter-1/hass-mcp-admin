@@ -13,7 +13,12 @@ least one test. The mutants remove or weaken a guard: argument validation,
 an authority check, the execute precondition, the D1 capture, the D2
 sanitizer rule, the D3 cross-check, the page's partial source, a paging or
 bucket rule, the factory's route rules, audit attribution, child request
-inheritance or the keys helper's bucket rule.
+inheritance, the keys helper's bucket rule, or (HAMCP-501 W6 S1, an
+architect decision) the page-size ladder: the ladder limit and aligned
+offset, the page's own size, the too-large flag the size bound alone sets,
+and the ``page_too_large`` signal, the scan's only step-down trigger. The
+per-type size's mutants (argument_size_one_type and result_size_one_type)
+went with the per-type size.
 
 The suite's AST reachability tests parse the files on disk, so a mutant does
 not reach them; every mutant in ``MUTANTS`` is killed by a behavior test.
@@ -65,7 +70,7 @@ MUTANTS = {
     # Page results: D3, the paging rules and the other buckets.
     "d3_flat_has_more_unchecked": (GATEWAY, "        or has_more is not flat_has_more\n", ""),
     "rows_unbounded": (
-        GATEWAY, "type(rows) is not list or len(rows) > SEARCH_SUBCALL_PAGE_SIZE", "type(rows) is not list"),
+        GATEWAY, "type(rows) is not list or len(rows) > size", "type(rows) is not list"),
     "partial_unchecked": (GATEWAY, "        or type(partial) is not bool\n", ""),
     "partial_from_metadata": (
         GATEWAY, '    partial = data.get("partial")\n',
@@ -75,7 +80,7 @@ MUTANTS = {
         GATEWAY, "if bucket != capture.bucket and data.get(bucket, []) != []:", "if False:"),
     "paging_unchecked": (GATEWAY, "    if not consistent:\n        raise SearchSubcallPageFailure", "    if False:\n        raise SearchSubcallPageFailure"),
     "short_page_claims_more": (
-        GATEWAY, "len(rows) == SEARCH_SUBCALL_PAGE_SIZE and offset + len(rows) < total",
+        GATEWAY, "len(rows) == size and offset + len(rows) < total",
         "offset + len(rows) < total"),
     "last_page_short_of_total": (
         GATEWAY, "consistent = offset + len(rows) == total or (not rows and offset >= total)",
@@ -83,8 +88,8 @@ MUTANTS = {
     "failure_category_dropped": (
         GATEWAY, 'category if type(category) is str else "invalid_response"', '"invalid_response"'),
     "capture_unchecked": (
-        GATEWAY, "if type(data) is not dict or type(capture.withheld_names) is not frozenset:",
-        "if type(data) is not dict:"),
+        GATEWAY, "type(data) is not dict or type(capture.withheld_names) is not frozenset\n",
+        "type(data) is not dict\n"),
     # The factory.
     "duplicate_route_allowed": (
         GATEWAY, '                if route.entry.upstream_name == "ha_search"\n'
@@ -177,20 +182,68 @@ MUTANTS = {
         "sanitation.truncated_field_count\n"),
     # bucket_withheld_names.
     "keys_bucket_unchecked": (
-        KEYS, 'if type(payload) is not dict or bucket not in ("dashboards", "helpers"):',
+        KEYS, 'if type(payload) is not dict or bucket not in (\n'
+              '        "automations", "scripts", "scenes", "dashboards", "helpers",\n    ):',
         "if type(payload) is not dict:"),
+    # HAMCP-501 W6 S1: the entity-type buckets are admitted.
+    "keys_entity_buckets_refused": (
+        KEYS, '"automations", "scripts", "scenes", "dashboards", "helpers",', '"dashboards", "helpers",'),
     "keys_records_unchecked": (
         KEYS, "    records = payload.get(bucket)\n    if type(records) is not list:\n        raise ValueError",
         "    records = payload.get(bucket) or []\n    if False:\n        raise ValueError"),
     "keys_admitted_counted": (
         KEYS, "for name in _names(records, row, set()) - row.admitted - row.drops\n",
         "for name in _names(records, row, set()) - row.drops\n"),
+    # HAMCP-501 W6 S1 (an architect decision): the page-size ladder.
+    "argument_size_any": (
+        GATEWAY, "or type(size) is not int or size not in SEARCH_SUBCALL_PAGE_SIZE_LADDER",
+        "or type(size) is not int or size < 1"),
+    "result_size_first": (
+        GATEWAY, 'page_arguments["offset"], page_arguments["limit"]\n',
+        'page_arguments["offset"], SEARCH_SUBCALL_PAGE_SIZE_LADDER[0]\n'),
+    "audit_limit_dropped": (
+        GATEWAY, '                                "limit": page_arguments["limit"],\n',
+        '                                "limit": None,\n'),
+    "too_large_flag_ignored": (
+        GATEWAY, '        if capture.too_large is True and category == "response_too_large":\n'
+        "            raise SearchSubcallPageTooLarge()\n", ""),
+    "too_large_without_flag": (
+        GATEWAY, 'capture.too_large is True and category == "response_too_large"',
+        'category == "response_too_large"'),
+    "too_large_any_category": (
+        GATEWAY, 'capture.too_large is True and category == "response_too_large"',
+        "capture.too_large is True"),
+    "too_large_not_step_down": (
+        GATEWAY, "class SearchSubcallPageTooLarge(SearchSubcallPageFailure, SearchPageTooLarge):",
+        "class SearchSubcallPageTooLarge(SearchSubcallPageFailure):"),
+    "too_large_category_dropped": (
+        GATEWAY, '{"provider_authority_changed", "page_too_large"}', '{"provider_authority_changed"}'),
+    "flagged_success_accepted": (
+        GATEWAY, "\n        or capture.too_large is not False\n    ):", "\n    ):"),
+    "preset_flag_accepted": (
+        GATEWAY, "                search_page.too_large is not False\n                or type(search_page.bucket)",
+        "                type(search_page.bucket)"),
+    "size_flag_unset": (
+        GATEWAY, "                        # HAMCP-501 W6 S1: the size bound alone refused the page.\n"
+        "                        search_page.too_large = True\n", "                        pass\n"),
+    "render_flag_unset": (
+        GATEWAY, "                if truncated:\n                    search_page.too_large = True\n",
+        "                if truncated:\n"),
+    "render_cut_served": (
+        GATEWAY, "                if truncated:\n                    search_page.too_large = True\n"
+        '                    raise _GatewayFailure("response_too_large", dispatched=True)\n'
+        "                return rendered\n", "                return rendered\n"),
+    "render_branch_skipped": (
+        GATEWAY, "            if search_page is not None:\n"
+        "                # HAMCP-501 W6 S1: a sub-call page is rendered",
+        "            if False:\n                # HAMCP-501 W6 S1: a sub-call page is rendered"),
 }
 
 EQUIVALENT = {
-    # ``page_arguments(..., offset // 150)`` carries an aligned offset, so the
-    # equality check that follows refuses any unaligned offset as well.
-    "offset_unaligned": (GATEWAY, "\n        or offset % SEARCH_SUBCALL_PAGE_SIZE\n", "\n"),
+    # ``page_arguments(..., offset // size, size)`` carries an offset that is
+    # a multiple of the ladder size, so the equality check that follows
+    # refuses any unaligned offset as well.
+    "offset_unaligned": (GATEWAY, "\n        or offset % size\n", "\n"),
 }
 
 

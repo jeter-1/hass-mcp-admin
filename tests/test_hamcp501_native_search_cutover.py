@@ -134,21 +134,23 @@ class NativeTests(NativeBase):
     """Through the registered tool, under the legacy 9.2.0 descriptor."""
 
     async def test_the_helper_scan_pages_under_the_native_request(self):
-        rows = [w4.flow(index, score=90 - index % 50) for index in range(320)]
+        rows = [w4.flow(index, score=90 - index % 5) for index in range(w4.PAGE + 32)]
         self.serve("helper", w4.pages_of("helper", rows))
+        pages = -(-len(rows) // w4.PAGE)
+        self.assertGreater(pages, 1)
         data = await self.ok(query="kitchen", search_types=["helper"])
-        self.assertEqual(self.sent(), [("ha_search", w4.arguments(page=page)) for page in range(3)])
-        self.assertEqual((data["config_total_matches"], len(data["helpers"])), (320, 10))
-        self.assertEqual(reasons_of(data), {("paged", "config", "more_matches"): 310})
+        self.assertEqual(self.sent(), [("ha_search", w4.arguments(page=page)) for page in range(pages)])
+        self.assertEqual((data["config_total_matches"], len(data["helpers"])), (w4.PAGE + 32, 10))
+        self.assertEqual(reasons_of(data), {("paged", "config", "more_matches"): w4.PAGE + 22})
         self.assertEqual(self.metadata["subcall_route"], "admitted")
         # D5 (a): every page carries the native request's authorizer.
-        self.assertEqual(len(self.children), 3)
+        self.assertEqual(len(self.children), pages)
         for child in self.children:
             self.assertIsNot(child, self.telemetry)
             self.assertEqual(child.tool_name, "search_subcall_page_read")
             self.assertIs(child.core_dispatch_authorizer, self.telemetry.core_dispatch_authorizer)
         self.assertEqual([(record["result_status"], record["failure_category"]) for record in self.audits()],
-                         [("success", None)] * 3)
+                         [("success", None)] * pages)
 
     async def test_the_dashboard_scan_withholds_row_25_names(self):
         rows = [w4.board(index, score=99 - index % 90) for index in range(400)]
@@ -178,11 +180,18 @@ class NativeTests(NativeBase):
         self.assertNotIn(MARKER, json.dumps(self.audits()))
 
     async def test_only_searched_sub_call_types_send_a_page(self):
-        await self.ok(query="kitchen", search_types=["automation"])
+        # HAMCP-501 W6 S1 b+ (approved by Josh as relayed by the architect):
+        # every configuration type pages through the gateway. X1: a domain
+        # intent skips configuration search without an explicit search_types.
+        await self.ok(query="kitchen", domain_filter="light")
         self.assertEqual(self.transport.calls, 0)
-        # The default types include helper but not dashboard.
-        await self.ok(query="kitchen")
+        await self.ok(query="kitchen", search_types=["helper"])
         self.assertEqual(self.sent(), [("ha_search", w4.arguments())])
+        self.transport.sent.clear()
+        # The default types are automation, script, scene and helper; not dashboard.
+        await self.ok(query="kitchen")
+        self.assertEqual(self.sent(), [("ha_search", w4.arguments(search_type))
+                                       for search_type in ("automation", "script", "scene", "helper")])
 
     async def test_an_unadmitted_sub_call_route_is_disclosed_with_zero_dispatch(self):
         with patch.object(search_module.SEARCH, "reader_factory", lambda: None):
@@ -248,10 +257,21 @@ class ScorerTests(NativeBase):
         self.assertEqual([(row["entity_id"], row["score"]) for row in data["entities"]], [("light.hall", 80)])
         data = await self.same("  VeRanda ", "veranda", exact_match=False)
         self.assertIn("light.porch", [row["entity_id"] for row in data["entities"]])
+        # HAMCP-501 W6 S1 b+: automation rows are the route's. A page carries
+        # the stripped query, as 9.2.0 strips it (``tools/tools_search.py``
+        # line 359, sha256 95a418bb...), and the route lowers it itself (legacy
+        # ``smart_search/_deep.py`` line 180, sha256 10c57f9f...).
+        morning = {"entity_id": "automation.morning", "friendly_name": "Morning routine", "score": 100,
+                   "match_in_name": True, "match_in_config": False, "match_in_references": False}
+        self.serve("automation", [w4.reply_of(w4.body("automation", [morning]))])
+        self.transport.sent.clear()
         data = await self.same("  MORNING Routine ", "morning routine", search_types=["automation"])
         self.assertEqual([row["entity_id"] for row in data["automations"]], ["automation.morning"])
+        self.assertEqual([value["query"] for _, value in self.sent()], ["MORNING Routine", "morning routine"])
         # The deep path: an entity-id-shaped query reads Core's search graph
-        # once, lowered and stripped (design section 8 step 5).
+        # once, lowered and stripped (design section 8 step 5). No page
+        # carries the automation, so its row is the graph's.
+        self.served.clear()
         self.calls.clear()
         data = await self.same("  LIGHT.KITCHEN ", "light.kitchen")
         related = self.batches("search/related")
@@ -474,8 +494,10 @@ class RoutedTests(NativeBase):
         return json.loads(rpc_result(response)["content"][0]["text"]), core, record, audit
 
     async def test_the_lease_is_the_static_route_and_every_page_carries_it(self):
-        rows = [w4.flow(index) for index in range(320)]
+        rows = [w4.flow(index) for index in range(w4.PAGE + 32)]
         self.serve("helper", w4.pages_of("helper", rows))
+        pages = -(-len(rows) // w4.PAGE)
+        self.assertGreater(pages, 1)
         result, core, record, _ = await self.post({"query": "kitchen", "search_types": ["helper"]})
         self.assertIs(result["success"], True, result)
         self.check_reply(result["data"])
@@ -494,7 +516,7 @@ class RoutedTests(NativeBase):
         ((parent, authorizer),) = self.parents
         self.assertEqual(authorizer.__qualname__.split(".")[0], "AuthenticatedMcpGateway")
         self.assertEqual(authorizer.__name__, "authorize_core_dispatch")
-        self.assertEqual(len(self.children), 3)
+        self.assertEqual(len(self.children), pages)
         for child in self.children:
             self.assertIs(child.core_dispatch_authorizer, authorizer)
             self.assertEqual(child.caller_id, parent.caller_id)
@@ -738,7 +760,10 @@ class ContractTests(unittest.TestCase):
 
     def test_the_routes_bind_the_native_reads_and_keep_the_sub_call_gate(self):
         self.assertEqual(routes.STATIC_TOOL_CORE_REQUIREMENTS["ha_search"], c.CORE_REQUIREMENTS)
-        self.assertEqual(len(c.CORE_REQUIREMENTS), 5)
+        # HAMCP-501 W6 S1 b+: search reads no configuration body, so it needs
+        # no automation configuration authority.
+        self.assertEqual(len(c.CORE_REQUIREMENTS), 4)
+        self.assertNotIn("core.automation_configuration_read", c.CORE_REQUIREMENTS)
         self.assertEqual(routes.INTERNAL_ONLY_DELEGATED_READS, frozenset({"ha_search"}))
         self.assertEqual(routes.DELEGATED_CORE_REQUIREMENTS["ha_search"], (SUBCALL_REQUIREMENT,))
         self.assertIn("ha_search", routes.DEVICE_DEPENDENT_DELEGATED_TOOLS)

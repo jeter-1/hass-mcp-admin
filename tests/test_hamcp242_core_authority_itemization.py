@@ -245,10 +245,10 @@ EXPECTED_LIVE_WITHHELD = [
 # F3/apply-time profile).
 EXPECTED_AFFECTED_TOOLS = {
     "core.automation_baseline_metadata_read": ["capture_automation_baseline"],
+    # HAMCP-501 W6 S1 b+: native ha_search reads no automation configuration.
     "core.automation_configuration_read": [
         "capture_automation_baseline",
         "get_automation_config",
-        "ha_search",  # HAMCP-501 W6
         "list_automations",
     ],
     "core.automation_trace_read": [

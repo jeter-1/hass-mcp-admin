@@ -127,11 +127,11 @@ REASON_CODES = {
     "paged": frozenset({"response_budget", "more_matches"}),
     "truncated": frozenset({"record_strings", "record_lists", "query_echo", "domain_filter_echo"}),
     "filtered": frozenset({"sanitizer_redaction", "config_bodies_withheld"}),
-    "not_searched": frozenset({
-        "time_budget", "read_failed", "not_readable", "upstream_partial", "graph_unavailable",
-    }),
+    "not_searched": frozenset({"read_failed", "upstream_partial", "graph_unavailable"}),
     "source_unavailable": frozenset({
-        "dashboard_subcall_incomplete", "helper_subcall_incomplete", "subcall_not_admitted",
+        "automation_subcall_incomplete", "script_subcall_incomplete",
+        "scene_subcall_incomplete", "dashboard_subcall_incomplete",
+        "helper_subcall_incomplete", "subcall_not_admitted",
         "malformed_state_row", "area_registry", "floor_registry", "label_registry",
         "device_registry", "entity_aliases",
     }),

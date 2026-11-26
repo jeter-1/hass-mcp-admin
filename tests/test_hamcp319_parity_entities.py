@@ -565,7 +565,8 @@ class Parity92Tests(ParityBase):
     # tests.test_hamcp501_native_search_cutover). These Row 24 projection,
     # disclosure and refusal guards now run on the internal-only route, as a
     # sub-call page with the fixed page arguments (see ParityBase.call).
-    PAGE = subcalls.page_arguments('helper', 'synthetic lamp', True, 0)
+    PAGE = subcalls.page_arguments('helper', 'synthetic lamp', True, 0,
+                                   subcalls.PAGE_SIZE_LADDER[0])
 
     async def test_92_parity_row_24_search_is_internal_only(self):
         # Never published, never a direct read: zero dispatch either way.
@@ -881,7 +882,7 @@ class F3ReplayTests(ParityBase):
             # HAMCP-501 W6 (G1): the frozen receipt replays through the
             # internal-only route as a sub-call page (config-only arguments);
             # native entity search's hidden handling is the W3 engine's.
-            args = subcalls.page_arguments('helper', query, True, 0)
+            args = subcalls.page_arguments('helper', query, True, 0, subcalls.PAGE_SIZE_LADDER[0])
             result = await self.call('ha_search', args, record)
             self.assert_sent('ha_search', args)
             self.assertTrue(result['success'], result)

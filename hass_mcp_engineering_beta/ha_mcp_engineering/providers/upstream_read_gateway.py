@@ -46,6 +46,7 @@ from ..mcp_sdk_compatibility import (
     install_catalog_generation_gate,
 )
 from ..models import FailureResponse, SuccessResponse, Timing, dump_json
+from ..models.responses import dump_json_with_truncation
 from ..ha_mcp_readmission import (
     CapabilityAdmissionCoordinator,
     DecisionGeneration,
@@ -83,8 +84,9 @@ from ..sanitization import (
 from ..search.subcalls import (
     BUCKETS as SEARCH_SUBCALL_BUCKETS,
     MAX_SCAN_ROWS as SEARCH_SUBCALL_MAX_ROWS,
-    PAGE_SIZE as SEARCH_SUBCALL_PAGE_SIZE,
+    PAGE_SIZE_LADDER as SEARCH_SUBCALL_PAGE_SIZE_LADDER,
     PageResult as SearchPageResult,
+    PageTooLarge as SearchPageTooLarge,
     page_arguments as search_page_arguments,
 )
 from ..tool_framework import timing_since
@@ -281,9 +283,10 @@ _FAILURE_CATEGORIES = frozenset(
     }
 )
 # HAMCP-501 W6 (F2): the fixed failure codes a native search sub-call page may
-# carry: a gateway failure category, or the reader's own authority refusal.
+# carry: a gateway failure category, the reader's own authority refusal, or
+# (S1) a page the reply size bound alone refused.
 _SEARCH_PAGE_FAILURE_CATEGORIES = _FAILURE_CATEGORIES | frozenset(
-    {"provider_authority_changed"}
+    {"provider_authority_changed", "page_too_large"}
 )
 # Exact codes from the compiled, reviewed ha-mcp 7.14.1 profile. They select
 # Engineering-owned categories only; upstream messages, metadata, suggestions,
@@ -886,9 +889,11 @@ class HistoryReader:
 class SearchSubcallReader:
     """One fixed admitted ``ha_search`` generation for native search sub-calls.
 
-    HAMCP-501 W4: ``readers`` maps ``dashboard`` and ``helper`` to a page
-    reader that takes exactly the fixed page arguments and returns one
-    ``search.subcalls.PageResult`` or raises.
+    HAMCP-501 W4: ``readers`` maps each sub-call type in
+    ``search.subcalls.SUBCALL_TYPES`` (automation, script, scene, dashboard
+    and flow helper since W6 S1 b+) to a page reader that takes exactly the
+    fixed page arguments and returns one ``search.subcalls.PageResult`` or
+    raises.
     """
 
     readers: MappingProxyType
@@ -918,14 +923,28 @@ class SearchSubcallPageFailure(Exception):
         self.category = fixed
 
 
-class _SearchPageCapture:
-    """HAMCP-501 W4 (D1): one sub-call page's withheld names, in memory only."""
+class SearchSubcallPageTooLarge(SearchSubcallPageFailure, SearchPageTooLarge):
+    """HAMCP-501 W6 S1: a page the reply size bound alone refused.
 
-    __slots__ = ("bucket", "withheld_names")
+    Raised only from the page capture's ``too_large`` flag, which the size
+    branches set, never from a page's text or another category; the scan
+    reads the page's span again at the next ladder size.
+    """
+
+    def __init__(self) -> None:
+        super().__init__("page_too_large")
+
+
+class _SearchPageCapture:
+    """HAMCP-501 W4 (D1): one sub-call page's withheld names, and (W6 S1)
+    whether the reply size bound alone refused it, in memory only."""
+
+    __slots__ = ("bucket", "withheld_names", "too_large")
 
     def __init__(self, bucket: str) -> None:
         self.bucket = bucket
         self.withheld_names: frozenset | None = None
+        self.too_large = False
 
 
 # The record buckets of a 9.2.0 ``ha_search`` reply. On a sub-call page every
@@ -940,22 +959,26 @@ _SEARCH_PAGE_TYPES = MappingProxyType({
 
 
 def _search_page_arguments(search_type: str, arguments: Any) -> dict[str, Any] | None:
-    """A fresh copy of exactly ``search_page_arguments(...)``, or None."""
+    """A fresh copy of exactly ``search_page_arguments(...)``, or None.
+
+    The limit is a ``PAGE_SIZE_LADDER`` size and the offset a multiple of it
+    (HAMCP-501 W6 S1); any other limit or offset is refused.
+    """
 
     if type(arguments) is not dict:
         return None
     query = arguments.get("query")
     exact_match = arguments.get("exact_match")
     offset = arguments.get("offset")
+    size = arguments.get("limit")
     if (
         type(query) is not str or not query.strip() or type(exact_match) is not bool
+        or type(size) is not int or size not in SEARCH_SUBCALL_PAGE_SIZE_LADDER
         or type(offset) is not int or not 0 <= offset < SEARCH_SUBCALL_MAX_ROWS
-        or offset % SEARCH_SUBCALL_PAGE_SIZE
+        or offset % size
     ):
         return None
-    expected = search_page_arguments(
-        search_type, query, exact_match, offset // SEARCH_SUBCALL_PAGE_SIZE
-    )
+    expected = search_page_arguments(search_type, query, exact_match, offset // size, size)
     if set(arguments) != set(expected) or arguments != expected:
         return None
     if any(type(arguments[key]) is not type(value) for key, value in expected.items()):
@@ -966,25 +989,32 @@ def _search_page_arguments(search_type: str, arguments: Any) -> dict[str, Any] |
 
 
 def _search_page_result(
-    result: Any, capture: _SearchPageCapture, offset: int
+    result: Any, capture: _SearchPageCapture, offset: int, size: int
 ) -> SearchPageResult:
     """The scan's ``PageResult`` from one successful projected page.
 
     ``partial`` is the projected ``partial`` field, never the delegated
     completeness overlay. Paging follows ``config_has_more``, which must equal
-    the flat ``has_more`` (D3). A page that claims more rows is full and ends
-    before the total, so the next offset neither skips nor repeats a row; a
-    last page ends at the total.
+    the flat ``has_more`` (D3). A page that claims more rows is full (its
+    ``size``, the validated limit) and ends before the total, so the next
+    offset neither skips nor repeats a row; a last page ends at the total.
+    A failure the reply size bound alone caused, as the capture's flag
+    records it, is ``SearchSubcallPageTooLarge`` (HAMCP-501 W6 S1).
     """
 
     if type(result) is not dict or result.get("success") is not True:
         details = result.get("details") if type(result) is dict else None
         category = details.get("failure_category") if type(details) is dict else None
+        if capture.too_large is True and category == "response_too_large":
+            raise SearchSubcallPageTooLarge()
         raise SearchSubcallPageFailure(
             category if type(category) is str else "invalid_response"
         )
     data = result.get("data")
-    if type(data) is not dict or type(capture.withheld_names) is not frozenset:
+    if (
+        type(data) is not dict or type(capture.withheld_names) is not frozenset
+        or capture.too_large is not False
+    ):
         raise SearchSubcallPageFailure("invalid_response")
     rows = data.get(capture.bucket)
     partial = data.get("partial")
@@ -992,7 +1022,7 @@ def _search_page_result(
     flat_has_more = data.get("has_more")
     total = data.get("config_total_matches")
     if (
-        type(rows) is not list or len(rows) > SEARCH_SUBCALL_PAGE_SIZE
+        type(rows) is not list or len(rows) > size
         or type(partial) is not bool
         or type(has_more) is not bool or type(flat_has_more) is not bool
         or has_more is not flat_has_more
@@ -1004,7 +1034,7 @@ def _search_page_result(
             raise SearchSubcallPageFailure("invalid_response")
     if has_more:
         consistent = (
-            len(rows) == SEARCH_SUBCALL_PAGE_SIZE and offset + len(rows) < total
+            len(rows) == size and offset + len(rows) < total
         )
     else:
         consistent = offset + len(rows) == total or (not rows and offset >= total)
@@ -4317,15 +4347,22 @@ class UpstreamReadGateway:
         """Capture the admitted ``ha_search`` route for native search sub-calls.
 
         HAMCP-501 W4 (HAMCP-481 design sections 2.4 to 2.6): one page reader
-        each for the dashboard and flow-helper sub-calls. A page takes exactly
-        the fixed ``search.subcalls.page_arguments``; anything else is refused
-        before dispatch. Each page passes the gateway's argument validation,
-        live catalog revalidation, Core gate, Row 25 projection, sanitizer and
-        size check unchanged, with the parent request's authority rechecked at
-        dispatch; a page with no parent request or no parent authorizer is
-        refused before any request starts. A page the sanitizer redacted or bounded fails (D2). A
-        failure raises ``SearchSubcallPageFailure``. Only the 9.2.0 Row 25
-        projection is accepted. No fallback and no other upstream tool.
+        for each sub-call type in ``search.subcalls.SUBCALL_TYPES``
+        (automation, script, scene, dashboard and flow helper; W6 S1 b+). A
+        page takes exactly the fixed ``search.subcalls.page_arguments`` at a
+        size in ``search.subcalls.PAGE_SIZE_LADDER``, its offset a multiple
+        of its size (W6 S1); anything else is refused before dispatch. Each
+        page passes the gateway's argument validation, live catalog
+        revalidation, Core gate, Row 25 projection, sanitizer and size check
+        unchanged, with the parent request's authority rechecked at dispatch;
+        a page with no parent request or no parent authorizer is refused
+        before any request starts. A page the sanitizer redacted or bounded
+        fails (D2). A failure raises ``SearchSubcallPageFailure``; a page
+        whose data exceeds the size check, or whose escaped reply exceeds the
+        render bound, raises its subclass ``SearchSubcallPageTooLarge``
+        (category ``page_too_large``), the scan's only step-down signal. Only
+        the 9.2.0 Row 25 projection is accepted. No fallback and no other
+        upstream tool.
         """
 
         with self._lock:
@@ -4383,7 +4420,9 @@ class UpstreamReadGateway:
                     ))
                     if not current() or not telemetry.authorize_core_dispatch():
                         raise SearchSubcallPageFailure("provider_authority_changed")
-                    page = _search_page_result(result, capture, page_arguments["offset"])
+                    page = _search_page_result(
+                        result, capture, page_arguments["offset"], page_arguments["limit"]
+                    )
                     status = "success"
                     return page
                 except SearchSubcallPageFailure as failure:
@@ -4402,6 +4441,7 @@ class UpstreamReadGateway:
                                 "provider": PROVIDER_ID, "upstream_tool": "ha_search",
                                 "search_type": search_type,
                                 "offset": page_arguments["offset"],
+                                "limit": page_arguments["limit"],
                                 "upstream_version": route.server_version,
                                 "contract_fingerprint": route.contract_fingerprint,
                                 "result_status": status,
@@ -4479,7 +4519,8 @@ class UpstreamReadGateway:
                 # HAMCP-501 W4: a sub-call page is only the 9.2.0 Row 25 route.
                 raise _GatewayFailure("prohibited_delegation", dispatched=False)
             if search_page is not None and (
-                type(search_page.bucket) is not str
+                search_page.too_large is not False
+                or type(search_page.bucket) is not str
                 or search_page.bucket not in _SEARCH_PAGE_TYPES
                 or _search_page_arguments(_SEARCH_PAGE_TYPES[search_page.bucket], arguments)
                 is None
@@ -4774,6 +4815,9 @@ class UpstreamReadGateway:
                     ).encode("utf-8")
                 )
                 if encoded_size + 8_000 > response_limit:
+                    if search_page is not None:
+                        # HAMCP-501 W6 S1: the size bound alone refused the page.
+                        search_page.too_large = True
                     raise _GatewayFailure("response_too_large", dispatched=True)
                 upstream_partial, completeness_warnings = _upstream_completeness(
                     policy_entry, sanitation.value
@@ -4876,6 +4920,17 @@ class UpstreamReadGateway:
                         "sanitization_failed", dispatched=True
                     ) from None
                 return dump_json(sealed_body, limit=response_limit)
+            if search_page is not None:
+                # HAMCP-501 W6 S1: a sub-call page is rendered as every reply
+                # is, and one the bound would cut fails as too large instead of
+                # reaching its reader cut. The flag is the branch taken.
+                rendered, truncated = dump_json_with_truncation(
+                    success.as_dict(), response_limit
+                )
+                if truncated:
+                    search_page.too_large = True
+                    raise _GatewayFailure("response_too_large", dispatched=True)
+                return rendered
             return success.to_json(response_limit)
         except _GatewayFailure as exc:
             mapping = route_context.get("mapping")

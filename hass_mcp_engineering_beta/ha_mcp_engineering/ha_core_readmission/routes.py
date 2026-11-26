@@ -326,12 +326,13 @@ STATIC_TOOL_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     # HAMCP-476: GET /api/logbook and, in all mode, GET /api/states.
     "get_automation_run_counts": ("core.basic_rest_read",),
     # HAMCP-501 W6: native ha_search reads exactly search.core_contracts.READS
-    # (CORE_REQUIREMENTS; a test pins the equality).  Its dashboard and
-    # flow-helper sub-call pages keep the delegated route's own requirement
-    # (DELEGATED_CORE_REQUIREMENTS["ha_search"], G2).
+    # (CORE_REQUIREMENTS; a test pins the equality).  Its automation, script,
+    # scene, dashboard and flow-helper sub-call pages keep the delegated
+    # route's own requirement (DELEGATED_CORE_REQUIREMENTS["ha_search"], G2);
+    # S1 b+ dropped the automation, script and scene configuration reads.
     "ha_search": (
         "core.basic_rest_read", "core.basic_websocket_read", "core.non_device_registry_read",
-        "core.direct_device_registry_read", "core.automation_configuration_read",
+        "core.direct_device_registry_read",
     ),
     "get_logbook": ("core.basic_rest_read",),
     "get_error_log": ("core.basic_websocket_read",),

@@ -1,4 +1,5 @@
-"""Sequential fixed Core reads with fail-closed projection (HAMCP-481 W2).
+"""Sequential fixed Core reads with fail-closed projection (HAMCP-481 W2;
+HAMCP-501 W6 S1: no automation, script or scene body read).
 
 A ``CoreReadSession`` is opened for a declared set of reads from
 ``core_contracts.READS``. Opening it checks the Core route authority of
@@ -26,7 +27,6 @@ from types import MappingProxyType
 from typing import Any, Awaitable, Callable
 
 from ..clients.paths import rest_path
-from ..clients.rest import ExpectedHttpStatus
 from ..entity_ids import STRICT_ENTITY_ID
 from ..errors import (
     AuthorizationError,
@@ -86,8 +86,6 @@ def rest_route(name: str, *values: str):
 
     if name == "states" and not values:
         return rest_path("/states")
-    if name == "scene_config" and len(values) == 1:
-        return rest_path("/config/scene/config/{}", *values)
     raise c.CoreReadError("invalid_arguments")
 
 
@@ -172,21 +170,6 @@ def project_rows(name: str, raw: Any) -> ReadResult:
     return _finished(name, MappingProxyType(rows), partial, dropped)
 
 
-def project_config(name: str, outcome: Any) -> ReadResult:
-    """One ``automation/config`` or ``script/config`` batch outcome."""
-
-    if type(outcome) is not tuple or len(outcome) != 2:
-        return _unavailable(name, "invalid_response")
-    ok, value = outcome
-    if ok is not True:
-        if ok is False and value == "not_found":
-            return ReadResult(name, c.NOT_FOUND, "not_found")
-        return _unavailable(name, "command_failed")
-    if type(value) is not dict or type(value.get("config")) is not dict:
-        return _unavailable(name, "invalid_response")
-    return _finished(name, value["config"], {"field_drift"} if set(value) != {"config"} else set())
-
-
 def project_related(outcome: Any) -> ReadResult:
     """One ``search/related`` batch outcome: the modelled buckets only."""
 
@@ -211,15 +194,6 @@ def project_related(outcome: Any) -> ReadResult:
             buckets[item_type] = INVALID
             partial.add("field_drift")
     return _finished(name, MappingProxyType(buckets), partial)
-
-
-def project_scene_config(raw: Any) -> ReadResult:
-    name = "scene_config"
-    if isinstance(raw, ExpectedHttpStatus) and raw.status == 404:
-        return ReadResult(name, c.NOT_FOUND, "not_found")
-    if type(raw) is not dict:
-        return _unavailable(name, "invalid_response")
-    return _finished(name, raw, set())
 
 
 def _aliases(entry: dict) -> Any:
@@ -348,10 +322,10 @@ class CoreReadSession:
         return self._record(_unavailable(name, reason) if reason else project_rows(name, raw))
 
     async def batch(self, name: str, items) -> ReadResult:
-        """``automation/config``, ``script/config`` or ``search/related``,
-        one pipelined payload per item; each item keeps its own outcome."""
+        """``search/related``, one pipelined payload per item; each item keeps
+        its own outcome."""
 
-        read = self._declared(name, "related" if name == "search_related" else "config")
+        self._declared(name, "related")
         items = tuple(items) if type(items) in (tuple, list) else None
         if (items is None or len(items) > c.MAX_BATCH_ITEMS
                 or not all(type(item) is str for item in items) or len(set(items)) != len(items)):
@@ -365,9 +339,7 @@ class CoreReadSession:
             return self._record(_unavailable(name, reason))
         if type(raw) is not list or len(raw) != len(items):
             return self._record(_unavailable(name, "invalid_response"))
-        project = project_related if read.shape == "related" else (
-            lambda outcome: project_config(name, outcome))
-        outcomes = {item: project(outcome) for item, outcome in zip(items, raw)}
+        outcomes = {item: project_related(outcome) for item, outcome in zip(items, raw)}
         failed = sum(1 for outcome in outcomes.values() if outcome.status == c.UNAVAILABLE)
         if failed == len(items):
             return self._record(_unavailable(name, "command_failed"))
@@ -375,14 +347,6 @@ class CoreReadSession:
         if any(outcome.status == c.PARTIAL for outcome in outcomes.values()):
             partial.add("field_drift")
         return self._record(_finished(name, None, partial, items=outcomes))
-
-    async def scene_config(self, config_id: str) -> ReadResult:
-        read = self._declared("scene_config", "mapping")
-        if type(config_id) is not str or read.argument.fullmatch(config_id) is None:
-            raise c.CoreReadError("invalid_arguments")
-        raw, reason = await self._dispatch(lambda: self.rest_client.request(
-            "GET", rest_route(read.name, config_id), expected_statuses=frozenset({404})))
-        return self._record(_unavailable(read.name, reason) if reason else project_scene_config(raw))
 
     async def entity_entries(self, entity_ids) -> ReadResult:
         """Registry aliases by entity, in chunks of ``GET_ENTRIES_CHUNK``.

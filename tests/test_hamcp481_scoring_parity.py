@@ -291,7 +291,8 @@ class ReachabilityTests(unittest.TestCase):
                 "ha_mcp_engineering.search.core_reads.CoreReadSession")),
             ("ha_mcp_engineering/providers/upstream_read_gateway.py", (
                 subcalls, f"{subcalls}.BUCKETS", f"{subcalls}.MAX_SCAN_ROWS",
-                f"{subcalls}.PAGE_SIZE", f"{subcalls}.PageResult", f"{subcalls}.page_arguments")),
+                f"{subcalls}.PAGE_SIZE_LADDER", f"{subcalls}.PageResult",
+                f"{subcalls}.PageTooLarge", f"{subcalls}.page_arguments")),
             ("ha_mcp_engineering/tools/search.py", (
                 "ha_mcp_engineering.search", "ha_mcp_engineering.search.engine")),
             ("ha_mcp_engineering/tools/search.py", (
