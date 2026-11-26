@@ -32,8 +32,10 @@ device's ``next_name_part`` 735-738 and the child device's 884-889, whose row
 carries no manufacturer or model (891-910).
 
 The golden calls B2a to B7 are the beta.13 baseline's reads (HA Admin,
-2026-11-25), on a synthetic house shaped like it: no live data and no live
-Home Assistant. The scorer's own goldens are
+2026-11-25). The house reuses the entity IDs and order the baseline reports;
+the other entities, the states, the registry rows, the devices and the
+configuration bodies are synthetic, and no test reads live Home Assistant.
+The scorer's own goldens are
 ``docs/evidence/hamcp481/fixtures/component-scoring-golden.json``
 (``tests/test_hamcp481_scoring_parity.py``).
 """
@@ -128,15 +130,15 @@ OTHERS = (
 HOUSE = (*LIGHTS, *LEAKS, *OTHERS)
 HOUSE_BODIES = {
     "automation.master_bathroom_josh_shower_off": {
-        "id": "1735420771600", "alias": "Master Bathroom Josh Shower Off",
+        "id": "shower_off", "alias": "Master Bathroom Josh Shower Off",
         "triggers": [{"trigger": "state", "entity_id": DOOR, "to": "on"}],
         "actions": [{"action": "light.turn_off", "target": {"entity_id": "light.corner_lamp"}}]},
     "automation.master_bathroom_josh_shower_time": {
-        "id": "1735420771599", "alias": "Master Bathroom Josh Shower Time",
+        "id": "shower_time", "alias": "Master Bathroom Josh Shower Time",
         "triggers": [{"trigger": "state", "entity_id": DOOR, "to": "off"}],
         "actions": [{"action": "light.turn_on", "target": {"entity_id": "light.corner_lamp"}}]},
     "automation.porch_at_dusk": {
-        "id": "1735420771601", "alias": "Porch at dusk",
+        "id": "porch_at_dusk", "alias": "Porch at dusk",
         "triggers": [{"trigger": "sun", "event": "sunset"}],
         "actions": [{"action": "light.turn_on", "target": {"entity_id": "light.back_porch_floodlight"}}]},
 }
