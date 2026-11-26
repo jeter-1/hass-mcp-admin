@@ -33,6 +33,9 @@ from ha_mcp_engineering.providers.upstream_read_gateway import (  # noqa: E402
     _compare_held_tool_contract,
 )
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
+from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
+    INTERNAL_ONLY_DELEGATED_READS,
+)
 from ha_mcp_engineering.capabilities import (  # noqa: E402
     capability_for_tool,
     dynamic_upstream_capabilities,
@@ -83,6 +86,9 @@ CURRENT_TAXONOMY_FIXTURE = json.loads(
 # ha_get_app, ha_get_integration). ha_get_hacs_info is already ``unsupported``
 # in the 9.2.0 policy, so the HAMCP-290 retirement subtracts nothing here.
 READ_ROUTES_920 = 27
+# HAMCP-501 W6 (G1, as relayed by the architect): ha_search is one of the 27
+# matched read routes but is admitted internal-only for the native search.
+EXPOSED_READ_ROUTES_920 = READ_ROUTES_920 - len(INTERNAL_ONLY_DELEGATED_READS)
 
 
 def captured_tools(version: str = CURRENT_VERSION) -> list[dict]:
@@ -154,6 +160,8 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
         snapshot = {
             "held_classifications": held_classifications,
             "held_canary_routes": tuple(sorted(gateway._held_canaries)),
+            # HAMCP-501 W6: a canary never mutates the internal-only routes.
+            "internal_routes": tuple(sorted(gateway._internal.items())),
             "registered_dynamic_tools": registered_dynamic_tools,
             "dynamic_capabilities": dynamic_capabilities,
             "admission_generation": gateway._admission_generation,
@@ -184,10 +192,11 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
             held_classifications,
             (("ha_get_operation_status", "held_for_canary"),),
         )
-        self.assertEqual(len(registered_dynamic_tools), READ_ROUTES_920)
-        self.assertIn("ha_search", registered_dynamic_tools)
+        self.assertEqual(len(registered_dynamic_tools), EXPOSED_READ_ROUTES_920)
+        self.assertNotIn("ha_search", registered_dynamic_tools)
+        self.assertEqual(set(gateway._internal), set(INTERNAL_ONLY_DELEGATED_READS))
         self.assertNotIn("ha_get_operation_status", registered_dynamic_tools)
-        self.assertEqual(len(dynamic_capabilities), READ_ROUTES_920)
+        self.assertEqual(len(dynamic_capabilities), EXPOSED_READ_ROUTES_920)
         self.assertTrue(
             all(
                 item["operation_class"] == "automatic_read"
@@ -293,7 +302,9 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(transport.calls, [])
         self.assertEqual(transport.attempts, [])
-        self.assertIn("ha_search", registered_tools(server))
+        # HAMCP-501 W6: the route stays admitted, internal-only.
+        self.assertNotIn("ha_search", registered_tools(server))
+        self.assertIn("ha_search", gateway._internal)
         self.assertNotIn("ha_get_operation_status", registered_tools(server))
         self.assertEqual(
             self.admission_surface_snapshot(gateway, server),
@@ -388,7 +399,7 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(evidence["promotion_performed"])
                 self.assertFalse(evidence["fallback_occurred"])
                 self.assertNotIn("ha_get_operation_status", registered_tools(server))
-                expected_reads = READ_ROUTES_920
+                expected_reads = EXPOSED_READ_ROUTES_920
                 self.assertEqual(
                     gateway.health_snapshot()["dynamically_exposed_count"],
                     expected_reads,
