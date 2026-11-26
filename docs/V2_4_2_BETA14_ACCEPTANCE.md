@@ -50,7 +50,12 @@ final release pull request binds their evidence.
 | HAMCP-497, HAMCP-498 | `get_server_health` `server.build_sha` and `build_dirty`; `release_registry` `last_refresh_at` and `refresh_interval_seconds`; a Core-bound refusal in an open Core restart window is retryable and names the window | landed (#512); `tests/test_hamcp497_health_build_identity.py`, `tests/test_hamcp498_core_restart_retryable.py` |
 | HAMCP-508 | Bounded reads disclosed: list tools `total` and `truncated`; incident row bounds partial with `items_withheld` and `items_malformed`, and omitted-count keys; dependency indirect-walk gap and full dynamic count; `list_automation_traces` object reply (breaking: `traces`, `returned`, `source_truncated`, `retention`), with a full default ring at six runs and the oldest run absent | landed (#515); `tests/test_hamcp508_incomplete_results.py` |
 | HAMCP-505 | The Core-evidence pull request acceptance target taken from the support window's current Core (2026.11.3). CI scripts and tests only | landed (#514) |
-| HAMCP-481 (built as HAMCP-501) | Native search (entities, automations and scripts). W1 to W3 landed inert; W4 and the W6 cutover [fill: state after W6]; W7 writes the native search rows | W1 landed (#506), W2 landed (#507), W3 landed (#513), W4 [fill: #516], W6 [fill], W7 [fill] |
+| HAMCP-481 W1 (built as HAMCP-501) | Native search scoring port, inert: no tool imports it | landed (#506) |
+| HAMCP-481 W2 | Native search fixed Core reads, inert | landed (#507) |
+| HAMCP-481 W3 | Native search engine, inert | landed (#513) |
+| HAMCP-481 W4 | Native search page readers | [fill: #516 state] |
+| HAMCP-481 W6 | The `ha_search` cutover to native search | [fill: PR and state] |
+| HAMCP-481 W7 | Native search docs rows | [fill: PR and state] |
 
 ## 1. Source and offline acceptance
 
@@ -111,8 +116,9 @@ which steps are reads.
      automation that ran more than 5 times in the lookback (chosen first with
      `get_automation_run_counts`, also a read) reports `collection_state`
      `retention_limited`, a partial source, `retention_coverage` `partial`
-     and a warning naming `trace.stored_traces`; a root cause, if any,
-     carries `affected_step`.
+     and a warning naming `trace.stored_traces`. Each summary root cause, if
+     any, carries `affected_step`, and a disabled automation's group, if the
+     scope includes one, reports `current_state` `disabled`, not `null`.
    - **HAMCP-503 TB-3.** `set_automation_trace_watch` with `action` `list`
      only: each watch row carries `retention_gap_polls` and
      `last_retention_gap_at` (`null` is valid). With no watch, record that and

@@ -31,11 +31,14 @@ release pull request completes this entry.
   is copied at sequence 19, which signs 2026.11.3 with the same 38 profiles
   as 2026.11.0; and the support window rotates to 2026.11.3 current and
   2026.11.0 rollback, with the Core candidate empty.
-- Native search (HAMCP-481, built as HAMCP-501; plan approved 2026-11-25):
-  the scoring port (W1, #506), the fixed Core reads (W2, #507) and the
-  engine (W3, #513) have landed inert: no tool imports them yet. The page
-  readers (W4, [fill: #516]) and the `ha_search` cutover (W6, [fill]) are
-  [fill: state after W6]. The tool keeps the name `ha_search`.
+- Native search (HAMCP-481, built as HAMCP-501; plan approved 2026-11-25).
+  The tool keeps the name `ha_search`.
+  - Landed inert, so no tool imports it yet: the scoring port (W1, #506).
+  - Landed inert: the fixed Core reads (W2, #507).
+  - Landed inert: the engine (W3, #513).
+  - The page readers (W4, #516): [fill: state].
+  - The `ha_search` cutover (W6, [fill: PR]): [fill: state].
+  - The native search docs rows (W7, [fill: PR]): [fill: state].
 - Landed: the Core-evidence workflow takes its pull request acceptance
   target from the support window's current Core, 2026.11.3, instead of a
   fixed 2026.11.0 (HAMCP-505, #514). CI scripts and tests only; no runtime
