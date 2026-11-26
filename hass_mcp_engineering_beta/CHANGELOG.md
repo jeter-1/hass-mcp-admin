@@ -33,7 +33,7 @@ release pull request completes this entry.
   2026.11.0 rollback, with the Core candidate empty.
 - Native search (HAMCP-481, built as HAMCP-501; plan approved 2026-11-25).
   The tool keeps the name `ha_search`.
-  - Landed inert, so no tool imports it yet: the scoring port (W1, #506).
+  - Landed inert, so at W1 no tool imported it: the scoring port (W1, #506).
   - Landed inert: the fixed Core reads (W2, #507).
   - Landed inert: the engine (W3, #513).
   - Landed inert: the page readers (W4, #516). W6 fixed their page check,

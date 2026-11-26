@@ -105,10 +105,17 @@ which steps are reads.
      `release_registry` reports `last_refresh_at` (a UTC time after the
      deploy) and `refresh_interval_seconds`.
    - **HAMCP-502.** `get_history` for one busy entity over about 30 hours
-     ending now returns the full span, with its first change near the window
-     start rather than cut at 24 hours; `get_history_slices` over the same
-     entity and window gives the same change count and the same first and
-     last change times.
+     ending now: when the payload fits, the latest `last_changed` is near now
+     (a read cut at 24 hours ends about 6 hours early); when
+     `metadata.truncated` is true, `metadata.total_states` counts the whole
+     window and `metadata.continuation` names `get_history_slices` from
+     `metadata.cursor`. `get_history_slices` over the same entity and window,
+     following `next_cursor` until `has_more` is false, ends with
+     `coverage.complete_until.at` equal to `window.end`; if the read stops
+     with `continuation_verification_limit`, a new read starts at
+     `coverage.complete_until`. Change counts are compared only where both
+     sides name the same total, never one `get_history` prefix against one
+     slices page.
    - **HAMCP-490, HAMCP-491.** `configuration_integrity_analysis` with
      `detail_level` `compact`, followed by `next_cursor` to the end: every
      `finding_id` is unique across the pages, and `counter_semantics` labels
@@ -155,9 +162,11 @@ which steps are reads.
        the buckets searched.
      - Component parity (W6b): entity rows carry `name`, the composed
        device and entity name, equal to the baseline's value for the same
-       entity (X12); the fuzzy partial-ID and domain reads score 80 with
-       the baseline's `match_type`; a state filter with a domain is a domain
-       listing with no `state_filter_note`.
+       entity (X12); a domain-filter listing scores 100 with `match_type`
+       `domain_listing`; a fuzzy query equal to the domain scores 80 with
+       `exact_domain`, and a fuzzy partial ID scores 80 with `partial_id`; a
+       state filter with a domain is a domain listing with no
+       `state_filter_note`.
 
    Not checked live:
    - HAMCP-498 needs an open Core restart window, and causing one is not a

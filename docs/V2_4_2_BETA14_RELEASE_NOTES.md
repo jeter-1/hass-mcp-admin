@@ -122,8 +122,9 @@ native now does what live does.
   automation, script and scene bodies stay on W6's sub-call. P9 (exact
   configuration match) is unchanged.
 - Every entity search now reads the device registry, and every query also
-  reads the area, floor and label registries; exact mode reads aliases. No
-  new source is read.
+  reads the area, floor and label registries; every query mode (exact,
+  fuzzy and area-filtered) reads `config/entity_registry/get_entries` for
+  aliases. No new source is read.
 
 ## Evidence
 
