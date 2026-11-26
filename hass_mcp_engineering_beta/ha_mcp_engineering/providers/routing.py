@@ -48,6 +48,7 @@ _ENGINEERING_NATIVE = {
     ProviderCapability.THREAD_MATTER_TOPOLOGY,
     ProviderCapability.HISTORY_SLICES,
     ProviderCapability.AUTOMATION_RUN_COUNTS,
+    ProviderCapability.NATIVE_SEARCH,
     ProviderCapability.UNREGISTERED_ENTITIES,
     ProviderCapability.CONFIGURATION_DEFINITIONS,
     ProviderCapability.AUTOMATION_BASELINE_CAPTURE,
@@ -173,6 +174,7 @@ TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
     "get_incident_logs": ProviderCapability.INCIDENT_LOGS,
     "get_history_slices": ProviderCapability.HISTORY_SLICES,
     "get_automation_run_counts": ProviderCapability.AUTOMATION_RUN_COUNTS,
+    "ha_search": ProviderCapability.NATIVE_SEARCH,
     "list_automations": ProviderCapability.AUTOMATION_LIST,
     "get_automation_config": ProviderCapability.AUTOMATION_CONFIG,
     "list_devices": ProviderCapability.DEVICE_REGISTRY_READ,
@@ -325,6 +327,11 @@ ANALYTICAL_PROVIDER_POLICIES = {
     "get_automation_run_counts": {
         "policy_id": "automation_run_counts_read_v1", "access": "read", "orchestrator": "engineering",
         "scope": "GET /api/logbook for 1-10 automation entities per request, bisected on a logbook limit within 8 GETs and 60 s (named) or 32 GETs and 120 s (all mode, after one GET /api/states, at most 200 automations); the logbook slot is held for the call; counts and times only",
+        "writes_allowed": "none", "fallback_policy": "none",
+    },
+    "ha_search": {
+        "policy_id": "native_search_read_v1", "access": "read", "orchestrator": "engineering",
+        "scope": "the fixed Core reads in search.core_contracts.READS only (states; area, floor, label, entity and device registries; entity registry entries; automation, script and scene configuration; search/related; input_* lists) under the request's Core lease; dashboard and flow-helper matches only through fixed internal ha_search sub-call pages on the 9.2.0 Row 25 route, never listed or aliased; bounded reply",
         "writes_allowed": "none", "fallback_policy": "none",
     },
     "get_unregistered_entities": {
@@ -575,6 +582,18 @@ def automation_run_counts_policy_allows_read() -> bool:
     decision = routing_for_tool("get_automation_run_counts")
     return (
         decision.capability == ProviderCapability.AUTOMATION_RUN_COUNTS
+        and decision.route == CapabilityRoute.ENGINEERING_NATIVE
+        and decision.preferred_provider == "engineering"
+        and not decision.fallback_providers
+        and not decision.explicit_direct_fallback_allowed
+    )
+
+
+def native_search_policy_allows_read() -> bool:
+    """HAMCP-501: native ha_search reads and its internal sub-call pages only; no fallback."""
+    decision = routing_for_tool("ha_search")
+    return (
+        decision.capability == ProviderCapability.NATIVE_SEARCH
         and decision.route == CapabilityRoute.ENGINEERING_NATIVE
         and decision.preferred_provider == "engineering"
         and not decision.fallback_providers

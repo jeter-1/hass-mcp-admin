@@ -297,15 +297,17 @@ def _route_methods(route: Route) -> frozenset[str] | None:
 
     The transport refuses any other method before a credential or session
     exists. The options-flow routes are reached only by the helper-options
-    gateway; the scene configuration route only by the scene configuration
-    gateway (HAMCP-071).
+    gateway. The scene configuration route is written only by the scene
+    configuration gateway (HAMCP-071); native ``ha_search`` (HAMCP-481/501)
+    reads it with GET only, through ``search.core_reads``.
     """
 
     if route.template == "/config/config_entries/options/flow":
         return frozenset({"POST"})
     if route.template == "/config/config_entries/options/flow/{}":
         return frozenset({"DELETE", "POST"})
-    # HAMCP-071: only the scene configuration gateway reaches this route.
+    # HAMCP-071: only the scene configuration gateway writes this route;
+    # native ha_search (HAMCP-481/501) reads it with GET only.
     # HAMCP-298 §3.5: a DELETE is reachable only under the single-use
     # ``scene_delete_permit`` the created-object delete gateway installs for
     # exactly one config id (``_scene_delete_permitted``).

@@ -219,6 +219,8 @@ def create_application(
     from .configuration_definitions.service import CONFIGURATION_DEFINITIONS
     from .incident_logs.service import INCIDENT_LOGS
     from .history_slices.service import HISTORY_SLICES
+    from .search.core_reads import CoreReadSession
+    from .tools.search import SEARCH
     server = get_registered_server()
     audit = AuditLogger(
         settings.audit_path,
@@ -267,6 +269,17 @@ def create_application(
     # the factory returns None and the tool reports the route unavailable.
     HISTORY_SLICES.configure(
         settings, reader_factory=lambda: UPSTREAM_READ_GATEWAY.history_reader(audit=audit),
+    )
+    # HAMCP-501 W6: no I/O here; each call reads Core through one
+    # CoreReadSession under its own lease, and the sub-call page readers are
+    # captured per call (None before the internal-only route is admitted).
+    SEARCH.configure(
+        settings,
+        session_factory=lambda reads: CoreReadSession(
+            HomeAssistantRestClient(settings), HomeAssistantWebSocketClient(settings),
+            CORE_READMISSION, reads,
+        ),
+        reader_factory=lambda: UPSTREAM_READ_GATEWAY.search_subcall_reader(audit=audit),
     )
     gateway = AuthenticatedMcpGateway(
         server.streamable_http_app(),

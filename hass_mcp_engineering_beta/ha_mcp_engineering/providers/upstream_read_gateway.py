@@ -64,6 +64,7 @@ from ..ha_mcp_readmission.registry import (
     SignedReleaseRegistry,
 )
 from ..ha_core_readmission.routes import (
+    INTERNAL_ONLY_DELEGATED_READS,
     RETIRED_DELEGATED_READS,
     delegated_requirements,
 )
@@ -278,6 +279,11 @@ _FAILURE_CATEGORIES = frozenset(
         "sanitization_failed",
         "internal_error",
     }
+)
+# HAMCP-501 W6 (F2): the fixed failure codes a native search sub-call page may
+# carry: a gateway failure category, or the reader's own authority refusal.
+_SEARCH_PAGE_FAILURE_CATEGORIES = _FAILURE_CATEGORIES | frozenset(
+    {"provider_authority_changed"}
 )
 # Exact codes from the compiled, reviewed ha-mcp 7.14.1 profile. They select
 # Engineering-owned categories only; upstream messages, metadata, suggestions,
@@ -895,12 +901,21 @@ class SearchSubcallReader:
 class SearchSubcallPageFailure(Exception):
     """A native search sub-call page failed; ``category`` is a fixed code.
 
-    The scan records the page as failed; no text reaches the reply.
+    The scan records the page as failed; no text reaches the reply. HAMCP-501
+    W6 (F2): the category is mapped to the fixed set here, the one point both
+    the page result and the page audit read it from; anything else, including
+    a non-string, becomes ``invalid_response``.
     """
 
-    def __init__(self, category: str) -> None:
-        super().__init__(category)
-        self.category = category
+    def __init__(self, category: object) -> None:
+        fixed = (
+            category
+            if type(category) is str
+            and category in _SEARCH_PAGE_FAILURE_CATEGORIES
+            else "invalid_response"
+        )
+        super().__init__(fixed)
+        self.category = fixed
 
 
 class _SearchPageCapture:
@@ -1118,6 +1133,10 @@ class UpstreamReadGateway:
         self._registered_tool_registry: McpSdkToolRegistry | None = None
         self._registered_names: set[str] = set()
         self._exposed: dict[str, _AdmittedRoute] = {}
+        # HAMCP-501 W6 (G1): admitted routes a registered native tool uses
+        # internally, keyed by upstream name; never listed, aliased or
+        # capability-recorded.
+        self._internal: dict[str, _AdmittedRoute] = {}
         self._held_canaries: dict[str, _HeldCanaryRoute] = {}
         self._dynamic_capabilities: tuple[dict[str, Any], ...] = ()
         self._admission_generation = 0
@@ -1674,6 +1693,7 @@ class UpstreamReadGateway:
             )
             with self._lock:
                 previous_exposed = dict(self._exposed)
+                previous_internal = dict(self._internal)
                 previous_held_canaries = dict(self._held_canaries)
                 if (
                     readmission_selection is None
@@ -1712,6 +1732,7 @@ class UpstreamReadGateway:
                 selected_policy.reviewed_runtime_output_schema_fingerprints_by_name
             )
             exposed: dict[str, _AdmittedRoute] = {}
+            internal: dict[str, _AdmittedRoute] = {}
             dynamic_tools: dict[str, ReviewedUpstreamReadTool] = {}
             capabilities: list[dict[str, Any]] = []
             collisions: list[dict[str, str]] = []
@@ -1765,8 +1786,17 @@ class UpstreamReadGateway:
                             }
                         )
                         continue
+                # HAMCP-501 W6 (G1 = A): a read a registered native tool
+                # replaces keeps its Core gate above, but is admitted only as
+                # an internal route under its upstream name: no client tool,
+                # alias, collision or capability record, on any version.
+                internal_only = (
+                    entry.upstream_name in INTERNAL_ONLY_DELEGATED_READS
+                )
                 exposed_name = entry.exposed_name
-                if exposed_name in base_names:
+                if internal_only:
+                    exposed_name = entry.upstream_name
+                elif exposed_name in base_names:
                     exposed_name = f"{ALIAS_PREFIX}{entry.upstream_name}"
                     if exposed_name in base_names or exposed_name in exposed:
                         raise DashboardTransportError("schema_mismatch")
@@ -1776,15 +1806,15 @@ class UpstreamReadGateway:
                             "exposed_name": exposed_name,
                         }
                     )
-                dynamic_tool = ReviewedUpstreamReadTool.build(
-                    gateway=self,
-                    entry=entry,
-                    exposed_name=exposed_name,
-                    observed_tool=tool,
-                    admission_generation=generation,
-                    contract_fingerprint=decision.expected_fingerprint,
-                )
-                dynamic_tools[exposed_name] = dynamic_tool
+                if not internal_only:
+                    dynamic_tools[exposed_name] = ReviewedUpstreamReadTool.build(
+                        gateway=self,
+                        entry=entry,
+                        exposed_name=exposed_name,
+                        observed_tool=tool,
+                        admission_generation=generation,
+                        contract_fingerprint=decision.expected_fingerprint,
+                    )
                 candidate_route = _AdmittedRoute(
                     entry=entry,
                     observed_tool=tool,
@@ -1849,6 +1879,13 @@ class UpstreamReadGateway:
                         else None
                     ),
                 )
+                if internal_only:
+                    internal[exposed_name] = (
+                        previous_internal[exposed_name]
+                        if previous_internal.get(exposed_name) == candidate_route
+                        else candidate_route
+                    )
+                    continue
                 exposed[exposed_name] = (
                     previous_exposed[exposed_name]
                     if previous_exposed.get(exposed_name) == candidate_route
@@ -2050,7 +2087,8 @@ class UpstreamReadGateway:
                 selected_policy.classification_counts["automatic_read"]
             )
             # The optional reader never changes stock accounting (HAMCP-162).
-            stock_exposed = any(
+            # HAMCP-501 W6: an internal-only route is a stock route too.
+            stock_exposed = bool(internal) or any(
                 not is_yaml_adapter(route.entry) for route in exposed.values()
             )
             compatibility_status = (
@@ -2136,6 +2174,7 @@ class UpstreamReadGateway:
                     server=server,
                     dynamic_tools=dynamic_tools,
                     exposed=exposed,
+                    internal=internal,
                     held_canaries=held_canaries,
                     capabilities=tuple(capabilities),
                     generation=generation,
@@ -2196,6 +2235,17 @@ class UpstreamReadGateway:
             )
             return generation, tuple(sorted(self._exposed))
 
+    def _route_locked(self, name: str) -> _AdmittedRoute | None:
+        """Return the admitted route for one name, listed or internal-only.
+
+        The caller holds ``self._lock``. A listed route wins; an internal-only
+        route (HAMCP-501 W6, G1) is keyed by its upstream name and is never
+        listed, aliased or capability-recorded.
+        """
+
+        route = self._exposed.get(name)
+        return route if route is not None else self._internal.get(name)
+
     def _arm_missing_release_retry(self, delay: float | None) -> None:
         if delay is None:
             return
@@ -2221,6 +2271,7 @@ class UpstreamReadGateway:
         held_canaries: dict[str, _HeldCanaryRoute],
         capabilities: tuple[dict[str, Any], ...],
         generation: int,
+        internal: dict[str, _AdmittedRoute] | None = None,
         catalog: McpReadCatalog,
         evaluation: _CatalogEvaluation,
         observed_fingerprint: str | None,
@@ -2269,6 +2320,7 @@ class UpstreamReadGateway:
         self._replace_registered_tools(server, dynamic_tools)
         self._registered_names = set(dynamic_tools)
         self._exposed = dict(exposed)
+        self._internal = dict(internal or {})
         self._held_canaries = dict(held_canaries)
         self._dynamic_capabilities = capabilities
         self._admission_generation = generation
@@ -3474,7 +3526,7 @@ class UpstreamReadGateway:
 
         owner_task = asyncio.current_task()
         with self._lock:
-            mapping = self._exposed.get(exposed_name)
+            mapping = self._route_locked(exposed_name)
             if (
                 not mapping
                 or not mapping.entry.is_read_route
@@ -3552,7 +3604,7 @@ class UpstreamReadGateway:
                     raise DashboardTransportError("schema_mismatch")
                 with self._lock:
                     route_is_current = (
-                        self._exposed.get(exposed_name) is mapping
+                        self._route_locked(exposed_name) is mapping
                     )
                 if not route_is_current:
                     raise DashboardTransportError(
@@ -3927,7 +3979,7 @@ class UpstreamReadGateway:
                     lease.readmission_commit = commit
                 else:
                     with self._lock:
-                        if self._exposed.get(exposed_name) is not mapping:
+                        if self._route_locked(exposed_name) is not mapping:
                             raise DashboardTransportError(
                                 "prohibited_delegation"
                             )
@@ -4009,7 +4061,7 @@ class UpstreamReadGateway:
         def current() -> bool:
             try:
                 with self._lock:
-                    if (self._exposed.get(name) is not route
+                    if (self._route_locked(name) is not route
                             or self._core_reconciliation_epoch != core_epoch):
                         return False
                     _policy, _release, selection = self._validate_identity(
@@ -4273,8 +4325,9 @@ class UpstreamReadGateway:
         """
 
         with self._lock:
+            # HAMCP-501 W6 (G1): the route is internal-only, never listed.
             routes = [
-                (name, route) for name, route in self._exposed.items()
+                (name, route) for name, route in self._internal.items()
                 if route.entry.upstream_name == "ha_search"
                 and route.entry.classification == "automatic_read"
             ]
@@ -4393,6 +4446,19 @@ class UpstreamReadGateway:
             telemetry, telemetry_token = begin_request()
         try:
             if require_unmodified_script and policy_entry.upstream_name != "ha_config_get_script":
+                raise _GatewayFailure("prohibited_delegation", dispatched=False)
+            if (
+                policy_entry.upstream_name in INTERNAL_ONLY_DELEGATED_READS
+                and search_page is None
+            ):
+                # HAMCP-501 W6 (G1): an internal-only route is dispatched only
+                # as a native search sub-call page, never as a direct read.
+                raise _GatewayFailure("prohibited_delegation", dispatched=False)
+            if search_page is not None and (
+                telemetry is None or telemetry.core_dispatch_authorizer is None
+            ):
+                # HAMCP-501 W6: a sub-call page always runs inside a request
+                # that carries the parent's Core lease; none, no dispatch.
                 raise _GatewayFailure("prohibited_delegation", dispatched=False)
             if search_page is not None and (
                 type(search_page) is not _SearchPageCapture
@@ -4711,7 +4777,7 @@ class UpstreamReadGateway:
                 # failure counts stay available, but only the currently admitted route
                 # may clear its own transient failure. A call from a removed generation
                 # must not erase a newer discovery failure.
-                if self._exposed.get(exposed_name) is mapping:
+                if self._route_locked(exposed_name) is mapping:
                     self._state["generic_delegation_available"] = bool(self._exposed)
                     self._state["last_call_failure_category"] = None
                     if self._state["last_discovery_failure_category"] is None:
@@ -4811,7 +4877,7 @@ class UpstreamReadGateway:
                 route_is_current = (
                     route_was_admitted
                     and mapping is not None
-                    and self._exposed.get(exposed_name) is mapping
+                    and self._route_locked(exposed_name) is mapping
                 )
             if not route_was_admitted or route_is_current:
                 if category in _EXPECTED_PROVIDER_OUTCOMES:
@@ -5590,6 +5656,7 @@ class UpstreamReadGateway:
                 self._replace_registered_tools(self._registered_server, {})
             self._registered_names = set()
             self._exposed = {}
+            self._internal = {}
             self._held_canaries = {}
             self._dynamic_capabilities = ()
 
@@ -5644,7 +5711,7 @@ class UpstreamReadGateway:
                     UpstreamSurface.HA_MCP
                 )
             with self._lock:
-                if self._exposed.get(exposed_name) is not mapping:
+                if self._route_locked(exposed_name) is not mapping:
                     return False
                 self._remove_registered_tools()
                 self._active_release = None
@@ -5685,23 +5752,34 @@ class UpstreamReadGateway:
             return True
 
         with self._lock:
-            if self._exposed.get(exposed_name) is not mapping:
+            if self._route_locked(exposed_name) is not mapping:
                 return False
-            if self._registered_tool_registry is not None:
-                replacement = dict(self._registered_tool_registry.snapshot())
-                replacement.pop(exposed_name, None)
-                self._registered_tool_registry.replace(replacement)
-            registered_names = set(self._registered_names)
-            registered_names.discard(exposed_name)
-            self._registered_names = registered_names
-            exposed = dict(self._exposed)
-            exposed.pop(exposed_name, None)
-            self._exposed = exposed
-            self._dynamic_capabilities = tuple(
-                item
-                for item in self._dynamic_capabilities
-                if item.get("tool") != exposed_name
-            )
+            if self._internal.get(exposed_name) is mapping:
+                # HAMCP-501 W6 (G1): an internal-only route has no client
+                # tool, registered name or capability record. Withdrawing it
+                # must never touch the registry, where the same name is the
+                # native Engineering tool.
+                internal = dict(self._internal)
+                internal.pop(exposed_name, None)
+                self._internal = internal
+            else:
+                if self._registered_tool_registry is not None:
+                    replacement = dict(
+                        self._registered_tool_registry.snapshot()
+                    )
+                    replacement.pop(exposed_name, None)
+                    self._registered_tool_registry.replace(replacement)
+                registered_names = set(self._registered_names)
+                registered_names.discard(exposed_name)
+                self._registered_names = registered_names
+                exposed = dict(self._exposed)
+                exposed.pop(exposed_name, None)
+                self._exposed = exposed
+                self._dynamic_capabilities = tuple(
+                    item
+                    for item in self._dynamic_capabilities
+                    if item.get("tool") != exposed_name
+                )
 
             disposition = failure.get("disposition")
             missing = set(self._state["missing_tools"])
@@ -5773,7 +5851,7 @@ class UpstreamReadGateway:
                 )
                 reason_counts[reason] += 1
 
-            matched_count = len(self._exposed)
+            matched_count = len(self._exposed) + len(self._internal)
             missing_count = len(missing)
             quarantined_count = len(quarantined)
             accounted = (
@@ -5783,7 +5861,9 @@ class UpstreamReadGateway:
                 "reviewed_automatic_read_count"
             ]
             compatibility_status = (
-                "partial" if self._exposed else "incompatible"
+                "partial"
+                if self._exposed or self._internal
+                else "incompatible"
             )
             collision_mappings = [
                 item
@@ -5796,7 +5876,7 @@ class UpstreamReadGateway:
                     "generic_delegation_available": bool(self._exposed),
                     "admission_complete": False,
                     "exact_matched_automatic_read_count": matched_count,
-                    "dynamically_exposed_count": matched_count,
+                    "dynamically_exposed_count": len(self._exposed),
                     "schema_mismatch_count": reason_counts.get(
                         "input_schema_mismatch", 0
                     ),
@@ -5846,7 +5926,7 @@ class UpstreamReadGateway:
                     "compatibility_status": compatibility_status,
                     "admission_status": (
                         "partially_admitted"
-                        if self._exposed
+                        if self._exposed or self._internal
                         else "blocked_incompatible_upstream"
                     ),
                     "reconciliation_status": "reprobe_requested",
@@ -5903,7 +5983,7 @@ class UpstreamReadGateway:
         trigger = False
         publish = False
         with self._lock:
-            if self._exposed.get(exposed_name) is not mapping:
+            if self._route_locked(exposed_name) is not mapping:
                 return False
             safe_name = self._safe_identity_evidence(catalog.server_name)
             safe_version = self._safe_version_evidence(
@@ -5993,7 +6073,7 @@ class UpstreamReadGateway:
                 UpstreamSurface.HA_MCP
             )
         with self._lock:
-            if self._exposed.get(exposed_name) is not mapping:
+            if self._route_locked(exposed_name) is not mapping:
                 return False
             self._remove_registered_tools()
             self._reset_contract_accounting_locked()
