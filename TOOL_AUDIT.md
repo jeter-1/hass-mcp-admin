@@ -14,8 +14,8 @@ sends only `trace/list`. See
 
 ## Read changes without a new tool (2.4.2-beta.14)
 
-These items add no tool, route, permission, option or write path. The
-native search row is the last one below.
+The items other than native search add no tool, route, permission, option
+or write path. The native search row is the last one below.
 
 - **`get_history` (HAMCP-502).** The same `GET /history/period/{start}` read
   now sends `end_time` (both bounds from one instant), so a window over 24
