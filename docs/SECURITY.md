@@ -1366,6 +1366,35 @@ path.
   `PROVIDER_PROHIBITED` if its policy drifts. It is mapped to
   `core.basic_rest_read` in the HAMCP-164 Core gate, like `get_logbook`.
 
+The `2.4.2-beta.14` items outside native search (HAMCP-502, 462, 490, 491,
+493, 497, 498, 503, 505 and 508) add no tool, permission, add-on option, HTTP
+client, Supervisor call, WebSocket command, upstream route, fallback or write
+path. The native search section comes with W7 (HAMCP-501).
+
+- **Changed query parameters, same routes.** `get_history` and the incident
+  history and logbook reads add `end_time`, and the history reads add an
+  explicit `significant_changes_only` (HAMCP-502). The 168 hour limit and
+  the existing byte, record and structure limits are unchanged.
+- **Trust root and support window (HAMCP-462).** The signed Core registry
+  trust root is copied at sequence 19, which signs 2026.11.3 with the same 38
+  profiles as 2026.11.0, and the support window rotates to 2026.11.3 current
+  and 2026.11.0 rollback. No signing key or signature check changed.
+- **Health and refusal disclosure (HAMCP-497, HAMCP-498).**
+  `get_server_health` adds the build SHA and dirty flag `server_info`
+  already exposed, and the registry's last refresh time and interval. The
+  retryable Core restart-window refusal names only the recovery state, its
+  times and confirmation counts from Core readmission's health projection,
+  and it is returned before any provider dispatch. A runtime that was never
+  admitted, is incompatible, or whose projection cannot be read keeps the
+  non-retryable refusal.
+- **Disclosure only (HAMCP-490, 491, 493, 503, 508).** Finding ids, counter
+  labels, root-cause step locations, and the retention and bounded-read
+  counts and flags are computed from data the tools already read. Reliability takes `trace.stored_traces` from the
+  configuration it already reads. `list_automation_traces` still sends only
+  `trace/list`; its reply is now an object (breaking, SI-5).
+- **CI only (HAMCP-505).** The Core-evidence workflow's pull request
+  acceptance target comes from the support window; no runtime change.
+
 The `2.4.1-beta.30` incident-window slice (HAMCP-131) adds two read-only tools.
 Neither adds a permission, add-on option, role, fallback or write path.
 

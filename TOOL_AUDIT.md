@@ -12,6 +12,39 @@ trace ring (default 5 per ring), so older runs are not listed. The tool still
 sends only `trace/list`. See
 [`docs/AUTOMATION_RELIABILITY_ANALYSIS.md`](docs/AUTOMATION_RELIABILITY_ANALYSIS.md).
 
+## Read changes without a new tool (2.4.2-beta.14)
+
+These items add no tool, route, permission, option or write path. The
+native search rows come with W7 (HAMCP-501).
+
+- **`get_history` (HAMCP-502).** The same `GET /history/period/{start}` read
+  now sends `end_time` (both bounds from one instant), so a window over 24
+  hours is returned in full rather than as its first day. A full read sends
+  `significant_changes_only=0`, so attribute-only changes are returned; a
+  minimal read sends `1`. The incident history and logbook reads send
+  `end_time` too, and the incident history coverage row says it reads
+  significant changes only.
+- **`get_error_log` (HAMCP-502).** A system log of 50 or more entries (Core's
+  default ring) reports `system_log_retention_unknown`.
+- **`automation_reliability_analysis` and trace watches (HAMCP-503).** A
+  trace source whose ring may have evicted runs inside the lookback reads
+  partial (`retention_limited`), from the `trace.stored_traces` value in the
+  configuration the tool already reads. Trace watch rows add
+  `retention_gap_polls` and `last_retention_gap_at`.
+- **`get_server_health` (HAMCP-497).** Adds `server.build_sha` and
+  `server.build_dirty`, the values `server_info` already reports, and
+  `release_registry.last_refresh_at` and `refresh_interval_seconds`.
+- **Core-bound refusals (HAMCP-498).** A Core-bound call refused while
+  admitted Core authority is withdrawn and not yet restored returns
+  `CoreCapabilityUnavailable` with `retryable` true and `reason_code`
+  `core_authority_recovering`, naming the recovery state and next attempt,
+  with `provider_dispatch_occurred` false. Every other refusal is unchanged.
+- **Bounded reads (HAMCP-508 SI-1 to SI-4, SI-6, SI-7).** `list_automations`,
+  `list_devices` and `list_entity_registry` add `returned`, `total` and
+  `truncated`; incident correlation and `entity_dependency_analysis` report
+  their caps as partial with withheld counts. Output keys only; the reads are
+  unchanged.
+
 ## Automation run counts (2.9.1, HAMCP-476)
 
 `get_automation_run_counts` is a native, read-only, Engineering-owned evidence

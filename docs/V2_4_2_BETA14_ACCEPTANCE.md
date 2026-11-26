@@ -41,6 +41,7 @@ final release pull request binds their evidence.
 
 | Item | Scope | State |
 | --- | --- | --- |
+| HAMCP-500 | The 2.4.2-beta.14 declaration, materialized in all three version authorities | landed (#504) |
 | HAMCP-502 | `get_history` and incident activity reads bounded with an end time, so windows over 24 hours are complete; `minimal=False` history returns attribute-only changes; the incident reliability row follows a partial bundle; `get_error_log` flags a full system log ring | landed (#505); `tests/test_hamcp502_history_end_time.py` |
 | HAMCP-462 | Core mirror pins refreshed to 2026.11.3, the trust-root seq 19 copy and the support-window rotation | landed (#508) |
 | HAMCP-490, HAMCP-491 | Configuration integrity: a unique `finding_id` for each dynamic finding, and the unfiltered dynamic reference count labeled in `counter_semantics` | landed (#510); `tests/test_hamcp490_integrity_dynamic_ids.py` |
@@ -48,7 +49,8 @@ final release pull request binds their evidence.
 | HAMCP-503 | Reliability trace retention reported as partial, and the trace watch retention-gap counter | landed (#509); `tests/test_hamcp503_trace_retention.py`, `tests/test_hamcp503_trace_watch_retention_gap.py` |
 | HAMCP-497, HAMCP-498 | `get_server_health` `server.build_sha` and `build_dirty`; `release_registry` `last_refresh_at` and `refresh_interval_seconds`; a Core-bound refusal in an open Core restart window is retryable and names the window | landed (#512); `tests/test_hamcp497_health_build_identity.py`, `tests/test_hamcp498_core_restart_retryable.py` |
 | HAMCP-508 | Bounded reads disclosed: list tools `total` and `truncated`; incident row bounds partial with `items_withheld` and `items_malformed`, and omitted-count keys; dependency indirect-walk gap and full dynamic count; `list_automation_traces` object reply (breaking: `traces`, `returned`, `source_truncated`, `retention`), with a full default ring at six runs and the oldest run absent | landed (#515); `tests/test_hamcp508_incomplete_results.py` |
-| HAMCP-481 | Native search (entities, automations and scripts) | not landed |
+| HAMCP-505 | The Core-evidence pull request acceptance target taken from the support window's current Core (2026.11.3). CI scripts and tests only | landed (#514) |
+| HAMCP-481 (built as HAMCP-501) | Native search (entities, automations and scripts). W1 to W3 landed inert; W4 and the W6 cutover [fill: state after W6]; W7 writes the native search rows | W1 landed (#506), W2 landed (#507), W3 landed (#513), W4 [fill: #516], W6 [fill], W7 [fill] |
 
 ## 1. Source and offline acceptance
 
@@ -87,15 +89,46 @@ which steps are reads.
 1. **Identity.** `server_info` and `get_server_health` report:
    - `2.4.2-beta.14`;
    - the merged release SHA as build SHA;
-   - `dirty: false`.
-2. **Item checks.** **Pending.** One read per landed item. The planned checks
-   are:
-   - a `get_history` read over more than 24 hours returns the full span;
-   - integrity analysis compact findings have distinct identities and
-     filtered counts;
-   - reliability analysis reports current state and paths;
-   - health reports the build identity and registry refresh time;
-   - native search returns entities, automations and scripts.
+   - `dirty: false`;
+   - `upstream_version` `9.2.0` and `core_version` `2026.11.3`, the
+     support window's current pair (HAMCP-462).
+2. **Item checks.** Reads only, in one Engineering process, since signed
+   cursors and the trace-watch counter are per process:
+   - **HAMCP-497.** `get_server_health` reports `server.build_sha` equal to
+     the merged release SHA and `server.build_dirty` `false`;
+     `release_registry` reports `last_refresh_at` (a UTC time after the
+     deploy) and `refresh_interval_seconds`.
+   - **HAMCP-502.** `get_history` for one busy entity over about 30 hours
+     ending now returns the full span, with its first change near the window
+     start rather than cut at 24 hours; `get_history_slices` over the same
+     entity and window gives the same change count and the same first and
+     last change times.
+   - **HAMCP-490, HAMCP-491.** `configuration_integrity_analysis` with
+     `detail_level` `compact`, followed by `next_cursor` to the end: every
+     `finding_id` is unique across the pages, and `counter_semantics` labels
+     `unresolved_dynamic_reference_count` as unfiltered.
+   - **HAMCP-503 TB-1, HAMCP-493.** `automation_reliability_analysis` on an
+     automation that ran more than 5 times in the lookback (chosen first with
+     `get_automation_run_counts`, also a read) reports `collection_state`
+     `retention_limited`, a partial source, `retention_coverage` `partial`
+     and a warning naming `trace.stored_traces`; a root cause, if any,
+     carries `affected_step`.
+   - **HAMCP-503 TB-3.** `set_automation_trace_watch` with `action` `list`
+     only: each watch row carries `retention_gap_polls` and
+     `last_retention_gap_at` (`null` is valid). With no watch, record that and
+     add none, since adding a watch is not a read.
+   - **HAMCP-508.** `list_automations` reports `returned`, `total` and
+     `truncated`, and `list_automation_traces` on the automation above returns
+     `traces`, `returned`, `source_truncated` and `retention`, with
+     `ring_full` `true`.
+   - **HAMCP-481.** [fill: W7 adds the native search parity steps.]
+
+   Not checked live:
+   - HAMCP-498 needs an open Core restart window, and causing one is not a
+     read; its evidence is `tests/test_hamcp498_core_restart_retryable.py`.
+   - HAMCP-462 acts in CI and admission; the pair in step 1 is its only
+     live trace.
+   - HAMCP-505 changes CI only.
 
    There are no lifecycle steps.
 3. **Tool catalog.** A fresh `tools/list` matches the catalog the final

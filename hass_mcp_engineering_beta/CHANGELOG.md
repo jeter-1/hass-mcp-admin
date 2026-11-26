@@ -31,8 +31,15 @@ release pull request completes this entry.
   is copied at sequence 19, which signs 2026.11.3 with the same 38 profiles
   as 2026.11.0; and the support window rotates to 2026.11.3 current and
   2026.11.0 rollback, with the Core candidate empty.
-- Planned (plan approved 2026-11-25): native search (HAMCP-481). None has
-  landed yet.
+- Native search (HAMCP-481, built as HAMCP-501; plan approved 2026-11-25):
+  the scoring port (W1, #506), the fixed Core reads (W2, #507) and the
+  engine (W3, #513) have landed inert: no tool imports them yet. The page
+  readers (W4, [fill: #516]) and the `ha_search` cutover (W6, [fill]) are
+  [fill: state after W6]. The tool keeps the name `ha_search`.
+- Landed: the Core-evidence workflow takes its pull request acceptance
+  target from the support window's current Core, 2026.11.3, instead of a
+  fixed 2026.11.0 (HAMCP-505, #514). CI scripts and tests only; no runtime
+  change.
 - Landed: `configuration_integrity_analysis` gives each dynamic finding its
   own `finding_id` (HAMCP-490, #510). Two references at one path that differ
   in evidence used to share one ID, so compact rows repeated. The first
@@ -75,7 +82,13 @@ release pull request completes this entry.
     stored trace ring (default 5 per ring, overridable per automation), so
     older runs are not listed, and `ring_full` is true when a ring holds at
     least the default cap. Clients that read the list must read `traces`.
-- New in-progress `V2_4_2_BETA14` release notes and acceptance contract.
+- New in-progress `V2_4_2_BETA14` release notes and acceptance contract
+  (HAMCP-500, #504), and their item rows (HAMCP-509, [fill: PR]).
+- Not in this build: object lifecycle, response compaction, history paging,
+  plan withdraw, list paging, trace-watch renewal and the dashboard items
+  (planned for 2.11); the ha-mcp visibility filter for native search
+  (HAMCP-499); the HAMCP-293 risk lowering (HAMCP-486); and the HAMCP-474 D1
+  relabel (HAMCP-487). [fill: anything W4 to W7 defer]
 - Rollback: pending; stated by the final release pull request.
 
 ## 2.4.2-beta.13 - 2.9.1 build, in progress (HAMCP-455)
