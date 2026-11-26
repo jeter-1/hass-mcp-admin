@@ -100,8 +100,9 @@ Changed (with reason):
 - The audit status of the native invalid-argument path is failure / validation_failure.
 ```
 
-W6b (#519), measured against the same live component route (ha-mcp 9.2.0
-`ha_mcp_tools` search). Each item is kept: native now does what live does.
+W6b (#519), a summary of #519's P1-P9 table, measured against the same live
+component route (ha-mcp 9.2.0 `ha_mcp_tools` search). Each item is kept:
+native now does what live does.
 - P1: every entity row carries `name`, the composed device and entity name
   (Core 2026.11.3's rule); the composed-name warning is removed (X12).
 - P2: exact mode matches the entity ID, friendly name, composed name,
