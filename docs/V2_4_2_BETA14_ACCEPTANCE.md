@@ -56,7 +56,7 @@ final release pull request binds their evidence.
 | HAMCP-481 W4 | Native search sub-call page readers, inert | landed (#516) |
 | HAMCP-481 W6 | The `ha_search` cutover to native search: the delegated `ha_search` internal-only, sub-call body matching (S1), the numeric and scrub withholding, and the page-size ladder | landed (#517); `tests/test_hamcp501_native_search_cutover.py`, `tests/test_hamcp481_native_search_engine.py`, `tests/test_hamcp501_w6_f1_body_matching.py` |
 | HAMCP-481 W6b | Native search component-route parity: the composed `name`, the scored texts, the tier scorer, and the state filter before paging | landed (#519); `tests/test_hamcp501_w6b_component_parity.py`, `tests/test_hamcp481_scoring_parity.py`, `tests/test_hamcp481_native_search_engine.py` |
-| HAMCP-481 W7 | Native search: the design doc update | [fill: PR and state] |
+| HAMCP-481 W7 | Native search: the design doc update (revision 5, the implementation record). Docs only | landed (#520); no test (docs only) |
 
 ## 1. Source and offline acceptance
 
@@ -179,7 +179,7 @@ which steps are reads.
    release pull request declares, with exactly one `ha_search` and no
    `ha_mcp__ha_search`. At #517 the catalog is 114 tools: 88 Engineering
    and 26 delegated (beta.13 as observed live: 115, 87 and 28); W6b (#519)
-   does not change it. [fill: confirm after W7]
+   and W7 (#520, docs only) do not change it.
 
 PASS needs every check. If a step fails, record the response in the release
 task. Whether to roll back is Josh's decision.

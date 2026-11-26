@@ -40,7 +40,7 @@ each landed item's behavior from the landed source.
 | HAMCP-481 W4 | Native search: the sub-call page readers, landed inert; W6 fixed their page check, which refused every page under the live unified descriptor | landed (#516) |
 | HAMCP-481 W6 | Native search: the `ha_search` cutover; the tool keeps its name and arguments, plus one appended `search_types` sentence. The delegated 9.2.0 `ha_search` is internal-only (no `ha_mcp__ha_search`) and serves only the fixed sub-call pages under its own Core requirement. Automation, script and scene body matches come from ha-mcp's scrubbed sub-call (S1); a numeric-like query or an unproven scrub withholds them. Pages step down 150, 30, 6, 1 rows when too large | landed (#517) |
 | HAMCP-481 W6b | Native search: component-route parity. Entity rows carry the composed device and entity `name`; the scored texts add the name, aliases, labels, device texts, area and floor; the component tier scorer (100, 80, ratio of at least 70) replaces BM25 and the typo fallback; the state filter runs before paging. Supersedes #518 (synthetic test fixtures) | landed (#519) |
-| HAMCP-481 W7 | Native search: the design doc update (these release rows are HAMCP-509's) | [fill: PR and state] |
+| HAMCP-481 W7 | Native search: the design doc update. Revision 5 of `docs/HAMCP_481_NATIVE_SEARCH_DESIGN.md` marks native search implemented in 2.10.0 and adds the implementation record (§10). Docs only; these release rows are HAMCP-509's | landed (#520) |
 
 Not in this build:
 - object lifecycle, response compaction, history paging, plan withdraw, list
@@ -56,7 +56,10 @@ Not in this build:
   YAML-mode dashboards, and no inf/nan arm in the numeric trigger;
 - the helper sub-call still opens and aborts options flows upstream, as
   before (HAMCP-233);
-- [fill: W7 deferrals].
+- the later items the design doc keeps: native helper reads that replace
+  the helper sub-call (HAMCP-484), an `entity` value for `search_types`
+  (HAMCP-485), and `include_config` bodies, withheld until a redaction
+  design exists (HAMCP-454). W7 (#520) is docs only and adds no deferral.
 
 ### Native search parity
 

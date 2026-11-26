@@ -77,8 +77,10 @@ or write path. The native search row is the last one below.
     entity row carries the composed `name`. Every entity search reads the
     device registry, and every query the area, floor and label registries;
     no new source (`test_the_reads_are_unchanged`).
-  - Catalog: 114 tools, 88 Engineering and 26 delegated, unchanged by W6b.
-    [fill: W7]
+  - Catalog: 114 tools, 88 Engineering and 26 delegated, unchanged by W6b
+    and by W7 (#520, docs only).
+  - Design: `docs/HAMCP_481_NATIVE_SEARCH_DESIGN.md` revision 5 (W7, #520)
+    is the implementation record (§10).
 
 ## Automation run counts (2.9.1, HAMCP-476)
 

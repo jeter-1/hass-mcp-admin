@@ -1446,7 +1446,13 @@ path. Native search is the last bullet below.
     READY_WITH_FOLLOW_UP, one Low finding (W6B-R1-001, an unreachable
     `engine.py` branch), deferred to HAMCP-520; the post-merge delta
     (test-only and an unprotected CI fixture field) was verified by the
-    architect. [fill: W7]
+    architect.
+  - **Design doc (W7, #520).** Docs only: revision 5 of
+    `docs/HAMCP_481_NATIVE_SEARCH_DESIGN.md` records the build as
+    implemented (§10). No runtime, test, schema, routing or protected-path
+    change. Review: Cursor r1 CHANGES_REQUIRED (R1-F1 Medium; R1-F2 to
+    R1-F4 Low), one docs correction batch, verified by the architect; no
+    Cursor r2.
 
 The `2.4.1-beta.30` incident-window slice (HAMCP-131) adds two read-only tools.
 Neither adds a permission, add-on option, role, fallback or write path.

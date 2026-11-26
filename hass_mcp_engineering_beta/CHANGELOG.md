@@ -57,7 +57,10 @@ release pull request completes this entry.
     floor) and tier scorer (100, 80, ratio of at least 70), retiring BM25 and
     the typo fallback; the state filter runs before paging. Every entity
     search now reads the device registry. Supersedes #518.
-  - The native search design doc update (W7, [fill: PR]): [fill: state].
+  - Landed: the native search design doc update (W7, #520). Revision 5 of
+    `docs/HAMCP_481_NATIVE_SEARCH_DESIGN.md` marks native search
+    implemented in 2.10.0 and adds the implementation record (§10). Docs
+    only.
 - Landed: the Core-evidence workflow takes its pull request acceptance
   target from the support window's current Core, 2026.11.3, instead of a
   fixed 2026.11.0 (HAMCP-505, #514). CI scripts and tests only; no runtime
@@ -115,8 +118,11 @@ release pull request completes this entry.
   parent request (HAMCP-510); an engine cleanup after W6b (HAMCP-520); the
   disclosed body-match residuals (non-scalar and bool secrets, YAML-mode
   dashboards, no inf/nan arm); and the helper sub-call still opening and
-  aborting options flows upstream, as before (HAMCP-233). [fill: W7
-  deferrals]
+  aborting options flows upstream, as before (HAMCP-233). The design doc
+  also keeps as later work: native helper reads that replace the helper
+  sub-call (HAMCP-484), an `entity` value for `search_types` (HAMCP-485),
+  and `include_config` bodies, withheld until a redaction design exists
+  (HAMCP-454).
 - Rollback: pending; stated by the final release pull request.
 
 ## 2.4.2-beta.13 - 2.9.1 build, in progress (HAMCP-455)
