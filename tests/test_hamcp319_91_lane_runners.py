@@ -103,6 +103,8 @@ OPTIONAL_91 = [tool for tool in json.loads((ROOT / "docs" / "evidence" / "hamcp3
                                            .read_text(encoding="utf-8"))["tools"]
                if tool["name"] in runners.OPTIONAL_NAMES]
 AUTOMATIC_READS = 27
+# HAMCP-501 W6: matched but not exposed; the runner reads them from source.
+INTERNAL = runners.internal_only_delegated_reads()
 
 
 def peer_tools_91() -> list:
@@ -133,7 +135,7 @@ def strict_91_view(**overrides) -> dict:
         "optional_sibling_drift": [], "optional_reviewed_accounting_valid": True,
         "writes_allowed": False, "direct_ha_fallback_allowed": False, "stock_catalog_match_is_informational": True,
         "reviewed_accounted_tool_count": 77, "reviewed_policy_entry_count": 77, "upstream_advertised_tool_count": 82,
-        "dynamically_exposed_count": AUTOMATIC_READS + 1, "core_withheld_read_count": 0,
+        "dynamically_exposed_count": AUTOMATIC_READS + 1 - len(INTERNAL), "core_withheld_read_count": 0,
         "observed_protocol_version": PROTOCOL,
     }
     view.update(overrides)
@@ -164,7 +166,8 @@ def health_case(expect: str, **overrides):
     )
     if expect == "admitted_strict_91":
         arguments.update(health_before=health(**strict_91_view()), health_after=health(**strict_91_view()),
-                         tool_names=[runners.PROBE_TOOL], probe=served_probe(), peer_requests=None,
+                         tool_names=[runners.PROBE_TOOL, *sorted(INTERNAL)], probe=served_probe(),
+                         peer_requests=None,
                          peer_tools=peer_tools_91(), reviewed_tools=REVIEWED_91)
     elif expect == "catalog_mode_unadmitted_at_startup":
         view = {"initialized": False, "admission_status": "pending_discovery", "dynamically_exposed_count": 0,
@@ -430,6 +433,9 @@ class HealthCaseTests(unittest.TestCase):
         self.assertEqual(health_case("admitted_strict_91", probe=served_probe("8.5.0"))[:2],
                          ("failed", "probe_not_served_by_91"))
         self.assertEqual(health_case("admitted_strict_91", tool_names=[])[:2], ("failed", "probe_tool_not_listed"))
+        # HAMCP-501 W6: the internal-only read's name is Engineering's native tool.
+        self.assertEqual(health_case("admitted_strict_91", tool_names=[runners.PROBE_TOOL])[:2],
+                         ("failed", "native_owner_not_listed"))
         self.assertEqual(health_case("admitted_strict_91", probe=None)[:2], ("failed", "probe_read_not_useful"))
 
     def test_legacy_refusal_negatives(self) -> None:
@@ -722,12 +728,56 @@ class StrictCatalogExactnessTests(unittest.TestCase):
                                                 dict(stock_catalog_match_is_informational=False)],
             "catalog_size_not_reviewed": [dict(upstream_advertised_tool_count=83), dict(reviewed_accounted_tool_count=76),
                                           dict(reviewed_policy_entry_count=78)],
-            "no_delegated_reads_exposed": [dict(dynamically_exposed_count=27), dict(core_withheld_read_count=1)],
+            # HAMCP-501 W6: AUTOMATIC_READS + 1 is an internal-only read exposed.
+            "no_delegated_reads_exposed": [dict(dynamically_exposed_count=AUTOMATIC_READS + 1),
+                                           dict(dynamically_exposed_count=AUTOMATIC_READS - len(INTERNAL)),
+                                           dict(core_withheld_read_count=1)],
         }
         for category, changes in negatives.items():
             for change in changes:
                 with self.subTest(category=category, change=change):
                     self.assertEqual(self.strict(**change), ("failed", category))
+
+    def test_internal_only_reads_come_from_engineering_source(self) -> None:
+        # HAMCP-501 W6: the runner's parse equals the Engineering import.
+        engineering = str(ROOT / "hass_mcp_engineering_beta")
+        if engineering not in sys.path:
+            sys.path.insert(0, engineering)
+        from ha_mcp_engineering.ha_core_readmission.routes import INTERNAL_ONLY_DELEGATED_READS
+
+        self.assertEqual(INTERNAL, INTERNAL_ONLY_DELEGATED_READS)
+        self.assertIn("ha_search", INTERNAL)
+
+    def test_internal_only_reads_source_fails_closed(self) -> None:
+        name = runners.INTERNAL_ONLY_NAME
+        bad = {
+            "absent": "OTHER = ('ha_search',)\n",
+            "twice": f"{name} = ('ha_search',)\n{name} = ('ha_get_state',)\n",
+            "list": f"{name} = ['ha_search']\n",
+            "empty_name": f"{name} = ('',)\n",
+            "not_a_name": f"{name} = (7,)\n",
+            "duplicate": f"{name} = ('ha_search', 'ha_search')\n",
+            "computed": f"{name} = tuple(['ha_search'])\n",
+            "syntax": f"{name} = (\n",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "routes.py"
+            with self.subTest(case="missing"):
+                with self.assertRaisesRegex(runners.LaneFailure, "internal_only_reads_unreadable"):
+                    runners.internal_only_delegated_reads(path)
+            for case, text in bad.items():
+                with self.subTest(case=case):
+                    path.write_text(text, encoding="utf-8")
+                    with self.assertRaisesRegex(runners.LaneFailure, "internal_only_reads_unreadable"):
+                        runners.internal_only_delegated_reads(path)
+            path.write_text(f"{name}: tuple[str, ...] = ('ha_search',)\n", encoding="utf-8")
+            self.assertEqual(runners.internal_only_delegated_reads(path), frozenset({"ha_search"}))
+
+    def test_strict_admission_fails_closed_on_unreadable_internal_only_source(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            with mock.patch.object(runners, "ROUTES_SOURCE", Path(directory) / "routes.py"):
+                self.assertEqual(health_case("admitted_strict_91")[:2],
+                                 ("failed", "internal_only_reads_unreadable"))
 
     def test_load_reviewed_capture_fails_closed(self) -> None:
         capture = json.loads(runners.REVIEWED_91_CAPTURE.read_text(encoding="utf-8"))
@@ -747,7 +797,8 @@ class StrictCatalogExactnessTests(unittest.TestCase):
 
     def test_health_runner_lists_the_peer_only_for_strict_admission(self) -> None:
         async def session(_endpoint, *, probe):
-            return health(**strict_91_view()), [runners.PROBE_TOOL], served_probe() if probe else None
+            return (health(**strict_91_view()), [runners.PROBE_TOOL, *sorted(INTERNAL)],
+                    served_probe() if probe else None)
 
         listed = []
 

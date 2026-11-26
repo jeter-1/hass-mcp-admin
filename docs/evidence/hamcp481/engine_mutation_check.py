@@ -1,4 +1,4 @@
-"""HAMCP-501 W3: guard mutants of the native search engine modules.
+"""HAMCP-501 W3 and W6 S1: guard mutants of the native search engine modules.
 
 The modules are ``search/engine.py``, ``entities.py``, ``configs.py``,
 ``subcalls.py`` and ``reply.py``. Each mutant is one textual edit of one
@@ -9,12 +9,29 @@ module and the suite see the same classes, and the suite must fail at least
 one test. The mutants remove or weaken a guard: an argument check, a refusal,
 a fail-closed source rule, a hidden-entity rule, a bound, a partial-reason
 disclosure, a projection, a fit rule, the final sanitizer check, the
-exception rule or the labels read rule.
+exception rule, the labels read rule or a sub-call row rule.
 
 The suite's AST reachability tests parse the files on disk, so a mutant does
 not reach them; every mutant in ``MUTANTS`` is killed by a behavior test.
-``EQUIVALENT`` holds the one edit that changes no observable outcome, with
-the reason; it is run and reported, not required to fail.
+``EQUIVALENT`` holds an edit that changes no observable outcome, with the
+reason; it is run and reported, not required to fail. It is empty: its one
+edit, the configuration-body time budget, went with the body reads.
+
+HAMCP-501 W6 S1 = b+ (approved by Josh as relayed by the architect,
+2026-11-26): native search reads no automation, script or scene body, so
+the mutants of that code went with it: unavailable_batch_used,
+scene_read_exception_swallowed, graph_items_not_last,
+body_key_grammar_unchecked, chunk_timeout_unbounded,
+chunk_timeout_mislabelled, not_found_body_read_failed, non_dict_body_kept,
+scene_owner_unchecked and the equivalent time_budget_unchecked.
+row_kind_unchecked is re-anchored to the new row loop, and the S1 guards
+of the entity-type sub-call rows have their own mutants. Every type's own
+row keys have theirs: entity_row_keys_unchecked became row_keys_any_type.
+The page-size ladder (an architect decision, in place of a per-type page
+size) has its own: the ladder sizes, the page arguments, the step-down
+trigger, the spans, the alignment, the call bound and the full-page rule.
+The per-type size's mutants (page_rows_any_type, page_sizes_not_derived and
+page_arguments_one_size) went with it.
 
 Usage, from the repository root::
 
@@ -134,36 +151,30 @@ MUTANTS = {
     "labels_read_when_null": (
         "entities", 'if "labels" in self.requested and "labels" not in self.null:',
         'if "labels" in self.requested:'),
-    # configs.py: body reads, the time budget, the graph and the sub-calls.
-    "unavailable_batch_used": (
-        "configs", "if type(result) is not ReadResult or result.status == c.UNAVAILABLE:\n            return [None]",
-        "if type(result) is not ReadResult:\n            return [None]"),
-    "scene_read_exception_swallowed": ("configs", "            raise outcome\n", "            return [None] * len(reads)\n"),
-    "graph_items_not_last": (
-        "configs", "ordered = ([item for item in items if item[0] not in deprioritize]\n"
-                   "               + [item for item in items if item[0] in deprioritize])",
-        "ordered = list(items)"),
-    "body_key_grammar_unchecked": ("configs", "if argument.fullmatch(item[1]) is None:", "if False:"),
-    "chunk_timeout_unbounded": ("configs", "timeout = min(remaining, ITEM_TIMEOUT_SECONDS)", "timeout = remaining"),
-    "chunk_timeout_mislabelled": (
-        "configs", 'counts["time_budget" if remaining < ITEM_TIMEOUT_SECONDS else "read_failed"]',
-        'counts["time_budget"]'),
-    "not_found_body_read_failed": (
-        "configs", "elif outcome.status == c.NOT_FOUND:", "elif False:"),
-    "non_dict_body_kept": ("configs", "elif type(outcome.value) is dict:", "elif True:"),
+    # configs.py: the graph, the storage helpers and the sub-calls.
     "graph_query_unchecked": ("configs", "if STRICT_ENTITY_ID.fullmatch(query) is not None:", "if True:"),
     "graph_invalid_ids_used": (
         "configs", "and all(ids is not INVALID for ids in item.value.values())):", "):"),
     "graph_id_prefix_unchecked": (
         "configs", 'STRICT_ENTITY_ID.fullmatch(entity_id) and entity_id.startswith(f"{search_type}.")',
         "STRICT_ENTITY_ID.fullmatch(entity_id)"),
-    "scene_owner_unchecked": ("configs", 'if row["platform"] == "homeassistant":', "if True:"),
     "helper_invalid_name_used": ("configs", "if name is INVALID or original_name is INVALID:", "if False:"),
     "helper_dropped_rows_unreported": (
         "configs", 'reasons.add("not_searched", "helper", "read_failed", result.dropped)', "pass"),
     "helper_invalid_value_used": ("configs", "if any(value is INVALID for value in helper.values()):", "if False:"),
     "subcall_not_admitted_unreported": ("configs", "if outcome.status == subcalls.NOT_ADMITTED:", "if False:"),
     "upstream_partial_unreported": ("configs", "if outcome.upstream_partial:", "if False:"),
+    # HAMCP-501 W6 S1: the per-type incomplete code and the entity-row ids.
+    "subcall_incomplete_unreported": ("configs", "    elif outcome.status == subcalls.INCOMPLETE:", "    elif False:"),
+    "script_id_unfilled": (
+        "configs", '    if search_type == "script" and record.get("script_id") is None:\n'
+                   '        record["script_id"] = slug\n    elif', "    if"),
+    "scene_id_unfilled": (
+        "configs", '    elif search_type == "scene" and record.get("scene_id") is None:\n', "    elif False:\n"),
+    "scene_id_registry_unused": (
+        "configs", '        record["scene_id"] = slug_map.get(slug) or slug\n    # The component',
+        '        record["scene_id"] = slug\n    # The component'),
+    "references_default_dropped": ("configs", '    record.setdefault("match_in_references", False)\n', ""),
     "dashboard_scan_unheld": ("configs", "needed=request.offset + request.limit", "needed=1"),
     "dashboard_total_uncorrected": (
         "configs", "total = len(tagged) - dashboard_held + dashboard_total", "total = len(tagged)"),
@@ -171,22 +182,70 @@ MUTANTS = {
         "configs", 'tagged.sort(key=lambda item: -item[1]["score"])', 'tagged.sort(key=lambda item: item[1]["score"])'),
     # subcalls.py: the page and row shapes and the scan stops.
     "row_extra_key_accepted": (
-        "subcalls", 'if type(row) is not dict or not set(row) <= set(_ROW_KINDS) | {"score"}:',
+        "subcalls", "if type(row) is not dict or not set(row) <= _ROW_KEYS[search_type]:",
         "if type(row) is not dict:"),
+    # HAMCP-501 W6 S1: every type's row keys are its own.
+    "row_keys_any_type": (
+        "subcalls", "not set(row) <= _ROW_KEYS[search_type]:", 'not set(row) <= set(_ROW_KINDS) | {"score"}:'),
+    "helper_row_keys_widened": (
+        "subcalls", '"helper": frozenset({"entity_id", "helper_type", "name",',
+        '"helper": frozenset({"entity_id", "helper_type", "name", "friendly_name",'),
+    "dashboard_row_keys_widened": (
+        "subcalls", '"dashboard": frozenset({"score",', '"dashboard": frozenset({"score", "name",'),
     "row_score_unchecked": ("subcalls", "    if type(score) is not int:\n        return False\n", ""),
-    "row_kind_unchecked": (
-        "subcalls", "if key != \"score\" and type(value) is not _ROW_KINDS[key]:", "if False:"),
+    "row_kind_unchecked": ("subcalls", "        if type(value) is not _ROW_KINDS[key]:", "        if False:"),
     "helper_type_optional": ("subcalls", 'return search_type != "helper" or "helper_type" in row', "return True"),
+    # HAMCP-501 W6 S1: the entity-type rows and the repeated-row stop.
+    "nullable_widened": ("subcalls", "(value is None and key in _NULLABLE)", "value is None"),
+    "entity_rows_unchecked": (
+        "subcalls", "    if search_type in ENTITY_TYPES:\n        entity_id", "    if False:\n        entity_id"),
+    "entity_id_grammar_unchecked": (
+        "subcalls", "                and STRICT_ENTITY_ID.fullmatch(entity_id) is not None\n", ""),
+    "entity_id_prefix_unchecked": (
+        "subcalls", '\n                and entity_id.startswith(f"{search_type}."))', ")"),
+    "page_repeat_allowed": (
+        "subcalls", "if len(set(page_ids)) != len(page_ids) or not seen.isdisjoint(page_ids):",
+        "if not seen.isdisjoint(page_ids):"),
+    "scan_repeat_allowed": (
+        "subcalls", "if len(set(page_ids)) != len(page_ids) or not seen.isdisjoint(page_ids):",
+        "if len(set(page_ids)) != len(page_ids):"),
+    "seen_not_updated": ("subcalls", "        seen.update(page_ids)\n", ""),
     "page_total_negative": ("subcalls", "        and page.config_total_matches >= 0\n", ""),
-    "page_size_unbounded": ("subcalls", "        and len(page.rows) <= PAGE_SIZE\n", ""),
+    "page_size_unbounded": ("subcalls", "        and len(page.rows) <= size\n", ""),
     "withheld_names_untyped": ("subcalls", "        and all(type(name) is str for name in page.withheld_names)\n", ""),
-    "empty_page_with_more": ("subcalls", "        and (page.rows or not page.has_more)\n", ""),
+    "empty_page_with_more": (
+        "subcalls", "        and (len(page.rows) == size or not page.has_more)\n", ""),
+    # HAMCP-501 W6 S1: a page that claims more rows is full.
+    "short_page_with_more": (
+        "subcalls", "len(page.rows) == size or not page.has_more", "page.rows or not page.has_more"),
     "reader_none_called": (
         "subcalls", "    if reader is None:\n        return SubcallOutcome(search_type, NOT_ADMITTED)\n", ""),
     "row_bound_unchecked": (
-        "subcalls", "if remaining <= 0 or scanned >= MAX_SCAN_ROWS:", "if remaining <= 0:"),
-    "scan_deadline_unchecked": (
-        "subcalls", "if remaining <= 0 or scanned >= MAX_SCAN_ROWS:", "if scanned >= MAX_SCAN_ROWS:"),
+        "subcalls", "if remaining <= 0 or scanned >= MAX_SCAN_ROWS or calls", "if remaining <= 0 or calls"),
+    "scan_deadline_unchecked": ("subcalls", "if remaining <= 0 or scanned", "if scanned"),
+    # HAMCP-501 W6 S1 (an architect decision): the page-size ladder.
+    "ladder_misaligned": ("subcalls", "PAGE_SIZE_LADDER = (150, 30, 6, 1)", "PAGE_SIZE_LADDER = (150, 40, 6, 1)"),
+    "page_arguments_any_size": ("subcalls", "or size not in PAGE_SIZE_LADDER):", "or size < 1):"),
+    "page_offset_not_scaled": ("subcalls", '"offset": page * size,', '"offset": page,'),
+    "page_limit_fixed": ("subcalls", '"limit": size,', '"limit": PAGE_SIZE_LADDER[0],'),
+    "call_bound_unchecked": ("subcalls", " or calls >= MAX_PAGE_CALLS:", ":"),
+    "calls_not_counted": ("subcalls", "        calls += 1\n", ""),
+    "page_index_unaligned": (
+        "subcalls", "exact_match, offset // size, size)", "exact_match, offset // PAGE_SIZE_LADDER[0], size)"),
+    "any_failure_steps_down": ("subcalls", "        except PageTooLarge:\n", "        except Exception:\n"),
+    "step_down_ignored": ("subcalls", "if level == len(PAGE_SIZE_LADDER) - 1:", "if True:"),
+    "oversized_row_skipped": (
+        "subcalls", "                # One row too large for a page of its own.\n"
+        "                return finished(INCOMPLETE)\n",
+        "                offset += size\n                continue\n"),
+    "step_down_level_kept": ("subcalls", "            level += 1\n", ""),
+    "span_end_wrong": (
+        "subcalls", "span_ends.append(offset + size)", "span_ends.append(offset + PAGE_SIZE_LADDER[level + 1])"),
+    "span_not_popped": ("subcalls", "            span_ends.pop()\n            level -= 1\n",
+                        "            span_ends.pop()\n"),
+    "span_pop_once": (
+        "subcalls", "while span_ends and offset == span_ends[-1]:", "if span_ends and offset == span_ends[-1]:"),
+    "offset_advance_fixed": ("subcalls", "        offset += size\n", "        offset += PAGE_SIZE_LADDER[0]\n"),
     "snapshot_move_ignored": ("subcalls", "elif page.config_total_matches != first_total:", "elif False:"),
     "storage_helpers_kept": (
         "subcalls", 'if row["helper_type"] not in STORAGE_HELPER_TYPES)', ")"),
@@ -234,16 +293,9 @@ MUTANTS = {
         "reply", "if check.redacted_field_count or check.truncated_field_count or check.value != reply:",
         "if check.redacted_field_count or check.truncated_field_count:"),
 }
-# Run and reported, but not required to fail a test.
-EQUIVALENT = {
-    # With the budget spent, ``remaining`` is at most 0, so the chunk's
-    # ``asyncio.wait_for`` timeout is too. CPython 3.12 ``wait_for`` then
-    # cancels the task before its first step (Lib/asyncio/tasks.py), so no
-    # read is sent, and the TimeoutError branch counts the chunk
-    # time_budget, since ``remaining`` is below ITEM_TIMEOUT_SECONDS. The
-    # reply is the one the break gives.
-    "time_budget_unchecked": ("configs", "        if remaining <= 0:\n", "        if False:\n"),
-}
+# Run and reported, but not required to fail a test. Empty since HAMCP-501
+# W6 S1 (see the module docstring).
+EQUIVALENT: dict = {}
 
 
 class _Mutant(importlib.abc.MetaPathFinder, importlib.abc.Loader):

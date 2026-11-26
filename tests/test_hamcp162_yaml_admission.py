@@ -557,8 +557,8 @@ class AdmissionTests(Harness):
         gateway, _ = await self.gateway(version, stock_catalog(version), mode=mode)
         return self.exposed(gateway)
 
-    async def test_stock_catalog_is_optional_absent_with_87_public_tools(self):
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 87)  # HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
+    async def test_stock_catalog_is_optional_absent_with_88_public_tools(self):
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 88)  # HAMCP-501 W6: + native ha_search; HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
         for version in VERSIONS:
             for mode in ("A", "B"):
                 with self.subTest(version=version, mode=mode):

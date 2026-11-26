@@ -20,6 +20,7 @@ workflow already uses.
 from __future__ import annotations
 
 import argparse
+import ast
 import asyncio
 import hashlib
 import json
@@ -79,6 +80,12 @@ MAX_PEER_CATALOG_PAGES = 32
 FIXTURE_READ_KEYS = ("rest_reads", "websocket_reads")
 FIXTURE_MUTATION_KEYS = ("http_mutations", "websocket_mutations")
 LANE_ENGINEERING_IMAGE = "engineering-admission-lane:test"
+# HAMCP-501 W6: delegated reads Engineering keeps internal-only for its own
+# native tool of the same name (never exposed, never listed). Read from
+# source, like scripts/codex-context.py, not from a lane literal.
+ROUTES_SOURCE = (Path(__file__).resolve().parent.parent / "hass_mcp_engineering_beta"
+                 / "ha_mcp_engineering" / "ha_core_readmission" / "routes.py")
+INTERNAL_ONLY_NAME = "INTERNAL_ONLY_DELEGATED_READ_TOOLS"
 ENGINEERING_IMAGES = frozenset({LANE_ENGINEERING_IMAGE})
 PEER_CONTAINER = "exact-admission-upstream"
 PEER_PORT = 18086
@@ -414,11 +421,16 @@ def evaluate_health_case(expect: str, *, configured_url: str, engineering_versio
                 "reviewed_capture_fingerprint_matches_runtime":
                     canonical_fingerprint({"tools": reviewed_tools}) == fingerprint,
             }
-            # One optional exposure: the admitted reader.
+            # One optional exposure: the admitted reader. HAMCP-501 W6: the
+            # internal-only reads are matched but not exposed, and each
+            # name is listed as Engineering's own native tool.
+            internal = internal_only_delegated_reads()
             require(view.get("exact_matched_automatic_read_count") is not None
-                    and view.get("dynamically_exposed_count") == reads + 1
+                    and view.get("dynamically_exposed_count") == reads + 1 - len(internal)
                     and view.get("core_withheld_read_count") == 0, "no_delegated_reads_exposed")
+            observed["internal_only_delegated_reads"] = sorted(internal)
             require(PROBE_TOOL in names, "probe_tool_not_listed")
+            require(internal <= names, "native_owner_not_listed")
             require(result["success"], "probe_read_not_useful")
             require(result["mcp_is_error"] is not True, "probe_mcp_is_error")
             require(result["provider"] == "upstream_read_gateway", "probe_not_via_read_gateway")
@@ -617,6 +629,33 @@ async def engineering_session(endpoint: str, *, probe: bool) -> tuple[dict[str, 
             health = tool_text(await session.call_tool(HEALTH_TOOL, {"check_ha": False}))
             require(isinstance(health, dict), "health_unreadable")
             return health, names, probe_result
+
+
+def internal_only_delegated_reads(path: Path | None = None) -> frozenset[str]:
+    """Return the internal-only delegated read names from Engineering source.
+
+    Fails closed when the source, the assignment or its value is not a
+    readable tuple of tool names.
+    """
+
+    path = ROUTES_SOURCE if path is None else path
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, SyntaxError) as error:
+        raise LaneFailure("internal_only_reads_unreadable") from error
+    values = []
+    for node in tree.body:
+        targets = node.targets if isinstance(node, ast.Assign) else (
+            [node.target] if isinstance(node, ast.AnnAssign) else [])
+        if any(isinstance(target, ast.Name) and target.id == INTERNAL_ONLY_NAME for target in targets):
+            try:
+                values.append(ast.literal_eval(node.value))
+            except (TypeError, ValueError) as error:
+                raise LaneFailure("internal_only_reads_unreadable") from error
+    require(len(values) == 1 and isinstance(values[0], tuple)
+            and all(isinstance(name, str) and name for name in values[0])
+            and len(set(values[0])) == len(values[0]), "internal_only_reads_unreadable")
+    return frozenset(values[0])
 
 
 Session = Callable[..., Any]

@@ -8,6 +8,14 @@ once, each completes as soon as its own upstream exchange does, and
 `partial` is ha-mcp's own flag passed through, not something Engineering
 derives from latency or concurrency. The lockstep itself is therefore not
 reproducible here; it is attributed to the upstream ha-mcp provider.
+
+HAMCP-501 W6 (G1, as relayed by the architect): ``ha_search`` is native, and
+the delegated route is internal-only, reached only as one native search
+sub-call page. The burst is pinned on a synthetic held delegated read, which
+carries no reviewed completeness flag, so every call is complete however it
+is held or released. ha-mcp's own ``partial`` flag on the internal search
+route is pinned call by call in ``test_hamcp437_920_read_guards``
+(``SearchCompleteness920Tests``).
 """
 from __future__ import annotations
 
@@ -31,10 +39,12 @@ _BURST = 5
 # Safety bound only; every assertion is event-driven. Matches the hold
 # allowance of tests/test_hamcp168_health_supersession.py.
 _WAIT_TIMEOUT_SECONDS = 30
+# HAMCP-501 W6: a synthetic published delegated read; ha_search is internal-only.
+_HELD = "ha_hamcp168_held_read"
 
 
 class _HeldSearchTransport(FakeTransport):
-    """Holds each ha_search exchange until the test releases it by key."""
+    """Holds each held-read exchange until the test releases it by key."""
 
     def __init__(self, tools, *, partial_by_key):
         super().__init__(tools)
@@ -61,7 +71,7 @@ class _HeldSearchTransport(FakeTransport):
             if inspect.isawaitable(prepared):
                 await prepared
         result = self.result
-        if tool_name == "ha_search":
+        if tool_name == _HELD:
             key = arguments["entity_id"]
             self.in_flight += 1
             self.max_in_flight = max(self.max_in_flight, self.in_flight)
@@ -97,20 +107,22 @@ class ConcurrentDelegatedReadTests(unittest.IsolatedAsyncioTestCase):
             self.enterContext(patch.object(
                 capabilities, name, deepcopy(getattr(capabilities, name))))
         self.keys = [f"sensor.hamcp168_{index}" for index in range(_BURST)]
-        # Mixed upstream flags: partial must follow ha-mcp, call by call.
+        # Mixed upstream flags: Engineering reads no partial flag on this
+        # read and derives none from latency, concurrency or release order.
         self.partial_by_key = {
             key: index % 2 == 0 for index, key in enumerate(self.keys)
         }
-        entries = [policy_entry("ha_search"), policy_entry("ha_get_state")]
+        entries = [policy_entry(_HELD), policy_entry("ha_get_state"), policy_entry("ha_search")]
         tools = [catalog_tool(entry.upstream_name) for entry in entries]
         self.transport = _HeldSearchTransport(
             tools, partial_by_key=self.partial_by_key
         )
-        _gateway, server, _ = await initialize(
+        self.gateway, server, _ = await initialize(
             entries, tools, transport=self.transport
         )
-        self.search = registered_tools(server).get("ha_search")
-        self.get_state = registered_tools(server).get("ha_get_state")
+        self.tools = registered_tools(server)
+        self.search = self.tools.get(_HELD)
+        self.get_state = self.tools.get("ha_get_state")
 
     async def test_burst_is_fully_concurrent_and_completes_individually(self):
         tasks = {
@@ -142,10 +154,31 @@ class ConcurrentDelegatedReadTests(unittest.IsolatedAsyncioTestCase):
             value = json.loads(await asyncio.wait_for(
                 tasks[key], timeout=_WAIT_TIMEOUT_SECONDS))
             self.assertTrue(value["success"])
-            expected = "partial" if self.partial_by_key[key] else "complete"
-            self.assertEqual(expected, value["metadata"]["completeness"])
+            self.assertEqual("complete", value["metadata"]["completeness"])
             pending = [k for k in self.keys if not tasks[k].done()]
             self.assertEqual(self.keys[: self.keys.index(key)], pending)
+        self.assertEqual(0, self.transport.in_flight)
+
+    async def test_delegated_search_is_internal_only_and_never_published(self):
+        # HAMCP-501 W6 (G1): admitted internal-only, so no public burst of
+        # delegated ha_search reads exists; a direct read is refused before
+        # dispatch.
+        from ha_mcp_engineering.providers import upstream_read_gateway as gateway_module
+        self.assertNotIn("ha_search", self.tools)
+        self.assertNotIn("ha_mcp__ha_search", self.tools)
+        with self.gateway._lock:
+            route = self.gateway._internal["ha_search"]
+        before = len(self.transport.attempts)
+        reply = json.loads(await self.gateway.execute(
+            exposed_name="ha_search", arguments={"entity_id": self.keys[0]},
+            reviewed_schema=gateway_module._public_read_schema(
+                route.entry, route.observed_tool["inputSchema"]),
+            policy_entry=route.entry, admission_generation=route.generation,
+            contract_fingerprint=route.contract_fingerprint,
+        ))
+        self.assertIs(reply["success"], False)
+        self.assertEqual("prohibited_delegation", reply["details"]["failure_category"])
+        self.assertEqual(before, len(self.transport.attempts))
         self.assertEqual(0, self.transport.in_flight)
 
 

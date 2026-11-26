@@ -1,0 +1,48 @@
+{
+  "command": "unshare -rn <venv>/bin/python -I docs/evidence/hamcp501/f1/generate_body_match_fixtures.py --upstream <ha-mcp-51e3aac7> --output-dir docs/evidence/hamcp501/f1",
+  "generator": {
+    "path": "docs/evidence/hamcp501/f1/generate_body_match_fixtures.py",
+    "sha256": "0b6a5523c0edb5521b14d699fc8a0ef7cabb16ff28e1f40de4b1d6e5d98dcbbf"
+  },
+  "golden": {
+    "path": "docs/evidence/hamcp501/f1/body-match-golden.json",
+    "sha256": "ac9da86e8b14957bcc874d68864c443a8a1061e241da6054a7ec3f577bdf9a6d"
+  },
+  "inputs": "synthetic, defined in the generator; no value is a credential",
+  "isolation": "python -I in the task venv (PyYAML for secrets.py), under unshare -rn (no network)",
+  "python": "3.12.14",
+  "pyyaml": "6.0.2",
+  "schema": "hamcp501-f1-body-match-provenance-v1",
+  "source": {
+    "commit": "51e3aac788482a081807591cd5d58d07dc4e540b",
+    "executed": [
+      "custom_components/ha_mcp_tools/websocket_api/search_score.py",
+      "custom_components/ha_mcp_tools/websocket_api/secrets.py",
+      "custom_components/ha_mcp_tools/websocket_api/search.py::_degradation_warnings",
+      "custom_components/ha_mcp_tools/websocket_api/search.py::_add_optional_keys",
+      "custom_components/ha_mcp_tools/websocket_api/search.py::_search_prep"
+    ],
+    "files": {
+      "custom_components/ha_mcp_tools/websocket_api/constants.py": "672c13bb636c77c549cb27a72cf27c304d8ac1a61cc833348e4531ad40cbfa71",
+      "custom_components/ha_mcp_tools/websocket_api/flow_domains.py": "f371892fbbbb7f77dd7938eb8239133d6538e43922c0e7fc1c154fbda319bccd",
+      "custom_components/ha_mcp_tools/websocket_api/search.py": "5f1a1e312884494245f71c4720c5ddd3ac3d4211f9c8257e9be9460be36781a8",
+      "custom_components/ha_mcp_tools/websocket_api/search_score.py": "ba034030b149091fba1e2777ac6c0c4d9c442fa33148b7d92441cba3feca43de",
+      "custom_components/ha_mcp_tools/websocket_api/secrets.py": "9f4b00dc2dfc2d1d3167e70dc6793b58e5d58065d1203c283813e34b616a7958",
+      "src/ha_mcp/tools/search/entities.py": "650dcd0ea85c63541f6220696767e7db568d097214627496c09d2129762b7500",
+      "src/ha_mcp/tools/search/response.py": "fe776978341246e12a2ddcfd8a7ec3f66f8bbee5712d9697d4b8edc6d43af07c"
+    },
+    "read_as_data": [
+      "custom_components/ha_mcp_tools/websocket_api/constants.py",
+      "custom_components/ha_mcp_tools/websocket_api/flow_domains.py",
+      "src/ha_mcp/tools/search/response.py",
+      "src/ha_mcp/tools/search/entities.py"
+    ],
+    "repository": "https://github.com/homeassistant-ai/ha-mcp",
+    "stubbed": {
+      "_flow_helper_domains": "returns no flow domains",
+      "hass": "config.path from a temporary directory; executor jobs run inline",
+      "homeassistant.core": "HomeAssistant, an empty class"
+    },
+    "version": "9.2.0"
+  }
+}

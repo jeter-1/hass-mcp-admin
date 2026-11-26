@@ -1,55 +1,56 @@
 """The configuration surface of native ``ha_search`` (HAMCP-481 W3, design
-sections 2.4 to 2.6, 3.5, 3.6 and 6.1).
+sections 2.4 to 2.6, 3.5, 3.6 and 6.1; HAMCP-501 W6 S1).
 
-Automations, scripts, scenes and storage helpers are searched natively, over
-the inventories the engine already read and one injected reader (a
-``CoreReadSession``) for configuration bodies and the reference graph.
-Dashboards and flow helpers come from the delegated sub-calls
-(:mod:`.subcalls`). Nothing here falls back to the delegated route for a
-native bucket.
-
-Body reads (G-b). Each type's items are read in chunks of
-:data:`CONFIG_CHUNK`. A chunk waits at most the smaller of the type's
-remaining time budget and :data:`ITEM_TIMEOUT_SECONDS`. Once the budget is
-spent, the rest are counted as ``not_searched`` ``time_budget``. A chunk that
-times out on the budget is counted the same way; one that times out on the
-per-item timeout, or fails, is counted as ``read_failed``. An item that Core
-does not find, or whose key is not a valid read argument, is counted as
-``not_readable``. Bodies are read in memory for matching only; a record
-carries no body.
+Storage helpers are searched natively, over the inventories the engine
+already read. Automations, scripts, scenes, dashboards and flow helpers come
+from the delegated sub-calls (:mod:`.subcalls`). Under S1 = b+ (approved by
+Josh as relayed by the architect, 2026-11-26), automation, script and scene
+body matching is the delegated route's own, and native search reads no
+automation, script or scene body: the one injected reader (a
+``CoreReadSession``) serves the reference graph only. Nothing here falls back
+to the delegated route for a native bucket.
 
 Sources. The entity registry is required for scene and helper search: an
 unusable registry fails the search. A helper list that cannot be read, its
 dropped rows and its rows with an invalid field are counted as
 ``read_failed``. The reference graph is read once, for an ``entity_id``-shaped
 query with automations, scripts or scenes requested; a failed or unreadable
-graph is counted as ``not_searched`` ``graph_unavailable``.
+graph is counted as ``not_searched`` ``graph_unavailable``. A sub-call that is
+not admitted or did not finish is ``source_unavailable`` for its own bucket,
+and an upstream ``partial`` page is ``not_searched`` ``upstream_partial`` for
+its own bucket; the other buckets are unaffected.
+
+Body matching (HAMCP-501 W6 F1). A delegated row keeps the route's body match
+only when the page shows that it was matched against the scrubbed corpus.
+For the automation, script, scene and helper sub-calls, a query the A'+
+trigger names (:func:`.subcalls.body_match_unsafe`, decided by Josh as
+relayed by the architect, 2026-11-26), or a scan whose pages or bracketing
+helper probes are not ``clean``, keeps only the component name tier of each
+row and the graph references: ``match_in_config`` is False, a row with no
+name match is dropped, and the bucket is ``not_searched`` with
+``body_numeric_query``, ``body_scrub_degraded`` or ``body_scrub_unverified``.
+Native storage helpers and dashboards are unaffected.
 
 Ported from ha-mcp 9.2.0, commit 51e3aac788482a081807591cd5d58d07dc4e540b:
 
 - ``src/ha_mcp/tools/smart_search/_deep.py`` (sha256
   10c57f9fd6186deb31d88329f3d61bdd63bf6cb525fafbf455eda0bfd44482ff): the
-  automation, script and storage-helper candidates, scoring and records, the
-  helper registry map, and the category-ordered merge and slice;
+  storage-helper candidates, scoring and records, the helper registry map,
+  and the category-ordered merge and slice;
 - ``src/ha_mcp/tools/smart_search/_scenes.py`` (sha256
   3b587de45f4954b779e064bbbb19087d0266d2a069db9c6ac3c055c2844154fa): the
-  scene registry walk, the fetch selection and the storage-key resolution;
+  scene registry walk and the storage-key resolution;
 - ``src/ha_mcp/tools/smart_search/_graph.py`` (sha256
   39580945a782d6b7007d523d05450568d10daa115496a321232e4713a936259b): when the
-  graph applies, the graph record and the graph-hit merge;
-- ``src/ha_mcp/tools/smart_search/_fetch.py`` (sha256
-  8c0452072e2d35b2e2713a3e840e7535a5cc1fab9ae3be349f33f3fed13fd2c3): the
-  chunked, budgeted fetch and its graph-confirmed-last order;
-- ``src/ha_mcp/config_settings.py`` (sha256
-  cf975eee29dc9747ea0ed3ad7e6f97e6d78e674c6100d26c3cfe35e0e5b38b3c): the
-  default time budgets, the per-item timeout and the chunk size.
+  graph applies, the graph record and the graph-hit merge.
 
 Changes from the source:
 
-- automation and script bodies are read by entity id over the websocket, so
-  an item without a unique id is read too;
-- a chunk waits the smaller of the remaining budget and the per-item
-  timeout, and its failures are named reasons (G-b);
+- automation, script and scene rows come from the delegated sub-calls (S1);
+  a script or scene id the route leaves empty is filled from the entity id,
+  a scene's through the registry's storage key;
+- ``config_time_budget`` is validated but not forwarded: each sub-call scan
+  has its own deadline (:data:`.subcalls.SCAN_DEADLINE_SECONDS`);
 - an unusable entity registry fails scene and helper search instead of
   degrading;
 - the helper registry map is keyed by platform and unique id;
@@ -114,20 +115,15 @@ BUCKET_OF = MappingProxyType({
 })
 # The types the reference graph speaks to (``_graph.py``).
 GRAPH_TYPES = ("automation", "script", "scene")
-# ``INDIVIDUAL_FETCH_BATCH_SIZE`` and ``INDIVIDUAL_CONFIG_TIMEOUT``.
-CONFIG_CHUNK = 10
-ITEM_TIMEOUT_SECONDS = 5.0
-# The ``*_CONFIG_TIME_BUDGET`` defaults, in seconds.
-DEFAULT_TIME_BUDGETS = MappingProxyType({"automation": 30.0, "script": 20.0, "scene": 20.0})
 # ``fetch_related_buckets``'s timeout.
 GRAPH_TIMEOUT_SECONDS = 5.0
-# ``config_time_budget``'s public schema range.
+# ``config_time_budget``'s public schema range. The value is validated, not
+# forwarded (S1).
 TIME_BUDGET_RANGE = (0.001, 300.0)
 
 # ``_graph.py`` ``_VALID_ENTITY_ID``, unanchored for ``fullmatch``; no
 # ``re.ASCII``, as in the source.
 _GRAPH_SHAPED = re.compile(r"(?!.+__)(?!_)[\da-z_]+(?<!_)\.(?!_)[\da-z_]+(?<!_)")
-_BODY_READS = MappingProxyType({"automation": "automation_config", "script": "script_config"})
 _HELPER_LISTS = tuple(f"{domain}_list" for domain in c.INPUT_DOMAINS)
 
 
@@ -188,17 +184,11 @@ def reads_for(request: ConfigRequest) -> tuple:
     names = {"states"}
     if types & {"scene", "helper"}:
         names.add("entity_registry")
-    for search_type, name in _BODY_READS.items():
-        if search_type in types:
-            names.add(name)
     if graph_applies(request):
         names.add("search_related")
-    if "scene" in types:
-        names.add("scene_config")
     if "helper" in types:
         names.update(_HELPER_LISTS)
-    order = ("states", "entity_registry", "automation_config", "script_config",
-             "search_related", "scene_config", *_HELPER_LISTS)
+    order = ("states", "entity_registry", "search_related", *_HELPER_LISTS)
     return tuple(name for name in order if name in names)
 
 
@@ -216,70 +206,6 @@ def _score(entity_id: str, name: str, domain: str, body: Any, request: ConfigReq
     if total < threshold:
         return None
     return total, in_name, config_score >= threshold
-
-
-async def _read_chunk(search_type: str, reads: list, reader: Any) -> list:
-    name = _BODY_READS.get(search_type)
-    if name is not None:
-        result = await reader.batch(name, tuple(key for _, key in reads))
-        if type(result) is not ReadResult or result.status == c.UNAVAILABLE:
-            return [None] * len(reads)
-        return [result.items.get(key) for _, key in reads]
-    outcomes = await asyncio.gather(*(reader.scene_config(key) for _, key in reads),
-                                    return_exceptions=True)
-    for outcome in outcomes:
-        if isinstance(outcome, BaseException):
-            # An authority change or a refused argument fails the search.
-            raise outcome
-    return list(outcomes)
-
-
-async def _read_bodies(search_type: str, items: list, reader: Any, request: ConfigRequest,
-                       deprioritize: frozenset, monotonic: Callable[[], float],
-                       reasons: Reasons) -> dict:
-    """Read the bodies of ``items``, ``(result key, read key)`` pairs, under
-    the type's time budget (G-b). Returns the bodies by result key."""
-
-    argument = c.READS[_BODY_READS.get(search_type, "scene_config")].argument
-    # ``_individual_fetch_budgeted``: graph-confirmed items last, order kept.
-    ordered = ([item for item in items if item[0] not in deprioritize]
-               + [item for item in items if item[0] in deprioritize])
-    counts = {"time_budget": 0, "read_failed": 0, "not_readable": 0}
-    readable = []
-    for item in ordered:
-        if argument.fullmatch(item[1]) is None:
-            counts["not_readable"] += 1
-        else:
-            readable.append(item)
-    budget = request.config_time_budget
-    if budget is None:
-        budget = DEFAULT_TIME_BUDGETS[search_type]
-    bodies: dict[str, dict] = {}
-    started = monotonic()
-    for start in range(0, len(readable), CONFIG_CHUNK):
-        chunk = readable[start:start + CONFIG_CHUNK]
-        remaining = budget - (monotonic() - started)
-        if remaining <= 0:
-            counts["time_budget"] += len(readable) - start
-            break
-        timeout = min(remaining, ITEM_TIMEOUT_SECONDS)
-        try:
-            outcomes = await asyncio.wait_for(_read_chunk(search_type, chunk, reader), timeout)
-        except (asyncio.TimeoutError, TimeoutError):
-            counts["time_budget" if remaining < ITEM_TIMEOUT_SECONDS else "read_failed"] += len(chunk)
-            continue
-        for (key, _), outcome in zip(chunk, outcomes):
-            if type(outcome) is not ReadResult or outcome.status == c.UNAVAILABLE:
-                counts["read_failed"] += 1
-            elif outcome.status == c.NOT_FOUND:
-                counts["not_readable"] += 1
-            elif type(outcome.value) is dict:
-                bodies[key] = outcome.value
-            else:
-                counts["read_failed"] += 1
-    for code, count in counts.items():
-        reasons.add("not_searched", search_type, code, count)
-    return bodies
 
 
 async def _graph(request: ConfigRequest, reader: Any, reasons: Reasons) -> Mapping | None:
@@ -314,73 +240,34 @@ async def _graph(request: ConfigRequest, reader: Any, reasons: Reasons) -> Mappi
     return None
 
 
-async def _automations_or_scripts(search_type: str, request: ConfigRequest, states: StateRows,
-                                  reader: Any, hits: frozenset, monotonic: Callable[[], float],
-                                  reasons: Reasons) -> list:
-    prefix = f"{search_type}."
-    candidates = [(entity_id, row.friendly_name) for entity_id, row in states.rows.items()
-                  if entity_id.startswith(prefix)]
-    bodies = await _read_bodies(search_type, [(entity_id, entity_id) for entity_id, _ in candidates],
-                                reader, request, hits, monotonic, reasons)
-    records = []
-    for entity_id, friendly_name in candidates:
-        body = bodies.get(entity_id)
-        scored = _score(entity_id, friendly_name, search_type, body, request)
-        if scored is None:
-            continue
-        record = {"entity_id": entity_id}
-        if search_type == "script":
-            record["script_id"] = entity_id.removeprefix(prefix)
-        record.update({"friendly_name": friendly_name, "score": scored[0],
-                       "match_in_name": scored[1], "match_in_config": scored[2],
-                       "match_in_references": False})
-        records.append((record, bool(body)))
-    return records
-
-
-def _scene_registry(sources: Mapping) -> tuple[dict, set]:
-    """``_scenes.py``'s registry walk: slug to storage key, and the storage
-    keys of Home Assistant's own scenes."""
+def _scene_registry(sources: Mapping) -> dict:
+    """``_scenes.py``'s registry walk: slug to storage key."""
 
     registry = required_rows(sources, "entity_registry", ("platform", "unique_id"))
     slug_map: dict[str, str] = {}
-    owned: set[str] = set()
     for entity_id, row in registry.items():
         unique_id = row["unique_id"]
         if not entity_id.startswith("scene.") or not unique_id:
             continue
         slug_map[entity_id.removeprefix("scene.")] = unique_id
-        if row["platform"] == "homeassistant":
-            owned.add(unique_id)
-    return slug_map, owned
+    return slug_map
 
 
-async def _scenes(request: ConfigRequest, states: StateRows, slug_map: dict, owned: set,
-                  reader: Any, hits: frozenset, monotonic: Callable[[], float],
-                  reasons: Reasons) -> list:
-    candidates = [(entity_id, row.friendly_name, entity_id.removeprefix("scene."))
-                  for entity_id, row in states.rows.items() if entity_id.startswith("scene.")]
-    # ``_select_scene_ids_to_fetch``: integration-managed scenes are scored
-    # by name only, with no reason (their read is a 404 by design).
-    fetch = [(slug, slug_map.get(slug, slug)) for _, _, slug in candidates
-             if slug_map.get(slug, slug) in owned]
-    bodies = await _read_bodies("scene", fetch, reader, request,
-                                frozenset(entity_id.removeprefix("scene.") for entity_id in hits),
-                                monotonic, reasons)
-    records = []
-    for entity_id, friendly_name, slug in candidates:
-        body = bodies.get(slug)
-        scored = _score(entity_id, friendly_name, "scene", body, request)
-        if scored is None:
-            continue
-        # ``_resolve_scene_storage_id``.
-        config_id = body.get("id") if body else None
-        scene_id = config_id if type(config_id) is str else slug_map.get(slug, slug)
-        records.append(({"entity_id": entity_id, "scene_id": scene_id,
-                         "friendly_name": friendly_name, "score": scored[0],
-                         "match_in_name": scored[1], "match_in_config": scored[2],
-                         "match_in_references": False}, bool(body)))
-    return records
+def _entity_record(search_type: str, row: dict, slug_map: Mapping) -> dict:
+    """A copy of an automation, script or scene sub-call row, with the id the
+    route left empty filled: a script's from its entity id, a scene's by
+    ``_resolve_scene_storage_id``'s registry fallback."""
+
+    record = dict(row)
+    slug = record["entity_id"].removeprefix(f"{search_type}.")
+    if search_type == "script" and record.get("script_id") is None:
+        record["script_id"] = slug
+    elif search_type == "scene" and record.get("scene_id") is None:
+        record["scene_id"] = slug_map.get(slug) or slug
+    # The component route does not report references; the native graph
+    # merge may set it.
+    record.setdefault("match_in_references", False)
+    return record
 
 
 def _storage_helpers(request: ConfigRequest, sources: Mapping, reasons: Reasons) -> list:
@@ -451,6 +338,69 @@ def _merge_graph(results: dict, hits: Mapping, request: ConfigRequest, states: S
             records.append((record, False))
 
 
+# ``search_score.py``'s ``FUZZY_THRESHOLD`` (``constants.py``).
+ROUTE_FUZZY_THRESHOLD = 70
+# The names Row 25 withholds from a reviewed flow-helper row; a collection
+# helper, automation, script or scene row withholds none.
+_FLOW_HELPER_WITHHELD = frozenset({"entry_id", "options_withheld"})
+
+
+def _route_name_tier(query_lower: str, texts: tuple, *, exact: bool) -> int | None:
+    """ha-mcp 9.2.0's component name tier: ``_name_tier`` in
+    ``custom_components/ha_mcp_tools/websocket_api/search_score.py`` (sha256
+    ba034030b149091fba1e2777ac6c0c4d9c442fa33148b7d92441cba3feca43de), over
+    a row's entity id and name only."""
+
+    query_norm = "" if exact else " ".join(scoring.tokenize(query_lower))
+    best = 0
+    for text in texts:
+        if not text:
+            continue
+        text_lower = str(text).lower()
+        if query_lower in text_lower:
+            return 100
+        if not exact:
+            if query_norm and query_norm in " ".join(scoring.tokenize(text_lower)):
+                return 100
+            best = max(best, scoring.ratio(query_lower, text_lower))
+    if not exact and best >= ROUTE_FUZZY_THRESHOLD:
+        return best
+    return None
+
+
+def _name_only(row: dict, request: ConfigRequest) -> dict | None:
+    """A sub-call row with the route's body match removed: the name tier's
+    score, or None when the row's entity id and name do not match. The graph
+    merge may add a dropped row back as a reference."""
+
+    score = _route_name_tier(request.query_lower,
+                             (row.get("entity_id"), row.get("friendly_name") or row.get("name")),
+                             exact=request.exact_match)
+    if score is None:
+        return None
+    return {**row, "score": score, "match_in_name": True, "match_in_config": False}
+
+
+def _kept_withheld(search_type: str, rows: tuple) -> frozenset:
+    """The withheld names a bucket discloses under a body code: its kept rows'
+    only, so a dropped row leaves no trace (``options_withheld`` is counted
+    for any kept flow-helper row)."""
+
+    if search_type == "helper" and any("entity_id" not in row for row in rows):
+        return _FLOW_HELPER_WITHHELD
+    return frozenset()
+
+
+def _body_code(unsafe_query: bool, scrub: str) -> str | None:
+    if unsafe_query:
+        return "body_numeric_query"
+    if scrub == subcalls.SCRUB_DEGRADED:
+        return "body_scrub_degraded"
+    if scrub != subcalls.SCRUB_CLEAN:
+        return "body_scrub_unverified"
+    return None
+
+
 def _disclose(outcome: subcalls.SubcallOutcome, reasons: Reasons) -> None:
     search_type = outcome.search_type
     if outcome.status == subcalls.NOT_ADMITTED:
@@ -474,23 +424,25 @@ async def search_configs(request: ConfigRequest, *, states: StateRows, sources: 
     for name in reads_for(request):
         if c.READS[name].shape == "rows":
             source_result(sources, name)
-    slug_map: dict[str, str] = {}
-    owned: set[str] = set()
-    if "scene" in types:
-        slug_map, owned = _scene_registry(sources)
+    slug_map = _scene_registry(sources) if "scene" in types else {}
     hits = await _graph(request, reader, reasons)
     results: dict[str, list] = {search_type: [] for search_type in CONFIG_TYPES}
-    for search_type in ("automation", "script"):
-        if search_type in types:
-            results[search_type] = await _automations_or_scripts(
-                search_type, request, states, reader, (hits or {}).get(search_type, frozenset()),
-                monotonic, reasons)
-    if "scene" in types:
-        results["scene"] = await _scenes(request, states, slug_map, owned, reader,
-                                         (hits or {}).get("scene", frozenset()), monotonic, reasons)
     bucket_withheld: dict[str, frozenset] = {}
     dashboard_held = dashboard_total = 0
-    for search_type in ("helper", "dashboard"):
+    # HAMCP-501 W6 F1: under the A'+ trigger no probe is read; otherwise a
+    # helper probe before and after the scans brackets the automation, script
+    # and scene pages, which carry no degraded flag of their own.
+    unsafe_query = subcalls.body_match_unsafe(request.query, request.exact_match)
+    probed = not unsafe_query and any(t in types for t in subcalls.ENTITY_TYPES)
+    probes = []
+    if probed:
+        probes.append(await subcalls.probe_scrub(subcall_readers.get("helper"),
+                                                 query=request.query,
+                                                 exact_match=request.exact_match))
+    outcomes: dict[str, subcalls.SubcallOutcome] = {}
+    # One scan per requested type, in category order, one after another; each
+    # scan has its own deadline.
+    for search_type in CONFIG_TYPES:
         if search_type not in types:
             continue
         if search_type == "helper":
@@ -499,11 +451,33 @@ async def search_configs(request: ConfigRequest, *, states: StateRows, sources: 
                                       query=request.query, exact_match=request.exact_match,
                                       needed=request.offset + request.limit, monotonic=monotonic)
         _disclose(outcome, reasons)
-        if outcome.withheld_names:
-            bucket_withheld[BUCKET_OF[search_type]] = outcome.withheld_names
-        results[search_type].extend((row, False) for row in outcome.rows)
+        outcomes[search_type] = outcome
+    if probed:
+        probes.append(await subcalls.probe_scrub(subcall_readers.get("helper"),
+                                                 query=request.query,
+                                                 exact_match=request.exact_match))
+    code = _body_code(unsafe_query, subcalls.worst_scrub(
+        *probes, *(outcome.scrub for search_type, outcome in outcomes.items()
+                   if search_type in subcalls.BODY_TYPES)))
+    for search_type, outcome in outcomes.items():
+        rows, withheld = outcome.rows, outcome.withheld_names
+        if (code is not None and search_type in subcalls.BODY_TYPES
+                and outcome.status != subcalls.NOT_ADMITTED):
+            reasons.add("not_searched", search_type, code, None)
+            rows = tuple(kept for kept in (_name_only(row, request) for row in rows)
+                         if kept is not None)
+            withheld = _kept_withheld(search_type, rows)
+        if withheld:
+            bucket_withheld[BUCKET_OF[search_type]] = withheld
+        if search_type in subcalls.ENTITY_TYPES:
+            # The route scored the body; ``include_config`` is never
+            # forwarded, so the reply discloses each body as withheld.
+            results[search_type].extend((_entity_record(search_type, row, slug_map), True)
+                                        for row in rows)
+        else:
+            results[search_type].extend((row, False) for row in rows)
         if search_type == "dashboard":
-            dashboard_held = len(outcome.rows)
+            dashboard_held = len(rows)
             dashboard_total = max(outcome.total, dashboard_held)
     if hits:
         _merge_graph(results, hits, request, states, slug_map)

@@ -1084,6 +1084,18 @@ class AuthenticatedMcpGateway:
                     )
                     return
             # Equality, not set membership (HAMCP-189 non-string names).
+            if tool_name == "ha_search":
+                # HAMCP-501 W6: refused before the Core lease and any read,
+                # with the reply the tool itself gives.
+                from .tools.search import refusal as native_search_refusal
+                rendered = await native_search_refusal(raw_parameters)
+                if rendered is not None:
+                    telemetry.error_code = telemetry.error_code or ErrorCode.VALIDATION_FAILURE.value
+                    await self._respond_mcp_tool_result(
+                        send, rpc_id=rpc.get("id"), rendered=rendered, request_id=request_id,
+                    )
+                    return
+            # Equality, not set membership (HAMCP-189 non-string names).
             if tool_name == "capture_automation_baseline" or tool_name == "compare_automation_baselines":
                 from .audit_baseline.capture_contracts import CaptureError
                 from .tools.audit_baseline import validate_raw_arguments
@@ -1433,7 +1445,7 @@ class AuthenticatedMcpGateway:
                         "upstream_attempted": False,
                     }
                     resource_ids = {}
-                elif tool_name not in {"get_integration_inspection", "get_backup_inventory", "get_recorder_settings", "get_unregistered_entities", "get_configuration_definitions", "get_incident_logs", "get_history_slices", "get_automation_run_counts", "capture_automation_baseline", "compare_automation_baselines", "dashboard_integrity_analysis", *TRACE_SNAPSHOT_TOOLS} and telemetry.error_code in {
+                elif tool_name not in {"get_integration_inspection", "get_backup_inventory", "get_recorder_settings", "get_unregistered_entities", "get_configuration_definitions", "get_incident_logs", "get_history_slices", "get_automation_run_counts", "ha_search", "capture_automation_baseline", "compare_automation_baselines", "dashboard_integrity_analysis", *TRACE_SNAPSHOT_TOOLS} and telemetry.error_code in {
                     ErrorCode.INVALID_REQUEST.value,
                     ErrorCode.VALIDATION_FAILURE.value,
                 }:
@@ -1744,6 +1756,12 @@ class AuthenticatedMcpGateway:
                         "fallback": "none",
                     }
                     resource_ids = {}
+                elif tool_name == "ha_search":
+                    # HAMCP-501 W6: closed names, booleans, counts and buckets
+                    # only; the query, filter and field texts are never copied.
+                    from .tools.search import audit_parameters as native_search_audit
+                    audit_parameters = native_search_audit(parameters)
+                    resource_ids = {}
                 elif tool_name == "run_held_read_canary":
                     # Canary arguments and upstream result content are
                     # untrusted and may contain sensitive Home Assistant data.
@@ -1835,6 +1853,7 @@ class AuthenticatedMcpGateway:
                             "get_incident_logs",
                             "get_history_slices",
                             "get_automation_run_counts",
+                            "ha_search",
                             "get_integration_inspection",
                             "get_backup_inventory",
                             "get_recorder_settings",

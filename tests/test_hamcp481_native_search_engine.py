@@ -10,7 +10,6 @@ routed, so these tests drive it directly.
 from __future__ import annotations
 
 import ast
-import asyncio
 import copy
 import dataclasses
 import functools
@@ -27,7 +26,6 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "hass_mcp_engineering_beta"), str(ROOT)]
 
 from tests.test_hamcp481_core_reads import NOW, Base, entity_row  # noqa: E402
-from ha_mcp_engineering.clients.rest import ExpectedHttpStatus  # noqa: E402
 from ha_mcp_engineering.configuration import Settings  # noqa: E402
 from ha_mcp_engineering.errors import HomeAssistantApiError, HomeAssistantUnavailableError  # noqa: E402
 from ha_mcp_engineering.providers import upstream_reads_9_2 as u  # noqa: E402
@@ -90,6 +88,8 @@ REGISTRY = {
     "sensor.blank": {"area_id": "", "device_id": "dev1"},
     "sensor.deep": {"device_id": "dev5"},
 }
+# The configuration bodies the synthetic delegated route matches. S1 b+
+# (approved by Josh, as relayed by the architect): native search reads none.
 BODIES = {
     "automation.morning": {"id": "1700000000001", "alias": "Morning routine",
                            "triggers": [{"trigger": "time", "at": "07:00:00"}],
@@ -104,6 +104,8 @@ BODIES = {
 }
 RELATED = {"light.kitchen": {"automation": ["automation.morning"], "script": ["script.wake"],
                              "scene": ["scene.movie"], "area": ["kitchen"]}}
+SCENE_BODIES = {"scene.movie": {"id": "movie_uid", "name": "Movie time",
+                                "entities": {"light.kitchen": {"state": "off"}}}}
 ALIASES = {"light.porch": ["Veranda"]}
 OTHER_INPUTS = ("input_number", "input_select", "input_text", "input_datetime", "input_button")
 
@@ -122,11 +124,6 @@ def floor(floor_id, name, level):
 def device(device_id, area_id, parent=None, labels=()):
     return {"area_id": area_id, "id": device_id, "labels": list(labels), "name": device_id.title(),
             "name_by_user": None, "parent_device_id": parent, "disabled_by": None}
-
-
-def configs_reply(payloads):
-    return [(True, {"config": copy.deepcopy(BODIES[payload["entity_id"]])})
-            if payload["entity_id"] in BODIES else (False, "not_found") for payload in payloads]
 
 
 def related_reply(payloads):
@@ -155,11 +152,7 @@ def world():
         "input_boolean/list": [{"id": "guest_mode", "name": "Guest mode", "icon": "mdi:account"}],
         **{f"{domain}/list": [] for domain in OTHER_INPUTS},
         "config/entity_registry/get_entries": entries_reply,
-        "automation/config": configs_reply,
-        "script/config": configs_reply,
         "search/related": related_reply,
-        "/config/scene/config/movie_uid": {"id": "movie_uid", "name": "Movie time",
-                                           "entities": {"light.kitchen": {"state": "off"}}},
     }
 
 
@@ -168,8 +161,19 @@ def reasons_of(result):
             for entry in result["partial_reasons"]}
 
 
-def page(rows=(), partial=False, has_more=False, total=0, withheld=frozenset()):
-    return subcalls.PageResult(tuple(rows), partial, has_more, total, frozenset(withheld))
+# HAMCP-501 W6 S1: a scan's first pages are of the ladder's first size.
+FIRST = subcalls.PAGE_SIZE_LADDER[0]
+
+
+def probe(query, exact=True):
+    """W6 F1: the helper probe page read before and after the scans."""
+    return subcalls.page_arguments("helper", query, exact, 0, subcalls.PROBE_SIZE)
+
+
+def page(rows=(), partial=False, has_more=False, total=0, withheld=frozenset(),
+         scrub=subcalls.SCRUB_CLEAN):
+    # W6 F1: a synthetic page is clean unless a test says otherwise.
+    return subcalls.PageResult(tuple(rows), partial, has_more, total, frozenset(withheld), scrub)
 
 
 class World(Base):
@@ -180,13 +184,45 @@ class World(Base):
         self.values.update(world())
         self.reads: list = []
         self.pages: list = []
-        self.readers = {"helper": self.no_helpers}
+        self.bodies = copy.deepcopy({**BODIES, **SCENE_BODIES})
+        self.readers = {"automation": self.component, "script": self.component,
+                        "scene": self.component, "helper": self.no_helpers}
         self.secrets: tuple = ()
         self.monotonic = time.monotonic
 
     async def no_helpers(self, arguments):
         self.pages.append(arguments)
         return page()
+
+    async def component(self, arguments):
+        """The synthetic delegated route's automation, script or scene page
+        (S1 b+). The route, not native search, matches the name and the body
+        (ha-mcp 9.2.0 ``component.py``); every match scores 100, as its exact
+        mode does. A script or scene id the route leaves empty is ``None``."""
+
+        self.pages.append(arguments)
+        search_type, query = arguments["search_types"][0], arguments["query"].lower().strip()
+        states = self.values["states"] if isinstance(self.values["states"], list) else []
+        rows = []
+        for state in states:
+            entity_id = state.get("entity_id") if isinstance(state, dict) else None
+            if type(entity_id) is not str or not entity_id.startswith(f"{search_type}."):
+                continue
+            attributes = state.get("attributes")
+            name = attributes.get("friendly_name") if isinstance(attributes, dict) else None
+            name = name if type(name) is str else entity_id
+            in_name = query in entity_id or query in name.lower()
+            in_config = query in json.dumps(self.bodies.get(entity_id, {})).lower()
+            if not (in_name or in_config):
+                continue
+            row = {"entity_id": entity_id, "friendly_name": name, "score": 100, "match_in_name": in_name,
+                   "match_in_config": in_config, "match_in_references": False}
+            if search_type != "automation":
+                row[f"{search_type}_id"] = self.bodies.get(entity_id, {}).get("id")
+            rows.append(row)
+        start = arguments["offset"]
+        window = rows[start:start + arguments["limit"]]
+        return page(window, has_more=start + len(window) < len(rows), total=len(rows))
 
     def factory(self, reads):
         self.reads.append(reads)
@@ -214,7 +250,8 @@ class World(Base):
         for call in self.calls:
             if call[0] == "rest":
                 self.assertEqual(call[1], "GET")
-                self.assertTrue(call[2] == "/states" or call[2].startswith("/config/scene/config/"), call)
+                # S1 b+: no configuration body read.
+                self.assertEqual(call[2], "/states", call)
             elif call[0] == "command":
                 self.assertIn(call[1]["type"], SINGLE_COMMANDS)
             else:
@@ -282,8 +319,12 @@ class SchemaBindingTests(unittest.TestCase):
 
 
 class PageSizeTests(unittest.TestCase):
-    """Design section 2.6: a page of ``PAGE_SIZE`` rows of the largest row
-    shape passes the gateway's size check."""
+    """Design section 2.6, HAMCP-501 W6 S1: a full page of each sub-call
+    type's largest rows passes the gateway's size check and its bounded
+    reply, with margin."""
+
+    # A four-byte UTF-8 character: the widest a name character encodes.
+    WIDE = "\U0001F600"
 
     @staticmethod
     def gateway_limit():
@@ -294,44 +335,317 @@ class PageSizeTests(unittest.TestCase):
         # ``upstream_read_gateway.py``: min(policy limit, settings limit).
         return min(entries[0]["response_limit_bytes"], default)
 
-    @staticmethod
-    def encoded(rows):
-        # The largest Row 25 helper row: a 9.2.0 storage-helper row
-        # (``_deep.py``) with a 64-character entity id and name.
-        row = {"entity_id": "input_datetime." + "x" * 49, "helper_type": "input_datetime",
-               "name": "N" * 64, "score": 100, "match_in_name": True, "match_in_config": True,
-               "match_in_references": True}
-        assert len(row["entity_id"]) == 64
-        envelope = {"success": True, "query": "q" * reply.QUERY_ECHO_MAX, "entities": [],
-                    "entity_total_matches": 0, "automations": [], "scripts": [], "scenes": [],
-                    "helpers": [dict(row) for _ in range(rows)], "search_types": ["helper"],
-                    "config_total_matches": 20_000, "partial": False, "errors": [], "warnings": [],
-                    "count": rows, "offset": 19_800, "limit": rows, "has_more": True,
-                    "next_offset": 20_000, "config_has_more": True, "config_next_offset": 20_000}
-        # The gateway's encoding and margin (``upstream_read_gateway.py``).
-        return len(json.dumps(envelope, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
-                              allow_nan=False, default=str).encode("utf-8")) + 8_000
+    @classmethod
+    def largest(cls, search_type):
+        """The largest Row 25 row of ``search_type`` at the name bounds.
 
-    def test_a_full_page_fits_the_gateway_check(self):
+        Every name or id string is ``RECORD_STRING_MAX`` four-byte
+        characters; an entity id is 255 characters (four-byte for a helper,
+        whose entity id is not checked as strict); the score is a
+        21-character integer and every flag is false.
+        """
+
+        name = cls.WIDE * reply.RECORD_STRING_MAX
+        rows = {
+            "automation": {"entity_id": "automation." + "x" * 244, "friendly_name": name},
+            "script": {"entity_id": "script." + "x" * 248, "script_id": name, "friendly_name": name},
+            "scene": {"entity_id": "scene." + "x" * 249, "scene_id": name, "friendly_name": name},
+            "helper": {"entity_id": cls.WIDE * 255, "helper_type": name, "name": name},
+            "dashboard": {},
+        }
+        row = {**rows[search_type], "score": -(10 ** 19), "match_in_name": False,
+               "match_in_config": False, "match_in_references": False}
+        if search_type == "dashboard":
+            del row["match_in_name"]
+        return row
+
+    @staticmethod
+    def encoded(value):
+        # The gateway's encoding (``upstream_read_gateway.py``).
+        return len(json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+                              allow_nan=False, default=str).encode("utf-8"))
+
+    @staticmethod
+    def escaped(value):
+        # The compact encoding of the gateway's bounded reply
+        # (``models/responses.py``), ASCII-escaped.
+        return len(json.dumps(value, separators=(",", ":"), allow_nan=False, default=str))
+
+    @classmethod
+    def envelope(cls, search_type, rows, warnings=()):
+        """A projected 9.2.0 page with its widest fields: the longest echoed
+        query, the last offsets, every bucket and Row 25's counts."""
+
+        value = {"success": True, "query": cls.WIDE * reply.QUERY_ECHO_MAX, "entities": [],
+                 "entity_total_matches": 0, "automations": [], "scripts": [], "scenes": [],
+                 "helpers": [], "dashboards": [], "search_types": [search_type],
+                 "config_total_matches": 20_000, "partial": False, "errors": [],
+                 "warnings": list(warnings), "count": len(rows), "offset": 19_999,
+                 "limit": len(rows), "has_more": False, "next_offset": 20_000,
+                 "config_has_more": False, "config_next_offset": 20_000,
+                 "fields_withheld": 20_000, "fields_dropped_by_policy": 20_000,
+                 "upstream_warnings_replaced": 20_000}
+        value[subcalls.BUCKETS[search_type]] = list(rows)
+        return value
+
+    def test_each_row_bound_is_its_largest_row_rounded_up(self):
+        self.assertEqual(set(subcalls.ROW_BYTES), set(subcalls.SUBCALL_TYPES))
+        for search_type in subcalls.SUBCALL_TYPES:
+            with self.subTest(search_type=search_type):
+                row = self.largest(search_type)
+                # The row carries every key its type may carry, and is valid.
+                self.assertEqual(set(row), subcalls._ROW_KEYS[search_type])
+                self.assertTrue(subcalls._row_valid(search_type, row))
+                # Its escaped bytes with the comma between rows, rounded up
+                # to ten; never fewer than its UTF-8 bytes.
+                size = self.escaped(row) + 1
+                self.assertEqual(subcalls.ROW_BYTES[search_type], -(-size // 10) * 10)
+                self.assertGreaterEqual(self.escaped(row), self.encoded(row))
+
+    def test_the_ladder_steps_down_to_each_types_worst_case(self):
         limit = self.gateway_limit()
         self.assertEqual(limit, 60_000)
-        self.assertEqual(subcalls.PAGE_SIZE, 150)
-        self.assertLessEqual(self.encoded(subcalls.PAGE_SIZE), limit)
-        # The design's 200 would not fit (disclosed in the PR).
-        self.assertGreater(self.encoded(200), limit)
+        # The limit less the gateway's 8,000-byte margin, a 13,000-byte
+        # envelope and 2,000 bytes of warnings and errors.
+        self.assertEqual(subcalls.PAGE_BUDGET_BYTES, limit - 8_000 - 13_000 - 2_000)
+        for search_type in subcalls.SUBCALL_TYPES:
+            with self.subTest(search_type=search_type):
+                self.assertLessEqual(self.escaped(self.envelope(search_type, [])), 13_000)
+        # HAMCP-501 W6 S1 (an architect decision): one ladder for every type,
+        # each size dividing the one above it, the last a page of one.
+        ladder = subcalls.PAGE_SIZE_LADDER
+        self.assertEqual(ladder, (150, 30, 6, 1))
+        self.assertTrue(all(larger > smaller and larger % smaller == 0
+                            for larger, smaller in zip(ladder, ladder[1:])))
+        # The worst case, as documentation: the rows a page of a type's
+        # largest rows holds, and the ladder size a scan of them steps down
+        # to at most.
+        fits = {search_type: subcalls.PAGE_BUDGET_BYTES // size
+                for search_type, size in subcalls.ROW_BYTES.items()}
+        self.assertEqual({search_type: min(rows, ladder[0]) for search_type, rows in fits.items()}, {
+            "automation": 10, "script": 5, "scene": 5, "dashboard": 150, "helper": 3})
+        self.assertEqual({search_type: max(size for size in ladder if size <= rows)
+                          for search_type, rows in fits.items()}, {
+            "automation": 6, "script": 1, "scene": 1, "dashboard": 150, "helper": 1})
+        # The call bound: a whole scan in pages of 150, and ten spans each
+        # read again down to a page of one.
+        whole = -(-subcalls.MAX_SCAN_ROWS // ladder[0])
+        again = sum(larger // smaller for larger, smaller in zip(ladder, ladder[1:]))
+        self.assertEqual((whole, again, subcalls.MAX_PAGE_CALLS), (134, 16, 300))
+        self.assertLessEqual(whole + 10 * again, subcalls.MAX_PAGE_CALLS)
+
+    def test_a_full_page_of_each_types_largest_rows_fits_both_bounds(self):
+        limit = self.gateway_limit()
+        # The reserve: 2,000 bytes of warnings in place of the empty list.
+        warnings = ["w" * 1_996]
+        self.assertEqual(self.escaped(warnings), 2_000)
+        # Every ladder size the budget holds, a page of one included.
+        sizes = [(search_type, size) for search_type in subcalls.SUBCALL_TYPES
+                 for size in subcalls.PAGE_SIZE_LADDER
+                 if size * subcalls.ROW_BYTES[search_type] <= subcalls.PAGE_BUDGET_BYTES]
+        self.assertEqual(len(sizes), 9)
+        for search_type, size in sizes:
+            with self.subTest(search_type=search_type, size=size):
+                value = self.envelope(search_type, [self.largest(search_type)] * size, warnings)
+                # The gateway's check, and the reply with the margin holding
+                # the reply around the data.
+                self.assertLessEqual(self.encoded(value) + 8_000, limit)
+                self.assertLessEqual(self.escaped(value) + 8_000, limit)
+        # A 150-row page of the largest rows overflows for every type but
+        # dashboards: a scan of them steps down the ladder.
+        for search_type in ("automation", "script", "scene", "helper"):
+            with self.subTest(search_type=search_type, rows=FIRST):
+                rows = [self.largest(search_type)] * FIRST
+                self.assertGreater(self.encoded(self.envelope(search_type, rows)) + 8_000, limit)
+        # Sizes taken from the gateway's UTF-8 check alone overflow the
+        # escaped reply.
+        for search_type, rows in (("automation", 32), ("script", 18), ("scene", 18), ("helper", 14)):
+            with self.subTest(search_type=search_type, rows=rows):
+                value = self.envelope(search_type, [self.largest(search_type)] * rows)
+                self.assertLessEqual(self.encoded(value) + 8_000, limit)
+                self.assertGreater(self.escaped(value), limit)
+
+    def test_each_type_admits_only_its_own_row_keys(self):
+        admitted = set(subcalls._ROW_KINDS) | {"score"}
+        self.assertEqual(set().union(*subcalls._ROW_KEYS.values()), admitted)
+        self.assertEqual(set(subcalls._ROW_KEYS), set(subcalls.SUBCALL_TYPES))
+        for search_type, keys in subcalls._ROW_KEYS.items():
+            for key in sorted(admitted - keys):
+                with self.subTest(search_type=search_type, key=key):
+                    row = {**self.largest(search_type), key: subcalls._ROW_KINDS[key]()}
+                    self.assertFalse(subcalls._row_valid(search_type, row))
 
     def test_page_arguments_are_fixed(self):
         for search_type in subcalls.SUBCALL_TYPES:
-            self.assertEqual(subcalls.page_arguments(search_type, "q", False, 3), {
-                "query": "q", "search_types": [search_type], "exact_match": False,
-                "include_config": False, "offset": 3 * subcalls.PAGE_SIZE, "limit": subcalls.PAGE_SIZE})
-        for bad in (("automation", "q", True, 0), ("helper", 1, True, 0), ("helper", "q", 1, 0)):
-            with self.assertRaises(ValueError):
+            for size in subcalls.PAGE_SIZE_LADDER:
+                self.assertEqual(subcalls.page_arguments(search_type, "q", False, 3, size), {
+                    "query": "q", "search_types": [search_type], "exact_match": False,
+                    "include_config": False, "offset": 3 * size, "limit": size})
+        for bad in (("entity", "q", True, 0, FIRST), ("automations", "q", True, 0, FIRST),
+                    ("helper", 1, True, 0, FIRST), ("helper", "q", 1, 0, FIRST),
+                    ("helper", "q", True, -1, FIRST), ("helper", "q", True, True, FIRST),
+                    ("helper", "q", True, 1.0, FIRST),
+                    # HAMCP-501 W6 S1: the size is a ladder size.
+                    ("helper", "q", True, 0, 0), ("helper", "q", True, 0, 10),
+                    ("helper", "q", True, 0, 2 * FIRST), ("helper", "q", True, 0, float(FIRST)),
+                    ("helper", "q", True, 0, True), ("helper", "q", True, 0, None)):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
                 subcalls.page_arguments(*bad)
+        with self.assertRaises(TypeError):
+            # The size has no default.
+            subcalls.page_arguments(*("helper", "q", True, 0))
         # The scan deadline is the policy's ha_search timeout.
         policy = json.loads((PACKAGE / "upstream_tool_policy_9_2_0.json").read_text(encoding="utf-8"))
         entry = next(tool for tool in policy["tools"] if tool["upstream_name"] == "ha_search")
         self.assertEqual(subcalls.SCAN_DEADLINE_SECONDS, float(entry["timeout_seconds"]))
+
+
+class LadderTests(unittest.IsolatedAsyncioTestCase):
+    """HAMCP-501 W6 S1 (an architect decision): a scan steps down the
+    page-size ladder only for a page too large for the reply bound."""
+
+    def setUp(self):
+        self.calls = []
+
+    @staticmethod
+    def row(index):
+        return {"entity_id": f"automation.flow_{index:05}", "friendly_name": f"Flow {index}",
+                "score": 90, "match_in_name": True, "match_in_config": False,
+                "match_in_references": False}
+
+    def reader(self, count, fits=None, failing=None):
+        """A 9.2.0 table of ``count`` rows: a page holding row ``i`` is too
+        large when its size exceeds ``fits[i]``, and a page in ``failing``
+        fails with its exception."""
+
+        rows = [self.row(index) for index in range(count)]
+        fits, failing = fits or {}, failing or {}
+
+        async def read(arguments):
+            offset, size = arguments["offset"], arguments["limit"]
+            self.calls.append((offset, size))
+            # The fixed arguments, the offset a multiple of the page's size.
+            self.assertEqual(arguments, subcalls.page_arguments("automation", "flow", True,
+                                                                offset // size, size))
+            window = rows[offset:offset + size]
+            if (offset, size) in failing:
+                raise failing[(offset, size)]
+            if any(size > fits.get(offset + index, size) for index in range(len(window))):
+                raise subcalls.PageTooLarge()
+            return page(window, has_more=offset + len(window) < count, total=count)
+
+        return rows, read
+
+    async def scan(self, read):
+        return await subcalls.scan("automation", read, query="flow", exact_match=True, needed=1)
+
+    async def test_a_normal_install_is_one_call_per_150_rows(self):
+        rows, read = self.reader(2 * FIRST + 40)
+        outcome = await self.scan(read)
+        self.assertEqual((outcome.status, outcome.pages, outcome.total), (subcalls.COMPLETE, 3, len(rows)))
+        self.assertEqual(self.calls, [(0, FIRST), (FIRST, FIRST), (2 * FIRST, FIRST)])
+        self.assertEqual(outcome.rows, tuple(rows))
+
+    async def test_one_large_row_steps_down_for_its_span_only(self):
+        # Row 200 fits only a page of one: its 150-row span is read again in
+        # pages of 30, its 30-row span in pages of 6 and its 6-row span in
+        # pages of one, and the scan climbs back after each span. Every other
+        # span stays at 150.
+        rows, read = self.reader(600, fits={200: 1})
+        outcome = await self.scan(read)
+        self.assertEqual(self.calls, [
+            (0, 150), (150, 150), (150, 30), (180, 30), (180, 6), (186, 6), (192, 6), (198, 6),
+            (198, 1), (199, 1), (200, 1), (201, 1), (202, 1), (203, 1),
+            (204, 6), (210, 30), (240, 30), (270, 30), (300, 150), (450, 150)])
+        self.assertEqual((outcome.status, outcome.pages), (subcalls.COMPLETE, 4 + 16))
+        self.assertEqual(outcome.rows, tuple(rows))
+
+    async def test_a_row_that_ends_its_spans_climbs_back_at_once(self):
+        # Row 299 is the last row of its 150-, 30- and 6-row spans: after it
+        # the scan is back at 150 in one step.
+        rows, read = self.reader(600, fits={299: 1})
+        outcome = await self.scan(read)
+        self.assertEqual(self.calls, [
+            (0, 150), (150, 150), (150, 30), (180, 30), (210, 30), (240, 30), (270, 30),
+            (270, 6), (276, 6), (282, 6), (288, 6), (294, 6),
+            (294, 1), (295, 1), (296, 1), (297, 1), (298, 1), (299, 1), (300, 150), (450, 150)])
+        self.assertEqual((outcome.status, outcome.pages), (subcalls.COMPLETE, 20))
+        self.assertEqual(outcome.rows, tuple(rows))
+
+    async def test_mixed_sizes_hold_the_rows_of_a_single_size_scan(self):
+        # Large rows in several spans, at the first and last rows and at span
+        # ends: none skipped and none repeated, in the order of a scan that
+        # never steps down.
+        count = 457
+        rows, read = self.reader(count, fits={0: 30, 149: 6, 150: 1, 299: 1, 300: 6, 455: 1, 456: 30})
+        outcome = await self.scan(read)
+        stepped, self.calls = self.calls, []
+        _, plain = self.reader(count)
+        single = await self.scan(plain)
+        self.assertEqual((outcome.status, single.status), (subcalls.COMPLETE, subcalls.COMPLETE))
+        self.assertEqual(outcome.rows, single.rows)
+        self.assertEqual(outcome.rows, tuple(rows))
+        self.assertEqual((outcome.total, single.pages), (single.total, 4))
+        self.assertEqual(self.calls, [(0, 150), (150, 150), (300, 150), (450, 150)])
+        self.assertEqual({size for _, size in stepped}, set(subcalls.PAGE_SIZE_LADDER))
+        self.assertEqual(outcome.pages, len(stepped))
+
+    async def test_a_row_too_large_for_a_page_of_one_is_incomplete(self):
+        rows, read = self.reader(400, fits={170: 0})
+        outcome = await self.scan(read)
+        self.assertEqual(self.calls, [(0, 150), (150, 150), (150, 30), (150, 6), (156, 6), (162, 6),
+                                      (168, 6), (168, 1), (169, 1), (170, 1)])
+        # The rows before it are kept; the bucket is incomplete.
+        self.assertEqual((outcome.status, outcome.pages), (subcalls.INCOMPLETE, 10))
+        self.assertEqual(outcome.rows, tuple(rows[:170]))
+
+    async def test_another_failure_is_not_read_again(self):
+        # Only ``PageTooLarge`` steps down: a failure named for the size bound,
+        # an exception class of the same name and a timeout fail the scan with
+        # no retry, at the first size or after a step-down.
+        named = type("PageTooLarge", (Exception,), {})
+        for error in (RuntimeError("response_too_large"), ValueError("page_too_large"), named(),
+                      TimeoutError()):
+            for span, fits, expected in (
+                    ((150, 150), {}, [(0, 150), (150, 150)]),
+                    ((150, 30), {160: 6}, [(0, 150), (150, 150), (150, 30)])):
+                with self.subTest(error=type(error).__name__, span=span):
+                    self.calls = []
+                    rows, read = self.reader(400, fits=fits, failing={span: error})
+                    outcome = await self.scan(read)
+                    self.assertEqual(self.calls, expected)
+                    self.assertEqual((outcome.status, outcome.rows), (subcalls.INCOMPLETE, tuple(rows[:150])))
+
+    async def test_the_call_bound_ends_a_pathological_scan(self):
+        # Every row fits only a page of one: a 6-row span takes 7 calls, and
+        # the scan stops at the call bound, incomplete, with the rows read.
+        count = 1_000
+        rows, read = self.reader(count, fits={index: 1 for index in range(count)})
+        outcome = await self.scan(read)
+        self.assertEqual((outcome.status, outcome.pages, len(self.calls)),
+                         (subcalls.INCOMPLETE, subcalls.MAX_PAGE_CALLS, subcalls.MAX_PAGE_CALLS))
+        held = len(outcome.rows)
+        self.assertEqual(outcome.rows, tuple(rows[:held]))
+        self.assertEqual((held, sum(size == 1 for _, size in self.calls)), (247, 247))
+        self.calls = []
+        with patch.object(subcalls, "MAX_PAGE_CALLS", 7):
+            outcome = await self.scan(read)
+        self.assertEqual(self.calls, [(0, 150), (0, 30), (0, 6), (0, 1), (1, 1), (2, 1), (3, 1)])
+        self.assertEqual((outcome.status, outcome.rows), (subcalls.INCOMPLETE, tuple(rows[:4])))
+        # The row bound still holds a scan that steps down.
+        self.calls = []
+        with patch.object(subcalls, "MAX_SCAN_ROWS", 5):
+            outcome = await self.scan(read)
+        self.assertEqual((outcome.status, len(outcome.rows), len(self.calls)), (subcalls.INCOMPLETE, 5, 8))
+
+    async def test_the_deadline_spans_the_step_downs(self):
+        rows, read = self.reader(400, fits={160: 1})
+        clock = iter([0.0, 0.0, 0.0, 0.0, 61.0])
+        outcome = await subcalls.scan("automation", read, query="flow", exact_match=True, needed=1,
+                                      monotonic=lambda: next(clock))
+        # A spent deadline sends no page, also after a step-down.
+        self.assertEqual(self.calls, [(0, 150), (150, 150), (150, 30)])
+        self.assertEqual((outcome.status, outcome.rows), (subcalls.INCOMPLETE, tuple(rows[:150])))
 
 
 class ReachabilityTests(unittest.TestCase):
@@ -346,7 +660,8 @@ class ReachabilityTests(unittest.TestCase):
         "configs": {"..entity_ids", ".:core_contracts", ".:scoring", ".:subcalls", ".core_reads",
                     ".entities", ".reply", "__future__", "asyncio", "dataclasses", "math", "re", "time",
                     "types", "typing"},
-        "subcalls": {".:core_contracts", "__future__", "asyncio", "dataclasses", "time", "typing"},
+        "subcalls": {"..entity_ids", ".:core_contracts", ".:scoring", "__future__", "asyncio",
+                     "dataclasses", "time", "types", "typing"},
         "reply": {"..errors", "..sanitization", "__future__", "dataclasses", "json", "typing"},
     }
     FORBIDDEN_CALLS = {"request", "command", "command_batch", "call_service", "send_json", "subscribe",
@@ -376,6 +691,47 @@ class ReachabilityTests(unittest.TestCase):
                 if isinstance(node, (ast.Name, ast.Attribute)):
                     label = node.id if isinstance(node, ast.Name) else node.attr
                     self.assertNotIn(label, {"eval", "exec", "__import__", "importlib"}, name)
+
+    def test_no_configuration_body_read_is_reachable(self):
+        # S1 b+ (approved by Josh, as relayed by the architect): the delegated
+        # route matches automation, script and scene bodies and scrubs them;
+        # native search reads none, so no native score can carry a resolved
+        # secret.
+        body_reads = ("automation/config", "script/config", "scene/config")
+        trees = {name: self.tree(name) for name in (*W3_MODULES, "core_contracts", "core_reads", "scoring")}
+        trees["tools/search"] = ast.parse((PACKAGE / "tools/search.py").read_text(encoding="utf-8"))
+        for name, tree in trees.items():
+            docstrings = {id(node.body[0].value) for node in ast.walk(tree)
+                          if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+                          and node.body and isinstance(node.body[0], ast.Expr)
+                          and isinstance(node.body[0].value, ast.Constant)}
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Constant) and type(node.value) is str and id(node) not in docstrings:
+                    for read in body_reads:
+                        self.assertNotIn(read, node.value, (name, node.lineno))
+        for read in c.READS.values():
+            self.assertFalse([text for text in body_reads if text in read.command], read.name)
+        self.assertFalse(hasattr(CoreReadSession, "scene_config"))
+        # The only native configuration score is the storage helpers'.
+        callers = {}
+        for name in W3_MODULES:
+            for function in ast.walk(self.tree(name)):
+                if not isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                for node in ast.walk(function):
+                    if isinstance(node, ast.Call):
+                        callee = (node.func.attr if isinstance(node.func, ast.Attribute)
+                                  else getattr(node.func, "id", None))
+                        if callee in {"_score", "config_match_score"}:
+                            callers.setdefault(callee, set()).add((name, function.name))
+        self.assertEqual(callers, {"_score": {("configs", "_storage_helpers")},
+                                   "config_match_score": {("configs", "_score")}})
+        reads = set()
+        for size in range(1, len(configs.CONFIG_TYPES) + 1):
+            for types in itertools.combinations(configs.CONFIG_TYPES, size):
+                for query in ("routine", "light.kitchen"):
+                    reads |= set(configs.reads_for(configs.ConfigRequest(query, True, types, 10, 0)))
+        self.assertEqual(reads, {"states", "entity_registry", "search_related", *configs._HELPER_LISTS})
 
 
 class GoldenTests(World):
@@ -413,21 +769,19 @@ class GoldenTests(World):
         self.assertGreaterEqual(result["scenes"][0]["score"], 1)
         # One session; the reads this call needs, in READS order. W6b: a
         # query scores the component's joined texts (search.py 548-564).
+        # S1 b+: no configuration body read.
         self.assertEqual(self.reads, [(
             "states", "area_registry", "floor_registry", "label_registry", "entity_registry",
-            "device_registry", "automation_config", "script_config", "search_related",
-            "scene_config", "input_boolean_list", "input_number_list", "input_select_list",
-            "input_text_list", "input_datetime_list", "input_button_list", "entity_registry_entries")])
-        # Graph-confirmed bodies are read last (``_fetch.py``).
-        self.assertEqual([p["entity_id"] for p in self.batches("automation/config")[0]],
-                         ["automation.porch_lights", "automation.morning"])
+            "device_registry", "search_related", "input_boolean_list", "input_number_list",
+            "input_select_list", "input_text_list", "input_datetime_list", "input_button_list",
+            "entity_registry_entries")])
         self.assertEqual(self.batches("search/related"),
                          [[{"type": "search/related", "item_type": "entity", "item_id": "light.kitchen"}]])
-        self.assertIn(("rest", "GET", "/config/scene/config/movie_uid"), [call[:3] for call in self.calls])
-        # The integration scene is scored by name and never fetched.
-        self.assertNotIn("/config/scene/config/hue_other", [call[2] for call in self.calls
-                                                            if call[0] == "rest"])
-        self.assertEqual(self.pages, [subcalls.page_arguments("helper", "light.kitchen", True, 0)])
+        self.assertEqual([call[2] for call in self.calls if call[0] == "rest"], ["/states"])
+        # W6 F1: a helper probe brackets the scans.
+        self.assertEqual(self.pages, [probe("light.kitchen"), *(
+            subcalls.page_arguments(search_type, "light.kitchen", True, 0, FIRST)
+            for search_type in ("automation", "script", "scene", "helper")), probe("light.kitchen")])
 
     async def test_search_entities_oracle_match_sets(self):
         # Design section 8.3 as G-d (as relayed by the architect): match sets
@@ -789,8 +1143,7 @@ class SourceFailureTests(World):
         for method, arguments in (
                 ("inventory", {"query": "light.kitchen"}),
                 ("entity_entries", {"query": "veranda", "exact_match": False, "search_types": None}),
-                ("batch", {"query": "light.kitchen", "search_types": ["automation"]}),
-                ("scene_config", {"query": "movie", "search_types": ["scene"]})):
+                ("batch", {"query": "light.kitchen", "search_types": ["automation"]})):
             boom = RuntimeError(MARKER)
             read = AsyncMock(side_effect=boom)
             with self.subTest(method=method), patch.object(CoreReadSession, method, read):
@@ -859,7 +1212,9 @@ class RefusalTests(World):
         self.assertEqual(result["search_types"], ["automation", "automation"])
         self.assertEqual(result["applied"]["search_types"], ["automation"])
         self.assertEqual(result["warnings"], [reply.WARNING_ENTITY_SKIPPED])
-        self.assertEqual(len(self.batches("automation/config")[-1]), 2)
+        self.assertEqual(self.pages[-3:], [probe("routine"),
+                                           subcalls.page_arguments("automation", "routine", True, 0, FIRST),
+                                           probe("routine")])
         # A JSON list is never split on its commas.
         result = await self.go(query="light.kitchen", result_fields='["entity_id", "labels"]')
         self.assertEqual(result["entities"], [{"entity_id": "light.kitchen", "labels": ["Food"]}])
@@ -867,6 +1222,9 @@ class RefusalTests(World):
         self.assertEqual(set(result) - reply.ALWAYS_KEPT, {"entities"})
         await self.go(query="routine", config_time_budget=0.001, search_types=["script"])
         await self.go(query="routine", config_time_budget=300, search_types=["script"])
+        self.assertEqual(self.pages[-3:], [probe("routine"),
+                                           subcalls.page_arguments("script", "routine", True, 0, FIRST),
+                                           probe("routine")])
 
 
 class ConfigTests(World):
@@ -884,7 +1242,7 @@ class ConfigTests(World):
         self.assertEqual(result["entity_total_matches"], 0)
         self.assertNotIn("search_type", result)
         self.assertNotIn("entity_has_more", result)
-        self.assertEqual(self.pages, [subcalls.page_arguments("helper", "guest", True, 0)])
+        self.assertEqual(self.pages, [subcalls.page_arguments("helper", "guest", True, 0, FIRST)])
 
     async def test_include_config_withholds_bodies(self):
         result = await self.go(query="guest", search_types=["helper"], include_config=True)
@@ -932,8 +1290,8 @@ class ConfigTests(World):
         self.assertEqual(sorted(names), ["input_boolean.guest_mode", "sensor.guest_template"])
         self.assertEqual(result["config_total_matches"], 2)
         self.assertEqual(result["fields_withheld"], 1)  # entry_id
-        self.assertEqual(self.pages, [subcalls.page_arguments("helper", "guest", True, 0)])
-        self.assertEqual(self.pages[0]["limit"], 150)
+        self.assertEqual(self.pages, [subcalls.page_arguments("helper", "guest", True, 0, FIRST)])
+        self.assertEqual(self.pages[0]["limit"], FIRST)
 
     async def test_sub_call_failures_are_partial(self):
         async def raising(arguments):
@@ -943,16 +1301,22 @@ class ConfigTests(World):
             return page(partial=True)
 
         async def oversized(arguments):
+            # HAMCP-501 W6 S1: a failure named for the size bound is not the
+            # step-down signal (``PageTooLarge``): the page fails.
             if arguments["offset"]:
                 raise RuntimeError("response_too_large")
             flow = {"helper_type": "template", "name": "Guest flow", "score": 90}
-            return page([flow], has_more=True, total=400)
+            others = [{**flow, "name": f"Other {index}", "score": 1} for index in range(FIRST - 1)]
+            return page([flow, *others], has_more=True, total=400)
 
         for readers, expected in (
             ({}, {("source_unavailable", "helper", "subcall_not_admitted"): None}),
             ({"helper": raising}, {("source_unavailable", "helper", "helper_subcall_incomplete"): None}),
             ({"helper": partial}, {("not_searched", "helper", "upstream_partial"): None}),
-            ({"helper": oversized}, {("source_unavailable", "helper", "helper_subcall_incomplete"): None}),
+            # The first page's rows and the native guest_mode helper, less the
+            # default limit of 10.
+            ({"helper": oversized}, {("source_unavailable", "helper", "helper_subcall_incomplete"): None,
+                                     ("paged", "config", "more_matches"): FIRST + 1 - 10}),
         ):
             with self.subTest(readers=readers):
                 self.readers = readers
@@ -961,10 +1325,12 @@ class ConfigTests(World):
                 self.assertNotIn(MARKER, json.dumps(result))
                 self.assertIn("input_boolean.guest_mode", [r.get("entity_id") for r in result["helpers"]])
         self.assertIn("Guest flow", [r["name"] for r in result["helpers"]])
-        # The default types include helper, so no reader is disclosed.
+        # Every default type is a sub-call (S1 b+), so each missing reader is
+        # disclosed.
         self.readers = {}
         result = await self.go(query="light.kitchen")
-        self.assertEqual(reasons_of(result), {("source_unavailable", "helper", "subcall_not_admitted"): None})
+        self.assertEqual(reasons_of(result), {("source_unavailable", search_type, "subcall_not_admitted"): None
+                                              for search_type in configs.DEFAULT_SEARCH_TYPES})
 
     async def test_invalid_pages_and_scan_bounds_are_incomplete(self):
         good = {"helper_type": "template", "name": "Guest flow", "score": 90}
@@ -976,7 +1342,12 @@ class ConfigTests(World):
             page([good], total=-1),
             page([good], total=1, withheld={7}),
             page([], has_more=True, total=1),
-            page([good] * (subcalls.PAGE_SIZE + 1), total=1),
+            # HAMCP-501 W6 S1: a page that claims more rows is full.
+            page([good], has_more=True, total=2),
+            page([good] * (FIRST - 1), has_more=True, total=FIRST + 1),
+            page([good] * (FIRST + 1), total=1),
+            # HAMCP-501 W6 S1: a helper row with another type's key.
+            page([{**good, "friendly_name": "Guest"}], total=1),
             SimpleNamespace(rows=(good,), partial=False, has_more=False, config_total_matches=1,
                             withheld_names=frozenset()),
         )
@@ -989,43 +1360,59 @@ class ConfigTests(World):
                 self.assertEqual(reasons_of(result),
                                  {("source_unavailable", "helper", "helper_subcall_incomplete"): None})
                 self.assertEqual(reader.await_count, 1)
-        moving = iter([page([good], has_more=True, total=3), page([good], has_more=True, total=4)])
+        first = [{**good, "name": f"Guest flow {index}"} for index in range(FIRST)]
+        # Scored above the first page's rows: kept, they would lead the bucket.
+        later = [{**good, "name": f"Guest later {index}", "score": 99} for index in range(FIRST)]
+        moving = iter([page(first, has_more=True, total=FIRST + 3),
+                       page(later, has_more=True, total=FIRST + 4)])
         self.readers = {"helper": AsyncMock(side_effect=lambda arguments: next(moving))}
         result = await self.go(query="guest", search_types=["helper"])
-        self.assertEqual(reasons_of(result), {("source_unavailable", "helper", "helper_subcall_incomplete"): None})
-        self.assertEqual([r["name"] for r in result["helpers"]].count("Guest flow"), 1)
-        endless = AsyncMock(return_value=page([good], has_more=True, total=5))
+        # The first page's rows are kept, with the native guest_mode helper;
+        # the moved page's are not.
+        self.assertEqual(reasons_of(result), {("source_unavailable", "helper", "helper_subcall_incomplete"): None,
+                                              ("paged", "config", "more_matches"): FIRST + 1 - 10})
+        names = [r.get("name") or "" for r in result["helpers"]]
+        self.assertTrue(any(name.startswith("Guest flow ") for name in names))
+        self.assertFalse(any(name.startswith("Guest later ") for name in names))
+        endless = AsyncMock(return_value=page([good] * FIRST, has_more=True, total=4 * FIRST))
         self.readers = {"helper": endless}
         self.monotonic = itertools.chain([0.0, 0.0, 0.0], itertools.repeat(61.0)).__next__
         result = await self.go(query="guest", search_types=["helper"])
         # A spent deadline sends no page: the reader is not even called.
         self.assertEqual((endless.call_count, endless.await_count), (2, 2))
-        self.assertEqual(reasons_of(result), {("source_unavailable", "helper", "helper_subcall_incomplete"): None})
+        # Two full pages are kept, with the native guest_mode helper.
+        self.assertEqual(reasons_of(result), {("source_unavailable", "helper", "helper_subcall_incomplete"): None,
+                                              ("paged", "config", "more_matches"): 2 * FIRST + 1 - 10})
         self.monotonic = time.monotonic
         endless.reset_mock()
-        with patch.object(subcalls, "MAX_SCAN_ROWS", 3):
+        with patch.object(subcalls, "MAX_SCAN_ROWS", 2 * FIRST + 1):
             await self.go(query="guest", search_types=["helper"])
         self.assertEqual(endless.await_count, 3)
 
     async def test_dashboards_are_held_to_the_page(self):
-        board = {"name": "Kitchen board", "score": 80, "match_in_name": True}
-        reader = AsyncMock(return_value=page([board] * 3, has_more=True, total=25))
+        # A 9.2.0 dashboard row after Row 25 (``_ROW_KEYS``).
+        board = {"score": 80, "match_in_config": True, "match_in_references": False}
+        reader = AsyncMock(return_value=page([board] * FIRST, has_more=True, total=FIRST + 25))
         self.readers = {"dashboard": reader}
         result = await self.go(query="kitchen", search_types=["dashboard"], limit=2)
         self.assertEqual(len(result["dashboards"]), 2)
-        self.assertEqual(result["config_total_matches"], 25)
+        self.assertEqual(result["config_total_matches"], FIRST + 25)
         self.assertEqual((result["config_has_more"], result["config_next_offset"]), (True, 2))
-        self.assertEqual(reasons_of(result), {("paged", "config", "more_matches"): 23})
-        reader.assert_awaited_once_with(subcalls.page_arguments("dashboard", "kitchen", True, 0))
+        self.assertEqual(reasons_of(result), {("paged", "config", "more_matches"): FIRST + 23})
+        reader.assert_awaited_once_with(subcalls.page_arguments("dashboard", "kitchen", True, 0, FIRST))
         plain = await self.go(query="kitchen", search_types=["automation"])
         self.assertNotIn("dashboards", plain)
-        # One row a page: the scan reads until it holds offset + limit rows.
-        boards = [{"name": f"Board {index}", "score": 80 - index, "match_in_name": True} for index in range(3)]
-        reader = AsyncMock(side_effect=[page([board], has_more=True, total=25) for board in boards])
+        # The scan reads until it holds offset + limit rows: past one page
+        # (HAMCP-501 W6 S1: a page that claims more rows is full).
+        pages = [page([{"score": 80 - number, "match_in_config": True, "match_in_references": False}]
+                      * FIRST, has_more=True, total=3 * FIRST) for number in range(3)]
+        reader = AsyncMock(side_effect=pages)
         self.readers = {"dashboard": reader}
-        result = await self.go(query="kitchen", search_types=["dashboard"], limit=2)
-        self.assertEqual([r["name"] for r in result["dashboards"]], ["Board 0", "Board 1"])
+        result = await self.go(query="kitchen", search_types=["dashboard"], limit=2, offset=FIRST)
+        self.assertEqual([r["score"] for r in result["dashboards"]], [79, 79])
         self.assertEqual(reader.await_count, 2)
+        self.assertEqual(reader.await_args_list[1].args[0],
+                         subcalls.page_arguments("dashboard", "kitchen", True, 1, FIRST))
 
     async def test_config_paging_and_order(self):
         result = await self.go(query="light.kitchen", limit=1, offset=1)
@@ -1042,94 +1429,197 @@ class ConfigTests(World):
         self.assertEqual([r["entity_id"] for r in result["helpers"]], ["sensor.high", "sensor.low"])
 
 
-class BodyReadTests(World):
-    def add_automations(self, count):
-        for index in range(count):
-            self.values["states"].append(st(f"automation.extra_{index:02}", "on", f"Extra {index}"))
+class RouteEntityTests(World):
+    """S1 b+ (approved by Josh, as relayed by the architect): automation,
+    script and scene rows come from the delegated route, which matches and
+    scrubs the bodies (its legacy path fails closed per item). Native search
+    reads no body; a failed or partial page affects its own bucket only."""
 
-    async def test_a_spent_budget_is_time_budget(self):
-        # G-b (as relayed by the architect): each chunk waits at most
-        # min(remaining type budget, 5 s).
-        self.add_automations(15)
-
-        async def hang(payloads):
-            self.calls.append(("batch", payloads))
-            await asyncio.Event().wait()
-
-        self.socket.command_batch = hang
-        self.monotonic = itertools.chain([0.0, 0.0], itertools.repeat(10.0)).__next__
-        result = await self.go(query="routine", search_types=["automation"], config_time_budget=0.05)
-        self.assertEqual(reasons_of(result), {("not_searched", "automation", "time_budget"): 17})
-        self.assertEqual([r["entity_id"] for r in result["automations"]], ["automation.morning"])
-        self.assertEqual(len(self.batches("automation/config")), 1)
-
-    async def test_a_per_item_timeout_is_read_failed(self):
-        self.add_automations(15)
-
-        async def hang(payloads):
-            self.calls.append(("batch", payloads))
-            await asyncio.Event().wait()
-
-        self.socket.command_batch = hang
-        with patch.object(configs, "ITEM_TIMEOUT_SECONDS", 0.05):
-            result = await self.go(query="routine", search_types=["automation"])
-        self.assertEqual(reasons_of(result), {("not_searched", "automation", "read_failed"): 17})
-        self.assertEqual([len(batch) for batch in self.batches("automation/config")],
-                         [configs.CONFIG_CHUNK, 17 - configs.CONFIG_CHUNK])
-
-    async def test_failed_and_missing_bodies(self):
-        self.values["automation/config"] = HomeAssistantApiError()
+    async def test_rows_come_from_the_route_and_no_body_is_read(self):
         result = await self.go(query="routine", search_types=["automation"])
-        self.assertEqual(reasons_of(result), {("not_searched", "automation", "read_failed"): 2})
-        self.assertEqual([r["entity_id"] for r in result["automations"]], ["automation.morning"])
-        self.values["automation/config"] = configs_reply
-        with patch.dict(BODIES, clear=False):
-            del BODIES["automation.porch_lights"]
-            result = await self.go(query="routine", search_types=["automation"])
-        self.assertEqual(reasons_of(result), {("not_searched", "automation", "not_readable"): 1})
+        self.assertEqual(result["automations"], [{
+            "entity_id": "automation.morning", "friendly_name": "Morning routine", "score": 100,
+            "match_in_name": True, "match_in_config": True, "match_in_references": False}])
+        self.assertEqual(self.pages, [probe("routine"),
+                                      subcalls.page_arguments("automation", "routine", True, 0, FIRST),
+                                      probe("routine")])
+        self.assertEqual(self.reads, [("states",)])
+        self.assertEqual([call[2] for call in self.calls if call[0] == "rest"], ["/states"])
+        self.assertEqual([call for call in self.calls if call[0] != "rest"], [])
 
-    async def test_scene_bodies(self):
-        result = await self.go(query="movie", search_types=["scene"])
-        self.assertEqual(result["scenes"][0]["scene_id"], "movie_uid")
-        self.values["/config/scene/config/movie_uid"] = ExpectedHttpStatus(404)
-        result = await self.go(query="movie", search_types=["scene"])
-        self.assertEqual(reasons_of(result), {("not_searched", "scene", "not_readable"): 1})
-        self.assertEqual(result["scenes"][0]["scene_id"], "movie_uid")
-        rows = self.values["config/entity_registry/list"]
-        next(row for row in rows if row["entity_id"] == "scene.movie")["unique_id"] = "bad id!"
-        self.calls.clear()
-        result = await self.go(query="movie", search_types=["scene"])
-        self.assertEqual(reasons_of(result), {("not_searched", "scene", "not_readable"): 1})
-        self.assertFalse([call for call in self.calls if call[0] == "rest" and "scene" in call[2]])
-
-    async def test_an_authority_change_during_a_scene_read_fails_the_search(self):
-        self.rest.hook = lambda path: (setattr(self.core, "generation", self.core.generation + 1)
-                                       if path.startswith("/config/scene/config/") else None)
-        error = await self.refused("source_unavailable", {"query": "movie", "search_types": ["scene"]})
-        self.assertEqual(error.details, {"reason": "source_unavailable", "source": "core_authority"})
-
-    async def test_reads_outside_the_read_contract_are_read_failed(self):
-        original = CoreReadSession.batch
-
-        async def unavailable(session, name, keys):
-            result = await original(session, name, keys)
-            if name != "automation_config":
-                return result
-            # Items present, but the batch itself says unavailable.
-            return dataclasses.replace(result, status=c.UNAVAILABLE, reason="source_unavailable")
-
-        with patch.object(CoreReadSession, "batch", unavailable):
-            result = await self.go(query="routine", search_types=["automation"])
-        self.assertEqual(reasons_of(result), {("not_searched", "automation", "read_failed"): 2})
-        body = ReadResult("scene_config", c.COMPLETE, None, ["not", "a", "body"])
-        with patch.object(CoreReadSession, "scene_config", AsyncMock(return_value=body)):
-            result = await self.go(query="movie", search_types=["scene"])
-        self.assertEqual(reasons_of(result), {("not_searched", "scene", "read_failed"): 1})
-
-    async def test_config_matches_find_targets(self):
+    async def test_the_route_matches_bodies(self):
         result = await self.go(query="switch.fan", search_types=["script"])
-        self.assertEqual([(r["entity_id"], r["match_in_config"]) for r in result["scripts"]],
-                         [("script.wake", True)])
+        self.assertEqual([(r["entity_id"], r["match_in_name"], r["match_in_config"]) for r in result["scripts"]],
+                         [("script.wake", False, True)])
+        # The match is the route's: a body without the target is no match.
+        self.bodies["script.wake"] = {"alias": "Wake up"}
+        result = await self.go(query="switch.fan", search_types=["script"])
+        self.assertEqual(result["scripts"], [])
+
+    async def test_route_ids_are_kept_or_filled(self):
+        def ids(result, bucket, key):
+            return [(record["entity_id"], record[key]) for record in result[bucket]]
+
+        result = await self.go(query="movie", search_types=["scene"])
+        self.assertEqual(ids(result, "scenes", "scene_id"), [("scene.movie", "movie_uid")])
+        # An id the route leaves empty is filled: a scene's from the registry,
+        # else from its slug; a script's from its slug.
+        result = await self.go(query="other scene", search_types=["scene"])
+        self.assertEqual(ids(result, "scenes", "scene_id"), [("scene.other", "hue_other")])
+        result = await self.go(query="wake", search_types=["script"])
+        self.assertEqual(ids(result, "scripts", "script_id"), [("script.wake", "wake")])
+        self.bodies["script.wake"]["id"] = "wake_up"
+        result = await self.go(query="wake", search_types=["script"])
+        self.assertEqual(ids(result, "scripts", "script_id"), [("script.wake", "wake_up")])
+        self.values["config/entity_registry/list"] = [
+            row for row in self.values["config/entity_registry/list"] if row["entity_id"] != "scene.other"]
+        result = await self.go(query="other scene", search_types=["scene"])
+        self.assertEqual(ids(result, "scenes", "scene_id"), [("scene.other", "other")])
+
+    async def test_a_row_without_references_reports_false(self):
+        # Both 9.2.0 routes set match_in_references (search/component.py 111,
+        # smart_search/_deep.py 594), but Row 25 admits a row without it; the
+        # record still reports it.
+        async def bare(arguments):
+            served = await self.component(arguments)
+            return dataclasses.replace(served, rows=tuple(
+                {key: value for key, value in row.items() if key != "match_in_references"}
+                for row in served.rows))
+
+        self.readers["automation"] = bare
+        result = await self.go(query="routine", search_types=["automation"])
+        self.assertEqual([(record["entity_id"], record["match_in_references"])
+                          for record in result["automations"]], [("automation.morning", False)])
+
+    async def test_a_failed_or_partial_page_affects_its_own_bucket(self):
+        baseline = await self.go(query="light.kitchen")
+        self.assertEqual(reasons_of(baseline), {})
+        readers = dict(self.readers)
+
+        async def raising(arguments):
+            raise RuntimeError(MARKER)
+
+        async def partial(arguments):
+            return dataclasses.replace(await self.component(arguments), partial=True)
+
+        for search_type in subcalls.ENTITY_TYPES:
+            bucket = configs.BUCKET_OF[search_type]
+            for reader, expected in (
+                    (raising, {("source_unavailable", search_type, f"{search_type}_subcall_incomplete"): None}),
+                    (partial, {("not_searched", search_type, "upstream_partial"): None})):
+                with self.subTest(search_type=search_type, reader=reader.__name__):
+                    self.readers = {**readers, search_type: reader}
+                    result = await self.go(query="light.kitchen")
+                    self.assertEqual(reasons_of(result), expected)
+                    self.assertNotIn(MARKER, json.dumps(result))
+                    for other in ("entities", "automations", "scripts", "scenes", "helpers"):
+                        if other != bucket:
+                            self.assertEqual(result[other], baseline[other], other)
+                    if reader is partial:
+                        self.assertEqual(result[bucket], baseline[bucket])
+                    else:
+                        # Only the graph's reference rows remain.
+                        self.assertTrue(all(record["match_in_references"] and not record["match_in_config"]
+                                            for record in result[bucket]))
+
+    async def test_a_legacy_secret_bearing_item_is_the_routes_to_withhold(self):
+        # The legacy route fails closed per item: an item it cannot scrub is
+        # left out and the page is partial. Native search adds nothing back.
+        async def withheld(arguments):
+            self.pages.append(arguments)
+            return page([], partial=True)
+
+        self.readers["script"] = withheld
+        result = await self.go(query="turn_on", search_types=["automation", "script"])
+        self.assertEqual(result["scripts"], [])
+        self.assertEqual(reasons_of(result), {("not_searched", "script", "upstream_partial"): None})
+        self.assertEqual(sorted(record["entity_id"] for record in result["automations"]),
+                         ["automation.morning", "automation.porch_lights"])
+
+    async def test_an_entity_scan_is_whole(self):
+        extra = FIRST + 5
+        self.values["states"].extend(st(f"automation.extra_{index:03}", "on", f"Extra routine {index}")
+                                     for index in range(extra))
+        result = await self.go(query="routine", search_types=["automation"], limit=1)
+        self.assertEqual(result["config_total_matches"], extra + 1)
+        self.assertEqual([record["entity_id"] for record in result["automations"]], ["automation.morning"])
+        self.assertEqual([arguments["offset"] for arguments in self.pages
+                          if arguments["search_types"] == ["automation"]], [0, FIRST])
+        self.assertEqual((self.pages[0], self.pages[-1], len(self.pages)),
+                         (probe("routine"), probe("routine"), 4))
+
+    async def test_entity_rows_are_checked(self):
+        good = {"entity_id": "automation.morning", "friendly_name": "Morning routine", "score": 100,
+                "match_in_name": True, "match_in_config": False, "match_in_references": False}
+        missing = dict(good)
+        del missing["entity_id"]
+
+        def full(rows):
+            # HAMCP-501 W6 S1: a page that claims more rows is full.
+            return [*rows, *({**good, "entity_id": f"automation.filler_{index:03}",
+                              "friendly_name": f"Filler {index}", "score": 1}
+                             for index in range(FIRST - len(rows)))]
+
+        bad_pages = (
+            [{**good, "entity_id": "script.wake"}],
+            [{**good, "entity_id": "automation.Morning"}],
+            [missing],
+            [{**good, "entity_id": None}],
+            [{**good, "script_id": "morning"}],
+            [{**good, "helper_type": "template"}],
+            [{**good, "config": {}}],
+            [{**good, "friendly_name": None}],
+            [{**good, "score": 99.5}],
+            [good, dict(good)],
+        )
+        for rows in bad_pages:
+            with self.subTest(rows=rows):
+                # A good page would follow; the scan stops at the bad one.
+                reader = AsyncMock(side_effect=[page(full(rows), has_more=True, total=FIRST + 1),
+                                                page([good], total=FIRST + 1)])
+                self.readers = {**self.readers, "automation": reader}
+                result = await self.go(query="routine", search_types=["automation"])
+                self.assertEqual(reasons_of(result), {
+                    ("source_unavailable", "automation", "automation_subcall_incomplete"): None})
+                self.assertEqual(result["automations"], [])
+                self.assertEqual(reader.await_count, 1)
+        # A row repeated across pages: the rows already held are kept.
+        reader = AsyncMock(side_effect=[page(full([good]), has_more=True, total=FIRST + 1),
+                                        page([good], total=FIRST + 1)])
+        self.readers = {**self.readers, "automation": reader}
+        result = await self.go(query="routine", search_types=["automation"])
+        # The first page's rows are kept, less the default limit of 10.
+        self.assertEqual(reasons_of(result), {
+            ("source_unavailable", "automation", "automation_subcall_incomplete"): None,
+            ("paged", "config", "more_matches"): FIRST - 10})
+        names = [record["entity_id"] for record in result["automations"]]
+        self.assertEqual((names[0], names.count("automation.morning")), ("automation.morning", 1))
+        self.assertEqual(reader.await_count, 2)
+
+    async def test_include_config_withholds_route_bodies(self):
+        result = await self.go(query="routine", search_types=["automation"], include_config=True)
+        self.assertEqual(reasons_of(result), {("filtered", "config", "config_bodies_withheld"): 1})
+        self.assertEqual(result["fields_withheld"], 1)
+        self.assertNotIn("config", result["automations"][0])
+        self.assertEqual({arguments["include_config"] for arguments in self.pages}, {False})
+
+    async def test_config_time_budget_is_validated_not_forwarded(self):
+        # Changed (disclosed): the route's pages carry no time budget, so a
+        # valid budget has no effect.
+        plain = await self.go(query="routine", search_types=["automation", "script"])
+        for budget in (0.001, 300):
+            with self.subTest(budget=budget):
+                self.pages.clear()
+                result = await self.go(query="routine", search_types=["automation", "script"],
+                                       config_time_budget=budget)
+                self.assertEqual({b: result[b] for b in ("automations", "scripts")},
+                                 {b: plain[b] for b in ("automations", "scripts")})
+                self.assertEqual(reasons_of(result), {})
+                self.assertEqual(self.pages, [probe("routine"), *(
+                    subcalls.page_arguments(search_type, "routine", True, 0, FIRST)
+                    for search_type in ("automation", "script")), probe("routine")])
+        codes = set().union(*reply.REASON_CODES.values())
+        self.assertFalse({"time_budget", "not_readable"} & codes)
 
 
 class GraphTests(World):

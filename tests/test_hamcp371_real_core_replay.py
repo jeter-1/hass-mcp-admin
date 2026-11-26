@@ -41,6 +41,7 @@ from ha_mcp_engineering.providers import upstream_reads_9_2_blueprint as bluepri
 from ha_mcp_engineering.request_context import begin_request, end_request
 from test_ha_mcp_production_readmission import _GatewayTransport, _settings
 import support.ha_mcp_captures as previous  # HAMCP-437: helpers moved from the retired 8.5 module
+from support import internal_search_page as internal  # HAMCP-501 W6 (G1)
 
 FIXTURES = ROOT / 'tests/fixtures/ha_mcp_9_2_0'
 CONTRACT = json.loads((FIXTURES / 'output-key-contract.json').read_text(encoding='utf-8'))
@@ -150,6 +151,15 @@ async def _replay(version, cases, tools=None):
     for tool, arguments, result in cases:
         transport.override = result
         transport.sent = []
+        if internal.is_internal_only(tool):
+            # HAMCP-501 W6 (G1): the delegated read is internal-only. It is
+            # never published and is reached only as one native search
+            # sub-call page.
+            if tool in registry or tool not in gateway._internal:
+                raise AssertionError(f'{tool} is not internal-only')
+            out = await internal.execute_page(gateway, tool, arguments, caller='hamcp371-replay')
+            outputs.append((out, list(transport.sent)))
+            continue
         _telemetry, token = begin_request('hamcp371-replay')
         try:
             out = json.loads(await registry[tool].run(deepcopy(arguments)))
@@ -359,6 +369,19 @@ def _cases_920(sets=('A/9.2.0', 'B/9.2.0')):
                 yield set_name, call, rec['exchange']['response']['result']
 
 
+def _arguments(call):
+    """The arguments a replayed read dispatches with.
+
+    HAMCP-501 W6 (G1): the internal-only ``ha_search`` takes only the fixed
+    sub-call page arguments, so its recorded content replays through one page.
+    Row 25's projection reads no page argument (the receipts carry no
+    ``result_fields``), so the recorded content is projected unchanged.
+    """
+    if internal.is_internal_only(call['public_tool']):
+        return internal.PAGE_ARGUMENTS
+    return call['public_arguments']
+
+
 def _with(result, content):
     copy = deepcopy(result)
     copy['structuredContent'] = content
@@ -379,6 +402,12 @@ class RealCoreReplay920(unittest.TestCase):
                 for (call, rec), (out, sent) in zip(calls, outputs):
                     with self.subTest(set=set_name, sub=sub, call=call['id']):
                         refused = REFUSED_BEFORE_DISPATCH_920.get(call['id'])
+                        if internal.is_internal_only(call['public_tool']):
+                            # HAMCP-501 W6 (G1): the recorded public arguments
+                            # are not a sub-call page; they never reach the
+                            # internal-only route.
+                            self.assertIsNone(refused)
+                            refused = 'prohibited_delegation'
                         if refused is not None:
                             self.assertEqual(sent, [])
                             self.assertIs(out['success'], False)
@@ -395,13 +424,24 @@ class RealCoreReplay920(unittest.TestCase):
                             self.assertNotIn(error['message'], json.dumps(out))
                             self.assertNotIn(error['code'], json.dumps(out))
 
+    def test_internal_only_search_receipts_replay_as_one_page(self):
+        # HAMCP-501 W6 (G1): the recorded content reaches the internal-only
+        # route only with the fixed page arguments, dispatched once, unchanged.
+        cases = [(c, r) for _s, c, r in _cases_920() if internal.is_internal_only(c['public_tool'])]
+        self.assertEqual({c['id'] for c, _ in cases}, {'r25-search', 'v25-search-text'})
+        outputs = replay('9.2.0', [(c['public_tool'], _arguments(c), r) for c, r in cases])
+        for (call, _), (out, sent) in zip(cases, outputs):
+            with self.subTest(call=call['id']):
+                self.assertEqual(sent, [(call['upstream_tool'], internal.PAGE_ARGUMENTS)])
+                self.assertIs(out['success'], True, out.get('details'))
+
     def test_every_profile_b_read_has_a_receipt(self):
         tools = {c['public_tool'] for c, _ in public_calls('B/9.2.0')}
         self.assertEqual(tools & set(READS), set(READS))
 
     def test_admitted_keys_and_withheld_counts(self):
         cases = list(_cases_920())
-        outputs = replay('9.2.0', [(c['public_tool'], c['public_arguments'], r) for _, c, r in cases])
+        outputs = replay('9.2.0', [(c['public_tool'], _arguments(c), r) for _, c, r in cases])
         for (set_name, call, result), (out, _sent) in zip(cases, outputs):
             tool = call['public_tool']
             row = READS[tool]
@@ -444,7 +484,7 @@ class RealCoreReplay920(unittest.TestCase):
                 nested[INJECTED] = 'y'
             for variant in (content, one, two):
                 cases.append((call, nested is not None, _with(result, variant)))
-        outputs = replay('9.2.0', [(c['public_tool'], c['public_arguments'], r) for c, _, r in cases])
+        outputs = replay('9.2.0', [(c['public_tool'], _arguments(c), r) for c, _, r in cases])
         for i in range(0, len(cases), 3):
             call, has_nested = cases[i][0], cases[i][1]
             base, one, two = (outputs[i + j][0] for j in range(3))
@@ -498,7 +538,7 @@ class RealCoreReplay920(unittest.TestCase):
             injected['warnings'] = list(injected.get('warnings', [])) + [CANARY]
             cases.append((call, _with(result, injected)))
         self.assertTrue(cases)
-        outputs = replay('9.2.0', [(c['public_tool'], c['public_arguments'], r) for c, r in cases])
+        outputs = replay('9.2.0', [(c['public_tool'], _arguments(c), r) for c, r in cases])
         for (call, _), (out, _sent) in zip(cases, outputs):
             with self.subTest(call=call['id']):
                 self.assertNotIn(CANARY, json.dumps(out))
@@ -524,7 +564,7 @@ class RealCoreReplay920(unittest.TestCase):
                 cases.append((call, _with(result, injected)))
         self.assertTrue(cases)
         for (call, _), (out, _sent) in zip(cases, replay('9.2.0', [
-                (c['public_tool'], c['public_arguments'], r) for c, r in cases])):
+                (c['public_tool'], _arguments(c), r) for c, r in cases])):
             with self.subTest(call=call['id']):
                 self.assertIs(out['success'], True)
                 self.assertGreaterEqual(out['data']['fields_withheld'], 1)
@@ -533,7 +573,7 @@ class RealCoreReplay920(unittest.TestCase):
     def test_zone_and_services_changes(self):
         cases = [(c, r) for s, c, r in _cases_920(('B/9.2.0',))
                  if c['public_tool'] in ('ha_get_zone', 'ha_list_services', 'ha_search')]
-        outputs = replay('9.2.0', [(c['public_tool'], c['public_arguments'], r) for c, r in cases])
+        outputs = replay('9.2.0', [(c['public_tool'], _arguments(c), r) for c, r in cases])
         for (call, result), (out, _sent) in zip(cases, outputs):
             text = json.dumps(out['data'])
             upstream = generator.names(result['structuredContent'], call['public_tool'])
