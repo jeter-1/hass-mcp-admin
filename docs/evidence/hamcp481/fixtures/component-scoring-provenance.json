@@ -1,0 +1,45 @@
+{
+  "command": "unshare -rn <venv>/bin/python -I docs/evidence/hamcp481/fixtures/generate_component_scoring_fixtures.py --upstream <ha-mcp-51e3aac7> --output-dir docs/evidence/hamcp481/fixtures",
+  "generator": {
+    "path": "docs/evidence/hamcp481/fixtures/generate_component_scoring_fixtures.py",
+    "sha256": "ca91c73a3bb62628222dd9cf92b90bcd31ba1941ebaf96699a4b66f381378a37"
+  },
+  "golden": {
+    "path": "docs/evidence/hamcp481/fixtures/component-scoring-golden.json",
+    "sha256": "b4f937eed222cc6c4e7a26f29a85c873b2808a817aecc96b86a000d70885b24e"
+  },
+  "inputs": "synthetic, defined in the generator",
+  "isolation": "python -I in a venv with no packages, under unshare -rn (no network)",
+  "python": "3.12.14",
+  "schema": "hamcp501-component-scoring-provenance-v1",
+  "source": {
+    "commit": "51e3aac788482a081807591cd5d58d07dc4e540b",
+    "executed": [
+      "custom_components/ha_mcp_tools/websocket_api/search_score.py",
+      "custom_components/ha_mcp_tools/search_locations.py"
+    ],
+    "extracted": {
+      "custom_components/ha_mcp_tools/websocket_api/constants.py": [
+        "FUZZY_THRESHOLD",
+        "HIDDEN_SCORE_PENALTY",
+        "_SPLIT_RE"
+      ],
+      "custom_components/ha_mcp_tools/websocket_api/search.py": [
+        "_entity_match_type",
+        "_is_alias_driven",
+        "_get_match_type_tier"
+      ]
+    },
+    "files": {
+      "custom_components/ha_mcp_tools/search_locations.py": "4567798ee26475efd88e9ed14f9261262e84132d4f453bd6f32789c038c30fd3",
+      "custom_components/ha_mcp_tools/websocket_api/constants.py": "672c13bb636c77c549cb27a72cf27c304d8ac1a61cc833348e4531ad40cbfa71",
+      "custom_components/ha_mcp_tools/websocket_api/search.py": "5f1a1e312884494245f71c4720c5ddd3ac3d4211f9c8257e9be9460be36781a8",
+      "custom_components/ha_mcp_tools/websocket_api/search_score.py": "ba034030b149091fba1e2777ac6c0c4d9c442fa33148b7d92441cba3feca43de"
+    },
+    "repository": "https://github.com/homeassistant-ai/ha-mcp",
+    "stubbed": {
+      "ha_mcp_tools.websocket_api.constants": "the three extracted constants only"
+    },
+    "version": "9.2.0"
+  }
+}

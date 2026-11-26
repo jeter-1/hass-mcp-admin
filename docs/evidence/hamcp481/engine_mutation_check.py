@@ -111,21 +111,20 @@ MUTANTS = {
         "pass"),
     "include_hidden_ignored": (
         "entities", "denied = frozenset() if request.include_hidden else hidden", "denied = hidden"),
+    # HAMCP-501 W6b: one ``kept()`` filter serves the query and listing modes.
     "hidden_scored": (
-        "entities", "if entity_id in denied or not in_domain(entity_id):", "if not in_domain(entity_id):"),
+        "entities", "        return (entity_id not in denied\n                and (domain",
+        "        return (True\n                and (domain"),
     "hidden_area_member_listed": (
-        "entities", "if entity_id not in denied and in_domain(entity_id)]", "if in_domain(entity_id)]"),
-    "malformed_row_listed": (
-        "entities", "if entity_id not in denied and entity_id not in malformed_ids",
-        "if entity_id not in denied"),
-    "area_hidden_unpenalized": (
-        "entities", 'scoring.apply_hidden_penalty(100, entity_id in hidden), "area_match")', '100, "area_match")'),
-    "domain_hidden_unpenalized": (
-        "entities", "scoring.apply_hidden_penalty(100, entity_id in hidden), DOMAIN_LISTING)",
-        "100, DOMAIN_LISTING)"),
-    "domain_hidden_listed": (
-        "entities", "if scoring.entity_domain(entity_id) == domain and entity_id not in denied]",
-        "if scoring.entity_domain(entity_id) == domain]"),
+        "entities", "if entity_id not in malformed_ids and kept(entity_id, state_of(entity_id).state)",
+        "if entity_id not in malformed_ids"),
+    "malformed_row_listed": ("entities", "if entity_id not in malformed_ids and kept(", "if kept("),
+    "listing_hidden_unpenalized": (
+        "entities", "row.state, scoring.apply_hidden_penalty(100, entity_id in hidden),", "row.state, 100,"),
+    "query_hidden_unpenalized": (
+        "entities", "scoring.apply_hidden_penalty(tier, entity_id in hidden),", "tier,"),
+    "domain_filter_dropped": (
+        "entities", "                and (domain is None or scoring.entity_domain(entity_id) == domain)\n", ""),
     "result_fields_unprojected": (
         "entities", "record = {key: value for key, value in record.items() if key in keep}",
         "record = dict(record)"),
