@@ -12,7 +12,9 @@ describes what was built.
 Revision 4 was the architect's delta-check change to revision 3 (head
 `93175f3c`): the visibility filter gives one fixed note instead of a
 per-query `hidden` count (§3.7, §7). Revision 5 supersedes that filter
-(§3.7, §10.2).
+(§3.7, §10.2). Revision 5 also carries the correction batch for Cursor's r1
+review of this pull request (#520), R1-F1 to R1-F4, as the architect
+directed.
 Revision 3 was the correction batch for Cursor's round-2 review of revision 2
 (head `3ace9227`). Revision 2 was the correction batch for the Cursor review
 and the architect review of revision 1 (head `4cd3a430`), with J2 applied as
@@ -530,8 +532,11 @@ Inputs are stripped first (`tools_search.py:355-362`). Then:
   (`entities.py:606`, `fuzzy_search.py:233`, `modes.py:221`, `:423`, `:522`).
   The golden fixture in §8 pins it.
 - *Rev 5 (G-c):* the enumeration match types are `area_match`,
-  `domain_listing` and `state_listing`. An empty query takes
-  `domain_listing`. Native has no fuzzy-to-substring fallback.
+  `domain_listing` and `state_listing`. With an empty query, the filters
+  select the mode (`search/entities.py:204-211`): `domain_filter` with no
+  `area_filter` gives `domain_listing`; `area_filter` gives area mode
+  (`area_match`); with neither, it is `state_listing`. Native has no
+  fuzzy-to-substring fallback.
 - Token-AND is dropped. The architect withdrew revision 1's O5 recommendation.
 - **Visibility filter.** *Rev 5: superseded, not ported (§3.7).* Entities in
   the ha-mcp visibility hidden set are
@@ -759,7 +764,7 @@ the build stops.
 | Argument | Today (9.2.0 through Engineering) | Native | Status |
 | --- | --- | --- | --- |
 | `query` | Searches entities, configuration bodies and entity references | The same (§3.2, §3.5). No `maxLength` (J1, no caps) | Kept |
-| `search_types` | Configuration types `automation`, `script`, `scene`, `helper`, `dashboard`. The default is the first four. Any explicit value skips entities. The public description omits that | The 9.2.0 meaning is kept. The description gains the wire sentence: "Explicitly providing this selects configuration-only search and skips entities. Omit it for entity discovery." With a query, the R-A warning explains the empty bucket (*rev 5 correction:* R-A fires for any explicit `search_types`, with or without a query, `search/engine.py:347-348`, §10.12). `dashboard` routes per §2.4 | Redefined (description only), decided as relayed: reading (i), confirmed as relayed (J3) |
+| `search_types` | Configuration types `automation`, `script`, `scene`, `helper`, `dashboard`. The default is the first four. Any explicit value skips entities. The public description omits that | The 9.2.0 meaning is kept. The description gains the wire sentence: "Explicitly providing this selects configuration-only search and skips entities. Omit it for entity discovery." The R-A warning explains the empty bucket. An explicit `search_types` with no query is refused as `no_criteria` (`search/engine.py:232-233`) before the warning is added (`:347-348`), so every successful explicit reply carries it (§10.12). `dashboard` routes per §2.4 | Redefined (description only), decided as relayed: reading (i), confirmed as relayed (J3) |
 | `domain_filter` | Entity search only; does not affect configuration search | The same | Kept |
 | `area_filter` | The ladder in §3.3, with floor expansion | The same, plus the effective-area rule (§2.3) | Kept |
 | `state_filter` | Case-insensitive; standalone enumerates; page-only in the two modes of §3.4 | The same (§3.4) | Kept |
@@ -850,7 +855,10 @@ On the legacy path, the `name` opt-in carries no composed value, only its note
 (`_COMPOSED_NAME_UNAVAILABLE`, `tools/search/entities.py:81`, used at `:117`).
 The component path composes it. Natively, `name` is composed by the pinned
 Core naming rule (ADR-021). If the build cannot pin that rule, `name` is
-served as the legacy path serves it, with the note.
+served as the legacy path serves it, with the note. *Rev 5:* native composes
+`name` once W6b (#519) lands, and W7 merges after #519. Without #519, the
+native reply does not compose `name` and warns that it is not served
+(§10.10).
 
 No new record field is added in this revision. Revision 1 proposed `device_id`,
 `device_name`, `area_id`, `hidden`, `entity_category`, `device_class`,
@@ -1448,8 +1456,16 @@ G1, internal-only:
   signing.
 - The mechanism is `execute(..., search_page=...)` under the lease (D5,
   §10.7).
-- Catalog: 114 = 88 + 26. `exact_matched` includes the internal route, and
-  `dynamically_exposed` excludes it (codex-context reports 26/114).
+- Catalog: 114 = 88 + 26 is the connector total, and it excludes the
+  internal `ha_search`. codex-context reports it as
+  `expected_connector_total` 114, with `expected_delegated_reads` 26
+  (`scripts/codex-context.py:895-910`).
+- The read gateway's health counters are separate
+  (`providers/upstream_read_gateway.py:5936`, `:5960-5961`).
+  `exact_matched_automatic_read_count` counts the exposed and the internal
+  routes, 27 when every reviewed read matches. `dynamically_exposed_count`
+  counts the exposed routes only, 26. The internal-only set is
+  `("ha_search",)` (`ha_core_readmission/routes.py:249`).
 
 G2, the route requirements:
 
@@ -1761,7 +1777,10 @@ The other parts of the reply:
   (§10.4).
 - **G-c (§3.2).** The enumeration match types are `area_match`,
   `domain_listing` and `state_listing`. An empty query takes
-  `domain_listing`. Native has no fuzzy-to-substring fallback.
+  `domain_listing` only with `domain_filter` and no `area_filter`. With
+  `area_filter` it is area mode (`area_match`), and with neither it is
+  `state_listing` (`search/entities.py:204-211`). Native has no
+  fuzzy-to-substring fallback.
 - **G-d (§8.3).** The golden comparison is of match sets, not order
   (`tests/test_hamcp481_native_search_engine.py:783`).
 - **G-h (§6.1, §6.2).** A failed `get_entries` chunk gives a partial
@@ -1771,8 +1790,10 @@ The other parts of the reply:
 - **G-j (§3.3).** The fuzzy area match is `partial_ratio`
   (`_entities.py:856-860`, native `search/entities.py:406-408`), not a
   whole-string ratio. Area plus a query is always fuzzy at 80.
-- **R-A (§4, §6.4).** It fires for any explicit `search_types`, not only with
-  a query (`search/engine.py:347-348`).
+- **R-A (§4, §6.4).** An explicit `search_types` with no query is refused as
+  `no_criteria` (`search/engine.py:232-233`) before the R-A warning is added
+  (`:347-348`). So every successful explicit reply carries the warning
+  (`tests/test_hamcp481_native_search_engine.py:1143-1144`, `:1166-1172`).
 - **Plan corrections.** These are not in this document, so they are recorded
   here only:
   - `ha_core_readmission/websocket.py` does not exist;
