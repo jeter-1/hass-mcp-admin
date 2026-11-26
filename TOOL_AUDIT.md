@@ -44,9 +44,35 @@ or write path. The native search row is the last one below.
   `truncated`; incident correlation and `entity_dependency_analysis` report
   their caps as partial with withheld counts. Output keys only; the reads are
   unchanged.
-- **`ha_search` (HAMCP-481, W1 to W7).** [fill: the native search rows after
-  W6, checked against the merged source: the reads it sends, sub-calls,
-  filters, `result_fields` and partial semantics.]
+- **`ha_search` (HAMCP-481, W1 to W7).** The provider changes from the
+  delegated ha-mcp 9.2.0 tool to a native Engineering tool
+  (`tools/search.py`, routing `engineering_native`, no fallback;
+  `readOnlyHint` true, `destructiveHint` false). The name, arguments and
+  reply keys are kept; the native schema appends one sentence to the
+  `search_types` description (J3) and has its own pinned fingerprint
+  (`47b15a3e…`), while the 9.2.0 Row 25 fingerprint is unchanged.
+  - Reads (`search/core_contracts.py` `READS`): `GET /states`; the area,
+    floor, label, entity and device registry lists;
+    `config/entity_registry/get_entries` for aliases; `search/related` for
+    graph references; and the storage helpers' `<domain>/list`, through
+    four Core profiles (`core.basic_rest_read`,
+    `core.basic_websocket_read`, `core.non_device_registry_read`,
+    `core.direct_device_registry_read`). No automation, script or scene
+    configuration is read (S1).
+  - Sub-calls: the automation, script, scene, dashboard and flow-helper
+    buckets come from fixed pages of the delegated `ha_search`, which is
+    internal-only (never listed, no `ha_mcp__ha_search`) and keeps its own
+    Core requirement, `core.delegated_device_effective_area`. Pages are 150
+    rows and step down to 30, 6 and 1 only when a page is too large; a scan
+    stops at 20,000 rows, 300 page calls per bucket or 60 seconds. Without
+    ha-mcp admitted those buckets are `subcall_not_admitted`.
+  - A numeric-like query, or a helper probe that does not show a clean
+    scrub, withholds body matching for the body buckets
+    (`body_numeric_query`, `body_scrub_degraded`, `body_scrub_unverified`).
+  - Partial semantics: each bucket reports its own `partial_reasons`, and a
+    failed sub-call affects only its bucket. No visibility filter
+    (HAMCP-499).
+  - Catalog: 114 tools, 88 Engineering and 26 delegated. [fill: W6b]
 
 ## Automation run counts (2.9.1, HAMCP-476)
 

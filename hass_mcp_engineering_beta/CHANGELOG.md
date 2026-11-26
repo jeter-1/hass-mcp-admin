@@ -36,8 +36,22 @@ release pull request completes this entry.
   - Landed inert, so no tool imports it yet: the scoring port (W1, #506).
   - Landed inert: the fixed Core reads (W2, #507).
   - Landed inert: the engine (W3, #513).
-  - The page readers (W4, #516): [fill: state].
-  - The `ha_search` cutover (W6, [fill: PR]): [fill: state].
+  - Landed inert: the page readers (W4, #516). W6 fixed their page check,
+    which refused every page under the live unified descriptor.
+  - Landed: the `ha_search` cutover (W6, #517). `ha_search` is now a native,
+    read-only Engineering tool with the same name and arguments, plus one
+    sentence appended to the `search_types` description. The delegated 9.2.0
+    `ha_search` is internal-only: it is never listed (no
+    `ha_mcp__ha_search`) and serves only the fixed sub-call pages, under its
+    own Core requirement. Automation, script and scene body matches come from
+    ha-mcp's scrubbed sub-call; native search reads no automation, script
+    or scene configuration.
+    A numeric-like query, or a scrub not shown clean, withholds body matching
+    for that bucket (`body_numeric_query`, `body_scrub_degraded`,
+    `body_scrub_unverified`). A page too large for the reply bound is re-read
+    at a smaller size (150, 30, 6, then 1 rows). The catalog is 114 tools
+    (88 Engineering, 26 delegated).
+  - Component-route parity (W6b, #519): [fill: state].
   - The native search design doc update (W7, [fill: PR]): [fill: state].
 - Landed: the Core-evidence workflow takes its pull request acceptance
   target from the support window's current Core, 2026.11.3, instead of a
@@ -91,7 +105,13 @@ release pull request completes this entry.
   plan withdraw, list paging, trace-watch renewal and the dashboard items
   (planned for 2.11); the ha-mcp visibility filter for native search
   (HAMCP-499); the HAMCP-293 risk lowering (HAMCP-486); and the HAMCP-474 D1
-  relabel (HAMCP-487). [fill: anything W4 to W7 defer]
+  relabel (HAMCP-487). Native search defers: dashboard and helper identity
+  (HAMCP-447); a fail-closed refusal for the other fixed readers with no
+  parent request (HAMCP-510); an engine cleanup after W6b (HAMCP-520); the
+  disclosed body-match residuals (non-scalar and bool secrets, YAML-mode
+  dashboards, no inf/nan arm); and the helper sub-call still opening and
+  aborting options flows upstream, as before (HAMCP-233). [fill: W6b and W7
+  deferrals]
 - Rollback: pending; stated by the final release pull request.
 
 ## 2.4.2-beta.13 - 2.9.1 build, in progress (HAMCP-455)

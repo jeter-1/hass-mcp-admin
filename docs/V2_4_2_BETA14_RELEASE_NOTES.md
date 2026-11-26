@@ -37,8 +37,9 @@ each landed item's behavior from the landed source.
 | HAMCP-481 W1 (built as HAMCP-501) | Native search (entities, automations and scripts; filters; `result_fields`; correct partial semantics): the scoring port, landed inert, so no tool imports it | landed (#506) |
 | HAMCP-481 W2 | Native search: the fixed Core reads, landed inert | landed (#507) |
 | HAMCP-481 W3 | Native search: the engine, landed inert | landed (#513) |
-| HAMCP-481 W4 | Native search: the page readers | [fill: #516 state] |
-| HAMCP-481 W6 | Native search: the `ha_search` cutover; the tool keeps its name | [fill: PR and state] |
+| HAMCP-481 W4 | Native search: the sub-call page readers, landed inert; W6 fixed their page check, which refused every page under the live unified descriptor | landed (#516) |
+| HAMCP-481 W6 | Native search: the `ha_search` cutover; the tool keeps its name and arguments, plus one appended `search_types` sentence. The delegated 9.2.0 `ha_search` is internal-only (no `ha_mcp__ha_search`) and serves only the fixed sub-call pages under its own Core requirement. Automation, script and scene body matches come from ha-mcp's scrubbed sub-call (S1); a numeric-like query or an unproven scrub withholds them. Pages step down 150, 30, 6, 1 rows when too large | landed (#517) |
+| HAMCP-481 W6b | Native search: component-route parity | [fill: #519 state] |
 | HAMCP-481 W7 | Native search: the design doc update (these release rows are HAMCP-509's) | [fill: PR and state] |
 
 Not in this build:
@@ -47,7 +48,57 @@ Not in this build:
 - the ha-mcp visibility filter for native search (HAMCP-499);
 - the HAMCP-293 risk lowering (HAMCP-486);
 - the HAMCP-474 D1 relabel (HAMCP-487);
-- [fill: anything W4 to W7 defer].
+- native search: dashboard and helper identity (HAMCP-447);
+- a fail-closed refusal for the other fixed readers with no parent request
+  (HAMCP-510);
+- an engine cleanup after W6b (HAMCP-520);
+- the disclosed body-match residuals, for 2.11: non-scalar and bool secrets,
+  YAML-mode dashboards, and no inf/nan arm in the numeric trigger;
+- the helper sub-call still opens and aborts options flows upstream, as
+  before (HAMCP-233);
+- [fill: W6b and W7 deferrals].
+
+### Native search parity
+
+Copied verbatim from the W6 pull request (#517), measured against the live
+delegated component route (unified descriptor c1ca76bd). [fill: W6b's parity
+changes]
+
+```
+Kept:
+- Full 9.2.0 schema (per_domain_limit, group_by_domain, fields, result_fields, config_time_budget, include_hidden default true), plus one appended sentence.
+- X1 eligibility: domain/area/state intent skips config search unless search_types is explicit.
+- X5 union area match; X6 unknown area gives success with 0.
+- X10 count is the sum; limit is per surface. X15 ties sort by entity_id.
+- X3/X4 Row 25 projection for dashboard and helper rows.
+- Automation, script and scene body matching (match_in_config) is the delegated route's own (S1 b+), scrubbed upstream, except under the F1 trigger or an unproven scrub (see Changed).
+- Audit status: a partial reply is audited partial, as on the delegated route (restored in the correction batch).
+- result_fields enrichment (area, floor, labels, aliases, is_group, member_entity_ids).
+
+Improved:
+- X9: closed Engineering warnings; upstream_warnings_replaced is 0.
+- X1 now warns config_skipped.
+- X11: offset and limit are always present.
+- X7: completeness reflects real partial_reasons; a partial or failed sub-call affects only its own bucket.
+- Full description (no truncation).
+- Combined next_offset is the minimum of the surfaces.
+- match_in_references comes from Core search/related (entity_id-shaped query); the component route hard-codes it false. A graph failure gives not_searched graph_unavailable.
+- A long-named row no longer fails the whole type: the page-size ladder re-reads only its span at a smaller size.
+
+Changed (with reason):
+- X7: no VISIBLE_SCOPE caveat; HAMCP-499's visibility filter is not ported; hidden only via registry hidden_by.
+- X12: the composed device+entity name is not served (warning); W6b adds it.
+- An unusable floor/area registry gives source_unavailable.
+- The invalid-argument envelope is the native SearchError.
+- Arbitrary delegated projection is unreachable.
+- config_time_budget is validated but not forwarded to pages; each sub-call scan has its own 60 s deadline (S1, as decided).
+- Automation, script and scene matches need ha-mcp admitted; without it the bucket is source_unavailable subcall_not_admitted (S1 b+: bodies only from the scrubbed route).
+- An upstream partial page (legacy: a secret-bearing file gives per-id 500s) is not_searched upstream_partial for that bucket only; the upstream partial_reason text and hint are not carried.
+- A row larger than the reply bound even at page size 1, or a bucket past 300 page calls, is <type>_subcall_incomplete for that bucket.
+- F1 trigger (Codex r1 F1; Josh's A'+ as relayed): for a numeric-like query (exact: only 0-9 . + - e : t and spaces; fuzzy: that, or any query token with a digit), automation, script, scene and helper sub-call rows keep only a name rescore and graph references. match_in_config is false, rows with no name match are dropped, and the bucket is not_searched body_numeric_query. A legitimate numeric body match (for example 10:00 or 75) is lost; the name match and graph references remain.
+- F1 scrub check: when a one-row helper probe before or after the scans does not show a clean scrub, every body type in the call is treated the same way (body_scrub_degraded or body_scrub_unverified).
+- The audit status of the native invalid-argument path is failure / validation_failure.
+```
 
 ## Evidence
 

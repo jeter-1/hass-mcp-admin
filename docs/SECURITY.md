@@ -1394,11 +1394,49 @@ path. Native search is the last bullet below.
   `trace/list`; its reply is now an object (breaking, SI-5).
 - **CI only (HAMCP-505).** The Core-evidence workflow's pull request
   acceptance target comes from the support window; no runtime change.
-- **Native search (HAMCP-481, W1 to W7).** [fill after W6, each checked
-  against the merged source: the W4 sub-call page path is unreachable until
-  W6 wires it; W6 passes the native tool's lease as `core_dispatch_authorizer`
-  (D5); a sub-call page the sanitizer redacted or truncated fails and is never
-  merged (D2); and the reads, routes and limits it adds.]
+- **Native search (HAMCP-481, W1 to W7).** Native `ha_search` (#517)
+  replaces the delegated `ha_search` as the public tool. It adds no
+  permission, add-on option, client, write, workflow or signing change, and
+  no policy JSON or `config.yaml` change. Its reads are Core reads through
+  four existing signed profiles and a fixed command table
+  (`search/core_contracts.py`); it reads no automation, script or scene
+  configuration (S1, pinned by the AST test
+  `test_no_configuration_body_read_is_reachable`).
+  - **Internal-only delegated route (G1).** The delegated `ha_search` is in
+    `INTERNAL_ONLY_DELEGATED_READ_TOOLS` (`ha_core_readmission/routes.py`):
+    it is never listed or aliased (no `ha_mcp__ha_search`) and is never a
+    direct read. It serves only the fixed automation, script, scene,
+    dashboard and flow-helper sub-call pages, with exact page arguments at a
+    ladder size (150, 30, 6, 1), under its own Core requirement
+    `core.delegated_device_effective_area`, fail-closed (G2). No fallback
+    and no other upstream tool.
+  - **Sub-call pages.** Each page runs under the calling request's Core
+    lease as its `core_dispatch_authorizer` (D5), and a page with no parent
+    request or authorizer is refused before dispatch (F1). A page the
+    sanitizer redacted or truncated fails and is never merged (D2).
+    Failures map to a fixed category set; anything else becomes
+    `invalid_response` (F2). Only a reply-size refusal steps the page size
+    down; a scan stops at 20,000 rows, 300 page calls per bucket or 60
+    seconds.
+  - **Body matching.** `match_in_config` for automations, scripts and
+    scenes is ha-mcp's own, from its scrubbed sub-call, and bodies are never
+    returned. A numeric-like query withholds body matching
+    (`body_numeric_query`), as does a one-row helper probe, read before and
+    after the scans, that does not show a clean scrub
+    (`body_scrub_degraded`, `body_scrub_unverified`); the matched rows then
+    keep only a name rescore and graph references. The probes do not prove
+    the scrub state of a page read between them. Disclosed residuals, for
+    2.11: non-scalar and bool secrets, YAML-mode dashboards, and no inf/nan
+    arm in the trigger.
+  - **No ha-mcp visibility filter in this release.** It is off in this
+    house. In a house with it on, entities the delegated search hid would
+    appear in native results (HAMCP-499).
+  - Every reply passes the shared sanitizer (`search/reply.py`), and a
+    sanitizer failure withholds the reply.
+  - Review on #517: Codex one round, CHANGES_REQUIRED (F1 High, F2 Medium),
+    both fixed; Cursor r1 READY; Cursor r2 CHANGES_REQUIRED (R2-F1 High,
+    script and scene body tests), fixed with tests only and verified by the
+    architect. [fill: W6b and W7]
 
 The `2.4.1-beta.30` incident-window slice (HAMCP-131) adds two read-only tools.
 Neither adds a permission, add-on option, role, fallback or write path.

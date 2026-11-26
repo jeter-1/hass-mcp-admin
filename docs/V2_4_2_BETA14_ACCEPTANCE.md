@@ -53,8 +53,9 @@ final release pull request binds their evidence.
 | HAMCP-481 W1 (built as HAMCP-501) | Native search scoring port, inert: no tool imports it | landed (#506) |
 | HAMCP-481 W2 | Native search fixed Core reads, inert | landed (#507) |
 | HAMCP-481 W3 | Native search engine, inert | landed (#513) |
-| HAMCP-481 W4 | Native search page readers | [fill: #516 state] |
-| HAMCP-481 W6 | The `ha_search` cutover to native search | [fill: PR and state] |
+| HAMCP-481 W4 | Native search sub-call page readers, inert | landed (#516) |
+| HAMCP-481 W6 | The `ha_search` cutover to native search: the delegated `ha_search` internal-only, sub-call body matching (S1), the numeric and scrub withholding, and the page-size ladder | landed (#517); `tests/test_hamcp501_native_search_cutover.py`, `tests/test_hamcp481_native_search_engine.py`, `tests/test_hamcp501_w6_f1_body_matching.py` |
+| HAMCP-481 W6b | Native search component-route parity | [fill: #519 state] |
 | HAMCP-481 W7 | Native search: the design doc update | [fill: PR and state] |
 
 ## 1. Source and offline acceptance
@@ -127,8 +128,31 @@ which steps are reads.
      `truncated`, and `list_automation_traces` on the automation above returns
      `traces`, `returned`, `source_truncated` and `retention`, with
      `ring_full` `true`.
-   - **HAMCP-481.** [fill after W7: the native search steps, compared with the
-     HA Admin baseline captured on beta.13.]
+   - **HAMCP-481.** Each native search read repeats a read of the HA Admin
+     baseline captured on beta.13 (2026-11-25 22:15 CST, sha256 `fe9e5a7e`)
+     with the same arguments. A read passes when it matches the baseline or
+     differs only as the native search parity list in the release notes
+     says; any other difference is a failure, not a pass with a note. The
+     order of equal scores may differ only where that list says so.
+     - Entities: the domain, query, partial-id, area and state reads return
+       the baseline's totals and first rows, with `score` and `match_type`
+       where the baseline had them. A complete read reports
+       `metadata.completeness` `complete`, and the visibility caveat is
+       replaced by the disclosed no-filter note (HAMCP-499).
+     - Configuration: a query for an entity used by automations returns the
+       entity and the same automations, with `match_in_config` true and
+       `match_in_references` true for those that use it. A paged query
+       (`limit` 5, then `offset` 5) returns the same page rows with no
+       overlap, and `offset` and `limit` are present. With `include_config`
+       true no body is returned and the withheld count is present. A domain
+       filter with a query reports configuration skipped (`config_skipped`).
+     - Sub-call buckets: the dashboard and helper reads return the
+       baseline's rows, the flow helper included; a scene word from the house
+       finds its scene; and a query matching nothing gives every bucket 0 and
+       `partial` false.
+     - The audit shows native attribution, and sub-call page events only for
+       the buckets searched.
+     - [fill: W6b's parity reads (the composed `name` and the tier scorer).]
 
    Not checked live:
    - HAMCP-498 needs an open Core restart window, and causing one is not a
@@ -136,10 +160,21 @@ which steps are reads.
    - HAMCP-462 acts in CI and admission; the pair in step 1 is its only
      live trace.
    - HAMCP-505 changes CI only.
+   - HAMCP-481 S1, the configuration-body oracle, is never probed live,
+     since probing it would be the attack. Its evidence is
+     `test_no_configuration_body_read_is_reachable` in
+     `tests/test_hamcp481_native_search_engine.py` and the body-match tests
+     in `tests/test_hamcp501_w6_f1_body_matching.py`.
+   - HAMCP-481 floors and area aliases, where the house has none: fixtures
+     only.
+   - HAMCP-481 page-size step-down (150, 30, 6, 1): `LadderTests` only.
 
    There are no lifecycle steps.
 3. **Tool catalog.** A fresh `tools/list` matches the catalog the final
-   release pull request declares. **Pending.**
+   release pull request declares, with exactly one `ha_search` and no
+   `ha_mcp__ha_search`. At #517 the catalog is 114 tools: 88 Engineering
+   and 26 delegated (beta.13 as observed live: 115, 87 and 28). [fill:
+   confirm after W6b and W7]
 
 PASS needs every check. If a step fails, record the response in the release
 task. Whether to roll back is Josh's decision.
