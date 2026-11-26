@@ -1110,6 +1110,9 @@ class AdmissionTests(Readers):
         flagged.too_large, unset.too_large = True, None
         refusals = [
             ("ha_get_state", capture_, arguments_920("ha_get_state"), None),
+            # Another tool, even with the exact page arguments: only the
+            # tool-name check refuses it before dispatch.
+            ("ha_get_state", capture_, arguments(), None),
             ("ha_search", object(), arguments(), None),
             ("ha_search", {"bucket": "helpers", "withheld_names": None}, arguments(), None),
             ("ha_search", capture_, arguments(),
