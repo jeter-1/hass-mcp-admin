@@ -103,6 +103,9 @@ class CatalogTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(set(expected) - set(actual), set())
         actual["get_server_health"] = _without_hamcp171_deep_storage_audit(self, actual["get_server_health"])
         actual["get_server_health"] = _without_hamcp242_health_disclosure(self, actual["get_server_health"])
+        # HAMCP-425 and HAMCP-492 are undone first: their lines follow 473's and 508's.
+        from hamcp425_descriptor_changes import without_hamcp425_descriptor_changes  # + HAMCP-425
+        actual = without_hamcp425_descriptor_changes(self, actual)
         from hamcp226_228_descriptor_changes import without_hamcp226_descriptor_change
         from hamcp473_descriptor_changes import without_hamcp473_descriptor_change  # + HAMCP-473
         actual["configuration_integrity_analysis"] = without_hamcp226_descriptor_change(

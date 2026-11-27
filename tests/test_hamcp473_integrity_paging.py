@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "hass_mcp_engineeri
 from ha_mcp_engineering.tools import analysis
 from ha_mcp_engineering.integrity.service import (
     COMPACT_FINDING_KEYS,
+    COMPACT_PAGE_BUDGET_CHARS,
     ConfigurationIntegrityAnalysisService,
 )
 from tests import test_configuration_integrity_analysis as fixtures
@@ -70,6 +71,8 @@ class CompactWalkTests(unittest.IsolatedAsyncioTestCase):
         for _ in range(200):
             raw, response = await read(service, cursor=cursor, **arguments)
             self.assertLessEqual(len(raw.encode("utf-8")), BUDGET)
+            if arguments.get("detail_level", "compact") == "compact":
+                self.assertLessEqual(len(raw.encode("utf-8")), COMPACT_PAGE_BUDGET_CHARS)
             self.assertTrue(response["success"], response.get("error_code"))
             self.assertNotIn("response_completeness", response)
             pages.append(response["data"])
@@ -88,9 +91,12 @@ class CompactWalkTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len({item["finding_id"] for item in findings}), total)
         self.assertTrue(all(page["finding_count"] == total for page in pages))
         self.assertEqual(sum(page["pagination"]["returned"] for page in pages), total)
-        # Practical paging: every page but the last is full.
-        self.assertTrue(all(page["pagination"]["returned"] == 100 for page in pages[:-1]))
-        self.assertEqual(len(pages), 13)
+        # HAMCP-492: below the response limit, the compact page budget binds
+        # every page but the last; about 31 synthetic compact findings fit it.
+        self.assertTrue(all(page["pagination"]["clamp_reason"] == "compact_page_budget"
+                            for page in pages[:-1]))
+        self.assertTrue(all(page["pagination"]["returned"] >= 30 for page in pages[:-1]))
+        self.assertEqual(len(pages), 41)
         self.assertEqual(len(provider.calls), 1)
         self.assertEqual(provider.value, original)
         self.assertEqual(len(service.pagination_snapshots._values), 0)

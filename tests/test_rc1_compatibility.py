@@ -172,6 +172,8 @@ class RC1PublicContractTests(unittest.TestCase):
         schemas["get_logbook"] = without_hamcp294_inputs(self, schemas["get_logbook"])
         from hamcp518_descriptor_changes import without_hamcp518_and_475_inputs  # + HAMCP-475, HAMCP-518
         schemas["get_audit_log"] = without_hamcp518_and_475_inputs(self, schemas["get_audit_log"])
+        from hamcp425_descriptor_changes import without_hamcp425_schema_changes  # + HAMCP-425
+        schemas = without_hamcp425_schema_changes(self, schemas)
         beta26_schemas = {
             name: schemas[name]
             for name in BETA26_TOOL_NAMES

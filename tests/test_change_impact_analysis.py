@@ -1852,6 +1852,9 @@ class ToolCompatibilityTests(unittest.TestCase):
             if name == "get_audit_log":  # + HAMCP-475
                 from hamcp518_descriptor_changes import without_hamcp518_and_475_inputs
                 parameters = without_hamcp518_and_475_inputs(self, parameters)
+            from hamcp425_descriptor_changes import HAMCP425_TOOLS, without_hamcp425_inputs
+            if name in HAMCP425_TOOLS:  # + HAMCP-425
+                parameters = without_hamcp425_inputs(self, name, parameters)
             digest = hashlib.sha256(
                 json.dumps(
                     parameters,
