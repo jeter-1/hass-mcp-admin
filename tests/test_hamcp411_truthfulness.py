@@ -244,7 +244,7 @@ class DeviceConfigurationRefusalCodeTests(unittest.TestCase):
 
 
 class BusyReadTests(unittest.TestCase):
-    """HAMCP-413 (HAAC-E046)."""
+    """HAMCP-413 (HAAC-E046); HAMCP-513: the shared read_busy (409) code."""
 
     def test_concurrent_read_is_a_retryable_busy_refusal(self):
         for error_type in (HistorySlicesError, IncidentLogsError):
@@ -252,7 +252,7 @@ class BusyReadTests(unittest.TestCase):
                 code, message, retryable, details = map_exception(
                     error_type("read_in_progress")
                 )
-                self.assertEqual(code, ErrorCode.RATE_LIMIT_EXCEEDED)
+                self.assertEqual(code, ErrorCode.READ_BUSY)
                 self.assertIs(retryable, True)
                 self.assertIn("retry after it completes", message)
                 self.assertEqual(details["reason"], "read_in_progress")

@@ -869,23 +869,6 @@ class YamlConfigReader:
     purpose: str | None = None
 
 
-# HAMCP-131: the only argument shape the history-slice reader sends. One
-# entity, absolute UTC bounds Engineering computed, ascending, minimal.
-_HISTORY_TIME = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}\+00:00\Z")
-_HISTORY_ENTITY = re.compile(r"[a-z0-9_]{1,64}\.[a-z0-9_]{1,190}\Z")
-
-
-@dataclass(frozen=True)
-class HistoryReader:
-    """One fixed admitted ``ha_get_history`` generation for fixed arguments."""
-
-    read: Callable[[str, str, str, int, int], Awaitable[dict[str, Any]]]
-    current: Callable[[], bool]
-    provenance: str
-    version: str
-    contract: str
-
-
 @dataclass(frozen=True)
 class SearchSubcallReader:
     """One fixed admitted ``ha_search`` generation for native search sub-calls.
@@ -4273,90 +4256,6 @@ class UpstreamReadGateway:
             purpose=purpose,
         ) if current() else None
 
-    def history_reader(self, *, audit=None) -> HistoryReader | None:
-        """Capture the admitted ``ha_get_history`` route for history slices.
-
-        HAMCP-131: Engineering builds every argument (one validated entity,
-        absolute UTC bounds, ascending order, minimal response, bounded
-        offset and limit); the gateway's argument validation, live catalog
-        revalidation, Core gate and response sanitizer apply unchanged. No
-        caller-selected argument, no fallback and no other upstream tool.
-        """
-
-        with self._lock:
-            routes = [
-                (name, route) for name, route in self._exposed.items()
-                if route.entry.upstream_name == "ha_get_history"
-                and route.entry.classification == "automatic_read"
-            ]
-            if len(routes) != 1:
-                return None
-            name, route = routes[0]
-            core_epoch = self._core_reconciliation_epoch
-
-        current = self._bounded_route_current(name, route, core_epoch)
-
-        async def read(entity_id: str, start_time: str, end_time: str, offset: int, limit: int) -> dict[str, Any]:
-            if (
-                not isinstance(entity_id, str) or not _HISTORY_ENTITY.fullmatch(entity_id)
-                or not isinstance(start_time, str) or not _HISTORY_TIME.fullmatch(start_time)
-                or not isinstance(end_time, str) or not _HISTORY_TIME.fullmatch(end_time)
-                or type(offset) is not int or not 0 <= offset <= 1_000_000
-                or type(limit) is not int or not 1 <= limit <= 1000
-            ):
-                return {"success": False, "details": {"failure_category": "argument_validation"}}
-            if not current():
-                return {"success": False, "details": {"failure_category": "provider_authority_changed"}}
-            parent = current_telemetry()
-            if parent is None or parent.core_dispatch_authorizer is None:
-                # HAMCP-510: no parent request or no authority to inherit:
-                # refused before a request starts, as for search sub-call pages.
-                return {"success": False, "details": {"failure_category": "provider_authority_changed"}}
-            telemetry, token = begin_request()
-            telemetry.tool_name = "history_slice_read"
-            telemetry.caller_id = parent.caller_id
-            telemetry.core_dispatch_authorizer = parent.core_dispatch_authorizer
-            telemetry.audit_context["parent_request_id"] = parent.request_id
-            result: dict[str, Any] = {}
-            try:
-                if not telemetry.authorize_core_dispatch():
-                    return {"success": False, "details": {"failure_category": "provider_authority_changed"}}
-                result = json.loads(await self.execute(
-                    exposed_name=name, arguments={
-                        "entity_ids": entity_id, "start_time": start_time, "end_time": end_time,
-                        "limit": limit, "offset": offset, "order": "asc", "source": "history",
-                        "minimal_response": True, "significant_changes_only": True,
-                    },
-                    reviewed_schema=route.observed_tool["inputSchema"],
-                    policy_entry=route.entry, admission_generation=route.generation,
-                    contract_fingerprint=route.contract_fingerprint,
-                ))
-                if not current() or not telemetry.authorize_core_dispatch():
-                    result = {"success": False, "details": {"failure_category": "provider_authority_changed"}}
-                return result
-            finally:
-                try:
-                    if audit is not None:
-                        audit.write({
-                            "event": "history_slice_read", "request_id": telemetry.request_id,
-                            "parent_request_id": parent.request_id if parent else None,
-                            "provider": PROVIDER_ID, "upstream_tool": "ha_get_history",
-                            "upstream_version": route.server_version,
-                            "contract_fingerprint": route.contract_fingerprint,
-                            "result_status": "success" if result.get("success") is True else "failed_or_cancelled",
-                            "provider_dispatch_count": telemetry.provider_dispatch_count,
-                            "fallback_occurred": False,
-                        })
-                finally:
-                    end_request(token)
-
-        return HistoryReader(
-            read=read, current=current,
-            provenance=(f"ha-mcp {route.server_version}; contract {route.contract_fingerprint}; "
-                        "one entity per request; no fallback"),
-            version=route.server_version, contract=route.contract_fingerprint,
-        ) if current() else None
-
     def search_subcall_reader(self, *, audit=None) -> SearchSubcallReader | None:
         """Capture the admitted ``ha_search`` route for native search sub-calls.
 
@@ -4851,7 +4750,8 @@ class UpstreamReadGateway:
                 )
                 data_value = sanitation.value
                 bounded_truncation = bool(sanitation.truncated_field_count)
-            METRICS.record_provider_result(PROVIDER_ID, completeness, dispatched=True)
+            METRICS.record_provider_result(PROVIDER_ID, completeness, dispatched=True,
+                                           consumer=_gateway_consumer(telemetry, exposed_name))
             publish_current_route = False
             with self._lock:
                 # A completed call proves the discovered route remains usable. Historical
@@ -4959,11 +4859,13 @@ class UpstreamReadGateway:
                 if classified_outcome:
                     METRICS.record_classified_outcome(classified_outcome)
                     METRICS.record_provider_result(
-                        PROVIDER_ID, "complete", dispatched=True
+                        PROVIDER_ID, "complete", dispatched=True,
+                        consumer=_gateway_consumer(telemetry, exposed_name),
                     )
                 else:
                     METRICS.record_provider_result(
-                        PROVIDER_ID, "failed", dispatched=True
+                        PROVIDER_ID, "failed", dispatched=True,
+                        consumer=_gateway_consumer(telemetry, exposed_name),
                     )
             with self._lock:
                 route_is_current = (
@@ -5318,12 +5220,14 @@ class UpstreamReadGateway:
                         PROVIDER_ID,
                         "complete",
                         dispatched=True,
+                        consumer="held_read_canary",
                     )
                 else:
                     METRICS.record_provider_result(
                         PROVIDER_ID,
                         "failed",
                         dispatched=True,
+                        consumer="held_read_canary",
                     )
             response_limit = min(
                 route.entry.response_limit_bytes
@@ -5733,6 +5637,7 @@ class UpstreamReadGateway:
                 PROVIDER_ID,
                 completeness,
                 dispatched=True,
+                consumer="held_read_canary",
             )
             return serialized
         except _GatewayFailure as exc:
@@ -7168,6 +7073,16 @@ def _runtime_descriptor_fields_valid(tool: dict[str, Any]) -> bool:
         and not (set(value) - _ALLOWED_TOOL_META_FIELDS[namespace])
         for namespace, value in meta.items()
     )
+
+
+def _gateway_consumer(telemetry: Any, exposed_name: str) -> str:
+    """HAMCP-517: the consumer class of one dispatched gateway request."""
+
+    if telemetry is None:
+        return "unattributed"
+    if telemetry.audit_context.get("parent_request_id") is not None:
+        return "internal_reader"
+    return "delegated_tool" if telemetry.tool_name == exposed_name else "engineering_tool"
 
 
 def _normalize_category(category: str) -> str:
