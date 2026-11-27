@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import uuid
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
@@ -73,6 +74,16 @@ def _bounded_json(value: Any) -> bool:
 
 def _reject_non_finite_json_constant(value: str) -> None:
     raise ValueError(f"core_probe_response_non_finite:{value}")
+
+
+def _parse_finite_json_float(value: str) -> float:
+    # HAMCP-471: an exponent overflow such as 1e999 never reaches
+    # parse_constant; the float parser returns infinity. The error names the
+    # token it equals, not the raw number text.
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        _reject_non_finite_json_constant("Infinity" if parsed > 0 else "-Infinity")
+    return parsed
 
 
 def _configuration_validation_response(value: Any) -> bool:
@@ -347,6 +358,7 @@ class AiohttpCoreSnapshotSource:
         return json.loads(
             b"".join(chunks),
             parse_constant=_reject_non_finite_json_constant,
+            parse_float=_parse_finite_json_float,
         )
 
     async def wait_for_connection_change(
