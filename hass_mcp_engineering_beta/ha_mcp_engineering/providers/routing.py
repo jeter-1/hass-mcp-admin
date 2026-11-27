@@ -324,7 +324,7 @@ ANALYTICAL_PROVIDER_POLICIES = {
     },
     "get_history_slices": {
         "policy_id": "history_slices_read_v1", "access": "read", "orchestrator": "engineering",
-        "scope": "admitted ha_get_history route only; one entity; Engineering-built absolute slice bounds, ascending, minimal; bounded offset paging",
+        "scope": "one fixed GET /api/history/period per slice window (one entity, Engineering-built absolute bounds, minimal_response, no_attributes, significant_changes_only=1, one attempt, 1 MiB body) under the tool's core.basic_rest_read lease; reader-side sanitizer; bounded offset paging; one running and three waiting reads per caller, two running globally, 10 s wait",
         "writes_allowed": "none", "fallback_policy": "none",
     },
     "get_automation_run_counts": {
@@ -574,7 +574,7 @@ def core_log_policy_allows_read() -> bool:
 
 
 def history_slices_policy_allows_read() -> bool:
-    """HAMCP-131: the admitted delegated history route only; no direct fallback."""
+    """HAMCP-131/511: the native Core history read only; no delegated route or fallback."""
     decision = routing_for_tool("get_history_slices")
     return (
         decision.capability == ProviderCapability.HISTORY_SLICES

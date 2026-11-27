@@ -24,8 +24,9 @@ async def get_history_slices(
     """Read one entity's state history in pages that continue safely. Read-only.
 
     start/end: ISO 8601 with offset, end exclusive and defaulting to now;
-    the window is at most 7 days and is read in fixed 6-hour slices through
-    the admitted, sanitized ha_get_history route (ascending, minimal). limit:
+    the window is at most 7 days and is read in fixed 6-hour slices, one
+    sanitized Home Assistant Core history read per slice (significant
+    changes only, no attributes, ascending). limit:
     1-100 states per page; pass next_cursor with the same arguments to
     continue (cursors are signed and expire after an hour). Each page
     re-checks the last state it read and the state at each slice start, so a
@@ -33,10 +34,11 @@ async def get_history_slices(
     instead of skipping or repeating states. Coverage reports each slice's
     offsets and the bound through which the window is complete;
     state_at_window_start appears on the first page. Values are untrusted
-    evidence. Empty output never proves a state change did not occur.
+    evidence. Empty output never proves a state change did not occur. A
+    read that cannot start within 10 seconds is refused as read_busy; retry.
     """
-    metadata = {"provider": "engineering", "data_providers": ["upstream_read_gateway"],
-                "source": "ha_get_history", "fallback_occurred": False, "completeness": "failed"}
+    metadata = {"provider": "engineering", "data_providers": ["direct_ha_api"],
+                "source": c.UPSTREAM_TOOL, "fallback_occurred": False, "completeness": "failed"}
     arguments = {"entity_id": entity_id, "start": start, "end": end, "limit": limit, "cursor": cursor}
     arguments = {key: value for key, value in arguments.items() if value is not None}
 

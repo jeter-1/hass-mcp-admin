@@ -220,6 +220,7 @@ def create_application(
     from .configuration_definitions.service import CONFIGURATION_DEFINITIONS
     from .incident_logs.service import INCIDENT_LOGS
     from .history_slices.service import HISTORY_SLICES
+    from .history_slices.native import reader_factory as history_reader_factory
     from .search.core_reads import CoreReadSession
     from .tools.search import SEARCH
     server = get_registered_server()
@@ -268,11 +269,9 @@ def create_application(
     # HAMCP-220: Home Assistant's time zone is read per call from Core
     # /api/config under the tool's own core.basic_rest_read lease.
     INCIDENT_LOGS.configure(settings, HomeAssistantRestClient(settings), CORE_READMISSION)
-    # HAMCP-131: the history route is captured per request; before admission
-    # the factory returns None and the tool reports the route unavailable.
-    HISTORY_SLICES.configure(
-        settings, reader_factory=lambda: UPSTREAM_READ_GATEWAY.history_reader(audit=audit),
-    )
+    # HAMCP-511: no I/O here; each call reads Core history natively under the
+    # tool's own core.basic_rest_read lease (no delegated route, no fallback).
+    HISTORY_SLICES.configure(settings, reader_factory=history_reader_factory(settings))
     # HAMCP-501 W6: no I/O here; each call reads Core through one
     # CoreReadSession under its own lease, and the sub-call page readers are
     # captured per call (None before the internal-only route is admitted).

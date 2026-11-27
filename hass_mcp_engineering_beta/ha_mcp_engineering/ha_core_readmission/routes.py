@@ -324,7 +324,7 @@ STATIC_TOOL_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "get_automation_trace": ("core.automation_trace_read",),
     "check_config": ("core.configuration_validation",),
     "get_history": ("core.basic_rest_read",),
-    # HAMCP-131: the delegated ha_get_history route reads recorder history.
+    # HAMCP-511: native GET /api/history/period, one entity per request.
     "get_history_slices": ("core.basic_rest_read",),
     # HAMCP-476: GET /api/logbook and, in all mode, GET /api/states.
     "get_automation_run_counts": ("core.basic_rest_read",),

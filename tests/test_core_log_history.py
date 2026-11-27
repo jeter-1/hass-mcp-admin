@@ -369,8 +369,9 @@ class CoreLogHistoryTests(unittest.IsolatedAsyncioTestCase):
         await entered.wait()
         result = await self.result()
         self.assertEqual(result["details"]["reason"], "core_log_read_in_progress")
-        # HAMCP-413 (HAAC-E046): busy and retryable, not an unavailable provider.
-        self.assertEqual(result["error_code"], "rate_limit_exceeded")
+        # HAMCP-413 (HAAC-E046): busy and retryable, not an unavailable provider;
+        # HAMCP-513: the shared read_busy (409) code.
+        self.assertEqual(result["error_code"], "read_busy")
         self.assertIs(result["retryable"], True)
         self.assertEqual(len(self.calls), 1)
         task.cancel()

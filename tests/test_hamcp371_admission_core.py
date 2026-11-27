@@ -83,7 +83,6 @@ from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
 from signed_registry_fixtures import NOW, RegistrySigner  # noqa: E402
 from support import frozen_foreign_releases as foreign  # noqa: E402
 from support.ha_mcp_redirect_peer import RedirectPeer  # noqa: E402
-import test_hamcp319_history as history_fixtures  # noqa: E402
 import test_hamcp319_no_redirect as part1  # noqa: E402
 import test_hamcp319_no_redirect_useful as useful  # noqa: E402
 
@@ -372,20 +371,12 @@ class VersionBoundContractTests(unittest.TestCase):
         self.assertEqual(probes, {(p.probe_id, p.capability_id, p.structured_code, p.shape_fingerprint)
                                   for p in expected})
 
-    def test_history_parser_row_is_release_bound(self):
-        self.assertIn("9.2.0", history_contracts.REVIEWED_VERSIONS)
-        self.assertEqual(set(history_service._PARSERS), set(history_contracts.REVIEWED_VERSIONS))
-        good = {"state": "on", "last_changed": "2026-10-19T05:30:00-05:00",
-                "last_updated": "2026-10-19T05:30:00-05:00"}
-        entity = "sensor.synthetic_temperature"
-        envelope = history_fixtures.HistorySlicesRowTests.envelope
-        parsed = history_service._PARSERS["9.2.0"](envelope([good], version="9.2.0"), entity, 0)
-        self.assertNotEqual(parsed, "representation_invalid")
-        for parser_version, attributed in (("9.2.0", "9.1.2"), ("9.1.2", "9.2.0"), ("9.2.0", "9.2.1")):
-            with self.subTest(parser=parser_version, attributed=attributed):
-                raw = envelope([good], version=attributed)
-                self.assertEqual(history_service._PARSERS[parser_version](raw, entity, 0),
-                                 "representation_invalid")
+    def test_history_slices_are_not_bound_to_an_upstream_release(self):
+        # HAMCP-511: get_history_slices reads Core natively; no ha-mcp
+        # release, parser row or gateway reader admits it.
+        self.assertEqual(history_contracts.REVIEWED_VERSIONS, frozenset({history_contracts.NATIVE_VERSION}))
+        self.assertNotIn("9.2.0", history_contracts.REVIEWED_VERSIONS)
+        self.assertFalse(hasattr(history_service, "_PARSERS"))
 
     def test_strict_full_selector_binds_920(self):
         self.assertIn("9.2.0", endpoint.STRICT_FULL_SELECTOR_RELEASES)

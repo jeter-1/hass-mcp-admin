@@ -160,7 +160,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4363,
+       "line": 4262,
        "anchor": "def search_subcall_reader"
       },
       {
@@ -366,7 +366,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4202,
+       "line": 4185,
        "anchor": "def yaml_config_reader(self, *, audit=None"
       }
      ]
@@ -445,7 +445,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4175,
+       "line": 4158,
        "anchor": "require_unmodified_script"
       }
      ]
@@ -475,7 +475,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/application.py",
-       "line": 439,
+       "line": 438,
        "anchor": "yaml_config_reader(audit=audit, purpose=\"dependency_index\")"
       }
      ]
@@ -490,7 +490,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4363,
+       "line": 4262,
        "anchor": "def search_subcall_reader"
       },
       {
@@ -704,7 +704,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4363,
+       "line": 4262,
        "anchor": "def search_subcall_reader"
       },
       {
@@ -1072,7 +1072,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4202,
+       "line": 4185,
        "anchor": "def yaml_config_reader(self, *, audit=None"
       }
      ]
@@ -1364,7 +1364,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/application.py",
-       "line": 439,
+       "line": 438,
        "anchor": "yaml_config_reader(audit=audit, purpose=\"dependency_index\")"
       }
      ]
@@ -1421,7 +1421,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4202,
+       "line": 4185,
        "anchor": "def yaml_config_reader(self, *, audit=None"
       }
      ]
@@ -1543,7 +1543,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4202,
+       "line": 4185,
        "anchor": "def yaml_config_reader(self, *, audit=None"
       }
      ]
@@ -2585,7 +2585,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4363,
+       "line": 4262,
        "anchor": "def search_subcall_reader"
       },
       {
@@ -2855,7 +2855,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4363,
+       "line": 4262,
        "anchor": "def search_subcall_reader"
       },
       {
@@ -3204,7 +3204,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4363,
+       "line": 4262,
        "anchor": "def search_subcall_reader"
       },
       {
@@ -4343,7 +4343,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 1797,
+       "line": 1780,
        "anchor": "\"disposition\": \"retired_delegated_read\""
       }
      ]
@@ -5462,26 +5462,26 @@
     },
     {
      "tool": "get_history_slices",
-     "provider": "upstream_read_gateway history_reader",
-     "purpose_binding": "history_slices_read_v1 [gateway_reader:history_reader]",
-     "admission": "upstream:ha_get_history 8.5.0/8.6.0/9.1.0 (REVIEWED_VERSIONS)",
+     "provider": "direct_ha_api",
+     "purpose_binding": "history_slices_read_v1",
+     "admission": "native; core.basic_rest_read compiled-active (NativeHistoryReader, core-rest-history-period-v1)",
      "completeness": "partial",
-     "detail": "Single entity, up to 7 days, 6 h slices, limit 1..100, max 12 upstream calls, cursor TTL 3600 s.",
+     "detail": "REST /history/period per 6 h slice; single entity, up to 7 days, limit 1..100, max 12 Core reads for new slices plus up to 40 verification reads on a continued page (52 per page), 1 MiB body, one attempt, bounded read slots, cursor TTL 3600 s.",
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/history_slices/contracts.py",
-       "line": 33,
+       "line": 36,
        "anchor": "UPSTREAM_TOOL"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/history_slices/contracts.py",
-       "line": 38,
+       "line": 40,
        "anchor": "REVIEWED_VERSIONS"
       },
       {
-       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4279,
-       "anchor": "def history_reader"
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/history_slices/native.py",
+       "line": 189,
+       "anchor": "async def _fetch"
       }
      ]
     },
@@ -5531,7 +5531,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/history_slices/contracts.py",
-       "line": 38,
+       "line": 40,
        "anchor": "REVIEWED_VERSIONS"
       }
      ]
@@ -7374,12 +7374,6 @@
   }
  },
  "reader_purpose_index": {
-  "gateway_reader:history_reader": {
-   "used_by": [
-    "history"
-   ],
-   "note": "Backs get_history_slices (ha_get_history on reviewed 8.5.0/8.6.0 only)."
-  },
   "gateway_reader:script_dependency_reader": {
    "used_by": [
     "scripts"
@@ -7434,7 +7428,7 @@
  },
  "inventory": {
   "tool_catalog": {
-   "fingerprint": "080e262cf171e4a69babec70a24a566ec66e457f7df40875f431d8dd537d8d22",
+   "fingerprint": "71904c7bcf129ee9b059818f435ca9193d01dd91515d7ab352c87005b4103051",
    "items": {
     "adapter:ha-mcp-8.4.3-platform-apps-v1": "c96ec4d8b2f2fc06",
     "adapter:ha-mcp-8.4.3-platform-health-v1": "73c2eb69c76e7f2b",
@@ -7589,7 +7583,7 @@
     "native:get_execution_task": "692c1b181c1bbc75",
     "native:get_helper_settings": "2ac885a1a3bd3192",
     "native:get_history": "71e782398c05dab4",
-    "native:get_history_slices": "fb17be24a468f499",
+    "native:get_history_slices": "b22f7adb33cdecbd",
     "native:get_incident_logs": "4407aea991fc0302",
     "native:get_integration_inspection": "3cae7ee06e0f3375",
     "native:get_logbook": "05f65dbd69c7bed9",
@@ -7631,9 +7625,8 @@
    }
   },
   "reader_purposes": {
-   "fingerprint": "0e0702ced8852d773adfadce92bb385d3cf048e09cc1d3ac1eb965c2ea660777",
+   "fingerprint": "227ac2c142a770062d122dc7767b18ab7032a25bf1c8c87e966efab81b9fa690",
    "items": {
-    "gateway_reader:history_reader": "582b3e70f6cee161",
     "gateway_reader:script_dependency_reader": "79620f269679ebec",
     "gateway_reader:search_subcall_reader": "6bae0be593ca86b3",
     "gateway_reader:yaml_config_reader": "d9f8474b3be0833c",
@@ -7686,7 +7679,7 @@
    }
   },
   "provider_registry": {
-   "fingerprint": "d8ffdef701255b9038312ef2b1863dc047af405320f2a879d42d8b60973c2b6d",
+   "fingerprint": "9bac476cfb6d209444c3b956d52055150e30b4c8c087413c1e4bb4b113c2c1d4",
    "items": {
     "analytical_policy:automation_reliability_analysis": "94c8a4aabfe06038",
     "analytical_policy:automation_reliability_batch_analysis": "7233c3d17334b3e6",
@@ -7699,7 +7692,7 @@
     "analytical_policy:get_backup_inventory": "430e24fc736585fc",
     "analytical_policy:get_configuration_definitions": "c7ff1c23f46b9db9",
     "analytical_policy:get_helper_settings": "5f542a5f994a43be",
-    "analytical_policy:get_history_slices": "0f7eff1d6a802ef0",
+    "analytical_policy:get_history_slices": "72dd43976c0ff9a1",
     "analytical_policy:get_integration_inspection": "85402013290ea72e",
     "analytical_policy:get_marketplace_inventory": "ea56f36e53cd76cd",
     "analytical_policy:get_recorder_settings": "6a0227c762f9894c",
@@ -7747,7 +7740,7 @@
     "provider_matrix:get_dashboard_config": "ea6526e043a00386",
     "provider_matrix:get_entity": "ed46c5a5330b1e02",
     "provider_matrix:get_helper_settings": "98d0b7ce2bd2a785",
-    "provider_matrix:get_history_slices": "b8ee5e8deae9ce98",
+    "provider_matrix:get_history_slices": "9dd6c29d11390b68",
     "provider_matrix:get_incident_logs": "835913ae0566d5a0",
     "provider_matrix:get_integration_inspection": "03c06ab7e5d46b33",
     "provider_matrix:get_recorder_settings": "65cf21ccb99937ff",

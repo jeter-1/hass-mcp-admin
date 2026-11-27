@@ -225,7 +225,7 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
         "tool": "get_history_slices", "category": "evidence",
         "status": "beta_native", "risk": "read", "additive": True,
         "operation_class": "read", "routing": "engineering_native",
-        "provider": "engineering", "data_providers": ["upstream_read_gateway"],
+        "provider": "engineering", "data_providers": ["direct_ha_api"],
         "fallback": "none", "policy": "history_slices_read_v1", "direct_write_allowed": False,
     },
     {
@@ -1104,10 +1104,10 @@ CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (
     {
         "tool": "get_history_slices", "capability": "history_slices",
         "required_semantics": "One entity's state history over a bounded window in fixed time slices with per-page coverage, a signed cursor that re-checks the last state read and each slice-start state, and stale refusal when earlier history changed.",
-        "standard_ha_mcp_coverage": "reviewed_argument_constrained", "direct_ha_coverage": "not_used",
+        "standard_ha_mcp_coverage": "reviewed_argument_constrained", "direct_ha_coverage": "reviewed_fixed_reads",
         "selected_provider": "engineering", "fallback_policy": "none",
         "completeness": "partial_with_reasons_when_limited_redacted_or_upstream_failed",
-        "security_justification": "Only the admitted ha_get_history route with Engineering-built absolute bounds, ascending minimal order and bounded offset paging; gateway sanitization plus the strict sanitizer at one exit; versions 8.5.0/8.6.0 only; no direct Home Assistant fallback.",
+        "security_justification": "One fixed Core GET /api/history/period per slice window under the tool's core.basic_rest_read lease, with Engineering-built absolute bounds for one entity, minimal_response, no_attributes and significant_changes_only=1; one attempt with a 1 MiB body bound; known secrets redacted by the reader's sanitizer plus the strict sanitizer at one exit; bounded read slots; no delegated route, write or fallback.",
         "trust_mode": "reviewed_native_read", "trust_profile": "history-slices-read-v1",
     },
     {
