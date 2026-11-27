@@ -1185,13 +1185,130 @@ def _audit_page_trailer(
     return json.dumps({AUDIT_PAGE_TRAILER_KEY: page}) + "\n"
 
 
+# HAMCP-518: a summary is derived from the current audit file in one pass and
+# writes nothing, so it survives a restart exactly as the file does. Every
+# name it reports and every map it builds is bounded; tools that do not fit
+# the response limit are counted, never cut.
+AUDIT_SUMMARY_KEY = "_summary"
+MAX_AUDIT_SUMMARY_TOOLS = 200
+MAX_AUDIT_SUMMARY_NAME_CHARS = 128
+MAX_AUDIT_SUMMARY_TRACKED_TOOLS = 2048
+MAX_AUDIT_SUMMARY_EVENTS = 32
+MAX_AUDIT_SUMMARY_STATUSES = 16
+_AUDIT_SUMMARY_UNKNOWN = "unknown"
+_AUDIT_SUMMARY_OTHER = "other"
+
+
+def _audit_summary_name(value: Any) -> str:
+    if not isinstance(value, str) or not value:
+        return _AUDIT_SUMMARY_UNKNOWN
+    return value[:MAX_AUDIT_SUMMARY_NAME_CHARS]
+
+
+def _audit_summary_count(counts: dict[str, int], name: str, maximum: int) -> None:
+    if name not in counts and len(counts) >= maximum:
+        name = _AUDIT_SUMMARY_OTHER
+    counts[name] = counts.get(name, 0) + 1
+
+
+def _audit_summary_timestamp(value: Any) -> str | None:
+    return value[:64] if isinstance(value, str) and value else None
+
+
+def _audit_summary(event: str) -> str:
+    path = os.environ.get("AUDIT_PATH", "/data/audit.jsonl")
+    summary: dict[str, Any] = {
+        "scope": "current_audit_file",
+        "event_filter": event or None,
+        "records": 0,
+        "first_timestamp": None,
+        "last_timestamp": None,
+        "events": {},
+        "tools": [],
+        "tools_total": 0,
+        "tools_omitted": 0,
+        "calls_omitted": 0,
+        "untracked_tool_calls": 0,
+        "skipped_undecodable": 0,
+        "skipped_unparsed": 0,
+    }
+    tools: dict[str, dict[str, Any]] = {}
+    if os.path.exists(path):
+        with open(path, "rb") as f:
+            # The same whole-row snapshot a page reads: a row still being
+            # written, or completed past the snapshot, is not counted.
+            end = os.fstat(f.fileno()).st_size
+            offset = 0
+            for raw in f:
+                if offset + len(raw) > end or not raw.endswith(b"\n"):
+                    break
+                offset += len(raw)
+                try:
+                    row = raw.decode("utf-8")
+                except UnicodeDecodeError:
+                    summary["skipped_undecodable"] += 1
+                    continue
+                record = _parsed_audit_record(row)
+                if record is None:
+                    if row.strip():
+                        summary["skipped_unparsed"] += 1
+                    continue
+                if event and not audit_record_matches_event(record, event):
+                    continue
+                summary["records"] += 1
+                timestamp = _audit_summary_timestamp(record.get("timestamp"))
+                if timestamp is not None:
+                    if summary["first_timestamp"] is None:
+                        summary["first_timestamp"] = timestamp
+                    summary["last_timestamp"] = timestamp
+                record_event = _audit_summary_name(record.get("event"))
+                _audit_summary_count(summary["events"], record_event, MAX_AUDIT_SUMMARY_EVENTS)
+                if record.get("event") != "tool_call":
+                    continue
+                name = _audit_summary_name(record.get("tool_name"))
+                entry = tools.get(name)
+                if entry is None:
+                    if len(tools) >= MAX_AUDIT_SUMMARY_TRACKED_TOOLS:
+                        summary["untracked_tool_calls"] += 1
+                        continue
+                    entry = tools[name] = {"tool": name, "calls": 0, "result_status": {}}
+                entry["calls"] += 1
+                _audit_summary_count(
+                    entry["result_status"],
+                    _audit_summary_name(record.get("result_status")),
+                    MAX_AUDIT_SUMMARY_STATUSES,
+                )
+    ranked = sorted(tools.values(), key=lambda item: (-item["calls"], item["tool"]))
+    summary["tools_total"] = len(ranked)
+    kept = min(len(ranked), MAX_AUDIT_SUMMARY_TOOLS)
+    budget = SETTINGS.response_size_limit
+    while True:
+        summary["tools"] = ranked[:kept]
+        summary["tools_omitted"] = len(ranked) - kept
+        summary["calls_omitted"] = sum(item["calls"] for item in ranked[kept:])
+        rendered = json.dumps({AUDIT_SUMMARY_KEY: summary}, sort_keys=True) + "\n"
+        if kept == 0 or len(rendered.encode("utf-8")) <= budget:
+            return rendered
+        kept -= 1
+
+
 @mcp.tool()
-async def get_audit_log(lines: int = 50, event: str = "", cursor: str = "") -> str:
+async def get_audit_log(
+    lines: int = 50, event: str = "", cursor: str = "", summary: bool = False
+) -> str:
     """Tail this server's own audit log (tool calls, auth failures, rate
     limit events). Optional event filter: tool_call, auth_failure,
     auth_failure_throttled, rate_limited.
     Pages fit the response limit; the last line is always a _page trailer.
-    To read older entries, pass its next_cursor until complete is true."""
+    To read older entries, pass its next_cursor until complete is true.
+    summary=true returns per-event and per-tool counts for the whole log instead."""
+    if summary:
+        if cursor:
+            raise GovernanceError(
+                ErrorCode.VALIDATION_FAILURE,
+                details={"field": "cursor", "reason": "not_allowed_with_summary"},
+            )
+        return _audit_summary(event)
     claim = _decode_audit_cursor(cursor) if cursor else None
     event_binding = _audit_digest(event)
     if claim is not None and claim["event"] != event_binding:

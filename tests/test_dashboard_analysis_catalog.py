@@ -162,8 +162,8 @@ class PublicBoundaryTests(unittest.IsolatedAsyncioTestCase):
         current = without_hamcp311_descriptor_changes(self, current)
         from hamcp294_descriptor_changes import without_hamcp294_descriptor_changes  # + HAMCP-294
         current = without_hamcp294_descriptor_changes(self, current)
-        from hamcp475_descriptor_changes import without_hamcp475_descriptor_changes  # + HAMCP-475
-        current = without_hamcp475_descriptor_changes(self, current)
+        from hamcp518_descriptor_changes import without_hamcp518_and_475_descriptor_changes  # + HAMCP-475, HAMCP-518
+        current = without_hamcp518_and_475_descriptor_changes(self, current)
         from hamcp298_descriptor_changes import without_hamcp298_descriptor_changes  # + HAMCP-298
         current = without_hamcp298_descriptor_changes(self, current)
         from hamcp508_descriptor_changes import without_hamcp508_descriptor_changes  # + HAMCP-508

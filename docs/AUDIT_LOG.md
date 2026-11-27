@@ -13,7 +13,7 @@ tool-specific bounded intent. They exclude access secrets, authentication
 material, authenticated URLs, raw cursors, full configuration, traces, logs,
 history, diffs, and unbounded analytical evidence.
 
-`get_audit_log(lines=50, event="", cursor="")` is read-only. Its effective
+`get_audit_log(lines=50, event="", cursor="", summary=false)` is read-only. Its effective
 page size is always clamped to 1 through 500: zero and negative values produce
 at most one record, the default remains 50, and values above 500 produce at
 most 500. Event
@@ -154,3 +154,63 @@ provider completion or expected disruption, readback-only reconciliation,
 verification, and final outcome. They include bounded provider and fallback
 attribution but never raw provider responses, credentials, authenticated URLs,
 arbitrary service data, or unbounded Home Assistant payloads.
+
+## Summary (HAMCP-518)
+
+`summary=true` returns one bounded JSON object instead of a page: counts for
+the whole current audit file, so a client need not walk every page to count
+calls. The response is one line, with no `_page` trailer:
+
+```json
+{"_summary": {"scope": "current_audit_file", "event_filter": null, "records": 6,
+  "first_timestamp": "...", "last_timestamp": "...",
+  "events": {"tool_call": 4, "auth_failure": 1, "rate_limited": 1},
+  "tools": [{"tool": "ha_get_state", "calls": 3, "result_status": {"success": 2, "error": 1}}],
+  "tools_total": 2, "tools_omitted": 1, "calls_omitted": 1,
+  "untracked_tool_calls": 0, "skipped_undecodable": 0, "skipped_unparsed": 0}}
+```
+
+- It reads the same whole-row snapshot a page reads, in one pass, and writes
+  nothing. It is derived from the audit file, so it survives a restart as the
+  file does; rotation (at 5 MiB) starts it again from the new file. `scope`
+  says so. The rotated `audit.jsonl.1` is not read.
+- `event` still filters: only matching records are counted, and
+  `event_filter` names the filter (`null` for none). `lines` is ignored.
+- `records` counts the matching records. `first_timestamp` and
+  `last_timestamp` are the first and last record timestamps in file order
+  (`null` when none), at most 64 characters.
+- `events` counts records by top-level `event`. For `tool_call` records,
+  `tools` gives each `tool_name` with its call count and a count per
+  `result_status`. A missing or non-string name counts as `unknown`.
+- Bounds:
+  - every name is cut to 128 characters;
+  - `events` holds at most 32 names and each `result_status` map at most 16;
+    further names are counted under `other`;
+  - at most 2,048 distinct tools are tracked; calls to further tools are
+    counted in `untracked_tool_calls`;
+  - `tools` lists at most 200 tools, ordered by calls (most first) then name,
+    and fewer when needed to fit `response_size_limit`. `tools_total` is the
+    number of tracked tools; `tools_omitted` and `calls_omitted` count the
+    tracked tools left out and their calls. A tool is left out whole, never
+    cut.
+- `skipped_undecodable` counts non-UTF-8 rows and `skipped_unparsed` counts
+  other non-blank rows that are not a bounded JSON object. Their content is
+  never returned. Only counts and the bounded names above leave the file; no
+  record content, parameters or cursor material does.
+- `summary=true` with a `cursor` is refused with `validation_failure`
+  (`field: cursor`, `reason: not_allowed_with_summary`), before the log is
+  read.
+- The call's own audit record adds `summary`: the flag as a boolean, or
+  `null` when the value sent was not a boolean. It is recorded alongside
+  `lines`, `event` and `cursor_present`; the cursor is still never recorded.
+
+### Migration review (public input schema)
+
+- Additive only: one optional input, `summary` (boolean, default `false`).
+  `lines`, `event` and `cursor` keep their names, types and defaults; no
+  input is required.
+- Output: with the default, every response is byte-identical to before.
+  Only `summary=true` returns the `_summary` object.
+- The description gains one line naming `summary`. Tool count, category,
+  risk, route, provider and policy are unchanged.
+- There is no persisted format: the summary is derived on each call.
