@@ -2169,180 +2169,6 @@ def _change_reasons(
     return reasons
 
 
-# HAMCP-486 (release 2.11.0 Lane C GO, 2026-11-27, as relayed by the
-# architect): the first proven lowering case. An exact update whose only
-# difference is the literal message or title of a persistent notification is
-# classified as an alias-only edit of the same configuration. Home Assistant
-# Core 2026.11.0 is the evidence:
-# - Both services read message (required) and title (optional) with
-#   cv.string, which keeps a str unchanged. The call-step data schema makes a
-#   str a template only when is_template_string holds ("{" with "{{", "{%"
-#   or "{#"), and render_complex returns a plain str unchanged. Static text is
-#   never rendered, so it cannot fail the call or change any other value.
-# - persistent_notification.async_create stores the text and sends a
-#   dispatcher signal. It writes no state and fires no bus event, so no
-#   template can read the text. Core's readers are the persistent_notification
-#   trigger platform (trigger.notification) and the frontend websocket.
-# Every other case keeps the legacy rule: any other difference, any
-# protected or safety-critical evidence or comparison, any warning, a
-# blueprint, and any persistent_notification trigger in the configuration.
-# notify.mobile_app and other notify platforms are left out: their message
-# can select a device command.
-_NOTIFICATION_TEXT_SERVICES = frozenset(
-    {"persistent_notification.create", "notify.persistent_notification"}
-)
-# Keys of a plain call step. A step with any other key (device_id, delay, and
-# so on) may be dispatched as another step type, so it is not masked.
-_NOTIFICATION_TEXT_STEP_KEYS = frozenset(
-    {"action", "service", "data", "metadata", "alias", "enabled", "continue_on_error"}
-)
-_NOTIFICATION_TEXT_FIELDS = ("message", "title")
-_NOTIFICATION_TEXT_TEMPLATE_MARKERS = ("{{", "{%", "{#")
-_NOTIFICATION_TEXT_BYTES = 4_096
-_NOTIFICATION_TEXT_MASK = "\x00"
-_NOTIFICATION_TEXT_TRIGGER = "persistent_notification"
-_NOTIFICATION_TEXT_REASON = (
-    "Only the literal text of a persistent notification changed; nothing in "
-    "this configuration can read it (HAMCP-486)"
-)
-
-
-def _notification_text_copy(value: Any) -> Any:
-    """Copy a plain JSON value; raise TypeError for anything else."""
-
-    if isinstance(value, dict):
-        if not all(isinstance(key, str) for key in value):
-            raise TypeError("non-string key")
-        return {key: _notification_text_copy(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_notification_text_copy(item) for item in value]
-    if value is None or isinstance(value, (str, bool, int, float)):
-        return value
-    raise TypeError("non-JSON value")
-
-
-def _notification_text_step(node: dict[str, Any]) -> bool:
-    names = [node[key] for key in ("action", "service") if key in node]
-    return (
-        len(names) == 1
-        and isinstance(names[0], str)
-        and names[0] in _NOTIFICATION_TEXT_SERVICES
-        and set(node) <= _NOTIFICATION_TEXT_STEP_KEYS
-        and isinstance(node.get("data"), dict)
-        and "message" in node["data"]
-    )
-
-
-def _notification_text_masked(
-    config: dict[str, Any],
-) -> tuple[str, dict[str, Any], list[Any]]:
-    """Return the configuration with each notification text masked.
-
-    The result is the canonical masked form, the plain copy, and the masked
-    texts in traversal order. A script's risk view also holds ``sequence`` as
-    its action root; that alias is left out so it is compared once.
-    """
-
-    roots = _action_roots(config)
-    aliased = "sequence" in config and any(
-        config["sequence"] is root for _key, root in roots
-    )
-    plain = _notification_text_copy(
-        {key: item for key, item in config.items() if not (aliased and key == "sequence")}
-    )
-    masked = _notification_text_copy(plain)
-    texts: list[Any] = []
-    for root_path, root in _action_roots(masked):
-        for _path, node in _action_nodes(root, root_path):
-            if not _notification_text_step(node):
-                continue
-            for field in _NOTIFICATION_TEXT_FIELDS:
-                if field in node["data"]:
-                    texts.append(node["data"][field])
-                    node["data"][field] = _NOTIFICATION_TEXT_MASK
-    canonical = json.dumps(
-        masked, sort_keys=True, separators=(",", ":"), allow_nan=False
-    )
-    return canonical, plain, texts
-
-
-def _notification_text_literal(value: Any) -> bool:
-    return (
-        isinstance(value, str)
-        and all(char.isprintable() or char in "\n\t" for char in value)
-        and not any(marker in value for marker in _NOTIFICATION_TEXT_TEMPLATE_MARKERS)
-        and len(value.encode("utf-8")) <= _NOTIFICATION_TEXT_BYTES
-    )
-
-
-def _notification_text_read(value: Any) -> bool:
-    """Whether any mapping names the persistent_notification trigger."""
-
-    pending = [value]
-    while pending:
-        item = pending.pop()
-        if isinstance(item, dict):
-            if any(
-                isinstance(item.get(key), str)
-                and item[key].strip().lower() == _NOTIFICATION_TEXT_TRIGGER
-                for key in ("platform", "trigger")
-            ):
-                return True
-            pending.extend(item.values())
-        elif isinstance(item, list):
-            pending.extend(item)
-    return False
-
-
-def _notification_text_only(
-    fields: set[str],
-    proposed: dict[str, Any],
-    current: dict[str, Any],
-    protected_effect_verdict: str | None,
-) -> bool:
-    """Whether the update changes only static persistent-notification text."""
-
-    if (
-        protected_effect_verdict != "none"
-        or not fields
-        or not fields <= _CHANGE_ACTION_FIELDS
-    ):
-        return False
-    try:
-        proposed_masked, proposed_plain, proposed_texts = _notification_text_masked(
-            proposed
-        )
-        current_masked, current_plain, current_texts = _notification_text_masked(
-            current
-        )
-    except (TypeError, ValueError, RecursionError, OverflowError):
-        return False
-    if proposed_masked != current_masked or len(proposed_texts) != len(current_texts):
-        return False
-    changed = [
-        (before, after)
-        for before, after in zip(current_texts, proposed_texts)
-        if _change_canonical(before) != _change_canonical(after)
-    ]
-    if not changed or not all(
-        _notification_text_literal(before) and _notification_text_literal(after)
-        for before, after in changed
-    ):
-        return False
-    for plain in (proposed_plain, current_plain):
-        if "use_blueprint" in plain or _notification_text_read(plain):
-            return False
-        _services, evidence, warnings, _targets = _structured_analysis(plain)
-        if warnings or any(
-            item.get("trigger") in {"safety_critical_service", *PROTECTED_OBJECT_TRIGGERS}
-            or _protected_high_evidence(item)
-            or item.get("service") in SAFETY_CRITICAL_SERVICES
-            for item in evidence
-        ):
-            return False
-    return True
-
-
 def classify_risk(
     operation: ChangeOperation,
     diff: dict[str, Any],
@@ -2353,14 +2179,11 @@ def classify_risk(
 ) -> ChangeRiskAssessment:
     """Classify one automation-shaped configuration.
 
-    The level, apply decision, evidence, and warnings are the
-    whole-configuration result of ``_legacy_classify_risk``, except in the
-    proven HAMCP-486 case: an exact update that changes only static
-    persistent-notification text is classified as an alias-only edit. For an
-    exact update with ``current`` (HAMCP-293), the reasons also name the
-    changed fields and action steps, and each high-risk call instance, by
-    path and target, as added or changed, moved, removed, or present and
-    unchanged.
+    The level, apply decision, evidence, and warnings are always the
+    whole-configuration result of ``_legacy_classify_risk``. For an exact
+    update with ``current`` (HAMCP-293), the reasons also name the changed
+    fields and action steps, and each high-risk call instance, by path and
+    target, as added or changed, moved, removed, or present and unchanged.
     """
 
     assessment = _legacy_classify_risk(
@@ -2375,17 +2198,6 @@ def classify_risk(
     ):
         return assessment
     fields = {item["field"] for item in diff.get("changed_fields", [])}
-    if assessment.level is not RiskLevel.LOW and _notification_text_only(
-        fields, proposed, current, protected_effect_verdict
-    ):
-        assessment = _legacy_classify_risk(
-            operation,
-            {"changed_fields": []},
-            proposed,
-            current=current,
-            protected_effect_verdict=protected_effect_verdict,
-        )
-        assessment.reasons = [*assessment.reasons, _NOTIFICATION_TEXT_REASON]
     assessment.reasons = [
         *assessment.reasons,
         *_change_reasons(fields, proposed, current),
