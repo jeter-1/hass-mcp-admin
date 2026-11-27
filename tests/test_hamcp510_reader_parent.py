@@ -1,11 +1,15 @@
 """HAMCP-510: the fixed gateway readers refuse without inherited authority.
 
-The script, YAML (every purpose) and history readers start a child request
+The script and YAML (every purpose) readers start a child request
 that inherits the parent's Core dispatch authorizer. With no parent request,
 or a parent with no authorizer, there is nothing to inherit, and the
 request-context default (no authorizer authorizes) must not stand in for it.
 Each reader refuses before a request starts, as the search sub-call page
 readers do: zero dispatch, zero audit, and the caller's context unchanged.
+
+HAMCP-511: the gateway's history reader is retired (get_history_slices reads
+Core natively); ``test_hamcp511_native_history_slices`` covers the native
+reader's refusal without the tool's own Core authorizer.
 """
 
 from __future__ import annotations
@@ -26,7 +30,6 @@ from ha_mcp_engineering.providers import upstream_read_gateway as gw  # noqa: E4
 from ha_mcp_engineering.request_context import begin_request, current_telemetry, end_request  # noqa: E402
 
 REFUSED = {"success": False, "details": {"failure_category": "provider_authority_changed"}}
-TIME = "2026-01-01T00:00:00.000000+00:00"
 
 
 class ReaderParentAuthorityTests(unittest.IsolatedAsyncioTestCase):
@@ -46,8 +49,8 @@ class ReaderParentAuthorityTests(unittest.IsolatedAsyncioTestCase):
         audit = Mock()
         readers = {
             "script": (self.gateway.script_dependency_reader(audit=audit), ("script.synthetic",)),
-            "history": (self.gateway.history_reader(audit=audit), ("sensor.synthetic", TIME, TIME, 0, 10)),
         }
+        self.assertFalse(hasattr(self.gateway, "history_reader"))
         for purpose, (paths, _event) in gw.YAML_READER_PURPOSES.items():
             readers[f"yaml:{purpose}"] = (
                 self.gateway.yaml_config_reader(audit=audit, purpose=purpose), (sorted(paths)[0],))

@@ -120,7 +120,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/audit_baseline/capture_contracts.py",
-       "line": 254,
+       "line": 261,
        "anchor": "GET /config/automation/config/{verified_configuration_id}"
       },
       {
@@ -160,7 +160,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4346,
+       "line": 4259,
        "anchor": "def search_subcall_reader"
       },
       {
@@ -170,12 +170,12 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/search/subcalls.py",
-       "line": 57,
+       "line": 65,
        "anchor": "PAGE_SIZE_LADDER = (150, 30, 6, 1)"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/search/subcalls.py",
-       "line": 167,
+       "line": 194,
        "anchor": "def page_arguments"
       }
      ]
@@ -361,12 +361,12 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 89,
+       "line": 90,
        "anchor": "ALLOWED_FILE = \"configuration.yaml\""
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4191,
+       "line": 4182,
        "anchor": "def yaml_config_reader(self, *, audit=None"
       }
      ]
@@ -445,7 +445,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4164,
+       "line": 4155,
        "anchor": "require_unmodified_script"
       }
      ]
@@ -460,7 +460,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 855,
+       "line": 856,
        "anchor": "\"dependency_index\": (DEPENDENCY_YAML_PATHS"
       },
       {
@@ -475,7 +475,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/application.py",
-       "line": 436,
+       "line": 438,
        "anchor": "yaml_config_reader(audit=audit, purpose=\"dependency_index\")"
       }
      ]
@@ -490,7 +490,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4346,
+       "line": 4259,
        "anchor": "def search_subcall_reader"
       },
       {
@@ -500,12 +500,12 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/search/subcalls.py",
-       "line": 57,
+       "line": 65,
        "anchor": "PAGE_SIZE_LADDER = (150, 30, 6, 1)"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/search/subcalls.py",
-       "line": 167,
+       "line": 194,
        "anchor": "def page_arguments"
       }
      ]
@@ -704,7 +704,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4346,
+       "line": 4259,
        "anchor": "def search_subcall_reader"
       },
       {
@@ -714,12 +714,12 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/search/subcalls.py",
-       "line": 57,
+       "line": 65,
        "anchor": "PAGE_SIZE_LADDER = (150, 30, 6, 1)"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/search/subcalls.py",
-       "line": 167,
+       "line": 194,
        "anchor": "def page_arguments"
       }
      ]
@@ -939,7 +939,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 852,
+       "line": 853,
        "anchor": "YAML_READER_PURPOSES = MappingProxyType"
       },
       {
@@ -959,17 +959,17 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 89,
+       "line": 90,
        "anchor": "ALLOWED_FILE"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 100,
+       "line": 101,
        "anchor": "YAML_PATH_PATTERN"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 245,
+       "line": 246,
        "anchor": "_L2_SEGMENTS ="
       },
       {
@@ -1067,12 +1067,12 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 89,
+       "line": 90,
        "anchor": "ALLOWED_FILE = \"configuration.yaml\""
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4191,
+       "line": 4182,
        "anchor": "def yaml_config_reader(self, *, audit=None"
       }
      ]
@@ -1279,7 +1279,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 852,
+       "line": 853,
        "anchor": "YAML_READER_PURPOSES = MappingProxyType"
       },
       {
@@ -1299,17 +1299,17 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 89,
+       "line": 90,
        "anchor": "ALLOWED_FILE"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 100,
+       "line": 101,
        "anchor": "YAML_PATH_PATTERN"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 245,
+       "line": 246,
        "anchor": "_L2_SEGMENTS ="
       },
       {
@@ -1349,7 +1349,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 855,
+       "line": 856,
        "anchor": "\"dependency_index\": (DEPENDENCY_YAML_PATHS"
       },
       {
@@ -1364,7 +1364,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/application.py",
-       "line": 436,
+       "line": 438,
        "anchor": "yaml_config_reader(audit=audit, purpose=\"dependency_index\")"
       }
      ]
@@ -1416,12 +1416,12 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 89,
+       "line": 90,
        "anchor": "ALLOWED_FILE = \"configuration.yaml\""
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4191,
+       "line": 4182,
        "anchor": "def yaml_config_reader(self, *, audit=None"
       }
      ]
@@ -1459,17 +1459,17 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 89,
+       "line": 90,
        "anchor": "ALLOWED_FILE"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 100,
+       "line": 101,
        "anchor": "YAML_PATH_PATTERN"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 245,
+       "line": 246,
        "anchor": "_L2_SEGMENTS ="
       },
       {
@@ -1494,7 +1494,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 852,
+       "line": 853,
        "anchor": "YAML_READER_PURPOSES = MappingProxyType"
       },
       {
@@ -1514,12 +1514,12 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 853,
+       "line": 854,
        "anchor": "\"recorder_settings\": (YAML_CONFIG_PATHS"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 860,
+       "line": 861,
        "anchor": "class YamlConfigReader"
       }
      ]
@@ -1538,12 +1538,12 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 89,
+       "line": 90,
        "anchor": "ALLOWED_FILE = \"configuration.yaml\""
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4191,
+       "line": 4182,
        "anchor": "def yaml_config_reader(self, *, audit=None"
       }
      ]
@@ -1559,7 +1559,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 1976,
+       "line": 1987,
        "anchor": "yaml-fragment-read"
       }
      ]
@@ -1597,17 +1597,17 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 89,
+       "line": 90,
        "anchor": "ALLOWED_FILE"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 100,
+       "line": 101,
        "anchor": "YAML_PATH_PATTERN"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 245,
+       "line": 246,
        "anchor": "_L2_SEGMENTS ="
       },
       {
@@ -1632,7 +1632,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 852,
+       "line": 853,
        "anchor": "YAML_READER_PURPOSES = MappingProxyType"
       },
       {
@@ -1654,7 +1654,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 251,
+       "line": 252,
        "anchor": "_L2_BASENAMES ="
       }
      ]
@@ -1679,7 +1679,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 245,
+       "line": 246,
        "anchor": "_L2_SEGMENTS ="
       },
       {
@@ -1748,17 +1748,17 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 97,
+       "line": 98,
        "anchor": "YAML_PATH_PATTERN = ("
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 2192,
+       "line": 2189,
        "anchor": "OPTIONAL_TOOL_DISPOSITIONS"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 2154,
+       "line": 2165,
        "anchor": "\"9.2.0\": \"admitted\""
       }
      ]
@@ -1886,12 +1886,12 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 838,
+       "line": 839,
        "anchor": "DEFINITION_YAML_PATHS = frozenset"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 2154,
+       "line": 2165,
        "anchor": "\"9.2.0\": \"admitted\""
       }
      ]
@@ -1987,17 +1987,17 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 97,
+       "line": 98,
        "anchor": "YAML_PATH_PATTERN = ("
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 2192,
+       "line": 2189,
        "anchor": "OPTIONAL_TOOL_DISPOSITIONS"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 2154,
+       "line": 2165,
        "anchor": "\"9.2.0\": \"admitted\""
       }
      ]
@@ -2130,12 +2130,12 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 838,
+       "line": 839,
        "anchor": "DEFINITION_YAML_PATHS = frozenset"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 2154,
+       "line": 2165,
        "anchor": "\"9.2.0\": \"admitted\""
       }
      ]
@@ -2221,17 +2221,17 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 97,
+       "line": 98,
        "anchor": "YAML_PATH_PATTERN = ("
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 2192,
+       "line": 2189,
        "anchor": "OPTIONAL_TOOL_DISPOSITIONS"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 2154,
+       "line": 2165,
        "anchor": "\"9.2.0\": \"admitted\""
       }
      ]
@@ -2311,12 +2311,12 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 838,
+       "line": 839,
        "anchor": "DEFINITION_YAML_PATHS = frozenset"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 2154,
+       "line": 2165,
        "anchor": "\"9.2.0\": \"admitted\""
       }
      ]
@@ -2402,12 +2402,12 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 838,
+       "line": 839,
        "anchor": "DEFINITION_YAML_PATHS = frozenset"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 2154,
+       "line": 2165,
        "anchor": "\"9.2.0\": \"admitted\""
       },
       {
@@ -2507,7 +2507,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4346,
+       "line": 4259,
        "anchor": "def search_subcall_reader"
       },
       {
@@ -2517,12 +2517,12 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/search/subcalls.py",
-       "line": 57,
+       "line": 65,
        "anchor": "PAGE_SIZE_LADDER = (150, 30, 6, 1)"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/search/subcalls.py",
-       "line": 167,
+       "line": 194,
        "anchor": "def page_arguments"
       }
      ]
@@ -2683,7 +2683,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 302,
+       "line": 303,
        "anchor": "_UPSTREAM_CAPABILITY_CODES = frozenset"
       },
       {
@@ -2732,12 +2732,12 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 838,
+       "line": 839,
        "anchor": "DEFINITION_YAML_PATHS = frozenset"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 2154,
+       "line": 2165,
        "anchor": "\"9.2.0\": \"admitted\""
       },
       {
@@ -2777,7 +2777,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4346,
+       "line": 4259,
        "anchor": "def search_subcall_reader"
       },
       {
@@ -2787,12 +2787,12 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/search/subcalls.py",
-       "line": 57,
+       "line": 65,
        "anchor": "PAGE_SIZE_LADDER = (150, 30, 6, 1)"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/search/subcalls.py",
-       "line": 167,
+       "line": 194,
        "anchor": "def page_arguments"
       }
      ]
@@ -3041,7 +3041,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/dashboard_analysis/contracts.py",
-       "line": 16,
+       "line": 17,
        "anchor": "DASHBOARD_BYTES = 2 * 1024 * 1024"
       },
       {
@@ -3126,7 +3126,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4346,
+       "line": 4259,
        "anchor": "def search_subcall_reader"
       },
       {
@@ -3136,12 +3136,12 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/search/subcalls.py",
-       "line": 57,
+       "line": 65,
        "anchor": "PAGE_SIZE_LADDER = (150, 30, 6, 1)"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/search/subcalls.py",
-       "line": 167,
+       "line": 194,
        "anchor": "def page_arguments"
       }
      ]
@@ -3476,22 +3476,22 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 69,
+       "line": 70,
        "anchor": "TOOL_NAME = \"ha_config_get_yaml\""
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 2129,
+       "line": 2140,
        "anchor": "OPTIONAL_TOOL_BINDINGS: dict"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 2080,
+       "line": 2091,
        "anchor": "_CAPTURES = {"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 831,
+       "line": 832,
        "anchor": "YAML_CONFIG_PATHS"
       }
      ]
@@ -3508,7 +3508,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 89,
+       "line": 90,
        "anchor": "ALLOWED_FILE"
       }
      ]
@@ -3524,7 +3524,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_yaml_reader.py",
-       "line": 2080,
+       "line": 2091,
        "anchor": "_CAPTURES = {"
       }
      ]
@@ -4210,7 +4210,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 838,
+       "line": 839,
        "anchor": "DEFINITION_YAML_PATHS"
       }
      ]
@@ -4265,7 +4265,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 1792,
+       "line": 1780,
        "anchor": "\"disposition\": \"retired_delegated_read\""
       }
      ]
@@ -4410,7 +4410,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/tools/search.py",
-       "line": 111,
+       "line": 112,
        "anchor": "async def ha_search"
       },
       {
@@ -5384,15 +5384,15 @@
     },
     {
      "tool": "get_history_slices",
-     "provider": "upstream_read_gateway history_reader",
-     "purpose_binding": "history_slices_read_v1 [gateway_reader:history_reader]",
-     "admission": "upstream:ha_get_history 8.5.0/8.6.0/9.1.0 (REVIEWED_VERSIONS)",
+     "provider": "direct_ha_api",
+     "purpose_binding": "history_slices_read_v1",
+     "admission": "native; core.basic_rest_read compiled-active (NativeHistoryReader, core-rest-history-period-v1)",
      "completeness": "partial",
-     "detail": "Single entity, up to 7 days, 6 h slices, limit 1..100, max 12 upstream calls, cursor TTL 3600 s.",
+     "detail": "REST /history/period per 6 h slice; single entity, up to 7 days, limit 1..100, max 12 Core reads, 1 MiB body, one attempt, bounded read slots, cursor TTL 3600 s.",
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/history_slices/contracts.py",
-       "line": 33,
+       "line": 34,
        "anchor": "UPSTREAM_TOOL"
       },
       {
@@ -5401,9 +5401,9 @@
        "anchor": "REVIEWED_VERSIONS"
       },
       {
-       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4265,
-       "anchor": "def history_reader"
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/history_slices/native.py",
+       "line": 189,
+       "anchor": "async def _fetch"
       }
      ]
     },
@@ -5482,7 +5482,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/clients/logbook.py",
-       "line": 436,
+       "line": 445,
        "anchor": "class LogbookReader"
       },
       {
@@ -5563,7 +5563,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 853,
+       "line": 854,
        "anchor": "\"recorder_settings\": (YAML_CONFIG_PATHS"
       },
       {
@@ -5708,7 +5708,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/supervisor_self.py",
-       "line": 70,
+       "line": 71,
        "anchor": "class SupervisorSelfAddonIdentityResolver"
       }
      ]
@@ -5833,12 +5833,12 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/operational_backup.py",
-       "line": 35,
+       "line": 36,
        "anchor": "REQUIRED_TOOL"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/operational_backup.py",
-       "line": 389,
+       "line": 390,
        "anchor": "restore_allowed"
       }
      ]
@@ -5873,7 +5873,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/operational_backup.py",
-       "line": 390,
+       "line": 391,
        "anchor": "delete_allowed"
       }
      ]
@@ -7296,12 +7296,6 @@
   }
  },
  "reader_purpose_index": {
-  "gateway_reader:history_reader": {
-   "used_by": [
-    "history"
-   ],
-   "note": "Backs get_history_slices (ha_get_history on reviewed 8.5.0/8.6.0 only)."
-  },
   "gateway_reader:script_dependency_reader": {
    "used_by": [
     "scripts"
@@ -7356,7 +7350,7 @@
  },
  "inventory": {
   "tool_catalog": {
-   "fingerprint": "012832bc95fc091b4cd5af88faa78a262148ee4292976f4153d65a6eb3f575c9",
+   "fingerprint": "a063894d7c9c6bb9355ee10b8c149a50048c7c55acf16066ef230915c6555ffa",
    "items": {
     "adapter:ha-mcp-8.4.3-platform-apps-v1": "c96ec4d8b2f2fc06",
     "adapter:ha-mcp-8.4.3-platform-health-v1": "73c2eb69c76e7f2b",
@@ -7510,7 +7504,7 @@
     "native:get_error_log": "4bccef4594dc6903",
     "native:get_execution_task": "692c1b181c1bbc75",
     "native:get_history": "71e782398c05dab4",
-    "native:get_history_slices": "fb17be24a468f499",
+    "native:get_history_slices": "b22f7adb33cdecbd",
     "native:get_incident_logs": "4407aea991fc0302",
     "native:get_integration_inspection": "3cae7ee06e0f3375",
     "native:get_logbook": "05f65dbd69c7bed9",
@@ -7552,9 +7546,8 @@
    }
   },
   "reader_purposes": {
-   "fingerprint": "0e0702ced8852d773adfadce92bb385d3cf048e09cc1d3ac1eb965c2ea660777",
+   "fingerprint": "227ac2c142a770062d122dc7767b18ab7032a25bf1c8c87e966efab81b9fa690",
    "items": {
-    "gateway_reader:history_reader": "582b3e70f6cee161",
     "gateway_reader:script_dependency_reader": "79620f269679ebec",
     "gateway_reader:search_subcall_reader": "6bae0be593ca86b3",
     "gateway_reader:yaml_config_reader": "d9f8474b3be0833c",
@@ -7607,7 +7600,7 @@
    }
   },
   "provider_registry": {
-   "fingerprint": "2f391243b28225a9086b2e0b6fe124766b44ccd68e7093e728dcef0bcaaa5c3a",
+   "fingerprint": "ca6115e03eb3619dd0df83139995655450e0ffab38ba866aba34a387fbd188fc",
    "items": {
     "analytical_policy:automation_reliability_analysis": "94c8a4aabfe06038",
     "analytical_policy:automation_reliability_batch_analysis": "7233c3d17334b3e6",
@@ -7619,7 +7612,7 @@
     "analytical_policy:get_automation_run_counts": "350f1a4f149e30d8",
     "analytical_policy:get_backup_inventory": "430e24fc736585fc",
     "analytical_policy:get_configuration_definitions": "c7ff1c23f46b9db9",
-    "analytical_policy:get_history_slices": "0f7eff1d6a802ef0",
+    "analytical_policy:get_history_slices": "72dd43976c0ff9a1",
     "analytical_policy:get_integration_inspection": "85402013290ea72e",
     "analytical_policy:get_marketplace_inventory": "ea56f36e53cd76cd",
     "analytical_policy:get_recorder_settings": "6a0227c762f9894c",
@@ -7666,7 +7659,7 @@
     "provider_matrix:get_core_log_history": "b989dec69fd29a1a",
     "provider_matrix:get_dashboard_config": "ea6526e043a00386",
     "provider_matrix:get_entity": "ed46c5a5330b1e02",
-    "provider_matrix:get_history_slices": "b8ee5e8deae9ce98",
+    "provider_matrix:get_history_slices": "9dd6c29d11390b68",
     "provider_matrix:get_incident_logs": "835913ae0566d5a0",
     "provider_matrix:get_integration_inspection": "03c06ab7e5d46b33",
     "provider_matrix:get_recorder_settings": "65cf21ccb99937ff",
