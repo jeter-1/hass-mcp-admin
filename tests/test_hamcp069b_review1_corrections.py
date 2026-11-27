@@ -374,9 +374,8 @@ class IncompleteEvidenceClassificationTests(AvailabilityExposureServiceTestCase)
             "unresolved_dynamic_consumer": lambda s: setattr(s, "obligations", (obligation(),)),
             "automation_read_failures": lambda s: setattr(
                 s, "automation_read_failures", (object(),)),
-            "script_read_failures": lambda s: setattr(
-                s, "script_diagnostics", script_diagnostics(failed_item_count=1)),
-            "script_evidence_unavailable": lambda s: setattr(s, "script_diagnostics", None),
+            # HAMCP-394: the script-only gaps are disclosed but do not elevate;
+            # tests/test_hamcp394_provable_dependency_gaps.py covers them.
         }
         for index, (gap, change) in enumerate(causes.items()):
             with self.subTest(gap=gap):
@@ -427,7 +426,7 @@ class IncompleteEvidenceClassificationTests(AvailabilityExposureServiceTestCase)
 
     async def test_evidence_becoming_complete_after_approval_is_refused(self):
         self.add_entity("light.porch")
-        self.snapshot.script_diagnostics = None
+        self.snapshot.automation_read_failures = (object(),)
         created = await self.create(operation="disable", entity_ids=["light.porch"])
         self.assertEqual(policy(created)[0], "elevated_admin")
         await self.approve(created)
