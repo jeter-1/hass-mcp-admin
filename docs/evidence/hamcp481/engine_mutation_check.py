@@ -33,6 +33,12 @@ trigger, the spans, the alignment, the call bound and the full-page rule.
 The per-type size's mutants (page_rows_any_type, page_sizes_not_derived and
 page_arguments_one_size) went with it.
 
+HAMCP-522 (2.11.0 Lane B1): the area modes draw their candidates from the
+state rows, and ``state_rows`` keeps no set of malformed ids. So
+hidden_area_member_listed drops ``kept()`` from the area candidates,
+malformed_row_listed keeps a malformed state row, and
+dropped_state_rows_uncounted counts only the malformed rows.
+
 Usage, from the repository root::
 
     python -I docs/evidence/hamcp481/engine_mutation_check.py
@@ -114,7 +120,7 @@ MUTANTS = {
     "invalid_state_row_kept": (
         "entities", "if state is INVALID or attributes is INVALID or type(name) is not str:",
         "if type(name) is not str:"),
-    "dropped_state_rows_uncounted": ("entities", "result.dropped + len(malformed)", "len(malformed)"),
+    "dropped_state_rows_uncounted": ("entities", "result.dropped + malformed)", "malformed)"),
     "member_id_grammar_unchecked": (
         "entities", "if all(type(item) is str and _MEMBER_ID.fullmatch(item) for item in raw):",
         "if all(type(item) is str for item in raw):"),
@@ -133,9 +139,9 @@ MUTANTS = {
         "entities", "        return (entity_id not in denied\n                and (domain",
         "        return (True\n                and (domain"),
     "hidden_area_member_listed": (
-        "entities", "if entity_id not in malformed_ids and kept(entity_id, state_of(entity_id).state)",
-        "if entity_id not in malformed_ids"),
-    "malformed_row_listed": ("entities", "if entity_id not in malformed_ids and kept(", "if kept("),
+        "entities", "if kept(entity_id, row.state) and entity_id in registry", "if entity_id in registry"),
+    "malformed_row_listed": (
+        "entities", "            malformed += 1\n            continue\n", "            malformed += 1\n"),
     "listing_hidden_unpenalized": (
         "entities", "row.state, scoring.apply_hidden_penalty(100, entity_id in hidden),", "row.state, 100,"),
     "query_hidden_unpenalized": (

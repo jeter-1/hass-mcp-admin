@@ -338,34 +338,9 @@ def _merge_graph(results: dict, hits: Mapping, request: ConfigRequest, states: S
             records.append((record, False))
 
 
-# ``search_score.py``'s ``FUZZY_THRESHOLD`` (``constants.py``).
-ROUTE_FUZZY_THRESHOLD = 70
 # The names Row 25 withholds from a reviewed flow-helper row; a collection
 # helper, automation, script or scene row withholds none.
 _FLOW_HELPER_WITHHELD = frozenset({"entry_id", "options_withheld"})
-
-
-def _route_name_tier(query_lower: str, texts: tuple, *, exact: bool) -> int | None:
-    """ha-mcp 9.2.0's component name tier: ``_name_tier`` in
-    ``custom_components/ha_mcp_tools/websocket_api/search_score.py`` (sha256
-    ba034030b149091fba1e2777ac6c0c4d9c442fa33148b7d92441cba3feca43de), over
-    a row's entity id and name only."""
-
-    query_norm = "" if exact else " ".join(scoring.tokenize(query_lower))
-    best = 0
-    for text in texts:
-        if not text:
-            continue
-        text_lower = str(text).lower()
-        if query_lower in text_lower:
-            return 100
-        if not exact:
-            if query_norm and query_norm in " ".join(scoring.tokenize(text_lower)):
-                return 100
-            best = max(best, scoring.ratio(query_lower, text_lower))
-    if not exact and best >= ROUTE_FUZZY_THRESHOLD:
-        return best
-    return None
 
 
 def _name_only(row: dict, request: ConfigRequest) -> dict | None:
@@ -373,9 +348,11 @@ def _name_only(row: dict, request: ConfigRequest) -> dict | None:
     score, or None when the row's entity id and name do not match. The graph
     merge may add a dropped row back as a reference."""
 
-    score = _route_name_tier(request.query_lower,
-                             (row.get("entity_id"), row.get("friendly_name") or row.get("name")),
-                             exact=request.exact_match)
+    # The component name tier over the entity id and name only (HAMCP-520:
+    # the one implementation, beside the entity scorer's).
+    score = scoring.name_tier(request.query_lower,
+                              (row.get("entity_id"), row.get("friendly_name") or row.get("name")),
+                              exact=request.exact_match)
     if score is None:
         return None
     return {**row, "score": score, "match_in_name": True, "match_in_config": False}

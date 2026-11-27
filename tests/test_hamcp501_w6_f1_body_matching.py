@@ -36,7 +36,7 @@ from tests import test_hamcp501_search_subcall_readers as w4  # noqa: E402
 from tests.test_hamcp481_native_search_engine import MARKER, reasons_of  # noqa: E402
 from ha_mcp_engineering.providers import upstream_read_gateway as gw  # noqa: E402
 from ha_mcp_engineering.providers import upstream_reads_9_2_keys as k  # noqa: E402
-from ha_mcp_engineering.search import configs, reply, subcalls  # noqa: E402
+from ha_mcp_engineering.search import configs, reply, scoring, subcalls  # noqa: E402
 
 F1 = ROOT / "docs/evidence/hamcp501/f1"
 GENERATOR = F1 / "generate_body_match_fixtures.py"
@@ -260,20 +260,45 @@ class GoldenTests(unittest.TestCase):
         for number in numbers:
             self.assertLessEqual(set(str(number).lower()), NUMBER_CHARS, number)
 
+    def test_the_rescore_uses_the_one_name_tier(self):
+        # HAMCP-520: the name-only rescore calls the entity scorer's tier;
+        # the duplicate is gone.
+        self.assertFalse(hasattr(configs, "_route_name_tier"))
+        self.assertFalse(hasattr(configs, "ROUTE_FUZZY_THRESHOLD"))
+        calls = []
+        original = scoring.name_tier
+
+        def spy(*args, **kwargs):
+            calls.append((args, kwargs))
+            return original(*args, **kwargs)
+
+        scoring.name_tier = spy
+        try:
+            request = configs.ConfigRequest(query="Front gate", search_types=("automation",),
+                                            exact_match=False, limit=10, offset=0)
+            row = {"entity_id": "automation.front_gate", "friendly_name": "Front gate", "score": 1}
+            kept = configs._name_only(row, request)
+        finally:
+            scoring.name_tier = original
+        self.assertEqual(calls, [(("front gate", ("automation.front_gate", "Front gate")),
+                                  {"exact": False})])
+        self.assertEqual((kept["score"], kept["match_in_name"], kept["match_in_config"]),
+                         (100, True, False))
+
     def test_the_name_rescore_is_the_component_name_tier(self):
         self.assertTrue(any(row["tier"] is not None for row in GOLDEN["name_tiers"]))
         for row in GOLDEN["name_tiers"]:
             with self.subTest(row=row):
                 self.assertEqual(
-                    configs._route_name_tier(row["query"].strip().lower(),
-                                             (row["entity_id"], row["name"]), exact=row["exact"]),
+                    scoring.name_tier(row["query"].strip().lower(),
+                                      (row["entity_id"], row["name"]), exact=row["exact"]),
                     row["tier"])
         # The threshold is the component's; a ratio just under it is no match.
-        self.assertEqual(configs.ROUTE_FUZZY_THRESHOLD, GOLDEN["constants"]["FUZZY_THRESHOLD"])
+        self.assertEqual(scoring.FUZZY_THRESHOLD, GOLDEN["constants"]["FUZZY_THRESHOLD"])
         texts = ("automation.front_gate", "Front gate")
         for query, tier in (("frt g", None), ("fr gt", None), ("frnt gx", 70)):
             with self.subTest(query=query):
-                self.assertEqual(configs._route_name_tier(query, texts, exact=False), tier)
+                self.assertEqual(scoring.name_tier(query, texts, exact=False), tier)
 
     def test_the_raw_page_scrub_state(self):
         other = [text for text in k.SEARCH_SCRUB_DEGRADED_WARNINGS if text != MATCH_TEXT]
