@@ -155,7 +155,9 @@ class RealRuntimeUnsupportedTests(unittest.IsolatedAsyncioTestCase):
         payload = await call(gateway, "get_error_log")
         self.assertEqual(payload["error"], "CoreCapabilityUnavailable")
         self.assertFalse(payload["retryable"])
-        self.assertEqual(payload["details"], {})
+        # HAMCP-514: the generic refusal names the provider, not a window.
+        self.assertEqual(set(payload["details"]), {"provider", "core_capabilities"})
+        self.assertEqual(payload["details"]["provider"], "home_assistant_core")
         self.assertEqual(app.calls, [])
 
     async def test_an_unsupported_core_version_stays_non_retryable(self):
@@ -272,7 +274,9 @@ class RecoveryStateMatrixTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(case=name):
                 payload = await self.refused(runtime)
                 self.assertFalse(payload["retryable"])
-                self.assertEqual(payload["details"], {})
+                # HAMCP-514: no window, so the details only name the provider.
+                self.assertEqual(set(payload["details"]), {"provider", "core_capabilities"})
+                self.assertEqual(payload["details"]["provider"], "home_assistant_core")
                 self.assertEqual(
                     payload["message"], "The required capability provider is unavailable."
                 )

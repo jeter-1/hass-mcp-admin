@@ -45,6 +45,7 @@ from .ha_core_readmission.routes import (
     static_tool_core_route,
     static_tool_target,
 )
+from .ha_core_readmission.models import SURFACE as CORE_PROVIDER
 from .logging_config import get_logger, log_event
 from .models import FailureResponse, Timing
 from .observability import METRICS
@@ -506,8 +507,8 @@ class AuthenticatedMcpGateway:
 
         Covers 069B, and every ``PENDING_ADMISSION_TOOLS`` tool (165, 155,
         232, 145 and the script-trace reads).  Only the selected profile's
-        own admission state is reported; any other Core unavailability keeps
-        the generic refusal with empty details.
+        own admission state is reported; other Core unavailability gets the
+        generic refusal with only ``provider`` and ``core_capabilities``.
         """
 
         if self._core_runtime is None:
@@ -1309,6 +1310,14 @@ class AuthenticatedMcpGateway:
                     # HAMCP-498: a pending signed admission keeps precedence;
                     # otherwise an open Core restart window is retryable.
                     recovery = {} if details else self._core_recovery_details()
+                    if not details and not recovery:
+                        # HAMCP-514: any other Core unavailability names the
+                        # unavailable provider and the Core capabilities the
+                        # call needed. It stays non-retryable.
+                        details = {
+                            "provider": CORE_PROVIDER,
+                            "core_capabilities": list(core_requirements),
+                        }
                     failure = FailureResponse(
                         operation=tool_name,
                         error="CoreCapabilityUnavailable",
