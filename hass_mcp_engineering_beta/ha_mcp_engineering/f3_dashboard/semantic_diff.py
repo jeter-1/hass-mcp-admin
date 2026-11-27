@@ -19,6 +19,7 @@ from .models import (
     SemanticDiffEntry,
     ValueSummary,
 )
+from .sensitivity import container_type, pointer_segments, sensitive_leaf
 
 
 # The preview Engineering shows for a withheld value. Review projections keep
@@ -26,28 +27,16 @@ from .models import (
 # (HAMCP-191 D4); equal dashboard text collides.
 REDACTED_PREVIEW = "<redacted>"
 
-_SENSITIVE_FIELD_FRAGMENTS = (
-    "token",
-    "password",
-    "secret",
-    "authorization",
-    "api_key",
-    "access_key",
-    "credential",
-)
+
+def _withheld(value: Any, path: str, holder_type: Any) -> bool:
+    # HAMCP-477: the one dashboard sensitivity rule; plan creation refuses
+    # exactly the values this preview withholds.
+    return sensitive_leaf(pointer_segments(path), value, card_type=holder_type)
 
 
-def _sensitive_path(path: str) -> bool:
-    lowered = path.lower()
-    return any(fragment in lowered for fragment in _SENSITIVE_FIELD_FRAGMENTS)
-
-
-def _looks_secret(value: str) -> bool:
-    lowered = value.lower()
-    return lowered.startswith("bearer ") or lowered.startswith("basic ")
-
-
-def summarize_value(*, present: bool, value: Any, path: str) -> ValueSummary:
+def summarize_value(
+    *, present: bool, value: Any, path: str, holder_type: Any = None
+) -> ValueSummary:
     if not present:
         return ValueSummary("untrusted_data", "missing", False, False, False, None)
     if value is None:
@@ -55,9 +44,13 @@ def summarize_value(*, present: bool, value: Any, path: str) -> ValueSummary:
     if isinstance(value, bool):
         return ValueSummary("untrusted_data", "boolean", True, False, False, str(value).lower())
     if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if _withheld(value, path, holder_type):
+            return ValueSummary(
+                "untrusted_data", "number", True, True, False, REDACTED_PREVIEW
+            )
         return ValueSummary("untrusted_data", "number", True, False, False, repr(value))
     if isinstance(value, str):
-        if _sensitive_path(path) or _looks_secret(value):
+        if _withheld(value, path, holder_type):
             return ValueSummary(
                 "untrusted_data", "string", True, True, False, REDACTED_PREVIEW
             )
@@ -135,6 +128,7 @@ def build_semantic_diff(
 
     entries: list[SemanticDiffEntry] = []
     for effect in compilation.effects:
+        holder_type = container_type(compilation.resulting_configuration, effect.path)
         entries.append(
             SemanticDiffEntry(
                 operation_id=effect.operation_id,
@@ -144,11 +138,13 @@ def build_semantic_diff(
                     present=effect.previous_present,
                     value=effect.previous_value,
                     path=effect.path,
+                    holder_type=holder_type,
                 ),
                 proposed=summarize_value(
                     present=effect.proposed_present,
                     value=effect.proposed_value,
                     path=effect.path,
+                    holder_type=holder_type,
                 ),
                 context=_context(effect.path),
                 leaf_change_count=effect.leaf_change_count,

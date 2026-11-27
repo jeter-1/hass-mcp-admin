@@ -60,6 +60,10 @@ from ..f3_dashboard.errors import (
 )
 from ..f3_dashboard.planning import create_dashboard_update_plan as build_dashboard_update
 from ..f3_dashboard.semantic_diff import REDACTED_PREVIEW
+from ..f3_dashboard.sensitivity import (
+    MAX_SENSITIVE_PATHS,
+    effect_sensitive_paths,
+)
 from ..f3_dashboard.constants import (
     ARTIFACT_SCHEMA,
     MAX_DESCRIPTION_CHARS,
@@ -5608,6 +5612,32 @@ class ChangeGovernanceService:
             )
         return self._public(plan)
 
+    def _dashboard_changed_sensitive_paths(self, proposal: Any) -> list[str]:
+        """Pointers of the sensitive values a dashboard plan would change.
+
+        Pointers the shared detector would flag are withheld; the list is
+        bounded and never carries a value.
+        """
+
+        compilation = proposal.compilation
+        found: list[str] = []
+        for effect in compilation.effects:
+            for pointer in effect_sensitive_paths(
+                effect,
+                current=proposal.raw_evidence.configuration,
+                resulting=compilation.resulting_configuration,
+            ):
+                if pointer not in found:
+                    found.append(pointer)
+        shown = [
+            pointer
+            for pointer in found
+            if not persistence_safety_errors(pointer, self.sensitive_values)
+        ]
+        if found and not shown:
+            shown = ["*"]
+        return shown[:MAX_SENSITIVE_PATHS]
+
     async def create_dashboard_update_plan(
         self,
         *,
@@ -5710,6 +5740,20 @@ class ChangeGovernanceService:
             raise GovernanceError(
                 ErrorCode.CONFIGURATION_VALIDATION_FAILED,
                 details={"reason": "dashboard_contains_prohibited_sensitive_data"},
+            )
+        # HAMCP-477: the dashboard sensitivity rule over every value an
+        # operation adds, replaces or removes. The approval projection holds
+        # each exact before/after value, so a credential under a key the
+        # shared detector does not name is refused here, before any plan,
+        # artifact or write. The refusal names JSON pointers, never values.
+        flagged = self._dashboard_changed_sensitive_paths(proposal)
+        if flagged:
+            raise GovernanceError(
+                ErrorCode.CONFIGURATION_VALIDATION_FAILED,
+                details={
+                    "reason": "dashboard_contains_prohibited_sensitive_data",
+                    "sensitive_paths": flagged,
+                },
             )
         try:
             approval_projection = build_dashboard_approval_projection(
