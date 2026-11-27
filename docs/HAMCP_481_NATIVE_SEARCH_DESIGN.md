@@ -8,6 +8,10 @@ notes in §0 to §9 are marked *Rev 5* and point to the
 implementation record in §10. Where a revision 4 text and §10 differ, §10
 describes what was built.
 
+*2.11.0 (Lane B1):* HAMCP-522, HAMCP-523, HAMCP-525 and HAMCP-520 change
+the build after 2.10.0. §10.15 records them. Where §10.15 and an earlier
+section differ, §10.15 describes the current build.
+
 Revision 4 was the architect's delta-check change to revision 3 (head
 `93175f3c`): the visibility filter gives one fixed note instead of a
 per-query `hidden` count (§3.7, §7). Revision 5 supersedes that filter
@@ -571,6 +575,8 @@ The 9.2.0 ladder is kept (`tools/smart_search/_entities.py:686-800`):
    native `search/entities.py:406-408`), not a whole-string ratio. Area plus
    a query is always fuzzy at 80. *G-i:* area mode lists a registry entity
    with no state as `unknown` (`search/entities.py:573`).
+   *2.11.0 (HAMCP-522, §10.15):* superseded. The area modes list states
+   only, as the component route does.
 
 The effective-area rule is §2.3. 9.2.0 degrades to exact-only with a warning
 when the floor registry is unavailable. Natively, that case fails the read
@@ -594,7 +600,8 @@ when step 1 did not match, because the floor steps are then needed (§6.2).
   (`search/entities.py:727` at `d3da5b07`) runs the domain, hidden and
   state filters first, and `PAGE_FILTERED_MODES` is empty (`:169`). The
   page-only warning, `WARNING_STATE_PAGE_ONLY`, is removed
-  (`search/reply.py`).
+  (`search/reply.py`). *2.11.0 (HAMCP-520, §10.15):* the empty set and
+  its unreachable `state_filter_note` branch are removed.
 
 ### 3.5 Configuration and reference matching
 
@@ -1623,7 +1630,10 @@ helper; `BODY_TYPES`, `:137`):
   `match_in_config` false (`search/configs.py:381`);
 - a row with no name match is dropped;
 - the bucket gets `not_searched` `body_numeric_query`, count null;
-- no probe is read.
+- no probe is read;
+- *2.11.0 (HAMCP-525):* the sub-call pages are still read, for the name
+  rescore only. `not_searched` here means the bodies were not matched,
+  not that no page was read. The same holds under the two scrub codes.
 
 **Scrub probe.**
 
@@ -1777,6 +1787,9 @@ The other parts of the reply:
   `WARNING_STATE_PAGE_ONLY` and `WARNING_COMPOSED_NAME` (§10.14).
 
   `upstream_warnings_replaced` is 0.
+
+  *2.11.0 (HAMCP-523, §10.15):* each warning's closed code is in
+  `metadata.warning_codes`.
 - **Counts.** `ENGINEERING_COUNTS` (`search/reply.py:79`) holds three:
   `fields_withheld`, `fields_dropped_by_policy` and
   `upstream_warnings_replaced`.
@@ -1822,7 +1835,8 @@ The other parts of the reply:
 - **G-h (§6.1, §6.2).** A failed `get_entries` chunk gives a partial
   `source_unavailable` `entity_aliases`, in both modes, never a failed read.
 - **G-i (§3.3).** Area mode lists a registry entity with no state as
-  `unknown` (`search/entities.py:573`).
+  `unknown` (`search/entities.py:573`). *2.11.0:* superseded by
+  HAMCP-522 (§10.15).
 - **G-j (§3.3).** The fuzzy area match is `partial_ratio`
   (`_entities.py:856-860`, native `search/entities.py:406-408`), not a
   whole-string ratio. Area plus a query is always fuzzy at 80.
@@ -1897,7 +1911,8 @@ Changed, with the reason:
   - Automation, script, scene and helper sub-call rows keep only a name
     rescore and graph references, with `match_in_config` false.
   - Rows with no name match are dropped, and the bucket is `not_searched`
-    `body_numeric_query`.
+    `body_numeric_query`. The pages are still read, for the name rescore
+    only (HAMCP-525).
   - A legitimate numeric body match (`10:00`, `75`) is lost.
 - The F1 scrub check: when a one-row helper probe, before or after the scans,
   does not show a clean scrub, every body type in the call is treated the
@@ -1932,7 +1947,8 @@ them. Its parity items:
 - P5, the state filter: `kept()` (`search/entities.py:727`) runs the
   domain, hidden and state filters before scoring and paging in every
   mode. `PAGE_FILTERED_MODES` is empty (`:169`), and
-  `WARNING_STATE_PAGE_ONLY` is removed (§3.4).
+  `WARNING_STATE_PAGE_ONLY` is removed (§3.4). *2.11.0:*
+  `PAGE_FILTERED_MODES` is removed (HAMCP-520, §10.15).
 - P6, the area-filtered query: the same tier scorer as an unfiltered
   query, in place of BM25 at a threshold of 80.
 - P7, device texts: `name_by_user`, `name`, `manufacturer` and `model`. The
@@ -1942,10 +1958,64 @@ them. Its parity items:
 - P8, configuration fuzzy: the internals of `entity_name_score`,
   `config_match_score` and `deep_match_score` become the component
   scorer, with their signatures kept. Configuration names use `name_tier`
-  (`search/scoring.py:190`).
+  (`search/scoring.py:190`). *2.11.0:* the body-code name rescore uses it
+  too (HAMCP-520, §10.15).
 - P9, configuration exact: kept.
 
 The reply's warnings are three (`search/reply.py:111`, §10.10). The golden
 is `docs/evidence/hamcp481/fixtures/component-scoring-golden.json`, and
 the W1 golden fixtures there stay as history (§8 item 4). The review is in
 §10.1.
+
+### 10.15 2.11.0 Lane B1: HAMCP-522, HAMCP-523, HAMCP-525, HAMCP-520
+
+From the Lane B1 pull request into `release/2.11.0` (base `54627e35`).
+Citations here are by name. The line numbers in §10 to §10.14 stay at
+their stated revisions. The Lane B file list and its decisions are Josh's,
+as relayed by the architect (2026-11-27).
+
+- **HAMCP-522: the area modes list states only.** `area_only` and
+  `area_filtered_query` draw their candidates from the state rows, as the
+  component does: `_search_entities` iterates `_iter_states`
+  (`search.py:359-371`), and a state with no registry row has no area
+  (`_registry_enrichment`, `:500`).
+  - A registry entity with no state row is no longer listed, so none is
+    shown as `unknown`.
+  - A state with no registry row is not listed by an area mode.
+  - This supersedes G-i (§3.3, §10.12).
+  - `StateRows` drops its set of malformed ids; the malformed count is
+    unchanged.
+  - The engine mutation script re-anchors `hidden_area_member_listed`,
+    `malformed_row_listed` and `dropped_state_rows_uncounted` to this code
+    (`docs/evidence/hamcp481/engine_mutation_check.py`).
+  - Tests: `StatesOnlyAreaTests` in
+    `tests/test_hamcp501_w6b_component_parity.py`.
+- **HAMCP-523: warning codes.** Each warning keeps its closed text in
+  `data.warnings`. Its closed code is in `metadata.warning_codes`, in the
+  same order, which is the metadata key the delegated route served
+  (`WARNING_CODES` and `warning_codes` in `search/reply.py`).
+  - The codes are `entity_search_skipped`, `config_search_skipped` and
+    `ambiguous_floor_match`.
+  - A successful reply always carries the list, empty when there is no
+    warning. A refusal carries none.
+  - `partial` and `partial_reasons` do not change.
+  - Tests: `tests/test_hamcp501_native_search_cutover.py`.
+- **HAMCP-525: wording only.** Under `body_numeric_query`,
+  `body_scrub_degraded` or `body_scrub_unverified`, the sub-call pages are
+  still read. Their rows keep only the name rescore and graph references
+  (`_name_only`).
+  - `not_searched` there means the bodies were not matched, not that no
+    page was read.
+  - Behavior is unchanged. `docs/SECURITY.md`, `TOOL_AUDIT.md` and §10.6
+    say so, and the tool description is unchanged.
+- **HAMCP-520: dead code removed.**
+  - `PAGE_FILTERED_MODES`, empty since W6b (§10.14 P5), is removed with the
+    unreachable `state_filter_note` branch of `withheld_names`.
+    `state_filter_note` stays a withheld 9.2.0 key (`search/reply.py`).
+  - The body-code name rescore calls `scoring.name_tier`, and the copy in
+    `search/configs.py` (`_route_name_tier`, `ROUTE_FUZZY_THRESHOLD`) is
+    removed. The W6 golden name tiers now run against `scoring.name_tier`.
+  - `GoldenTests.test_b7_the_state_filter_runs_before_paging` still passes.
+  - The W6 body mutation script's threshold mutant now edits
+    `FUZZY_THRESHOLD` in `search/scoring.py`
+    (`docs/evidence/hamcp501/f1/body_match_mutation_check.py`).

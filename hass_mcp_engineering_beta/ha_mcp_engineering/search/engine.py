@@ -17,10 +17,9 @@ there is no fallback to the delegated route and no empty success.
 withholds and the ``fields`` projection keeps: ``by_domain`` when
 ``group_by_domain`` is set and entity search ran; ``area_filter`` in both area
 modes; ``area_names`` in the area-only mode, and ``message`` when that mode
-matched nothing; ``state_filter_note`` in a page-filtered mode with a state
-filter; and the record names the configuration surface withholds. A withheld
-key's own children (the domain keys of ``by_domain``) and ``partial_reason``
-are not counted.
+matched nothing; and the record names the configuration surface withholds.
+A withheld key's own children (the domain keys of ``by_domain``) and
+``partial_reason`` are not counted.
 
 Ported from ha-mcp 9.2.0, commit 51e3aac788482a081807591cd5d58d07dc4e540b:
 
@@ -328,8 +327,6 @@ def withheld_names(call: SearchCall, outcome: entities.EntityOutcome | None) -> 
         names.add("area_names")
         if outcome.surface.total == 0:
             names.add("message")
-    if outcome.search_type in entities.PAGE_FILTERED_MODES and call.state_filter is not None:
-        names.add("state_filter_note")
     return frozenset(names)
 
 
