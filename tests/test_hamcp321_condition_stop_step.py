@@ -175,6 +175,18 @@ class ConditionStopStepTests(unittest.TestCase):
         detail = {"trace": {"condition/0": [FALSE]}}
         self.assertIsNone(self.stop("condition/0", "failed_conditions", detail, error="Synthetic run error"))
 
+    def test_an_error_late_in_a_long_trace_is_still_not_a_stop(self):
+        # Core inserts the stopping step last, after any number of earlier steps.
+        earlier = {f"action/{index}": [{"result": {}}] for index in range(200)}
+        own = {"trace": {**earlier, "condition/late": [{**FALSE, "error": "Synthetic late error"}]}}
+        self.assertIsNone(self.stop("condition/late", "failed_conditions", own))
+        earlier = {f"action/{index}": [{"result": {}}] for index in range(199)}
+        child = {"trace": {**earlier, "condition/0": [FALSE],
+                           "condition/0/conditions/0": [{"error": "Synthetic inner error"}]}}
+        self.assertIsNone(self.stop("condition/0/conditions/0", "failed_conditions", child))
+        clean = {"trace": {**earlier, "condition/0": [FALSE], "condition/0/conditions/0": [TRUE]}}
+        self.assertEqual(self.stop("condition/0/conditions/0", "failed_conditions", clean), "condition/0")
+
     def test_the_live_case_reaches_the_rule_and_the_incident_at_the_stop(self):
         traces = [
             _normalize_trace(summary("action/1", "aborted", run_id=run_id,

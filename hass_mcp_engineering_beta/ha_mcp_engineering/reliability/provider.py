@@ -770,12 +770,13 @@ def _condition_stop_step(summary: dict[str, Any], detail: Any) -> str | None:
     if stopped is None:
         return None
     # An error recorded on the stopping condition, or within it, is an error,
-    # not a clean stop; an earlier step's error is not.
-    for key in list(trace)[:200]:
-        if isinstance(key, str) and (key == stopped or key.startswith(stopped + "/")):
-            entry = _last_entry(trace[key])
-            if isinstance(entry, dict) and entry.get("error") not in (None, "", False):
-                return None
+    # not a clean stop; an earlier step's error is not. Core inserts the
+    # stopping step last, so keys are matched by name, not by position.
+    within = (key for key in trace if isinstance(key, str) and key.startswith(stopped + "/"))
+    for key in (stopped, *within):
+        entry = _last_entry(trace.get(key))
+        if isinstance(entry, dict) and entry.get("error") not in (None, "", False):
+            return None
     return stopped[:160]
 
 
