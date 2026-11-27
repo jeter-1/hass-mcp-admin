@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.4.2-beta.15 - 2.11.0 build, in progress (HAMCP-526)
+
+Builds on 2.4.2-beta.14 (2.10.0 build, HAMCP-500, #522). In progress: items
+land through reviewed pull requests into `release/2.11.0`, and the final
+release pull request completes this entry.
+
+- Version materialized on `release/2.11.0`, created from `main` at 54627e35,
+  so item pull requests carry no version change. The release transition is
+  from 2.4.2-beta.14 to 2.4.2-beta.15.
+- Planned (kickoff approved 2026-11-27): list paging and complete large
+  replies (HAMCP-425, 432, 492, 359), native history slices with paging
+  and concurrency (HAMCP-511, 527, 513, 517), large dashboard read-back and
+  the dashboard rules and write guard (HAMCP-273, 291, 444, 477), the native
+  search follow-ups (HAMCP-522, 523, 525, 520, 447), trace-watch lifecycle
+  (HAMCP-296, 431, 389, 524), correctness fixes (HAMCP-510, 471, 321, 495,
+  512, 514, 515, 518), the lifecycle carry (HAMCP-378, 394, 429, 486, 445)
+  and helper stored settings (HAMCP-519). None has landed yet.
+- New in-progress `V2_4_2_BETA15` release notes and acceptance contract.
+- Rollback: pending; stated by the final release pull request.
+
 ## 2.4.2-beta.14 - 2.10.0 build, in progress (HAMCP-500)
 
 Builds on 2.4.2-beta.13 (2.9.1 build, HAMCP-455, #500). In progress: items
