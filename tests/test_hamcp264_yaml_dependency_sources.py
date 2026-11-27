@@ -60,6 +60,7 @@ from ha_mcp_engineering.providers.upstream_read_gateway import (  # noqa: E402
 import hamcp162_synthetic as syn  # noqa: E402
 from test_hamcp129_platform_reads import ok  # noqa: E402
 from test_hamcp162_yaml_reader import TOOL, payload, yaml_gateway  # noqa: E402
+from support.parent_request import enter_authorized_parent  # noqa: E402  (HAMCP-510)
 from tests.hamcp209_fixtures import read_blueprint  # noqa: E402
 from tests.test_hamcp209_fast_dependency_index import _AnalysisRest  # noqa: E402
 from tests.test_hamcp227_global_sources import (  # noqa: E402
@@ -162,6 +163,12 @@ class Captured(logging.Handler):
 
 class YamlGatewayCase(unittest.IsolatedAsyncioTestCase):
     """A real gateway reader for the dependency_index purpose."""
+
+    def setUp(self):
+        # HAMCP-510: production reads run inside the dependency index build's
+        # own request, which carries Core dispatch authority; the no-parent
+        # refusal has its own tests.
+        self.parent = enter_authorized_parent(self)
 
     async def gateway_reader(self, documents=DOCUMENTS, **gateway_kwargs):
         self.gateway, self.transport = await yaml_gateway(**gateway_kwargs)

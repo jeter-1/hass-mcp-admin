@@ -218,8 +218,15 @@ def parse(raw):
         return result
     def invalid(_):
         raise CaptureError("malformed_response")
+    def finite(value):
+        # HAMCP-471: an exponent overflow such as 1e999 never reaches
+        # parse_constant; the float parser returns infinity.
+        parsed = float(value)
+        if not math.isfinite(parsed):
+            invalid(value)
+        return parsed
     try:
-        return bounded(json.loads(raw, object_pairs_hook=pairs, parse_constant=invalid))
+        return bounded(json.loads(raw, object_pairs_hook=pairs, parse_constant=invalid, parse_float=finite))
     except (ValueError, UnicodeError, RecursionError, OverflowError):
         raise CaptureError("malformed_response") from None
 
