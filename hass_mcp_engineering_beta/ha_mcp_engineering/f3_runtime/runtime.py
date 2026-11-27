@@ -5786,6 +5786,14 @@ class F3RuntimeIntegration:
                     {"source_operation_id": operation.operation_id}
                 )[:12]
                 operation_id = f"rollback_{operation.operation_id[:42]}_{suffix}"
+                proposed_config = deepcopy(operation.current_config)
+                if resource_type == "helper":
+                    # HAMCP-531 (release 2.11.0 Lane C GO, 2026-11-27;
+                    # HAMCP-346 design 5.7 item 1): the captured pre-state is
+                    # Core's list item, which carries the storage ``id`` that
+                    # no helper proposal accepts. Only ``id`` is dropped; every
+                    # other captured field is still validated.
+                    proposed_config.pop("id", None)
                 operations.append(
                     {
                         "operation_id": operation_id,
@@ -5793,7 +5801,7 @@ class F3RuntimeIntegration:
                         "helper_type": helper_type,
                         "action": "update",
                         "target_id": operation.target_id,
-                        "proposed_config": deepcopy(operation.current_config),
+                        "proposed_config": proposed_config,
                         "depends_on": (
                             [operations[-1]["operation_id"]] if operations else []
                         ),
@@ -6454,6 +6462,10 @@ class F3RuntimeIntegration:
                 }
                 if operation.resource_type == "helper":
                     restore["helper_type"] = operation.helper_type
+                    # HAMCP-531: the same captured list item as in
+                    # ``_plan_fresh_rollback``; only its storage ``id`` is
+                    # dropped.
+                    restore["proposed_config"].pop("id", None)
                 restores[restore["operation_id"]] = value
                 order.append(restore)
             excluded_ids = [item["operation_id"] for item in excluded][:8]

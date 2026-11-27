@@ -390,7 +390,8 @@ class ReachabilityTests(unittest.TestCase):
                     importers.append((str(relative), tuple(sorted(hits))))
         # HAMCP-501 W4: the gateway's sub-call page readers take the fixed W3
         # page contract. W6: the application composes CoreReadSession with no
-        # I/O, and the native tool reaches only the engine and SearchError.
+        # I/O, and the native tool reaches only the engine, SearchError and
+        # (HAMCP-523) the closed warning codes.
         # Nothing else outside search imports the package.
         subcalls = "ha_mcp_engineering.search.subcalls"
         self.assertEqual(sorted(importers), [
@@ -409,7 +410,8 @@ class ReachabilityTests(unittest.TestCase):
             ("ha_mcp_engineering/tools/search.py", (
                 "ha_mcp_engineering.search", "ha_mcp_engineering.search.engine")),
             ("ha_mcp_engineering/tools/search.py", (
-                "ha_mcp_engineering.search.reply", "ha_mcp_engineering.search.reply.SearchError")),
+                "ha_mcp_engineering.search.reply", "ha_mcp_engineering.search.reply.SearchError",
+                "ha_mcp_engineering.search.reply.warning_codes")),
         ])
 
 

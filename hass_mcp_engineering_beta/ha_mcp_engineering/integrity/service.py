@@ -40,6 +40,27 @@ from .rules import classify_integrity
 MAX_PAGE_LIMIT = 100
 MAX_ANALYSIS_FINDINGS = 2_000
 DETAIL_RESULT_CAPS = {"summary": 50, "standard": 30, "evidence": 20, "compact": 100}
+# HAMCP-492: a compact page is also bounded to this many characters, when that
+# is below the response limit, so a client can keep a whole page inline.
+COMPACT_PAGE_BUDGET_CHARS = 24_000
+
+
+class _OverCompactPageBudget:
+    """A ``page_fits`` verdict: the page fits the response limit but not the
+    compact page budget. Falsy, so every rejection site treats it as a
+    rejection; ``_snapshot_page`` reports it as ``compact_page_budget``. An
+    internal marker, never a public value."""
+
+    __slots__ = ()
+
+    def __bool__(self) -> bool:
+        return False
+
+    def __repr__(self) -> str:
+        return "OVER_COMPACT_PAGE_BUDGET"
+
+
+OVER_COMPACT_PAGE_BUDGET = _OverCompactPageBudget()
 # HAMCP-473: compact pages carry one short record per finding, no evidence
 # records and no dynamic review items, so a full page fits the response limit.
 COMPACT_DETAIL_LEVEL = "compact"
@@ -679,7 +700,10 @@ class ConfigurationIntegrityAnalysisService:
 
         HAMCP-473: when the requested page does not fit the response limit,
         search for the largest page that does, so a page holds as many
-        findings as the limit allows.
+        findings as the limit allows. HAMCP-492: ``clamp_reason`` names the
+        bound that rejected the smallest failing size: ``compact_page_budget``
+        for the ``OVER_COMPACT_PAGE_BUDGET`` verdict, else
+        ``response_size_limit``.
         """
         effective_limit, clamp_reason = _effective_limit(
             limit, snapshot.detail_level
@@ -754,16 +778,23 @@ class ConfigurationIntegrityAnalysisService:
                 partial=partial,
             )
 
-            if page_fits is None or fails_at is None and page_fits(output):
+            # One probe per size; its verdict says which bound rejected it.
+            verdict = True if page_fits is None else page_fits(output)
+            if verdict and fails_at is None:
                 # The full final page has been serialized successfully. Do not
                 # retire a snapshot merely because an attempted page was final.
                 if not has_more:
                     self.pagination_snapshots.remove(snapshot_id)
                 return output
-            if fails_at is not None and page_fits(output):
+            if verdict:
                 fits_below = (len(page), output)
             else:
                 fails_at = len(page)
+                failed_reason = (
+                    "compact_page_budget"
+                    if verdict is OVER_COMPACT_PAGE_BUDGET
+                    else "response_size_limit"
+                )
             low = fits_below[0] if fits_below else 0
             if fails_at - low <= 1:
                 if fits_below is None:
@@ -780,7 +811,7 @@ class ConfigurationIntegrityAnalysisService:
                 # rendering is this page. A smaller page always has more.
                 return fits_below[1]
             effective_limit = (low + fails_at) // 2
-            clamp_reason = "response_size_limit"
+            clamp_reason = failed_reason
 
     def _encode_cursor(self, **values) -> str:
         payload = json.dumps(

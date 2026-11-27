@@ -71,8 +71,9 @@ class ListFirstPageTests(unittest.TestCase):
         completeness = self.assert_first_page(
             result, result["data"]["automations"], source, "/data/automations")
         self.assertNotIn("total_count", completeness)
-        # Siblings, metadata and attribution are kept unchanged.
-        self.assertEqual(result["data"]["count"], 2000)
+        # HAMCP-432: a count equal to the rows received becomes the rows kept.
+        self.assertEqual(result["data"]["count"], completeness["returned_count"])
+        # Other siblings, metadata and attribution are kept unchanged.
         self.assertEqual(result["data"]["filter"], "all")
         self.assertEqual(result["metadata"], value["metadata"])
         self.assertEqual(result["operation"], value["operation"])

@@ -48,7 +48,7 @@ from ha_mcp_engineering.providers import upstream_reads_9_2 as reads_9_2  # noqa
 from ha_mcp_engineering.providers import upstream_yaml_reader as yaml_reader  # noqa: E402
 from ha_mcp_engineering.request_context import begin_request, current_telemetry, end_request  # noqa: E402
 from ha_mcp_engineering.routing import AuthenticatedMcpGateway  # noqa: E402
-from ha_mcp_engineering.search import core_contracts as c, scoring  # noqa: E402
+from ha_mcp_engineering.search import core_contracts as c, reply as reply_module, scoring  # noqa: E402
 from ha_mcp_engineering.tools import search as search_module  # noqa: E402
 from ha_mcp_engineering.upstream_tool_policy import schema_fingerprint  # noqa: E402
 
@@ -110,6 +110,9 @@ class NativeBase(w4.Readers):
         self.metadata = result["metadata"]
         self.check_metadata(self.metadata)
         self.assertEqual(self.metadata["completeness"], "partial" if data["partial"] else "complete")
+        # HAMCP-523: every reply names its warnings' closed codes, in order.
+        self.assertEqual(self.metadata["warning_codes"],
+                         [reply_module.WARNING_CODES[text] for text in data.get("warnings", [])])
         self.assertNotIn("visibility_filter_active", json.dumps(result))
         return data
 
@@ -202,6 +205,27 @@ class NativeTests(NativeBase):
                          {("source_unavailable", "helper", "subcall_not_admitted"): None})
         self.assertEqual([row["url_path"] for row in data["dashboards"]], ["synthetic-board"])
         self.assertEqual(self.transport.calls, 0)
+
+    async def test_each_warning_carries_its_closed_code(self):
+        # HAMCP-523: the texts stay in data.warnings; the codes are in
+        # metadata.warning_codes, and partial does not change.
+        self.serve("helper", [w4.reply_of(w4.body("helper", [w4.flow(0)]))])
+        data = await self.ok(query="kitchen", search_types=["helper"])
+        self.assertEqual(data["warnings"], [reply_module.WARNING_ENTITY_SKIPPED])
+        self.assertEqual(self.metadata["warning_codes"], ["entity_search_skipped"])
+        self.assertEqual((data["partial"], data["partial_reasons"]), (False, []))
+        data = await self.ok(query="kitchen", domain_filter="light")
+        self.assertEqual(data["warnings"], [reply_module.WARNING_CONFIG_SKIPPED])
+        self.assertEqual(self.metadata["warning_codes"], ["config_search_skipped"])
+        self.assertEqual((data["partial"], data["partial_reasons"]), (False, []))
+        # Both searches run: no warning, and an empty list of codes.
+        data = await self.ok(query="kitchen")
+        self.assertNotIn("warnings", data)
+        self.assertEqual(self.metadata["warning_codes"], [])
+
+    async def test_a_refusal_carries_no_warning_codes(self):
+        result = await self.refused_call(ErrorCode.VALIDATION_FAILURE, query="kitchen", limit=0)
+        self.assertNotIn("warning_codes", result["metadata"])
 
     async def test_an_unconfigured_runtime_refuses_before_any_read(self):
         with patch.multiple(search_module.SEARCH, session_factory=None, reader_factory=None):
@@ -567,6 +591,7 @@ class RoutedTests(NativeBase):
         self.assertIs(result["success"], True, result)
         self.assertIs(result["data"]["partial"], False)
         self.assertEqual(result["metadata"]["completeness"], "complete")
+        self.assertEqual(result["metadata"]["warning_codes"], ["entity_search_skipped"])
         self.assertEqual((record["result_status"], record.get("error_code")), ("success", None))
 
     async def test_a_partial_reply_is_audited_partial(self):
@@ -779,6 +804,18 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(schema_fingerprint(upstream), reads_9_2.SEARCH_PUBLIC_SCHEMA_FINGERPRINT)
         self.assertEqual(reads_9_2.SEARCH_PUBLIC_SCHEMA_FINGERPRINT,
                          "c6bd01c71eea48b7fbe75c8d86f762b2336ab685e99b3e16acd91bed73e3d5bf")
+
+    def test_the_warning_codes_are_closed_and_one_per_text(self):
+        codes = reply_module.WARNING_CODES
+        self.assertEqual(tuple(codes), reply_module.WARNINGS)
+        self.assertEqual(len(set(codes.values())), len(codes))
+        for code in codes.values():
+            self.assertRegex(code, r"^[a-z]+(_[a-z]+)*$")
+        self.assertEqual(reply_module.warning_codes({"warnings": [reply_module.WARNING_AMBIGUOUS_FLOOR]}),
+                         ["ambiguous_floor_match"])
+        self.assertEqual(reply_module.warning_codes({}), [])
+        with self.assertRaises(KeyError):
+            reply_module.warning_codes({"warnings": ["synthetic unlisted text"]})
 
     def test_the_registered_tool_is_the_native_contract(self):
         tool = search_module.registered_tool()

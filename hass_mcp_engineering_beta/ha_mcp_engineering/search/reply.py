@@ -109,6 +109,20 @@ WARNING_AMBIGUOUS_FLOOR = (
     "pass an exact floor or area name or ID."
 )
 WARNINGS = (WARNING_ENTITY_SKIPPED, WARNING_CONFIG_SKIPPED, WARNING_AMBIGUOUS_FLOOR)
+# HAMCP-523: each warning's closed code, served as ``metadata.warning_codes``
+# (the key the delegated route served). The text stays in ``warnings``.
+WARNING_CODES = {
+    WARNING_ENTITY_SKIPPED: "entity_search_skipped",
+    WARNING_CONFIG_SKIPPED: "config_search_skipped",
+    WARNING_AMBIGUOUS_FLOOR: "ambiguous_floor_match",
+}
+
+
+def warning_codes(reply: Mapping) -> list[str]:
+    """The closed codes of an assembled reply's warnings, in order."""
+
+    return [WARNING_CODES[text] for text in reply.get("warnings", ())]
+
 
 # Closed ``partial_reasons`` vocabulary (design section 6.1).
 REASON_ORDER = ("paged", "truncated", "filtered", "not_searched", "source_unavailable")
