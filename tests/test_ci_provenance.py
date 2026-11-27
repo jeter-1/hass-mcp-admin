@@ -54,6 +54,8 @@ def fixture(base="b" * 40, head="4deb1d30edc7ccb8ced7c8438930ca1310c3775b"):
 
 
 POLICY_CHECKS = ("policy-workflow-lint", "policy-secret-scan")
+# Dispatch extras as (check id, check suite id, run id); the PR check is 77/88/99.
+EXTRAS = ((76, 89, 98), (75, 87, 97), (74, 86, 96))
 
 
 def policy_fixture(base="b" * 40, head="4deb1d30edc7ccb8ced7c8438930ca1310c3775b",
@@ -374,33 +376,56 @@ class DispatchValidateExtraTests(unittest.TestCase):
         return self.data[f"{self.prefix}/commits/{self.head}/check-runs"
                          "?check_name=validate&filter=latest&per_page=100"]
 
-    def extra_check(self):
-        return next(check for check in self.checks["check_runs"] if check["id"] == 76)
+    def extra_check(self, check_id=76):
+        return next(check for check in self.checks["check_runs"] if check["id"] == check_id)
 
-    def extra_run(self):
-        return self.data[self.runs_route(89, "workflow_dispatch")]["workflow_runs"][0]
+    def extra_run(self, suite=89):
+        return self.data[self.runs_route(suite, "workflow_dispatch")]["workflow_runs"][0]
 
-    def extra_jobs(self):
-        return self.data[f"{self.prefix}/actions/runs/98/attempts/1/jobs?per_page=100"]
+    def extra_jobs(self, run_id=98):
+        return self.data[f"{self.prefix}/actions/runs/{run_id}/attempts/1/jobs?per_page=100"]
 
-    def add_dispatch(self, first=False):
-        check = deepcopy(self.checks["check_runs"][0])
-        check.update(id=76, check_suite={"id": 89}, pull_requests=[])
+    def add_dispatch(self, first=False, extra=EXTRAS[0]):
+        check_id, suite, run_id = extra
+        check = deepcopy(self.extra_check(77))
+        check.update(id=check_id, check_suite={"id": suite}, pull_requests=[])
         if first:
             self.checks["check_runs"].insert(0, check)
         else:
             self.checks["check_runs"].append(check)
         self.checks["total_count"] = len(self.checks["check_runs"])
         run = deepcopy(self.data[f"{self.prefix}/actions/runs/99"])
-        run.update(id=98, check_suite_id=89, event="workflow_dispatch", pull_requests=[])
-        self.set_runs(89, "pull_request", [])
-        self.set_runs(89, "workflow_dispatch", [run])
-        job = {"id": 76, "name": "validate", "run_id": 98, "run_attempt": 1,
+        run.update(id=run_id, check_suite_id=suite, event="workflow_dispatch", pull_requests=[])
+        self.set_runs(suite, "pull_request", [])
+        self.set_runs(suite, "workflow_dispatch", [run])
+        job = {"id": check_id, "name": "validate", "run_id": run_id, "run_attempt": 1,
                "head_sha": self.head, "status": "completed", "conclusion": "success",
-               "check_run_url": f"https://api.github.com/{self.prefix}/check-runs/76"}
-        self.data[f"{self.prefix}/actions/runs/98/attempts/1/jobs?per_page=100"] = {
+               "check_run_url": f"https://api.github.com/{self.prefix}/check-runs/{check_id}"}
+        self.data[f"{self.prefix}/actions/runs/{run_id}/attempts/1/jobs?per_page=100"] = {
             "total_count": 1, "jobs": [job]}
-        self.data[f"{self.prefix}/actions/runs/98"] = deepcopy(run)
+        self.data[f"{self.prefix}/actions/runs/{run_id}"] = deepcopy(run)
+
+    def add_extras(self, count, pr_index=0):
+        """The PR check and ``count`` dispatch extras, the PR check at ``pr_index``."""
+
+        self.data = fixture()
+        self.calls = []
+        for extra in EXTRAS[:count]:
+            self.add_dispatch(extra=extra)
+        listed = self.checks["check_runs"]
+        listed.insert(pr_index, listed.pop(0))
+
+    def receipt(self, extra):
+        check_id, suite, run_id = extra
+        return {"run_id": run_id, "run_attempt": 1, "job_id": check_id,
+                "check_run_id": check_id, "check_suite_id": suite}
+
+    def layouts(self):
+        """Two and three extras, with the PR check at every position."""
+
+        for count in (2, 3):
+            for pr_index in range(count + 1):
+                yield count, pr_index
 
     def reset(self, first=False):
         self.data = fixture()
@@ -545,6 +570,105 @@ class DispatchValidateExtraTests(unittest.TestCase):
             return data
         with self.assertRaisesRegex(validator.Refusal, "validate_check_changed"):
             validator.verify(164, "b" * 40, self.head, api)
+
+    # Codex r1 R1: every check past the first two must also be verified.
+
+    def test_two_or_three_successful_extras_list_every_receipt_in_any_order(self):
+        for count, pr_index in self.layouts():
+            with self.subTest(count=count, pr_index=pr_index):
+                self.add_extras(count, pr_index)
+                result = self.verify()
+                self.assertEqual(result["status"], "success")
+                self.assertEqual((result["run_id"], result["check_run_id"],
+                                  result["check_suite_id"]), (99, 77, 88))
+                self.assertEqual(result["dispatch_runs"],
+                                 [self.receipt(extra) for extra in EXTRAS[:count]])
+        # The receipts follow the listing order, whatever it is.
+        self.add_extras(3)
+        self.checks["check_runs"].reverse()
+        self.assertEqual(self.verify()["dispatch_runs"],
+                         [self.receipt(extra) for extra in reversed(EXTRAS)])
+
+    def test_any_pending_extra_among_several_waits(self):
+        for count, pr_index in self.layouts():
+            for check_id, suite, run_id in EXTRAS[:count]:
+                with self.subTest(count=count, pr_index=pr_index, extra=check_id, target="check"):
+                    self.add_extras(count, pr_index)
+                    self.extra_check(check_id).update(status="in_progress", conclusion=None)
+                    self.assertEqual(self.verify(), {"status": "pending"})
+                with self.subTest(count=count, pr_index=pr_index, extra=check_id, target="run"):
+                    self.add_extras(count, pr_index)
+                    for run in (self.extra_run(suite), self.data[f"{self.prefix}/actions/runs/{run_id}"]):
+                        run.update(status="in_progress", conclusion=None)
+                    self.assertEqual(self.verify()["status"], "pending")
+
+    def test_any_failed_extra_among_several_refuses(self):
+        for count, pr_index in self.layouts():
+            for check_id, suite, run_id in EXTRAS[:count]:
+                for target in ("check", "run", "job", "reread"):
+                    with self.subTest(count=count, pr_index=pr_index, extra=check_id, target=target):
+                        self.add_extras(count, pr_index)
+                        obj = {"check": lambda: self.extra_check(check_id),
+                               "run": lambda: self.extra_run(suite),
+                               "job": lambda: self.extra_jobs(run_id)["jobs"][0],
+                               "reread": lambda: self.data[f"{self.prefix}/actions/runs/{run_id}"],
+                               }[target]()
+                        obj["conclusion"] = "failure"
+                        with self.assertRaisesRegex(validator.Refusal, "unsuccessful_ci"):
+                            self.verify()
+
+    def test_a_wrong_event_among_several_extras_refuses(self):
+        for count, pr_index in self.layouts():
+            for check_id, suite, run_id in EXTRAS[:count]:
+                label = dict(count=count, pr_index=pr_index, extra=check_id)
+                with self.subTest(**label, change="no ci.yml run"):
+                    self.add_extras(count, pr_index)
+                    self.set_runs(suite, "workflow_dispatch", [])
+                    with self.assertRaisesRegex(validator.Refusal, "missing_or_ambiguous_ci_run"):
+                        self.verify()
+                with self.subTest(**label, change="push"):
+                    self.add_extras(count, pr_index)
+                    self.extra_run(suite)["event"] = "push"
+                    with self.assertRaisesRegex(validator.Refusal, "wrong_ci_run"):
+                        self.verify()
+                with self.subTest(**label, change="second pull_request check"):
+                    self.add_extras(count, pr_index)
+                    run = deepcopy(self.data[f"{self.prefix}/actions/runs/99"])
+                    run.update(id=run_id, check_suite_id=suite)
+                    self.set_runs(suite, "workflow_dispatch", [])
+                    self.set_runs(suite, "pull_request", [run])
+                    with self.assertRaisesRegex(validator.Refusal, "ambiguous_validate_check"):
+                        self.verify()
+
+    def test_pull_request_binding_is_checked_wherever_the_pr_check_is_listed(self):
+        for count, pr_index in self.layouts():
+            with self.subTest(count=count, pr_index=pr_index):
+                self.add_extras(count, pr_index)
+                self.extra_check(77)["pull_requests"][0]["head"]["sha"] = "c" * 40
+                with self.assertRaisesRegex(validator.Refusal, "_pr_binding"):
+                    self.verify()
+
+    def test_any_check_changed_or_rerun_during_verification_refuses(self):
+        commits = f"{self.prefix}/commits/"
+        for count, pr_index in self.layouts():
+            for position in range(count + 1):
+                with self.subTest(count=count, pr_index=pr_index, position=position):
+                    self.add_extras(count, pr_index)
+
+                    def api(route, position=position):
+                        data = self.api(route)
+                        if route.startswith(commits) and len(self.calls) > 1:
+                            data["check_runs"][position]["conclusion"] = "failure"
+                        return data
+
+                    with self.assertRaisesRegex(validator.Refusal, "validate_check_changed"):
+                        validator.verify(164, "b" * 40, self.head, api)
+            for check_id, _, run_id in EXTRAS[:count]:
+                with self.subTest(count=count, pr_index=pr_index, rerun=check_id):
+                    self.add_extras(count, pr_index)
+                    self.data[f"{self.prefix}/actions/runs/{run_id}"]["run_attempt"] = 2
+                    with self.assertRaisesRegex(validator.Refusal, "ci_run_changed"):
+                        self.verify()
 
 
 class PolicyCheckProvenanceTests(unittest.TestCase):
