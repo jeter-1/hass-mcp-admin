@@ -1746,7 +1746,7 @@ class AuthenticatedMcpGateway:
                         "limit": checked["limit"] if checked else None,
                         "end_defaulted": bool(checked and checked["end_defaulted"]),
                         "cursor_present": bool(checked and checked["cursor"] is not None),
-                        "provider": "engineering", "data_providers": ["upstream_read_gateway"],
+                        "provider": "engineering", "data_providers": ["direct_ha_api"],
                         "fallback": "none",
                     }
                     resource_ids = {}
