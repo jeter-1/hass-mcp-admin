@@ -97,7 +97,7 @@ publication:
 - **Tests that pin it:**
   - the exact trigger map in `tests/test_review_automation.py` (around line 125);
   - `tests/test_publication_handoff.py`, `tests/test_publication_eligibility.py`, `tests/test_publication_ci_event_context.py` and `tests/test_publication_validation_reuse.py`.
-- **Not coupled:** `ci.yml` (`validate`) runs on `pull_request` and is unaffected. `scripts/validate_ci_provenance.py` requires CI runs with `event == pull_request`, not the merge trigger.
+- **Not coupled:** `ci.yml` (`validate`) runs on `pull_request` and is unaffected. `scripts/validate_ci_provenance.py` requires one CI run with `event == pull_request`, not the merge trigger; since HAMCP-521 it also accepts, and requires to pass, extra full-tier `workflow_dispatch` runs of `ci.yml` on the same head.
 
 ## 2. GitHub's change (official sources)
 
