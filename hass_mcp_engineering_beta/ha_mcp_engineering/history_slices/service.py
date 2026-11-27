@@ -260,11 +260,13 @@ class HistorySliceService:
         if caller == "anonymous":
             raise c.HistorySlicesError("history_route_unavailable")
         reader = self.reader_factory() if self.reader_factory else None
-        if reader is None or reader.version not in c.REVIEWED_VERSIONS or not reader.current():
+        # ready() commits no Core authority: the lease is first committed
+        # after the read slots are held, immediately before the first Core
+        # request (routing.py commits it on the first authorizer call).
+        if reader is None or reader.version not in c.REVIEWED_VERSIONS or not reader.ready():
             raise c.HistorySlicesError("history_route_unavailable")
         async with self.slots.hold(caller):
-            # The same lease check again: a lease lost while waiting refuses
-            # before any Core request.
+            # A lease lost while waiting refuses before any Core request.
             if not reader.current():
                 raise c.HistorySlicesError("history_route_unavailable")
             return await self._read(args, reader)
