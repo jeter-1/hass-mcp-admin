@@ -11,7 +11,8 @@ in §7.
 | Base | Researched at `release/2.11.0` `54627e35dcfd8e972d468aec8745fd918db53ad3` (= `main` after #522), Engineering `2.4.2-beta.14`. The branch then merged `ea2dc63b0a7119862678b341a7f33daab21cd8a5` (#524, `2.4.2-beta.15`); under `E/` that merge changes only `version.py`, so every cite below still holds. |
 | Register | HAMCP-346 (HA admin E034); shares the write mechanism with HAMCP-328 (helper create, after 3.0) |
 | Signed registry | `upstream-trust/ha-core-release-registry.json`, tip **sequence 19** (expires 2027-02-23): 2026.10.0 (22 capabilities), 2026.10.1 (26), 2026.10.3 (31), 2026.11.0 (38), 2026.11.3 (38) |
-| Core source | Raw files from the GitHub tag `2026.11.3`, read in a scratch copy outside the repository. These are **not** the signed source archive. A build re-derives every Core fact below from the signed `2026.11.3` archive before it relies on it |
+| Core source | Raw files from the GitHub tag `2026.11.3`, read in a scratch copy outside the repository, plus `components/websocket_api/connection.py` at the same tag (sha256 `abe7fc8e7fabc9a552bfb5b6df36117b42d0aa75b948064c1a384e42c608368c`) for the dispatch fact in §2.1. These are **not** the signed source archive. A build re-derives every Core fact below from the signed `2026.11.3` archive before it relies on it |
+| Review | Cursor r1 (`cursor-hass-mcp-admin-526-r1`) findings R1, R2, R4–R7 are corrected below. R3 is corrected in part: §2.1 explains why the WebSocket path still fills schedule defaults, and adopts R3's load fixed-point requirement |
 | Paths | Core paths are relative to `homeassistant/` at tag 2026.11.3. `E/` = `hass_mcp_engineering_beta/ha_mcp_engineering/` |
 | Examples | Every entity id, name and value in this document is synthetic |
 
@@ -94,9 +95,18 @@ prove offline in the build).
   the reload-key map names `reload:input_boolean` and `reload:input_number`
   (`locks.py:212-213`); `_DEPENDENCY_HELPER_DOMAINS = {input_boolean,
   input_select}` (`locks.py:31`).
-- **Other closed sets.** `E/f3_configuration/migration.py:40-55` lists the
-  migratable resource types; `_P4_TARGET_TYPES = {scene_configuration,
-  input_boolean, input_number}` (`E/f3_runtime/dispatch_facts.py:155`).
+- **Other closed sets.** Four sets name today's helper types:
+  - the F3 configuration adapter map, built only for `automation`,
+    `script`, `input_boolean` and `input_number`
+    (`E/f3_runtime/runtime.py:2085-2091`);
+  - the F3 route-admission target-type allowlist
+    (`E/f3_runtime/registry.py:709-716`), which raises "F3 route admission
+    binding is invalid" for any other type;
+  - the F3 proposal allowlist (`E/f3_configuration/migration.py:44-56`,
+    "configuration resource type is not reviewed");
+  - the created-object delete rejection set `_P4_TARGET_TYPES =
+    {scene_configuration, input_boolean, input_number}`
+    (`E/f3_runtime/dispatch_facts.py:155`).
 - **Readback.** `normalize_resource_config` (`resources.py:339-351`) drops
   `id` and coerces `input_number` numerics to float; verification compares
   normalized forms (`compare_resource_verification`).
@@ -108,28 +118,60 @@ prove offline in the build).
   fingerprint no longer equals its verified resulting fingerprint. Planning
   runs under `ROLLBACK_PLANNING_REQUIREMENTS = ("core.dependency_helper_planning",)`
   (`runtime.py:930`). The reverse plan is a new plan with its own approval.
+- **Today's helper undo is refused at planning.** Helper `current_config`
+  is the raw `{type}/list` item, `id` included (`resources.py:765-792`,
+  stored at `service.py:7942`). The reverse operation copies it unchanged
+  (`runtime.py:5796`). The plan builder validates the raw `proposed_config`
+  (`service.py:7576`, `:7681`), and no step between them removes `id`.
+  `validate_resource` refuses it: `input_boolean config contains unsupported
+  fields: id`, and the same for `input_number`. This design checked it by
+  calling `validate_resource` offline and by reading source. No existing
+  test exercises a helper undo. This is a defect in today's
+  `input_boolean`/`input_number` undo, outside 346's new types; §5.7 fixes it
+  first.
 
 ## 2. Core authority (2026.11.3)
 
 ### 2.1 An update replaces the whole stored item, defaults included
 
 - The WebSocket update command's schema is the type's storage fields **with
-  their defaults** plus the item id (`helpers/collection.py:634-644`).
-  `ws_update_item` (`:737`) removes the message envelope keys and calls
-  `async_update_item(item_id, data)` (`:328-353`), which calls the type's
-  `_update_data(current, updates)` (`:338`) and stores the result.
-- Every helper type's `_update_data` returns `{id: item[id]} |
-  validated_update`: input_boolean (`components/input_boolean/__init__.py:84-87`),
-  input_select (`input_select/__init__.py:216-221`), input_text
+  their defaults** plus the item id (`helpers/collection.py:634-644`). The
+  WebSocket dispatcher passes the handler the **schema output**, not the raw
+  message: `handler(self.hass, self, schema(msg))`
+  (`components/websocket_api/connection.py:325`). So defaults are already
+  filled, and each field is already in its validated form, before
+  `ws_update_item` (`helpers/collection.py:737`) removes the envelope keys
+  and calls `async_update_item(item_id, data)` (`:328-353`). That calls the
+  type's `_update_data(current, updates)` (`:338`) and stores the result.
+- Every helper type's `_update_data` except schedule's returns
+  `{id: item[id]} | validated_update`, validating the update a second time:
+  input_boolean (`components/input_boolean/__init__.py:84-87`), input_select
+  (`input_select/__init__.py:216-221`), input_text
   (`input_text/__init__.py:186-191`), input_number
   (`input_number/__init__.py:226-229`), input_datetime
   (`input_datetime/__init__.py:157-160`), input_button
   (`input_button/__init__.py:77-80`), timer (`timer/__init__.py:157-163`,
-  which also reformats `duration`), counter (`counter/__init__.py:160-163`),
-  schedule (`schedule/__init__.py:122-125`).
+  which also reformats `duration`) and counter
+  (`counter/__init__.py:160-163`).
+- **Schedule is different** (`schedule/__init__.py:122-125`). Its
+  `_update_data` calls `self.SCHEMA(update_data)`, discards the return, and
+  stores `{id} | update_data`. Create does the same (`:109-112`). Over the
+  WebSocket this still stores defaulted, serialized day lists, because
+  `update_data` is already the output of the WebSocket schema
+  (`BASE_SCHEMA | STORAGE_SCHEDULE_SCHEMA`, registered at
+  `schedule/__init__.py:86-92`; `schedule/schema.py:85-108`). That schema fills each omitted
+  day with `[]`, sorts by `from`, writes `from` as a string, and writes a
+  `to` of midnight as `24:00:00`. A caller of `async_update_item` that skips
+  the WebSocket schema would store the raw dict, which Engineering never
+  does. Load runs `STORAGE_SCHEMA` on every stored item
+  (`schedule/__init__.py:128-132`, `schema.py:110`), so an item that is not a fixed point of
+  that schema changes shape at the next restart. Increment 2's canonical
+  form must therefore be a fixed point of the WebSocket update schema and of
+  `STORAGE_SCHEMA` (§4, §8).
 - **Consequence 1 (defaults).** A field the proposal omits that has a Core
   default is **reset to that default**, not kept. Omitting a timer's
-  `restore` stores `restore: false`.
+  `restore` stores `restore: false`. For schedule, an omitted day becomes
+  `[]` (through the WebSocket schema, above).
 - **Consequence 2 (clearing).** A field the proposal omits that has **no**
   default is **removed**. This is the only way to clear a stored `initial`,
   `icon`, `pattern` or `unit_of_measurement`. Today's `input_boolean` path
@@ -191,7 +233,7 @@ consequences to disclose in the plan, not refusals.
 | input_button | Name and icon only (`input_button/entity.py:72-75`) |
 | counter | The state is clamped into the new `minimum`/`maximum`, which can write a new state (`counter/entity.py:93-100`, `:157-161`) |
 | schedule | The schedule is recomputed at once, so the on/off state can change immediately (`schedule/entity.py:76-82`) |
-| input_number (existing) | The value is clamped into the new range (`input_number/entity.py:124-135`) |
+| input_number (existing) | The value is clamped into the new range (`input_number/entity.py:124-135`). When the helper has a registry entry, Core also calls `async_registry_entry_updated()`, which drops a registry display unit that no longer fits the device class or native unit (`input_number/entity.py:127-129`); this matters if J-6 adds `device_class` |
 
 A state change caused this way fires `state_changed` and can trigger
 automations. The plan's consequence section names it (§5.8).
@@ -225,11 +267,38 @@ Engineering accepts only the form Core stores, so readback compares exactly.
 | input_datetime | `name`, `has_date`, `has_time` | `initial`, `icon` | at least one of `has_date`/`has_time`; `initial` must match the stored form for the chosen flags (`YYYY-MM-DD`, `HH:MM:SS` or `YYYY-MM-DD HH:MM:SS`), because Core does not check it for storage |
 | input_button | `name` | `icon` | — |
 | counter | `name`, `initial`, `minimum`, `maximum`, `restore`, `step` | `icon` | ints (no bools), `minimum`/`maximum` int or `null`; `minimum <= initial <= maximum` when bounded; `step >= 1` |
-| schedule | `name`, all seven days | `icon` | the canonical stored form only: each day a list sorted by `from`, `HH:MM:SS` strings, `to` may be `24:00:00`, no overlaps, `from < to`; `data`, when present, is a bounded flat map of the scalar types Core accepts; bounded ranges per day |
+| schedule | `name`, all seven days | `icon` | the canonical stored form only: each day a list sorted by `from`, `HH:MM:SS` strings, `to` may be `24:00:00`, no overlaps, `from < to`; `data`, when present, is a bounded flat map of the scalar types Core accepts; bounded ranges per day. The canonical form is accepted only if it is a fixed point of the WebSocket update schema and of `STORAGE_SCHEMA` (§2.1) |
 
 All types keep the existing `name` and `icon` checks
 (`_validate_required_name`, `_validate_optional_icon`) and the existing
 persistence-safety checks on plan content.
+
+**Stored values Core accepts that these rules reject.** Several rules above
+are stricter than what Core stores:
+
+| Rule | What Core stores anyway |
+|---|---|
+| `input_datetime.initial` format | any string: storage never calls `valid_initial` (§2.2) |
+| `input_text.pattern` compiles | any string (`cv.string`) |
+| `input_select` options non-empty | `""` (`[cv.string]`) |
+| timer `name` non-empty and at most 255 (shared name check) | any string (`cv.string`) |
+| other types' `name` at most 255 | any non-empty string |
+| counter `minimum <= initial <= maximum` | any ints (no storage check) |
+
+Without a rule for these, an icon-only edit or an undo of such a helper
+would be refused, including the E034 timer case.
+
+**Rule (unchanged-field carry-over).** A stricter-than-Core rule is waived
+for a field whose proposed value equals the current stored value exactly
+(same JSON type and value, with `bool` distinct from `int`). The current value
+is the one read at plan time and bound into the plan's current-state
+fingerprint. A cross-field rule is waived only when every field it reads is
+carried unchanged. Core's own rule, as Engineering mirrors it, still
+applies to every field. A carried value that fails a stricter rule is
+listed in the plan's disclosure as "kept as stored; outside Engineering's
+rule for new values". A changed value that fails a stricter rule is
+refused, with the field and the rule named. This keeps readback exact,
+because Core stores each of these fields as given.
 
 ### 4.1 input_number `device_class` gap (existing type)
 
@@ -261,9 +330,34 @@ resend it. **Proposal:**
   copies the exact current value into the persisted proposal, so the approval
   hash and readback bind it like any other field. The field must exist in the
   current item, or the plan is refused.
-- Plan, approval and receipt views render `input_text.initial` as presence and
-  length only. The exact value stays inside the persisted proposal.
-- The existing persistence-safety checks still refuse known sensitive values.
+- **Conflict.** An operation whose `proposed_config` contains `initial` and
+  whose `keep_current_fields` contains `initial` is refused before any read,
+  with a stable reason (for example `keep_current_field_conflict`). The
+  approval hash binds exactly one copy, and a presence-and-length view could
+  not show which one won.
+- **Where the value would otherwise reach the client.** Contract-v2 public
+  plans already drop raw `proposed_config` and `current_config`
+  (`E/governance/service.py:3452-3468`). Two derived structures still carry
+  values:
+  - `structured_resource_diff` (`E/governance/resources.py:588`) writes
+    `changed_fields` with `_summary` of each changed value into
+    `dry_run_results`. `_summary` keeps the first 160 characters of a string
+    (`resources.py:1748-1749`). The approval page renders `changed_fields`
+    (`E/approval_web.py:2167`).
+  - The semantic projection stores before and after leaf snapshots
+    (`E/governance/semantic_projection.py:225-247`), and the approval page
+    renders it (`approval_web.py:1822`).
+  For `input_text.initial`, both structures carry presence and length only,
+  as before and after, whether the field changed or not. The same applies to
+  any receipt or audit record that copies either structure, to undo plans
+  (the reverse proposal carries the captured `initial`), and to every
+  `input_text` mode. `unchanged_fields` keeps listing the field name only.
+  The exact value stays only in the persisted proposal and current
+  configuration, which the approval hash and readback use.
+- The existing persistence-safety checks (`persistence_safety_errors`) still
+  refuse known secrets and webhook-shaped data. They do not treat
+  `input_text.initial` as sensitive. The display rule above is what keeps it
+  off client-visible surfaces.
 
 This adds a second public-schema field (§9 J-5).
 
@@ -314,7 +408,44 @@ family ("Never governed_configuration_operation", `routes.py:1163-1183`).
 
 It is listed in `F3_ENTRY_ADMISSION_PROFILES` and refuses
 `pending_signed_registry_admission` until an owner-signed registry sequence
-names it for the running Core version. HAMCP-328 helper creates would reuse
+names it for the running Core version.
+
+**Admission at plan time, not only at apply.** `F3_ENTRY_ADMISSION_PROFILES`
+guards an initial **apply** (`_refuse_unadmitted_entry`,
+`E/ha_core_readmission/routes.py:1201-1204`). Planning reads the helper
+earlier (`_read_configuration_resource`, `E/governance/service.py:7752`) and
+persists what it read, and for `input_text` that includes `initial`. The
+build therefore adds a plan-time check:
+
+- `_require_dormant_profile_admission` (`service.py:6252`) already runs
+  first in `_create_configuration_plan` (`service.py:7148`), before
+  validation, before any read and before anything is stored. The build
+  extends it to treat a raw operation with `resource_type: "helper"` and a
+  `helper_type` among the seven new types as needing the new profile.
+- It calls a new `_storage_helper_configuration_core()`, beside
+  `_scene_configuration_core()` (`service.py:6678-6705`) and with the same
+  refusal shape: `PROVIDER_UNAVAILABLE`, `reason` and `reason_code`
+  `pending_signed_registry_admission`, `core_capability` naming the profile,
+  `plan_created: false`, `provider_dispatch_occurred: false`.
+- Rollback planning of a new type runs the same check before its read in
+  `_plan_fresh_rollback` (`E/f3_runtime/runtime.py:5778`).
+
+**A Core lease for every persistence.** Once the profile is admitted, the
+builder's existing invariant still refuses a dormant-profile plan saved
+without `_before_persist` (`service.py:7157-7159`). The public
+`create_configuration_plan` (`service.py:5914-5927`) passes none. The build
+adds a branch that plans a new-type helper update inside an exact-target
+Core planning lease for the new profile. It follows scene planning:
+`_scene_configuration_planning_lease` (`service.py:6753-6772`, over
+`_rollback_planning_lease`), `async with lease`, and
+`_before_persist=lease.require_current`. That lease covers one target, so
+increment 1 allows one new-type operation per plan and refuses a plan that
+mixes it with any other operation. Scene planning has the same limit
+(`len(prepared.items) != 1`, `service.py:6783`). Two timer icons, as in E034,
+are two plans. A multi-target planning lease is a later change. Undo of a
+new type holds the same lease.
+
+HAMCP-328 helper creates would reuse
 the same profile with a create-specific clause, so one signing step can admit
 both. Whether to sign it for 2026.11.3 only, or for every 2026.11.x entry, is
 Josh's decision (§9 J-4).
@@ -328,9 +459,11 @@ no longer equals the storage id.
 
 **Proposal for the first build:** keep that fail-closed behavior and state it
 in the refusal ("target not found as a storage item; a renamed helper is not
-supported yet"). Resolving through the entity registry's `unique_id` (as
-`E/governance/created_object_identity.py:208-221` already does for created
-objects) is a later, separate change (§9 J-7).
+supported yet"). Resolving through the entity registry's `unique_id` is a
+later, separate change (§9 J-7). The lookup it would reuse is
+`registry_entry` (`E/governance/created_object_delete.py:306-333`), which
+scans the registry by `unique_id`. `created_object_identity.py:208` only
+checks that an entry already chosen corresponds to the storage id.
 
 ### 5.5 Locks, reload keys and closed type sets
 
@@ -339,10 +472,15 @@ objects) is a later, separate change (§9 J-7).
 - Reload keys: `reload:<type>` for each new type, following
   `reload:input_number`, though no reload is sent (the profile forbids it).
 - `_DEPENDENCY_HELPER_DOMAINS` is unchanged.
-- `migration.py`'s resource-type set and `dispatch_facts._P4_TARGET_TYPES`:
-  each new type is added only where its behavior matches the existing
-  helper types. The build checks each set and records why it adds or skips a
-  type.
+- Required for every new update identity (§1, "Other closed sets"):
+  - the F3 configuration adapter map (`E/f3_runtime/runtime.py:2089`) gains
+    `update_<type>_configuration` for each new type, and no create adapter;
+  - the F3 route-admission target-type allowlist
+    (`E/f3_runtime/registry.py:709`) gains each new type;
+  - the F3 proposal allowlist (`E/f3_configuration/migration.py:44-56`)
+    gains each new type, or proposal conversion refuses it.
+- `dispatch_facts._P4_TARGET_TYPES` stays unchanged. It is the
+  created-object delete rejection set, and 346 is update-only.
 
 ### 5.6 Readback
 
@@ -358,17 +496,28 @@ objects) is a later, separate change (§9 J-7).
 Undo reuses `rollback_change` unchanged in shape: a reverse `update` per
 verified operation from its captured `current_config`, as a new plan with
 its own approval, excluded when the helper changed again after the source
-plan. Two points the build proves **before** extending it:
+plan. Two rules, the first fixed and proven **before** any new type reuses
+the path:
 
-1. The captured `current_config` is the raw `{type}/list` item, which
-   includes Core's `id` key (`resources.py:771-792`). The build must show
-   whether today's reverse path strips `id` or refuses it, for the existing
-   `input_boolean`/`input_number` types first. This design did not check it.
-2. The reverse proposal must pass the new type's validator. Because the
-   validators accept exactly the stored forms (§4), a captured stored item
-   passes unless it holds a field Engineering does not know, such as an
-   `input_number.device_class` (§4.1). Such an undo fails closed with the
-   unsupported field named.
+1. **The reverse proposal drops `id`.** For a helper operation, the reverse
+   `proposed_config` is the captured list item with the `id` key removed and
+   nothing else changed. Today the path copies the item with `id`
+   (`runtime.py:5796`) and planning refuses it (§1, "Today's helper undo is
+   refused at planning"). The build fixes this in `_plan_fresh_rollback` and
+   proves it on today's `input_boolean` and `input_number` first. Only `id`
+   is removed. Any other captured field Engineering does not know, such as
+   an `input_number.device_class` while J-6 is open (§4.1), still fails
+   closed with the field named.
+2. **The reverse proposal meets the new type's validator under the
+   carry-over rule (§4).** At rollback planning, the "current value" is the
+   helper's state after the source plan. A field the source plan did not
+   change equals that value, so a stored value outside a stricter
+   Engineering rule is carried back unchanged and disclosed. A field the
+   source plan changed is restored only if the captured value meets the
+   stricter rule. Otherwise the undo fails closed with the field and the
+   rule named. For example, a source plan that replaced a non-format
+   `input_datetime.initial` with a valid one cannot be undone back to the
+   non-format string.
 
 ### 5.8 Risk and consequence disclosure
 
@@ -378,7 +527,10 @@ plan. Two points the build proves **before** extending it:
   - "removing the current option leaves `input_select.example_mode` on a
     value that is no longer an option";
   - "the counter will be clamped from 12 to 10";
-  - "the schedule may switch on or off immediately".
+  - "the schedule may switch on or off immediately";
+  - with J-6, for an `input_number` with a registry entry whose
+    `device_class` or unit changes: "Core may drop the registry display unit
+    if it no longer fits" (§2.3).
 - Where a predicted state change is computable from the current state (counter
   clamp, input_select option removal, input_number clamp), the plan states
   the predicted value. Otherwise it states that the state may change.
@@ -407,12 +559,21 @@ Protected (each needs Josh's named OK at build time):
   `keep_current_fields` (public schema).
 - `E/f3_configuration/strategies.py`: strategies, identities, strategy map.
 - `E/f3_configuration/locks.py`: lock prefix and reload keys.
-- `E/f3_configuration/migration.py` and `E/f3_runtime/dispatch_facts.py`:
-  only if §5.5 shows a type belongs there.
+- `E/f3_configuration/migration.py`: the F3 proposal allowlist (§5.5).
+  `E/f3_runtime/dispatch_facts.py` is not changed (`_P4_TARGET_TYPES` stays).
 - `E/f3_configuration/gateway.py`: only if update dispatch needs a per-type
   response check.
-- `E/f3_runtime/registry.py`: `CONFIGURATION_REGISTRATIONS`.
-- `E/f3_runtime/runtime.py`: only if §5.7 item 1 needs a fix.
+- `E/f3_runtime/registry.py`: `CONFIGURATION_REGISTRATIONS` and the
+  route-admission target-type allowlist (`:709`).
+- `E/f3_runtime/runtime.py`: the configuration adapter map (`:2089`), the
+  reverse proposal without `id` (§5.7 item 1), and the plan-time admission
+  check and lease in `_plan_fresh_rollback` (§5.3).
+- `E/governance/service.py` also gains the plan-time admission check
+  (`_require_dormant_profile_admission`, `_storage_helper_configuration_core`)
+  and the lease-holding planning branch (§5.3).
+- `E/governance/semantic_projection.py`, `E/governance/resources.py`
+  (`structured_resource_diff`) and `E/approval_web.py`: the `input_text.initial`
+  display rule, if J-5 is accepted (§4.2).
 - `E/ha_core_readmission/profiles.py`, `E/ha_core_readmission/routes.py`:
   the new dormant profile and its routes.
 - `E/capabilities.py`: capability metadata for the new types.
@@ -430,7 +591,19 @@ Success:
 - An icon-only edit on a timer, the E034 case.
 - Clearing `initial` on `input_select`, `input_text` and `input_boolean`. The
   last proves today's path (§2.1).
-- Undo of each type restores the captured item exactly.
+- Undo of each type restores the captured item exactly. First, on today's
+  types: an offline rollback plan for an `input_boolean` (and an
+  `input_number`) whose captured `current_config` holds `id` and `name` is
+  created, and its reverse `proposed_config` has no `id` (§5.7 item 1).
+- Carry-over (§4): an icon-only plan for an `input_datetime` whose stored
+  `initial` is a non-empty string outside the three formats is created, and
+  the persisted proposal holds that exact string, disclosed as kept as
+  stored. The same holds for a timer whose stored `name` is longer than 255
+  characters.
+- Schedule (increment 2): the offline fake applies the WebSocket update
+  schema and then stores `{id} | output`, as Core does (§2.1). A canonical
+  seven-day proposal, including a `to` of `24:00:00`, reads back identical
+  after update and after a simulated load through `STORAGE_SCHEMA`.
 
 Refusal and negative reachability:
 
@@ -443,17 +616,39 @@ Refusal and negative reachability:
 - A YAML-only or renamed helper fails closed as not found, with no dispatch.
 - Duplicate or identity-mismatched list items fail closed.
 - While the new profile is unadmitted, every new identity refuses
-  `pending_signed_registry_admission` and reads nothing.
+  `pending_signed_registry_admission` and reads nothing. That includes
+  planning: `create_configuration_plan` for a `timer` raises it with
+  `plan_created: false`, and the fake transport's command list is empty (no
+  `timer/list`). Rollback planning of a new type refuses the same way before
+  its read (§5.3).
+- Once the profile is admitted, a new-type plan saved without a current
+  Core lease is refused, and a plan that mixes a new type with another
+  operation is refused before any read (§5.3).
+- Carry-over negatives (§4): changing `input_datetime.initial` to a
+  non-format string is refused with `initial` named. An undo that would
+  restore a captured value the source plan changed, and that fails a
+  stricter rule, is refused with the field named (§5.7 item 2). A counter
+  plan that changes `minimum` so the unchanged `initial` falls outside the
+  bounds is refused.
+- A schedule proposal that omits a day is refused by Engineering (all seven
+  days are required), so the `[]` default is never relied on.
 - No reload, service call or second command is ever sent. A fake transport
   asserts the exact one-command sequence.
 - A readback mismatch (Core coerced a value) fails verification without a
   retry.
 - An undo after a later outside edit excludes the operation. An undo with an
   unknown captured field fails closed.
-- If J-5 is accepted: `input_text.initial` never appears in plan, approval or
-  receipt text, only presence and length. `keep_current_fields` is refused for
-  other types or fields, and when the current item lacks the field. A kept
-  value equals the current value exactly.
+- If J-5 is accepted: a plan that sets `input_text.initial` to a synthetic
+  password-like string has that string absent from the public plan dict,
+  `dry_run_results.changed_fields`, the semantic projection and the approval
+  HTML. Each shows presence and length only. The same holds for an unchanged
+  `initial` and for the undo plan. `keep_current_fields` is refused for other
+  types or fields, when the current item lacks the field, and when
+  `proposed_config` also holds `initial` (before any read). A kept value
+  equals the current value exactly in the persisted proposal.
+- Registry admission: `update_timer_configuration` is admitted only when the
+  registration tuple, the route target-type allowlist and the runtime adapter
+  map all include it (§5.5).
 
 Compatibility:
 
