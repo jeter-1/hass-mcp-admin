@@ -1411,18 +1411,45 @@ path. Native search is the last bullet below.
   replaces the delegated `ha_search` as the public tool. It adds no
   permission, add-on option, client, write, workflow or signing change, and
   no policy JSON or `config.yaml` change. Its reads are Core reads through
-  four existing signed profiles and a fixed command table
+  four existing signed profiles (five when dashboards are searched,
+  HAMCP-447) and a fixed command table
   (`search/core_contracts.py`); it reads no automation, script or scene
   configuration (S1, pinned by the AST test
   `test_no_configuration_body_read_is_reachable`).
   - **Internal-only delegated route (G1).** The delegated `ha_search` is in
     `INTERNAL_ONLY_DELEGATED_READ_TOOLS` (`ha_core_readmission/routes.py`):
     it is never listed or aliased (no `ha_mcp__ha_search`) and is never a
-    direct read. It serves only the fixed automation, script, scene,
-    dashboard and flow-helper sub-call pages, with exact page arguments at a
+    direct read. It serves only the fixed automation, script, scene and
+    flow-helper sub-call pages, with exact page arguments at a
     ladder size (150, 30, 6, 1), under its own Core requirement
     `core.delegated_device_effective_area`, fail-closed (G2). No fallback
     and no other upstream tool.
+  - **Dashboards and flow-helper ids (HAMCP-447, 2.11.0 Lane B2).**
+    Dashboards are searched natively, with no new permission, client or
+    write.
+    - The dashboard list and configuration reads use the existing signed
+      profile `core.dashboard_configuration_read`, which only a search
+      for dashboards holds. Without it such a search is refused whole,
+      before any read.
+    - The WebSocket batch allowlist admits `lovelace/config` in two
+      shapes only, `{type}` and `{type, url_path}`, with `url_path`
+      checked against `URL_PATH_PATTERN`. `force` and any other key are
+      refused.
+    - A YAML dashboard is never read, because Core resolves the YAML
+      loader's tags, such as `!include`, when it loads one. Each
+      configuration read is scored, then dropped, and never returned.
+    - Privacy: a record returns the dashboard's `url_path`
+      (pattern-checked; `default` for the default dashboard) and
+      `title` (sanitized, and held to the reply's 256-character
+      record-string cap plus the truncation suffix). A flow-helper
+      record returns its config-entry `entry_id`. B2 adds only those
+      three names to Row 25.
+    - The default dashboard is read and matched (d1). Core has no read
+      within the signed profile that reports its mode, so it is read
+      only when the list was read whole and lists no `lovelace`
+      dashboard, which Core would serve in its place. Core lists the
+      legacy YAML-mode default as `lovelace` and sets YAML dashboards up
+      only when it starts, so this rules out reading a YAML default.
   - **Sub-call pages.** Each page runs under the calling request's Core
     lease as its `core_dispatch_authorizer` (D5), and a page with no parent
     request or authorizer is refused before dispatch (F1). A page the

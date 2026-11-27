@@ -26,11 +26,18 @@ build gate added in revision 3 (the source of the ha-mcp visibility state,
 §3.7) is dropped: Josh's 2026-11-25 decision, as relayed by the architect,
 supersedes it (§9, §10.2).
 
+*2.11.0 (Lane B2):* HAMCP-447 searches dashboards natively and returns
+dashboard `url_path` and `title` and flow-helper `entry_id`. §10.16
+records it. Where §10.16 and an earlier section differ, §10.16 describes
+the current build.
+
 - Register: HAMCP-481. Related rows:
   - HAMCP-472, the `ha_search` audit finding this design absorbs;
   - HAMCP-441, the `result_fields` enrichment keys, which are returned today;
   - HAMCP-447, the dashboard identity, `by_domain`, area and state echoes,
-    `entry_id` and `options_withheld`, withheld today;
+    `entry_id` and `options_withheld`, withheld today. *2.11.0 (§10.16):*
+    dashboard `url_path` and `title` and flow-helper `entry_id` are
+    returned;
   - HAMCP-454, the `include_config` bodies and flow-helper options, withheld
     until a redaction design exists;
   - HAMCP-233, where `ha_search` opens options flows;
@@ -83,7 +90,8 @@ three properties of that path:
 3. **Withheld content.** Several things are withheld or reachable today:
    - `by_domain`, the area and state echoes, `area_names`, `state_filter_note`,
      `message`, `partial_reason`, dashboard `url_path` and `title`, and
-     flow-helper `entry_id` are withheld (HAMCP-447 and Row 25);
+     flow-helper `entry_id` are withheld (HAMCP-447 and Row 25).
+     *2.11.0 (§10.16):* those three are returned;
    - configuration bodies are withheld (HAMCP-454);
    - the upstream path can open options flows (HAMCP-233).
 
@@ -101,6 +109,8 @@ It has these properties:
   sub-calls, which match bodies inside ha-mcp.
 - **Dashboards stay delegated.** Dashboard search stays on the delegated
   ha-mcp route, through one fixed, paged internal sub-call (§2.4).
+  *2.11.0 (HAMCP-447, §10.16):* superseded. Dashboards are searched
+  natively, from Core's dashboard list and configuration reads.
 - **Visibility not ported (rev 5).** Superseded on 2026-11-25 by Josh's
   decision, as relayed by the architect: native search ships without the
   ha-mcp entity visibility filter, and HAMCP-499 follows later (§3.7,
@@ -178,7 +188,7 @@ HAMCP-403 quarantines `search_unified`.
 | Storage helpers | the six `<type>/list` commands 9.2.0 searches: `input_boolean`, `input_number`, `input_select`, `input_text`, `input_datetime` and `input_button` (`tools/smart_search/_deep.py:927-934`), mapped to the current `entity_id` through the entity registry (`_deep.py:749`) | Identity-only records with `helper_type` |
 | Flow helpers | the delegated ha-mcp `ha_search`, through one fixed, paged helper sub-call (§2.5) | Identity-only records with `helper_type` and `name`, as today |
 | References | Core's reference graph, `search/related` for an entity, for an `entity_id`-shaped query when automations, scripts or scenes are requested (`tools/smart_search/_graph.py:374-390`) | `match_in_references` on the referencing records |
-| Dashboards | the delegated ha-mcp `ha_search`, through one fixed, paged sub-call (§2.4) | Row 25 projection, as today |
+| Dashboards | *2.11.0 (§10.16):* Core's `lovelace/dashboards/list` and `lovelace/config`, read natively. Before: the delegated ha-mcp `ha_search`, through one fixed, paged sub-call (§2.4) | *2.11.0:* `url_path`, `title`, the score and the match flags. Before: the Row 25 projection |
 
 Counter, timer and schedule helpers have no body search in 9.2.0. They appear
 only as entity records, and the same holds natively.
@@ -286,6 +296,9 @@ The build makes these route edits together, in protected files:
   else.
 
 ### 2.4 Dashboards: how the tool routes them
+
+*2.11.0 (HAMCP-447, §10.16):* superseded. Dashboards are no longer a
+sub-call. This section records the 2.10.0 build.
 
 Dashboard search stays on the delegated ha-mcp route, as relayed from Josh.
 *Rev 5:* the reader as built is in §10.7 (W4 #516, extended by W6 #517). The
@@ -406,7 +419,8 @@ governs definition visibility.
 
 This section applies to both sub-calls, dashboard (§2.4) and helper (§2.5).
 *Rev 5:* it applies to all five sub-calls: automation, script, scene,
-dashboard and helper (§10.4).
+dashboard and helper (§10.4). *2.11.0 (§10.16):* four; dashboards are
+native, so the dashboard parts of this section no longer apply.
 
 **Paging (r2-S1).**
 
@@ -824,7 +838,7 @@ keys). Each is kept exactly as Row 25 treats it today.
 | Key | Today | Native | Status |
 | --- | --- | --- | --- |
 | `success`, `query`, `search_types`, `search_type`, `domain_filter` | Returned | The same | Kept |
-| `entities`, `automations`, `scripts`, `scenes`, `helpers`, `dashboards` | Returned | The same. `dashboards` only from §2.4 | Kept |
+| `entities`, `automations`, `scripts`, `scenes`, `helpers`, `dashboards` | Returned | The same. `dashboards` only from §2.4 (*2.11.0:* native, §10.16) | Kept |
 | `entity_total_matches`, `config_total_matches`, `count`, `offset`, `limit`, `has_more`, `next_offset`, `entity_has_more`, `entity_next_offset`, `config_has_more`, `config_next_offset` | Returned | The same, computed natively (§3.6) | Kept |
 | `partial` | Returned; true on every reply (F3) | True only with `partial_reasons` (§6.1) | Redefined, decided as relayed (HAMCP-472 P2, R-B) |
 | `warnings` | Returned; every text replaced | Only reviewed fixed texts from a closed set (§6.4); nothing replaced | Redefined (the HAMCP-472 fix) |
@@ -870,7 +884,9 @@ Kept as Row 25 admits them today:
   `scene_id`, `helper_type`, `name`.
 
 Withheld, as today: `config` (HAMCP-454); `url_path`, `title`, `entry_id` and
-`options_withheld` (HAMCP-447).
+`options_withheld` (HAMCP-447). *2.11.0 (§10.16):* `url_path`, `title`
+and `entry_id` are returned; `config` and `options_withheld` stay
+withheld.
 
 On the legacy path, the `name` opt-in carries no composed value, only its note
 (`_COMPOSED_NAME_UNAVAILABLE`, `tools/search/entities.py:81`, used at `:117`).
@@ -1023,6 +1039,8 @@ Drawn from the Row 25 admitted set (`upstream_reads_9_2_keys.py:313-327`).
 *Rev 5:* Row 25 is unchanged. Dashboard `url_path` and `title` and helper
 `entry_id` are still withheld and counted, so a flow-helper row carries
 `helper_type` and `name` with no id. HAMCP-447 owns releasing them (§10.8).
+*2.11.0 (HAMCP-447, §10.16):* Row 25 admits the three, and a flow-helper
+row carries its `entry_id`.
 
 Notes for the build's security section:
 
@@ -1152,7 +1170,8 @@ Notes for the build's security section:
      fit, with `paged` and the next offset at the first record not returned,
      and the next page continues from it;
    - a record whose fields the budget cuts gives `truncated` with a count.
-9. **Dashboards (§2.4):**
+9. **Dashboards (§2.4):** *2.11.0 (§10.16):* superseded; the native
+   dashboard tests are in `tests/test_hamcp447_native_dashboard_search.py`.
    - a dispatcher spy shows zero dashboard sub-calls when `search_types`
      lacks `dashboard`. When it has it, the spy shows only pages with the
      fixed arguments and successive offsets 0, P, 2P and so on, ending at the
@@ -1288,6 +1307,7 @@ with fixed numbers.
    body.
 10. `search_types` `["dashboard"]` with a query returns the delegated
     dashboard rows, with `url_path` and `title` withheld.
+    *2.11.0 (§10.16):* native rows, with `url_path` and `title` returned.
 11. A query with no matches gives empty buckets and `applied`. `partial` is
     false, or it carries only `not_searched` `upstream_partial` when a helper
     page was itself partial (r2-S2). No other reason is accepted. The fixed
@@ -1524,6 +1544,7 @@ S1 = b+ was Josh's decision on 2026-11-26, as relayed by the architect.
   route's own, inside ha-mcp, except where F1 withholds it (§10.6).
 - The five sub-calls are automation, script, scene, dashboard and helper
   (`SEARCH_SUBCALL_BUCKETS`, `providers/upstream_read_gateway.py:888-899`).
+  *2.11.0 (§10.16):* four; dashboards are native.
   The helper sub-call carries flow helpers. Native search reads the six
   storage helper types itself and matches them by name and body, in memory.
 - The injected Core read session serves the reference graph only. Nothing
@@ -1582,7 +1603,8 @@ The ladder replaces the single page size P of §2.6 (#517 Disclosure 3).
 
   Past any of these, the bucket is `<type>_subcall_incomplete`, for that
   bucket only.
-- A dashboard scan completes early once it has enough rows.
+- A dashboard scan completes early once it has enough rows. *2.11.0
+  (§10.16):* removed with the dashboard sub-call.
 
 The costs (#517 Disclosure 3):
 
@@ -1596,7 +1618,9 @@ The sizing evidence (#517 Disclosure 3):
 - The row sizes are 3,470 bytes for automation, 6,560 for script, 6,560 for
   scene, 90 for dashboard and 9,360 for helper.
 - The budget fits 10, 5, 5, 150 and 3 such rows. So the largest fitting
-  ladder size is 6, 1, 1, 150 and 1.
+  ladder size is 6, 1, 1, 150 and 1. *2.11.0 (§10.16):* the dashboard
+  size is removed, and a helper row is sized at 12,440 bytes (two rows;
+  the ladder size is still 1).
 - Before the ladder, a scene page took 58,115 of 60,000 bytes at 150 rows,
   and 80-character names gave `scene_subcall_incomplete`.
 
@@ -1672,7 +1696,8 @@ helper; `BODY_TYPES`, `:137`):
 `gateway.search_subcall_reader()` returns a `SearchSubcallReader` whose
 `.readers` is a read-only map (`providers/upstream_read_gateway.py:4462`).
 W4 (#516) had dashboard and helper. W6 extended it to all five
-`SEARCH_SUBCALL_BUCKETS` (`:888-899`).
+`SEARCH_SUBCALL_BUCKETS` (`:888-899`). *2.11.0 (§10.16):* the dashboard
+reader is removed; four remain.
 
 Each page is checked:
 
@@ -1725,7 +1750,7 @@ The generic `_upstream_completeness` `ha_search` branch is unreachable
 - §7 Row 25 is unchanged. Dashboard `url_path` and `title` and helper
   `entry_id` are still withheld and counted. So a flow-helper row carries
   `helper_type` and `name` with no id.
-- HAMCP-447 owns releasing those fields.
+- HAMCP-447 owns releasing those fields. *2.11.0 (§10.16):* released.
 
 ### 10.9 Arguments and audit
 
@@ -1755,6 +1780,9 @@ The closed reason set (`search/reply.py:124-145`), in `REASON_ORDER`:
   - `malformed_state_row`;
   - `area_registry`, `floor_registry`, `label_registry`, `device_registry`;
   - `entity_aliases`.
+
+*2.11.0 (HAMCP-447, §10.16):* `dashboard_subcall_incomplete` is removed,
+and `not_searched` gains `yaml_dashboards_skipped`.
 
 Compared with §6.1:
 
@@ -1949,3 +1977,120 @@ The reply's warnings are three (`search/reply.py:111`, §10.10). The golden
 is `docs/evidence/hamcp481/fixtures/component-scoring-golden.json`, and
 the W1 golden fixtures there stay as history (§8 item 4). The review is in
 §10.1.
+
+### 10.16 2.11.0 Lane B2: HAMCP-447
+
+From the Lane B2 pull request into `release/2.11.0`. Citations here are by
+name. The Lane B file list and its decisions are Josh's, as relayed by the
+architect (2026-11-27): YAML dashboards are skipped with a closed code; the
+default dashboard is d2 if Core has a read for its mode within the signed
+profile, else d1, disclosed; flow-helper ids are option (a), the
+`entry_id`. Josh's 2026-11-25 decision, as relayed, put dashboard and
+helper ids in search rows, with a privacy check. The edits to
+`clients/websocket.py` (option w1) and to the `providers/routing.py` scope
+string, and the Row 25 `url_path` and `title` admission, are approved as
+relayed by the architect.
+
+- **Dashboards are native.** A search whose `search_types` has `dashboard`
+  reads `lovelace/dashboards/list`, then `lovelace/config` for the chosen
+  dashboards (`READS` `dashboards` and `dashboard_config` in
+  `search/core_contracts.py`). Both use `core.dashboard_configuration_read`.
+  Any other search reads neither and does not hold that profile.
+  - Which are read (`plan` in `search/dashboards.py`): each listed storage
+    dashboard whose `url_path` fits `URL_PATH` (the pattern of
+    `URL_PATH_PATTERN` in `governance/dashboard_metadata.py`), in Core's
+    order, up to `MAX_DASHBOARDS` (500). The default dashboard is read
+    first, and only when the list was read with no dropped row and lists no
+    `lovelace` dashboard, which Core would serve in its place. Core lists
+    the legacy YAML-mode default as `lovelace` and sets YAML dashboards
+    up only when it starts, so this rules out reading a YAML
+    default. A listed `default` is then not read, so no two records
+    share a path.
+  - The default dashboard is d1. Core 2026.11.3 has no read within the
+    signed profile that reports the default dashboard's mode
+    (`lovelace/info` reports only the resource mode), so it is read and
+    matched under the rule above.
+  - A YAML dashboard is never read: Core resolves the YAML loader's tags,
+    such as `!include`, when it loads one. Each is counted as
+    `not_searched` `yaml_dashboards_skipped`.
+  - Matching is `scoring.config_match_score` over the body. Under
+    `exact_match` it is a case-insensitive substring of any key or non-null
+    leaf, score 100; otherwise the fuzzy leaf score also counts, at
+    `FUZZY_THRESHOLD` (70). `CoreReadSession.dashboard_configs`
+    (`search/core_reads.py`) pipelines the reads in `command_batch` chunks
+    of `CONFIG_CHUNK` (8) under one 60-second deadline
+    (`subcalls.SCAN_DEADLINE_SECONDS`). Each body is scored, then dropped.
+    `force` is never sent.
+  - A record has `url_path` (`default` for the default dashboard), `title`
+    (the listed title, else the `url_path`; "Default Dashboard" for the
+    default), `score`, `match_in_config` true and `match_in_references`
+    false. Under `include_config`, each matched body is disclosed as
+    withheld (`filtered` `config_bodies_withheld`).
+  - Accounting, all `not_searched` for `dashboard`:
+    `yaml_dashboards_skipped` counts the YAML rows. `read_failed` has no
+    count for an unreadable list or a dropped list row. It counts one for
+    each unusable or over-bound row, and for each configuration read that
+    failed or did not start before the deadline. Core's `config_not_found`
+    is a clean no-match.
+  - Dashboard records merge into the configuration list by the score sort,
+    dashboards last on ties, and `config_total_matches` counts them all.
+- **No dashboard sub-call.** `SUBCALL_TYPES` is automation, script, scene
+  and helper (`search/subcalls.py`). The scan's `needed` early stop and the
+  dashboard row size are removed, and `dashboard_subcall_incomplete` leaves
+  the closed reason set (`REASON_CODES` in `search/reply.py`). A delegated
+  page that carries dashboard records is still refused
+  (`_SEARCH_PAGE_BUCKETS` in `providers/upstream_read_gateway.py`), and
+  `bucket_withheld_names` refuses the `dashboards` bucket.
+- **Admission.** Native `ha_search`'s static requirement adds the
+  requirements of the reads the engine would issue for the call's
+  arguments (`static_tool_requirements` in
+  `ha_core_readmission/routes.py`). A call the engine refuses adds none.
+  Without `core.dashboard_configuration_read`, a dashboard search is
+  refused whole with `source_unavailable` (`core_authority`) before any
+  read, and other searches are served.
+- **WebSocket client (w1).** `lovelace/config` joins `_BATCH_COMMAND_KEYS`
+  (`clients/websocket.py`) in two shapes, `{type}` and `{type, url_path}`,
+  with `url_path` checked against `URL_PATH_PATTERN`. Any other key,
+  `force` among them, is refused.
+- **Flow-helper `entry_id` (option (a)).** A flow-helper row carries its
+  `entry_id`, a string (`_ROW_KEYS` in `search/subcalls.py`). Only
+  `options_withheld` stays withheld (`_FLOW_HELPER_WITHHELD` in
+  `search/configs.py`). A helper row is now sized at 12,440 bytes, and the
+  largest helper ladder size is still 1.
+- **Row 25 and privacy.** Row 25 admits `entry_id`, `title` and `url_path`
+  (`ROWS` in `providers/upstream_reads_9_2_keys.py`, citing ha-mcp 9.2.0 at
+  `51e3aac7`).
+  - `url_path` is pattern-checked.
+  - `title` passes the reply sanitizer, which holds a record string to 256
+    characters plus the truncation suffix (`truncated` `record_strings`).
+  - No body is returned.
+  - A delegated sub-call row that carries `url_path` or `title` is drift.
+  - The s7 output-key contract, the P4 parity file and the read coverage
+    matrix are regenerated. The public schemas and both fingerprints are
+    unchanged.
+- **Provider texts.** The native `ha_search` capability's justification
+  (`capabilities.py`) and its policy's `scope` string
+  (`providers/routing.py`) name the dashboard reads.
+- **Mutation scripts.**
+  - The engine script drops the four dashboard sub-call mutants (112 to
+    108) and re-anchors `helper_row_keys_widened` to the `entry_id` key.
+  - The sub-call reader script re-anchors its keys-bucket mutants, and
+    `missing_authorizer_allowed`, whose anchor has had four copies since
+    HAMCP-510.
+  - The core reads script re-anchors `batch_item_failure_silent` and
+    `batch_read_unlisted`.
+  - The dashboard guards' mutants are in
+    `docs/evidence/hamcp447/dashboard_mutation_check.py`.
+  - Results on the B2 tree before the Lane B1 merge, each with a clean
+    baseline and no survivor: dashboard 61 of 61 killed, engine 108 of
+    108, sub-call reader 57 of 57 and core reads 55 of 55, each
+    of the last two with its one earlier equivalent mutant. The
+    dashboard script's first run left two survivors, closed by
+    `test_the_dashboard_bound_is_the_governance_bound` and an unavailable
+    list result that carries rows in
+    `test_an_unreadable_list_reads_nothing`.
+- Tests: `tests/test_hamcp447_native_dashboard_search.py`.
+- For dashboards and flow-helper ids, this supersedes §0, §2.1's dashboards
+  row, §2.4, the dashboard parts of §2.6, §5's withheld names, §7's Row 25
+  note, §8 item 9, §10.5's dashboard early stop and row size, §10.7, §10.8
+  and §10.10's reason set.

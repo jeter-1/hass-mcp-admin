@@ -30,6 +30,7 @@ from tests import test_hamcp481_core_reads as cr  # noqa: E402
 from tests import test_hamcp481_native_search_engine as e3  # noqa: E402
 from ha_mcp_engineering.clients import websocket as ws  # noqa: E402
 from ha_mcp_engineering.errors import HomeAssistantApiError, HomeAssistantTimeoutError  # noqa: E402
+from ha_mcp_engineering.governance import dashboard_metadata  # noqa: E402
 from ha_mcp_engineering.governance.dashboard_metadata import URL_PATH_PATTERN  # noqa: E402
 from ha_mcp_engineering.ha_core_readmission import routes  # noqa: E402
 from ha_mcp_engineering.providers import upstream_read_gateway as gateway  # noqa: E402
@@ -98,6 +99,10 @@ class ClientShapeTests(unittest.TestCase):
                 expected = URL_PATH_PATTERN.fullmatch(sample) is not None
                 self.assertEqual(c.URL_PATH.fullmatch(sample) is not None, expected)
                 self.assertEqual(ws.batch_command_allowed({"type": CONFIG, "url_path": sample}), expected)
+
+    def test_the_dashboard_bound_is_the_governance_bound(self):
+        self.assertEqual(c.MAX_DASHBOARDS, dashboard_metadata.MAX_DASHBOARDS)
+        self.assertEqual(c.MAX_DASHBOARDS, 500)
 
 
 class ConfigReadTests(cr.Base):
@@ -317,7 +322,9 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(reasons, {"read_failed": 3})
 
     def test_an_unreadable_list_reads_nothing(self):
+        rows = MappingProxyType({"synthetic-board": board()})
         for result in (ReadResult("dashboards", c.UNAVAILABLE, "timeout"),
+                       ReadResult("dashboards", c.UNAVAILABLE, "timeout", rows),
                        ReadResult("dashboards", c.COMPLETE, None, None),
                        ReadResult("dashboards", c.COMPLETE, None, [("synthetic-board", board())]),
                        None, {"synthetic-board": board()}):

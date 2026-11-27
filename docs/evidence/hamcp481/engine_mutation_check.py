@@ -1,9 +1,9 @@
 """HAMCP-501 W3 and W6 S1: guard mutants of the native search engine modules.
 
 The modules are ``search/engine.py``, ``entities.py``, ``configs.py``,
-``subcalls.py`` and ``reply.py``. Each mutant is one textual edit of one
-module, served by an in-memory import hook (the files on disk are not
-changed). For each mutant the five modules and
+``dashboards.py``, ``subcalls.py`` and ``reply.py``. Each mutant is one
+textual edit of one module, served by an in-memory import hook (the files on
+disk are not changed). For each mutant the six modules and
 ``tests/test_hamcp481_native_search_engine.py`` are imported afresh, so every
 module and the suite see the same classes, and the suite must fail at least
 one test. The mutants remove or weaken a guard: an argument check, a refusal,
@@ -16,6 +16,14 @@ not reach them; every mutant in ``MUTANTS`` is killed by a behavior test.
 ``EQUIVALENT`` holds an edit that changes no observable outcome, with the
 reason; it is run and reported, not required to fail. It is empty: its one
 edit, the configuration-body time budget, went with the body reads.
+
+HAMCP-447 (2.11.0 Lane B2): dashboards are searched natively
+(``search/dashboards.py``), so the dashboard sub-call's mutants went with it:
+dashboard_scan_unheld, dashboard_total_uncorrected,
+dashboard_row_keys_widened and dashboard_scan_not_stopped.
+helper_row_keys_widened is re-anchored to the helper row's ``entry_id`` key.
+The dashboard guards' mutants are in
+``docs/evidence/hamcp447/dashboard_mutation_check.py``.
 
 HAMCP-501 W6 S1 = b+ (approved by Josh as relayed by the architect,
 2026-11-26): native search reads no automation, script or scene body, so
@@ -57,7 +65,7 @@ sys.path[:0] = [str(ROOT / "hass_mcp_engineering_beta"), str(ROOT)]
 PACKAGE = "ha_mcp_engineering.search"
 SUITE = "tests.test_hamcp481_native_search_engine"
 SEARCH = ROOT / "hass_mcp_engineering_beta/ha_mcp_engineering/search"
-MODULES = ("reply", "subcalls", "entities", "configs", "engine")
+MODULES = ("reply", "subcalls", "dashboards", "entities", "configs", "engine")
 SOURCES = {name: (SEARCH / f"{name}.py").read_text(encoding="utf-8") for name in MODULES}
 
 # name -> (module, original text, mutated text)
@@ -175,9 +183,6 @@ MUTANTS = {
         "configs", '        record["scene_id"] = slug_map.get(slug) or slug\n    # The component',
         '        record["scene_id"] = slug\n    # The component'),
     "references_default_dropped": ("configs", '    record.setdefault("match_in_references", False)\n', ""),
-    "dashboard_scan_unheld": ("configs", "needed=request.offset + request.limit", "needed=1"),
-    "dashboard_total_uncorrected": (
-        "configs", "total = len(tagged) - dashboard_held + dashboard_total", "total = len(tagged)"),
     "config_order_reversed": (
         "configs", 'tagged.sort(key=lambda item: -item[1]["score"])', 'tagged.sort(key=lambda item: item[1]["score"])'),
     # subcalls.py: the page and row shapes and the scan stops.
@@ -188,10 +193,8 @@ MUTANTS = {
     "row_keys_any_type": (
         "subcalls", "not set(row) <= _ROW_KEYS[search_type]:", 'not set(row) <= set(_ROW_KINDS) | {"score"}:'),
     "helper_row_keys_widened": (
-        "subcalls", '"helper": frozenset({"entity_id", "helper_type", "name",',
-        '"helper": frozenset({"entity_id", "helper_type", "name", "friendly_name",'),
-    "dashboard_row_keys_widened": (
-        "subcalls", '"dashboard": frozenset({"score",', '"dashboard": frozenset({"score", "name",'),
+        "subcalls", '"helper": frozenset({"entity_id", "entry_id", "helper_type", "name",',
+        '"helper": frozenset({"entity_id", "entry_id", "helper_type", "name", "friendly_name",'),
     "row_score_unchecked": ("subcalls", "    if type(score) is not int:\n        return False\n", ""),
     "row_kind_unchecked": ("subcalls", "        if type(value) is not _ROW_KINDS[key]:", "        if False:"),
     "helper_type_optional": ("subcalls", 'return search_type != "helper" or "helper_type" in row', "return True"),
@@ -249,8 +252,6 @@ MUTANTS = {
     "snapshot_move_ignored": ("subcalls", "elif page.config_total_matches != first_total:", "elif False:"),
     "storage_helpers_kept": (
         "subcalls", 'if row["helper_type"] not in STORAGE_HELPER_TYPES)', ")"),
-    "dashboard_scan_not_stopped": (
-        "subcalls", 'if search_type == "dashboard" and len(rows) >= needed:', "if False:"),
     # reply.py: sanitization, the fit, paging and projection.
     "sanitizer_failure_ignored": (
         "reply", '        if result.failed_closed:\n            raise SearchError("sanitization_failed")\n', ""),
@@ -319,7 +320,7 @@ class _Mutant(importlib.abc.MetaPathFinder, importlib.abc.Loader):
 
 
 def fresh_suite(target: str | None, source: str | None):
-    """Import the five modules and the suite afresh, ``target`` mutated."""
+    """Import the six modules and the suite afresh, ``target`` mutated."""
 
     package = importlib.import_module(PACKAGE)
     for name in MODULES:
