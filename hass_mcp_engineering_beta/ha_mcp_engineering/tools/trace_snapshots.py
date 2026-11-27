@@ -132,10 +132,23 @@ async def set_automation_trace_watch(
     stopped runs matching the mode (failures: error, aborted, cancelled,
     failed_single, failed_max_runs, disallowed_recursion_detected or an error
     field; executed: every run except failed_conditions and not_triggered).
-    Each watch keeps at most 20 snapshots and evicts only its own oldest;
-    watch snapshots together never exceed 400 (100 MiB), and manual snapshots
-    are never evicted. Polling pauses while Core authority is unavailable; missed runs
-    are counted, never backfilled.
+    Each watch keeps at most 20 snapshots and evicts its own oldest past that;
+    in executed mode a run that is not a failure never evicts a failure
+    snapshot and, when only failures are left, is not captured
+    (failures_protected, counted in uncaptured_runs). Watch snapshots
+    together never exceed 400 (100 MiB), and manual snapshots are never
+    evicted. Polling pauses while Core authority is unavailable; missed runs
+    are counted, never backfilled. Engineering polls over one held Core
+    connection, authorized again before every command and closed after
+    600 s, on an authority change or error, and when no watch is active.
+    skipped_polls is stored: the polls of the watch that did not finish (not
+    listed, or matching runs left for a later poll) since it was created or
+    reinstated. Runtime only, never stored and reset on restart:
+    recent_skipped_polls and recent_skip_reasons (core_authority_unavailable,
+    core_authority_retired, tick_time_exhausted, trace_list_failed,
+    trace_read_deferred) over the last hour, last_skipped_at and
+    last_skip_reason, and recent_evicted_count over the last hour, with
+    churning true at 20 or more (server health names churning watches).
     """
     return await _respond(
         "set_automation_trace_watch", "Returned the automation trace watch list.",

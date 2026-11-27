@@ -112,7 +112,22 @@ FAILURE_EXECUTIONS = frozenset({
     "disallowed_recursion_detected",
 })
 OUTCOMES = ("captured", "already_captured", "trace_not_retained", "run_in_progress",
-            "over_size_bound", "store_full", "read_failed")
+            "over_size_bound", "store_full", "read_failed", "failures_protected")
+
+# HAMCP-524 (release 2.11.0 Lane C GO, 2026-11-27): why a watch poll was
+# skipped. The stored ``skipped_polls`` stays the lifetime count; the reasons,
+# the recent count and the last skip are runtime only: never written, reset
+# when Engineering restarts.
+SKIP_REASONS = ("core_authority_unavailable", "core_authority_retired",
+                "tick_time_exhausted", "trace_list_failed", "trace_read_deferred")
+# The window of the runtime-only recent counts, and the most events kept per
+# watch for each kind (a poll adds at most one skip and one eviction event).
+RECENT_SECONDS = 3600
+RECENT_EVENTS = 256
+# HAMCP-389 (same GO): a watch that evicted at least its whole quota inside
+# the recent window is churning; a snapshot it holds may be gone within the
+# hour. Health names such watches.
+CHURN_EVICTIONS = WATCH_QUOTA
 
 RUN_ID = re.compile(r"[A-Za-z0-9_.:-]{1,128}\Z")
 # Caller attribution (a 12-hex caller hash, "anonymous" or "trace_watch").

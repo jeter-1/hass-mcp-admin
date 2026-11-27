@@ -1113,7 +1113,9 @@ class QueuedCommitTests(ServiceCase):
                 audit_rows = len(self.audit.rows)
                 [polled] = await self.queue_behind_lock(
                     lambda: self.service.poll_once(authority=(7, VERSION)), retire)
-                self.assertIsNone(polled)
+                # HAMCP-431: poll_once reports that a watch is active; the
+                # retired commit still writes nothing.
+                self.assertIs(polled, True)
                 self.assertEqual(self.index()["snapshots"], [])
                 self.assertTrue(self.service.paused)
                 after = self.index()["watches"][0]
