@@ -27,6 +27,13 @@ SCENE_RECREATE_MODEL = "hamcp329-created-scene-recreate-v1"
 SOURCE = "created_object_rollback"
 POLICY_TRIGGER = "created_object_rollback_policy"
 BASIS_MODIFIED_SINCE_CREATE = "created_object_registry_modified_since_create"
+# HAMCP-378 option B (release 2.11.0 Lane C GO, 2026-11-27): every rollback
+# child's policy decision names its form.  The code changes no class, risk,
+# consequence or acknowledgement; it makes the decision differ from what a
+# runtime without this module computes for the same plan (2.4.2-beta.7 sees an
+# ordinary HAMCP-155 delete), so such a runtime refuses the plan with
+# ``policy_snapshot_mismatch`` instead of running it.
+ROLLBACK_CHILD = "created_object_rollback_child"
 INCOMPLETE = "created_object_rollback_contract_incomplete"
 OWNED = "owned"
 MODIFIED_SINCE_CREATE = "modified_since_create"
@@ -265,6 +272,7 @@ __all__ = [
     "MODEL",
     "REASON_LIMIT",
     "RESIDUAL_DISCLOSURE",
+    "ROLLBACK_CHILD",
     "SCENE_RECREATE_MODEL",
     "POLICY_TRIGGER",
     "SOURCE",

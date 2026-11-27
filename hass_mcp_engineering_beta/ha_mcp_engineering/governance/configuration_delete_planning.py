@@ -19,11 +19,12 @@ from ..errors import AuthorizationError, HomeAssistantApiError
 from . import configuration_delete as delete_contract
 from . import global_reference_disclosure
 from .entity_availability_exposure_planning import (
-    INCOMPLETE_IMPACT_TEXT,
     MAX_DISCLOSED_CONSUMERS,
     MAX_STATEMENTS,
     UNAVAILABLE_COVERAGE,
     _consumer_evidence,
+    elevating_dependency_reasons,
+    incomplete_impact_statement,
 )
 from .entity_metadata_planning import EntityMetadataRefusal
 from .models import ChangeRiskAssessment, RiskLevel
@@ -273,9 +274,9 @@ def _statements(
         )
     if not consumers["evidence_complete"]:
         statements.append(
-            f"For {entity_id}, {INCOMPLETE_IMPACT_TEXT} ("
-            + ", ".join(consumers["evidence_gaps"])
-            + "); this is treated as protected."
+            incomplete_impact_statement(
+                entity_id, consumers["evidence_gaps"], "this is treated as protected."
+            )
         )
     elif not consumers["count"]:
         statements.append("No indexed automation or script consumer was found.")
@@ -446,9 +447,10 @@ async def prepare_item(
         )
     normalized_current = normalize_resource_config(resource_type, current)
     comparison = compare_removed_effects(resource_type, normalized_current)
-    dependency_reasons = sorted(set(evidence["dependency_reasons"]))[
-        : delete_contract.MAX_DEPENDENCY_REASONS
-    ]
+    # HAMCP-394: a script-only gap is disclosed, never a protected dependency.
+    dependency_reasons = elevating_dependency_reasons(
+        sorted(set(evidence["dependency_reasons"]))
+    )[: delete_contract.MAX_DEPENDENCY_REASONS]
     basis = expected_basis(comparison, dependency_reasons)
     effects = _effect_rows(comparison)
     consumers = {
