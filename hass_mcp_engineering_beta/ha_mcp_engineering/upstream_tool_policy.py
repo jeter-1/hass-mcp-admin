@@ -7,6 +7,7 @@ from collections import Counter
 from dataclasses import dataclass
 import hashlib
 import json
+import math
 from pathlib import Path
 import re
 from typing import Any
@@ -182,6 +183,15 @@ def _reject_nonfinite_json_constant(_value: str) -> None:
     raise UpstreamToolPolicyError("policy_nonfinite_json_constant")
 
 
+def _parse_finite_json_float(value: str) -> float:
+    # HAMCP-471: an exponent overflow such as 1e999 never reaches
+    # parse_constant; the float parser returns infinity.
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        _reject_nonfinite_json_constant(value)
+    return parsed
+
+
 def _load_strict_json(path: Path, *, error: str) -> Any:
     try:
         raw = path.read_bytes()
@@ -189,6 +199,7 @@ def _load_strict_json(path: Path, *, error: str) -> Any:
             raw,
             object_pairs_hook=_reject_duplicate_json_members,
             parse_constant=_reject_nonfinite_json_constant,
+            parse_float=_parse_finite_json_float,
         )
     except (
         OSError,
