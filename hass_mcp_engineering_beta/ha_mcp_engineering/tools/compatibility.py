@@ -20,8 +20,11 @@ import secrets
 import time
 from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Annotated, Any, Optional
 
+from pydantic import Field, WithJsonSchema
+
+from .. import paging
 from ..capabilities import (
     build_capability_catalog,
     build_capability_view,
@@ -33,6 +36,7 @@ from ..clients.paths import Route, rest_path
 from ..configuration import load_settings
 from ..health import HEALTH
 from ..identifiers import require_automation_config_id, require_entity_id
+from ..incident_logs.cursor import CursorCodec
 from ..dependency import DEPENDENCY_ANALYSIS
 from ..errors import ErrorCode, GovernanceError, HomeAssistantApiError
 from ..logging_config import get_logger
@@ -78,6 +82,14 @@ CORE_SYSTEM_LOG_DEFAULT_MAX_ENTRIES = 50
 # each automation keeps that many runs and that many not-triggered traces.
 CORE_DEFAULT_STORED_TRACES = 5
 MAX_AUDIT_RECORD_CHARS = 64 * 1024
+# HAMCP-425 (PC-1): one codec per adopting list tool for the life of the
+# process. A codec made per call would rotate its key and refuse every
+# continuation; a restart rotates it on purpose.
+LIST_AUTOMATIONS_CURSORS = CursorCodec("list_automations")
+LIST_DEVICES_CURSORS = CursorCodec("list_devices")
+LIST_ENTITY_REGISTRY_CURSORS = CursorCodec("list_entity_registry")
+SEARCH_ENTITIES_CURSORS = CursorCodec("search_entities")
+ListCursor = Annotated[str, Field(strict=True, max_length=paging.MAX_CURSOR_CHARS)]
 LOGGER = get_logger("compatibility")
 
 
@@ -105,6 +117,35 @@ def dump(data: Any) -> str:
 # Preserve the legacy helper name while routing serialization through the v2
 # response-model boundary.
 dump = dump_json
+
+
+def _list_page(codec, fingerprint, position, rows, *, limit, row_key, identity, category):
+    """HAMCP-425 (PC-1): one page of ``rows``, the whole filtered match set.
+
+    The rows are sorted by ``identity`` here, before the set digest and the
+    slice. A row whose identity is missing or not a string fails the read
+    with the tool's malformed-response error. The page is filled to the
+    response limit less the dispatcher's envelope reserve.
+    """
+
+    paging.identity_keys(rows, identity, lambda: HomeAssistantApiError(
+        details={"endpoint_category": category, "status": "malformed_response"}
+    ))
+    rows = sorted(rows, key=lambda row: row[identity])
+    digest = paging.set_digest(codec, [row[identity] for row in rows])
+    offset = position.require_set(codec, digest, len(rows))
+    reply = paging.fill_page(
+        rows[offset : offset + max(1, limit)],
+        codec=codec,
+        query=fingerprint,
+        digest=digest,
+        offset=offset,
+        total=len(rows),
+        row_key=row_key,
+        identity=identity,
+        budget=SETTINGS.response_size_limit - paging.ENVELOPE_RESERVE_CHARS,
+    )
+    return dump(reply, limit=SETTINGS.response_size_limit)
 
 
 # ---------------------------------------------------------------------------
@@ -350,11 +391,17 @@ async def get_entity(entity_id: str) -> str:
 
 
 @mcp.tool()
-async def search_entities(query: str = "", domain: str = "", limit: int = 50) -> str:
+async def search_entities(
+    query: str = "", domain: str = "", limit: int = 50, cursor: ListCursor = ""
+) -> str:
     """Search all entity states. Filters by substring match on entity_id or
     friendly_name, optionally restricted to a domain (e.g. 'binary_sensor').
     Returns entity_id, state, and friendly_name only — use get_entity for
-    full attributes."""
+    full attributes.
+    Pages in entity_id order: pass next_cursor back as cursor, with the same
+    query and domain, while has_more is true. Each page reflects its own read;
+    a changed match set or a server restart refuses the cursor, so start again
+    without one. A row too large for any page is named in omitted_ids."""
     if not isinstance(query, str):
         raise ValueError("query must be a string")
     if not isinstance(domain, str):
@@ -366,6 +413,9 @@ async def search_entities(query: str = "", domain: str = "", limit: int = 50) ->
     normalized_domain = domain.strip().lower()
     if normalized_domain and not re.fullmatch(r"[a-z0-9_]+", normalized_domain):
         raise ValueError("domain must be empty or a canonical Home Assistant domain")
+    codec = SEARCH_ENTITIES_CURSORS
+    fingerprint = codec.fingerprint({"query": q, "domain": normalized_domain})
+    position = paging.open_cursor(codec, cursor, fingerprint)
 
     states = await rest("GET", rest_path("/states"))
     if not isinstance(states, list):
@@ -400,14 +450,9 @@ async def search_entities(query: str = "", domain: str = "", limit: int = 50) ->
             }
         )
 
-    matches.sort(key=lambda item: item["entity_id"])
-    results = matches[:limit]
-    return dump(
-        {
-            "count": len(results),
-            "results": results,
-            "truncated": len(matches) > limit,
-        }
+    return _list_page(
+        codec, fingerprint, position, matches, limit=limit,
+        row_key="results", identity="entity_id", category="states_inventory",
     )
 
 
@@ -747,28 +792,38 @@ async def get_automation_trace(automation_id: str, run_id: str) -> str:
 
 
 @mcp.tool()
-async def list_automations(query: str = "", limit: int = 100) -> str:
+async def list_automations(query: str = "", limit: int = 100, cursor: ListCursor = "") -> str:
     """Automations with entity_id, friendly_name, state, last_triggered, and
     the internal id needed for config edits and traces. Optional substring
     filter on entity_id/friendly_name — prefer filtering over full dumps to
     save context.
     Returns at most limit rows; total counts every match and truncated is
-    true when more matched than were returned."""
-    states = await rest("GET", rest_path("/states"))
+    true when more matched than were returned.
+    Pages in entity_id order: pass next_cursor back as cursor, with the same
+    query, while has_more is true. Each page reflects its own read; a changed
+    match set or a server restart refuses the cursor, so start again without
+    one. A row too large for any page is named in omitted_ids."""
     q = query.lower()
-    # HAMCP-508 SI-1: keep counting past the page so a short page says so.
-    page_size = max(1, limit)
-    total = 0
+    codec = LIST_AUTOMATIONS_CURSORS
+    fingerprint = codec.fingerprint({"query": q})
+    position = paging.open_cursor(codec, cursor, fingerprint)
+    states = await rest("GET", rest_path("/states"))
+    # A row the old loop could not read (it raised) fails the read, as before.
+    if not isinstance(states, list) or not all(
+        isinstance(s, dict) and isinstance(s.get("entity_id"), str) for s in states
+    ):
+        raise HomeAssistantApiError(
+            details={"endpoint_category": "states_inventory", "status": "malformed_response"}
+        )
+    # HAMCP-508 SI-1: every match is kept, so total and the digest see them all.
     autos = []
     for s in states:
-        if not s["entity_id"].startswith("automation."):
+        entity_id = s["entity_id"]
+        if not entity_id.startswith("automation."):
             continue
         attrs = s.get("attributes", {})
         name = attrs.get("friendly_name") or ""
-        if q and q not in s["entity_id"].lower() and q not in name.lower():
-            continue
-        total += 1
-        if len(autos) >= page_size:
+        if q and q not in entity_id.lower() and q not in name.lower():
             continue
         autos.append(
             {
@@ -779,8 +834,10 @@ async def list_automations(query: str = "", limit: int = 100) -> str:
                 "id": attrs.get("id"),
             }
         )
-    return dump({"count": len(autos), "automations": autos,
-                 "returned": len(autos), "total": total, "truncated": total > len(autos)})
+    return _list_page(
+        codec, fingerprint, position, autos, limit=limit,
+        row_key="automations", identity="entity_id", category="states_inventory",
+    )
 
 
 @mcp.tool()
@@ -909,25 +966,31 @@ async def list_areas() -> str:
 
 
 @mcp.tool()
-async def list_devices(query: str = "", limit: int = 100) -> str:
+async def list_devices(query: str = "", limit: int = 100, cursor: ListCursor = "") -> str:
     """The device registry (manufacturer, model, area, connections), with
     optional substring filter on name/manufacturer/model. Use this to find
     orphaned or stale devices.
     Returns at most limit rows; total counts every match and truncated is
-    true when more matched than were returned."""
-    devices = await ws_command({"type": "config/device_registry/list"})
+    true when more matched than were returned.
+    Pages in device id order: pass next_cursor back as cursor, with the same
+    query, while has_more is true. Each page reflects its own read; a changed
+    match set or a server restart refuses the cursor, so start again without
+    one. A row too large for any page is named in omitted_ids."""
     q = query.lower()
-    page_size = max(1, limit)
-    total = 0
+    codec = LIST_DEVICES_CURSORS
+    fingerprint = codec.fingerprint({"query": q})
+    position = paging.open_cursor(codec, cursor, fingerprint)
+    devices = await ws_command({"type": "config/device_registry/list"})
+    if not isinstance(devices, list) or not all(isinstance(d, dict) for d in devices):
+        raise HomeAssistantApiError(
+            details={"endpoint_category": "device_registry", "status": "malformed_response"}
+        )
     out = []
     for d in devices:
         blob = " ".join(
             str(d.get(k) or "") for k in ("name", "name_by_user", "manufacturer", "model")
         ).lower()
         if q and q not in blob:
-            continue
-        total += 1
-        if len(out) >= page_size:
             continue
         out.append(
             {
@@ -939,28 +1002,36 @@ async def list_devices(query: str = "", limit: int = 100) -> str:
                 "disabled_by": d.get("disabled_by"),
             }
         )
-    return dump({"count": len(out), "devices": out,
-                 "returned": len(out), "total": total, "truncated": total > len(out)})
+    return _list_page(
+        codec, fingerprint, position, out, limit=limit,
+        row_key="devices", identity="id", category="device_registry",
+    )
 
 
 @mcp.tool()
-async def list_entity_registry(query: str = "", limit: int = 100) -> str:
+async def list_entity_registry(query: str = "", limit: int = 100, cursor: ListCursor = "") -> str:
     """The entity registry: platform, device_id, area, disabled/hidden
     status. This is where stale entity references and orphaned entities
     show up. Optional substring filter on entity_id/name.
     Returns at most limit rows; total counts every match and truncated is
-    true when more matched than were returned."""
-    entities = await ws_command({"type": "config/entity_registry/list"})
+    true when more matched than were returned.
+    Pages in entity_id order: pass next_cursor back as cursor, with the same
+    query, while has_more is true. Each page reflects its own read; a changed
+    match set or a server restart refuses the cursor, so start again without
+    one. A row too large for any page is named in omitted_ids."""
     q = query.lower()
-    page_size = max(1, limit)
-    total = 0
+    codec = LIST_ENTITY_REGISTRY_CURSORS
+    fingerprint = codec.fingerprint({"query": q})
+    position = paging.open_cursor(codec, cursor, fingerprint)
+    entities = await ws_command({"type": "config/entity_registry/list"})
+    if not isinstance(entities, list) or not all(isinstance(e, dict) for e in entities):
+        raise HomeAssistantApiError(
+            details={"endpoint_category": "entity_registry", "status": "malformed_response"}
+        )
     out = []
     for e in entities:
         blob = f"{e.get('entity_id','')} {e.get('name') or ''} {e.get('original_name') or ''}".lower()
         if q and q not in blob:
-            continue
-        total += 1
-        if len(out) >= page_size:
             continue
         out.append(
             {
@@ -973,8 +1044,10 @@ async def list_entity_registry(query: str = "", limit: int = 100) -> str:
                 "hidden_by": e.get("hidden_by"),
             }
         )
-    return dump({"count": len(out), "entities": out,
-                 "returned": len(out), "total": total, "truncated": total > len(out)})
+    return _list_page(
+        codec, fingerprint, position, out, limit=limit,
+        row_key="entities", identity="entity_id", category="entity_registry",
+    )
 
 
 @mcp.tool()
@@ -1185,13 +1258,167 @@ def _audit_page_trailer(
     return json.dumps({AUDIT_PAGE_TRAILER_KEY: page}) + "\n"
 
 
+# HAMCP-518: a summary is derived from the current audit file in one pass and
+# writes nothing, so it survives a restart exactly as the file does. Every
+# name it reports and every map it builds is bounded. To fit the response
+# limit it drops whole tools, then folds named events into ``other``, counting
+# both. What is left (the fixed keys, ``event_filter``, the two timestamps and
+# one ``other`` count) is under 1 KiB, the smallest allowed limit.
+AUDIT_SUMMARY_KEY = "_summary"
+MAX_AUDIT_SUMMARY_TOOLS = 200
+MAX_AUDIT_SUMMARY_NAME_CHARS = 128
+MAX_AUDIT_SUMMARY_TRACKED_TOOLS = 2048
+MAX_AUDIT_SUMMARY_EVENTS = 32
+MAX_AUDIT_SUMMARY_STATUSES = 16
+_AUDIT_SUMMARY_UNKNOWN = "unknown"
+_AUDIT_SUMMARY_OTHER = "other"
+
+
+def _audit_summary_name(value: Any) -> str:
+    if not isinstance(value, str) or not value:
+        return _AUDIT_SUMMARY_UNKNOWN
+    return value[:MAX_AUDIT_SUMMARY_NAME_CHARS]
+
+
+def _audit_summary_count(counts: dict[str, int], name: str, maximum: int) -> None:
+    if name not in counts and len(counts) >= maximum:
+        name = _AUDIT_SUMMARY_OTHER
+    counts[name] = counts.get(name, 0) + 1
+
+
+def _audit_summary_timestamp(value: Any) -> str | None:
+    return value[:64] if isinstance(value, str) and value else None
+
+
+def _audit_summary_bounded(value: str | None, limit: int) -> str | None:
+    """``value`` cut to ``limit`` characters and ``limit`` bytes of JSON."""
+
+    if value is None:
+        return None
+    text = value[:limit]
+    while len(json.dumps(text)) > limit + 2:
+        text = text[:-1]
+    return text
+
+
+def _audit_summary(event: str) -> str:
+    path = os.environ.get("AUDIT_PATH", "/data/audit.jsonl")
+    summary: dict[str, Any] = {
+        "scope": "current_audit_file",
+        "event_filter": _audit_summary_bounded(event or None, MAX_AUDIT_SUMMARY_NAME_CHARS),
+        "records": 0,
+        "first_timestamp": None,
+        "last_timestamp": None,
+        "events": {},
+        "events_omitted": 0,
+        "tools": [],
+        "tools_total": 0,
+        "tools_omitted": 0,
+        "calls_omitted": 0,
+        "untracked_tool_calls": 0,
+        "skipped_undecodable": 0,
+        "skipped_unparsed": 0,
+    }
+    tools: dict[str, dict[str, Any]] = {}
+    if os.path.exists(path):
+        with open(path, "rb") as f:
+            # The same whole-row snapshot a page reads: a row still being
+            # written, or completed past the snapshot, is not counted.
+            end = os.fstat(f.fileno()).st_size
+            offset = 0
+            for raw in f:
+                if offset + len(raw) > end or not raw.endswith(b"\n"):
+                    break
+                offset += len(raw)
+                try:
+                    row = raw.decode("utf-8")
+                except UnicodeDecodeError:
+                    summary["skipped_undecodable"] += 1
+                    continue
+                record = _parsed_audit_record(row)
+                if record is None:
+                    if row.strip():
+                        summary["skipped_unparsed"] += 1
+                    continue
+                if event and not audit_record_matches_event(record, event):
+                    continue
+                summary["records"] += 1
+                timestamp = _audit_summary_timestamp(record.get("timestamp"))
+                if timestamp is not None:
+                    if summary["first_timestamp"] is None:
+                        summary["first_timestamp"] = timestamp
+                    summary["last_timestamp"] = timestamp
+                record_event = _audit_summary_name(record.get("event"))
+                _audit_summary_count(summary["events"], record_event, MAX_AUDIT_SUMMARY_EVENTS)
+                if record.get("event") != "tool_call":
+                    continue
+                name = _audit_summary_name(record.get("tool_name"))
+                entry = tools.get(name)
+                if entry is None:
+                    if len(tools) >= MAX_AUDIT_SUMMARY_TRACKED_TOOLS:
+                        summary["untracked_tool_calls"] += 1
+                        continue
+                    entry = tools[name] = {"tool": name, "calls": 0, "result_status": {}}
+                entry["calls"] += 1
+                _audit_summary_count(
+                    entry["result_status"],
+                    _audit_summary_name(record.get("result_status")),
+                    MAX_AUDIT_SUMMARY_STATUSES,
+                )
+    for key in ("first_timestamp", "last_timestamp"):
+        summary[key] = _audit_summary_bounded(summary[key], 64)
+    ranked = sorted(tools.values(), key=lambda item: (-item["calls"], item["tool"]))
+    summary["tools_total"] = len(ranked)
+    kept = min(len(ranked), MAX_AUDIT_SUMMARY_TOOLS)
+    other = summary["events"].pop(_AUDIT_SUMMARY_OTHER, 0)
+    named = sorted(summary["events"].items(), key=lambda item: (-item[1], item[0]))
+    kept_events = len(named)
+    budget = SETTINGS.response_size_limit
+    while True:
+        summary["tools"] = ranked[:kept]
+        summary["tools_omitted"] = len(ranked) - kept
+        summary["calls_omitted"] = sum(item["calls"] for item in ranked[kept:])
+        folded = other + sum(count for _, count in named[kept_events:])
+        summary["events"] = dict(named[:kept_events])
+        if folded:
+            summary["events"][_AUDIT_SUMMARY_OTHER] = folded
+        summary["events_omitted"] = len(named) - kept_events
+        rendered = json.dumps({AUDIT_SUMMARY_KEY: summary}, sort_keys=True) + "\n"
+        if len(rendered.encode("utf-8")) <= budget or kept == kept_events == 0:
+            return rendered
+        if kept:
+            kept -= 1
+        else:
+            kept_events -= 1
+
+
 @mcp.tool()
-async def get_audit_log(lines: int = 50, event: str = "", cursor: str = "") -> str:
+async def get_audit_log(
+    lines: int = 50,
+    event: str = "",
+    cursor: str = "",
+    summary: Annotated[Any, WithJsonSchema({"type": "boolean"})] = False,
+) -> str:
     """Tail this server's own audit log (tool calls, auth failures, rate
     limit events). Optional event filter: tool_call, auth_failure,
     auth_failure_throttled, rate_limited.
     Pages fit the response limit; the last line is always a _page trailer.
-    To read older entries, pass its next_cursor until complete is true."""
+    To read older entries, pass its next_cursor until complete is true.
+    summary=true returns per-event and per-tool counts for the whole log instead."""
+    # HAMCP-518: the SDK would coerce a declared bool ("yes" or 1 to true), so
+    # the flag arrives raw and only a JSON boolean selects a mode.
+    if type(summary) is not bool:
+        raise GovernanceError(
+            ErrorCode.VALIDATION_FAILURE,
+            details={"field": "summary", "reason": "not_a_boolean"},
+        )
+    if summary:
+        if cursor:
+            raise GovernanceError(
+                ErrorCode.VALIDATION_FAILURE,
+                details={"field": "cursor", "reason": "not_allowed_with_summary"},
+            )
+        return _audit_summary(event)
     claim = _decode_audit_cursor(cursor) if cursor else None
     event_binding = _audit_digest(event)
     if claim is not None and claim["event"] != event_binding:

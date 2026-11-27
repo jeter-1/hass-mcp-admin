@@ -10,6 +10,7 @@ from ..entity_ids import ENTITY_ID_PATTERN, MAX_ENTITY_ID_LENGTH
 from ..errors import ErrorCode, GovernanceError
 from ..request_context import current_telemetry
 
+from .. import paging
 from ..governance import GOVERNANCE
 from ..governance import dashboard_metadata as dashboard_metadata_contract
 from ..governance import helper_options as helper_options_contract
@@ -637,8 +638,13 @@ async def list_execution_tasks(
         str, Field(pattern=r"^$|^[a-f0-9]{32}$")
     ] = "",
     limit: Annotated[int, Field(ge=1, le=100)] = 20,
+    cursor: Annotated[str, Field(strict=True, max_length=paging.MAX_CURSOR_CHARS)] = "",
 ) -> str:
-    """List bounded execution-task summaries with exact optional filters."""
+    """List bounded execution-task summaries with exact optional filters.
+    Pages newest first: pass next_cursor back as cursor, with the same
+    filters, while has_more is true. Each page reflects its own read; a
+    changed match set or a server restart refuses the cursor, so start again
+    without one. A row too large for any page is named in omitted_ids."""
     return await run_structured(
         "list_execution_tasks",
         "Returned bounded durable execution-task summaries.",
@@ -650,6 +656,8 @@ async def list_execution_tasks(
                 terminal_outcome=terminal_outcome,
                 plan_id=plan_id,
                 limit=limit,
+                cursor=cursor,
+                page_budget_chars=SETTINGS.response_size_limit - paging.ENVELOPE_RESERVE_CHARS,
             ),
         ),
         metadata={"resource_type": "execution_task"},

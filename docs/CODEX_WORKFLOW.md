@@ -411,8 +411,8 @@ matrix coverage and failure collection remain unchanged.
 Ordinary code and documentation-only pull requests run the same required jobs;
 there is no path-based exemption. Intentional version-specific step skips inside
 a successful matrix job remain distinct from a skipped required job family.
-Candidate evidence must identify the unique `validate` check, its actual producer
-and CI run, and the exact PR/base/head or verified synthetic merge checkout.
+Candidate evidence must identify the unique pull-request `validate` check, its
+actual producer and CI run, and the exact PR/base/head or verified synthetic merge checkout.
 The required status must be bound in the main ruleset to the observed GitHub
 Actions app (`integration_id: 15368`). This settings change is separate from the
 aggregate implementation and requires explicit owner authorization. Preserve the
@@ -420,10 +420,16 @@ exported prior ruleset and verify that no other rule, bypass, or enforcement
 setting changes. App binding alone does not identify the owning workflow.
 
 The protected-base `scripts/validate_ci_provenance.py` therefore verifies the
-unique check's app, PR/base/head association, and check suite; resolves that
-suite through this repository's `.github/workflows/ci.yml`; and binds its current
-run attempt's `validate` job to the exact check. Only a successful PR-triggered
-CI run and job for the authorized base/head are accepted. Another app or
+unique pull-request check's app, PR/base/head association, and check suite;
+resolves that suite through this repository's `.github/workflows/ci.yml`; and
+binds its current run attempt's `validate` job to the exact check. Only a
+successful PR-triggered CI run and job for the authorized base/head are
+accepted. A head may also carry `validate` checks from full-tier
+`workflow_dispatch` runs of the same workflow (HAMCP-521). Each such extra must
+resolve to exactly one `workflow_dispatch` run of `ci.yml` on the same head,
+with the same app, run and job binding, and must pass too; a dispatch run names
+no pull request, so its head and repository bind it. Exactly one check must
+come from a pull-request run, and the PR binding still applies to it. Another app or
 workflow, foreign repository, ambiguous/incomplete evidence, obsolete attempt,
 unsuccessful conclusion, or changed evidence refuses. Only an absent or pending
 check/run may remain pending within the existing bounded wait. GitHub API reads

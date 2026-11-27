@@ -1926,7 +1926,10 @@ class UpstreamReadGateway:
                         "schema_fingerprint": entry.input_schema_fingerprint,
                         "contract_fingerprint": decision.expected_fingerprint,
                         "admission_generation": generation,
-                        "collision": exposed_name != entry.upstream_name,
+                        # HAMCP-515: a collision is an alias forced by a name
+                        # clash (the collision_mappings rows), not a reviewed
+                        # rename.
+                        "collision": exposed_name != entry.exposed_name,
                     }
                 )
             if optional.admitted:
@@ -2076,7 +2079,7 @@ class UpstreamReadGateway:
                         "contract_fingerprint": optional.contract_fingerprint,
                         "admission_generation": generation,
                         "collision": (
-                            exposed_name != optional_entry.upstream_name
+                            exposed_name != optional_entry.exposed_name
                         ),
                         "optional": True,
                     }

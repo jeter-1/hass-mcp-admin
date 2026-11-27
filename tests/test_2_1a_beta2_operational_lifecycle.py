@@ -5032,8 +5032,10 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
             set(tools["get_execution_task"].parameters["properties"]),
             {"task_id"},
         )
+        # HAMCP-425: undo exactly the reviewed cursor input.
+        from tests.hamcp425_descriptor_changes import without_hamcp425_inputs
         self.assertEqual(
-            set(tools["list_execution_tasks"].parameters["properties"]),
+            set(without_hamcp425_inputs(self, "list_execution_tasks", tools["list_execution_tasks"].parameters)["properties"]),
             {"state", "terminal_outcome", "plan_id", "limit"},
         )
         public_state_filters = set(
