@@ -891,8 +891,8 @@ class SearchSubcallReader:
     """One fixed admitted ``ha_search`` generation for native search sub-calls.
 
     HAMCP-501 W4: ``readers`` maps each sub-call type in
-    ``search.subcalls.SUBCALL_TYPES`` (automation, script, scene, dashboard
-    and flow helper since W6 S1 b+) to a page reader that takes exactly the
+    ``search.subcalls.SUBCALL_TYPES`` (automation, script, scene and flow
+    helper since W6 S1 b+ and HAMCP-447) to a page reader that takes exactly the
     fixed page arguments and returns one ``search.subcalls.PageResult`` or
     raises.
     """
@@ -951,7 +951,8 @@ class _SearchPageCapture:
 
 
 # The record buckets of a 9.2.0 ``ha_search`` reply. On a sub-call page every
-# bucket but the requested one is absent or empty.
+# bucket but the requested one is absent or empty; ``dashboards`` stays here
+# after HAMCP-447 so a page with dashboard records is still refused.
 _SEARCH_PAGE_BUCKETS = (
     "entities", "automations", "scripts", "scenes", "helpers", "dashboards",
 )
@@ -4362,7 +4363,7 @@ class UpstreamReadGateway:
 
         HAMCP-501 W4 (HAMCP-481 design sections 2.4 to 2.6): one page reader
         for each sub-call type in ``search.subcalls.SUBCALL_TYPES``
-        (automation, script, scene, dashboard and flow helper; W6 S1 b+). A
+        (automation, script, scene and flow helper; W6 S1 b+, HAMCP-447). A
         page takes exactly the fixed ``search.subcalls.page_arguments`` at a
         size in ``search.subcalls.PAGE_SIZE_LADDER``, its offset a multiple
         of its size (W6 S1); anything else is refused before dispatch. Each

@@ -331,7 +331,7 @@ ANALYTICAL_PROVIDER_POLICIES = {
     },
     "ha_search": {
         "policy_id": "native_search_read_v1", "access": "read", "orchestrator": "engineering",
-        "scope": "the fixed Core reads in search.core_contracts.READS only (states; area, floor, label, entity and device registries; entity registry entries; search/related; input_* lists) under the request's Core lease; automation, script, scene, dashboard and flow-helper matches only through fixed internal ha_search sub-call pages on the 9.2.0 Row 25 route, never listed or aliased; bounded reply",
+        "scope": "the fixed Core reads in search.core_contracts.READS only (states; area, floor, label, entity and device registries; entity registry entries; search/related; input_* lists; the dashboard list and storage dashboard configurations, under core.dashboard_configuration_read when dashboards are searched, a YAML dashboard never read and a configuration scored, then dropped) under the request's Core lease; automation, script, scene and flow-helper matches only through fixed internal ha_search sub-call pages on the 9.2.0 Row 25 route, never listed or aliased; bounded reply",
         "writes_allowed": "none", "fallback_policy": "none",
     },
     "get_unregistered_entities": {

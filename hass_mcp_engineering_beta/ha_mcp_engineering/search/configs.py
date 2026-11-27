@@ -2,8 +2,9 @@
 sections 2.4 to 2.6, 3.5, 3.6 and 6.1; HAMCP-501 W6 S1).
 
 Storage helpers are searched natively, over the inventories the engine
-already read. Automations, scripts, scenes, dashboards and flow helpers come
-from the delegated sub-calls (:mod:`.subcalls`). Under S1 = b+ (approved by
+already read, and so are dashboards (HAMCP-447, :mod:`.dashboards`).
+Automations, scripts, scenes and flow helpers come from the delegated
+sub-calls (:mod:`.subcalls`). Under S1 = b+ (approved by
 Josh as relayed by the architect, 2026-11-26), automation, script and scene
 body matching is the delegated route's own, and native search reads no
 automation, script or scene body: the one injected reader (a
@@ -18,7 +19,8 @@ query with automations, scripts or scenes requested; a failed or unreadable
 graph is counted as ``not_searched`` ``graph_unavailable``. A sub-call that is
 not admitted or did not finish is ``source_unavailable`` for its own bucket,
 and an upstream ``partial`` page is ``not_searched`` ``upstream_partial`` for
-its own bucket; the other buckets are unaffected.
+its own bucket; the other buckets are unaffected. The dashboard reads are
+counted by :mod:`.dashboards`.
 
 Body matching (HAMCP-501 W6 F1). A delegated row keeps the route's body match
 only when the page shows that it was matched against the scrubbed corpus.
@@ -61,7 +63,8 @@ Changes from the source:
   sent and the graph is unavailable;
 - graph references on surfaces the call excluded, and the group and person
   consumers, are not reported;
-- dashboard and flow-helper rows come from the delegated sub-calls.
+- flow-helper rows come from the delegated sub-calls, and dashboards from
+  :mod:`.dashboards`.
 
 The ported code carries the source's license notice:
 
@@ -100,6 +103,7 @@ from typing import Any, Callable, Mapping
 
 from ..entity_ids import STRICT_ENTITY_ID
 from . import core_contracts as c
+from . import dashboards
 from . import scoring
 from . import subcalls
 from .core_reads import INVALID, ReadResult
@@ -188,7 +192,10 @@ def reads_for(request: ConfigRequest) -> tuple:
         names.add("search_related")
     if "helper" in types:
         names.update(_HELPER_LISTS)
-    order = ("states", "entity_registry", "search_related", *_HELPER_LISTS)
+    if "dashboard" in types:
+        names.update(("dashboards", "dashboard_config"))
+    order = ("states", "entity_registry", "search_related", *_HELPER_LISTS,
+             "dashboards", "dashboard_config")
     return tuple(name for name in order if name in names)
 
 
@@ -340,9 +347,10 @@ def _merge_graph(results: dict, hits: Mapping, request: ConfigRequest, states: S
 
 # ``search_score.py``'s ``FUZZY_THRESHOLD`` (``constants.py``).
 ROUTE_FUZZY_THRESHOLD = 70
-# The names Row 25 withholds from a reviewed flow-helper row; a collection
-# helper, automation, script or scene row withholds none.
-_FLOW_HELPER_WITHHELD = frozenset({"entry_id", "options_withheld"})
+# The names Row 25 withholds from a reviewed flow-helper row (HAMCP-447
+# admits its ``entry_id``); a collection helper, automation, script or scene
+# row withholds none.
+_FLOW_HELPER_WITHHELD = frozenset({"options_withheld"})
 
 
 def _route_name_tier(query_lower: str, texts: tuple, *, exact: bool) -> int | None:
@@ -428,7 +436,6 @@ async def search_configs(request: ConfigRequest, *, states: StateRows, sources: 
     hits = await _graph(request, reader, reasons)
     results: dict[str, list] = {search_type: [] for search_type in CONFIG_TYPES}
     bucket_withheld: dict[str, frozenset] = {}
-    dashboard_held = dashboard_total = 0
     # HAMCP-501 W6 F1: under the A'+ trigger no probe is read; otherwise a
     # helper probe before and after the scans brackets the automation, script
     # and scene pages, which carry no degraded flag of their own.
@@ -440,16 +447,16 @@ async def search_configs(request: ConfigRequest, *, states: StateRows, sources: 
                                                  query=request.query,
                                                  exact_match=request.exact_match))
     outcomes: dict[str, subcalls.SubcallOutcome] = {}
-    # One scan per requested type, in category order, one after another; each
-    # scan has its own deadline.
+    # One scan per requested sub-call type, in category order, one after
+    # another; each scan has its own deadline. Dashboards are native.
     for search_type in CONFIG_TYPES:
-        if search_type not in types:
+        if search_type not in types or search_type == "dashboard":
             continue
         if search_type == "helper":
             results["helper"] = _storage_helpers(request, sources, reasons)
         outcome = await subcalls.scan(search_type, subcall_readers.get(search_type),
                                       query=request.query, exact_match=request.exact_match,
-                                      needed=request.offset + request.limit, monotonic=monotonic)
+                                      monotonic=monotonic)
         _disclose(outcome, reasons)
         outcomes[search_type] = outcome
     if probed:
@@ -459,6 +466,12 @@ async def search_configs(request: ConfigRequest, *, states: StateRows, sources: 
     code = _body_code(unsafe_query, subcalls.worst_scrub(
         *probes, *(outcome.scrub for search_type, outcome in outcomes.items()
                    if search_type in subcalls.BODY_TYPES)))
+    if "dashboard" in types:
+        # HAMCP-447: over the list the engine read (``source_result`` checked
+        # it above) and the reader's configuration reads.
+        results["dashboard"] = await dashboards.search_dashboards(
+            request.query_lower, request.exact_match, sources["dashboards"], reader,
+            reasons, monotonic=monotonic)
     for search_type, outcome in outcomes.items():
         rows, withheld = outcome.rows, outcome.withheld_names
         if (code is not None and search_type in subcalls.BODY_TYPES
@@ -476,9 +489,6 @@ async def search_configs(request: ConfigRequest, *, states: StateRows, sources: 
                                         for row in rows)
         else:
             results[search_type].extend((row, False) for row in rows)
-        if search_type == "dashboard":
-            dashboard_held = len(rows)
-            dashboard_total = max(outcome.total, dashboard_held)
     if hits:
         _merge_graph(results, hits, request, states, slug_map)
     # ``_paginate_and_build_response``: category order, then a stable sort by
@@ -486,7 +496,7 @@ async def search_configs(request: ConfigRequest, *, states: StateRows, sources: 
     tagged = [(BUCKET_OF[search_type], record, body_read)
               for search_type in CONFIG_TYPES for record, body_read in results[search_type]]
     tagged.sort(key=lambda item: -item[1]["score"])
-    total = len(tagged) - dashboard_held + dashboard_total
+    total = len(tagged)
     window = tagged[request.offset:request.offset + request.limit]
     surface = Surface("config", tuple(window),
                       tuple(request.offset + index for index in range(len(window))),

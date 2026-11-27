@@ -152,29 +152,26 @@ class NativeTests(NativeBase):
         self.assertEqual([(record["result_status"], record["failure_category"]) for record in self.audits()],
                          [("success", None)] * pages)
 
-    async def test_the_dashboard_scan_withholds_row_25_names(self):
-        rows = [w4.board(index, score=99 - index % 90) for index in range(400)]
-        self.serve("dashboard", w4.pages_of("dashboard", rows))
-        result = await self.call(query="kitchen", search_types=["dashboard"])
-        data = result["data"]
-        self.check_reply(data)
-        self.assertEqual(self.sent(), [("ha_search", w4.arguments("dashboard"))])
-        self.assertEqual((len(data["dashboards"]), data["config_total_matches"], data["fields_withheld"]),
-                         (10, 400, 2))
-        encoded = json.dumps(result)
-        for withheld in ("dash-", "Kitchen board", "url_path", "title"):
-            self.assertNotIn(withheld, encoded)
-        self.transport.sent.clear()
-        await self.ok(query="kitchen", search_types=["dashboard"], offset=200, limit=10)
-        self.assertEqual(self.sent(), [("ha_search", w4.arguments("dashboard", page)) for page in range(2)])
+    async def test_dashboards_are_searched_natively_through_the_tool(self):
+        # HAMCP-447: the registered tool searches dashboards from Core, with no
+        # sub-call page; a record is its url_path, title, score and flags.
+        w4.native_dashboards(self.values)
+        data = await self.ok(query="kitchen", search_types=["dashboard"])
+        self.assertEqual(self.sent(), [])
+        self.assertEqual(data["dashboards"], [{"url_path": "synthetic-board", "title": "Synthetic", "score": 100,
+                                               "match_in_config": True, "match_in_references": False}])
+        self.assertEqual((data["config_total_matches"], data["fields_withheld"]), (1, 0))
+        self.assertNotIn("synthview", json.dumps(data))
+        self.assertEqual(self.transport.calls, 0)
 
-    async def test_a_failed_page_is_disclosed_and_the_other_sub_call_is_served(self):
-        self.served[("dashboard", 0)] = {"isError": True, "content": [{"type": "text", "text": MARKER}]}
-        self.serve("helper", [w4.reply_of(w4.body("helper", [w4.flow(0)]))])
+    async def test_a_failed_page_is_disclosed_and_native_dashboards_are_served(self):
+        w4.native_dashboards(self.values)
+        self.served[("helper", 0)] = {"isError": True, "content": [{"type": "text", "text": MARKER}]}
         data = await self.ok(query="kitchen", search_types=["dashboard", "helper"])
         self.assertEqual(reasons_of(data),
-                         {("source_unavailable", "dashboard", "dashboard_subcall_incomplete"): None})
-        self.assertEqual([row["entity_id"] for row in data["helpers"]], ["sensor.kitchen_flow_0"])
+                         {("source_unavailable", "helper", "helper_subcall_incomplete"): None})
+        self.assertEqual([row["url_path"] for row in data["dashboards"]], ["synthetic-board"])
+        self.assertEqual(data["helpers"], [])
         self.assertEqual(self.metadata["completeness"], "partial")
         self.assertNotIn(MARKER, json.dumps(data))
         self.assertNotIn(MARKER, json.dumps(self.audits()))
@@ -196,12 +193,14 @@ class NativeTests(NativeBase):
             for search_type in ("automation", "script", "scene", "helper")), ("ha_search", w4.probe_arguments())])
 
     async def test_an_unadmitted_sub_call_route_is_disclosed_with_zero_dispatch(self):
+        # HAMCP-447: dashboards are native, so Core serves them.
+        w4.native_dashboards(self.values)
         with patch.object(search_module.SEARCH, "reader_factory", lambda: None):
             data = await self.ok(query="kitchen", search_types=["helper", "dashboard"])
         self.assertEqual(self.metadata["subcall_route"], "not_admitted")
         self.assertEqual(reasons_of(data),
-                         {("source_unavailable", "helper", "subcall_not_admitted"): None,
-                          ("source_unavailable", "dashboard", "subcall_not_admitted"): None})
+                         {("source_unavailable", "helper", "subcall_not_admitted"): None})
+        self.assertEqual([row["url_path"] for row in data["dashboards"]], ["synthetic-board"])
         self.assertEqual(self.transport.calls, 0)
 
     async def test_an_unconfigured_runtime_refuses_before_any_read(self):
@@ -233,7 +232,10 @@ class NativeTests(NativeBase):
 
     async def test_only_the_fixed_read_only_core_commands_are_sent(self):
         self.serve("helper", [w4.reply_of(w4.body("helper", [w4.flow(0)]))])
+        # HAMCP-447: the native dashboard reads are pinned too.
+        w4.native_dashboards(self.values)
         await self.ok(query="kitchen", search_types=["automation", "script", "scene", "helper", "dashboard"])
+        self.assertEqual(len(self.batches("lovelace/config")), 1)
         await self.ok(query="light.kitchen")
         await self.ok(query="kitchen", exact_match=False,
                       result_fields=["entity_id", "area", "floor", "labels", "aliases"])

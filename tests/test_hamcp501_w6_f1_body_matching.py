@@ -326,8 +326,8 @@ class GoldenTests(unittest.TestCase):
     def test_a_bucket_discloses_its_kept_rows_withheld_names_only(self):
         flow = {"helper_type": "template", "name": "x", "score": 100}
         named = {"entity_id": "timer.x", **flow}
-        self.assertEqual(configs._kept_withheld("helper", (named, flow)),
-                         frozenset({"entry_id", "options_withheld"}))
+        # HAMCP-447: Row 25 admits a flow helper's entry_id.
+        self.assertEqual(configs._kept_withheld("helper", (named, flow)), frozenset({"options_withheld"}))
         self.assertEqual(configs._kept_withheld("helper", (named,)), frozenset())
         self.assertEqual(configs._kept_withheld("helper", ()), frozenset())
         self.assertEqual(configs._kept_withheld("automation", (flow,)), frozenset())
@@ -353,7 +353,7 @@ class GuardTests(unittest.TestCase):
 
     def scan(self, page):
         return asyncio.run(subcalls.scan("automation", self.reader(page, []), query="gate",
-                                         exact_match=True, needed=10))
+                                         exact_match=True))
 
     def probe(self, page, sent):
         return asyncio.run(subcalls.probe_scrub(self.reader(page, sent), query="gate",
@@ -612,20 +612,20 @@ class AcceptanceTests(w4.Readers):
         finally:
             self.readers = original
 
-    async def test_a_dashboard_bucket_gets_no_body_code(self):
-        # Dashboards are outside the component's scrub surfaces and the
-        # trigger (a disclosed residual): their route rows stay as served.
+    async def test_a_native_dashboard_gets_no_body_code(self):
+        # HAMCP-447: dashboards are searched natively, each Core body scored
+        # by Engineering, so no body code applies to them; their records are
+        # served.
         for query, variant, code in (("2468", "clean", "body_numeric_query"),
                                      ("unlock", "degraded", "body_scrub_degraded")):
             with self.subTest(query=query):
                 self.stage(query, "automation", [], variant=variant)
-                self.served[("dashboard", 0)] = self.page(
-                    "dashboard", [w4.board(0, score=100)], query, [w4.SKIP])
+                w4.native_dashboards(self.values, text=f"Synthetic {query} card")
                 native = await self.go(query=query, search_types=["automation", "dashboard"],
                                        exact_match=True)
                 self.assertEqual(self.body_codes(native),
                                  {("not_searched", "automation", code): None})
-                self.assertEqual(len(native["dashboards"]), 1)
+                self.assertEqual([row["url_path"] for row in native["dashboards"]], ["synthetic-board"])
 
     async def test_the_helper_page_scrub_closes_its_own_bucket(self):
         # A helper search reads no probe; its own pages carry the flag.

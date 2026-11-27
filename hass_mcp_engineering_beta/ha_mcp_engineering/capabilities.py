@@ -1109,7 +1109,7 @@ CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (
         "standard_ha_mcp_coverage": "reviewed_argument_constrained", "direct_ha_coverage": "reviewed_fixed_reads",
         "selected_provider": "engineering", "fallback_policy": "none",
         "completeness": "partial_with_reasons_when_source_unavailable_subcall_incomplete_or_budget_spent",
-        "security_justification": "Fixed Core REST and WebSocket reads under the native request's Core lease; automation, script, scene, dashboard and flow-helper matches (the route scrubs or withholds secret-bearing bodies) only through fixed internal ha_search sub-call pages on the 9.2.0 Row 25 route, which is never listed or aliased and is checked against the same lease at each page; known secrets withheld and the strict sanitizer at one exit; no write, service call or fallback.",
+        "security_justification": "Fixed Core REST and WebSocket reads under the native request's Core lease, the dashboard list and storage dashboard configurations among them when dashboards are searched (a YAML dashboard is never read; a configuration is scored, then dropped); automation, script, scene and flow-helper matches (the route scrubs or withholds secret-bearing bodies) only through fixed internal ha_search sub-call pages on the 9.2.0 Row 25 route, which is never listed or aliased and is checked against the same lease at each page; known secrets withheld and the strict sanitizer at one exit; no write, service call or fallback.",
         "trust_mode": "reviewed_native_read", "trust_profile": "native-search-read-v1",
     },
     {

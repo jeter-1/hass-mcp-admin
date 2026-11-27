@@ -3218,6 +3218,7 @@
         "entity_id": "receipt 9.1.2 profile A+B",
         "entity_next_offset": "receipt 9.1.2 profile A+B",
         "entity_total_matches": "receipt 9.1.2 profile A+B",
+        "entry_id": "9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/search/component.py:84-86; smart_search/_flow_helpers.py:145, :200; custom_components/ha_mcp_tools/websocket_api/search_config.py:395, :415 (helpers[] flow-helper entry_id)",
         "errors": "receipt 9.1.2 profile A+B",
         "floor": "9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/search/entities.py:59, :131-136, :306-314, :735-770; search/component.py:588-601; custom_components/ha_mcp_tools/websocket_api/search.py:520-523, :600-603 (result_fields entities[] area and floor names, label names, string aliases)",
         "friendly_name": "receipt 9.1.2 profile A+B",
@@ -3246,6 +3247,8 @@
         "search_types": "receipt 9.1.2 profile A+B",
         "state": "receipt 9.1.2 profile A+B",
         "success": "receipt 9.1.2 profile A+B",
+        "title": "9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/smart_search/_deep.py:1075-1083, :1152-1160 (dashboards[] url_path and title)",
+        "url_path": "9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/smart_search/_deep.py:1075-1083, :1152-1160 (dashboards[] url_path and title)",
         "warnings": "E1-R 9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/search/modes.py:688 (source-review key; shipped hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py:49-51,282-290)"
       },
       "calls": {
@@ -3279,6 +3282,12 @@
           "observed_9_1_2_profiles": [],
           "observed_9_2_0_profiles": [],
           "source": "9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/search/entities.py:59, :131-136, :306-314, :735-770; search/component.py:588-601; custom_components/ha_mcp_tools/websocket_api/search.py:520-523, :600-603 (result_fields entities[] area and floor names, label names, string aliases)",
+          "status": "admitted"
+        },
+        "entry_id": {
+          "observed_9_1_2_profiles": [],
+          "observed_9_2_0_profiles": [],
+          "source": "9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/search/component.py:84-86; smart_search/_flow_helpers.py:145, :200; custom_components/ha_mcp_tools/websocket_api/search_config.py:395, :415 (helpers[] flow-helper entry_id)",
           "status": "admitted"
         },
         "floor": {
@@ -3316,10 +3325,24 @@
           ],
           "source": "research G ruling 2c",
           "status": "admitted"
+        },
+        "title": {
+          "observed_9_1_2_profiles": [],
+          "observed_9_2_0_profiles": [],
+          "source": "9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/smart_search/_deep.py:1075-1083, :1152-1160 (dashboards[] url_path and title)",
+          "status": "admitted"
+        },
+        "url_path": {
+          "observed_9_1_2_profiles": [],
+          "observed_9_2_0_profiles": [],
+          "source": "9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/smart_search/_deep.py:1075-1083, :1152-1160 (dashboards[] url_path and title)",
+          "status": "admitted"
         }
       },
       "notes": [
-        "result_fields enrichment and membership keys are admitted by source review (HAMCP-441); no receipt passed result_fields"
+        "result_fields enrichment and membership keys are admitted by source review (HAMCP-441); no receipt passed result_fields",
+        "the flow-helper entry_id is admitted by source review (HAMCP-447); no receipt held a flow helper",
+        "the dashboard url_path and title are admitted by source review for native dashboard records (HAMCP-447); no receipt held a dashboard hit"
       ],
       "number": 25,
       "observed": {

@@ -1,5 +1,6 @@
 """Sequential fixed Core reads with fail-closed projection (HAMCP-481 W2;
-HAMCP-501 W6 S1: no automation, script or scene body read).
+HAMCP-501 W6 S1: no automation, script or scene body read; HAMCP-447:
+dashboard configurations are scored as they are read, then dropped).
 
 A ``CoreReadSession`` is opened for a declared set of reads from
 ``core_contracts.READS``. Opening it checks the Core route authority of
@@ -13,6 +14,11 @@ an ``unavailable`` result. A malformed or duplicate row is dropped, and a
 field that is absent or of the wrong kind becomes ``INVALID``; either makes
 the result ``partial`` with a closed reason. Exception text and provider
 values never enter a result or a source record.
+
+A dashboard configuration is never projected or kept: ``dashboard_configs``
+hands each body to the caller's scorer and keeps only the score. The caller
+chooses which dashboards are read (``search/dashboards.py``); a YAML
+dashboard is never one of them.
 
 Replies are not sanitized here; the caller that builds a client-visible
 envelope sanitizes it, as every Engineering tool does.
@@ -385,3 +391,74 @@ class CoreReadSession:
         if reasons:
             partial.add("item_failures")
         return self._record(_finished(name, MappingProxyType(entries), partial))
+
+    async def dashboard_configs(self, targets, measure: Callable[[dict], int], *,
+                                deadline: float | None = None,
+                                monotonic: Callable[[], float] | None = None) -> ReadResult:
+        """``lovelace/config`` for each target in order (``None`` is the
+        default dashboard), pipelined in chunks of ``CONFIG_CHUNK``.
+
+        Each configuration goes to ``measure`` and is then dropped; ``value``
+        maps each target read to its score. ``items`` maps each target to
+        "read", "not_found" (Core's ``config_not_found``: an unknown
+        dashboard or one with no saved configuration) or "failed". A
+        failed chunk fails its targets, and once ``monotonic()`` (the
+        caller's clock, required with a deadline) reaches ``deadline`` no
+        further chunk is sent and the rest fail; either
+        makes the result partial, and every target failing makes it
+        unavailable.
+        """
+
+        name = "dashboard_config"
+        self._declared(name, "config")
+        targets = tuple(targets) if type(targets) in (tuple, list) else None
+        if (targets is None or len(targets) > c.MAX_DASHBOARDS + 1
+                or not all(target is None or type(target) is str for target in targets)
+                or len(set(targets)) != len(targets) or not callable(measure)
+                or not (deadline is None
+                        or (type(deadline) in (int, float) and callable(monotonic)))):
+            raise c.CoreReadError("invalid_arguments")
+        payloads = [c.config_payload(target) for target in targets]
+        if not targets:
+            return _finished(name, MappingProxyType({}), set())
+        items: dict[Any, str] = {}
+        scores: dict[Any, int] = {}
+        reasons: list[str] = []
+        for start in range(0, len(targets), c.CONFIG_CHUNK):
+            chunk = targets[start:start + c.CONFIG_CHUNK]
+            batch = payloads[start:start + c.CONFIG_CHUNK]
+            if deadline is not None and monotonic() >= deadline:
+                reasons.append("timeout")
+                items.update(dict.fromkeys(targets[start:], "failed"))
+                break
+            raw, reason = await self._dispatch(lambda batch=batch: self.client.command_batch(batch))
+            if reason is None and (type(raw) is not list or len(raw) != len(chunk)):
+                reason = "invalid_response"
+            if reason:
+                reasons.append(reason)
+                items.update(dict.fromkeys(chunk, "failed"))
+                continue
+            for target, outcome in zip(chunk, raw):
+                items[target], score = _config_outcome(outcome, measure)
+                if score is not None:
+                    scores[target] = score
+        failed = sum(1 for outcome in items.values() if outcome == "failed")
+        if failed == len(targets):
+            return self._record(_unavailable(name, reasons[0] if reasons else "command_failed"))
+        partial = {"item_failures"} if failed else set()
+        return self._record(_finished(name, MappingProxyType(scores), partial, items=items))
+
+
+def _config_outcome(outcome: Any, measure: Callable[[dict], int]) -> tuple[str, int | None]:
+    """One ``lovelace/config`` batch outcome and its score; the body is not
+    kept."""
+
+    if type(outcome) is not tuple or len(outcome) != 2:
+        return "failed", None
+    ok, value = outcome
+    if ok is True:
+        if type(value) is not dict:
+            return "failed", None
+        score = measure(value)
+        return ("read", score) if type(score) is int else ("failed", None)
+    return ("not_found" if ok is False and value == "config_not_found" else "failed"), None
