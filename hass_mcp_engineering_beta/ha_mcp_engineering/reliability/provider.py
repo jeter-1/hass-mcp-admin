@@ -740,7 +740,7 @@ def _normalize_trace(summary: dict[str, Any], detail: Any) -> dict[str, Any]:
         "entity_ids": sorted(entities)[:50],
         "affected_dependency": sorted(entities)[0] if entities else None,
         "action_error": bool(error_step and any(term in error_step.lower() for term in ("action", "sequence", "service"))),
-        "condition_stop_step": _condition_stop_step(summary, detail, error),
+        "condition_stop_step": _condition_stop_step(summary, detail),
     }
 
 
@@ -748,27 +748,45 @@ def _normalize_trace(summary: dict[str, Any], detail: Any) -> dict[str, Any]:
 # automation condition is false and to "aborted" when a condition action is
 # false (or a stop with an error, or a wait timeout), and last_step to the last
 # step it traced. A false branch condition that a choose or if routed past is
-# not where the run stopped.
+# not where the run stopped. A compound check (not, or a numeric_state that
+# returns early) records its false result on the enclosing condition, an
+# ancestor of last_step, so the stop is the deepest such step on that path.
 _CONDITION_STOP_EXECUTIONS = frozenset({"aborted", "failed_conditions"})
 
 
-def _condition_stop_step(summary: dict[str, Any], detail: Any, error: str | None) -> str | None:
+def _condition_stop_step(summary: dict[str, Any], detail: Any) -> str | None:
     step = summary.get("last_step")
-    if error or not isinstance(step, str) or not step:
+    if not isinstance(step, str) or not step or summary.get("error") not in (None, "", False):
         return None
     if summary.get("script_execution") not in _CONDITION_STOP_EXECUTIONS:
         return None
     trace = detail.get("trace") if isinstance(detail, dict) else None
-    entries = trace.get(step) if isinstance(trace, dict) else None
-    if isinstance(entries, list) and entries:
-        stopped = any(
-            isinstance(entry, dict) and isinstance(entry.get("result"), dict)
-            and entry["result"].get("result") is False
-            for entry in entries[:100]
-        )
-        return step[:160] if stopped else None
-    # Without the step's own trace entry, only its name says it is a condition.
-    return step[:160] if "condition" in step.lower() else None
+    parts = step.split("/")
+    path = ["/".join(parts[:end]) for end in range(len(parts), 0, -1)]
+    if not isinstance(trace, dict) or not any(key in trace for key in path):
+        # Without the step's own trace entry, only its name says it is a condition.
+        return step[:160] if "condition" in step.lower() else None
+    stopped = next((key for key in path if _last_result(trace.get(key)) is False), None)
+    if stopped is None:
+        return None
+    # An error recorded on the stopping condition, or within it, is an error,
+    # not a clean stop; an earlier step's error is not.
+    for key in list(trace)[:200]:
+        if isinstance(key, str) and (key == stopped or key.startswith(stopped + "/")):
+            entry = _last_entry(trace[key])
+            if isinstance(entry, dict) and entry.get("error") not in (None, "", False):
+                return None
+    return stopped[:160]
+
+
+def _last_entry(entries: Any) -> Any:
+    return entries[-1] if isinstance(entries, list) and entries else None
+
+
+def _last_result(entries: Any) -> Any:
+    entry = _last_entry(entries)
+    result = entry.get("result") if isinstance(entry, dict) else None
+    return result.get("result") if isinstance(result, dict) else None
 
 
 def _error_signature(value: Any) -> str:

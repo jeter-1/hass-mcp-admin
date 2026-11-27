@@ -91,6 +91,55 @@ class ConditionStopStepTests(unittest.TestCase):
             with self.subTest(script_execution=execution):
                 self.assertIsNone(self.stop("condition/0", execution, None))
 
+    def test_a_compound_check_stops_at_the_enclosing_condition(self):
+        # Core 2026.11.3: a not condition is false when its inner check is
+        # true; the outer condition records the false result, and the inner
+        # key, an ancestor's child, is last_step.
+        automation = {"trace": {"trigger/0": [{}], "condition/0": [FALSE],
+                                "condition/0/conditions/0": [TRUE]}}
+        self.assertEqual(self.stop("condition/0/conditions/0", "failed_conditions", automation),
+                         "condition/0")
+        action = {"trace": {**routed_past_then_stopped()["trace"], "action/1/conditions/0": [TRUE]}}
+        self.assertEqual(self.stop("action/1/conditions/0", "aborted", action), "action/1")
+        # A numeric_state that returns false early sets no child result.
+        numeric = {"trace": {"condition/0": [FALSE], "condition/0/entity_id/0": [{"path": "x"}]}}
+        self.assertEqual(self.stop("condition/0/entity_id/0", "failed_conditions", numeric), "condition/0")
+        # A child that records its own false result is the deepest stop.
+        child = {"trace": {"condition/0": [FALSE], "condition/0/entity_id/0": [FALSE]}}
+        self.assertEqual(self.stop("condition/0/entity_id/0", "failed_conditions", child),
+                         "condition/0/entity_id/0")
+
+    def test_a_false_condition_off_the_stopping_path_is_not_the_stop(self):
+        # An if whose condition is false routes to else, which waits and aborts.
+        routed = {"trace": {
+            "action/0": [{"result": {"choice": "else"}}],
+            "action/0/if/condition/0": [FALSE],
+            "action/0/else/0": [{"result": {"wait": {"remaining": 0.0}, "timeout": True}}],
+        }}
+        self.assertIsNone(self.stop("action/0/else/0", "aborted", routed))
+        # action/1 is not an ancestor of action/10.
+        sibling = {"trace": {"action/1": [FALSE], "action/10": [{"result": {"wait": {}}}]}}
+        self.assertIsNone(self.stop("action/10", "aborted", sibling))
+        # The last run of a repeated step decides, not an earlier one.
+        repeated = {"trace": {"action/0": [FALSE, {"result": {"wait": {}}}]}}
+        self.assertIsNone(self.stop("action/0", "aborted", repeated))
+
+    def test_an_earlier_or_nested_value_error_does_not_hide_the_stop(self):
+        earlier = {"trace": {"action/0": [{"error": "Synthetic earlier failure"}],
+                             "condition/1": [FALSE]}}
+        self.assertEqual(self.stop("condition/1", "failed_conditions", earlier), "condition/1")
+        nested = {"trace": {"condition/0": [{**FALSE, "changed_variables": {"response": {"error": "busy"}}}]}}
+        self.assertEqual(self.stop("condition/0", "failed_conditions", nested), "condition/0")
+        normalized = _normalize_trace(summary("condition/1", "failed_conditions"), earlier)
+        self.assertEqual(normalized["error"], "Synthetic earlier failure")
+
+    def test_an_error_within_the_stopping_condition_or_the_run_is_not_a_stop(self):
+        inner = {"trace": {"condition/0": [FALSE],
+                           "condition/0/conditions/0": [{"error": "Synthetic inner error"}]}}
+        self.assertIsNone(self.stop("condition/0/conditions/0", "failed_conditions", inner))
+        detail = {"trace": {"condition/0": [FALSE]}}
+        self.assertIsNone(self.stop("condition/0", "failed_conditions", detail, error="Synthetic run error"))
+
     def test_the_live_case_reaches_the_rule_and_the_incident_at_the_stop(self):
         traces = [
             _normalize_trace(summary("action/1", "aborted", run_id=run_id,
