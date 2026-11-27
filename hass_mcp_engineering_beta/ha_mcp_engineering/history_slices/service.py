@@ -45,9 +45,9 @@ LIMITATIONS = (
     "significant changes only, no attributes) under this tool's own Core lease; the delegated "
     "ha_get_history route is not used and there is no fallback.",
     "The recorder collapses consecutive equal states and omits attribute-only changes, except for "
-    "climate, humidifier, input_datetime, thermostat and water_heater entities: every recorded row of "
-    "these is kept, so an attribute-only update reads as a repeated equal state. An excluded or purged "
-    "entity reads as no states.",
+    "climate, humidifier, thermostat and water_heater entities: their attribute-only updates are kept "
+    "and read as a repeated equal state. input_datetime rows are returned in full, but attribute-only "
+    "updates are omitted for it too. An excluded or purged entity reads as no states.",
     "state_at_window_start is null when the recorder holds no state older than the window start "
     "(retention edge, a new entity, or no access); that is not evidence the entity had no state.",
     "state_at_window_start.since is null when the recorder reports only the prevailing state: it "

@@ -14,8 +14,9 @@ with ``minimal_response``, ``no_attributes`` and
 - changes are rows with ``start < last_updated < end`` (a row exactly at
   ``start`` is in neither set; a row exactly at ``end`` is excluded);
 - consecutive equal states are collapsed, except for the
-  ``NEED_ATTRIBUTE_DOMAINS``, whose attribute-only updates read as repeated
-  states;
+  ``NEED_ATTRIBUTE_DOMAINS``; of those, only climate, humidifier, thermostat
+  and water_heater keep attribute-only updates (they read as repeated
+  states). This simulation does not model attribute-only updates;
 - the body is ``[]`` or ``[[rows]]``; row 0, and every row of a
   ``NEED_ATTRIBUTE_DOMAINS`` entity, is a full state with empty attributes
   and ``last_changed == last_updated``; every other row is

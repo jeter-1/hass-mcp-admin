@@ -11,8 +11,10 @@ Core behavior relied on (pinned Home Assistant Core 2026.11.3, see
 ``native.py``): the recorder returns the state prevailing before the
 requested start (reported at the start) followed by the rows with
 ``start < last_updated < end``. Minimal responses collapse consecutive
-equal states except for ``native.NEED_ATTRIBUTE_DOMAINS``, whose
-attribute-only updates read as repeated states. Offsets are stable only
+equal states except for ``native.NEED_ATTRIBUTE_DOMAINS``. Of those, the
+attribute-only updates of climate, humidifier, thermostat and water_heater
+read as repeated states; Core omits them for input_datetime, which is not a
+significant domain. Offsets are stable only
 over fixed absolute bounds.
 
 Every value here is a disclosed bound.

@@ -138,6 +138,33 @@ class ParserTests(unittest.TestCase):
                          {"climate", "humidifier", "input_datetime", "thermostat", "water_heater"})
         self.assertEqual(Recorder(entity_id=CLIMATE).query(S0, S1), [])
 
+    def test_the_limitation_names_core_attribute_only_semantics(self):
+        # Cursor A2-R1-03. Core 2026.11.3 recorder/history/const.py (sha256
+        # 87b24fc5...) and __init__.py L190-204: significant_changes_only
+        # selects attribute-only rows only for SIGNIFICANT_DOMAINS, and a
+        # minimal response keeps them only for NEED_ATTRIBUTE_DOMAINS.
+        significant = {"climate", "device_tracker", "humidifier", "thermostat", "water_heater"}
+        kept = sorted(significant & native.NEED_ATTRIBUTE_DOMAINS)
+        omitted = sorted(native.NEED_ATTRIBUTE_DOMAINS - significant)
+        self.assertEqual((kept, omitted), (["climate", "humidifier", "thermostat", "water_heater"],
+                                           ["input_datetime"]))
+        from ha_mcp_engineering.history_slices.service import LIMITATIONS
+        text = next(line for line in LIMITATIONS if "attribute-only" in line)
+        self.assertIn(", ".join(kept[:-1]) + " and " + kept[-1] + " entities: their attribute-only "
+                      "updates are kept", text)
+        self.assertIn("input_datetime rows are returned in full, but attribute-only updates are "
+                      "omitted for it too", text)
+
+    def test_the_coverage_matrix_states_both_read_caps(self):
+        # Cursor A2-R1-04: a continued page also spends verification reads.
+        matrix = json.loads((ROOT / "docs" / "read_coverage_matrix.json").read_text(encoding="utf-8"))
+        rows = [row for source in matrix["sources"] for row in source.get("read_paths", ())
+                if row.get("tool") == "get_history_slices"]
+        self.assertEqual(len(rows), 1)
+        cap, verify = c.MAX_UPSTREAM_CALLS, c.MAX_VERIFY_CALLS
+        self.assertIn(f"max {cap} Core reads for new slices plus up to {verify} verification reads "
+                      f"on a continued page ({cap + verify} per page)", rows[0]["detail"])
+
     def test_unpinned_bodies_are_refused(self):
         good = json.loads(body([(S0, "on"), (S0 + 10**6, "off")]))
 
@@ -499,6 +526,60 @@ class ServiceSlotTests(unittest.IsolatedAsyncioTestCase):
             await second
         self.assertEqual(raised.exception.details["reason"], "history_route_unavailable")
         self.assertEqual(self.client.callers, ["synthetic_caller_0"])
+        self.assertEqual(service.slots._admitted, {})
+
+
+    async def test_the_lease_is_not_committed_while_a_call_is_queued(self):
+        # Cursor A2-R1-01: the authorizer commits the Core lease, so it runs
+        # only once the read slot is held, never while the call waits.
+        for granted in (True, False):
+            with self.subTest(lease_held_at_slot=granted):
+                self.client = GatedClient(self.recorder)
+                service = self.service(ReadSlots(global_reads=1))
+                first = asyncio.create_task(self.read(service, "synthetic_caller_0"))
+                for _ in range(5):
+                    await asyncio.sleep(0)
+                authorizer = Mock(return_value=granted)
+                second = asyncio.create_task(self.read(service, "synthetic_caller_1", authorizer))
+                for _ in range(10):
+                    await asyncio.sleep(0)
+                self.assertEqual(service.slots._admitted, {"synthetic_caller_0": 1, "synthetic_caller_1": 1})
+                self.assertEqual(authorizer.call_count, 0)
+                self.client.release.set()
+                self.assertTrue((await first)["complete"])
+                if granted:
+                    self.assertTrue((await second)["complete"])
+                    self.assertGreaterEqual(authorizer.call_count, 1)
+                    self.assertEqual(self.client.callers, ["synthetic_caller_0", "synthetic_caller_1"])
+                else:
+                    with self.assertRaises(GovernanceError) as raised:
+                        await second
+                    self.assertEqual(raised.exception.details["reason"], "history_route_unavailable")
+                    self.assertEqual(self.client.callers, ["synthetic_caller_0"])
+                self.assertEqual(service.slots._admitted, {})
+
+    async def test_a_reader_with_no_authorizer_refuses_without_taking_a_slot(self):
+        # Cursor A2-R1-02: readiness is checked before queueing, so a call
+        # that can never read does not occupy a caller or global slot.
+        service = self.service()
+        holders = [asyncio.create_task(self.read(service, f"synthetic_caller_{n}")) for n in range(2)]
+        for _ in range(10):
+            await asyncio.sleep(0)
+        self.assertEqual(service.slots.running(), 2)
+        unready = asyncio.create_task(self.read(service, "synthetic_caller_2", None))
+        for _ in range(10):
+            await asyncio.sleep(0)
+        try:
+            self.assertTrue(unready.done(), "a reader with no authorizer queued for a slot")
+            self.assertNotIn("synthetic_caller_2", service.slots._admitted)
+            with self.assertRaises(GovernanceError) as raised:
+                await unready
+            self.assertEqual(raised.exception.details["reason"], "history_route_unavailable")
+        finally:
+            unready.cancel()
+            self.client.release.set()
+            await asyncio.gather(*holders, unready, return_exceptions=True)
+        self.assertEqual(self.client.callers, ["synthetic_caller_0", "synthetic_caller_1"])
         self.assertEqual(service.slots._admitted, {})
 
 

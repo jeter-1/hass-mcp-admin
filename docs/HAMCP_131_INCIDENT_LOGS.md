@@ -188,8 +188,8 @@ identical `_fetch_history` AST in both) sent one
 `history/history_during_period` WebSocket call for the whole requested window
 and sliced it on the client side the same way.
 
-Home Assistant 2026.10.1 recorder semantics for one entity with
-`minimal_response`:
+Home Assistant 2026.11.3 recorder semantics for one entity with
+`minimal_response` and `significant_changes_only`:
 
 - The window-start state is the state of the last row with
   `last_updated < start`. It is returned only when the database holds a row
@@ -204,9 +204,14 @@ Home Assistant 2026.10.1 recorder semantics for one entity with
   is in neither set.
 - Consecutive equal states are collapsed, except for climate, humidifier,
   input_datetime, thermostat and water_heater entities
-  (`NEED_ATTRIBUTE_DOMAINS`, Core 2026.11.3 `recorder/history/const.py`):
-  every recorded row of these is kept, so an attribute-only update reads as a
-  repeated equal state.
+  (`NEED_ATTRIBUTE_DOMAINS`, Core 2026.11.3 `recorder/history/const.py`),
+  whose rows are returned in full. Attribute-only updates are selected only
+  for the significant domains (`SIGNIFICANT_DOMAINS`: climate,
+  device_tracker, humidifier, thermostat, water_heater;
+  `recorder/history/__init__.py` L190-204). So climate, humidifier,
+  thermostat and water_heater attribute-only updates read as a repeated equal
+  state; device_tracker ones are folded into the previous equal state; and
+  input_datetime ones are omitted.
 
 `get_history_slices` cuts the window into fixed 6-hour slices. Each slice is
 one absolute-bounded request `[S − 1 ms, E)`. The 1 ms overlap places a row
