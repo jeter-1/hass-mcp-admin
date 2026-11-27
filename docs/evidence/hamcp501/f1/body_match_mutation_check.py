@@ -18,6 +18,9 @@ runs ``tests/test_hamcp501_w6_f1_body_matching.py`` and
 descriptors. The suites stop at their first failing test, which the report
 names; the mutant is killed when one test fails.
 
+HAMCP-520 (2.11.0 Lane B1): the name-only rescore calls ``scoring.name_tier``
+(``search/scoring.py``), so the name-tier threshold mutant edits that module.
+
 ``EQUIVALENT`` holds an edit that changes no observable outcome, with the
 reason; it is run and reported, not required to fail.
 
@@ -50,11 +53,12 @@ TARGETS = {
     "subcalls": ("ha_mcp_engineering.search", ENGINEERING / "search/subcalls.py"),
     "configs": ("ha_mcp_engineering.search", ENGINEERING / "search/configs.py"),
     "reply": ("ha_mcp_engineering.search", ENGINEERING / "search/reply.py"),
+    "scoring": ("ha_mcp_engineering.search", ENGINEERING / "search/scoring.py"),
     "keys": ("ha_mcp_engineering.providers", ENGINEERING / "providers/upstream_reads_9_2_keys.py"),
     "gateway": ("ha_mcp_engineering.providers", ENGINEERING / "providers/upstream_read_gateway.py"),
 }
 MODULE_NAMES = {
-    "subcalls": "subcalls", "configs": "configs", "reply": "reply",
+    "subcalls": "subcalls", "configs": "configs", "reply": "reply", "scoring": "scoring",
     "keys": "upstream_reads_9_2_keys", "gateway": "upstream_read_gateway",
 }
 SOURCES = {key: path.read_text(encoding="utf-8") for key, (_, path) in TARGETS.items()}
@@ -155,8 +159,9 @@ MUTANTS = {
         "configs", 'return {**row, "score": score,', 'return {**row, "score": row["score"],'),
     "match_in_config_kept": (
         "configs", '"match_in_name": True, "match_in_config": False}', '"match_in_name": True}'),
+    # HAMCP-520: the name-only rescore calls ``scoring.name_tier``.
     "name_tier_fuzzy_threshold_lowered": (
-        "configs", "ROUTE_FUZZY_THRESHOLD = 70\n", "ROUTE_FUZZY_THRESHOLD = 60\n"),
+        "scoring", "\nFUZZY_THRESHOLD = 70\n", "\nFUZZY_THRESHOLD = 60\n"),
     "page_withheld_kept_under_code": (
         "configs", "            withheld = _kept_withheld(search_type, rows)\n", ""),
     "flow_withheld_without_flow_row": (

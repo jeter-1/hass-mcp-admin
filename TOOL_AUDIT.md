@@ -102,6 +102,8 @@ or write path. The native search row is the last one below.
   - A numeric-like query, or a helper probe that does not show a clean
     scrub, withholds body matching for the body buckets
     (`body_numeric_query`, `body_scrub_degraded`, `body_scrub_unverified`).
+    The pages are still read, and their rows are matched by name only, so
+    `not_searched` there means the bodies were not matched (HAMCP-525).
   - Partial semantics: each bucket reports its own `partial_reasons`, and a
     failed sub-call affects only its bucket. No visibility filter
     (HAMCP-499).
