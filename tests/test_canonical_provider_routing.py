@@ -108,7 +108,11 @@ class CanonicalRoutingTests(unittest.IsolatedAsyncioTestCase):
         states = [{"entity_id": "sensor.example", "state": "on", "attributes": {}}]
         with patch.object(compatibility, "rest", new=AsyncMock(return_value=states)):
             payload = json.loads(await compatibility.search_entities("does-not-exist"))
-        self.assertEqual(payload["data"], {"count": 0, "results": [], "truncated": False})
+        # HAMCP-425: the page keys say the walk is complete; no cursor is issued.
+        self.assertEqual(payload["data"], {
+            "count": 0, "results": [], "returned": 0, "total": 0, "truncated": False,
+            "has_more": False, "next_cursor": None, "page_limit_reason": None,
+        })
         self.assertEqual(payload["metadata"]["source_coverage"][0]["completeness"], "complete")
 
     async def test_search_entities_limit_one_is_partial_without_provider_failure(self):

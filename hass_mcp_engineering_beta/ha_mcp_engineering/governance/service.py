@@ -260,6 +260,8 @@ from .helper_dependency import (
     read_runtime_helper_dependency_risk,
 )
 from .validation import sanitize_context, validate_automation
+from .. import paging
+from ..incident_logs.cursor import CursorCodec
 from .semantic_projection import (
     SemanticProjectionError,
     build_semantic_projection,
@@ -280,6 +282,10 @@ DORMANT_PROFILE_RESOURCE_TYPES = frozenset(
         scene_configuration_contract.RESOURCE_TYPE,
     }
 )
+
+
+# HAMCP-425 (PC-1): list_execution_tasks continuations; one key per process.
+EXECUTION_TASK_CURSORS = CursorCodec("list_execution_tasks")
 
 
 APPROVAL_AUTHORITY_VERSION = 3
@@ -2622,19 +2628,29 @@ class ChangeGovernanceService:
         terminal_outcome: str = "",
         plan_id: str = "",
         limit: int = 20,
+        cursor: str = "",
+        page_budget_chars: int | None = None,
     ) -> dict[str, Any]:
         if state:
             try:
                 ExecutionTaskState(state)
             except ValueError as exc:
                 raise GovernanceError(ErrorCode.INVALID_REQUEST) from exc
+        # HAMCP-425 (PC-1): the cursor is checked before the read; the set
+        # digest after it. page_budget_chars bounds the compact page (None:
+        # no size bound, for in-process callers).
+        codec = EXECUTION_TASK_CURSORS
+        fingerprint = codec.fingerprint(
+            {"state": state, "terminal_outcome": terminal_outcome, "plan_id": plan_id}
+        )
+        position = paging.open_cursor(codec, cursor, fingerprint)
         try:
             tasks = self.task_repository.list()
         except ExecutionTaskStorageError as exc:
             raise GovernanceError(
                 ErrorCode.EXECUTION_TASK_STORAGE_ERROR
             ) from exc
-        summaries = []
+        matched = []
         for task in tasks:
             if state and task.state.value != state:
                 continue
@@ -2645,15 +2661,32 @@ class ChangeGovernanceService:
                 continue
             if plan_id and task.plan_id != plan_id:
                 continue
+            matched.append(task)
+        # created_at descending, then task_id ascending among equal times.
+        matched.sort(key=lambda task: task.task_id)
+        matched.sort(key=lambda task: task.created_at, reverse=True)
+        digest = paging.set_digest(codec, [task.task_id for task in matched])
+        offset = position.require_set(codec, digest, len(matched))
+        summaries = []
+        for task in matched[offset : offset + max(1, min(int(limit), 100))]:
             # HAMCP-181 S6: the summary carries the same facts and counter
             # qualifiers as get_execution_task.
             facts = self._dispatch_facts(task)
             summary = self._public_task(task, include_events=False)
             summary.update(facts.public_fields())
             summaries.append(dispatch_qualify_counters(summary, facts))
-            if len(summaries) >= max(1, min(int(limit), 100)):
-                break
-        return {"count": len(summaries), "tasks": summaries}
+        return paging.fill_page(
+            summaries,
+            codec=codec,
+            query=fingerprint,
+            digest=digest,
+            offset=offset,
+            total=len(matched),
+            row_key="tasks",
+            identity="task_id",
+            budget=page_budget_chars,
+            legacy_truncated=False,
+        )
 
     async def cancel_execution_task(
         self, task_id: str

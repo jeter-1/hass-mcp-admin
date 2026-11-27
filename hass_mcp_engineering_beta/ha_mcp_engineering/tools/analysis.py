@@ -10,6 +10,11 @@ from pydantic import Field
 from ..dependency import DEPENDENCY_ANALYSIS
 from ..impact import CHANGE_IMPACT_ANALYSIS
 from ..integrity import CONFIGURATION_INTEGRITY_ANALYSIS
+from ..integrity.service import (
+    COMPACT_DETAIL_LEVEL,
+    COMPACT_PAGE_BUDGET_CHARS,
+    OVER_COMPACT_PAGE_BUDGET,
+)
 from ..incident import INCIDENT_CORRELATION
 from ..handoff import HANDOFF_GENERATION
 from ..reliability import RELIABILITY_ANALYSIS
@@ -470,6 +475,8 @@ async def configuration_integrity_analysis(
     This read-only operation never deletes, rewrites, or changes Home Assistant.
     To walk every finding, use detail_level compact with limit 100 and follow
     next_cursor; severities and finding_types narrow the walk.
+    A compact page holds at most 24000 characters. For the whole-analysis
+    counts and coverage with one finding, use detail_level compact with limit 1.
     """
 
     started = time.perf_counter()
@@ -477,6 +484,17 @@ async def configuration_integrity_analysis(
     rendered = None
     screened = 0
     service = None
+
+    # HAMCP-492: a compact page is rendered against its own budget when that
+    # is below the response limit, so the client sees at most that many
+    # characters. Every compact rejection is then the budget's, reported as
+    # the falsy OVER_COMPACT_PAGE_BUDGET verdict.
+    compact_budget = (
+        detail_level == COMPACT_DETAIL_LEVEL
+        and COMPACT_PAGE_BUDGET_CHARS < SETTINGS.response_size_limit
+    )
+    page_bound = COMPACT_PAGE_BUDGET_CHARS if compact_budget else SETTINGS.response_size_limit
+    rejected = OVER_COMPACT_PAGE_BUDGET if compact_budget else False
 
     def page_fits(output):
         nonlocal rendered, screened
@@ -500,11 +518,11 @@ async def configuration_integrity_analysis(
                 metadata=metadata,
                 timing=timing_since(started),
                 request_id=current_request_id(),
-            ).to_json(SETTINGS.response_size_limit)
+            ).to_json(page_bound)
         except ValueError:
-            return False
+            return rejected
         if json.loads(candidate).get("response_completeness", {}).get("truncated"):
-            return False
+            return rejected
         rendered, screened = candidate, hits
         return True
 
