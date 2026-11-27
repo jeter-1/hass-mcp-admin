@@ -8,6 +8,11 @@ rather than as the cause. Each high-risk call is named by its path and its
 literal targets, so two calls to one service are reported separately as
 changed, moved, removed, or unchanged.
 
+HAMCP-486 (release 2.11.0 Lane C GO, 2026-11-27, as relayed by the
+architect) adds the one exception: an update that changes only static
+persistent-notification text. Those cases are in
+``tests/test_hamcp486_notification_text_case.py``; no case here meets it.
+
 Every plan-path assertion compares the plan with the same plan classified by
 the legacy rule alone (``_change_reasons`` disabled): level, apply decision,
 evidence, warnings, policy class, and acknowledgements must be equal, and the

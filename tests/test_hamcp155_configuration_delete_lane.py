@@ -41,11 +41,16 @@ def absent(resource_type):
             "entity_id": ENTITY[resource_type], "state_status": 404}
 
 
-def elevated(*basis, verdict=lane.VERDICT_NONE):
-    """The lane's protection record: incomplete script evidence is the one gap."""
-    return {"protected": True, "basis": list(basis), "dependency_reasons": [lane.INCOMPLETE_SCRIPT_EVIDENCE],
+def protection(*basis, verdict=lane.VERDICT_NONE):
+    """The lane's protection record: incomplete script evidence is the one gap.
+
+    HAMCP-394: the script-only gap is disclosed and binds no dependency reason,
+    so only a removed protected effect elevates.
+    """
+    risk = "high" if basis else "medium"
+    return {"protected": bool(basis), "basis": list(basis), "dependency_reasons": [],
             "removed_effect_verdict": verdict, "unlock_or_disarm": False, "evidence_complete": False,
-            "evidence_gaps": [lane.SCRIPT_EVIDENCE_GAP], "risk_level": "high", "operation_risk_level": "high"}
+            "evidence_gaps": [lane.SCRIPT_EVIDENCE_GAP], "risk_level": risk, "operation_risk_level": risk}
 
 
 def synthetic_receipt(core_version=CORE):
@@ -55,7 +60,7 @@ def synthetic_receipt(core_version=CORE):
     def deleted(resource_type):
         return {"result": "PASS", "task_state": "succeeded_verified", "dispatch_counts": [1],
                 "write_methods": ["DELETE"], "ha_writes": 1, "write_routes_bound": True, "config_checks": 0,
-                "entity_id": ENTITY[resource_type], **elevated(lane.BASIS_PROTECTED_DEPENDENCY),
+                "entity_id": ENTITY[resource_type], **protection(),
                 "preflight_present": True, "readback": absent(resource_type),
                 "codes": ["exact_readback_verified"]}
 
@@ -82,8 +87,7 @@ def synthetic_receipt(core_version=CORE):
             "delete_automation": deleted("automation"), "delete_script": deleted("script"),
             "recreate_automation": recreated("automation"), "recreate_script": recreated("script"),
             "protected_effect": {"result": "PASS", "plan_created": True,
-                                 **elevated(lane.BASIS_PROTECTED_EFFECT, lane.BASIS_PROTECTED_DEPENDENCY,
-                                            verdict=lane.VERDICT_REMOVED),
+                                 **protection(lane.BASIS_PROTECTED_EFFECT, verdict=lane.VERDICT_REMOVED),
                                  "removes_statement": True, "ha_writes": 0},
             "not_found": {"result": "PASS", "preflight_config_status": 404, "reason_code": lane.NOT_FOUND,
                           "plan_created": False, "provider_dispatch_occurred": False, "ha_writes": 0},
@@ -267,36 +271,38 @@ class ReceiptTests(unittest.TestCase):
 
 
 class ClassificationReasonTests(unittest.TestCase):
-    """Each delete is elevated for its asserted reason only (HAMCP-222, OD-4)."""
+    """Each delete is classified for its asserted reason only (HAMCP-222, HAMCP-394)."""
 
     def verify(self, value):
         return lane.verify_result(value, core_version=CORE, support_slot=CORE_SLOT)
 
-    def test_plain_deletes_are_elevated_only_for_incomplete_script_evidence(self):
+    def test_plain_deletes_are_standard_with_the_script_gap_disclosed(self):
         for name in ("delete_automation", "delete_script"):
             cases = {
-                "standard": dict(protected=False, basis=[], dependency_reasons=[], evidence_complete=True,
-                                 evidence_gaps=[], risk_level="medium", operation_risk_level="medium"),
-                "not_protected": dict(protected=False),
-                "plan_medium": dict(risk_level="medium"),
-                "child_medium": dict(operation_risk_level="medium"),
+                "gap_undisclosed": dict(evidence_complete=True, evidence_gaps=[]),
+                # The pre-394 elevation for the script gap is a different receipt.
+                "elevated_for_the_gap": dict(protected=True, basis=[lane.BASIS_PROTECTED_DEPENDENCY],
+                                             dependency_reasons=[lane.INCOMPLETE_SCRIPT_EVIDENCE],
+                                             risk_level="high", operation_risk_level="high"),
+                "protected": dict(protected=True),
+                "plan_high": dict(risk_level="high"),
+                "child_high": dict(operation_risk_level="high"),
                 "risk_unread": dict(risk_level=""),
                 "child_risk_unread": dict(operation_risk_level=""),
-                "effect_basis": dict(basis=[lane.BASIS_PROTECTED_EFFECT, lane.BASIS_PROTECTED_DEPENDENCY]),
-                "unlock_basis": dict(basis=["delete_unlock_or_disarm_floor", lane.BASIS_PROTECTED_DEPENDENCY]),
-                "no_basis": dict(basis=[]),
+                "dependency_basis": dict(basis=[lane.BASIS_PROTECTED_DEPENDENCY]),
+                "effect_basis": dict(basis=[lane.BASIS_PROTECTED_EFFECT]),
+                "unlock_basis": dict(basis=["delete_unlock_or_disarm_floor"]),
                 "effect_removed": dict(removed_effect_verdict=lane.VERDICT_REMOVED),
                 "effect_unresolved": dict(removed_effect_verdict="unresolved"),
                 "unlock": dict(unlock_or_disarm=True),
                 "evidence_complete": dict(evidence_complete=True),
-                "other_gap": dict(evidence_gaps=["automation_inventory_incomplete"],
-                                  dependency_reasons=["dependency_evidence_incomplete:automation_inventory_incomplete"]),
+                "other_gap": dict(evidence_gaps=["automation_inventory_incomplete"]),
                 "extra_gap": dict(evidence_gaps=["automation_inventory_incomplete", lane.SCRIPT_EVIDENCE_GAP]),
-                "no_reason": dict(dependency_reasons=[]),
-                "feeds_protected": dict(dependency_reasons=["feeds_protected_automation:night_lock",
-                                                            lane.INCOMPLETE_SCRIPT_EVIDENCE]),
-                "unresolved_consumer": dict(dependency_reasons=["unresolved_automation_consequence:x",
-                                                                lane.INCOMPLETE_SCRIPT_EVIDENCE]),
+                "script_reason": dict(dependency_reasons=[lane.INCOMPLETE_SCRIPT_EVIDENCE]),
+                "other_reason": dict(dependency_reasons=[
+                    "dependency_evidence_incomplete:automation_inventory_incomplete"]),
+                "feeds_protected": dict(dependency_reasons=["feeds_protected_automation:night_lock"]),
+                "unresolved_consumer": dict(dependency_reasons=["unresolved_automation_consequence:x"]),
                 "reasons_unrecorded": dict(dependency_reasons=None),
             }
             for case, changes in cases.items():
@@ -304,7 +310,7 @@ class ClassificationReasonTests(unittest.TestCase):
                 scenario(name, **changes)(value)
                 with self.subTest(name=name, case=case), self.assertRaises(REFUSED):
                     self.verify(value)
-            for key in elevated():
+            for key in protection():
                 value = synthetic_receipt()
                 del value["scenarios"][name][key]
                 with self.subTest(name=name, missing=key), self.assertRaises(REFUSED):
@@ -314,8 +320,11 @@ class ClassificationReasonTests(unittest.TestCase):
         cases = {
             "standard": dict(protected=False),
             "dependency_only": dict(basis=[lane.BASIS_PROTECTED_DEPENDENCY]),
-            "effect_only": dict(basis=[lane.BASIS_PROTECTED_EFFECT]),
-            "reordered": dict(basis=[lane.BASIS_PROTECTED_DEPENDENCY, lane.BASIS_PROTECTED_EFFECT]),
+            # The pre-394 effect-plus-gap receipt is a different receipt.
+            "effect_and_dependency": dict(basis=[lane.BASIS_PROTECTED_EFFECT, lane.BASIS_PROTECTED_DEPENDENCY],
+                                          dependency_reasons=[lane.INCOMPLETE_SCRIPT_EVIDENCE]),
+            "script_reason": dict(dependency_reasons=[lane.INCOMPLETE_SCRIPT_EVIDENCE]),
+            "no_basis": dict(basis=[]),
             "nothing_removed": dict(removed_effect_verdict=lane.VERDICT_NONE),
             "plan_medium": dict(risk_level="medium"),
             "child_medium": dict(operation_risk_level="medium"),
@@ -597,7 +606,8 @@ class ClassificationServiceTests(ConfigurationDeleteServiceTestCase):
         for resource_type, target_id in (("automation", "plain"), ("script", "plain_script")):
             created = await self.create_one(resource_type, target_id)
             self.assertNotIn("risk_level", created)
-            self.assertEqual(created["risk"]["level"], "high")
+            # HAMCP-394: the script-only gap no longer elevates the delete.
+            self.assertEqual(created["risk"]["level"], "medium")
             value = self.scenario_value(created, "delete_" + resource_type)
             with self.subTest(resource_type=resource_type):
                 lane._scenario_checks("delete_" + resource_type, value)
@@ -610,7 +620,7 @@ class ClassificationServiceTests(ConfigurationDeleteServiceTestCase):
         lane._scenario_checks("protected_effect", self.scenario_value(created, "protected_effect"))
 
     async def test_with_complete_evidence_a_plain_delete_is_standard_and_the_lane_check_refuses(self):
-        """The check discriminates: the standard path is a different, refused receipt."""
+        """The check discriminates: the complete-evidence path is a different, refused receipt."""
         self.add("automation", "plain", lane.automation_config("plain", self.NOOP))
         created = await self.create_one("automation", "plain")
         value = self.scenario_value(created, "delete_automation")
