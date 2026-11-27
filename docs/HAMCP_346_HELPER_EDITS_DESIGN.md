@@ -12,7 +12,7 @@ in §7.
 | Register | HAMCP-346 (HA admin E034); shares the write mechanism with HAMCP-328 (helper create, after 3.0) |
 | Signed registry | `upstream-trust/ha-core-release-registry.json`, tip **sequence 19** (expires 2027-02-23): 2026.10.0 (22 capabilities), 2026.10.1 (26), 2026.10.3 (31), 2026.11.0 (38), 2026.11.3 (38) |
 | Core source | Raw files from the GitHub tag `2026.11.3`, read in a scratch copy outside the repository, plus `components/websocket_api/connection.py` at the same tag (sha256 `abe7fc8e7fabc9a552bfb5b6df36117b42d0aa75b948064c1a384e42c608368c`) for the dispatch fact in §2.1. These are **not** the signed source archive. A build re-derives every Core fact below from the signed `2026.11.3` archive before it relies on it |
-| Review | Cursor r1 (`cursor-hass-mcp-admin-526-r1`) findings R1, R2, R4–R7 are corrected below. R3 is corrected in part: §2.1 explains why the WebSocket path still fills schedule defaults, and adopts R3's load fixed-point requirement |
+| Review | Cursor r1 (`cursor-hass-mcp-admin-526-r1`) findings R1, R2, R4–R7 are corrected below. R3 is corrected in part: §2.1 explains why the WebSocket path still fills schedule defaults, and adopts R3's load fixed-point requirement. Cursor r2 (`cursor-hass-mcp-admin-526-r2`) found R1–R7 resolved and raised R8 (new-type undo inside the generic rollback lease). R8 is corrected in §5.3, §5.7 item 3, §7 and §8. Round 2 of 2: no third round |
 | Paths | Core paths are relative to `homeassistant/` at tag 2026.11.3. `E/` = `hass_mcp_engineering_beta/ha_mcp_engineering/` |
 | Examples | Every entity id, name and value in this document is synthetic |
 
@@ -427,8 +427,10 @@ build therefore adds a plan-time check:
   refusal shape: `PROVIDER_UNAVAILABLE`, `reason` and `reason_code`
   `pending_signed_registry_admission`, `core_capability` naming the profile,
   `plan_created: false`, `provider_dispatch_occurred: false`.
-- Rollback planning of a new type runs the same check before its read in
-  `_plan_fresh_rollback` (`E/f3_runtime/runtime.py:5778`).
+- Rollback planning of a new type runs the same check before any read, on
+  its own undo branch (§5.7 item 3). It does not run in
+  `_plan_fresh_rollback`, which is entered only after the generic rollback
+  lease is held.
 
 **A Core lease for every persistence.** Once the profile is admitted, the
 builder's existing invariant still refuses a dormant-profile plan saved
@@ -438,12 +440,19 @@ adds a branch that plans a new-type helper update inside an exact-target
 Core planning lease for the new profile. It follows scene planning:
 `_scene_configuration_planning_lease` (`service.py:6753-6772`, over
 `_rollback_planning_lease`), `async with lease`, and
-`_before_persist=lease.require_current`. That lease covers one target, so
+`_before_persist=lease.require_current`. The build adds
+`_storage_helper_configuration_planning_lease(helper_type, target_id)` in
+the same shape: it calls `_storage_helper_configuration_core()`, then
+returns `_rollback_planning_lease(core, (<new profile>,), target={"target_type":
+helper_type, "target_id": target_id})`. The target type is the helper's own
+type, as for `input_select` in the route target-type allowlist
+(`E/f3_runtime/registry.py:709-715`). That lease covers one target, so
 increment 1 allows one new-type operation per plan and refuses a plan that
 mixes it with any other operation. Scene planning has the same limit
 (`len(prepared.items) != 1`, `service.py:6783`). Two timer icons, as in E034,
 are two plans. A multi-target planning lease is a later change. Undo of a
-new type holds the same lease.
+new type holds the same lease and never the generic rollback lease (§5.7
+item 3).
 
 HAMCP-328 helper creates would reuse
 the same profile with a create-specific clause, so one signing step can admit
@@ -496,8 +505,8 @@ checks that an entry already chosen corresponds to the storage id.
 Undo reuses `rollback_change` unchanged in shape: a reverse `update` per
 verified operation from its captured `current_config`, as a new plan with
 its own approval, excluded when the helper changed again after the source
-plan. Two rules, the first fixed and proven **before** any new type reuses
-the path:
+plan. Three rules. The first is fixed and proven **before** any new type
+reuses the path:
 
 1. **The reverse proposal drops `id`.** For a helper operation, the reverse
    `proposed_config` is the captured list item with the `id` key removed and
@@ -518,6 +527,50 @@ the path:
    rule named. For example, a source plan that replaced a non-format
    `input_datetime.initial` with a valid one cannot be undone back to the
    non-format string.
+3. **New-type undo has its own early-return branch with its own
+   exact-target lease.** `_create_fresh_rollback_plan`
+   (`E/f3_runtime/runtime.py:5624`) already returns early for scene,
+   helper-options and dashboard-metadata undo (`runtime.py:5628-5661`).
+   Each of those branches checks admission and then takes its own exact
+   lease. Every other undo enters the generic `_rollback_planning_lease` at
+   `runtime.py:5688`. For a helper undo that lease is
+   `ROLLBACK_PLANNING_REQUIREMENTS = ("core.dependency_helper_planning",)`
+   (`runtime.py:930`) with `target=None`. Only then is `_plan_fresh_rollback`
+   called; it reads at `runtime.py:5777-5778` and persists with that lease's
+   `require_current` (`runtime.py:5850`). `core.dependency_helper_planning`
+   is the dependency-analysis contract (`E/ha_core_readmission/profiles.py:335-345`),
+   not the new profile. The build therefore adds one more early return,
+   placed with the three above and before `runtime.py:5688`. It mirrors
+   `_create_scene_configuration_rollback` (`runtime.py:6932-7047`):
+   - **Entry.** Contract version 2 and any source operation with
+     `resource_type: "helper"` and a `helper_type` among the seven new types.
+   - **Admission first.** `_storage_helper_configuration_core()` runs before
+     any read or lease (scene: `runtime.py:6945`). Unadmitted, it refuses
+     `pending_signed_registry_admission` with the §5.3 shape and creates
+     nothing.
+   - **Local checks, no read.** Exactly one source operation; otherwise
+     refuse. That is the forward limit of §5.3. It keeps
+     `_plan_fresh_rollback`'s eligibility: task state, `update` action,
+     captured `current_config`, a verified child and a resulting
+     fingerprint. A failed check refuses `ROLLBACK_NOT_AVAILABLE` as today.
+   - **Its own lease.** `async with
+     self.service._storage_helper_configuration_planning_lease(helper_type,
+     target_id)`. This is one exact-target lease for the new profile (§5.3).
+     It never acquires `core.dependency_helper_planning`.
+   - **Inside the lease.** Read the helper, compare its fingerprint with the
+     verified resulting fingerprint, and build the reverse proposal: the
+     captured item without `id` (item 1), checked under item 2. Drift leaves
+     no operation, so undo refuses `ROLLBACK_NOT_AVAILABLE`, as today's
+     exclusion does. Then `lease.require_current()`, and then
+     `_create_configuration_plan(..., _before_persist=lease.require_current)`.
+     The plan builder's own helper read (`E/governance/service.py:7752`) runs
+     inside the same lease.
+   - **Bookkeeping.** Rollback status, `request_id` and the audit record are
+     the same as `_plan_fresh_rollback`'s.
+
+   Today's `input_boolean` and `input_number` undo stays on
+   `_plan_fresh_rollback` under the generic lease, with only the item 1
+   `id` fix. The test that proves this branch is in §8 (Undo lease).
 
 ### 5.8 Risk and consequence disclosure
 
@@ -566,11 +619,14 @@ Protected (each needs Josh's named OK at build time):
 - `E/f3_runtime/registry.py`: `CONFIGURATION_REGISTRATIONS` and the
   route-admission target-type allowlist (`:709`).
 - `E/f3_runtime/runtime.py`: the configuration adapter map (`:2089`), the
-  reverse proposal without `id` (§5.7 item 1), and the plan-time admission
-  check and lease in `_plan_fresh_rollback` (§5.3).
+  reverse proposal without `id` in `_plan_fresh_rollback` for today's two
+  types (§5.7 item 1), and the new-type undo branch in
+  `_create_fresh_rollback_plan`. That branch returns before the generic
+  lease at `:5688` and holds its own exact-target lease (§5.7 item 3).
 - `E/governance/service.py` also gains the plan-time admission check
-  (`_require_dormant_profile_admission`, `_storage_helper_configuration_core`)
-  and the lease-holding planning branch (§5.3).
+  (`_require_dormant_profile_admission`, `_storage_helper_configuration_core`),
+  `_storage_helper_configuration_planning_lease` and the lease-holding
+  planning branch (§5.3).
 - `E/governance/semantic_projection.py`, `E/governance/resources.py`
   (`structured_resource_diff`) and `E/approval_web.py`: the `input_text.initial`
   display rule, if J-5 is accepted (§4.2).
@@ -620,7 +676,7 @@ Refusal and negative reachability:
   planning: `create_configuration_plan` for a `timer` raises it with
   `plan_created: false`, and the fake transport's command list is empty (no
   `timer/list`). Rollback planning of a new type refuses the same way before
-  its read (§5.3).
+  its read (§5.3); see Undo lease below.
 - Once the profile is admitted, a new-type plan saved without a current
   Core lease is refused, and a plan that mixes a new type with another
   operation is refused before any read (§5.3).
@@ -649,6 +705,31 @@ Refusal and negative reachability:
 - Registry admission: `update_timer_configuration` is admitted only when the
   registration tuple, the route target-type allowlist and the runtime adapter
   map all include it (§5.5).
+
+Undo lease (§5.7 item 3). These tests prove R8. They go in a new
+`tests/test_hamcp346_storage_helper_edits.py` and use the synthetic Core's
+`planning_leases` recorder (`tests/hamcp069b_fixtures.py:284`, `:300-303`),
+which records each acquire's capability ids and target:
+
+- `test_admitted_timer_undo_holds_exact_target_new_profile_lease`: the new
+  profile is admitted and one verified `timer` update is undone. Every lease
+  recorded during `rollback_change` is `((<new profile>,), {"target_type":
+  "timer", "target_id": "timer.synthetic_tea"})`. None of them names
+  `core.dependency_helper_planning`. The rollback plan is created, and its
+  reverse `proposed_config` has no `id`.
+- `test_unadmitted_timer_undo_refuses_before_list`: the profile is withdrawn
+  after the forward apply. The same `rollback_change` raises
+  `PROVIDER_UNAVAILABLE` with `reason_code`
+  `pending_signed_registry_admission`. The fake transport records no
+  `timer/list`, `planning_leases` gains nothing, and no plan is stored.
+- `test_timer_undo_rechecks_its_lease_before_persisting`: the profile is
+  withdrawn after the read inside the lease. Undo refuses, and nothing is
+  persisted. This is the `test_hamcp071_scene_configuration.py:2655`
+  pattern.
+- `test_existing_helper_undo_keeps_generic_lease`: the lease recorded during
+  an `input_boolean` undo's `rollback_change` is
+  `(("core.dependency_helper_planning",), None)`. That is today's path,
+  unchanged except for the `id` fix.
 
 Compatibility:
 
