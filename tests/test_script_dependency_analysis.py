@@ -26,6 +26,7 @@ from ha_mcp_engineering.upstream_tool_policy import load_reviewed_upstream_relea
 from tests import test_entity_dependency_analysis as dependency_fixtures
 from tests.test_entity_dependency_analysis import FakeProvider, finding, scan
 from tests.support import ha_mcp_920_receipts
+from tests.support.parent_request import enter_authorized_parent
 from tests.test_readonly_upstream_gateway import (
     CompositeCoreRuntime, FakeTransport, catalog_tool, initialize, policy_entry, schema, settings,
 )
@@ -411,6 +412,11 @@ class ScriptIndexTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ScriptGatewayTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        # HAMCP-510: production reads run inside a parent request with Core
+        # dispatch authority; the no-parent refusal has its own tests.
+        self.parent = enter_authorized_parent(self)
+
     async def gateway(self, payload=None, core=None):
         entry = policy_entry("ha_config_get_script", reviewed_schema=schema("script_id"))
         tool = catalog_tool("ha_config_get_script", reviewed_schema=schema("script_id"))
@@ -427,7 +433,7 @@ class ScriptGatewayTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(transport.calls[0][:2], ("ha_config_get_script", {"script_id": "script.renamed"}))
         self.assertEqual(core.finish_calls, 1)
         self.assertEqual(audit.write.call_args.args[0]["provider"], "upstream_read_gateway")
-        self.assertIsNone(current_telemetry())
+        self.assertIs(current_telemetry(), self.parent)
 
     async def test_redacted_or_truncated_configuration_is_not_exact_evidence(self):
         for body in ({"sequence": [], "password": "synthetic-private-password"}, {"sequence": [], "description": "x" * 25000}):
@@ -556,7 +562,7 @@ class ScriptGatewayTests(unittest.IsolatedAsyncioTestCase):
         audit.write.side_effect = RuntimeError("synthetic audit failure")
         with self.assertRaises(RuntimeError):
             await gateway.script_dependency_reader(audit=audit).read("script.renamed")
-        self.assertIsNone(current_telemetry())
+        self.assertIs(current_telemetry(), self.parent)
         self.assertEqual(core.finish_calls, 1)
 
 
