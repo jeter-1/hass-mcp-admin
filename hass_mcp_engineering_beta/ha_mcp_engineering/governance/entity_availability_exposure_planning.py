@@ -63,6 +63,20 @@ DISCLOSURE_MODEL = "entity_availability_exposure_disclosure_v1"
 # OD-4: every evidence gap is a protected dependency reason.
 INCOMPLETE_PREFIX = "dependency_evidence_incomplete:"
 INCOMPLETE_IMPACT_TEXT = "impact could not be fully determined"
+# HAMCP-394 (release 2.11.0 Lane C GO, 2026-11-27): the gaps that cannot hide
+# an elevating fact.  They hide script findings only, and ``_consumer_evidence``
+# lists a script finding as a consumer without a reason; an automation that
+# calls a script is already unresolved in its own action profile (``script``
+# is a transitive effect domain).  Every completion of the missing script
+# evidence classifies a disable or delete the same, so its planner drops these
+# reasons.  The gaps stay disclosed.  Other plan types keep OD-4 unchanged.
+SCRIPT_ONLY_GAPS = frozenset(
+    {"script_evidence_unavailable", "script_inventory_bounded", "script_read_failures"}
+)
+SCRIPT_ONLY_GAP_TEXT = (
+    "the script consumer list is incomplete ({gaps}); script consumers never "
+    "raise the approval level, so these gaps do not elevate the change."
+)
 ASSISTANT_NAMES = {
     "conversation": "Assist",
     "cloud.google_assistant": "Google Assistant",
@@ -287,6 +301,27 @@ def dependency_evidence_gaps(snapshot: Any | None, entity_id: str) -> list[str]:
     return sorted(gaps)
 
 
+def elevating_gaps(gaps: list[str]) -> list[str]:
+    """HAMCP-394: the gaps a disable or delete is elevated for."""
+
+    return [gap for gap in gaps if gap not in SCRIPT_ONLY_GAPS]
+
+
+def elevating_dependency_reasons(reasons: list[str]) -> list[str]:
+    """HAMCP-394: the dependency reasons a disable or delete planner binds."""
+
+    dropped = {f"{INCOMPLETE_PREFIX}{gap}" for gap in SCRIPT_ONLY_GAPS}
+    return [reason for reason in reasons if reason not in dropped]
+
+
+def incomplete_impact_statement(entity_id: str, gaps: list[str], protected: str) -> str:
+    """The disclosure of an evidence gap, ending as its elevation ends."""
+
+    if elevating_gaps(gaps):
+        return f"For {entity_id}, {INCOMPLETE_IMPACT_TEXT} ({', '.join(gaps)}); {protected}"
+    return f"For {entity_id}, " + SCRIPT_ONLY_GAP_TEXT.format(gaps=", ".join(gaps))
+
+
 def _consumer_evidence(snapshot: Any | None, entity_id: str) -> dict[str, Any]:
     """Return the disable impact evidence for one target (design §5, §6.1)."""
 
@@ -456,11 +491,13 @@ def _statements(
             )
         if not consumers["evidence_complete"]:
             statements.append(
-                f"For {entity_id}, {INCOMPLETE_IMPACT_TEXT} ("
-                + ", ".join(consumers["evidence_gaps"])
-                + "); the change needs elevated approval, and its consequence "
-                "is unknown unless positive evidence names a protected object "
-                "or automation."
+                incomplete_impact_statement(
+                    entity_id,
+                    consumers["evidence_gaps"],
+                    "the change needs elevated approval, and its consequence "
+                    "is unknown unless positive evidence names a protected "
+                    "object or automation.",
+                )
             )
         elif not consumers["count"]:
             statements.append(
@@ -754,7 +791,11 @@ async def prepare(
             )
         protection = {
             "object_reasons": object_protection(current),
-            "dependency_reasons": list(consumers["dependency_reasons"]) if consumers else [],
+            "dependency_reasons": (
+                elevating_dependency_reasons(consumers["dependency_reasons"])
+                if consumers
+                else []
+            ),
         }
         disclosure: dict[str, Any] = {
             "model": DISCLOSURE_MODEL,
