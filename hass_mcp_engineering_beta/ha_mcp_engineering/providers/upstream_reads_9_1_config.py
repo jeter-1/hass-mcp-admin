@@ -345,8 +345,10 @@ def _template(payload: Any, arguments: dict) -> dict:
     return result
 
 
+# HAMCP-512: the two fields are never reported, so their absence does not make
+# a render partial; the read is complete and the warning still discloses them.
 def _template_completeness(_payload: Any) -> tuple[bool, list[str]]:
-    return True, [TEMPLATE_FIELDS_UNAVAILABLE_WARNING]
+    return False, [TEMPLATE_FIELDS_UNAVAILABLE_WARNING]
 
 
 # Row 11 (P): tools_traces.py:528-595 (list), :598-729 (detail and the

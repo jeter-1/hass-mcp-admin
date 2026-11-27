@@ -48,6 +48,7 @@ COUNTS = ("fields_withheld", "fields_dropped_by_policy", "upstream_warnings_repl
 NONE_WITHHELD = dict.fromkeys(COUNTS, 0)
 WITHHELD_ONE = NONE_WITHHELD | {"fields_withheld": 1}
 REPLACED_ONE = NONE_WITHHELD | {"upstream_warnings_replaced": 1}
+TEMPLATE_WARNINGS = [keys.TEXTS[config.TEMPLATE_FIELDS_UNAVAILABLE_WARNING]]
 
 AUTOMATION = "ha_config_get_automation"
 CALENDAR = "ha_config_get_calendar_events"
@@ -121,7 +122,7 @@ class _Base(unittest.IsolatedAsyncioTestCase):
         finally:
             end_request(token)
 
-    def succeeded(self, result, *, complete=True, counts=NONE_WITHHELD):
+    def succeeded(self, result, *, complete=True, counts=NONE_WITHHELD, warnings=()):
         """The public data, without the 9.2.0 key-set counts (asserted here)."""
         self.assertTrue(result.get("success"), result)
         metadata = result["metadata"]
@@ -130,7 +131,7 @@ class _Base(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(metadata["fallback_occurred"])
         self.assertEqual(metadata["completeness"], "complete" if complete else "partial", result)
         if complete:
-            self.assertEqual(result["warnings"], [], result)
+            self.assertEqual(result["warnings"], list(warnings), result)
         data = result["data"]
         if self.version == "9.2.0":
             self.assertEqual({key: data.pop(key) for key in COUNTS}, counts, result)
@@ -354,8 +355,8 @@ class Parity92Tests(_Base):
     async def test_92_parity_row_10_eval_template(self):
         arguments, payload = self.fixture("row_10_template")
         result = await self.call(TEMPLATE, arguments, ok(payload))
-        data = self.succeeded(result, complete=False)
-        self.assertEqual(result["warnings"], [keys.TEXTS[config.TEMPLATE_FIELDS_UNAVAILABLE_WARNING]])
+        # HAMCP-512: complete; the unreported fields are disclosed, not partial.
+        data = self.succeeded(result, warnings=TEMPLATE_WARNINGS)
         self.assertEqual(data, payload | {"unavailable_fields": ["evaluation_time", "request_id"]})
         self.assertNotIn("request_id", data)
         self.assertNotIn("evaluation_time", data)
@@ -364,7 +365,8 @@ class Parity92Tests(_Base):
             "condition": None, "variables": None, "strict": False,
         })
         for timeout in (1, 60):
-            self.succeeded(await self.call(TEMPLATE, arguments | {"timeout": timeout}, ok(payload)), complete=False)
+            self.succeeded(await self.call(TEMPLATE, arguments | {"timeout": timeout}, ok(payload)),
+                           warnings=TEMPLATE_WARNINGS)
             self.assertEqual(self.last_sent(TEMPLATE)["timeout"], timeout)
         for bad in ({"timeout": 0}, {"timeout": 61}, {"timeout": 2.5}, {"timeout": True},
                     {"condition": "x"}, {"variables": {}}, {"strict": True}):
@@ -552,8 +554,7 @@ class KeySet92Tests(_Base):
             with self.subTest(extra=extra):
                 # 9.1.0: invalid_response.
                 result = await self.call(TEMPLATE, arguments, ok(payload | extra))
-                data = self.succeeded(result, complete=False, counts=WITHHELD_ONE)
-                self.assertEqual(result["warnings"], [keys.TEXTS[config.TEMPLATE_FIELDS_UNAVAILABLE_WARNING]])
+                data = self.succeeded(result, counts=WITHHELD_ONE, warnings=TEMPLATE_WARNINGS)
                 self.assertEqual(data, payload | {"unavailable_fields": ["evaluation_time", "request_id"]})
 
     async def test_92_keyset_row_10_unavailable_fields_and_condition_withheld(self):
@@ -562,8 +563,7 @@ class KeySet92Tests(_Base):
             with self.subTest(extra=extra):
                 # 9.1.0: invalid_response.
                 result = await self.call(TEMPLATE, arguments, ok(payload | extra))
-                data = self.succeeded(result, complete=False, counts=WITHHELD_ONE)
-                self.assertEqual(result["warnings"], [keys.TEXTS[config.TEMPLATE_FIELDS_UNAVAILABLE_WARNING]])
+                data = self.succeeded(result, counts=WITHHELD_ONE, warnings=TEMPLATE_WARNINGS)
                 self.assertEqual(data, payload | {"unavailable_fields": ["evaluation_time", "request_id"]})
 
     async def test_92_keyset_row_11_trace_record_keys_withheld(self):
@@ -614,7 +614,7 @@ class ProjectionTableTests(unittest.TestCase):
         self.assertEqual(config.PROJECTIONS[GROUPS][1]({"groups": [{"unavailable_fields": [CANARY]}]}),
                          (True, [config.GROUP_FIELDS_UNAVAILABLE_WARNING]))
         self.assertEqual(config.PROJECTIONS[TEMPLATE][1]({"warnings": [CANARY]}),
-                         (True, [config.TEMPLATE_FIELDS_UNAVAILABLE_WARNING]))
+                         (False, [config.TEMPLATE_FIELDS_UNAVAILABLE_WARNING]))
 
 
 if __name__ == "__main__":
