@@ -8,7 +8,7 @@ in §7.
 
 | Item | Value |
 |---|---|
-| Base | `release/2.11.0` at `54627e35dcfd8e972d468aec8745fd918db53ad3` (= `main` after #522), Engineering `2.4.2-beta.14` |
+| Base | Researched at `release/2.11.0` `54627e35dcfd8e972d468aec8745fd918db53ad3` (= `main` after #522), Engineering `2.4.2-beta.14`. The branch then merged `ea2dc63b0a7119862678b341a7f33daab21cd8a5` (#524, `2.4.2-beta.15`); under `E/` that merge changes only `version.py`, so every cite below still holds. |
 | Register | HAMCP-346 (HA admin E034); shares the write mechanism with HAMCP-328 (helper create, after 3.0) |
 | Signed registry | `upstream-trust/ha-core-release-registry.json`, tip **sequence 19** (expires 2027-02-23): 2026.10.0 (22 capabilities), 2026.10.1 (26), 2026.10.3 (31), 2026.11.0 (38), 2026.11.3 (38) |
 | Core source | Raw files from the GitHub tag `2026.11.3`, read in a scratch copy outside the repository. These are **not** the signed source archive. A build re-derives every Core fact below from the signed `2026.11.3` archive before it relies on it |
