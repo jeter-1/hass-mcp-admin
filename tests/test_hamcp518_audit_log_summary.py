@@ -3,9 +3,9 @@
 A summary is derived in one pass over the same whole-row snapshot a page
 reads, and writes nothing. These tests prove its counts, that every name and
 map it reports is bounded, that it fits the response limit by counting the
-tools it leaves out, that the default page is unchanged, that a summary with
-a cursor is refused, and that the gateway audits the flag as a bool and never
-the cursor.
+tools and events it leaves out, that the default page is unchanged, that a
+summary with a cursor or a non-boolean flag is refused, and that the gateway
+audits the flag as a bool (``None`` otherwise) and never the cursor.
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ from ha_mcp_engineering.tools import compatibility
 
 SUMMARY_FIELDS = {
     "scope", "event_filter", "records", "first_timestamp", "last_timestamp",
-    "events", "tools", "tools_total", "tools_omitted", "calls_omitted",
+    "events", "events_omitted", "tools", "tools_total", "tools_omitted", "calls_omitted",
     "untracked_tool_calls", "skipped_undecodable", "skipped_unparsed",
 }
 
@@ -250,6 +250,55 @@ class SummaryBoundTests(_SummaryCase):
         self.assertEqual(summary["tools_omitted"], 60 - kept)
         self.assertEqual(sum(item["calls"] for item in full["tools"][kept:]), summary["calls_omitted"])
         self.assertEqual(summary["tools_total"], 60)
+        self.assertEqual((summary["events"], summary["events_omitted"]), ({"tool_call": len(records)}, 0))
+
+    async def test_a_long_event_and_a_full_events_map_fit_the_smallest_limit(self):
+        # Event names that fill the map, each called a different number of
+        # times, plus tools; at the smallest allowed limit nothing named fits.
+        records = []
+        for index in range(compatibility.MAX_AUDIT_SUMMARY_EVENTS + 8):
+            records.extend({"event": f"{index:02d}{'e' * 200}"} for _ in range(1 + index % 4))
+        records += [_call(f"tool_{index:02d}_{'n' * 100}") for index in range(30)]
+        _write(self.path, records)
+        _, full = await self.summary()
+        self.assertEqual(full["events_omitted"], 0)
+        self.limit(1_024)
+        for event in ("", "e" * 100_000, "\U0001F600" * 100_000, "\x01" * 100_000):
+            with self.subTest(event=event[:1]):
+                rendered, summary = await self.summary(event)
+                self.assertLessEqual(len(rendered.encode("utf-8")), 1_024)
+                self.assertNotIn("hamcp518-record-content-marker", rendered)
+                if event:
+                    self.assertEqual(summary["records"], 0)
+                    filter_ = summary["event_filter"]
+                    self.assertTrue(event.startswith(filter_))
+                    self.assertLessEqual(len(json.dumps(filter_)), compatibility.MAX_AUDIT_SUMMARY_NAME_CHARS + 2)
+                    continue
+                self.assertEqual(summary["records"], len(records))
+                self.assertEqual(sum(summary["events"].values()), len(records))
+                self.assertEqual((summary["tools"], summary["tools_omitted"]), ([], 30))
+                self.assertEqual(summary["calls_omitted"], 30)
+                self.assertGreater(summary["events_omitted"], 0)
+                named = {name: count for name, count in summary["events"].items() if name != "other"}
+                # The most-counted named events are kept; the rest are folded.
+                full_named = sorted(
+                    ((name, count) for name, count in full["events"].items() if name != "other"),
+                    key=lambda item: (-item[1], item[0]),
+                )
+                self.assertEqual(sorted(named.items(), key=lambda item: (-item[1], item[0])),
+                                 full_named[:len(named)])
+                self.assertEqual(summary["events_omitted"], len(full_named) - len(named))
+
+    async def test_the_carried_strings_are_bounded_as_json(self):
+        stamp = "\U0001F600" * 100
+        _write(self.path, [{"event": "auth_failure", "timestamp": stamp}])
+        self.limit(1_024)
+        rendered, summary = await self.summary("\x01" * 500)
+        self.assertEqual(summary["records"], 0)
+        _, summary = await self.summary()
+        for key in ("first_timestamp", "last_timestamp"):
+            self.assertTrue(stamp.startswith(summary[key]))
+            self.assertLessEqual(len(json.dumps(summary[key])), 64 + 2)
 
 
 class SummaryRequestTests(_SummaryCase):
@@ -275,6 +324,29 @@ class SummaryRequestTests(_SummaryCase):
                 self.assertEqual(
                     raised.exception.details, {"field": "cursor", "reason": "not_allowed_with_summary"}
                 )
+
+    async def test_a_non_boolean_summary_is_refused_on_the_sdk_path_before_any_read(self):
+        # The SDK coerces a declared bool, so prove the refusal on its own
+        # argument validation, not by calling the function directly.
+        _write(self.path, [_call("ha_get_state")])
+        tool = compatibility.mcp._tool_manager.get_tool("get_audit_log")
+        self.assertEqual(tool.parameters["properties"]["summary"],
+                         {"default": False, "title": "Summary", "type": "boolean"})
+
+        async def run(value):
+            return await tool.fn_metadata.call_fn_with_arg_validation(
+                tool.fn, tool.is_async, {"summary": value}, None)
+
+        for value in ("yes", "true", 1, "no", "false", 0, None, [True], {"value": True}):
+            with self.subTest(value=value):
+                with patch.object(compatibility, "_audit_summary", side_effect=AssertionError("summary ran")), \
+                        patch.object(compatibility, "open", side_effect=AssertionError("log read"), create=True):
+                    with self.assertRaises(GovernanceError) as raised:
+                        await run(value)
+                self.assertEqual(raised.exception.code, ErrorCode.VALIDATION_FAILURE)
+                self.assertEqual(raised.exception.details, {"field": "summary", "reason": "not_a_boolean"})
+        self.assertIn(compatibility.AUDIT_SUMMARY_KEY, await run(True))
+        self.assertNotIn(compatibility.AUDIT_SUMMARY_KEY, await run(False))
 
 
 class SummaryGatewayAuditTests(_SummaryCase):
@@ -320,6 +392,59 @@ class SummaryGatewayAuditTests(_SummaryCase):
         self.assertNotIn(marker, stored)
         self.assertNotIn('"yes"', stored)
         self.assertNotIn(self.SECRET, stored)
+
+    async def test_a_non_boolean_flag_on_the_sdk_path_is_a_failure_audited_as_none(self):
+        from mcp.server.fastmcp.exceptions import ToolError
+
+        _write(self.path, [_call("ha_get_state")])
+        gateway_audit = self.path.parent / "gateway-audit.jsonl"
+        gateway = self.gateway(gateway_audit)
+
+        async def app(scope, receive, send):
+            # Runs the registered tool through the SDK's own argument
+            # validation and renders the result or error as the SDK does.
+            body = b""
+            while True:
+                message = await receive()
+                body += message.get("body", b"")
+                if not message.get("more_body"):
+                    break
+            request = json.loads(body)
+            try:
+                text = await compatibility.mcp._tool_manager.call_tool(
+                    "get_audit_log", request["params"]["arguments"])
+                result = {"content": [{"type": "text", "text": text}], "isError": False}
+            except ToolError as error:
+                result = {"content": [{"type": "text", "text": str(error)}], "isError": True}
+            payload = {"jsonrpc": "2.0", "id": request["id"], "result": result}
+            await send({"type": "http.response.start", "status": 200,
+                        "headers": [(b"content-type", b"text/event-stream")]})
+            await send({"type": "http.response.body",
+                        "body": f"event: message\r\ndata: {json.dumps(payload)}\r\n\r\n".encode()})
+
+        gateway.app = app
+        token = "hamcp518-synthetic-flag-token"
+        sent = [{"summary": token}, {"summary": 1}, {"summary": True}]
+        import httpx
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=gateway), base_url="http://127.0.0.1:8100"
+        ) as client:
+            for index, arguments in enumerate(sent):
+                response = await client.post(f"/{self.SECRET}/mcp", json={
+                    "jsonrpc": "2.0", "id": f"hamcp518-{index}", "method": "tools/call",
+                    "params": {"name": "get_audit_log", "arguments": arguments},
+                })
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual('"isError": true' in response.text, index < 2)
+        stored = gateway_audit.read_text(encoding="utf-8")
+        records = [json.loads(line) for line in stored.splitlines()]
+        audited = [record for record in records if record.get("tool_name") == "get_audit_log"]
+        self.assertEqual([record["parameters"]["summary"] for record in audited], [None, None, True])
+        self.assertEqual([record["result_status"] for record in audited], ["failure", "failure", "success"])
+        self.assertNotIn(token, stored)
+        for record in audited:
+            self.assertNotIn("cursor", record["parameters"])
 
 
 if __name__ == "__main__":

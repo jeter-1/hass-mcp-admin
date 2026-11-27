@@ -164,7 +164,7 @@ calls. The response is one line, with no `_page` trailer:
 ```json
 {"_summary": {"scope": "current_audit_file", "event_filter": null, "records": 6,
   "first_timestamp": "...", "last_timestamp": "...",
-  "events": {"tool_call": 4, "auth_failure": 1, "rate_limited": 1},
+  "events": {"tool_call": 4, "auth_failure": 1, "rate_limited": 1}, "events_omitted": 0,
   "tools": [{"tool": "ha_get_state", "calls": 3, "result_status": {"success": 2, "error": 1}}],
   "tools_total": 2, "tools_omitted": 1, "calls_omitted": 1,
   "untracked_tool_calls": 0, "skipped_undecodable": 0, "skipped_unparsed": 0}}
@@ -183,9 +183,11 @@ calls. The response is one line, with no `_page` trailer:
   `tools` gives each `tool_name` with its call count and a count per
   `result_status`. A missing or non-string name counts as `unknown`.
 - Bounds:
-  - every name is cut to 128 characters;
-  - `events` holds at most 32 names and each `result_status` map at most 16;
-    further names are counted under `other`;
+  - every name is cut to 128 characters; `event_filter` is also cut to at
+    most 128 bytes of JSON, and each timestamp to 64;
+  - `events` holds at most 32 named events plus an `other` bucket, and each
+    `result_status` map at most 16 named statuses plus `other`; further names
+    are counted under `other`;
   - at most 2,048 distinct tools are tracked; calls to further tools are
     counted in `untracked_tool_calls`;
   - `tools` lists at most 200 tools, ordered by calls (most first) then name,
@@ -193,6 +195,11 @@ calls. The response is one line, with no `_page` trailer:
     number of tracked tools; `tools_omitted` and `calls_omitted` count the
     tracked tools left out and their calls. A tool is left out whole, never
     cut.
+  - If no tools are left and the response still does not fit, the
+    least-counted named events are folded into `other`; `events_omitted`
+    counts the names folded this way. The counts still add up to `records`.
+    With every tool and event folded, the response is under 1 KiB, the
+    smallest allowed `response_size_limit`.
 - `skipped_undecodable` counts non-UTF-8 rows and `skipped_unparsed` counts
   other non-blank rows that are not a bounded JSON object. Their content is
   never returned. Only counts and the bounded names above leave the file; no
@@ -200,8 +207,11 @@ calls. The response is one line, with no `_page` trailer:
 - `summary=true` with a `cursor` is refused with `validation_failure`
   (`field: cursor`, `reason: not_allowed_with_summary`), before the log is
   read.
+- A `summary` that is not a JSON boolean (for example `"yes"` or `1`) is
+  refused with `validation_failure` (`field: summary`,
+  `reason: not_a_boolean`), before the log is read; it is not coerced.
 - The call's own audit record adds `summary`: the flag as a boolean, or
-  `null` when the value sent was not a boolean. It is recorded alongside
+  `null` when the value sent was not a boolean (that call is refused). It is recorded alongside
   `lines`, `event` and `cursor_present`; the cursor is still never recorded.
 
 ### Migration review (public input schema)

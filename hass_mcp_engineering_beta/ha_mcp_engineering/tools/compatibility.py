@@ -20,7 +20,9 @@ import secrets
 import time
 from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Annotated, Any, Optional
+
+from pydantic import WithJsonSchema
 
 from ..capabilities import (
     build_capability_catalog,
@@ -1187,8 +1189,10 @@ def _audit_page_trailer(
 
 # HAMCP-518: a summary is derived from the current audit file in one pass and
 # writes nothing, so it survives a restart exactly as the file does. Every
-# name it reports and every map it builds is bounded; tools that do not fit
-# the response limit are counted, never cut.
+# name it reports and every map it builds is bounded. To fit the response
+# limit it drops whole tools, then folds named events into ``other``, counting
+# both. What is left (the fixed keys, ``event_filter``, the two timestamps and
+# one ``other`` count) is under 1 KiB, the smallest allowed limit.
 AUDIT_SUMMARY_KEY = "_summary"
 MAX_AUDIT_SUMMARY_TOOLS = 200
 MAX_AUDIT_SUMMARY_NAME_CHARS = 128
@@ -1215,15 +1219,27 @@ def _audit_summary_timestamp(value: Any) -> str | None:
     return value[:64] if isinstance(value, str) and value else None
 
 
+def _audit_summary_bounded(value: str | None, limit: int) -> str | None:
+    """``value`` cut to ``limit`` characters and ``limit`` bytes of JSON."""
+
+    if value is None:
+        return None
+    text = value[:limit]
+    while len(json.dumps(text)) > limit + 2:
+        text = text[:-1]
+    return text
+
+
 def _audit_summary(event: str) -> str:
     path = os.environ.get("AUDIT_PATH", "/data/audit.jsonl")
     summary: dict[str, Any] = {
         "scope": "current_audit_file",
-        "event_filter": event or None,
+        "event_filter": _audit_summary_bounded(event or None, MAX_AUDIT_SUMMARY_NAME_CHARS),
         "records": 0,
         "first_timestamp": None,
         "last_timestamp": None,
         "events": {},
+        "events_omitted": 0,
         "tools": [],
         "tools_total": 0,
         "tools_omitted": 0,
@@ -1278,23 +1294,39 @@ def _audit_summary(event: str) -> str:
                     _audit_summary_name(record.get("result_status")),
                     MAX_AUDIT_SUMMARY_STATUSES,
                 )
+    for key in ("first_timestamp", "last_timestamp"):
+        summary[key] = _audit_summary_bounded(summary[key], 64)
     ranked = sorted(tools.values(), key=lambda item: (-item["calls"], item["tool"]))
     summary["tools_total"] = len(ranked)
     kept = min(len(ranked), MAX_AUDIT_SUMMARY_TOOLS)
+    other = summary["events"].pop(_AUDIT_SUMMARY_OTHER, 0)
+    named = sorted(summary["events"].items(), key=lambda item: (-item[1], item[0]))
+    kept_events = len(named)
     budget = SETTINGS.response_size_limit
     while True:
         summary["tools"] = ranked[:kept]
         summary["tools_omitted"] = len(ranked) - kept
         summary["calls_omitted"] = sum(item["calls"] for item in ranked[kept:])
+        folded = other + sum(count for _, count in named[kept_events:])
+        summary["events"] = dict(named[:kept_events])
+        if folded:
+            summary["events"][_AUDIT_SUMMARY_OTHER] = folded
+        summary["events_omitted"] = len(named) - kept_events
         rendered = json.dumps({AUDIT_SUMMARY_KEY: summary}, sort_keys=True) + "\n"
-        if kept == 0 or len(rendered.encode("utf-8")) <= budget:
+        if len(rendered.encode("utf-8")) <= budget or kept == kept_events == 0:
             return rendered
-        kept -= 1
+        if kept:
+            kept -= 1
+        else:
+            kept_events -= 1
 
 
 @mcp.tool()
 async def get_audit_log(
-    lines: int = 50, event: str = "", cursor: str = "", summary: bool = False
+    lines: int = 50,
+    event: str = "",
+    cursor: str = "",
+    summary: Annotated[Any, WithJsonSchema({"type": "boolean"})] = False,
 ) -> str:
     """Tail this server's own audit log (tool calls, auth failures, rate
     limit events). Optional event filter: tool_call, auth_failure,
@@ -1302,6 +1334,13 @@ async def get_audit_log(
     Pages fit the response limit; the last line is always a _page trailer.
     To read older entries, pass its next_cursor until complete is true.
     summary=true returns per-event and per-tool counts for the whole log instead."""
+    # HAMCP-518: the SDK would coerce a declared bool ("yes" or 1 to true), so
+    # the flag arrives raw and only a JSON boolean selects a mode.
+    if type(summary) is not bool:
+        raise GovernanceError(
+            ErrorCode.VALIDATION_FAILURE,
+            details={"field": "summary", "reason": "not_a_boolean"},
+        )
     if summary:
         if cursor:
             raise GovernanceError(
