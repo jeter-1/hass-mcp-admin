@@ -516,7 +516,9 @@ reuses the path:
    (`runtime.py:5796`) and planning refuses it (§1, "Today's helper undo is
    refused at planning"). HAMCP-531 fixes this in 2.11.0 in
    `_plan_fresh_rollback` and proves it on today's `input_boolean` and
-   `input_number` (§9). Only `id`
+   `input_number` (§9). HAMCP-531 fixed this at two sites:
+   `_plan_fresh_rollback` and the restore leg of
+   `_create_created_object_rollback`. Only `id`
    is removed. Any other captured field Engineering does not know, such as
    an `input_number.device_class` until the J-6 fix lands (§4.1), still fails
    closed with the field named.
