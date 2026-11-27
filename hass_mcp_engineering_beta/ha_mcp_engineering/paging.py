@@ -146,8 +146,10 @@ def fill_page(
     projected (the caller builds rows for the slice only). It keeps the
     longest whole-row prefix whose compact rendering, with the envelope and
     a worst-case ``next_cursor`` reserved, fits ``budget`` characters
-    (``None``: no size bound). A row too large for an empty page is skipped and named in
-    ``omitted_ids``; every page advances at least one row. ``count`` equals
+    (``None``: no size bound). The match set's last row is also kept when the
+    exact final page, which carries no cursor, fits. A row too large for any
+    page is skipped and named in ``omitted_ids``; every page advances at
+    least one row. ``count`` equals
     ``returned`` and ``truncated`` equals ``has_more`` where the tool has them.
     """
 
@@ -188,13 +190,24 @@ def fill_page(
         )
         room = budget - base
         kept, omitted, stopped = [], [], False
-        for row in window:
+        # The window's last row is the match set's last row (review A1-OMIT-001).
+        final = offset + len(window) == total
+        for index, row in enumerate(window):
             size = len(_compact(row))
             cost = size + (1 if kept else 0)
             if cost <= room:
                 kept.append(row)
                 room -= cost
                 continue
+            if final and index == len(window) - 1:
+                # The final page carries no cursor, so the reserve is not needed.
+                if len(_compact(reply(kept + [row], omitted, False, None, None))) <= budget:
+                    kept.append(row)
+                    continue
+                if len(_compact(reply([row], [], False, None, None))) <= budget:
+                    # It fits a final page of its own: the next page starts with it.
+                    stopped = True
+                    break
             if size <= budget - base:
                 # It fits a page of its own: the next page starts with it.
                 stopped = True

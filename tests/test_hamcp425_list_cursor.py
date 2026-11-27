@@ -224,6 +224,72 @@ class FillTests(ListHarness):
                                  {"feature": tool, "reason": "page_exceeds_response_limit"})
 
 
+class FinalPageTests(unittest.TestCase):
+    """Cursor r1 A1-OMIT-001: the final page carries no cursor, so the match
+    set's last row is kept when that page fits, even inside the band the
+    cursor reserve would take; only a row too large for any page is omitted."""
+
+    BUDGET = 2500
+
+    def setUp(self):
+        self.codec = CursorCodec("list_devices")
+
+    def fill(self, window, offset, total, budget=BUDGET):
+        return paging.fill_page(window, codec=self.codec, query="a" * 32, digest="b" * 32, offset=offset,
+                                total=total, row_key="devices", identity="id", budget=budget)
+
+    def walk(self, rows, limit=10):
+        pages, offset = [], 0
+        while True:
+            page = self.fill(rows[offset:offset + limit], offset, len(rows))
+            self.assertLessEqual(len(compact(page)), self.BUDGET)
+            pages.append(page)
+            offset += len(page["devices"]) + len(page.get("omitted_ids", []))
+            if not page["has_more"]:
+                self.assertIsNone(page["next_cursor"])
+                self.assertEqual(offset, len(rows))
+                return pages
+
+    def band_row(self, slack, total=4):
+        """A row whose cursor-free page of its own is BUDGET - slack characters."""
+
+        row = {"id": "d9999", "name": ""}
+        alone = len(compact(self.fill([row], total - 1, total, budget=None)))
+        row["name"] = "p" * (self.BUDGET - slack - alone)
+        return row
+
+    def test_a_last_row_in_the_cursor_band_gets_a_final_page(self):
+        rows = devices(3) + [self.band_row(8)]
+        pages = self.walk(rows)
+        self.assertGreater(len(pages[0]["next_cursor"]), 8)
+        self.assertEqual([page["page_limit_reason"] for page in pages], ["response_size_limit", None])
+        self.assertEqual([row["id"] for page in pages for row in page["devices"]], [row["id"] for row in rows])
+        self.assertFalse(any("omitted_ids" in page for page in pages))
+
+    def test_a_last_row_shares_the_final_page_when_it_fits_without_a_cursor(self):
+        small = devices(3)
+        rows = small + [self.band_row(sum(len(compact(row)) + 1 for row in small) + 8)]
+        pages = self.walk(rows)
+        self.assertEqual(len(pages), 1)
+        self.assertEqual([row["id"] for row in pages[0]["devices"]], [row["id"] for row in rows])
+        self.assertNotIn("omitted_ids", pages[0])
+        # The same page with a cursor would not have fitted.
+        self.assertGreater(len(compact(pages[0])) + len(self.codec.encode({"o": 3})), self.BUDGET)
+
+    def test_a_last_row_too_large_for_any_page_is_still_omitted(self):
+        rows = devices(3) + [self.band_row(-1)]
+        pages = self.walk(rows)
+        self.assertEqual([ident for page in pages for ident in page.get("omitted_ids", [])], ["d9999"])
+        self.assertEqual([row["id"] for page in pages for row in page["devices"]], ["d0000", "d0001", "d0002"])
+
+    def test_a_row_in_the_cursor_band_before_the_end_is_still_omitted(self):
+        tail = devices(1)[0] | {"id": "d9999x"}
+        rows = devices(3) + [self.band_row(8, total=5), tail]
+        pages = self.walk(rows)
+        self.assertEqual([ident for page in pages for ident in page.get("omitted_ids", [])], ["d9999"])
+        self.assertEqual(pages[-1]["devices"][-1]["id"], "d9999x")
+
+
 class BindingTests(ListHarness):
     async def test_a_case_only_filter_change_continues(self):
         cases = {
