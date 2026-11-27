@@ -130,6 +130,17 @@ def header_matches(mode, header):
     return header.script_execution != "failed_conditions" and not header.not_triggered
 
 
+def failure_entry(entry):
+    """HAMCP-389: a stored snapshot of a failed run.
+
+    Judged by the entry's stored ``script_execution`` only: the index entry
+    keeps no error field, so a run whose only failure sign is ``error`` is
+    not protected.
+    """
+
+    return entry.get("script_execution") in c.FAILURE_EXECUTIONS
+
+
 class Prepared:
     """One sanitized record ready to store, or the outcome that stopped it."""
 
@@ -167,6 +178,15 @@ class TraceSnapshotService:
         # previous listing. In process only, never written: it resets on
         # restart, and the store's watch row format is unchanged.
         self.retention_gaps = {}
+        # HAMCP-524 / HAMCP-389 (release 2.11.0 Lane C GO, 2026-11-27): watch
+        # ID -> recent skipped polls ``((at_ms, reason), ...)``, the last skip
+        # ``(at_ms, reason)`` and recent evictions ``((at_ms, count), ...)``.
+        # Kept like ``retention_gaps``: in process only, never written, reset
+        # on restart. Each value is an immutable tuple replaced whole on the
+        # event loop, so a store worker reading it never sees it change.
+        self.recent_skips = {}
+        self.last_skips = {}
+        self.recent_evictions = {}
 
     # ------------------------------------------------------------------
     # Authority, Core reads and record construction
@@ -208,19 +228,20 @@ class TraceSnapshotService:
             raise c.TraceSnapshotError("authority_unavailable")
         return status["generation"], observation.version
 
-    async def list_runs(self, automation_id):
+    async def list_runs(self, automation_id, *, command=None):
         try:
             return await fetch_normalized_trace_list(
-                self.command, automation_id, known_secrets=self.known_secrets)
+                command or self.command, automation_id, known_secrets=self.known_secrets)
         except (EngineeringServerError, TypeError, ValueError):
             raise c.TraceSnapshotError("source_unavailable") from None
 
-    async def read_detail(self, automation_id, run_id):
+    async def read_detail(self, automation_id, run_id, *, command=None):
         """``(outcome, detail)``; the detail is raw and must be sanitized next."""
 
         try:
-            detail = await self.command({"type": "trace/get", "domain": "automation",
-                                         "item_id": automation_id, "run_id": run_id})
+            detail = await (command or self.command)({
+                "type": "trace/get", "domain": "automation",
+                "item_id": automation_id, "run_id": run_id})
         except HomeAssistantApiError as exc:
             status = exc.details.get("status") if isinstance(exc.details, dict) else None
             return ("trace_not_retained" if status == 404 else "read_failed"), None
@@ -445,6 +466,12 @@ class TraceSnapshotService:
                       key=lambda w: (w["expires_at_ms"], w["watch_id"]))
         lapsed = sorted(index["lifecycle"]["lapsed"],
                         key=lambda r: (r["expired_at_ms"], r["watch_id"]), reverse=True)
+        # HAMCP-389: watches that evicted at least their quota in the last
+        # hour, most evictions first (counted when their commits returned).
+        churning = sorted(((self._recent_evicted(w["watch_id"], now_ms), w)
+                           for w in index["watches"]),
+                          key=lambda pair: (-pair[0], pair[1]["watch_id"]))
+        churning = [pair for pair in churning if pair[0] >= c.CHURN_EVICTIONS]
         self.summary = {
             "status": "observed", "active": len(index["watches"]), "limit": c.MAX_WATCHES,
             **{key: value for key, value in self._lifecycle(index, now_ms).items()
@@ -455,6 +482,9 @@ class TraceSnapshotService:
             "lapsed": [{"automation_id": r["automation_id"], "reason": r["reason"],
                         "at": c.utc_text(r["expired_at_ms"] / 1000)}
                        for r in lapsed[:c.HEALTH_LIST]],
+            "churning": [{"automation_id": w["automation_id"], "recent_evicted_count": count}
+                         for count, w in churning[:c.HEALTH_LIST]],
+            "churning_count": len(churning),
             "as_of": c.utc_text(now_ms / 1000),
         }
 
@@ -583,7 +613,19 @@ class TraceSnapshotService:
                 if watch is not None:
                     own = sorted((e for e in index["snapshots"] if e["watch_id"] == watch_id),
                                  key=lambda e: (e["captured_at_ms"], e["snapshot_id"]))
-                    victims = own[:max(0, len(own) - c.WATCH_QUOTA + 1)]
+                    excess = max(0, len(own) - c.WATCH_QUOTA + 1)
+                    victims = own[:excess]
+                    if excess and watch["mode"] == "executed":
+                        # HAMCP-389 (release 2.11.0 Lane C GO, 2026-11-27): a
+                        # run that is not a failure never evicts a failure
+                        # snapshot; it is refused when only failures are
+                        # left. A failure run evicts the oldest non-failure
+                        # snapshots first, then the oldest failures.
+                        spare = [e for e in own if not failure_entry(e)]
+                        if len(spare) < excess and not failure_entry(entry):
+                            outcomes[item.run_id] = "failures_protected"
+                            continue
+                        victims = (spare + [e for e in own if failure_entry(e)])[:excess]
                 count = len(index["snapshots"]) - len(victims) + 1
                 size = (sum(e["bytes"] for e in index["snapshots"])
                         - sum(e["bytes"] for e in victims) + entry["bytes"])
@@ -977,7 +1019,59 @@ class TraceSnapshotService:
             "retention_gap_polls": gap["polls"],
             "last_retention_gap_at": (None if gap["last_at_ms"] is None
                                       else c.utc_text(gap["last_at_ms"] / 1000)),
+            **self._recent_fields(watch["watch_id"], now_ms),
         }
+
+    def _recent_fields(self, watch_id, now_ms):
+        """HAMCP-524 / HAMCP-389 runtime-only fields of one public watch row."""
+
+        floor = now_ms - c.RECENT_SECONDS * 1000
+        skips = [reason for at_ms, reason in self.recent_skips.get(watch_id, ()) if at_ms > floor]
+        last = self.last_skips.get(watch_id)
+        evicted = self._recent_evicted(watch_id, now_ms)
+        return {
+            "recent_skipped_polls": len(skips),
+            "recent_skip_reasons": {reason: skips.count(reason) for reason in c.SKIP_REASONS},
+            "last_skipped_at": None if last is None else c.utc_text(last[0] / 1000),
+            "last_skip_reason": None if last is None else last[1],
+            "recent_evicted_count": evicted,
+            "churning": evicted >= c.CHURN_EVICTIONS,
+        }
+
+    def _recent_evicted(self, watch_id, now_ms):
+        floor = now_ms - c.RECENT_SECONDS * 1000
+        return sum(count for at_ms, count in self.recent_evictions.get(watch_id, ())
+                   if at_ms > floor)
+
+    @staticmethod
+    def _recent_add(events, event):
+        """``events`` plus ``event``, inside the window and the event bound."""
+
+        floor = event[0] - c.RECENT_SECONDS * 1000
+        return tuple(e for e in events if e[0] > floor)[-(c.RECENT_EVENTS - 1):] + (event,)
+
+    def _note_skips(self, watch_ids, reason, at_ms):
+        """Count skipped polls in the runtime-only recent view (on the loop)."""
+
+        if reason not in c.SKIP_REASONS:
+            raise ValueError("unknown skip reason")
+        for watch_id in watch_ids:
+            self.recent_skips[watch_id] = self._recent_add(
+                self.recent_skips.get(watch_id, ()), (at_ms, reason))
+            self.last_skips[watch_id] = (at_ms, reason)
+
+    def _note_evictions(self, watch_id, count, at_ms):
+        if count:
+            self.recent_evictions[watch_id] = self._recent_add(
+                self.recent_evictions.get(watch_id, ()), (at_ms, count))
+
+    def _keep_recent(self, keep):
+        """Drop the runtime-only counts of watches not in ``keep`` (on the loop)."""
+
+        self.retention_gaps = {k: v for k, v in self.retention_gaps.items() if k in keep}
+        self.recent_skips = {k: v for k, v in self.recent_skips.items() if k in keep}
+        self.last_skips = {k: v for k, v in self.last_skips.items() if k in keep}
+        self.recent_evictions = {k: v for k, v in self.recent_evictions.items() if k in keep}
 
     def _watch_list(self, index, now_ms):
         return [self._public_watch(w, index, now_ms)
@@ -1201,10 +1295,11 @@ class TraceSnapshotService:
         # HAMCP-503 TB-3: an ended watch's gap count goes with it, and a
         # reinstated watch keeps its ID but starts a fresh baseline, so its
         # count starts again at zero (review M1).
+        # HAMCP-524 / HAMCP-389: the recent skip and eviction counts follow
+        # the same rule; a reinstated row starts its stored counts at zero.
         active = {w["watch_id"] for w in index["watches"]}
         fresh = {item["watch_id"] for item in renewed or () if item["outcome"] == "reinstated"}
-        self.retention_gaps = {key: gap for key, gap in self.retention_gaps.items()
-                               if key in active and key not in fresh}
+        self._keep_recent(active - fresh)
         now_ms = _ms(now)
         result = {
             "action": action,
@@ -1233,7 +1328,7 @@ class TraceSnapshotService:
     # ------------------------------------------------------------------
     # Poller tick (W1); see ``poller.py`` for the authority it runs under
 
-    async def poll_once(self, *, authority, deadline=None):
+    async def poll_once(self, *, authority, deadline=None, command=None):
         """One bounded tick: at most one ``trace/list`` per watch.
 
         ``authority`` is the tick's own admitted ``(generation, version)``,
@@ -1241,24 +1336,25 @@ class TraceSnapshotService:
         ``deadline`` (``time.monotonic``) ends the tick's Core reads. Each
         watch gets an equal share of the time left when its turn comes, and
         the first watch rotates every tick, so one slow automation cannot
-        starve the others (review M2).
+        starve the others (review M2). ``command`` is the tick's Core
+        transport (HAMCP-431: the poller's held connection); without one the
+        service's own is used. Returns whether any watch is active.
         """
 
         authorized = authority is not None
         now = self.clock()
         index = await self._run(self._maintain, _ms(now))
-        current = {w["watch_id"] for w in index["watches"]}
-        self.retention_gaps = {k: v for k, v in self.retention_gaps.items() if k in current}
+        self._keep_recent({w["watch_id"] for w in index["watches"]})
         lost = [w["watch_id"] for w in index["watches"] if self._source(w["automation_id"]) is None]
         if lost:
             index = await self._run(self._end_watches, lost, _ms(now))
         if not index["watches"]:
             self.paused = not authorized
-            return
+            return False
         if not authorized:
             self.paused = True
-            await self._run(self._skip_all, [w["watch_id"] for w in index["watches"]], _ms(now))
-            return
+            await self._skip(index["watches"], "core_authority_unavailable", _ms(now))
+            return True
         self.paused = False
         if deadline is None:
             deadline = time.monotonic() + c.TICK_SECONDS * c.READ_SHARE
@@ -1275,13 +1371,16 @@ class TraceSnapshotService:
         self.rotation += 1
         for position, watch in enumerate(order):
             share = (deadline - time.monotonic()) / (len(order) - position)
-            if share <= 0 or not await self._poll_watch(watch, authority, time.monotonic() + share):
+            if share <= 0 or not await self._poll_watch(watch, authority, time.monotonic() + share,
+                                                         command=command):
                 # Out of time, or Core authority retired: nothing more is read
                 # or stored this tick; every watch not polled counts a skip.
-                rest = [w["watch_id"] for w in order[position + (0 if share <= 0 else 1):]]
+                rest = order[position + (0 if share <= 0 else 1):]
                 if rest:
-                    await self._run(self._skip_all, rest, _ms(self.clock()))
-                return
+                    await self._skip(rest, ("tick_time_exhausted" if share <= 0
+                                            else "core_authority_retired"), _ms(self.clock()))
+                return True
+        return True
 
     def _end_watches(self, watch_ids, now_ms):
         """End watches whose withheld automation ID this process cannot read.
@@ -1309,6 +1408,13 @@ class TraceSnapshotService:
             }, required=False)
         return index
 
+    async def _skip(self, watches, reason, now_ms):
+        """Count one skipped poll for each watch, stored and (HAMCP-524) recent."""
+
+        watch_ids = [w["watch_id"] for w in watches]
+        await self._run(self._skip_all, watch_ids, now_ms)
+        self._note_skips(watch_ids, reason, now_ms)
+
     def _skip_all(self, watch_ids, now_ms):
         with self.store.transaction():
             index = self.store.load_index()
@@ -1329,7 +1435,7 @@ class TraceSnapshotService:
         status = runtime.route_status(c.REQUIREMENTS) if runtime is not None else {}
         return status.get("available") is True and status.get("generation") == authority[0]
 
-    async def _poll_watch(self, watch, authority, watch_deadline=None):
+    async def _poll_watch(self, watch, authority, watch_deadline=None, *, command=None):
         """Poll one watch until ``watch_deadline``; ``False`` when authority retired.
 
         Reads finished before the deadline are kept, so a watch slower than
@@ -1345,13 +1451,13 @@ class TraceSnapshotService:
         listed_at_ms = _ms(self.clock())
         try:
             async with asyncio.timeout_at(self._loop_deadline(watch_deadline)):
-                listing = await self.list_runs(source)
+                listing = await self.list_runs(source, command=command)
         except (c.TraceSnapshotError, TimeoutError):
             if not self._still_authorized(authority):
                 self.paused = True
-                await self._run(self._skip_all, [watch_id], _ms(self.clock()))
+                await self._skip([watch], "core_authority_retired", _ms(self.clock()))
                 return False
-            await self._run(self._skip_all, [watch_id], _ms(self.clock()))
+            await self._skip([watch], "trace_list_failed", _ms(self.clock()))
             return True
         listed = [h for h in listing.headers if c.RUN_ID.fullmatch(h.run_id)]
         # Seen and stored run IDs are the persisted form (review H2).
@@ -1375,7 +1481,8 @@ class TraceSnapshotService:
         for header in matching[:c.MAX_CAPTURES]:
             try:
                 async with asyncio.timeout_at(self._loop_deadline(watch_deadline)):
-                    outcome, detail = await self.read_detail(source, header.run_id)
+                    outcome, detail = await self.read_detail(source, header.run_id,
+                                                             command=command)
             except TimeoutError:
                 outcome, detail = "source_unavailable", None
             if outcome == "source_unavailable":
@@ -1394,16 +1501,18 @@ class TraceSnapshotService:
             del detail
         if not self._still_authorized(authority):
             self.paused = True
-            await self._run(self._skip_all, [watch_id], _ms(self.clock()))
+            await self._skip([watch], "core_authority_retired", _ms(self.clock()))
             return False
+        counted = []
 
         def update(row, outcomes):
             bad = failed + sum(1 for value in outcomes.values()
                                if value in {"over_size_bound", "store_full", "read_failed",
-                                            "trace_not_retained"})
+                                            "trace_not_retained", "failures_protected"})
             row["uncaptured_runs"] += bad
             if deferred:
                 row["skipped_polls"] += 1
+                counted[:] = [True]
             # Seen IDs are pruned to runs Core still lists; never more than its list.
             kept = [r for r in row["seen_run_ids"] if r in settled or r in handled]
             row["seen_run_ids"] = sorted(set(kept) | handled)[-c.MAX_SEEN_RUNS:]
@@ -1433,6 +1542,7 @@ class TraceSnapshotService:
             # Nothing was stored; the runs count as a gap and are not retried.
             for item in prepared:
                 item.outcome = "read_failed"
+            counted.clear()
             committed = await self._run(self._commit, prepared, _ms(self.clock()),
                                         watch_id=watch_id, update_watch=update,
                                         authorized=authorized)
@@ -1440,6 +1550,11 @@ class TraceSnapshotService:
             # Retired while queued: nothing written; the runs are read next time.
             self.paused = True
             return False
+        # HAMCP-524 / HAMCP-389: counted only once the commit stored them.
+        at_ms = _ms(self.clock())
+        if counted:
+            self._note_skips([watch_id], "trace_read_deferred", at_ms)
+        self._note_evictions(watch_id, len(committed[2]), at_ms)
         self._note_retention_gap(watch, listing.headers, listed_at_ms)
         return True
 
