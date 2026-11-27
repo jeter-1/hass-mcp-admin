@@ -31,8 +31,40 @@ release pull request completes this entry.
   is copied at sequence 19, which signs 2026.11.3 with the same 38 profiles
   as 2026.11.0; and the support window rotates to 2026.11.3 current and
   2026.11.0 rollback, with the Core candidate empty.
-- Planned (plan approved 2026-11-25): native search (HAMCP-481). None has
-  landed yet.
+- Native search (HAMCP-481, built as HAMCP-501; plan approved 2026-11-25).
+  The tool keeps the name `ha_search`.
+  - Landed inert, so at W1 no tool imported it: the scoring port (W1, #506).
+  - Landed inert: the fixed Core reads (W2, #507).
+  - Landed inert: the engine (W3, #513).
+  - Landed inert: the page readers (W4, #516). W6 fixed their page check,
+    which refused every page under the live unified descriptor.
+  - Landed: the `ha_search` cutover (W6, #517). `ha_search` is now a native,
+    read-only Engineering tool with the same name and arguments, plus one
+    sentence appended to the `search_types` description. The delegated 9.2.0
+    `ha_search` is internal-only: it is never listed (no
+    `ha_mcp__ha_search`) and serves only the fixed sub-call pages, under its
+    own Core requirement. Automation, script and scene body matches come from
+    ha-mcp's scrubbed sub-call; native search reads no automation, script
+    or scene configuration.
+    A numeric-like query, or a scrub not shown clean, withholds body matching
+    for that bucket (`body_numeric_query`, `body_scrub_degraded`,
+    `body_scrub_unverified`). A page too large for the reply bound is re-read
+    at a smaller size (150, 30, 6, then 1 rows). The catalog is 114 tools
+    (88 Engineering, 26 delegated).
+  - Landed: component-route parity (W6b, #519). Entity rows carry the
+    composed device and entity `name`; exact and fuzzy matching use the
+    component's scored texts (name, aliases, labels, device texts, area,
+    floor) and tier scorer (100, 80, ratio of at least 70), retiring BM25 and
+    the typo fallback; the state filter runs before paging. Every entity
+    search now reads the device registry. Supersedes #518.
+  - Landed: the native search design doc update (W7, #520). Revision 5 of
+    `docs/HAMCP_481_NATIVE_SEARCH_DESIGN.md` marks native search
+    implemented in 2.10.0 and adds the implementation record (§10). Docs
+    only.
+- Landed: the Core-evidence workflow takes its pull request acceptance
+  target from the support window's current Core, 2026.11.3, instead of a
+  fixed 2026.11.0 (HAMCP-505, #514). CI scripts and tests only; no runtime
+  change.
 - Landed: `configuration_integrity_analysis` gives each dynamic finding its
   own `finding_id` (HAMCP-490, #510). Two references at one path that differ
   in evidence used to share one ID, so compact rows repeated. The first
@@ -75,7 +107,22 @@ release pull request completes this entry.
     stored trace ring (default 5 per ring, overridable per automation), so
     older runs are not listed, and `ring_full` is true when a ring holds at
     least the default cap. Clients that read the list must read `traces`.
-- New in-progress `V2_4_2_BETA14` release notes and acceptance contract.
+- New in-progress `V2_4_2_BETA14` release notes and acceptance contract
+  (HAMCP-500, #504), and their item rows (HAMCP-509, #521).
+- Not in this build: object lifecycle, response compaction, history paging,
+  plan withdraw, list paging, trace-watch renewal and the dashboard items
+  (planned for 2.11); the ha-mcp visibility filter for native search
+  (HAMCP-499); the HAMCP-293 risk lowering (HAMCP-486); and the HAMCP-474 D1
+  relabel (HAMCP-487). Native search defers: dashboard and helper identity
+  (HAMCP-447); a fail-closed refusal for the other fixed readers with no
+  parent request (HAMCP-510); an engine cleanup after W6b (HAMCP-520); the
+  disclosed body-match residuals (non-scalar and bool secrets, YAML-mode
+  dashboards, no inf/nan arm); and the helper sub-call still opening and
+  aborting options flows upstream, as before (HAMCP-233). The design doc
+  also keeps as later work: native helper reads that replace the helper
+  sub-call (HAMCP-484), an `entity` value for `search_types` (HAMCP-485),
+  and `include_config` bodies, withheld until a redaction design exists
+  (HAMCP-454).
 - Rollback: pending; stated by the final release pull request.
 
 ## 2.4.2-beta.13 - 2.9.1 build, in progress (HAMCP-455)
