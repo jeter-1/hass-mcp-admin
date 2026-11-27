@@ -38,6 +38,7 @@ from .logging_config import (
 from .health import HEALTH
 from .clients import HomeAssistantRestClient
 from .clients import HomeAssistantWebSocketClient
+from .clients.websocket import HeldWebSocketSession
 from .governance import GOVERNANCE
 from .governance.approval_notifications import validate_notification_service
 from .dependency import DEPENDENCY_ANALYSIS
@@ -259,8 +260,10 @@ def create_application(
     AUTOMATION_BASELINE_CAPTURE.configure(settings, CORE_READMISSION)
     # HAMCP-225: no I/O here; the trace watch poller starts with the listeners
     # and reads Core only under its own exact automation-trace lease.
+    # HAMCP-431: the poller reads over one held connection.
     TRACE_SNAPSHOTS.configure(settings, CORE_READMISSION, audit=audit,
-                              command=HomeAssistantWebSocketClient(settings).command)
+                              command=HomeAssistantWebSocketClient(settings).command,
+                              watch_session=HeldWebSocketSession(settings))
     # HAMCP-131: no I/O here; the add-on credential is read per request.
     # HAMCP-220: Home Assistant's time zone is read per call from Core
     # /api/config under the tool's own core.basic_rest_read lease.
