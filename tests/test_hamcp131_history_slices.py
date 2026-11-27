@@ -1,13 +1,13 @@
-"""HAMCP-131 continuable history over the sanitized delegated route. Offline.
+"""HAMCP-131 continuable history over the native Core history read. Offline.
 
-``history_slices_sim`` follows the pinned Home Assistant 2026.10.1 recorder
-and ha-mcp ``ha_get_history`` semantics (see its docstring and
-``docs/HAMCP_131_INCIDENT_LOGS.md``). Synthetic data and credentials only.
+``history_slices_sim`` follows the pinned Home Assistant Core 2026.11.3
+``GET /api/history/period`` semantics (see its docstring and
+``history_slices/native.py``). The real ``NativeHistoryReader`` runs over a
+fake Core client. Synthetic data and credentials only.
 
-HAMCP-437: the reader and the gateway run ha-mcp 9.2.0, the one reviewed
-release. The gateway tests use the committed 9.2.0 catalog capture and the
-9.x history shape from ``test_hamcp319_history``; the 8.5.0/8.6.0 admission
-subcases are retired with those releases.
+HAMCP-511: the delegated ``ha_get_history`` route and its gateway reader are
+retired; ``test_hamcp511_native_history_slices`` covers the native reader,
+its transport, the read slots and the parity with the delegated route.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ from unittest.mock import Mock, patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "hass_mcp_engineering_beta"), str(ROOT / "tests")]
 
-from history_slices_sim import FakeReader, Recorder, history_result, us  # noqa: E402
+from history_slices_sim import FakeReader, Recorder, core_row, render, us  # noqa: E402
 
 from ha_mcp_engineering.configuration import Settings  # noqa: E402
 from ha_mcp_engineering.errors import ErrorCode, GovernanceError  # noqa: E402
@@ -47,7 +47,7 @@ PACKAGE = ROOT / "hass_mcp_engineering_beta" / "ha_mcp_engineering"
 HA_TOKEN = "synthetic-ha-" + "credential-131"
 ACCESS_SECRET = "synthetic-access-" + "secret-131"
 NOW_MS = us("2026-10-19T13:30:00") // 1000
-ENTITY = "climate.mudroom_thermostat"
+ENTITY = "sensor.synthetic_history_131"
 START, END = "2026-10-19T00:00:00Z", "2026-10-19T12:00:00Z"
 S0, S1, S2 = us("2026-10-19T00:00:00"), us("2026-10-19T06:00:00"), us("2026-10-19T12:00:00")
 MS = 1000
@@ -102,13 +102,17 @@ def coverage_violations(pages, expected) -> list[str]:
 class HistorySliceTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.recorder = Recorder()
-        self.reader = FakeReader(self.recorder)
+        self.reader = FakeReader(self.recorder, known_secrets=(HA_TOKEN, ACCESS_SECRET))
         self.clock = [NOW_MS / 1000]
         self.service = self.make_service()
 
+    def tearDown(self):
+        # Every Core request had the exact pinned shape, under SINGLE_READ.
+        self.assertEqual(self.reader.violations, [])
+
     def make_service(self, factory=None) -> HistorySliceService:
         codec = CursorCodec("history_slices", key=b"h" * 32, clock=lambda: self.clock[0])
-        return HistorySliceService(factory or (lambda: self.reader), known_secrets=(HA_TOKEN, ACCESS_SECRET),
+        return HistorySliceService(factory or self.reader, known_secrets=(HA_TOKEN, ACCESS_SECRET),
                                    codec=codec, clock=lambda: NOW_MS)
 
     async def read(self, service=None, caller="synthetic_authenticated_caller", **arguments):
@@ -116,6 +120,8 @@ class HistorySliceTests(unittest.IsolatedAsyncioTestCase):
         arguments.setdefault("start", START)
         telemetry, token = begin_request()
         telemetry.caller_id = caller
+        # The tool's Core lease (routing.py installs the real authorizer).
+        telemetry.core_dispatch_authorizer = self.reader.current
         try:
             return await (service or self.service).read(arguments)
         finally:
@@ -160,7 +166,7 @@ class HistorySliceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([(r["slice"], r["finished"], r["entries_before_slice"], r["returned"]) for r in rows],
                          [(0, True, 1, 3), (1, True, 2, 3)])
         self.assertEqual(rows[1]["requested_from"], "2026-10-19T05:59:59.999000+00:00")
-        self.assertEqual(page["provider"]["route"], "upstream_read_gateway")
+        self.assertEqual(page["provider"]["route"], "direct_ha_api")
         self.assertEqual(page["provider"]["fallback"], "none")
         self.assertEqual(page["upstream_calls"], 2)
         # Engineering built every bound: one entity, absolute, 1 ms overlap.
@@ -180,15 +186,13 @@ class HistorySliceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(states([page]), [(at("00:00:00"), "at_start"), (at("12:00:00") - 1, "last")])
 
     async def test_fixture_matches_pinned_start_state_and_utc_rendering(self):
-        # Review L2: HA 2026.10.1 reports the start state at the requested
-        # start (models/state.py L56, L157); the reader renders the epoch
-        # timestamps in UTC (see ``history_slices_sim``).
+        # Review L2: Core reports the start state at the requested start,
+        # as a full row in UTC (see ``history_slices_sim``).
         self.recorder.add(S0 - 2 * 3600 * 10**6, "heat")
-        result = self.recorder.upstream(ENTITY, "2026-10-18T23:59:59.999000+00:00",
-                                         "2026-10-19T06:00:00+00:00", 0, 10)
-        self.assertEqual(result["data"]["data"]["entities"][0]["states"],
-                         [{"state": "heat", "last_changed": "2026-10-18T23:59:59.999000+00:00",
-                           "last_updated": "2026-10-18T23:59:59.999000+00:00"}])
+        body = self.recorder.period_body(ENTITY, S0 - 1000, S1)
+        self.assertEqual(body, [[{"entity_id": ENTITY, "state": "heat", "attributes": {},
+                                  "last_changed": "2026-10-18T23:59:59.999000+00:00",
+                                  "last_updated": "2026-10-18T23:59:59.999000+00:00"}]])
         page = await self.read(end=END)
         self.assertEqual(page["state_at_window_start"], {"since": None, "state": "heat"})
         # A real change inside the overlap is reported at its own time.
@@ -215,7 +219,7 @@ class HistorySliceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(states([page]), [(at("02:00:00"), "first_retained")])
         self.assertTrue(page["complete"])
         empty = Recorder()
-        page = await self.read(service=self.make_service(lambda: FakeReader(empty)), end=END)
+        page = await self.read(service=self.make_service(FakeReader(empty)), end=END)
         self.assertEqual((page["states"], page["state_at_window_start"]), ([], None))
         self.assertTrue(page["complete"])
         self.assertIn("Empty output never proves a state change did not occur.", page["limitations"])
@@ -323,7 +327,7 @@ class HistorySliceTests(unittest.IsolatedAsyncioTestCase):
         second = await self.read(end=END, limit=4, cursor=first["next_cursor"])
         self.assertEqual((second["returned"], second["verification_calls"], second["completeness"]),
                          (0, 1, "failed"))
-        self.assertIn("upstream_transport_timeout", second["omissions"])
+        self.assertIn("core_read_timeout", second["omissions"])
         self.assertTrue(second["has_more"])
         rest = await self.read_all(end=END, limit=4, cursor=second["next_cursor"])
         self.assertEqual(states([first, *rest]), oracle(self.recorder, S0, S2))
@@ -397,7 +401,7 @@ class HistorySliceTests(unittest.IsolatedAsyncioTestCase):
         # slice 0 once slice 1 is reached, and the current slice's prefix.
         self.assertEqual([page["verification_calls"] for page in pages], [0, 1, 1, 1, 2, 2])
 
-    async def test_cumulative_verification_is_chunked_and_bounded(self):
+    async def test_cumulative_verification_is_one_read_per_slice(self):
         self.recorder.add(S0 - 5, "start")
         for second in range(250):
             self.recorder.add(at("01:00:00") + second * 10**6, f"s{second}")
@@ -405,36 +409,41 @@ class HistorySliceTests(unittest.IsolatedAsyncioTestCase):
         for _ in range(2):
             pages.append(await self.read(end=END, limit=100, cursor=pages[-1]["next_cursor"]))
         # 101 entries after page 1 (start state + 100), 201 after page 2:
-        # chunks of at most VERIFY_CHUNK entries.
-        self.assertEqual([page["verification_calls"] for page in pages], [0, 2, 3])
-        self.assertLessEqual(max(call["limit"] for call in self.recorder.calls), c.MAX_LIMIT + 3)
+        # the reader returns the whole cached window, so one verification
+        # read covers the current slice's prefix, however long.
+        self.assertEqual([page["verification_calls"] for page in pages], [0, 1, 1])
+        # The verification and the scan of one window share one Core read.
+        self.assertEqual([page["upstream_calls"] for page in pages[:2]], [1, 1])
         self.assertEqual(states(pages), oracle(self.recorder, S0, S2))
         self.assertTrue(pages[-1]["complete"])
 
     async def test_a_continuation_past_the_verification_bound_issues_no_cursor(self):
         self.recorder.add(S0 - 5, "start")
-        for second in range(60):
-            self.recorder.add(at("01:00:00") + second * 10**6, f"s{second}")
-        with patch.object(c, "VERIFY_CHUNK", 1):
+        for minute in range(0, 720, 30):
+            self.recorder.add(S0 + minute * 60 * 10**6 + 10**6, f"m{minute}")
+        expected = oracle(self.recorder, S0, S2)
+        with patch.object(c, "MAX_VERIFY_CALLS", 1):
             pages = [await self.read(end=END, limit=10)]
             while pages[-1]["next_cursor"]:
                 # Every issued cursor is verifiable within the bound: one
-                # read per entry (chunk 1), at least one per finished slice.
+                # read per finished slice and one for the current prefix.
                 p = self.service.codec.decode(pages[-1]["next_cursor"])["p"]
-                cost = sum(max(1, total - start) for _, start, total, _ in p["g"]) + p["o"] - p["f"]
-                self.assertLessEqual(cost, c.MAX_VERIFY_CALLS)
+                self.assertLessEqual(len(p["g"]) + (p["o"] > 0), c.MAX_VERIFY_CALLS)
                 pages.append(await self.read(end=END, limit=10, cursor=pages[-1]["next_cursor"]))
-        # The prefix grows 11, 21, 31 entries; 41 would exceed 40 calls.
-        self.assertEqual([page["verification_calls"] for page in pages], [0, 11, 21, 31])
+        # Slice 0 holds 13 entries: page 1 ends inside it (one verification
+        # read); page 2 finishes it and would need two reads to continue.
+        self.assertEqual([page["verification_calls"] for page in pages], [0, 1])
         last = pages[-1]
         self.assertEqual((last["has_more"], last["next_cursor"], last["complete"], last["completeness"]),
                          (False, None, False, "partial"))
         self.assertIn("continuation_verification_limit", last["omissions"])
-        self.assertEqual(states(pages), oracle(self.recorder, S0, S2)[:40])
+        returned = states(pages)
+        self.assertEqual(returned, expected[:len(returned)])
+        self.assertLess(len(returned), len(expected))
         # The bound is the last returned state, never the window end.
-        self.assertEqual(last["coverage"]["complete_until"],
-                         {"at": "2026-10-19T01:00:39.000000+00:00", "inclusive": True})
-        self.assertEqual(coverage_violations(pages, oracle(self.recorder, S0, S2)), [])
+        self.assertEqual(bound_us(last["coverage"]["complete_until"]["at"]), returned[-1][0])
+        self.assertTrue(last["coverage"]["complete_until"]["inclusive"])
+        self.assertEqual(coverage_violations(pages, expected), [])
 
     async def test_cursor_evidence_must_cover_the_whole_read(self):
         self.seed()
@@ -445,7 +454,6 @@ class HistorySliceTests(unittest.IsolatedAsyncioTestCase):
             ("finished slice dropped", {"g": []}),
             ("finished slice from a later offset", {"g": [[0, 1, *payload["p"]["g"][0][2:]]]}),
             ("current slice from a later offset", {"f": 1}),
-            ("unbounded verification", {"g": [[0, 0, 5000, payload["p"]["g"][0][3]]]}),
         )
         for label, change in forged:
             with self.subTest(label):
@@ -454,6 +462,14 @@ class HistorySliceTests(unittest.IsolatedAsyncioTestCase):
                     await self.read(end=END, limit=4, cursor=cursor)
                 self.assertEqual(raised.exception.code, ErrorCode.INVALID_CURSOR)
                 self.assertEqual(raised.exception.details["reason"], "integrity_or_format_invalid")
+        # One verification read covers a slice however large its recorded
+        # total, so a forged total is not a cost bound: it fails closed as a
+        # continuity break against the re-read slice.
+        forged_total = {"g": [[0, 0, 5000, payload["p"]["g"][0][3]]]}
+        cursor = self.service.codec.encode({**payload, "p": {**payload["p"], **forged_total}})
+        with self.assertRaises(GovernanceError) as raised:
+            await self.read(end=END, limit=4, cursor=cursor)
+        self.assertEqual(raised.exception.code, ErrorCode.STALE_CURSOR)
 
     def test_the_largest_cumulative_cursor_fits_the_cursor_bound(self):
         # 28 slices in 7 days: the evidence of 27 finished slices, each at
@@ -589,7 +605,7 @@ class HistorySliceTests(unittest.IsolatedAsyncioTestCase):
         self.reader.fail_at = {1}
         first = await self.read(end=END, limit=50)
         self.assertEqual(len(first["states"]), 3)
-        self.assertIn("upstream_transport_timeout", first["omissions"])
+        self.assertIn("core_read_timeout", first["omissions"])
         self.assertTrue(first["has_more"])
         self.assertEqual(first["completeness"], "partial")
         rest = await self.read(end=END, limit=50, cursor=first["next_cursor"])
@@ -609,24 +625,57 @@ class HistorySliceTests(unittest.IsolatedAsyncioTestCase):
     async def test_unpinned_shapes_are_representation_invalid_without_a_cursor(self):
         self.seed()
 
-        def wrong_entity(result):
-            result["data"]["data"]["entities"][0]["entity_id"] = "climate.other"
-            return result
+        def wrong_entity(body):
+            body[0][0]["entity_id"] = "sensor.other_synthetic_131"
+            return body
 
-        def wrong_count(result):
-            result["data"]["data"]["entities"][0]["count"] += 1
-            return result
+        def second_entity(body):
+            return body + [[dict(body[0][0], entity_id="sensor.other_synthetic_131")]]
 
-        def naive_time(result):
-            for item in result["data"]["data"]["entities"][0]["states"]:
-                item["last_updated"] = item["last_updated"][:-6]
-            return result
+        def attributes_present(body):
+            body[0][0]["attributes"] = {"synthetic": 1}
+            return body
 
-        def descending(result):
-            result["data"]["data"]["entities"][0]["states"].reverse()
-            return result
+        def full_later_row(body):
+            body[0][1] = core_row(ENTITY, us("2026-10-19T01:00:00"), body[0][1]["state"], full=True)
+            return body
 
-        for transform in (wrong_entity, wrong_count, naive_time, descending, lambda result: ["synthetic"]):
+        def changed_differs(body):
+            body[0][0]["last_changed"] = render(S0 - 2 * MS)
+            return body
+
+        def naive_time(body):
+            for row in body[0]:
+                row["last_changed"] = row["last_changed"][:-6]
+            return body
+
+        def outside_window(body):
+            body[0][-1]["last_changed"] = render(S2)
+            return body
+
+        def descending(body):
+            body[0][1:] = reversed(body[0][1:])
+            return body
+
+        def numeric_state(body):
+            body[0][0]["state"] = 1
+            return body
+
+        def empty_rows(body):
+            return [[]]
+
+        def duplicate_key(body):
+            return '[[{"state": "a", "state": "b", "last_changed": "x"}]]'
+
+        def non_finite(body):
+            return '[[{"state": NaN}]]'
+
+        def not_json(body):
+            return "synthetic <html>"
+
+        for transform in (wrong_entity, second_entity, attributes_present, full_later_row, changed_differs,
+                          naive_time, outside_window, descending, numeric_state, empty_rows, duplicate_key,
+                          non_finite, not_json, lambda body: ["synthetic"], lambda body: {"synthetic": 1}):
             with self.subTest(transform=getattr(transform, "__name__", "list")):
                 self.reader.transform = transform
                 page = await self.read(end=END)
@@ -635,17 +684,24 @@ class HistorySliceTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIsNone(page["next_cursor"])
                 self.assertEqual(page["completeness"], "failed")
 
-    async def test_gateway_partial_is_disclosed(self):
-        self.seed()
-
-        def partial(result):
-            result["metadata"]["completeness"] = "partial"
-            return result
-        self.reader.transform = partial
-        page = await self.read(end=END)
-        self.assertIn("gateway_redacted_or_truncated", page["omissions"])
-        self.assertFalse(page["complete"])
-        self.assertTrue(page["coverage"]["slices"][0]["gateway_redacted_or_truncated"])
+    async def test_reader_redaction_or_truncation_is_disclosed(self):
+        # The reader's sanitizer redacts a planted known secret and truncates
+        # an over-long state before the service sees either; the omission
+        # keeps its public name from the delegated route.
+        for label, planted in (("known secret", f"synthetic {HA_TOKEN} value"),
+                               ("over-long state", "x" * 2_500)):
+            with self.subTest(label):
+                self.recorder = Recorder()
+                self.reader = FakeReader(self.recorder, known_secrets=(HA_TOKEN, ACCESS_SECRET))
+                self.service = self.make_service()
+                self.seed()
+                self.recorder.add(at("02:00:00"), planted)
+                page = await self.read(end=END)
+                self.assertIn("gateway_redacted_or_truncated", page["omissions"])
+                self.assertFalse(page["complete"])
+                self.assertTrue(page["coverage"]["slices"][0]["gateway_redacted_or_truncated"])
+                self.assertNotIn(HA_TOKEN, json.dumps(page))
+                self.assertNotIn(planted, json.dumps(page))
 
     async def test_response_byte_ceiling_shrinks_the_page_and_resumes(self):
         self.recorder.add(S0 - 5, "s")
@@ -787,9 +843,9 @@ class HistorySliceTests(unittest.IsolatedAsyncioTestCase):
     async def test_route_unavailable_unreviewed_version_or_anonymous_sends_nothing(self):
         cases = (
             (lambda: None, "synthetic_authenticated_caller"),
-            (lambda: FakeReader(self.recorder, version="8.4.3"), "synthetic_authenticated_caller"),
-            (lambda: FakeReader(self.recorder, version="8.7.0"), "synthetic_authenticated_caller"),
-            (lambda: self.reader, "anonymous"),
+            (FakeReader(self.recorder, version="8.4.3"), "synthetic_authenticated_caller"),
+            (FakeReader(self.recorder, version="8.7.0"), "synthetic_authenticated_caller"),
+            (self.reader, "anonymous"),
         )
         for factory, caller in cases:
             with self.subTest(caller=caller), self.assertRaises(GovernanceError) as raised:
@@ -810,14 +866,6 @@ class HistorySliceTests(unittest.IsolatedAsyncioTestCase):
             if index == 1:
                 self.reader.active = False
         self.reader.before_call = retire
-        original = self.reader.read
-
-        async def read(*args):
-            result = await original(*args)
-            if len(self.recorder.calls) == 1:
-                self.reader.active = False
-            return result
-        self.reader.read = read
         page = await self.read(end=END)
         self.assertIn("provider_authority_changed", page["omissions"])
         self.assertTrue(page["has_more"])
@@ -826,8 +874,14 @@ class HistorySliceTests(unittest.IsolatedAsyncioTestCase):
     # -- static and registration ---------------------------------------------------
 
     def test_read_only_static_surface(self):
+        # native.py is the one module that reaches Core: one GET through the
+        # shared REST client, asserted below; no other module imports a client.
+        native_path = PACKAGE / "history_slices" / "native.py"
         files = sorted((PACKAGE / "history_slices").glob("*.py")) + [PACKAGE / "tools" / "history_slices.py"]
+        self.assertIn(native_path, files)
         for path in files:
+            if path == native_path:
+                continue
             tree = ast.parse(path.read_text(encoding="utf-8"))
             for node in ast.walk(tree):
                 if isinstance(node, ast.Attribute):
@@ -843,6 +897,17 @@ class HistorySliceTests(unittest.IsolatedAsyncioTestCase):
                         self.assertNotRegex(module, r"clients|aiohttp|httpx|websocket|requests", path.name)
         source = (PACKAGE / "history_slices" / "service.py").read_text(encoding="utf-8")
         self.assertEqual(source.count("reader.read("), 1)
+        tree = ast.parse(native_path.read_text(encoding="utf-8"))
+        attributes = [node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)]
+        self.assertEqual(attributes.count("request"), 1)
+        self.assertFalse({"post", "put", "patch", "delete", "ws_connect", "call_service", "execute",
+                          "read_text", "read_bytes", "unlink", "write"} & set(attributes))
+        requests = [node for node in ast.walk(tree) if isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute) and node.func.attr == "request"]
+        self.assertEqual([ast.literal_eval(node.args[0]) for node in requests], ["GET"])
+        self.assertEqual([keyword.arg for node in requests for keyword in node.keywords], ["raw"])
+        imports = {node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)}
+        self.assertNotRegex(" ".join(sorted(m or "" for m in imports)), r"aiohttp|httpx|websocket|requests")
 
     def test_routing_core_gate_and_catalog(self):
         decision = routing_for_tool("get_history_slices")
@@ -853,7 +918,7 @@ class HistorySliceTests(unittest.IsolatedAsyncioTestCase):
         from ha_mcp_engineering.capabilities import BETA_NATIVE_CAPABILITIES
         entry = next(item for item in BETA_NATIVE_CAPABILITIES if item["tool"] == "get_history_slices")
         self.assertEqual((entry["risk"], entry["fallback"], entry["direct_write_allowed"],
-                          entry["data_providers"]), ("read", "none", False, ["upstream_read_gateway"]))
+                          entry["data_providers"]), ("read", "none", False, ["direct_ha_api"]))
         from ha_mcp_engineering.tools import registry
         tool = registry._SDK_TOOLS.get("get_history_slices")
         self.assertTrue(tool.annotations.readOnlyHint)
@@ -877,7 +942,8 @@ class HistorySliceToolTests(unittest.IsolatedAsyncioTestCase):
             destructive_services=frozenset(), ha_timeout_seconds=1.0,
         )
         runtime = service_module.HistorySlicesRuntime()
-        runtime.configure(self.settings, reader_factory=lambda: FakeReader(self.recorder))
+        self.reader = FakeReader(self.recorder, known_secrets=(HA_TOKEN, ACCESS_SECRET))
+        runtime.configure(self.settings, reader_factory=self.reader)
         for patcher in (patch.object(tool_module, "HISTORY_SLICES", runtime),
                         patch.object(tool_module, "SETTINGS", self.settings)):
             patcher.start()
@@ -886,6 +952,7 @@ class HistorySliceToolTests(unittest.IsolatedAsyncioTestCase):
     async def call(self, arguments: dict) -> dict:
         telemetry, token = begin_request()
         telemetry.caller_id = "synthetic_authenticated_caller"
+        telemetry.core_dispatch_authorizer = self.reader.current
         try:
             return json.loads(await tool_module.registered_tool().run(arguments))
         finally:
@@ -899,7 +966,7 @@ class HistorySliceToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["data"]["returned"], 1)
         self.assertEqual(result["metadata"]["provider"], "engineering")
-        self.assertEqual(result["metadata"]["data_providers"], ["upstream_read_gateway"])
+        self.assertEqual(result["metadata"]["data_providers"], ["direct_ha_api"])
         self.assertFalse(result["metadata"]["fallback_occurred"])
         self.assertEqual(result["metadata"]["completeness"], "complete")
         calls = len(self.recorder.calls)
@@ -920,254 +987,11 @@ class HistorySliceToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.recorder.calls, [])
 
 
-try:
-    import test_hamcp162_yaml_admission as yaml_admission  # noqa: E402
-    import test_hamcp319_history as h319  # noqa: E402  (HAMCP-437)
-    from support.ha_mcp_captures import capture  # noqa: E402  (HAMCP-437)
-except ImportError:  # pragma: no cover - the modules are in this repository
-    yaml_admission = h319 = capture = None
-
-from support.parent_request import enter_authorized_parent  # noqa: E402  (HAMCP-510)
-
-# HAMCP-437: the one reviewed release the gateway tests admit.
-CURRENT = "9.2.0"
-
-
-class HistoryReaderGatewayTests(yaml_admission.Harness):
-    """The gateway's fixed ``ha_get_history`` route (``history_reader``)."""
-
-    def setUp(self):
-        super().setUp()
-        # HAMCP-510: production reads run inside a parent request with Core
-        # dispatch authority; the no-parent refusal has its own tests.
-        self.parent = enter_authorized_parent(self)
-
-    async def history_gateway(self, version, recorder):
-        gateway, transport = await self.gateway(version, tools=capture(version)["tools"])
-        transport.history = recorder
-        original = transport.execute_read
-
-        async def execute_read(tool_name, arguments, **kwargs):
-            if tool_name != "ha_get_history":
-                return await original(tool_name, arguments, **kwargs)
-            kwargs["catalog_validator"](transport.catalog)
-            before = kwargs.get("before_dispatch")
-            if before is not None:
-                result = before()
-                if inspect.isawaitable(result):
-                    await result
-            transport.sent.append((tool_name, dict(arguments)))
-            upstream = h319.upstream_9_1(recorder, arguments)
-            return yaml_admission.McpReadResult(
-                protocol_version=transport.catalog.protocol_version,
-                server_name=transport.catalog.server_name, server_version=transport.catalog.server_version,
-                call_result=yaml_admission.ok(upstream),
-                connection_latency_ms=1.0, tool_call_latency_ms=1.0,
-            )
-        transport.execute_read = execute_read
-        return gateway, transport
-
-    async def test_admitted_reader_sends_only_the_fixed_argument_shape(self):
-        for version in (CURRENT,):
-            with self.subTest(version=version):
-                recorder = Recorder()
-                recorder.add(S0 - 5, "heat")
-                recorder.add(at("01:00:00"), "idle")
-                recorder.add(at("07:00:00"), "heat")
-                gateway, transport = await self.history_gateway(version, recorder)
-                audit = Mock()
-                reader = gateway.history_reader(audit=audit)
-                self.assertIsNotNone(reader)
-                self.assertEqual(reader.version, version)
-                service = HistorySliceService(lambda: reader, known_secrets=(HA_TOKEN,))
-                telemetry, token = begin_request()
-                telemetry.caller_id = "synthetic_authenticated_caller"
-                telemetry.core_dispatch_authorizer = lambda: True
-                try:
-                    page = await service.read({"entity_id": ENTITY, "start": START, "end": END, "limit": 1})
-                    rest = await service.read({"entity_id": ENTITY, "start": START, "end": END,
-                                               "cursor": page["next_cursor"]})
-                    self.assertIs(current_telemetry(), telemetry)
-                finally:
-                    end_request(token)
-                self.assertEqual(states([page, rest]), [(at("01:00:00"), "idle"), (at("07:00:00"), "heat")])
-                self.assertEqual(page["provider"]["upstream_version"], version)
-                sent = [arguments for name, arguments in transport.sent if name == "ha_get_history"]
-                # Page 1 reads slice 0; page 2 re-verifies the slice 0 range
-                # it returned (review M1), then reads slice 1.
-                self.assertEqual(len(sent), 3)
-                self.assertEqual(rest["verification_calls"], 1)
-                for arguments in sent:
-                    self.assertEqual(set(arguments), {"entity_ids", "start_time", "end_time", "limit", "offset",
-                                                      "order", "source", "minimal_response",
-                                                      "significant_changes_only"} | set(h319.PINS))
-                    self.assertEqual({k: arguments[k] for k in h319.PINS}, h319.PINS)
-                    self.assertEqual((arguments["entity_ids"], arguments["order"], arguments["source"],
-                                      arguments["minimal_response"]), (ENTITY, "asc", "history", True))
-                events = [call.args[0] for call in audit.write.call_args_list]
-                self.assertEqual([e["event"] for e in events], ["history_slice_read"] * 3)
-                self.assertEqual({e["provider"] for e in events}, {"upstream_read_gateway"})
-                self.assertFalse(any(e["fallback_occurred"] for e in events))
-                self.assertIs(current_telemetry(), self.parent)
-
-    async def gateway_read(self, service, **arguments):
-        arguments = {"entity_id": ENTITY, "start": START, "end": END, **arguments}
-        telemetry, token = begin_request()
-        telemetry.caller_id = "synthetic_authenticated_caller"
-        telemetry.core_dispatch_authorizer = lambda: True
-        try:
-            return await service.read(arguments)
-        finally:
-            end_request(token)
-
-    async def continuity_case(self, recorder, change, *, limit):
-        """Read one page, apply ``change`` to the recorder, continue once."""
-
-        gateway, transport = await self.history_gateway(CURRENT, recorder)
-        service = HistorySliceService(lambda: gateway.history_reader(audit=Mock()), known_secrets=(HA_TOKEN,))
-        first = await self.gateway_read(service, limit=limit)
-        self.assertTrue(first["has_more"])
-        change()
-        sent = len(transport.sent)
-        with self.assertRaises(GovernanceError) as raised:
-            await self.gateway_read(service, limit=limit, cursor=first["next_cursor"])
-        self.assertEqual(raised.exception.code, ErrorCode.STALE_CURSOR)
-        self.assertEqual(raised.exception.details["reason"], "history_continuity_broken")
-        return first, transport.sent[sent:]
-
-    @staticmethod
-    def five_states(recorder):
-        recorder.add(S0 - 5, "heat")
-        for hour, state in ((1, "idle"), (2, "heat"), (3, "idle"), (4, "heat"), (5, "idle")):
-            recorder.add(at(f"0{hour}:00:00"), state)
-
-    async def test_in_place_change_inside_the_previous_page_is_stale(self):
-        # Review M1 reproduction: 02:00 changes in place while the last
-        # returned state (03:00, the old overlap anchor) and every offset
-        # stay the same.
-        recorder = Recorder()
-        self.five_states(recorder)
-
-        def change():
-            recorder.rows = [(ts, "cool" if ts == at("02:00:00") else state) for ts, state in recorder.rows]
-        first, sent = await self.continuity_case(recorder, change, limit=3)
-        self.assertEqual([item["at"][11:19] for item in first["states"]], ["01:00:00", "02:00:00", "03:00:00"])
-        # One read of the current slice, from the previous page's range start.
-        self.assertEqual([arguments["offset"] for _, arguments in sent], [0])
-
-    async def test_balanced_insert_and_delete_inside_the_previous_page_is_stale(self):
-        recorder = Recorder()
-        self.five_states(recorder)
-
-        def change():
-            recorder.rows = [row for row in recorder.rows if row[0] != at("02:00:00")]
-            recorder.add(at("02:30:00"), "heat")
-        await self.continuity_case(recorder, change, limit=3)
-
-    async def test_change_in_a_finished_slice_the_previous_page_returned_is_stale(self):
-        recorder = Recorder()
-        self.five_states(recorder)
-        recorder.add(at("07:00:00"), "heat")
-        recorder.add(at("08:00:00"), "idle")
-
-        def change():
-            recorder.rows = [(ts, "cool" if ts == at("01:00:00") else state) for ts, state in recorder.rows]
-        first, sent = await self.continuity_case(recorder, change, limit=6)
-        self.assertEqual([item["slice"] for item in first["states"]], [0, 0, 0, 0, 0, 1])
-        # The verification read of slice 0 is the one that fails.
-        self.assertEqual(len(sent), 1)
-        self.assertEqual(sent[0][1]["start_time"], "2026-10-18T23:59:59.999000+00:00")
-
-    async def test_unchanged_history_continues_through_the_gateway(self):
-        recorder = Recorder()
-        self.five_states(recorder)
-        recorder.add(at("07:00:00"), "heat")
-        recorder.add(at("08:00:00"), "idle")
-        gateway, _ = await self.history_gateway(CURRENT, recorder)
-        service = HistorySliceService(lambda: gateway.history_reader(audit=Mock()), known_secrets=(HA_TOKEN,))
-        pages = [await self.gateway_read(service, limit=2)]
-        while pages[-1]["next_cursor"]:
-            pages.append(await self.gateway_read(service, limit=2, cursor=pages[-1]["next_cursor"]))
-        self.assertEqual(states(pages), oracle(recorder, S0, S2))
-        self.assertTrue(pages[-1]["complete"])
-
-    async def test_change_two_pages_back_is_stale_through_the_gateway(self):
-        # Review M1 residual through the admitted gateway: page 1 returns
-        # 01:00 and 02:00; after two more pages 01:00 changes in place.
-        recorder = Recorder()
-        self.five_states(recorder)
-        gateway, transport = await self.history_gateway(CURRENT, recorder)
-        service = HistorySliceService(lambda: gateway.history_reader(audit=Mock()), known_secrets=(HA_TOKEN,))
-        pages = [await self.gateway_read(service, limit=2)]
-        for _ in range(2):
-            pages.append(await self.gateway_read(service, limit=1, cursor=pages[-1]["next_cursor"]))
-        self.assertEqual([item["at"][11:19] for page in pages for item in page["states"]],
-                         ["01:00:00", "02:00:00", "03:00:00", "04:00:00"])
-        recorder.rows = [(ts, "cool" if ts == at("01:00:00") else state) for ts, state in recorder.rows]
-        sent = len(transport.sent)
-        with self.assertRaises(GovernanceError) as raised:
-            await self.gateway_read(service, limit=1, cursor=pages[-1]["next_cursor"])
-        self.assertEqual(raised.exception.code, ErrorCode.STALE_CURSOR)
-        # One verification read of the slice prefix, nothing read beyond it.
-        verify = [arguments for name, arguments in transport.sent[sent:] if name == "ha_get_history"]
-        self.assertEqual([(a["offset"], a["limit"]) for a in verify], [(0, 5)])
-
-    async def test_reader_refuses_unvalidated_arguments_with_zero_dispatch(self):
-        gateway, transport = await self.history_gateway(CURRENT, Recorder())
-        reader = gateway.history_reader()
-        good = c.format_us(S0)
-        for arguments in (("../x", good, good, 0, 1), (ENTITY, "24h", good, 0, 1),
-                          (ENTITY, good, "2026-10-19T00:00:00Z", 0, 1), (ENTITY, good, good, -1, 1),
-                          (ENTITY, good, good, 0, 1001), (ENTITY, good, good, True, 1),
-                          ([ENTITY], good, good, 0, 1)):
-            with self.subTest(arguments=arguments):
-                result = await reader.read(*arguments)
-                self.assertEqual(result, {"success": False, "details": {"failure_category": "argument_validation"}})
-        self.assertEqual([name for name, _ in transport.sent if name == "ha_get_history"], [])
-
-    async def test_parent_authority_refusal_dispatches_nothing(self):
-        gateway, transport = await self.history_gateway(CURRENT, Recorder())
-        reader = gateway.history_reader()
-        telemetry, token = begin_request()
-        telemetry.core_dispatch_authorizer = lambda: False
-        try:
-            result = await reader.read(ENTITY, c.format_us(S0), c.format_us(S1), 0, 5)
-        finally:
-            end_request(token)
-        self.assertFalse(result["success"])
-        self.assertEqual([name for name, _ in transport.sent if name == "ha_get_history"], [])
-
-    async def test_no_route_or_drift_supplies_no_reader(self):
-        from ha_mcp_engineering.providers.upstream_read_gateway import UpstreamReadGateway
-        self.assertIsNone(UpstreamReadGateway().history_reader())
-        tools = [tool for tool in capture(CURRENT)["tools"] if tool["name"] != "ha_get_history"]
-        gateway, transport = await self.gateway(CURRENT, tools=tools)
-        self.assertIsNone(gateway.history_reader())
-        gateway, transport = await self.history_gateway(CURRENT, Recorder())
-        reader = gateway.history_reader()
-        transport.set_tools(tools)
-        from mcp.server.fastmcp import FastMCP
-        await gateway.initialize(FastMCP("synthetic-hamcp131-reinitialize"))
-        self.assertFalse(reader.current())
-        result = await reader.read(ENTITY, c.format_us(S0), c.format_us(S1), 0, 5)
-        self.assertFalse(result["success"])
-        self.assertEqual([name for name, _ in transport.sent if name == "ha_get_history"], [])
-
-    async def test_gateway_sanitizes_planted_secrets_before_the_service(self):
-        recorder = Recorder()
-        recorder.add(S0 - 5, "heat")
-        recorder.add(at("01:00:00"), "token=" + HA_TOKEN)
-        gateway, transport = await self.history_gateway(CURRENT, recorder)
-        service = HistorySliceService(lambda: gateway.history_reader(), known_secrets=(HA_TOKEN, ACCESS_SECRET))
-        telemetry, token = begin_request()
-        telemetry.caller_id = "synthetic_authenticated_caller"
-        telemetry.core_dispatch_authorizer = lambda: True
-        try:
-            page = await service.read({"entity_id": ENTITY, "start": START, "end": END})
-        finally:
-            end_request(token)
-        self.assertNotIn(HA_TOKEN, json.dumps(page))
-        self.assertEqual(page["returned"], 1)
+# HAMCP-511: HistoryReaderGatewayTests is retired with the gateway's
+# ``ha_get_history`` reader. Its native equivalents (the fixed request shape,
+# continuation and staleness over the real reader, refusal once the lease is
+# gone, and redaction of planted secrets before the service) are in
+# ``test_hamcp511_native_history_slices``.
 
 
 if __name__ == "__main__":
