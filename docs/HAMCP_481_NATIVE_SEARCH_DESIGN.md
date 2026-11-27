@@ -2161,6 +2161,12 @@ relayed by the architect.
     `test_the_dashboard_bound_is_the_governance_bound` and an unavailable
     list result that carries rows in
     `test_an_unreadable_list_reads_nothing`.
+  - After the merge of `release/2.11.0` at `539d84ed` (Lane B1), the
+    engine and sub-call reader scripts were run again, since that merge
+    changed the engine, entities, configs, reply and gateway modules:
+    engine 108 of 108 killed, sub-call reader 57 of 57 with its one
+    equivalent mutant, both with a clean baseline. The dashboard and core
+    reads modules were not changed by that merge.
 - Tests: `tests/test_hamcp447_native_dashboard_search.py`.
 - For dashboards and flow-helper ids, this supersedes §0, §2.1's dashboards
   row, §2.4, the dashboard parts of §2.6, §5's withheld names, §7's Row 25
