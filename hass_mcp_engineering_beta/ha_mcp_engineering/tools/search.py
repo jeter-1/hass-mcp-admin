@@ -27,7 +27,7 @@ from ..providers.routing import native_search_policy_allows_read
 from ..providers.upstream_reads_9_2 import PUBLIC_SCHEMAS
 from ..request_context import current_telemetry
 from ..search import engine
-from ..search.reply import SearchError
+from ..search.reply import SearchError, warning_codes
 from ..tool_framework import run_structured
 from ..upstream_tool_policy import schema_fingerprint
 from .compatibility import SETTINGS
@@ -127,6 +127,7 @@ async def ha_search(arguments: Any) -> str:
             known_secrets=runtime.known_secrets,
         )
         metadata["completeness"] = "partial" if reply["partial"] else "complete"
+        metadata["warning_codes"] = warning_codes(reply)
         # The audit keeps the delegated route's status: a partial reply is
         # audited "partial", not "success".
         telemetry = current_telemetry()

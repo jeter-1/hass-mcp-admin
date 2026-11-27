@@ -95,9 +95,6 @@ Changes from the source:
 
 Changes from the component route:
 
-- the area modes list the registry entities of the matched areas, with or
-  without a state row, as 9.2.0's server-side area set does; the component
-  iterates the states only;
 - an entity is hidden when ``hidden_by`` is not None (the component tests
   its truth; Core sets an enum or None);
 - a device registry with a dropped or duplicate row is unusable, so a query
@@ -163,10 +160,6 @@ AREA_ONLY = "area_only"
 DOMAIN_LISTING = "domain_listing"
 STATE_LISTING = "state_listing"
 QUERY_MODES = frozenset({EXACT_MATCH, FUZZY_SEARCH, AREA_FILTERED_QUERY})
-# Modes whose state filter applies to the returned page only. None: the
-# component route filters by state before scoring and paging (search.py
-# 361-372).
-PAGE_FILTERED_MODES = frozenset()
 AREA_MODES = frozenset({AREA_FILTERED_QUERY, AREA_ONLY})
 
 # The registry fields each read must carry, valid, for a use.
@@ -332,12 +325,11 @@ def required_rows(sources: Mapping, name: str, fields: tuple) -> Mapping:
 
 @dataclass(frozen=True, slots=True)
 class StateRows:
-    """The usable state rows by entity id, in Core's order; the ids of kept
-    rows with an invalid field; and the malformed count (G-f: dropped rows
-    plus those kept rows)."""
+    """The usable state rows by entity id, in Core's order, and the
+    malformed count (G-f: dropped rows plus kept rows with an invalid
+    field)."""
 
     rows: Mapping
-    malformed: frozenset
     count: int
 
 
@@ -348,15 +340,15 @@ def state_rows(result: ReadResult) -> StateRows:
             or result.status not in (c.COMPLETE, c.PARTIAL) or not isinstance(result.value, Mapping)):
         raise SearchError("source_unavailable", source="states")
     rows: dict[str, _State] = {}
-    malformed: set[str] = set()
+    malformed = 0
     for entity_id, row in result.value.items():
         state, attributes = row.get("state"), row.get("attributes")
         name = entity_id if attributes is INVALID else attributes.get("friendly_name", entity_id)
         if state is INVALID or attributes is INVALID or type(name) is not str:
-            malformed.add(entity_id)
+            malformed += 1
             continue
         rows[entity_id] = _State(state, attributes, name)
-    return StateRows(MappingProxyType(rows), frozenset(malformed), result.dropped + len(malformed))
+    return StateRows(MappingProxyType(rows), result.dropped + malformed)
 
 
 def effective_device_area_id(device: Mapping, devices: Mapping) -> str | None:
@@ -704,7 +696,6 @@ async def search_entities(request: EntityRequest, sources: Mapping, states: Stat
     current = mode(request)
     for name in reads_for(request):
         source_result(sources, name)
-    malformed_ids = states.malformed
     states = states.rows
     registry = required_rows(sources, "entity_registry", _entity_registry_fields(request))
     if not _parts_agree(registry, _entity_part):
@@ -719,10 +710,6 @@ async def search_entities(request: EntityRequest, sources: Mapping, states: Stat
     state_filter = request.state_filter
     warnings: list[str] = []
     alias_map: dict | None = None
-
-    def state_of(entity_id: str) -> _State:
-        # An area entity with no usable state row is listed from the registry.
-        return states.get(entity_id) or _State("unknown", {}, entity_id)
 
     def kept(entity_id: str, state: str) -> bool:
         # ``_search_entities`` 361-372: the domain, hidden and state filters
@@ -745,9 +732,11 @@ async def search_entities(request: EntityRequest, sources: Mapping, states: Stat
         if ambiguous:
             warnings.append(WARNING_AMBIGUOUS_FLOOR)
         device_areas = _device_areas(area_devices)
-        candidates = [entity_id for entity_id, row in registry.items()
-                      if entity_id not in malformed_ids and kept(entity_id, state_of(entity_id).state)
-                      and effective_entity_area_id(row, device_areas) in matched]
+        # ``_search_entities`` 359-371 iterates the states only; a state with
+        # no registry row has no area (``_registry_enrichment`` 500).
+        candidates = [entity_id for entity_id, row in states.items()
+                      if kept(entity_id, row.state) and entity_id in registry
+                      and effective_entity_area_id(registry[entity_id], device_areas) in matched]
     else:
         candidates = [entity_id for entity_id, row in states.items() if kept(entity_id, row.state)]
 
@@ -760,7 +749,7 @@ async def search_entities(request: EntityRequest, sources: Mapping, states: Stat
         alias_map = await _read_aliases(candidates, aliases, reasons)
         records = []
         for entity_id in candidates:
-            row = state_of(entity_id)
+            row = states[entity_id]
             name = name_of(entity_id, row.friendly_name)
             known = alias_map.get(entity_id, ())
             tier = scoring.text_tier(query_lower,
@@ -780,7 +769,7 @@ async def search_entities(request: EntityRequest, sources: Mapping, states: Stat
         label = "area_match" if current == AREA_ONLY else current
         records = []
         for entity_id in candidates:
-            row = state_of(entity_id)
+            row = states[entity_id]
             records.append(_record(entity_id, row.friendly_name, scoring.entity_domain(entity_id),
                                    row.state, scoring.apply_hidden_penalty(100, entity_id in hidden),
                                    label, name_of(entity_id, row.friendly_name)))
@@ -811,7 +800,7 @@ async def search_entities(request: EntityRequest, sources: Mapping, states: Stat
         entity_id = record["entity_id"]
         if enricher.requested:
             record.update(enricher.fields(entity_id, alias_map or {}))
-        _membership(record, state_of(entity_id).attributes, membership, denied)
+        _membership(record, states[entity_id].attributes, membership, denied)
         if keep is not None:
             record = {key: value for key, value in record.items() if key in keep}
         emitted.append((ENTITY_BUCKET, record, False))

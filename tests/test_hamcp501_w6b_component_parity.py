@@ -373,6 +373,58 @@ class GoldenTests(House):
         self.assertEqual(scored(query), [(entity_id, 80, "exact_match") for entity_id in self.LEAK_IDS[:2]])
 
 
+class StatesOnlyAreaTests(House):
+    """HAMCP-522: the area modes list states only, as the component route
+    does (``_search_entities`` 359-371 iterates ``_iter_states``; a state with
+    no registry row has no area, ``_registry_enrichment`` 500)."""
+
+    def setUp(self):
+        super().setUp()
+        rows = self.values["config/entity_registry/list"]
+        # In North Bath by its own area, disabled: a registry row, no state.
+        rows.append(entity_row("sensor.north_bath_humidity", area_id="north_bath",
+                               original_name="Humidity", disabled_by="user"))
+        # In North Bath by its device, enabled but with no state row.
+        rows.append(entity_row("binary_sensor.acme_leak_probe_battery", device_id="leak_probe",
+                               original_name="Battery"))
+        # A state with no registry row: it has no area.
+        self.values["states"].append(st("sensor.north_bath_stray", "1", "North Bath stray"))
+
+    NO_STATE = ("sensor.north_bath_humidity", "binary_sensor.acme_leak_probe_battery")
+
+    async def test_area_only_lists_and_counts_states_only(self):
+        result = await self.go(area_filter="North Bath", limit=50)
+        self.assertEqual(result["search_type"], "area_only")
+        self.assertEqual(ids(result), [*GoldenTests.LEAK_IDS[:3], DOOR])
+        self.assertEqual(result["entity_total_matches"], 4)
+        self.assertEqual(result["partial_reasons"], [])
+
+    async def test_area_filtered_query_scores_states_only(self):
+        for query, expected in (("humidity", []), ("battery", []), ("stray", []),
+                                ("acme leak probe", GoldenTests.LEAK_IDS[:3])):
+            with self.subTest(query=query):
+                result = await self.go(area_filter="north_bath", query=query, limit=50)
+                self.assertEqual(result["search_type"], "area_filtered_query")
+                self.assertEqual(sorted(ids(result)), sorted(expected))
+                self.assertEqual(result["entity_total_matches"], len(expected))
+
+    async def test_no_unknown_state_is_made_up(self):
+        # Before HAMCP-522 a registry row with no state was listed as "unknown".
+        result = await self.go(area_filter="North Bath", state_filter="unknown", limit=50)
+        self.assertEqual((ids(result), result["entity_total_matches"]), ([], 0))
+
+    async def test_the_other_modes_are_unchanged(self):
+        # A query with no area scores the states, so the stray state is found
+        # and the registry rows with no state are not.
+        found = ids(await self.go(query="north bath stray", search_types=None, limit=50))
+        self.assertIn("sensor.north_bath_stray", found)
+        listing = ids(await self.go(domain_filter="sensor", limit=50))
+        self.assertIn("sensor.north_bath_stray", listing)
+        for entity_id in self.NO_STATE:
+            self.assertNotIn(entity_id, found)
+            self.assertNotIn(entity_id, listing)
+
+
 class Synthetic(World):
     def setUp(self):
         super().setUp()
@@ -717,7 +769,9 @@ class ContractTests(unittest.TestCase):
                                           reply.WARNING_AMBIGUOUS_FLOOR))
         self.assertFalse(hasattr(reply, "WARNING_STATE_PAGE_ONLY"))
         self.assertFalse(hasattr(reply, "WARNING_COMPOSED_NAME"))
-        self.assertEqual(entities.PAGE_FILTERED_MODES, frozenset())
+        # HAMCP-520: every mode filters by state before paging, so the
+        # page-filtered mode set and its withheld note are gone.
+        self.assertFalse(hasattr(entities, "PAGE_FILTERED_MODES"))
 
 
 if __name__ == "__main__":

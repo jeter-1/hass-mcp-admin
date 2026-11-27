@@ -1437,7 +1437,10 @@ path. Native search is the last bullet below.
     (`body_numeric_query`), as does a one-row helper probe, read before and
     after the scans, that does not show a clean scrub
     (`body_scrub_degraded`, `body_scrub_unverified`); the matched rows then
-    keep only a name rescore and graph references. The probes do not prove
+    keep only a name rescore and graph references. The sub-call pages are
+    still read in each case, for that rescore only: `not_searched` there
+    means the bodies were not matched, not that no page was read
+    (HAMCP-525). The probes do not prove
     the scrub state of a page read between them. Disclosed residuals, for
     2.11: non-scalar and bool secrets, YAML-mode dashboards, and no inf/nan
     arm in the trigger.
