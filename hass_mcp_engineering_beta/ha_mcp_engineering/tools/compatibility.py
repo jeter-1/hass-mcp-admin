@@ -20,8 +20,11 @@ import secrets
 import time
 from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Annotated, Any, Optional
 
+from pydantic import Field
+
+from .. import paging
 from ..capabilities import (
     build_capability_catalog,
     build_capability_view,
@@ -33,6 +36,7 @@ from ..clients.paths import Route, rest_path
 from ..configuration import load_settings
 from ..health import HEALTH
 from ..identifiers import require_automation_config_id, require_entity_id
+from ..incident_logs.cursor import CursorCodec
 from ..dependency import DEPENDENCY_ANALYSIS
 from ..errors import ErrorCode, GovernanceError, HomeAssistantApiError
 from ..logging_config import get_logger
@@ -78,6 +82,14 @@ CORE_SYSTEM_LOG_DEFAULT_MAX_ENTRIES = 50
 # each automation keeps that many runs and that many not-triggered traces.
 CORE_DEFAULT_STORED_TRACES = 5
 MAX_AUDIT_RECORD_CHARS = 64 * 1024
+# HAMCP-425 (PC-1): one codec per adopting list tool for the life of the
+# process. A codec made per call would rotate its key and refuse every
+# continuation; a restart rotates it on purpose.
+LIST_AUTOMATIONS_CURSORS = CursorCodec("list_automations")
+LIST_DEVICES_CURSORS = CursorCodec("list_devices")
+LIST_ENTITY_REGISTRY_CURSORS = CursorCodec("list_entity_registry")
+SEARCH_ENTITIES_CURSORS = CursorCodec("search_entities")
+ListCursor = Annotated[str, Field(strict=True, max_length=paging.MAX_CURSOR_CHARS)]
 LOGGER = get_logger("compatibility")
 
 
@@ -105,6 +117,35 @@ def dump(data: Any) -> str:
 # Preserve the legacy helper name while routing serialization through the v2
 # response-model boundary.
 dump = dump_json
+
+
+def _list_page(codec, fingerprint, position, rows, *, limit, row_key, identity, category):
+    """HAMCP-425 (PC-1): one page of ``rows``, the whole filtered match set.
+
+    The rows are sorted by ``identity`` here, before the set digest and the
+    slice. A row whose identity is missing or not a string fails the read
+    with the tool's malformed-response error. The page is filled to the
+    response limit less the dispatcher's envelope reserve.
+    """
+
+    paging.identity_keys(rows, identity, lambda: HomeAssistantApiError(
+        details={"endpoint_category": category, "status": "malformed_response"}
+    ))
+    rows = sorted(rows, key=lambda row: row[identity])
+    digest = paging.set_digest(codec, [row[identity] for row in rows])
+    offset = position.require_set(codec, digest, len(rows))
+    reply = paging.fill_page(
+        rows[offset : offset + max(1, limit)],
+        codec=codec,
+        query=fingerprint,
+        digest=digest,
+        offset=offset,
+        total=len(rows),
+        row_key=row_key,
+        identity=identity,
+        budget=SETTINGS.response_size_limit - paging.ENVELOPE_RESERVE_CHARS,
+    )
+    return dump(reply, limit=SETTINGS.response_size_limit)
 
 
 # ---------------------------------------------------------------------------
@@ -350,11 +391,17 @@ async def get_entity(entity_id: str) -> str:
 
 
 @mcp.tool()
-async def search_entities(query: str = "", domain: str = "", limit: int = 50) -> str:
+async def search_entities(
+    query: str = "", domain: str = "", limit: int = 50, cursor: ListCursor = ""
+) -> str:
     """Search all entity states. Filters by substring match on entity_id or
     friendly_name, optionally restricted to a domain (e.g. 'binary_sensor').
     Returns entity_id, state, and friendly_name only — use get_entity for
-    full attributes."""
+    full attributes.
+    Pages in entity_id order: pass next_cursor back as cursor, with the same
+    query and domain, while has_more is true. Each page reflects its own read;
+    a changed match set or a server restart refuses the cursor, so start again
+    without one. A row too large for any page is named in omitted_ids."""
     if not isinstance(query, str):
         raise ValueError("query must be a string")
     if not isinstance(domain, str):
@@ -366,6 +413,9 @@ async def search_entities(query: str = "", domain: str = "", limit: int = 50) ->
     normalized_domain = domain.strip().lower()
     if normalized_domain and not re.fullmatch(r"[a-z0-9_]+", normalized_domain):
         raise ValueError("domain must be empty or a canonical Home Assistant domain")
+    codec = SEARCH_ENTITIES_CURSORS
+    fingerprint = codec.fingerprint({"query": q, "domain": normalized_domain})
+    position = paging.open_cursor(codec, cursor, fingerprint)
 
     states = await rest("GET", rest_path("/states"))
     if not isinstance(states, list):
@@ -400,14 +450,9 @@ async def search_entities(query: str = "", domain: str = "", limit: int = 50) ->
             }
         )
 
-    matches.sort(key=lambda item: item["entity_id"])
-    results = matches[:limit]
-    return dump(
-        {
-            "count": len(results),
-            "results": results,
-            "truncated": len(matches) > limit,
-        }
+    return _list_page(
+        codec, fingerprint, position, matches, limit=limit,
+        row_key="results", identity="entity_id", category="states_inventory",
     )
 
 
@@ -747,28 +792,38 @@ async def get_automation_trace(automation_id: str, run_id: str) -> str:
 
 
 @mcp.tool()
-async def list_automations(query: str = "", limit: int = 100) -> str:
+async def list_automations(query: str = "", limit: int = 100, cursor: ListCursor = "") -> str:
     """Automations with entity_id, friendly_name, state, last_triggered, and
     the internal id needed for config edits and traces. Optional substring
     filter on entity_id/friendly_name — prefer filtering over full dumps to
     save context.
     Returns at most limit rows; total counts every match and truncated is
-    true when more matched than were returned."""
-    states = await rest("GET", rest_path("/states"))
+    true when more matched than were returned.
+    Pages in entity_id order: pass next_cursor back as cursor, with the same
+    query, while has_more is true. Each page reflects its own read; a changed
+    match set or a server restart refuses the cursor, so start again without
+    one. A row too large for any page is named in omitted_ids."""
     q = query.lower()
-    # HAMCP-508 SI-1: keep counting past the page so a short page says so.
-    page_size = max(1, limit)
-    total = 0
+    codec = LIST_AUTOMATIONS_CURSORS
+    fingerprint = codec.fingerprint({"query": q})
+    position = paging.open_cursor(codec, cursor, fingerprint)
+    states = await rest("GET", rest_path("/states"))
+    # A row the old loop could not read (it raised) fails the read, as before.
+    if not isinstance(states, list) or not all(
+        isinstance(s, dict) and isinstance(s.get("entity_id"), str) for s in states
+    ):
+        raise HomeAssistantApiError(
+            details={"endpoint_category": "states_inventory", "status": "malformed_response"}
+        )
+    # HAMCP-508 SI-1: every match is kept, so total and the digest see them all.
     autos = []
     for s in states:
-        if not s["entity_id"].startswith("automation."):
+        entity_id = s["entity_id"]
+        if not entity_id.startswith("automation."):
             continue
         attrs = s.get("attributes", {})
         name = attrs.get("friendly_name") or ""
-        if q and q not in s["entity_id"].lower() and q not in name.lower():
-            continue
-        total += 1
-        if len(autos) >= page_size:
+        if q and q not in entity_id.lower() and q not in name.lower():
             continue
         autos.append(
             {
@@ -779,8 +834,10 @@ async def list_automations(query: str = "", limit: int = 100) -> str:
                 "id": attrs.get("id"),
             }
         )
-    return dump({"count": len(autos), "automations": autos,
-                 "returned": len(autos), "total": total, "truncated": total > len(autos)})
+    return _list_page(
+        codec, fingerprint, position, autos, limit=limit,
+        row_key="automations", identity="entity_id", category="states_inventory",
+    )
 
 
 @mcp.tool()
@@ -909,25 +966,31 @@ async def list_areas() -> str:
 
 
 @mcp.tool()
-async def list_devices(query: str = "", limit: int = 100) -> str:
+async def list_devices(query: str = "", limit: int = 100, cursor: ListCursor = "") -> str:
     """The device registry (manufacturer, model, area, connections), with
     optional substring filter on name/manufacturer/model. Use this to find
     orphaned or stale devices.
     Returns at most limit rows; total counts every match and truncated is
-    true when more matched than were returned."""
-    devices = await ws_command({"type": "config/device_registry/list"})
+    true when more matched than were returned.
+    Pages in device id order: pass next_cursor back as cursor, with the same
+    query, while has_more is true. Each page reflects its own read; a changed
+    match set or a server restart refuses the cursor, so start again without
+    one. A row too large for any page is named in omitted_ids."""
     q = query.lower()
-    page_size = max(1, limit)
-    total = 0
+    codec = LIST_DEVICES_CURSORS
+    fingerprint = codec.fingerprint({"query": q})
+    position = paging.open_cursor(codec, cursor, fingerprint)
+    devices = await ws_command({"type": "config/device_registry/list"})
+    if not isinstance(devices, list) or not all(isinstance(d, dict) for d in devices):
+        raise HomeAssistantApiError(
+            details={"endpoint_category": "device_registry", "status": "malformed_response"}
+        )
     out = []
     for d in devices:
         blob = " ".join(
             str(d.get(k) or "") for k in ("name", "name_by_user", "manufacturer", "model")
         ).lower()
         if q and q not in blob:
-            continue
-        total += 1
-        if len(out) >= page_size:
             continue
         out.append(
             {
@@ -939,28 +1002,36 @@ async def list_devices(query: str = "", limit: int = 100) -> str:
                 "disabled_by": d.get("disabled_by"),
             }
         )
-    return dump({"count": len(out), "devices": out,
-                 "returned": len(out), "total": total, "truncated": total > len(out)})
+    return _list_page(
+        codec, fingerprint, position, out, limit=limit,
+        row_key="devices", identity="id", category="device_registry",
+    )
 
 
 @mcp.tool()
-async def list_entity_registry(query: str = "", limit: int = 100) -> str:
+async def list_entity_registry(query: str = "", limit: int = 100, cursor: ListCursor = "") -> str:
     """The entity registry: platform, device_id, area, disabled/hidden
     status. This is where stale entity references and orphaned entities
     show up. Optional substring filter on entity_id/name.
     Returns at most limit rows; total counts every match and truncated is
-    true when more matched than were returned."""
-    entities = await ws_command({"type": "config/entity_registry/list"})
+    true when more matched than were returned.
+    Pages in entity_id order: pass next_cursor back as cursor, with the same
+    query, while has_more is true. Each page reflects its own read; a changed
+    match set or a server restart refuses the cursor, so start again without
+    one. A row too large for any page is named in omitted_ids."""
     q = query.lower()
-    page_size = max(1, limit)
-    total = 0
+    codec = LIST_ENTITY_REGISTRY_CURSORS
+    fingerprint = codec.fingerprint({"query": q})
+    position = paging.open_cursor(codec, cursor, fingerprint)
+    entities = await ws_command({"type": "config/entity_registry/list"})
+    if not isinstance(entities, list) or not all(isinstance(e, dict) for e in entities):
+        raise HomeAssistantApiError(
+            details={"endpoint_category": "entity_registry", "status": "malformed_response"}
+        )
     out = []
     for e in entities:
         blob = f"{e.get('entity_id','')} {e.get('name') or ''} {e.get('original_name') or ''}".lower()
         if q and q not in blob:
-            continue
-        total += 1
-        if len(out) >= page_size:
             continue
         out.append(
             {
@@ -973,8 +1044,10 @@ async def list_entity_registry(query: str = "", limit: int = 100) -> str:
                 "hidden_by": e.get("hidden_by"),
             }
         )
-    return dump({"count": len(out), "entities": out,
-                 "returned": len(out), "total": total, "truncated": total > len(out)})
+    return _list_page(
+        codec, fingerprint, position, out, limit=limit,
+        row_key="entities", identity="entity_id", category="entity_registry",
+    )
 
 
 @mcp.tool()

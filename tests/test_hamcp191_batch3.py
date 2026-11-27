@@ -434,7 +434,9 @@ NON_IDENTIFIER_INPUTS: dict[str, frozenset[str]] = {
     "get_change_plan": frozenset({"detail_section", "cursor", "page_size"}),
     "list_change_plans": frozenset({"limit"}),
     "get_execution_task": frozenset(),
-    "list_execution_tasks": frozenset({"limit"}),
+    # HAMCP-425: the cursor is an opaque signed token, as get_change_plan's;
+    # a refusal names only the feature and a closed reason, never the value.
+    "list_execution_tasks": frozenset({"limit", "cursor"}),
     "inspect_governance_record": frozenset({"record_kind"}),
     "cancel_execution_task": frozenset(),
     "reverify_configuration_task": frozenset(),

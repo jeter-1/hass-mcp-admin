@@ -147,6 +147,9 @@ class PublicBoundaryTests(unittest.IsolatedAsyncioTestCase):
                           "ha_search"})  # + HAMCP-501 W6
         current["get_server_health"] = _without_hamcp171_deep_storage_audit(self, current["get_server_health"])
         current["get_server_health"] = _without_hamcp242_health_disclosure(self, current["get_server_health"])
+        # HAMCP-425 and HAMCP-492 are undone first: their lines follow 473's and 508's.
+        from hamcp425_descriptor_changes import without_hamcp425_descriptor_changes  # + HAMCP-425
+        current = without_hamcp425_descriptor_changes(self, current)
         from hamcp226_228_descriptor_changes import (without_hamcp226_descriptor_change,
                                                      without_hamcp228_capture_changes)
         from hamcp473_descriptor_changes import without_hamcp473_descriptor_change  # + HAMCP-473

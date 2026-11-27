@@ -10,7 +10,9 @@ reconstructable and that twice today's profile count, even with no two
 profiles sharing an outcome, fits in the unchanged 8192-character bound: in
 three quarters of it for the realistic doubled records, and in the bound
 itself, with no truncation, for the synthetic every-profile-its-own-reason
-worst case.  The doubling is that worst case's margin.
+worst case.  The doubling is that worst case's margin.  HAMCP-359 adds the
+same two bounds at the coordinator cap: MAX_CAPABILITIES profiles whose
+capability ids are all as long as the catalog's longest.
 """
 
 from __future__ import annotations
@@ -30,6 +32,7 @@ sys.path.insert(0, str(ROOT))
 
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
 from ha_mcp_engineering.ha_core_readmission.models import (  # noqa: E402
+    MAX_CAPABILITIES,
     CoreAuthoritySource,
     CoreDisposition,
 )
@@ -52,12 +55,20 @@ HEADROOM_LIMIT = AUDIT_BOUND * 3 // 4
 # The synthetic worst case (twice today's profiles, no two sharing a reason
 # code) must fit AUDIT_BOUND itself: it must not be truncated.  The doubling
 # is its margin, so it has no second fraction.
-# Measured at 35 profiles (2026-11-10): the real record emitted by
-# _reconcile() is 2179 characters, the realistic doubled record is 4161 and
-# the synthetic worst case is 6671, which leaves 1521.  One more profile adds
-# 152 to 196 characters to the worst case (mean 177), so the bound is 7 more
-# profiles away at the largest cost and 8 at the mean.  HAMCP-359 compacts the
-# record or restates this guard before the worst case reaches the bound.
+# HAMCP-359 restates the guard at the coordinator cap: MAX_CAPABILITIES (64)
+# profiles, every capability id as long as the catalog's longest and every
+# profile id the compiled convention, fit AUDIT_BOUND with no two sharing an
+# outcome and HEADROOM_LIMIT with today's shared outcomes.  The tests assert
+# the bounds, not these sizes.
+# Measured at 38 profiles (2026-11-27): the real record emitted by
+# _reconcile() is 2326 characters, the realistic doubled record is 4485 and
+# the doubled worst case is 7205, which leaves 987.  One more profile adds 154
+# to 190 characters to the doubled worst case (mean 169), so its bound is 6
+# more profiles away at the largest and the mean cost.  At the cap, with
+# 43-character capability ids, the worst case is 6549 and the shared record
+# 4261.  Not guarded here: schema-maximum (128-character) ids, and profile ids
+# that leave the compiled convention (the record then stores each on its
+# row); both need a catalog change.
 
 
 def _reconcile() -> tuple[CoreRuntime, dict]:
@@ -116,6 +127,31 @@ def _doubled(decisions) -> list:
         for item in decisions
     ]
     return [*decisions, *copies]
+
+
+def _at_capability_cap(decisions) -> list:
+    """MAX_CAPABILITIES decisions cycling today's outcomes.
+
+    Every capability id is exactly as long as today's longest, unique by an
+    index suffix, and every profile id follows the compiled convention.
+    """
+
+    longest = max(len(item.capability_id) for item in decisions)
+    capped = []
+    for index in range(MAX_CAPABILITIES):
+        item = decisions[index % len(decisions)]
+        tag = f"_{index:02d}"
+        capability_id = (item.capability_id + "x" * longest)[
+            : longest - len(tag)
+        ] + tag
+        capped.append(
+            replace(
+                item,
+                capability_id=capability_id,
+                profile_id=capability_id.replace(".", "_") + "_v1",
+            )
+        )
+    return capped
 
 
 def _one_outcome_per_profile(decisions) -> list:
@@ -300,6 +336,50 @@ class CapacityTests(unittest.TestCase):
             len(decisions),
         )
         self._assert_fits(decisions, AUDIT_BOUND)
+
+    def _assert_cap_record(self, decisions, limit) -> None:
+        real = self._real_decisions()
+        self.assertEqual(len(decisions), MAX_CAPABILITIES)
+        self.assertEqual(
+            len({item.capability_id for item in decisions}), MAX_CAPABILITIES
+        )
+        longest = max(len(item.capability_id) for item in real)
+        self.assertEqual(
+            {len(item.capability_id) for item in decisions}, {longest}
+        )
+        self._assert_fits(decisions, limit)
+        summary = _event_for(decisions)["analysis_summary"]
+        # Conventional profile ids are not stored on any row.
+        self.assertEqual(
+            {len(entry) for entry in summary["dispositions"]["profiles"].values()},
+            {3},
+        )
+        admitted = sum(item.disposition.admitted for item in decisions)
+        self.assertGreater(admitted, 0)
+        self.assertLess(admitted, MAX_CAPABILITIES)
+        rebuilt = _reconstruct(summary)
+        self.assertEqual(
+            summary["admitted_count"],
+            sum(1 for item in rebuilt.values() if item[0].startswith("admitted_")),
+        )
+        self.assertEqual(summary["admitted_count"], admitted)
+        self.assertEqual(summary["withheld_count"], MAX_CAPABILITIES - admitted)
+
+    def test_capability_cap_with_no_shared_outcome_is_stored_whole(self):
+        decisions = _one_outcome_per_profile(
+            _at_capability_cap(self._real_decisions())
+        )
+        event = _event_for(decisions)
+        self.assertEqual(
+            len(event["analysis_summary"]["dispositions"]["reason_code"]),
+            MAX_CAPABILITIES,
+        )
+        self._assert_cap_record(decisions, AUDIT_BOUND)
+
+    def test_capability_cap_with_today_outcomes_fits_with_headroom(self):
+        self._assert_cap_record(
+            _at_capability_cap(self._real_decisions()), HEADROOM_LIMIT
+        )
 
     def test_v1_shape_would_not_have_fit(self):
         # Regression anchor: the per-profile v1 list exceeded the bound.
