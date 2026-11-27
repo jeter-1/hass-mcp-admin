@@ -109,6 +109,10 @@ class DashboardPreread:
     compatibility_entry: str
     dashboard_contract_model: str
     operational_identity: DashboardOperationalIdentity
+    # HAMCP-273: the read reply's size without the configuration and without
+    # the digits of its own size field, in the HAMCP-306 measure. None only
+    # for a reader that does not measure its reply.
+    response_envelope_size: int | None = None
 
 
 @dataclass(frozen=True)
