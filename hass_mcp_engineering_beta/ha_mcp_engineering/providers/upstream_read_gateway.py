@@ -7,6 +7,7 @@ from collections import Counter
 from copy import deepcopy
 from dataclasses import dataclass, fields as dataclass_fields, replace as dataclass_replace
 import json
+import math
 import re
 import threading
 import time
@@ -7277,6 +7278,15 @@ def _reject_non_finite_json_constant(_value: str) -> None:
     raise ValueError("non-finite JSON constant")
 
 
+def _parse_finite_json_float(value: str) -> float:
+    # HAMCP-471: an exponent overflow such as 1e999 never reaches
+    # parse_constant; the float parser returns infinity.
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        _reject_non_finite_json_constant(value)
+    return parsed
+
+
 def _classify_upstream_tool_error(
     upstream_tool: str,
     call_result: dict[str, Any],
@@ -7351,6 +7361,7 @@ def _bounded_canonical_error_payload(value: Any) -> tuple[dict[str, Any], str] |
             canonical,
             object_pairs_hook=_reject_duplicate_json_members,
             parse_constant=_reject_non_finite_json_constant,
+            parse_float=_parse_finite_json_float,
         )
     except (RecursionError, TypeError, UnicodeError, ValueError):
         return None
@@ -7391,6 +7402,7 @@ def _reviewed_upstream_error_payload(
                 text,
                 object_pairs_hook=_reject_duplicate_json_members,
                 parse_constant=_reject_non_finite_json_constant,
+                parse_float=_parse_finite_json_float,
             )
         except (RecursionError, TypeError, UnicodeError, ValueError):
             return None

@@ -6,6 +6,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 import json
+import math
 import os
 import re
 from urllib.parse import urlsplit, urlunsplit
@@ -150,6 +151,7 @@ class SupervisorSelfAddonIdentityResolver:
                 body.decode("utf-8"),
                 object_pairs_hook=_reject_duplicate_members,
                 parse_constant=_reject_nonfinite,
+                parse_float=_parse_finite_float,
             )
         except (
             TypeError,
@@ -231,3 +233,12 @@ def _reject_duplicate_members(
 
 def _reject_nonfinite(_value: str) -> None:
     raise ValueError("non-finite JSON constant")
+
+
+def _parse_finite_float(value: str) -> float:
+    # HAMCP-471: an exponent overflow such as 1e999 never reaches
+    # parse_constant; the float parser returns infinity.
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        _reject_nonfinite(value)
+    return parsed

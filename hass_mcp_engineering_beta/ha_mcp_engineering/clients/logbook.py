@@ -110,6 +110,14 @@ def _decode(text):
     def reject_constant(value):
         raise ValueError("nonfinite_json")
 
+    def finite_float(value):
+        # HAMCP-471: an exponent overflow such as 1e999 never reaches
+        # parse_constant; the float parser returns infinity.
+        parsed = float(value)
+        if not math.isfinite(parsed):
+            reject_constant(value)
+        return parsed
+
     def unique_object(pairs):
         result = {}
         for key, value in pairs:
@@ -119,7 +127,8 @@ def _decode(text):
         return result
 
     try:
-        records = json.loads(text, parse_constant=reject_constant, object_pairs_hook=unique_object)
+        records = json.loads(text, parse_constant=reject_constant, parse_float=finite_float,
+                             object_pairs_hook=unique_object)
     except (ValueError, RecursionError):
         raise invalid_response() from None
     if not isinstance(records, list):

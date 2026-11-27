@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 import json
+import math
 import re
 from typing import Any, Mapping
 
@@ -134,11 +135,20 @@ def _strict_json_loads(raw: bytes) -> Any:
     def reject_constant(_value: str) -> None:
         _fail(RegistryErrorCode.MALFORMED_JSON)
 
+    def finite_float(value: str) -> float:
+        # HAMCP-471: an exponent overflow such as 1e999 never reaches
+        # parse_constant; the float parser returns infinity.
+        parsed = float(value)
+        if not math.isfinite(parsed):
+            reject_constant(value)
+        return parsed
+
     try:
         return json.loads(
             raw.decode("utf-8", errors="strict"),
             object_pairs_hook=reject_duplicates,
             parse_constant=reject_constant,
+            parse_float=finite_float,
         )
     except RegistryValidationError:
         raise

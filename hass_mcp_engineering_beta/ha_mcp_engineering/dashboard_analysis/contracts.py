@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 import json
+import math
 import re
 
 from ..clients.ha_mcp_endpoint import OPERATOR_MESSAGES as _ENDPOINT_OPERATOR_MESSAGES
@@ -130,8 +131,16 @@ def parse(raw, *, maximum=INVENTORY_BYTES, depth=INVENTORY_DEPTH, nodes=INVENTOR
     def invalid(_):
         raise AnalysisError("malformed_response")
 
+    def finite(value):
+        # HAMCP-471: an exponent overflow such as 1e999 never reaches
+        # parse_constant; the float parser returns infinity.
+        parsed = float(value)
+        if not math.isfinite(parsed):
+            invalid(value)
+        return parsed
+
     try:
-        value = json.loads(raw, object_pairs_hook=pairs, parse_constant=invalid)
+        value = json.loads(raw, object_pairs_hook=pairs, parse_constant=invalid, parse_float=finite)
         stack = [value]
         while stack:
             item = stack.pop()
@@ -143,7 +152,6 @@ def parse(raw, *, maximum=INVENTORY_BYTES, depth=INVENTORY_DEPTH, nodes=INVENTOR
                     raise AnalysisError("structural_limit")
                 stack.extend(item.values() if type(item) is dict else item)
             elif type(item) is float:
-                import math
                 if not math.isfinite(item):
                     raise AnalysisError("malformed_response")
         return value
