@@ -1487,7 +1487,7 @@
     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_device_projection.py": "0663f89c33c95e3d9185be2c68a33dcc6f77a2cd7672b24645623a636897e68a",
     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_history_9_1.py": "8b6263cefc05c05fe497ce980860d8270c43bc4a424493e0606798d809a1309f",
     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py": "a3013f9205fb9e9d05a0a8e02e9dccc980b0c68e985723345823bd84db61b052",
-    "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py": "0b2e59af9732a222e0c076f011d65e4fc6ae46d996d272691c44c7c0ae632388",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_config.py": "400ae463f1f5494c414a9416b3ca7d89aad2d61a6f6a07f683704416f213ccc3",
     "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_1_entities.py": "37886071e3b0074b3fb90138a2e9e4efeb9f899e574d3de7ae419ea759a7340a"
   },
   "upstream": {
