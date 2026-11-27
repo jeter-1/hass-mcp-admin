@@ -326,11 +326,19 @@ provider, fallback, or write path.
   `retention_unknown` and `affects_result_status` false, although it does not change the
   item's result status. The list is empty when no analyzed item has a limited source; otherwise
   a fixed warning points to it. It covers only items whose digest is in the response.
+- An item can also be partial because its static lifecycle inspection is incomplete,
+  which no evidence source explains (HAMCP-495). The item's `lifecycle` then names why,
+  from the same inspection the single tool runs: `limiting_reasons`, the inspection
+  bounds it reached (the single tool's `lifecycle_analysis.limiting_reasons`), and
+  `gap_categories`, the structures it could not resolve (the keys of the single tool's
+  `lifecycle_analysis.coverage.gap_counts`). Each list is sorted and holds at most 32
+  names. Both are empty when `coverage_complete` is true. When any analyzed item in the
+  response has incomplete lifecycle coverage, a fixed warning points to these fields.
 - The response stays under 60,000 characters. When the digests do not fit, the items
   that do not fit are reported `skipped_budget` with reason `output_budget`. Every
   requested ID appears exactly once in `items`. `source_limitations`,
-  `root_cause_detail` and their warnings are charged against the same bound, so near the
-  bound a response can hold one item fewer than in 2.6. In the synthetic worst case
+  `root_cause_detail`, their warnings and the lifecycle coverage warning are charged
+  against the same bound, so near the bound a response can hold one item fewer than in 2.6. In the synthetic worst case
   tested offline (20 IDs of 128 characters, three root causes each with long
   configuration paths, and a long friendly name), one more item becomes `skipped_budget`
   and is listed in `remaining_automation_ids`.
