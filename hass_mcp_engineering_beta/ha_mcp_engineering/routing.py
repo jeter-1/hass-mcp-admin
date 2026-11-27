@@ -507,8 +507,8 @@ class AuthenticatedMcpGateway:
 
         Covers 069B, and every ``PENDING_ADMISSION_TOOLS`` tool (165, 155,
         232, 145 and the script-trace reads).  Only the selected profile's
-        own admission state is reported; any other Core unavailability keeps
-        the generic refusal with empty details.
+        own admission state is reported; other Core unavailability gets the
+        generic refusal with only ``provider`` and ``core_capabilities``.
         """
 
         if self._core_runtime is None:
