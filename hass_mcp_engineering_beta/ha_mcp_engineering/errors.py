@@ -17,6 +17,7 @@ class ErrorCode(str, Enum):
     HA_TIMEOUT = "home_assistant_timeout"
     LOGBOOK_RESPONSE_LIMIT_EXCEEDED = "logbook_response_limit_exceeded"
     LOGBOOK_BUSY = "logbook_busy"
+    READ_BUSY = "read_busy"
     ENTITY_NOT_FOUND = "entity_not_found"
     AUTOMATION_NOT_FOUND = "automation_not_found"
     RESOURCE_NOT_FOUND = "resource_not_found"
@@ -191,6 +192,12 @@ ERROR_CATALOG: dict[ErrorCode, ErrorDefinition] = {
     ),
     ErrorCode.LOGBOOK_BUSY: ErrorDefinition(
         "A logbook read is still running. Wait for it to finish before another request.",
+        True, 409, "server_error",
+    ),
+    # HAMCP-513: one shared retryable refusal for a bounded read that found
+    # no free read slot (history slices, incident logs and Core logs).
+    ErrorCode.READ_BUSY: ErrorDefinition(
+        "Another read is in progress. Retry after it completes.",
         True, 409, "server_error",
     ),
     ErrorCode.ENTITY_NOT_FOUND: ErrorDefinition("The entity was not found.", False, 404, "invalid_params"),

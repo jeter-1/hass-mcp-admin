@@ -122,9 +122,10 @@ class IncidentLogsError(GovernanceError):
             "invalid_arguments": ErrorCode.INVALID_REQUEST,
         }.get(reason, ErrorCode.ANALYSIS_UNAVAILABLE)
         # HAMCP-413 (HAAC-E046): a concurrent read is a retryable busy
-        # refusal, not an unavailable provider.
+        # refusal, not an unavailable provider; HAMCP-513: the shared
+        # read_busy (409) code, not the rate-limit code.
         if reason == "read_in_progress":
-            code = ErrorCode.RATE_LIMIT_EXCEEDED
+            code = ErrorCode.READ_BUSY
             message = "Another incident log read is in progress; retry after it completes."
         else:
             message = None

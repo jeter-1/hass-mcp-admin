@@ -2,7 +2,7 @@
 
 Section 6.1 statistics projection ``ha-mcp-9.1.0-history-statistics-v1`` and
 section 1.2 rule 3 state rows, through the real upstream read gateway with a
-fake transport, plus the history-slices 9.1 parser row. Every call is an
+fake transport (the history-slices parser row is retired, HAMCP-511). Every call is an
 8.5-shaped public call. HAMCP-437: each scenario is driven against the 9.2.0
 gateway, whose ``upstream_history_9_2`` runs the unedited 9.1 projection on
 the 9.1 shapes (equal in every real-Core 9.2.0 receipt,
@@ -17,23 +17,18 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import replace
-from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 import sys
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "hass_mcp_engineering_beta"), str(ROOT / "tests")]
 
 from mcp.server.fastmcp import FastMCP  # noqa: E402
 
-from history_slices_sim import FakeReader, Recorder, history_result, us  # noqa: E402
 
-from ha_mcp_engineering.history_slices import contracts as c  # noqa: E402
-from ha_mcp_engineering.history_slices import service as service_module  # noqa: E402
-from ha_mcp_engineering.history_slices.service import HistorySliceService  # noqa: E402
 from ha_mcp_engineering.providers import upstream_history_9_1 as history  # noqa: E402
 from ha_mcp_engineering.providers import upstream_history_9_2 as history_9_2  # noqa: E402
 from ha_mcp_engineering.providers import upstream_reads_9_1  # noqa: E402
@@ -52,7 +47,6 @@ SCENARIOS = FIXTURES["scenarios"]
 TOOL = "ha_get_history"
 PINS = {"summary": False, "include_schema": False, "core_options": None}
 CANARY = "SYNTHETIC-CANARY-319-HIST"
-HA_TOKEN = "synthetic-ha-" + "credential-319"
 HISTORY_SCENARIOS = (
     "history_minimal", "history_attributes", "history_fields_typo", "history_timezone_failed",
 )
@@ -61,20 +55,12 @@ STATISTICS_SCENARIOS = (
     "statistics_unitless_timezone_failed",
 )
 DROPPED_91_KEYS = {"end", "unit_source", "unit_reason", "statistics_metadata", "last_reset"}
-CHICAGO = timezone(timedelta(hours=-5))
-NOW_MS = us("2026-10-19T13:30:00") // 1000
-SLICE_ENTITY = "climate.mudroom_thermostat"
 # HAMCP-437: the release the gateway cases drive, and its three count fields.
 CURRENT = "9.2.0"
 COUNTS = ("fields_withheld", "fields_dropped_by_policy", "upstream_warnings_replaced")
 # A peer URL whose parts occur in no result (the default host ``upstream``
 # would also redact ``upstream_warnings_replaced``).
 PEER_URL = "http://synthetic-host-319:9583/synthetic-history-secret-319/mcp"
-START, END = "2026-10-19T00:00:00Z", "2026-10-19T12:00:00Z"
-
-
-def at(text: str) -> int:
-    return us("2026-10-19T" + text)
 
 
 def ok(payload):
@@ -131,59 +117,6 @@ def meta(result):
     """The ha-mcp timezone ``metadata`` inside the gateway success envelope."""
 
     return result["data"]["metadata"]
-
-
-def localized(text: str) -> str:
-    return datetime.fromisoformat(text).astimezone(CHICAGO).isoformat()
-
-
-def upstream_9_1(recorder: Recorder, arguments: dict) -> dict:
-    """The 9.1 history result for the gateway's fixed slice query (class S shapes).
-
-    Built from the shared recorder simulation: 9.1 ``format_history_response``
-    (``history_response.py:49-74``) localizes ``lu``/``lc`` to the Home
-    Assistant time zone (offset-aware); entity pagination follows
-    ``build_pagination_metadata`` (``response_helpers.py:271-292``); the
-    query params carry ``summary`` (``tools_history.py:505-519``) and the
-    metadata is the 9.1 history form (``history_response.py:16-46``).
-    """
-
-    legacy = recorder.upstream(arguments["entity_ids"], arguments["start_time"],
-                               arguments["end_time"], arguments["offset"], arguments["limit"])
-    inner = legacy["data"]["data"]
-    entity = inner["entities"][0]
-    offset, limit = arguments["offset"], arguments["limit"]
-    period = {"start": arguments["start_time"], "end": arguments["end_time"]}
-    rows = [{"state": row["state"], "last_changed": localized(row["last_changed"]),
-             "last_updated": localized(row["last_updated"])} for row in entity["states"]]
-    return {
-        "data": {
-            "success": True, "source": "history",
-            "entities": [{
-                "entity_id": entity["entity_id"], "period": dict(period), "states": rows,
-                "total_count": entity["total_count"], "offset": offset, "limit": limit,
-                "count": len(rows), "has_more": entity["has_more"],
-                "next_offset": offset + limit if entity["has_more"] else None,
-            }],
-            "period": dict(period),
-            "query_params": {
-                "minimal_response": True, "significant_changes_only": True,
-                "limit": limit, "offset": offset, "order": "asc", "summary": False,
-            },
-        },
-        "metadata": {
-            "home_assistant_timezone": "America/Chicago",
-            "timestamp_format": "ISO 8601 (America/Chicago)",
-            "note": history._history_note_91("America/Chicago"),
-        },
-    }
-
-
-def upstream_8_5(recorder: Recorder, arguments: dict) -> dict:
-    """The shipped 8.5 result (identical to 8.6, see ``history_slices_sim``)."""
-
-    return recorder.upstream(arguments["entity_ids"], arguments["start_time"], arguments["end_time"],
-                             arguments["offset"], arguments["limit"])["data"]
 
 
 class Transport(_GatewayTransport):
@@ -564,156 +497,12 @@ class Row16RefusalTests(_Base):
         self.assertEqual({entry["class"] for entry in PROVENANCE["fixtures"].values()}, {"S"})
 
 
-class HistorySlicesRowTests(_Base):
-    """Rule 3: the history-slices parser row the 9.2.0 session maps through (the 9.1 row)."""
-
-    async def slices_case(self, version):
-        recorder = Recorder()
-        recorder.add(at("00:00:00") - 5, "heat")
-        recorder.add(at("01:00:00"), "idle")
-        recorder.add(at("07:00:00"), "heat")
-        gateway, transport = await self.gateway(version)
-        build = upstream_9_1 if version in ("9.1.0", CURRENT) else upstream_8_5
-        transport.responder = lambda tool, arguments: ok(build(recorder, arguments))
-        audit = Mock()
-        reader = gateway.history_reader(audit=audit)
-        self.assertIsNotNone(reader)
-        self.assertEqual(reader.version, version)
-        service = HistorySliceService(lambda: reader, known_secrets=(HA_TOKEN,), clock=lambda: NOW_MS)
-        telemetry, token = begin_request()
-        telemetry.caller_id = "synthetic_authenticated_caller"
-        telemetry.core_dispatch_authorizer = lambda: True
-        try:
-            page = await service.read({"entity_id": SLICE_ENTITY, "start": START, "end": END, "limit": 1})
-            rest = await service.read({"entity_id": SLICE_ENTITY, "start": START, "end": END,
-                                       "cursor": page["next_cursor"]})
-        finally:
-            end_request(token)
-        got = [(c.parse_upstream_us(item["at"]), item["state"]) for p in (page, rest) for item in p["states"]]
-        self.assertEqual(got, [(at("01:00:00"), "idle"), (at("07:00:00"), "heat")])
-        self.assertEqual(page["provider"]["upstream_version"], version)
-        self.assertIs(rest["has_more"], False)
-        sent = [arguments for name, arguments in transport.sent if name == TOOL]
-        self.assertEqual(len(sent), 3)
-        fixed = {"entity_ids", "start_time", "end_time", "limit", "offset", "order", "source",
-                 "minimal_response", "significant_changes_only"}
-        for arguments in sent:
-            if version in ("9.1.0", CURRENT):
-                self.assertEqual(set(arguments), fixed | set(PINS))
-                self.assertEqual({k: arguments[k] for k in PINS}, PINS)
-            else:
-                self.assertEqual(set(arguments), fixed)
-            self.assertEqual((arguments["entity_ids"], arguments["order"], arguments["source"],
-                              arguments["minimal_response"]), (SLICE_ENTITY, "asc", "history", True))
-        events = [call.args[0] for call in audit.write.call_args_list]
-        self.assertEqual({e["upstream_version"] for e in events}, {version})
-        self.assertFalse(any(e["fallback_occurred"] for e in events))
-        return page, rest
-
-    async def test_92_history_slices_positive(self):
-        await self.slices_case(CURRENT)
-
-    async def test_92_history_slices_unrecognized_shape_fails_closed(self):
-        recorder = Recorder()
-        recorder.add(at("01:00:00"), "idle")
-        gateway, transport = await self.gateway(CURRENT)
-
-        def responder(tool, arguments):
-            payload = upstream_9_1(recorder, arguments)
-            # 9.2.0 withholds an unknown key, so the refused shape is a naive time.
-            row = payload["data"]["entities"][0]["states"][0]
-            row["last_updated"] = CANARY + "-2026-10-19T05:30:00"
-            return ok(payload)
-
-        transport.responder = responder
-        reader = gateway.history_reader(audit=Mock())
-        service = HistorySliceService(lambda: reader, known_secrets=(HA_TOKEN,), clock=lambda: NOW_MS)
-        telemetry, token = begin_request()
-        telemetry.caller_id = "synthetic_authenticated_caller"
-        telemetry.core_dispatch_authorizer = lambda: True
-        try:
-            page = await service.read({"entity_id": SLICE_ENTITY, "start": START, "end": END})
-        finally:
-            end_request(token)
-        # The compiled row 16 projection refuses the unrecognized row; the
-        # slice reports the omission and claims no coverage.
-        self.assertNotIn(CANARY, json.dumps(page))
-        self.assertEqual(page["states"], [])
-        self.assertEqual(page["omissions"], ["upstream_invalid_response"])
-        self.assertIsNone(page["coverage"]["complete_until"])
-        self.assertEqual(page["upstream_calls"], 1)
-
-    def test_history_slices_parser_rows_match_reviewed_versions(self):
-        self.assertEqual(set(service_module._PARSERS), set(c.REVIEWED_VERSIONS))
-        self.assertIn(CURRENT, c.REVIEWED_VERSIONS)
-        self.assertIs(service_module._PARSERS[CURRENT], service_module._parse_9_2_0)
-
-    @staticmethod
-    def envelope(states, *, version=CURRENT, completeness="complete"):
-        result = history_result("sensor.synthetic_temperature", [], total=len(states), offset=0, limit=10)
-        body(result)["entities"][0].update(states=states, count=len(states))
-        result["metadata"].update(upstream_version=version, completeness=completeness)
-        return result
-
-    def test_92_history_slices_parser_expanded_rows(self):
-        rows = [
-            {"state": "21.5", "last_changed": "2026-10-19T05:30:00-05:00",
-             "last_updated": "2026-10-19T05:30:00-05:00", "attributes": {"friendly_name": "Synthetic"}},
-            {"state": "20.0", "last_changed": "2026-10-18T19:00:00-05:00",
-             "last_updated": "2026-10-19T01:00:00-05:00"},
-        ]
-        parsed = service_module._parse_9_2_0(self.envelope(rows), "sensor.synthetic_temperature", 0)
-        self.assertEqual(parsed, ([(us("2026-10-19T10:30:00"), "21.5"), (us("2026-10-19T06:00:00"), "20.0")],
-                                  2, False))
-        # Without attributes on every row; offset-aware localized times.
-        bare = [{k: v for k, v in row.items() if k != "attributes"} for row in rows]
-        self.assertEqual(service_module._parse_9_2_0(self.envelope(bare), "sensor.synthetic_temperature", 0)[0],
-                         parsed[0])
-
-    def test_92_history_slices_parser_refusals(self):
-        good = {"state": "on", "last_changed": "2026-10-19T05:30:00-05:00",
-                "last_updated": "2026-10-19T05:30:00-05:00"}
-        entity = "sensor.synthetic_temperature"
-        cases = {
-            "compressed_key": {**good, "lu": 1.0},
-            "unknown_key": {**good, "last_reported": good["last_updated"]},
-            "attributes_empty_list": {**good, "attributes": []},
-            "attributes_null": {**good, "attributes": None},
-            "naive_last_changed": {**good, "last_changed": "2026-10-19T05:30:00"},
-            "naive_last_updated": {**good, "last_updated": "2026-10-19T05:30:00"},
-            "missing_last_changed": {k: v for k, v in good.items() if k != "last_changed"},
-        }
-        for label, row in cases.items():
-            with self.subTest(case=label):
-                self.assertEqual(service_module._parse_9_2_0(self.envelope([row]), entity, 0),
-                                 "representation_invalid")
-        # A session attributed to any other release never maps through the 9.2.0 row.
-        for version in ("8.5.0", "8.6.0", "9.1.0", "9.1.2", None):
-            with self.subTest(version=version):
-                raw = self.envelope([good], version=version)
-                self.assertEqual(service_module._parse_9_2_0(raw, entity, 0), "representation_invalid")
-        self.assertEqual(service_module._parse_9_2_0([], entity, 0), "representation_invalid")
-        failure = {"success": False, "details": {"failure_category": "transport_timeout"}}
-        self.assertEqual(service_module._parse_9_2_0(failure, entity, 0), "upstream_transport_timeout")
-
-    async def test_history_slices_version_without_parser_refused_with_zero_calls(self):
-        for version, parsers in (("9.9.9", service_module._PARSERS),
-                                 (CURRENT, {k: v for k, v in service_module._PARSERS.items() if k != CURRENT})):
-            with self.subTest(version=version):
-                recorder = Recorder()
-                recorder.add(at("01:00:00"), "idle")
-                reader = FakeReader(recorder, version=version)
-                service = HistorySliceService(lambda: reader, known_secrets=(HA_TOKEN,), clock=lambda: NOW_MS)
-                telemetry, token = begin_request()
-                telemetry.caller_id = "synthetic_authenticated_caller"
-                try:
-                    with patch.object(service_module, "_PARSERS", parsers):
-                        with self.assertRaises(c.HistorySlicesError) as raised:
-                            await service.read({"entity_id": SLICE_ENTITY, "start": START, "end": END})
-                finally:
-                    end_request(token)
-                self.assertEqual(raised.exception.reason, "history_route_unavailable")
-                self.assertEqual(recorder.calls, [])
+# HAMCP-511: HistorySlicesRowTests is retired. get_history_slices no longer
+# maps through this row: it reads Core's /api/history/period natively
+# (``history_slices/native.py``), so the gateway's slice reader, the
+# per-release slice parsers and their envelopes are gone. Row 16 above still
+# covers the delegated ``ha_get_history`` tool; the native read is covered by
+# ``test_hamcp131_history_slices`` and ``test_hamcp511_native_history_slices``.
 
 
 if __name__ == "__main__":
