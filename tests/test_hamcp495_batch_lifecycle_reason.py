@@ -105,6 +105,13 @@ class LifecycleReasonTests(unittest.TestCase):
         self.assertEqual(bounded, sorted(bounded))
         self.assertTrue(all(0 < len(name) <= batch_module._MAX_LIFECYCLE_NAME_CHARS for name in bounded))
         self.assertEqual(batch_module._lifecycle_names(["b", "a", "b", 3, None]), ["a", "b"])
+        # Within the count bound, an empty or over-long name is still dropped.
+        limit = batch_module._MAX_LIFECYCLE_NAME_CHARS
+        self.assertEqual(
+            batch_module._lifecycle_names({"a" * (limit + 1): 1, "": 1, "scalar_length": 1}),
+            ["scalar_length"],
+        )
+        self.assertEqual(batch_module._lifecycle_names(["a" * limit]), ["a" * limit])
         for value in (None, "scalar_length", 5, {"x"}):
             with self.subTest(value=value):
                 self.assertEqual(batch_module._lifecycle_names(value), [])
