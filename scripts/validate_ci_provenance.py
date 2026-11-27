@@ -297,10 +297,6 @@ def verify(pr_number, base, head, api=github_get, check_name="validate"):
     checks = collection(api(checks_route), "check_runs")
     if not checks:
         return {"status": "pending"}
-    # ci.yml produces one validate check per head. pull_request_target starts
-    # one policy-locks suite per event (opened, edited, ...); every same-name
-    # check on the head must come from that workflow and pass.
-    require(len(checks) == 1 or event == "pull_request_target", "ambiguous_validate_check")
     identities = []
     for check in checks:
         require(check.get("name") == check_name and check.get("head_sha") == head,
@@ -308,19 +304,32 @@ def verify(pr_number, base, head, api=github_get, check_name="validate"):
         require(check.get("app", {}).get("id") == APP_ID
                 and check.get("app", {}).get("slug") == "github-actions",
                 "wrong_check_producer")
-        pr_binding(check, pr_number, base, head)
         identities.append((positive_id(check.get("id")),
                            positive_id(check.get("check_suite", {}).get("id"))))
+    workflow_id = None
+    events = [event] * len(checks)
+    # pull_request_target starts one policy-locks suite per event (opened,
+    # edited, ...); every same-name check on the head must come from that
+    # workflow and pass. ci.yml produces one pull_request validate check per
+    # head; a full-tier workflow_dispatch of ci.yml on the same head adds
+    # another (HAMCP-521). Each extra must be such a dispatch run and pass too.
+    if len(checks) > 1 and event != "pull_request_target":
+        workflow_id = producer_workflow(api, prefix, workflow_file, workflow_path)
+        events = [run_event(api, prefix, workflow_id, suite_id, head, event)
+                  for _, suite_id in identities]
+        require(events.count(event) == 1, "ambiguous_validate_check")
+    for check, check_event in zip(checks, events):
+        if check_event == event:
+            pr_binding(check, pr_number, base, head)
     if not all([successful(check) for check in checks]):
         return {"status": "pending"}
 
-    workflow = api(f"{prefix}/actions/workflows/{workflow_file}")
-    workflow_id = positive_id(workflow.get("id"))
-    require(workflow.get("path") == workflow_path
-            and workflow.get("state") == "active", "wrong_ci_workflow")
-    runs = [producer_run(api, prefix, workflow_id, workflow_path, event, check_name,
-                         check_id, suite_id, pr_number, base, head)
-            for check_id, suite_id in identities]
+    if workflow_id is None:
+        workflow_id = producer_workflow(api, prefix, workflow_file, workflow_path)
+    runs = [producer_run(api, prefix, workflow_id, workflow_path, check_event, check_name,
+                         check_id, suite_id, pr_number, base, head,
+                         bind_pr=check_event == event)
+            for (check_id, suite_id), check_event in zip(identities, events)]
     latest = collection(api(checks_route), "check_runs")
     current = {check.get("id"): check for check in latest}
     require(len(latest) == len(checks) == len(current) and all(
@@ -335,15 +344,39 @@ def verify(pr_number, base, head, api=github_get, check_name="validate"):
         "pr_number": pr_number, "base_sha": base, "head_sha": head,
     }
     receipts = [receipt for _, receipt in runs]
-    if len(receipts) == 1:
-        result.update(receipts[0])
-    else:
+    if event == "pull_request_target" and len(receipts) > 1:
         result["runs"] = receipts
+    else:
+        # The PR-triggered run stays the receipt; dispatch extras are listed.
+        primary = events.index(event)
+        result.update(receipts[primary])
+        extras = [receipt for index, receipt in enumerate(receipts) if index != primary]
+        if extras:
+            result["dispatch_runs"] = extras
     return result
 
 
+def producer_workflow(api, prefix, workflow_file, workflow_path):
+    workflow = api(f"{prefix}/actions/workflows/{workflow_file}")
+    require(workflow.get("path") == workflow_path
+            and workflow.get("state") == "active", "wrong_ci_workflow")
+    return positive_id(workflow.get("id"))
+
+
+def run_event(api, prefix, workflow_id, suite_id, head, event):
+    """The producer event of one extra same-name check's suite: the PR event or
+    a ci.yml workflow_dispatch. Any other event or workflow refuses."""
+
+    found = [candidate for candidate in (event, "workflow_dispatch") if collection(api(
+        f"{prefix}/actions/workflows/{workflow_id}/runs"
+        f"?check_suite_id={suite_id}&head_sha={head}&event={candidate}&per_page=100"
+    ), "workflow_runs")]
+    require(len(found) == 1, "missing_or_ambiguous_ci_run")
+    return found[0]
+
+
 def producer_run(api, prefix, workflow_id, workflow_path, event, check_name,
-                 check_id, suite_id, pr_number, base, head):
+                 check_id, suite_id, pr_number, base, head, bind_pr=True):
     runs = collection(api(
         f"{prefix}/actions/workflows/{workflow_id}/runs"
         f"?check_suite_id={suite_id}&head_sha={head}&event={event}&per_page=100"
@@ -359,7 +392,9 @@ def producer_run(api, prefix, workflow_id, workflow_path, event, check_name,
             and run.get("head_sha") == head, "wrong_ci_run")
     require(all(run.get(key, {}).get("full_name") == REPOSITORY
                 for key in ("repository", "head_repository")), "foreign_ci_run")
-    pr_binding(run, pr_number, base, head)
+    if bind_pr:
+        # A dispatch run names no pull request; its head and repository bind it.
+        pr_binding(run, pr_number, base, head)
     run_success = successful(run)
     jobs = collection(api(
         f"{prefix}/actions/runs/{run_id}/attempts/{attempt}/jobs?per_page=100"
