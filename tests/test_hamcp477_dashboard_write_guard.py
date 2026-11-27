@@ -18,6 +18,7 @@ import json
 from pathlib import Path
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -382,6 +383,50 @@ class DashboardWriteGuardTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(self.dashboard.write_count, 0)
                 self.assertEqual(self.repository.list(), [])
         self.assertNotIn(RAW.encode(), self._persisted_bytes())
+
+    async def test_a_value_removed_from_a_card_whose_type_changes_judges_the_current_type(self):
+        # The same plan turns the alarm panel into another card type and
+        # removes its code. The removed code is shown for approval, so it is
+        # judged under the current card type too, not only the resulting one.
+        self.dashboard.configuration = {
+            "title": "Synthetic",
+            "views": [{"cards": [{"type": "alarm-panel",
+                                  "entity": "alarm_control_panel.synthetic",
+                                  "code": "4821"}]}],
+        }
+        await self._assert_refused(
+            [
+                {"operation_id": "t", "operation": "replace",
+                 "path": "/views/0/cards/0/type", "value": "custom:x"},
+                {"operation_id": "r", "operation": "remove", "path": "/views/0/cards/0/code"},
+            ],
+            "/views/0/cards/0/code",
+        )
+
+    async def test_a_pointer_the_shared_detector_flags_is_withheld(self):
+        # Defense in depth: a key holding a known secret is refused earlier by
+        # the shared detector (unchanged reason, no pointer list), and if a
+        # pointer ever reached the guard's list it is withheld, not shown.
+        known = "QuxSynthKnownValue"
+        self.service.sensitive_values = (known,)
+        value = {"type": "custom:x", known + "_token": "x", "apiKey": RAW}
+        with self.assertRaises(GovernanceError) as raised:
+            await self._create(add_card(value))
+        self.assertEqual(raised.exception.details, {"reason": REASON})
+        self.assertEqual(self.dashboard.preread_count, 0)
+
+        def guarded(card):
+            operations = add_card(card)
+            compilation = compile_dashboard_patch(deepcopy(BASE), operations)
+            proposal = SimpleNamespace(
+                compilation=compilation,
+                raw_evidence=SimpleNamespace(configuration=deepcopy(BASE)),
+            )
+            return self.service._dashboard_changed_sensitive_paths(proposal)
+
+        self.assertEqual(guarded(value), ["/views/0/cards/1/apiKey"])
+        self.assertEqual(guarded({"type": "custom:x", known + "_token": "x"}), ["*"])
+        self.assertNotIn(known, json.dumps(guarded(value)))
 
     async def test_unchanged_sensitive_values_elsewhere_do_not_lock_the_dashboard(self):
         # HAMCP-477 judges only changed values; an unrelated edit still plans.
