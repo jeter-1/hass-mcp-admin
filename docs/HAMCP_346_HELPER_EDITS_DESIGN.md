@@ -2,13 +2,13 @@
 
 Status: **design only (2.11.0 Lane C, PR 1 of 4).** This document changes no
 source, schema, profile, registry or workflow. It does not authorize a build,
-a release, a signing session, deployment or live Home Assistant access. A
-build needs Josh's decisions in §9 and his named OK for each protected file
-in §7.
+a release, a signing session, deployment or live Home Assistant access.
+Josh's decisions are recorded in §9. A build still needs his named OK for
+each protected file in §7.
 
 | Item | Value |
 |---|---|
-| Base | Researched at `release/2.11.0` `54627e35dcfd8e972d468aec8745fd918db53ad3` (= `main` after #522), Engineering `2.4.2-beta.14`. The branch then merged `ea2dc63b0a7119862678b341a7f33daab21cd8a5` (#524, `2.4.2-beta.15`); under `E/` that merge changes only `version.py`, so every cite below still holds. |
+| Base | Researched at `release/2.11.0` `54627e35dcfd8e972d468aec8745fd918db53ad3` (= `main` after #522), Engineering `2.4.2-beta.14`. The branch then merged `ea2dc63b0a7119862678b341a7f33daab21cd8a5` (#524, `2.4.2-beta.15`); under `E/` that merge changes only `version.py`, so every cite below still holds. It then merged `f2275ab19ef5acd94ea2acf3737fa7e6a1b2ed56` (#527, #528, #530); that merge changes no file this document cites. |
 | Register | HAMCP-346 (HA admin E034); shares the write mechanism with HAMCP-328 (helper create, after 3.0) |
 | Signed registry | `upstream-trust/ha-core-release-registry.json`, tip **sequence 19** (expires 2027-02-23): 2026.10.0 (22 capabilities), 2026.10.1 (26), 2026.10.3 (31), 2026.11.0 (38), 2026.11.3 (38) |
 | Core source | Raw files from the GitHub tag `2026.11.3`, read in a scratch copy outside the repository, plus `components/websocket_api/connection.py` at the same tag (sha256 `abe7fc8e7fabc9a552bfb5b6df36117b42d0aa75b948064c1a384e42c608368c`) for the dispatch fact in §2.1. These are **not** the signed source archive. A build re-derives every Core fact below from the signed `2026.11.3` archive before it relies on it |
@@ -456,8 +456,10 @@ item 3).
 
 HAMCP-328 helper creates would reuse
 the same profile with a create-specific clause, so one signing step can admit
-both. Whether to sign it for 2026.11.3 only, or for every 2026.11.x entry, is
-Josh's decision (§9 J-4).
+both. Josh decided one profile, signed with HAMCP-328's creates (§9 J-4).
+The recommendation named no Core entries, so whether to sign it for
+2026.11.3 only, or for every 2026.11.x entry, is still open for that
+signing session: [JOSH].
 
 ### 5.4 Identity and renamed entity ids
 
@@ -512,10 +514,11 @@ reuses the path:
    `proposed_config` is the captured list item with the `id` key removed and
    nothing else changed. Today the path copies the item with `id`
    (`runtime.py:5796`) and planning refuses it (§1, "Today's helper undo is
-   refused at planning"). The build fixes this in `_plan_fresh_rollback` and
-   proves it on today's `input_boolean` and `input_number` first. Only `id`
+   refused at planning"). HAMCP-531 fixes this in 2.11.0 in
+   `_plan_fresh_rollback` and proves it on today's `input_boolean` and
+   `input_number` (§9). Only `id`
    is removed. Any other captured field Engineering does not know, such as
-   an `input_number.device_class` while J-6 is open (§4.1), still fails
+   an `input_number.device_class` until the J-6 fix lands (§4.1), still fails
    closed with the field named.
 2. **The reverse proposal meets the new type's validator under the
    carry-over rule (§4).** At rollback planning, the "current value" is the
@@ -618,18 +621,19 @@ Protected (each needs Josh's named OK at build time):
   response check.
 - `E/f3_runtime/registry.py`: `CONFIGURATION_REGISTRATIONS` and the
   route-admission target-type allowlist (`:709`).
-- `E/f3_runtime/runtime.py`: the configuration adapter map (`:2089`), the
-  reverse proposal without `id` in `_plan_fresh_rollback` for today's two
-  types (§5.7 item 1), and the new-type undo branch in
-  `_create_fresh_rollback_plan`. That branch returns before the generic
-  lease at `:5688` and holds its own exact-target lease (§5.7 item 3).
+- `E/f3_runtime/runtime.py`: the configuration adapter map (`:2089`) and
+  the new-type undo branch in `_create_fresh_rollback_plan`. That branch
+  returns before the generic lease at `:5688` and holds its own
+  exact-target lease (§5.7 item 3). The reverse proposal without `id` in
+  `_plan_fresh_rollback` for today's two types (§5.7 item 1) lands earlier,
+  in HAMCP-531 (§9). A build re-reads these line numbers after that merge.
 - `E/governance/service.py` also gains the plan-time admission check
   (`_require_dormant_profile_admission`, `_storage_helper_configuration_core`),
   `_storage_helper_configuration_planning_lease` and the lease-holding
   planning branch (§5.3).
 - `E/governance/semantic_projection.py`, `E/governance/resources.py`
   (`structured_resource_diff`) and `E/approval_web.py`: the `input_text.initial`
-  display rule, if J-5 is accepted (§4.2).
+  display rule, per J-5 (§4.2).
 - `E/ha_core_readmission/profiles.py`, `E/ha_core_readmission/routes.py`:
   the new dormant profile and its routes.
 - `E/capabilities.py`: capability metadata for the new types.
@@ -647,10 +651,11 @@ Success:
 - An icon-only edit on a timer, the E034 case.
 - Clearing `initial` on `input_select`, `input_text` and `input_boolean`. The
   last proves today's path (§2.1).
-- Undo of each type restores the captured item exactly. First, on today's
-  types: an offline rollback plan for an `input_boolean` (and an
-  `input_number`) whose captured `current_config` holds `id` and `name` is
-  created, and its reverse `proposed_config` has no `id` (§5.7 item 1).
+- Undo of each type restores the captured item exactly. On today's types,
+  HAMCP-531 proves §5.7 item 1: an offline rollback plan for an
+  `input_boolean` (and an `input_number`) whose captured `current_config`
+  holds `id` and `name` is created, and its reverse `proposed_config` has
+  no `id`.
 - Carry-over (§4): an icon-only plan for an `input_datetime` whose stored
   `initial` is a non-empty string outside the three formats is created, and
   the persisted proposal holds that exact string, disclosed as kept as
@@ -694,7 +699,7 @@ Refusal and negative reachability:
   retry.
 - An undo after a later outside edit excludes the operation. An undo with an
   unknown captured field fails closed.
-- If J-5 is accepted: a plan that sets `input_text.initial` to a synthetic
+- J-5: a plan that sets `input_text.initial` to a synthetic
   password-like string has that string absent from the public plan dict,
   `dry_run_results.changed_fields`, the semantic projection and the approval
   HTML. Each shows presence and length only. The same holds for an unchanged
@@ -738,19 +743,32 @@ Compatibility:
 - `core.governed_configuration_operation` is byte-identical.
 - Existing signed-profile fingerprints are unchanged.
 
-## 9. Owner decisions requested (Josh) — open
+## 9. Owner decisions (Josh) — decided 2026-11-27
 
-Recommendations are the builder's and are not decisions.
+Josh decided, 2026-11-27, verbatim, as relayed by the HA MCP Architect:
+"J-1 to J-7 as recommended. Undo bug: fix in 2.11, approve
+f3_runtime/runtime.py". Each question below is decided as the builder
+recommended.
 
 | # | Question | Builder recommendation | Decision |
 |---|---|---|---|
-| J-1 | Build HAMCP-346, and in which release? | Build increment 1 in the release Josh picks, after 2.11.0 | [JOSH] pending |
-| J-2 | Increments as in §6? | Yes: schedule in increment 2 | [JOSH] pending |
-| J-3 | Widen `create_configuration_plan`'s `helper_type` (public schema) rather than add a tool? | Widen | [JOSH] pending |
-| J-4 | New dormant runtime-only profile (§5.3), shared with HAMCP-328; which Core entries to sign it for, and when? | One profile; sign it in the same owner session as HAMCP-328's creates, unless edits are wanted sooner | [JOSH] pending |
-| J-5 | `input_text.initial`: `keep_current_fields` (public schema) plus presence-and-length rendering in plan, approval and receipt views (§4.2)? | Yes, consistent with 519 | [JOSH] pending |
-| J-6 | Fix the `input_number.device_class` gap (§4.1) in increment 1? | Yes: optional field, closed list of number device classes at the signed Core version | [JOSH] pending |
-| J-7 | Renamed helpers: fail closed now, with `unique_id` resolution later? | Yes | [JOSH] pending |
+| J-1 | Build HAMCP-346, and in which release? | Build increment 1 in the release Josh picks, after 2.11.0 | As recommended: after 2.11.0. The architect's relay names 2.12.0 |
+| J-2 | Increments as in §6? | Yes: schedule in increment 2 | As recommended: yes |
+| J-3 | Widen `create_configuration_plan`'s `helper_type` (public schema) rather than add a tool? | Widen | As recommended: widen |
+| J-4 | New dormant runtime-only profile (§5.3), shared with HAMCP-328; which Core entries to sign it for, and when? | One profile; sign it in the same owner session as HAMCP-328's creates, unless edits are wanted sooner | As recommended: one profile, shared with HAMCP-328, signed with HAMCP-328's creates. Which Core entries is still open (§5.3) |
+| J-5 | `input_text.initial`: `keep_current_fields` (public schema) plus presence-and-length rendering in plan, approval and receipt views (§4.2)? | Yes, consistent with 519 | As recommended: yes |
+| J-6 | Fix the `input_number.device_class` gap (§4.1) in increment 1? | Yes: optional field, closed list of number device classes at the signed Core version | As recommended: yes, in increment 1 |
+| J-7 | Renamed helpers: fail closed now, with `unique_id` resolution later? | Yes | As recommended: yes |
+
+**Undo bug.** §5.7 item 1, the reverse proposal without `id` for today's
+`input_boolean` and `input_number` undo, is fixed in 2.11.0 as its own row,
+HAMCP-531, and its own pull request. The same decision approves
+`E/f3_runtime/runtime.py` for that fix only. An HAMCP-346 build therefore
+starts from the fixed path; it does not repeat the item 1 fix.
+
+These decisions do not authorize a build. Each protected file in §7 still
+needs Josh's named OK at build time. Signing still needs its own owner
+session.
 
 ## 10. Non-actions
 
