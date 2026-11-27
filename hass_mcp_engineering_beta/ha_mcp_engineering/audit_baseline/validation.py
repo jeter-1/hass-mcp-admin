@@ -85,6 +85,15 @@ def _reject_constant(_value: str) -> None:
     raise BaselineValidationError("non_finite_number")
 
 
+def _parse_finite_float(value: str) -> float:
+    # HAMCP-471: an exponent overflow such as 1e999 never reaches
+    # parse_constant; the float parser returns infinity.
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        _reject_constant(value)
+    return parsed
+
+
 def _strict_loads(raw: bytes) -> Any:
     if len(raw) > MAX_INPUT_BYTES:
         raise BaselineValidationError("input_size_limit_exceeded")
@@ -97,6 +106,7 @@ def _strict_loads(raw: bytes) -> Any:
             text,
             object_pairs_hook=_duplicate_rejecting_object,
             parse_constant=_reject_constant,
+            parse_float=_parse_finite_float,
         )
     except BaselineValidationError:
         raise

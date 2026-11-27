@@ -86,6 +86,15 @@ SOURCE_LIMITATIONS_WARNING = (
     "Some evidence sources have known limits; source_limitations names each source and "
     "reason, and affects_result_status says whether the limit makes an item partial."
 )
+# HAMCP-495: a partial item can be partial because its lifecycle inspection
+# is incomplete, which no source limitation explains.
+LIFECYCLE_COVERAGE_WARNING = (
+    "Lifecycle inspection was incomplete for some items; each item's "
+    "lifecycle.limiting_reasons and lifecycle.gap_categories name why."
+)
+# The lifecycle names are the scanner's own literals; these bound them anyway.
+_MAX_LIFECYCLE_NAMES = 32
+_MAX_LIFECYCLE_NAME_CHARS = 64
 REDUCED_DETAIL_WARNING = (
     "Root-cause detail was reduced to fit the response bound; use "
     "automation_reliability_analysis for an automation's full root causes."
@@ -200,9 +209,20 @@ class _ItemOutcome:
     limitations: frozenset = frozenset()
 
 
+def _lifecycle_names(value: Any) -> list[str]:
+    """Sorted, bounded names from a lifecycle list or count mapping."""
+
+    names = {
+        name for name in (value if isinstance(value, (list, dict)) else ())
+        if isinstance(name, str) and 0 < len(name) <= _MAX_LIFECYCLE_NAME_CHARS
+    }
+    return sorted(names)[:_MAX_LIFECYCLE_NAMES]
+
+
 def _digest(automation_id: str, output: ReliabilityAnalysisOutput) -> dict:
     data = output.data
     lifecycle = data.get("lifecycle_analysis") or {}
+    lifecycle_coverage = lifecycle.get("coverage")
     return {
         "automation_id": automation_id,
         "status": "analyzed",
@@ -222,6 +242,12 @@ def _digest(automation_id: str, output: ReliabilityAnalysisOutput) -> dict:
         "lifecycle": {
             "hazards_detected": lifecycle.get("hazards_detected"),
             "coverage_complete": lifecycle.get("coverage_complete"),
+            # HAMCP-495: why coverage is incomplete, from the same inspection:
+            # the bounds it reached and the structures it could not resolve.
+            "limiting_reasons": _lifecycle_names(lifecycle.get("limiting_reasons")),
+            "gap_categories": _lifecycle_names(
+                lifecycle_coverage.get("gap_counts") if isinstance(lifecycle_coverage, dict) else None
+            ),
         },
         "source_completeness": {
             item.get("source_type"): item.get("completeness")
@@ -291,6 +317,10 @@ def _item_limitations(output: ReliabilityAnalysisOutput) -> frozenset:
         for reason in _coverage_limitation_reasons(coverage):
             values.add((source, reason, affects))
     return frozenset(values)
+
+
+def _lifecycle_incomplete(digest: dict | None) -> bool:
+    return digest is not None and (digest.get("lifecycle") or {}).get("coverage_complete") is False
 
 
 def _source_limitations(outcomes: list[_ItemOutcome]) -> list[dict]:
@@ -492,6 +522,8 @@ class ReliabilityBatchAnalyzer:
             available -= _rendered_cost(SOURCE_LIMITATIONS_WARNING, 2)
         detail = "full"
         analyzed = [item for item in outcomes if item.digest is not None]
+        if any(_lifecycle_incomplete(item.digest) for item in analyzed):
+            available -= _rendered_cost(LIFECYCLE_COVERAGE_WARNING, 2)
         if sum(_rendered_cost(item.digest, _ITEM_DEPTH) for item in analyzed) > available:
             reduced = [_reduced_digest(item.digest) for item in analyzed]
             if any(value != item.digest for value, item in zip(reduced, analyzed)):
@@ -552,6 +584,8 @@ class ReliabilityBatchAnalyzer:
         source_limitations = _source_limitations(outcomes)
         if source_limitations:
             warnings.append(SOURCE_LIMITATIONS_WARNING)
+        if any(_lifecycle_incomplete(item.digest) for item in analyzed):
+            warnings.append(LIFECYCLE_COVERAGE_WARNING)
         if root_cause_detail == "reduced":
             warnings.append(REDUCED_DETAIL_WARNING)
         data = {

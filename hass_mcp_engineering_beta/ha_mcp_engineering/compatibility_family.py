@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import json
+import math
 from pathlib import Path
 import re
 from typing import Any
@@ -119,6 +120,15 @@ def _reject_nonfinite(_value: str) -> None:
     raise CompatibilityFamilyError("nonfinite_json_value")
 
 
+def _parse_finite_float(value: str) -> float:
+    # HAMCP-471: an exponent overflow such as 1e999 never reaches
+    # parse_constant; the float parser returns infinity.
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        _reject_nonfinite(value)
+    return parsed
+
+
 def canonical_json(value: Any) -> bytes:
     return json.dumps(
         value,
@@ -135,6 +145,7 @@ def load_strict_json(path: Path, *, error: str) -> Any:
             path.read_text(encoding="utf-8"),
             object_pairs_hook=_reject_duplicate_members,
             parse_constant=_reject_nonfinite,
+            parse_float=_parse_finite_float,
         )
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise CompatibilityFamilyError(error) from exc

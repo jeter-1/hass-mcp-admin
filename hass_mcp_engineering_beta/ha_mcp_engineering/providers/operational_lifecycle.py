@@ -1263,6 +1263,7 @@ class ReviewedOperationalLifecycleProvider:
                 text,
                 object_pairs_hook=_reject_duplicate_members,
                 parse_constant=_reject_nonfinite,
+                parse_float=_parse_finite_float,
             )
         except (TypeError, ValueError, UnicodeError, RecursionError):
             self._fail("invalid_response", dispatched=dispatched)
