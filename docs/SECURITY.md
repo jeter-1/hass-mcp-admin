@@ -881,7 +881,12 @@ delegated provider or fallback.
   content-free quarantine stubs, fail-closed index, fixed diagnostics,
   bounded size, count and age. Manual
   captures are refused at capacity; a watch evicts only its own snapshots
-  (at most 20 each), and watch captures together stay inside a
+  (at most 20 each), and in `executed` mode a run that is not a failure
+  never evicts a failure snapshot (HAMCP-389; refused as
+  `failures_protected` when only failures are left; a failure is judged from
+  the stored `script_execution` only, so a run whose only failure sign is the
+  trace `error` field is not protected), and watch captures
+  together stay inside a
   400-snapshot, 100 MiB reservation (HAMCP-296) that is refused, never
   evicted, when full. The store holds at most 500 snapshots and 128 MiB
   since HAMCP-296, so at least 100 snapshots and 28 MiB always remain for
@@ -906,8 +911,16 @@ delegated provider or fallback.
   (HAMCP-296; 10 before) every 30 seconds, high-priority watches first, under its own Core authority lease, paused while authority is
   unavailable or the version is not admitted, and re-checked before each
   watch's reads are stored and again under the store lock, immediately
-  before the first write. Watch changes need no approval but write a
-  required, caller-attributed audit row.
+  before the first write. Since HAMCP-431 its frames share one held,
+  authenticated Core connection: every frame still passes the tick's Core
+  dispatch gate, a newly opened connection passes it again before its first
+  frame, and a missing request or authorizer refuses. The connection is
+  bound to the tick's Core generation and closes after 600 seconds, on a
+  generation change, an authorization failure, a timeout, cancellation, a
+  transport or protocol error, a tick without Core authority or a failed
+  tick, when no watch is active, and at shutdown. It persists nothing.
+  Manual captures keep one connection per frame. Watch changes need no
+  approval but write a required, caller-attributed audit row.
 - **Caller binding.** List and read cursors are HMAC-bound to the caller
   with a per-process key.
 

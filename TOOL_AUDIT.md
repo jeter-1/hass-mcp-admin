@@ -2,6 +2,39 @@
 
 Date: 2026-07-10
 
+## Trace watch connection, skips and eviction (2.4.2-beta.15, HAMCP-431, HAMCP-524, HAMCP-389)
+
+No new tool, route, permission, option or Home Assistant write. The
+`set_automation_trace_watch` input schema is unchanged; its description and
+its watch rows change.
+
+- **One held connection (HAMCP-431).** The watch poller sends its
+  `trace/list` and `trace/get` frames over one held, authenticated Core
+  connection instead of one connection per frame. Every frame still passes
+  the tick's Core dispatch gate, and a newly opened connection passes it
+  again before its first frame. The connection is bound to the tick's Core
+  generation. It closes after 600 s, when the generation changes, on an
+  authorization failure, timeout, cancellation, transport or protocol error,
+  when a tick has no Core authority or fails, when no watch is active, and at
+  shutdown. `capture_automation_trace` keeps one connection per frame.
+  `get_server_health` `trace_watches.session` reports `open`, `opened`,
+  `frames` and `last_close_reason`.
+- **Skips (HAMCP-524).** `skipped_polls` stays the stored lifetime count.
+  Watch rows add runtime-only fields, never stored and reset at restart:
+  `recent_skipped_polls` and `recent_skip_reasons` over the last hour
+  (`core_authority_unavailable`, `core_authority_retired`,
+  `tick_time_exhausted`, `trace_list_failed`, `trace_read_deferred`),
+  `last_skipped_at` and `last_skip_reason`.
+- **Eviction (HAMCP-389).** In `executed` mode a run that is not a failure
+  never evicts a failure snapshot. When only failures are left it is not
+  captured: outcome `failures_protected`, counted in `uncaptured_runs`. A
+  failure is judged from the stored `script_execution` only. Watch rows add
+  `recent_evicted_count` over the last hour and `churning` (true at 20 or
+  more). `get_server_health` `trace_watches` adds `churning` (at most 10
+  rows of `automation_id` and `recent_evicted_count`) and `churning_count`.
+
+Output keys are added only; no key is removed or renamed.
+
 ## Automation trace list shape (2.4.2-beta.14, HAMCP-508 SI-5)
 
 Breaking output change: `list_automation_traces` returns

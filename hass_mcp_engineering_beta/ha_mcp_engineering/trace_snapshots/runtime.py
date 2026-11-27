@@ -12,11 +12,13 @@ class TraceSnapshotRuntime:
         self.service = None
         self.poller = None
 
-    def configure(self, settings, core_runtime, *, audit, command):
+    def configure(self, settings, core_runtime, *, audit, command, watch_session=None):
         self.service = TraceSnapshotService(
             Path(settings.governance_path), command, core_runtime, audit,
             known_secrets=(settings.access_secret, settings.ha_token))
-        self.poller = TraceWatchPoller(self.service, core_runtime)
+        # HAMCP-431: the poller's held connection; manual captures keep
+        # ``command`` (one connection per frame).
+        self.poller = TraceWatchPoller(self.service, core_runtime, session=watch_session)
 
     def require(self):
         if self.service is None:
@@ -33,8 +35,12 @@ class TraceSnapshotRuntime:
     def health(self):
         if self.service is None:
             return {"configured": False}
-        return {"configured": True, "paused": self.service.paused,
-                "ticks": self.poller.ticks, "failed_ticks": self.poller.failed_ticks}
+        health = {"configured": True, "paused": self.service.paused,
+                  "ticks": self.poller.ticks, "failed_ticks": self.poller.failed_ticks}
+        session = getattr(self.poller, "session", None)
+        if session is not None:
+            health["session"] = session.health()
+        return health
 
     def watch_health(self):
         """HAMCP-296 ``get_server_health`` block; a failure degrades only this block."""
