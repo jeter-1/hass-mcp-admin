@@ -1621,6 +1621,10 @@ class AuthenticatedMcpGateway:
                         if key in parameters
                     }
                     audit_parameters["cursor_present"] = bool(parameters.get("cursor"))
+                    # HAMCP-518: the summary flag as a bool, or None for any
+                    # other value; the value itself never enters audit.
+                    summary_flag = parameters.get("summary", False)
+                    audit_parameters["summary"] = summary_flag if type(summary_flag) is bool else None
                 elif tool_name in TRACE_SNAPSHOT_TOOLS:
                     # HAMCP-225: pattern-checked identifiers and bounded flags
                     # only; note text, cursors and rejected values are never
