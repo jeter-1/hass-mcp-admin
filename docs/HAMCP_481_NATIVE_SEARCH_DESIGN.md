@@ -1969,7 +1969,9 @@ the W1 golden fixtures there stay as history (§8 item 4). The review is in
 
 ### 10.15 2.11.0 Lane B1: HAMCP-522, HAMCP-523, HAMCP-525, HAMCP-520
 
-From the Lane B1 pull request into `release/2.11.0` (base `54627e35`).
+From the Lane B1 pull request into `release/2.11.0` (branched at
+`54627e35`, the 2.10.0 release merge; merge base `53b5b88e` when
+reviewed).
 Citations here are by name. The line numbers in §10 to §10.14 stay at
 their stated revisions. The Lane B file list and its decisions are Josh's,
 as relayed by the architect (2026-11-27).
