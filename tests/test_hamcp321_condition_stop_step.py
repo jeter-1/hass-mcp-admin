@@ -109,6 +109,41 @@ class ConditionStopStepTests(unittest.TestCase):
         self.assertEqual(self.stop("condition/0/entity_id/0", "failed_conditions", child),
                          "condition/0/entity_id/0")
 
+    def test_nested_and_or_and_an_unavailable_numeric_state_stop_where_core_says(self):
+        # Core 2026.11.3 helpers/condition/conditions.py:138-216: and, or and
+        # not trace each child under conditions/<n>; models.py:157-166 records
+        # each checker's own result. An and whose not child is false: the not
+        # is the stop, not its true inner state.
+        and_not = {"trace": {
+            "condition/0": [FALSE], "condition/0/conditions/0": [TRUE],
+            "condition/0/conditions/1": [FALSE], "condition/0/conditions/1/conditions/0": [TRUE],
+        }}
+        self.assertEqual(self.stop("condition/0/conditions/1/conditions/0", "failed_conditions", and_not),
+                         "condition/0/conditions/1")
+        # An or whose every child is false, the last an and with a false leaf.
+        or_and = {"trace": {
+            "condition/0": [FALSE], "condition/0/conditions/0": [FALSE],
+            "condition/0/conditions/1": [FALSE], "condition/0/conditions/1/conditions/0": [FALSE],
+        }}
+        self.assertEqual(self.stop("condition/0/conditions/1/conditions/0", "failed_conditions", or_and),
+                         "condition/0/conditions/1/conditions/0")
+        # condition/__init__.py:450 traces each numeric_state entity under
+        # entity_id/<n>; conditions.py:359-364 records an unavailable value as
+        # a false result on that entry, the deepest false key. The same holds
+        # under an and condition action that aborts.
+        unavailable = {"trace": {
+            "condition/0": [FALSE],
+            "condition/0/entity_id/0": [{"result": {
+                "result": False, "message": "value 'unavailable' is non-numeric and treated as False"}}],
+        }}
+        self.assertEqual(self.stop("condition/0/entity_id/0", "failed_conditions", unavailable),
+                         "condition/0/entity_id/0")
+        in_action = {"trace": {**routed_past_then_stopped()["trace"],
+                               "action/1/conditions/0": [TRUE], "action/1/conditions/1": [FALSE],
+                               "action/1/conditions/1/entity_id/0": [FALSE]}}
+        self.assertEqual(self.stop("action/1/conditions/1/entity_id/0", "aborted", in_action),
+                         "action/1/conditions/1/entity_id/0")
+
     def test_a_false_condition_off_the_stopping_path_is_not_the_stop(self):
         # An if whose condition is false routes to else, which waits and aborts.
         routed = {"trace": {
