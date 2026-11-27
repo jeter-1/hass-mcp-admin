@@ -33,10 +33,11 @@ from .configuration_delete_planning import (
     prepare_item,
 )
 from .entity_availability_exposure_planning import (
-    INCOMPLETE_IMPACT_TEXT,
     MAX_DISCLOSED_CONSUMERS,
     MAX_STATEMENTS,
     UNAVAILABLE_COVERAGE,
+    elevating_dependency_reasons,
+    incomplete_impact_statement,
 )
 
 KIND_NAMES = {
@@ -166,9 +167,9 @@ def _statements(
         )
     if not consumers["evidence_complete"]:
         statements.append(
-            f"For {entity_id}, {INCOMPLETE_IMPACT_TEXT} ("
-            + ", ".join(consumers["evidence_gaps"])
-            + "); this is treated as protected."
+            incomplete_impact_statement(
+                entity_id, consumers["evidence_gaps"], "this is treated as protected."
+            )
         )
     elif not consumers["count"]:
         statements.append("No indexed automation or script consumer was found.")
@@ -227,9 +228,10 @@ async def prepare_created_item(
             kind="unavailable",
             **target,
         )
-    dependency_reasons = sorted(set(evidence["dependency_reasons"]))[
-        : delete_contract.MAX_DEPENDENCY_REASONS
-    ]
+    # HAMCP-394: a script-only gap is disclosed, never a protected dependency.
+    dependency_reasons = elevating_dependency_reasons(
+        sorted(set(evidence["dependency_reasons"]))
+    )[: delete_contract.MAX_DEPENDENCY_REASONS]
     basis = expected_basis_created(resource_type, current, dependency_reasons)
     consumers = {
         "status": evidence["status"],

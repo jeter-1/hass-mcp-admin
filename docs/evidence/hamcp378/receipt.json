@@ -1,0 +1,1830 @@
+{
+ "cases": {
+  "beta14_to_beta7": {
+   "modes": {
+    "automation_created": {
+     "created_calls": [
+      [
+       "get_plan",
+       "ok"
+      ],
+      [
+       "rollback_change",
+       "rollback_not_available"
+      ],
+      [
+       "status_after",
+       "ok"
+      ]
+     ],
+     "list_plans": {
+      "count": 1,
+      "partial": false,
+      "projection_failure_count": 0
+     },
+     "outcome": "no rollback plan",
+     "provider_writes": 0,
+     "readiness": [
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      },
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      }
+     ],
+     "recovery": {
+      "reconcile_execution_tasks": "ok",
+      "reconcile_operational_plans": "ok",
+      "recover_periodic": "ok"
+     },
+     "rollback_calls": null,
+     "rollback_change_of_created": null,
+     "startup_assertions": [],
+     "writer_rollback_reasons": null
+    },
+    "automation_rollback_applied": {
+     "created_calls": [
+      [
+       "get_plan",
+       "ok"
+      ],
+      [
+       "rollback_change",
+       "ok"
+      ],
+      [
+       "status_after",
+       "ok"
+      ]
+     ],
+     "list_plans": {
+      "count": 2,
+      "partial": false,
+      "projection_failure_count": 0
+     },
+     "outcome": "history readable",
+     "provider_writes": 0,
+     "readiness": [
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      },
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      }
+     ],
+     "recovery": {
+      "reconcile_execution_tasks": "ok",
+      "reconcile_operational_plans": "ok",
+      "recover_periodic": "ok"
+     },
+     "rollback_calls": [
+      [
+       "get_plan",
+       "ok"
+      ],
+      [
+       "status_after",
+       "ok"
+      ]
+     ],
+     "rollback_change_of_created": {
+      "rollback_plan_id": "4fde71840b9f416aaf9b5e049ff55d1c",
+      "status": "rollback_plan_created"
+     },
+     "startup_assertions": [],
+     "writer_rollback_reasons": [
+      "configuration_delete_standard_policy",
+      "supported_configuration_change"
+     ]
+    },
+    "automation_rollback_approved": {
+     "created_calls": [
+      [
+       "get_plan",
+       "ok"
+      ],
+      [
+       "rollback_change",
+       "ok"
+      ],
+      [
+       "status_after",
+       "ok"
+      ]
+     ],
+     "list_plans": {
+      "count": 2,
+      "partial": false,
+      "projection_failure_count": 0
+     },
+     "outcome": "executed",
+     "provider_writes": 1,
+     "readiness": [
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      },
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      }
+     ],
+     "recovery": {
+      "reconcile_execution_tasks": "ok",
+      "reconcile_operational_plans": "ok",
+      "recover_periodic": "ok"
+     },
+     "rollback_calls": [
+      [
+       "get_plan",
+       "ok"
+      ],
+      [
+       "approve",
+       "approval_already_consumed"
+      ],
+      [
+       "apply",
+       "ok"
+      ],
+      [
+       "status_after",
+       "ok"
+      ]
+     ],
+     "rollback_change_of_created": {
+      "rollback_plan_id": "e95a885a19b547e48ad946b379c44f91",
+      "status": "rollback_plan_created"
+     },
+     "startup_assertions": [],
+     "writer_rollback_reasons": [
+      "configuration_delete_standard_policy",
+      "supported_configuration_change"
+     ]
+    },
+    "automation_rollback_pending": {
+     "created_calls": [
+      [
+       "get_plan",
+       "ok"
+      ],
+      [
+       "rollback_change",
+       "ok"
+      ],
+      [
+       "status_after",
+       "ok"
+      ]
+     ],
+     "list_plans": {
+      "count": 2,
+      "partial": false,
+      "projection_failure_count": 0
+     },
+     "outcome": "executed",
+     "provider_writes": 1,
+     "readiness": [
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      },
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      }
+     ],
+     "recovery": {
+      "reconcile_execution_tasks": "ok",
+      "reconcile_operational_plans": "ok",
+      "recover_periodic": "ok"
+     },
+     "rollback_calls": [
+      [
+       "get_plan",
+       "ok"
+      ],
+      [
+       "approve",
+       "ok"
+      ],
+      [
+       "approval_decision",
+       "ok"
+      ],
+      [
+       "apply",
+       "ok"
+      ],
+      [
+       "status_after",
+       "ok"
+      ]
+     ],
+     "rollback_change_of_created": {
+      "rollback_plan_id": "d6793ddb7f074ade9e93682596e4f40a",
+      "status": "rollback_plan_created"
+     },
+     "startup_assertions": [],
+     "writer_rollback_reasons": [
+      "configuration_delete_standard_policy",
+      "supported_configuration_change"
+     ]
+    },
+    "helper_rollback_approved": {
+     "created_calls": [
+      [
+       "get_plan",
+       "ok"
+      ],
+      [
+       "rollback_change",
+       "ok"
+      ],
+      [
+       "status_after",
+       "ok"
+      ]
+     ],
+     "list_plans": {
+      "count": 1,
+      "partial": true,
+      "projection_failure_count": 1
+     },
+     "outcome": "refused: policy_snapshot_mismatch",
+     "provider_writes": 0,
+     "readiness": [
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      },
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      }
+     ],
+     "recovery": {
+      "reconcile_execution_tasks": "ok",
+      "reconcile_operational_plans": "ok",
+      "recover_periodic": "ok"
+     },
+     "rollback_calls": [
+      [
+       "get_plan",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "approve",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "apply",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "status_after",
+       "policy_snapshot_mismatch"
+      ]
+     ],
+     "rollback_change_of_created": {
+      "rollback_plan_id": "358652bb85b7471085ee6aeaf0e569da",
+      "status": "rollback_plan_created"
+     },
+     "startup_assertions": [],
+     "writer_rollback_reasons": [
+      "configuration_delete_standard_policy",
+      "supported_configuration_change"
+     ]
+    },
+    "helper_rollback_pending": {
+     "created_calls": [
+      [
+       "get_plan",
+       "ok"
+      ],
+      [
+       "rollback_change",
+       "ok"
+      ],
+      [
+       "status_after",
+       "ok"
+      ]
+     ],
+     "list_plans": {
+      "count": 1,
+      "partial": true,
+      "projection_failure_count": 1
+     },
+     "outcome": "refused: policy_snapshot_mismatch",
+     "provider_writes": 0,
+     "readiness": [
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      },
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      }
+     ],
+     "recovery": {
+      "reconcile_execution_tasks": "ok",
+      "reconcile_operational_plans": "ok",
+      "recover_periodic": "ok"
+     },
+     "rollback_calls": [
+      [
+       "get_plan",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "approve",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "apply",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "status_after",
+       "policy_snapshot_mismatch"
+      ]
+     ],
+     "rollback_change_of_created": {
+      "rollback_plan_id": "298b958ae2ab456ab125c3a2b29066d9",
+      "status": "rollback_plan_created"
+     },
+     "startup_assertions": [],
+     "writer_rollback_reasons": [
+      "configuration_delete_standard_policy",
+      "supported_configuration_change"
+     ]
+    },
+    "scene_rollback_approved": {
+     "created_calls": [
+      [
+       "get_plan",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "rollback_change",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "status_after",
+       "policy_snapshot_mismatch"
+      ]
+     ],
+     "list_plans": {
+      "count": 0,
+      "partial": true,
+      "projection_failure_count": 2
+     },
+     "outcome": "refused: policy_snapshot_mismatch",
+     "provider_writes": 0,
+     "readiness": [
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      },
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      }
+     ],
+     "recovery": {
+      "reconcile_execution_tasks": "ok",
+      "reconcile_operational_plans": "ok",
+      "recover_periodic": "ok"
+     },
+     "rollback_calls": [
+      [
+       "get_plan",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "approve",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "apply",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "status_after",
+       "policy_snapshot_mismatch"
+      ]
+     ],
+     "rollback_change_of_created": null,
+     "startup_assertions": [],
+     "writer_rollback_reasons": [
+      "configuration_delete_standard_policy",
+      "supported_configuration_change"
+     ]
+    },
+    "script_rollback_approved": {
+     "created_calls": [
+      [
+       "get_plan",
+       "ok"
+      ],
+      [
+       "rollback_change",
+       "ok"
+      ],
+      [
+       "status_after",
+       "ok"
+      ]
+     ],
+     "list_plans": {
+      "count": 2,
+      "partial": false,
+      "projection_failure_count": 0
+     },
+     "outcome": "executed",
+     "provider_writes": 1,
+     "readiness": [
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      },
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      }
+     ],
+     "recovery": {
+      "reconcile_execution_tasks": "ok",
+      "reconcile_operational_plans": "ok",
+      "recover_periodic": "ok"
+     },
+     "rollback_calls": [
+      [
+       "get_plan",
+       "ok"
+      ],
+      [
+       "approve",
+       "approval_already_consumed"
+      ],
+      [
+       "apply",
+       "ok"
+      ],
+      [
+       "status_after",
+       "ok"
+      ]
+     ],
+     "rollback_change_of_created": {
+      "rollback_plan_id": "b1814b71163547438f384a8bcc900584",
+      "status": "rollback_plan_created"
+     },
+     "startup_assertions": [],
+     "writer_rollback_reasons": [
+      "configuration_delete_standard_policy",
+      "supported_configuration_change"
+     ]
+    },
+    "script_rollback_pending": {
+     "created_calls": [
+      [
+       "get_plan",
+       "ok"
+      ],
+      [
+       "rollback_change",
+       "ok"
+      ],
+      [
+       "status_after",
+       "ok"
+      ]
+     ],
+     "list_plans": {
+      "count": 2,
+      "partial": false,
+      "projection_failure_count": 0
+     },
+     "outcome": "executed",
+     "provider_writes": 1,
+     "readiness": [
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      },
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      }
+     ],
+     "recovery": {
+      "reconcile_execution_tasks": "ok",
+      "reconcile_operational_plans": "ok",
+      "recover_periodic": "ok"
+     },
+     "rollback_calls": [
+      [
+       "get_plan",
+       "ok"
+      ],
+      [
+       "approve",
+       "ok"
+      ],
+      [
+       "approval_decision",
+       "ok"
+      ],
+      [
+       "apply",
+       "ok"
+      ],
+      [
+       "status_after",
+       "ok"
+      ]
+     ],
+     "rollback_change_of_created": {
+      "rollback_plan_id": "16512424e0204f9288859d13b891af14",
+      "status": "rollback_plan_created"
+     },
+     "startup_assertions": [],
+     "writer_rollback_reasons": [
+      "configuration_delete_standard_policy",
+      "supported_configuration_change"
+     ]
+    }
+   },
+   "reader": "beta7",
+   "reader_harness": "tests/hamcp155_fixtures.py ConfigurationDeleteServiceTestCase",
+   "reader_version": "2.4.2-beta.7",
+   "writer": "beta14",
+   "writer_version": "2.4.2-beta.14"
+  },
+  "beta14_to_tip": {
+   "modes": {
+    "automation_created": {
+     "created_calls": [
+      [
+       "get_plan",
+       "ok"
+      ],
+      [
+       "rollback_change",
+       "ok"
+      ],
+      [
+       "status_after",
+       "ok"
+      ]
+     ],
+     "list_plans": {
+      "count": 1,
+      "partial": false,
+      "projection_failure_count": 0
+     },
+     "outcome": "no rollback plan",
+     "provider_writes": 0,
+     "readiness": [
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      },
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      }
+     ],
+     "recovery": {
+      "reconcile_execution_tasks": "ok",
+      "reconcile_operational_plans": "ok",
+      "recover_periodic": "ok"
+     },
+     "rollback_calls": null,
+     "rollback_change_of_created": {
+      "rollback_plan_id": "b986a6c573c04eaeb963643aebe4ec79",
+      "status": "rollback_plan_created"
+     },
+     "startup_assertions": [],
+     "writer_rollback_reasons": null
+    },
+    "automation_rollback_applied": {
+     "created_calls": [
+      [
+       "get_plan",
+       "ok"
+      ],
+      [
+       "rollback_change",
+       "rollback_not_available"
+      ],
+      [
+       "status_after",
+       "ok"
+      ]
+     ],
+     "list_plans": {
+      "count": 1,
+      "partial": true,
+      "projection_failure_count": 1
+     },
+     "outcome": "history unreadable: policy_snapshot_mismatch",
+     "provider_writes": 0,
+     "readiness": [
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      },
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      }
+     ],
+     "recovery": {
+      "reconcile_execution_tasks": "ok",
+      "reconcile_operational_plans": "ok",
+      "recover_periodic": "ok"
+     },
+     "rollback_calls": [
+      [
+       "get_plan",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "status_after",
+       "policy_snapshot_mismatch"
+      ]
+     ],
+     "rollback_change_of_created": null,
+     "startup_assertions": [],
+     "writer_rollback_reasons": [
+      "configuration_delete_standard_policy",
+      "supported_configuration_change"
+     ]
+    },
+    "automation_rollback_approved": {
+     "created_calls": [
+      [
+       "get_plan",
+       "ok"
+      ],
+      [
+       "rollback_change",
+       "ok"
+      ],
+      [
+       "status_after",
+       "ok"
+      ]
+     ],
+     "list_plans": {
+      "count": 1,
+      "partial": true,
+      "projection_failure_count": 1
+     },
+     "outcome": "refused: policy_snapshot_mismatch",
+     "provider_writes": 0,
+     "readiness": [
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      },
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      }
+     ],
+     "recovery": {
+      "reconcile_execution_tasks": "ok",
+      "reconcile_operational_plans": "ok",
+      "recover_periodic": "ok"
+     },
+     "rollback_calls": [
+      [
+       "get_plan",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "approve",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "apply",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "status_after",
+       "policy_snapshot_mismatch"
+      ]
+     ],
+     "rollback_change_of_created": {
+      "rollback_plan_id": "e95a885a19b547e48ad946b379c44f91",
+      "status": "rollback_plan_created"
+     },
+     "startup_assertions": [],
+     "writer_rollback_reasons": [
+      "configuration_delete_standard_policy",
+      "supported_configuration_change"
+     ]
+    },
+    "automation_rollback_pending": {
+     "created_calls": [
+      [
+       "get_plan",
+       "ok"
+      ],
+      [
+       "rollback_change",
+       "ok"
+      ],
+      [
+       "status_after",
+       "ok"
+      ]
+     ],
+     "list_plans": {
+      "count": 1,
+      "partial": true,
+      "projection_failure_count": 1
+     },
+     "outcome": "refused: policy_snapshot_mismatch",
+     "provider_writes": 0,
+     "readiness": [
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      },
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      }
+     ],
+     "recovery": {
+      "reconcile_execution_tasks": "ok",
+      "reconcile_operational_plans": "ok",
+      "recover_periodic": "ok"
+     },
+     "rollback_calls": [
+      [
+       "get_plan",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "approve",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "apply",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "status_after",
+       "policy_snapshot_mismatch"
+      ]
+     ],
+     "rollback_change_of_created": {
+      "rollback_plan_id": "d6793ddb7f074ade9e93682596e4f40a",
+      "status": "rollback_plan_created"
+     },
+     "startup_assertions": [],
+     "writer_rollback_reasons": [
+      "configuration_delete_standard_policy",
+      "supported_configuration_change"
+     ]
+    },
+    "helper_rollback_approved": {
+     "created_calls": [
+      [
+       "get_plan",
+       "ok"
+      ],
+      [
+       "rollback_change",
+       "ok"
+      ],
+      [
+       "status_after",
+       "ok"
+      ]
+     ],
+     "list_plans": {
+      "count": 1,
+      "partial": true,
+      "projection_failure_count": 1
+     },
+     "outcome": "refused: policy_snapshot_mismatch",
+     "provider_writes": 0,
+     "readiness": [
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      },
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      }
+     ],
+     "recovery": {
+      "reconcile_execution_tasks": "ok",
+      "reconcile_operational_plans": "ok",
+      "recover_periodic": "ok"
+     },
+     "rollback_calls": [
+      [
+       "get_plan",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "approve",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "apply",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "status_after",
+       "policy_snapshot_mismatch"
+      ]
+     ],
+     "rollback_change_of_created": {
+      "rollback_plan_id": "358652bb85b7471085ee6aeaf0e569da",
+      "status": "rollback_plan_created"
+     },
+     "startup_assertions": [],
+     "writer_rollback_reasons": [
+      "configuration_delete_standard_policy",
+      "supported_configuration_change"
+     ]
+    },
+    "helper_rollback_pending": {
+     "created_calls": [
+      [
+       "get_plan",
+       "ok"
+      ],
+      [
+       "rollback_change",
+       "ok"
+      ],
+      [
+       "status_after",
+       "ok"
+      ]
+     ],
+     "list_plans": {
+      "count": 1,
+      "partial": true,
+      "projection_failure_count": 1
+     },
+     "outcome": "refused: policy_snapshot_mismatch",
+     "provider_writes": 0,
+     "readiness": [
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      },
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      }
+     ],
+     "recovery": {
+      "reconcile_execution_tasks": "ok",
+      "reconcile_operational_plans": "ok",
+      "recover_periodic": "ok"
+     },
+     "rollback_calls": [
+      [
+       "get_plan",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "approve",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "apply",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "status_after",
+       "policy_snapshot_mismatch"
+      ]
+     ],
+     "rollback_change_of_created": {
+      "rollback_plan_id": "298b958ae2ab456ab125c3a2b29066d9",
+      "status": "rollback_plan_created"
+     },
+     "startup_assertions": [],
+     "writer_rollback_reasons": [
+      "configuration_delete_standard_policy",
+      "supported_configuration_change"
+     ]
+    },
+    "scene_rollback_approved": {
+     "created_calls": [
+      [
+       "get_plan",
+       "ok"
+      ],
+      [
+       "rollback_change",
+       "ok"
+      ],
+      [
+       "status_after",
+       "ok"
+      ]
+     ],
+     "list_plans": {
+      "count": 1,
+      "partial": true,
+      "projection_failure_count": 1
+     },
+     "outcome": "refused: policy_snapshot_mismatch",
+     "provider_writes": 0,
+     "readiness": [
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      },
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      }
+     ],
+     "recovery": {
+      "reconcile_execution_tasks": "ok",
+      "reconcile_operational_plans": "ok",
+      "recover_periodic": "ok"
+     },
+     "rollback_calls": [
+      [
+       "get_plan",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "approve",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "apply",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "status_after",
+       "policy_snapshot_mismatch"
+      ]
+     ],
+     "rollback_change_of_created": {
+      "rollback_plan_id": "35362b0a5e2e46bca34786d97261117b",
+      "status": "rollback_plan_created"
+     },
+     "startup_assertions": [],
+     "writer_rollback_reasons": [
+      "configuration_delete_standard_policy",
+      "supported_configuration_change"
+     ]
+    },
+    "script_rollback_approved": {
+     "created_calls": [
+      [
+       "get_plan",
+       "ok"
+      ],
+      [
+       "rollback_change",
+       "ok"
+      ],
+      [
+       "status_after",
+       "ok"
+      ]
+     ],
+     "list_plans": {
+      "count": 1,
+      "partial": true,
+      "projection_failure_count": 1
+     },
+     "outcome": "refused: policy_snapshot_mismatch",
+     "provider_writes": 0,
+     "readiness": [
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      },
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      }
+     ],
+     "recovery": {
+      "reconcile_execution_tasks": "ok",
+      "reconcile_operational_plans": "ok",
+      "recover_periodic": "ok"
+     },
+     "rollback_calls": [
+      [
+       "get_plan",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "approve",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "apply",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "status_after",
+       "policy_snapshot_mismatch"
+      ]
+     ],
+     "rollback_change_of_created": {
+      "rollback_plan_id": "b1814b71163547438f384a8bcc900584",
+      "status": "rollback_plan_created"
+     },
+     "startup_assertions": [],
+     "writer_rollback_reasons": [
+      "configuration_delete_standard_policy",
+      "supported_configuration_change"
+     ]
+    },
+    "script_rollback_pending": {
+     "created_calls": [
+      [
+       "get_plan",
+       "ok"
+      ],
+      [
+       "rollback_change",
+       "ok"
+      ],
+      [
+       "status_after",
+       "ok"
+      ]
+     ],
+     "list_plans": {
+      "count": 1,
+      "partial": true,
+      "projection_failure_count": 1
+     },
+     "outcome": "refused: policy_snapshot_mismatch",
+     "provider_writes": 0,
+     "readiness": [
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      },
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      }
+     ],
+     "recovery": {
+      "reconcile_execution_tasks": "ok",
+      "reconcile_operational_plans": "ok",
+      "recover_periodic": "ok"
+     },
+     "rollback_calls": [
+      [
+       "get_plan",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "approve",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "apply",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "status_after",
+       "policy_snapshot_mismatch"
+      ]
+     ],
+     "rollback_change_of_created": {
+      "rollback_plan_id": "16512424e0204f9288859d13b891af14",
+      "status": "rollback_plan_created"
+     },
+     "startup_assertions": [],
+     "writer_rollback_reasons": [
+      "configuration_delete_standard_policy",
+      "supported_configuration_change"
+     ]
+    }
+   },
+   "reader": "tip",
+   "reader_harness": "tests/hamcp329_298_fixtures.py CreatedObjectServiceTestCase",
+   "reader_version": "2.4.2-beta.15",
+   "writer": "beta14",
+   "writer_version": "2.4.2-beta.14"
+  },
+  "tip_to_beta7": {
+   "modes": {
+    "automation_created": {
+     "created_calls": [
+      [
+       "get_plan",
+       "ok"
+      ],
+      [
+       "rollback_change",
+       "rollback_not_available"
+      ],
+      [
+       "status_after",
+       "ok"
+      ]
+     ],
+     "list_plans": {
+      "count": 1,
+      "partial": false,
+      "projection_failure_count": 0
+     },
+     "outcome": "no rollback plan",
+     "provider_writes": 0,
+     "readiness": [
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      },
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      }
+     ],
+     "recovery": {
+      "reconcile_execution_tasks": "ok",
+      "reconcile_operational_plans": "ok",
+      "recover_periodic": "ok"
+     },
+     "rollback_calls": null,
+     "rollback_change_of_created": null,
+     "startup_assertions": [],
+     "writer_rollback_reasons": null
+    },
+    "automation_rollback_applied": {
+     "created_calls": [
+      [
+       "get_plan",
+       "ok"
+      ],
+      [
+       "rollback_change",
+       "ok"
+      ],
+      [
+       "status_after",
+       "ok"
+      ]
+     ],
+     "list_plans": {
+      "count": 1,
+      "partial": true,
+      "projection_failure_count": 1
+     },
+     "outcome": "history unreadable: policy_snapshot_mismatch",
+     "provider_writes": 0,
+     "readiness": [
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      },
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      }
+     ],
+     "recovery": {
+      "reconcile_execution_tasks": "ok",
+      "reconcile_operational_plans": "ok",
+      "recover_periodic": "ok"
+     },
+     "rollback_calls": [
+      [
+       "get_plan",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "status_after",
+       "policy_snapshot_mismatch"
+      ]
+     ],
+     "rollback_change_of_created": {
+      "rollback_plan_id": "e8b7e05ba48f4de893465740d6c6575c",
+      "status": "rollback_plan_created"
+     },
+     "startup_assertions": [],
+     "writer_rollback_reasons": [
+      "configuration_delete_standard_policy",
+      "created_object_rollback_child",
+      "supported_configuration_change"
+     ]
+    },
+    "automation_rollback_approved": {
+     "created_calls": [
+      [
+       "get_plan",
+       "ok"
+      ],
+      [
+       "rollback_change",
+       "ok"
+      ],
+      [
+       "status_after",
+       "ok"
+      ]
+     ],
+     "list_plans": {
+      "count": 1,
+      "partial": true,
+      "projection_failure_count": 1
+     },
+     "outcome": "refused: policy_snapshot_mismatch",
+     "provider_writes": 0,
+     "readiness": [
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      },
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      }
+     ],
+     "recovery": {
+      "reconcile_execution_tasks": "ok",
+      "reconcile_operational_plans": "ok",
+      "recover_periodic": "ok"
+     },
+     "rollback_calls": [
+      [
+       "get_plan",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "approve",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "apply",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "status_after",
+       "policy_snapshot_mismatch"
+      ]
+     ],
+     "rollback_change_of_created": {
+      "rollback_plan_id": "f0b32c79a3d64bcb92322a8cd836d4c2",
+      "status": "rollback_plan_created"
+     },
+     "startup_assertions": [],
+     "writer_rollback_reasons": [
+      "configuration_delete_standard_policy",
+      "created_object_rollback_child",
+      "supported_configuration_change"
+     ]
+    },
+    "automation_rollback_pending": {
+     "created_calls": [
+      [
+       "get_plan",
+       "ok"
+      ],
+      [
+       "rollback_change",
+       "ok"
+      ],
+      [
+       "status_after",
+       "ok"
+      ]
+     ],
+     "list_plans": {
+      "count": 1,
+      "partial": true,
+      "projection_failure_count": 1
+     },
+     "outcome": "refused: policy_snapshot_mismatch",
+     "provider_writes": 0,
+     "readiness": [
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      },
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      }
+     ],
+     "recovery": {
+      "reconcile_execution_tasks": "ok",
+      "reconcile_operational_plans": "ok",
+      "recover_periodic": "ok"
+     },
+     "rollback_calls": [
+      [
+       "get_plan",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "approve",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "apply",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "status_after",
+       "policy_snapshot_mismatch"
+      ]
+     ],
+     "rollback_change_of_created": {
+      "rollback_plan_id": "c1f8ec9dfa0f4a5f92924e3fe6d134f5",
+      "status": "rollback_plan_created"
+     },
+     "startup_assertions": [],
+     "writer_rollback_reasons": [
+      "configuration_delete_standard_policy",
+      "created_object_rollback_child",
+      "supported_configuration_change"
+     ]
+    },
+    "helper_rollback_approved": {
+     "created_calls": [
+      [
+       "get_plan",
+       "ok"
+      ],
+      [
+       "rollback_change",
+       "ok"
+      ],
+      [
+       "status_after",
+       "ok"
+      ]
+     ],
+     "list_plans": {
+      "count": 1,
+      "partial": true,
+      "projection_failure_count": 1
+     },
+     "outcome": "refused: policy_snapshot_mismatch",
+     "provider_writes": 0,
+     "readiness": [
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      },
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      }
+     ],
+     "recovery": {
+      "reconcile_execution_tasks": "ok",
+      "reconcile_operational_plans": "ok",
+      "recover_periodic": "ok"
+     },
+     "rollback_calls": [
+      [
+       "get_plan",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "approve",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "apply",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "status_after",
+       "policy_snapshot_mismatch"
+      ]
+     ],
+     "rollback_change_of_created": {
+      "rollback_plan_id": "b69115a1d53c453da998fbda1f66415d",
+      "status": "rollback_plan_created"
+     },
+     "startup_assertions": [],
+     "writer_rollback_reasons": [
+      "configuration_delete_standard_policy",
+      "created_object_rollback_child",
+      "supported_configuration_change"
+     ]
+    },
+    "helper_rollback_pending": {
+     "created_calls": [
+      [
+       "get_plan",
+       "ok"
+      ],
+      [
+       "rollback_change",
+       "ok"
+      ],
+      [
+       "status_after",
+       "ok"
+      ]
+     ],
+     "list_plans": {
+      "count": 1,
+      "partial": true,
+      "projection_failure_count": 1
+     },
+     "outcome": "refused: policy_snapshot_mismatch",
+     "provider_writes": 0,
+     "readiness": [
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      },
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      }
+     ],
+     "recovery": {
+      "reconcile_execution_tasks": "ok",
+      "reconcile_operational_plans": "ok",
+      "recover_periodic": "ok"
+     },
+     "rollback_calls": [
+      [
+       "get_plan",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "approve",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "apply",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "status_after",
+       "policy_snapshot_mismatch"
+      ]
+     ],
+     "rollback_change_of_created": {
+      "rollback_plan_id": "d9d783f994f9409d82c01093c4f3718b",
+      "status": "rollback_plan_created"
+     },
+     "startup_assertions": [],
+     "writer_rollback_reasons": [
+      "configuration_delete_standard_policy",
+      "created_object_rollback_child",
+      "supported_configuration_change"
+     ]
+    },
+    "scene_rollback_approved": {
+     "created_calls": [
+      [
+       "get_plan",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "rollback_change",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "status_after",
+       "policy_snapshot_mismatch"
+      ]
+     ],
+     "list_plans": {
+      "count": 0,
+      "partial": true,
+      "projection_failure_count": 2
+     },
+     "outcome": "refused: policy_snapshot_mismatch",
+     "provider_writes": 0,
+     "readiness": [
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      },
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      }
+     ],
+     "recovery": {
+      "reconcile_execution_tasks": "ok",
+      "reconcile_operational_plans": "ok",
+      "recover_periodic": "ok"
+     },
+     "rollback_calls": [
+      [
+       "get_plan",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "approve",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "apply",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "status_after",
+       "policy_snapshot_mismatch"
+      ]
+     ],
+     "rollback_change_of_created": null,
+     "startup_assertions": [],
+     "writer_rollback_reasons": [
+      "configuration_delete_standard_policy",
+      "created_object_rollback_child",
+      "supported_configuration_change"
+     ]
+    },
+    "script_rollback_approved": {
+     "created_calls": [
+      [
+       "get_plan",
+       "ok"
+      ],
+      [
+       "rollback_change",
+       "ok"
+      ],
+      [
+       "status_after",
+       "ok"
+      ]
+     ],
+     "list_plans": {
+      "count": 1,
+      "partial": true,
+      "projection_failure_count": 1
+     },
+     "outcome": "refused: policy_snapshot_mismatch",
+     "provider_writes": 0,
+     "readiness": [
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      },
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      }
+     ],
+     "recovery": {
+      "reconcile_execution_tasks": "ok",
+      "reconcile_operational_plans": "ok",
+      "recover_periodic": "ok"
+     },
+     "rollback_calls": [
+      [
+       "get_plan",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "approve",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "apply",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "status_after",
+       "policy_snapshot_mismatch"
+      ]
+     ],
+     "rollback_change_of_created": {
+      "rollback_plan_id": "a4777d996c52478b990d8aafc1ced2f3",
+      "status": "rollback_plan_created"
+     },
+     "startup_assertions": [],
+     "writer_rollback_reasons": [
+      "configuration_delete_standard_policy",
+      "created_object_rollback_child",
+      "supported_configuration_change"
+     ]
+    },
+    "script_rollback_pending": {
+     "created_calls": [
+      [
+       "get_plan",
+       "ok"
+      ],
+      [
+       "rollback_change",
+       "ok"
+      ],
+      [
+       "status_after",
+       "ok"
+      ]
+     ],
+     "list_plans": {
+      "count": 1,
+      "partial": true,
+      "projection_failure_count": 1
+     },
+     "outcome": "refused: policy_snapshot_mismatch",
+     "provider_writes": 0,
+     "readiness": [
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      },
+      {
+       "execution_ready": true,
+       "faults": [],
+       "request_ready": true,
+       "status": "ready"
+      }
+     ],
+     "recovery": {
+      "reconcile_execution_tasks": "ok",
+      "reconcile_operational_plans": "ok",
+      "recover_periodic": "ok"
+     },
+     "rollback_calls": [
+      [
+       "get_plan",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "approve",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "apply",
+       "policy_snapshot_mismatch"
+      ],
+      [
+       "status_after",
+       "policy_snapshot_mismatch"
+      ]
+     ],
+     "rollback_change_of_created": {
+      "rollback_plan_id": "4f5d2b0163c4435996f5bae02858514a",
+      "status": "rollback_plan_created"
+     },
+     "startup_assertions": [],
+     "writer_rollback_reasons": [
+      "configuration_delete_standard_policy",
+      "created_object_rollback_child",
+      "supported_configuration_change"
+     ]
+    }
+   },
+   "reader": "beta7",
+   "reader_harness": "tests/hamcp155_fixtures.py ConfigurationDeleteServiceTestCase",
+   "reader_version": "2.4.2-beta.7",
+   "writer": "tip",
+   "writer_version": "2.4.2-beta.15"
+  }
+ },
+ "harness_sha256": "f32ea588c7a470e4c3ee32b69501ef7668009f8860a333e280aa736dd25bc0ce",
+ "model": "hamcp378-downgrade-harness-v1",
+ "trees": {
+  "beta14": {
+   "commit": "54627e35dcfd8e972d468aec8745fd918db53ad3",
+   "declared_version": "2.4.2-beta.14",
+   "name": "beta14"
+  },
+  "beta7": {
+   "commit": "b614be43f8c56ae06fdec0ac0bcb479b9da39715",
+   "declared_version": "2.4.2-beta.7",
+   "name": "beta7"
+  },
+  "tip": {
+   "commit": "29176686f0eaf95f6415807d6df8b99b4cfa7e7f",
+   "declared_version": "2.4.2-beta.15",
+   "name": "tip"
+  }
+ }
+}

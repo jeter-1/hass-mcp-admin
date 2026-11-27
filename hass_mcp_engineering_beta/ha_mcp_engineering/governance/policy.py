@@ -1232,9 +1232,11 @@ def _created_object_rollback_policy(
 
     A delete without the created-object marker keeps its 155 policy.  A
     marker that is not closed and bound to this exact child is prohibited.
-    An ``owned`` child keeps its 155 policy; a ``modified_since_create``
-    child is elevated with the ownership basis, which never sets a physical
-    consequence on its own.
+    An ``owned`` child keeps its 155 class, risk and consequence; a
+    ``modified_since_create`` child is elevated with the ownership basis,
+    which never sets a physical consequence on its own.  Either form also
+    carries ``ROLLBACK_CHILD`` (HAMCP-378 option B), so a runtime that does
+    not know the form recomputes a different decision and refuses the plan.
     """
 
     from . import created_object_rollback
@@ -1251,21 +1253,26 @@ def _created_object_rollback_policy(
             PhysicalConsequence.UNKNOWN,
             (created_object_rollback.INCOMPLETE,),
         )
-    if (
-        delete_policy.policy_class is ApprovalPolicyClass.PROHIBITED
-        or found[0]["ownership"] != created_object_rollback.MODIFIED_SINCE_CREATE
-    ):
+    if delete_policy.policy_class is ApprovalPolicyClass.PROHIBITED:
         return delete_policy
+    reasons = {*delete_policy.reason_codes, created_object_rollback.ROLLBACK_CHILD}
+    if found[0]["ownership"] != created_object_rollback.MODIFIED_SINCE_CREATE:
+        return OperationPolicyClassification(
+            delete_policy.policy_class,
+            delete_policy.risk_delta,
+            delete_policy.physical_consequence,
+            tuple(sorted(reasons)),
+            safety_critical_acknowledgement=(
+                delete_policy.safety_critical_acknowledgement
+            ),
+        )
     return OperationPolicyClassification(
         ApprovalPolicyClass.ELEVATED_ADMIN,
         RiskDelta.HIGH,
         delete_policy.physical_consequence,
         tuple(
             sorted(
-                {
-                    *delete_policy.reason_codes,
-                    created_object_rollback.BASIS_MODIFIED_SINCE_CREATE,
-                }
+                {*reasons, created_object_rollback.BASIS_MODIFIED_SINCE_CREATE}
             )
         ),
         safety_critical_acknowledgement=(

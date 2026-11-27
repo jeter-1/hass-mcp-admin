@@ -90,9 +90,10 @@ BASIS_PROTECTED_EFFECT = "delete_removes_protected_effect"
 BASIS_PROTECTED_DEPENDENCY = "delete_protected_dependency"
 # The lane's own dependency index has no script reader (production wires the
 # reviewed ha-mcp one in application.py), so script consumer evidence is
-# unavailable by construction. OD-4 treats every evidence gap as protected:
-# each delete here is elevated for exactly this reason, which the lane asserts
-# by its code rather than accepting any elevation (HAMCP-222).
+# unavailable by construction. Since HAMCP-394 (release 2.11.0 Lane C GO,
+# 2026-11-27) a script-only gap is disclosed but never elevates a delete: the
+# lane asserts the gap by its code and asserts that it binds no protected
+# dependency reason (HAMCP-222 asserted the earlier elevation the same way).
 SCRIPT_EVIDENCE_GAP = "script_evidence_unavailable"
 INCOMPLETE_SCRIPT_EVIDENCE = "dependency_evidence_incomplete:" + SCRIPT_EVIDENCE_GAP
 VERDICT_NONE = "none"
@@ -239,12 +240,11 @@ def _scenario_type(name):
     return name.split("_", 1)[1]
 
 
-def _elevated_for_incomplete_evidence(value):
-    """Elevated with high risk on plan and child, and incomplete script evidence the only gap."""
-    assert value["protected"] is True and value["unlock_or_disarm"] is False
-    assert value["risk_level"] == "high" and value["operation_risk_level"] == "high"
+def _script_gap_disclosed_only(value):
+    """Incomplete script evidence is the only gap, disclosed and binding no dependency reason."""
+    assert value["unlock_or_disarm"] is False
     assert value["evidence_complete"] is False and value["evidence_gaps"] == [SCRIPT_EVIDENCE_GAP]
-    assert value["dependency_reasons"] == [INCOMPLETE_SCRIPT_EVIDENCE]
+    assert value["dependency_reasons"] == []
 
 
 def _scenario_checks(name, value):
@@ -253,9 +253,10 @@ def _scenario_checks(name, value):
         assert value["task_state"] == "succeeded_verified" and value["dispatch_counts"] == [1]
         assert value["write_methods"] == ["DELETE"] and value["ha_writes"] == 1
         assert value["write_routes_bound"] is True and value["config_checks"] == 0
-        # Nothing protected is removed: the elevation is the evidence gap alone.
-        _elevated_for_incomplete_evidence(value)
-        assert value["basis"] == [BASIS_PROTECTED_DEPENDENCY]
+        # Nothing protected is removed and the script gap does not elevate.
+        _script_gap_disclosed_only(value)
+        assert value["protected"] is False and value["basis"] == []
+        assert value["risk_level"] == "medium" and value["operation_risk_level"] == "medium"
         assert value["removed_effect_verdict"] == VERDICT_NONE
         assert entity_of(_scenario_type(name), value["entity_id"])
         assert value["preflight_present"] is True and _absent(value["readback"])
@@ -273,9 +274,10 @@ def _scenario_checks(name, value):
         assert value["state_present"] is True
     if name == "protected_effect":
         assert value["plan_created"] is True
-        # The removed lock effect is its own basis, first, beside the same gap.
-        _elevated_for_incomplete_evidence(value)
-        assert value["basis"] == [BASIS_PROTECTED_EFFECT, BASIS_PROTECTED_DEPENDENCY]
+        # The removed lock effect alone elevates; the script gap adds no basis.
+        _script_gap_disclosed_only(value)
+        assert value["protected"] is True and value["basis"] == [BASIS_PROTECTED_EFFECT]
+        assert value["risk_level"] == "high" and value["operation_risk_level"] == "high"
         assert value["removed_effect_verdict"] == VERDICT_REMOVED
         assert value["removes_statement"] is True and value["ha_writes"] == 0
     if name == "not_found":
