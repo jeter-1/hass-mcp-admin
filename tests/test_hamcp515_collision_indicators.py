@@ -34,6 +34,7 @@ from tests.support.process_isolation import Guard  # noqa: E402
 VERSION = "9.2.0"
 RENAMED = "ha_get_blueprint"
 UPSTREAM = "ha_manage_blueprints"
+SAME_NAME = "ha_config_get_automation"  # reviewed name equals upstream name
 OPTIONAL = upstream_yaml_reader.TOOL_NAME
 
 _BEFORE = None
@@ -119,6 +120,26 @@ class CollisionIndicators(unittest.TestCase):
         self.assertEqual(health["collision_count"], 1)
         self.assertEqual(health["collision_mappings"], [{"upstream_name": UPSTREAM, "exposed_name": alias}])
         # Only the alias is a collision; every other row is not.
+        self.assertEqual([name for name, item in rows.items() if item["collision"]], [alias])
+        self.assert_agree(rows, health)
+
+    def test_forced_alias_of_a_same_name_read_is_a_collision(self):
+        # A read whose reviewed name equals its upstream name (most of them)
+        # is aliased the same way when its name is taken.
+        server = FastMCP("hamcp515-same-name-clash")
+
+        async def existing(path: str):
+            return {"implementation": "engineering", "path": path}
+
+        server.tool(name=SAME_NAME)(existing)
+        rows, health = admit(server)
+        alias = f"{ALIAS_PREFIX}{SAME_NAME}"
+        self.assertNotIn(SAME_NAME, rows)
+        self.assertEqual(rows[alias]["upstream_tool"], SAME_NAME)
+        self.assertIs(rows[alias]["collision"], True)
+        self.assertEqual(health["collision_count"], 1)
+        self.assertEqual(health["collision_mappings"], [{"upstream_name": SAME_NAME, "exposed_name": alias}])
+        self.assertIs(rows[RENAMED]["collision"], False)
         self.assertEqual([name for name, item in rows.items() if item["collision"]], [alias])
         self.assert_agree(rows, health)
 
