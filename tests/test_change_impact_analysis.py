@@ -1850,8 +1850,8 @@ class ToolCompatibilityTests(unittest.TestCase):
                 from hamcp294_descriptor_changes import without_hamcp294_inputs
                 parameters = without_hamcp294_inputs(self, parameters)
             if name == "get_audit_log":  # + HAMCP-475
-                from hamcp475_descriptor_changes import without_hamcp475_inputs
-                parameters = without_hamcp475_inputs(self, parameters)
+                from hamcp518_descriptor_changes import without_hamcp518_and_475_inputs
+                parameters = without_hamcp518_and_475_inputs(self, parameters)
             from hamcp425_descriptor_changes import HAMCP425_TOOLS, without_hamcp425_inputs
             if name in HAMCP425_TOOLS:  # + HAMCP-425
                 parameters = without_hamcp425_inputs(self, name, parameters)

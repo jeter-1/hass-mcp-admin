@@ -447,7 +447,7 @@ class UnadmittedCompiledCoreTests(unittest.IsolatedAsyncioTestCase):
                 )
         # The MCP application owns every Home Assistant interaction.
         self.assertEqual(app.calls, [])
-        # Other unavailable tools keep the generic refusal without details.
+        # Other unavailable tools get the generic refusal, without pending details.
         body = await call(gateway, "create_entity_metadata_plan",
                           {"entity_id": "light.porch", "name": "x"})
         self.assertIn(b"CoreCapabilityUnavailable", body)

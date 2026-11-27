@@ -7,6 +7,13 @@ installed before acquisition, the lease is consumed and revalidated on every
 dispatch, and it is closed when the tick ends or overruns. A tick without
 authority sends nothing and is counted against every watch as a skipped
 poll. Ticks never overlap.
+
+HAMCP-431: with a ``session`` (``clients.websocket.HeldWebSocketSession``)
+the tick's reads share one held, authenticated connection instead of one
+connection per frame. Every frame still passes this tick's dispatch gate.
+The connection is bound to the tick's Core generation and closed when a tick
+has no Core authority, when no watch is active, when a tick fails and at
+shutdown; between ticks it stays open, idle, for at most its maximum age.
 """
 
 from __future__ import annotations
@@ -73,9 +80,10 @@ def watch_poll_authority(core_runtime, deadline):
 
 class TraceWatchPoller:
     def __init__(self, service, core_runtime, *, interval=c.POLL_SECONDS,
-                 tick_seconds=c.TICK_SECONDS):
+                 tick_seconds=c.TICK_SECONDS, session=None):
         self.service, self.core_runtime = service, core_runtime
         self.interval, self.tick_seconds = interval, tick_seconds
+        self.session = session
         self.task = None
         self.ticks = 0
         self.failed_ticks = 0
@@ -83,11 +91,25 @@ class TraceWatchPoller:
     async def tick(self):
         started = time.monotonic()
         deadline = started + self.tick_seconds
-        with watch_poll_authority(self.core_runtime, deadline) as authority:
-            async with asyncio.timeout(self.tick_seconds):
-                # Reads stop at the read share; the rest is the commit reserve.
-                await self.service.poll_once(
-                    authority=authority, deadline=started + self.tick_seconds * c.READ_SHARE)
+        session = self.session
+        try:
+            with watch_poll_authority(self.core_runtime, deadline) as authority:
+                if session is not None:
+                    if authority is None:
+                        session.discard("authority_unavailable")
+                    else:
+                        session.bind(authority[0])
+                async with asyncio.timeout(self.tick_seconds):
+                    # Reads stop at the read share; the rest is the commit reserve.
+                    active = await self.service.poll_once(
+                        authority=authority, deadline=started + self.tick_seconds * c.READ_SHARE,
+                        **({} if session is None else {"command": session.command}))
+        except BaseException:
+            if session is not None:
+                session.discard("tick_failed")
+            raise
+        if session is not None and active is not True:
+            session.discard("no_active_watch")
 
     async def run(self):
         while True:
@@ -117,3 +139,5 @@ class TraceWatchPoller:
             self.task.cancel()
         if self.task is not None:
             await asyncio.gather(self.task, return_exceptions=True)
+        if self.session is not None:
+            await self.session.close("shutdown")
