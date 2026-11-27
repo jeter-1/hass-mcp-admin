@@ -888,17 +888,16 @@ class ReachabilityTests(unittest.TestCase):
 
 class InternalReaderSchemaSweepTests(unittest.IsolatedAsyncioTestCase):
     """The W4 defect class, swept: an internal reader that validates with a
-    schema other than the reviewed one. The three other internal readers pass
+    schema other than the reviewed one. The two other internal readers pass
     the raw observed schema. On the admitted 9.2.0 routes it is the reviewed
     schema (script) or a superset whose extra keys the reader never sends and
-    the dispatch shape pins (history: ``upstream_history_9_1.dispatch_arguments``;
-    YAML: ``yaml_reader.validate_arguments`` and ``upstream_arguments``). The
-    arguments each reader really sends validate the same under both."""
+    the dispatch shape pins (YAML: ``yaml_reader.validate_arguments`` and
+    ``upstream_arguments``). The arguments each reader really sends validate
+    the same under both. HAMCP-511 retired the third, the history-slices
+    reader: get_history_slices reads Core natively."""
 
     RAW_ONLY = {"ha_config_get_script": set(),
-                "ha_get_history": {"core_options", "include_schema", "summary"},
                 yaml_reader.TOOL_NAME: {"include_content", "include_parsed"}}
-    TIME = "2026-01-01T00:00:00.000000+00:00"
 
     async def test_each_internal_reader_validates_the_same_under_both_schemas(self):
         gateway, _ = await captures.gateway_920(tools=yaml_admission.captured("9.2.0"))
@@ -906,9 +905,8 @@ class InternalReaderSchemaSweepTests(unittest.IsolatedAsyncioTestCase):
             routes = {route.entry.upstream_name: route for route in gateway._exposed.values()
                       if route.entry.upstream_name in self.RAW_ONLY}
         self.assertEqual(set(routes), set(self.RAW_ONLY))
-        readers = {"ha_config_get_script": (gateway.script_dependency_reader(), [("script.synthetic",)]),
-                   "ha_get_history": (gateway.history_reader(),
-                                      [("sensor.synthetic", self.TIME, self.TIME, 0, 10)])}
+        self.assertFalse(hasattr(gateway, "history_reader"))
+        readers = {"ha_config_get_script": (gateway.script_dependency_reader(), [("script.synthetic",)])}
         for purpose, (paths, _event) in gw.YAML_READER_PURPOSES.items():
             readers[f"{yaml_reader.TOOL_NAME}:{purpose}"] = (
                 gateway.yaml_config_reader(purpose=purpose), [(path,) for path in sorted(paths)])

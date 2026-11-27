@@ -5,16 +5,24 @@ These notes describe source behavior at exact pins and the reviewed read
 contract. They are not deployment evidence; the live check is in
 `V2_4_1_BETA30_ACCEPTANCE.md` (deleted by HAMCP-437).
 
+HAMCP-511 (2.11.0) replaced the delegated `ha_get_history` route of
+`get_history_slices` with a native Home Assistant Core read. The history
+sections below describe the native read and say where the delegated route
+differed.
+
 ## Scope
 
 Two read-only Engineering-native tools:
 
 - `get_incident_logs` reads one bounded time window from Home Assistant
   journals through fixed Supervisor routes and merges them chronologically.
-- `get_history_slices` reads continuable entity history through the admitted,
-  gateway-sanitized delegated `ha_get_history` route. It does not use the native
-  `get_history` REST tool, which is not under the strict sanitizer (HAMCP-194 is
-  parked).
+- `get_history_slices` reads continuable entity history through one fixed
+  native Home Assistant Core REST read per slice (`GET /api/history/period`)
+  under the tool's own `core.basic_rest_read` lease (HAMCP-511). The reader
+  sanitizes every returned state, as the gateway's response sanitizer did on
+  the delegated `ha_get_history` route it replaced. That route is no longer
+  used and is not a fallback. The tool does not call the native `get_history`
+  tool.
 
 Neither tool writes anything, adds a permission, changes add-on configuration,
 reads log files from the filesystem, or falls back to another provider.
@@ -29,7 +37,8 @@ Assistant was accessed.
 | home-assistant/supervisor | `2026.09.1` | `40e3ee7640a3c44abe67f1a1397f39c3cd949806` |
 | systemd/systemd | `v257.9` | `147c30b613960bc24595435bd902a5c4beb5aba9` |
 | home-assistant/core | `2026.10.1` | `abe1fdd7cd6b4de1715c87b6fd87d92699514ef9` |
-| homeassistant-ai/ha-mcp | `8.5.0`, `8.6.0` | admitted captures used by `tests/test_hamcp162_yaml_admission.py` and `tests/test_upstream_8_6_compatibility.py`; see [`HA_MCP_8_6_0_COMPATIBILITY.md`](HA_MCP_8_6_0_COMPATIBILITY.md) |
+| home-assistant/core | `2026.11.3` | `92da9f154079459b9e547126f9bd9fce726de16a` (the native history read, HAMCP-511) |
+| homeassistant-ai/ha-mcp | `8.5.0`, `8.6.0` | the delegated history route, replaced by HAMCP-511; admitted captures used by `tests/test_hamcp162_yaml_admission.py` and `tests/test_upstream_8_6_compatibility.py`; see [`HA_MCP_8_6_0_COMPATIBILITY.md`](HA_MCP_8_6_0_COMPATIBILITY.md) |
 
 The Supervisor pin matches the Supervisor version the existing Engineering
 documents treat as current. Production HAOS ships its own systemd build. Its
@@ -164,17 +173,23 @@ The service maps an HTTP refusal on a readable route to a per-source
 
 ### History continuation
 
-`ha_get_history` is admitted at ha-mcp 8.5.0 and 8.6.0. Its `_fetch_history`
-has an identical AST in both versions. It sends one
-`history/history_during_period` WebSocket call for the whole requested window,
-then slices `[offset:offset+limit]` on the client side and reports
-`total_count`. Offsets are therefore stable only over fixed absolute bounds.
-`_convert_timestamp` (8.6.0 `tools_history.py` L54-69) renders the WebSocket
-epoch timestamps with `datetime.fromtimestamp(value, tz=UTC).isoformat()`, so
-times arrive in UTC with a `+00:00` offset.
+Each slice request is one `GET /api/history/period/<start>` (HAMCP-511), with
+`filter_entity_id` (one validated entity), an absolute UTC `end_time`, and
+`minimal_response`, `no_attributes` and `significant_changes_only=1`.
+Engineering builds every argument through HAMCP-200 `rest_path`. The request
+is one attempt (`SINGLE_READ`: no retry, no redirect, a 1 MiB body bound).
+Core REST has no offset, so each request returns the whole slice window and
+the reader slices `[offset:offset+limit]` itself. Offsets are therefore
+stable only over fixed absolute bounds. Times arrive in UTC with a `+00:00`
+offset; the reader refuses any other shape as `representation_invalid`.
 
-Home Assistant 2026.10.1 recorder semantics for one entity with
-`minimal_response`:
+Before HAMCP-511, `ha_get_history` (ha-mcp 8.5.0 and 8.6.0, with an
+identical `_fetch_history` AST in both) sent one
+`history/history_during_period` WebSocket call for the whole requested window
+and sliced it on the client side the same way.
+
+Home Assistant 2026.11.3 recorder semantics for one entity with
+`minimal_response` and `significant_changes_only`:
 
 - The window-start state is the state of the last row with
   `last_updated < start`. It is returned only when the database holds a row
@@ -187,7 +202,16 @@ Home Assistant 2026.10.1 recorder semantics for one entity with
   (review L2).
 - Changes are rows with `start < last_updated < end`. A row exactly at `start`
   is in neither set.
-- Consecutive equal states are collapsed.
+- Consecutive equal states are collapsed, except for climate, humidifier,
+  input_datetime, thermostat and water_heater entities
+  (`NEED_ATTRIBUTE_DOMAINS`, Core 2026.11.3 `recorder/history/const.py`),
+  whose rows are returned in full. Attribute-only updates are selected only
+  for the significant domains (`SIGNIFICANT_DOMAINS`: climate,
+  device_tracker, humidifier, thermostat, water_heater;
+  `recorder/history/__init__.py` L190-204). So climate, humidifier,
+  thermostat and water_heater attribute-only updates read as a repeated equal
+  state; device_tracker ones are folded into the previous equal state; and
+  input_datetime ones are omitted.
 
 `get_history_slices` cuts the window into fixed 6-hour slices. Each slice is
 one absolute-bounded request `[S − 1 ms, E)`. The 1 ms overlap places a row
@@ -206,16 +230,16 @@ and offset-paged. Continuity checks:
   in-place change or a balanced insert and delete on any earlier page, or a
   late state in an already covered empty slice, fails as stale; it is never
   reported complete.
-- Cost, per continued call: the re-read is chunked at 100 entries per
-  request (`VERIFY_CHUNK`), one request at least per finished slice, and is
-  bounded at 40 verification reads (`MAX_VERIFY_CALLS`, reported as
-  `bounds.max_verification_calls_per_page` and per page as
+- Cost, per continued call: the re-read is one Core request per finished
+  slice plus one for the current slice, since one request returns a whole
+  slice window. It is bounded at 40 verification reads (`MAX_VERIFY_CALLS`,
+  reported as `bounds.max_verification_calls_per_page` and per page as
   `verification_calls`). It comes on top of the at most 12 slice reads, so a
-  continued call makes at most 52 bounded upstream requests, each at most
-  100 states; ha-mcp fetches the slice window once per request (see the
-  upstream behavior above). A first page makes no verification read. Cost
-  grows with history already returned: 28 empty slices cost 28 reads,
-  4000 returned states in one slice cost 40.
+  continued call makes at most 52 bounded Core requests. A first page makes
+  no verification read. Cost grows with the slices already returned: a 7-day
+  span has at most 28 slices, so at most 28 reads. Before HAMCP-511 the
+  delegated re-read was chunked at 100 entries per request (`VERIFY_CHUNK`),
+  so 4000 returned states in one slice cost 40.
 - A page whose next continuation would need more than 40 verification reads
   issues no cursor: `has_more` is false, `complete` is false, the omission is
   `continuation_verification_limit`, and `complete_until` is the bound of what
@@ -231,8 +255,9 @@ and offset-paged. Continuity checks:
 - A new slice requires the state prevailing before its start to equal the last
   state already read.
 - The signed cursor binds the query fingerprint, the fixed end, the provider
-  contract digest (upstream version and admitted fingerprint) and the position.
-  A changed provider contract therefore fails as stale.
+  contract digest (the reader version and its pinned Core request contract)
+  and the position. A changed provider contract therefore fails as stale, and
+  a cursor issued by the delegated route does not continue on the native read.
 
 Outcomes:
 
@@ -341,12 +366,13 @@ Output:
   bound is exclusive and the cursor offset is the tie-break (review M3);
 - `omissions`, `truncated`, `has_more`, `next_cursor`, `complete`;
 - `upstream_calls` (verification calls included), `verification_calls` and
-  `provider` (upstream tool and version, route
-  `upstream_read_gateway`, fallback `none`);
+  `provider` (upstream tool `core_history_period` and its version, route
+  `direct_ha_api`, fallback `none`; HAMCP-511);
 - `bounds` and `limitations`.
 
 Each call makes at most 12 slice reads plus, on a continuation, at most 40
-verification reads of at most 100 states (52 requests).
+verification reads (52 Core requests), each one slice window under the 1 MiB
+body bound.
 
 ### Shared architecture
 
@@ -374,8 +400,9 @@ verification reads of at most 100 states (52 requests).
   source is always located on the next page.
 - **Typed routes.** Journal requests use HAMCP-200 `rest_path` with the
   registered templates `/core/logs` and `/addons/self/logs`. No caller value
-  becomes a path segment. History uses only the gateway reader, which builds
-  every upstream argument.
+  becomes a path segment. History uses only the native reader (HAMCP-511),
+  which builds every Core request argument through `rest_path` with the
+  template `/history/period/{}`.
 - **Routing, policy and Core gate.**
   - `get_incident_logs` uses capability `incident_logs` and policy
     `incident_logs_read_v1`. It is classified Core-independent, Supervisor-only,
@@ -383,6 +410,11 @@ verification reads of at most 100 states (52 requests).
   - `get_history_slices` uses capability `history_slices` and policy
     `history_slices_read_v1`. It is mapped to `core.basic_rest_read` in
     `STATIC_TOOL_CORE_REQUIREMENTS`.
+  - Each `get_history_slices` call holds a read slot before any Core request
+    (HAMCP-527): per caller one read runs and at most three wait, globally two
+    run, first come first served. A read that cannot start within 10 s of
+    arrival, or a fifth read from one caller, is refused as the shared
+    retryable `READ_BUSY` (409) with scope `caller` or `global` (HAMCP-513).
   - Both are `ENGINEERING_NATIVE`, with writes `none` and fallback `none`.
 - **Tool count.** 62 → 64 static Engineering tools.
 

@@ -1,20 +1,21 @@
 """Fixed read contract for HAMCP-131 continuable entity history.
 
-History is read only through the admitted, gateway-sanitized delegated
-``ha_get_history`` route (never the native ``get_history`` REST tool).
-Engineering builds every upstream argument: one entity, absolute UTC
-bounds, ascending order, minimal response and a bounded offset/limit.
+History is read natively from Home Assistant Core (HAMCP-511):
+``native.NativeHistoryReader`` sends one fixed
+``GET /api/history/period`` request per slice window under the tool's own
+Core lease. The delegated ``ha_get_history`` route is not used and is not a
+fallback. Engineering builds every request argument: one entity, absolute
+UTC bounds, minimal response, no attributes and significant changes only.
 
-Upstream behavior relied on (see ``docs/HAMCP_131_INCIDENT_LOGS.md``):
-
-- ha-mcp 8.5.0/8.6.0 ``_fetch_history`` (identical AST) sends one
-  ``history/history_during_period`` call for the whole requested window,
-  then slices ``[offset:offset+limit]`` client-side and reports
-  ``total_count``; offsets are stable only over fixed absolute bounds.
-- Home Assistant 2026.10.1 recorder history returns the state prevailing
-  before ``start_time`` (``last_updated < start``, only when the database
-  holds a state that old) followed by rows with
-  ``start < last_updated < end``, collapsing consecutive equal states.
+Core behavior relied on (pinned Home Assistant Core 2026.11.3, see
+``native.py``): the recorder returns the state prevailing before the
+requested start (reported at the start) followed by the rows with
+``start < last_updated < end``. Minimal responses collapse consecutive
+equal states except for ``native.NEED_ATTRIBUTE_DOMAINS``. Of those, the
+attribute-only updates of climate, humidifier, thermostat and water_heater
+read as repeated states; Core omits them for input_datetime, which is not a
+significant domain. Offsets are stable only
+over fixed absolute bounds.
 
 Every value here is a disclosed bound.
 """
@@ -30,12 +31,18 @@ from ..incident_logs.contracts import MAX_FUTURE_SKEW_SECONDS, format_ms, parse_
 
 
 SCHEMA = "history-slices-v1"
-UPSTREAM_TOOL = "ha_get_history"
-# Reviewed history shapes; each has a parser row in service._PARSERS (9.1.0: HAMCP-319 rule 3;
-# 9.1.2: HAMCP-351, tools_history.py and history_response.py unchanged at bab615df;
-# 9.2.0: HAMCP-371, history_response.py unchanged at 51e3aac7, and the slices send
-# only explicit-offset UTC times, which r16-history replays identically).
-REVIEWED_VERSIONS = frozenset({"8.5.0", "8.6.0", "9.1.0", "9.1.2", "9.2.0"})
+# The Core read the slices use (HAMCP-511), named as the provider's
+# upstream tool in responses and audit.
+UPSTREAM_TOOL = "core_history_period"
+# The reviewed native reader representation; a reader reporting any other
+# version is refused before a Core request.
+NATIVE_VERSION = "core-rest-history-period-v1"
+REVIEWED_VERSIONS = frozenset({NATIVE_VERSION})
+# The closed failure reasons a reader may return for one slice read.
+READ_FAILURES = frozenset({
+    "representation_invalid", "provider_authority_changed", "core_read_timeout",
+    "core_read_failed", "core_read_unavailable", "sanitization_failed",
+})
 
 MAX_SPAN_SECONDS = 7 * 24 * 3600
 SLICE_SECONDS = 6 * 3600
@@ -49,12 +56,11 @@ MAX_LIMIT = 100
 MAX_UPSTREAM_CALLS = 12
 # A continued page re-reads ALL history the read has returned so far: every
 # finished slice from offset 0 to its total and the current slice from offset
-# 0 to the cursor, in chunks of VERIFY_CHUNK entries (review M1). A page whose
-# next continuation would need more than MAX_VERIFY_CALLS verification reads
-# issues no cursor (omission continuation_verification_limit), so every issued
-# cursor is verifiable within the bound. 40 calls cover one call for each of
-# the at most 28 slices plus 12 further chunks.
-VERIFY_CHUNK = 100
+# 0 to the cursor, one read per slice (review M1; one Core request returns a
+# whole slice window). A page whose next continuation would need more than
+# MAX_VERIFY_CALLS verification reads issues no cursor (omission
+# continuation_verification_limit), so every issued cursor is verifiable
+# within the bound. The at most 28 slices of a 7-day span need at most 28.
 MAX_VERIFY_CALLS = 40
 # Entries before a slice start: the recorder's start state plus rows inside
 # the 1 ms overlap. More is not the pinned shape; the bound keeps every
@@ -64,6 +70,16 @@ MAX_CURSOR_CHARS = 4096
 MAX_STATE_CHARS = 255
 RESPONSE_BUDGET = 44_000
 CURSOR_TTL_SECONDS = 3600
+# Read admission (HAMCP-527): per caller, one read runs and at most three
+# wait; a fifth is refused at once. Globally two reads run, first come first
+# served. A read that has not started within READ_WAIT_SECONDS of arrival is
+# refused as busy (retryable); the bound stays under the 60 s per-request
+# timeout of common MCP clients.
+READS_PER_CALLER = 1
+QUEUED_READS_PER_CALLER = 3
+READS_GLOBAL = 2
+READ_WAIT_SECONDS = 10
+READ_BUSY_SCOPES = frozenset({"caller", "global"})
 
 _ENTITY_ID = re.compile(r"[a-z0-9_]{1,64}\.[a-z0-9_]{1,190}\Z")
 ALLOWED_ARGUMENTS = frozenset({"entity_id", "start", "end", "limit", "cursor"})
@@ -78,21 +94,25 @@ class HistorySlicesError(GovernanceError):
         "read_in_progress",
     })
 
-    def __init__(self, reason: str):
+    def __init__(self, reason: str, *, scope: str = "global"):
         if reason not in self.REASONS:
             reason = "history_unavailable"
         code = {
             "invalid_arguments": ErrorCode.INVALID_REQUEST,
             "history_route_unavailable": ErrorCode.PROVIDER_UNAVAILABLE,
         }.get(reason, ErrorCode.ANALYSIS_UNAVAILABLE)
+        details: dict[str, Any] = {"reason": reason, "fallback_occurred": False}
         # HAMCP-413 (HAAC-E046): a concurrent read is a retryable busy
-        # refusal, not an unavailable provider.
+        # refusal, not an unavailable provider. HAMCP-513/527: the shared
+        # read_busy (409) code, naming the exhausted scope (this caller's
+        # read slots or the global ones).
         if reason == "read_in_progress":
-            code = ErrorCode.RATE_LIMIT_EXCEEDED
+            code = ErrorCode.READ_BUSY
             message = "Another history read is in progress; retry after it completes."
+            details["scope"] = scope if scope in READ_BUSY_SCOPES else "global"
         else:
             message = None
-        super().__init__(code, message, details={"reason": reason, "fallback_occurred": False})
+        super().__init__(code, message, details=details)
         self.reason = reason
 
 

@@ -30,17 +30,13 @@ import json
 from pathlib import Path
 import sys
 import unittest
-from unittest.mock import Mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "hass_mcp_engineering_beta"), str(ROOT / "tests")]
 
-from ha_mcp_engineering.history_slices import contracts as slice_contracts  # noqa: E402
-from ha_mcp_engineering.history_slices.service import HistorySliceService  # noqa: E402
 from ha_mcp_engineering.providers import upstream_history_9_1 as history_9_1  # noqa: E402
 from ha_mcp_engineering.providers import upstream_history_9_2 as history_9_2  # noqa: E402
 from ha_mcp_engineering.providers import upstream_read_gateway as gateway_module  # noqa: E402
-from ha_mcp_engineering.request_context import begin_request, end_request  # noqa: E402
 import test_hamcp319_history as h319  # noqa: E402
 import test_hamcp371_real_core_replay as real  # noqa: E402
 
@@ -177,41 +173,9 @@ class GatewayTimeRefusal(unittest.TestCase):
         self.assertFalse(hasattr(history_9_1, "HistoryTimeOffsetRequired"))
 
 
-class HistorySlices920(h319._Base):
-    async def test_920_history_slices_positive(self):
-        self.assertIn("9.2.0", slice_contracts.REVIEWED_VERSIONS)
-        recorder = h319.Recorder()
-        recorder.add(h319.at("00:00:00") - 5, "heat")
-        recorder.add(h319.at("01:00:00"), "idle")
-        recorder.add(h319.at("07:00:00"), "heat")
-        gateway, transport = await self.gateway("9.2.0")
-        transport.responder = lambda tool, arguments: h319.ok(h319.upstream_9_1(recorder, arguments))
-        audit = Mock()
-        reader = gateway.history_reader(audit=audit)
-        self.assertIsNotNone(reader)
-        self.assertEqual(reader.version, "9.2.0")
-        service = HistorySliceService(lambda: reader, known_secrets=(h319.HA_TOKEN,),
-                                      clock=lambda: h319.NOW_MS)
-        telemetry, token = begin_request()
-        telemetry.caller_id = "synthetic_authenticated_caller"
-        telemetry.core_dispatch_authorizer = lambda: True
-        try:
-            page = await service.read({"entity_id": h319.SLICE_ENTITY, "start": h319.START,
-                                       "end": h319.END, "limit": 1})
-            rest = await service.read({"entity_id": h319.SLICE_ENTITY, "start": h319.START,
-                                       "end": h319.END, "cursor": page["next_cursor"]})
-        finally:
-            end_request(token)
-        got = [(slice_contracts.parse_upstream_us(item["at"]), item["state"])
-               for p in (page, rest) for item in p["states"]]
-        self.assertEqual(got, [(h319.at("01:00:00"), "idle"), (h319.at("07:00:00"), "heat")])
-        self.assertEqual(page["provider"]["upstream_version"], "9.2.0")
-        sent = [arguments for name, arguments in transport.sent if name == TOOL]
-        self.assertEqual(len(sent), 3)
-        for arguments in sent:
-            self.assertEqual({k: arguments[k] for k in h319.PINS}, h319.PINS)
-            self.assertTrue(gateway_module._HISTORY_TIME.fullmatch(arguments["start_time"]))
-            self.assertTrue(gateway_module._HISTORY_TIME.fullmatch(arguments["end_time"]))
+# HAMCP-511: HistorySlices920 is retired with the gateway's history-slices
+# reader; get_history_slices reads Core natively
+# (``test_hamcp511_native_history_slices``).
 
 
 class ReviewedKeySet(unittest.TestCase):
