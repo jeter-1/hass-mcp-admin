@@ -1467,6 +1467,44 @@ path. Native search is the last bullet below.
     R1-F4 Low), one docs correction batch, verified by the architect; no
     Cursor r2.
 
+The `2.4.2-beta.15` helper settings read (HAMCP-519) adds one read-only
+native tool, `get_helper_settings`. It adds no permission, add-on option,
+client, Supervisor call, upstream route, fallback or write path, and no new
+Core command: its reads are rows already in native search's fixed table
+(`search/core_contracts.py`).
+
+- **Fixed reads.** `config/entity_registry/list` and the selected
+  `input_boolean/list`, `input_number/list`, `input_select/list`,
+  `input_text/list`, `input_datetime/list` and `input_button/list`, sent on
+  native search's Core read session under the calling request's Core lease.
+  The tool requires `core.basic_websocket_read` and
+  `core.non_device_registry_read` in the HAMCP-164 Core gate. There is no
+  delegated read and no fallback; with no session factory configured the
+  tool refuses as `authority_unavailable`.
+- **Allowlist projection.** Each helper returns only its id, entity id,
+  name, icon, initial and a closed per-domain settings list; any other
+  stored key is ignored. A field of the wrong kind is withheld (`null`) and
+  named in `invalid_fields`, and the result is partial (`field_drift`).
+  input_select options are capped at 100, with the full count.
+- **input_text initial.** Reported as presence and length only; the stored
+  text is never returned (release 2.11.0 Lane C GO, 2026-11-27, Josh's
+  decision as relayed by the architect). Other domains' initials are
+  returned in full.
+- **Sanitizer.** Stored ids, names, icons, settings and initials pass the
+  shared sanitizer before they are returned. A helper's `helper_key` is
+  built from its sanitized id, so ordering, the cursor's set digest and
+  omitted ids never carry withheld text. Two ids the sanitizer makes equal
+  are both dropped (`duplicate_rows`), never guessed between. Redaction
+  counts are for the returned page. A sanitizer failure fails the call.
+- **Paging.** The shared PC-1 cursor: at most 200 helpers a page, in
+  `helper_key` order, bound to the domains and to the helper set, which
+  every page re-reads; a changed set refuses the cursor.
+- **Completeness.** A collection that cannot be read is listed in
+  `unavailable_domains` and the result is partial; when every selected
+  collection is unavailable the call fails. An unreadable entity registry
+  leaves every `entity_id_status` `unresolved`. YAML-defined helpers are not
+  in the storage collections and are not listed.
+
 The `2.4.1-beta.30` incident-window slice (HAMCP-131) adds two read-only tools.
 Neither adds a permission, add-on option, role, fallback or write path.
 

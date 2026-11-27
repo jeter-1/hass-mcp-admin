@@ -314,6 +314,9 @@ STATIC_TOOL_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "get_configuration_definitions": (
         "core.basic_rest_read", "core.basic_websocket_read", "core.non_device_registry_read",
     ),
+    # HAMCP-519: the input_*/list collections and config/entity_registry/list
+    # (helper_settings.contracts.CORE_REQUIREMENTS; a test pins the equality).
+    "get_helper_settings": ("core.basic_websocket_read", "core.non_device_registry_read"),
     # HAMCP-225: trace/list and trace/get with domain automation only.
     "capture_automation_trace": ("core.automation_trace_read",),
     "render_template": ("core.template_semantics",),

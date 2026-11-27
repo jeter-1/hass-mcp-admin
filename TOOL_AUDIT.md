@@ -2,6 +2,30 @@
 
 Date: 2026-07-10
 
+## Helper settings (2.4.2-beta.15, HAMCP-519)
+
+`get_helper_settings` is a native, read-only, Engineering-owned evidence
+tool:
+- category `evidence`, routing `engineering_native`, provider `engineering`,
+  data provider `direct_ha_api`, policy `helper_settings_read_v1`
+  (trust profile `helper-settings-read-v1`);
+- capability `configuration_definitions` (reused, so the provider models are
+  unchanged);
+- risk `read`, writes `none`, fallback `none`, additive;
+- annotations `readOnlyHint` true, `destructiveHint` false,
+  `idempotentHint` true and `openWorldHint` false;
+- mapped to `core.basic_websocket_read` and `core.non_device_registry_read`
+  in the HAMCP-164 Core gate.
+
+It lists the UI-created input_boolean, input_number, input_select,
+input_text, input_datetime and input_button helpers from their storage
+collections (`domains` selects some), each with its entity id from the
+entity registry, name, icon, initial and allowlisted settings. An
+input_text initial is presence and length only. YAML helpers are not
+listed. Pages of up to 200 (default 100) by `helper_key` with the shared
+PC-1 cursor. Any unreadable source or drifted field makes the result partial
+with reasons. It never creates, changes, reloads or deletes a helper.
+
 ## Trace watch connection, skips and eviction (2.4.2-beta.15, HAMCP-431, HAMCP-524, HAMCP-389)
 
 No new tool, route, permission, option or Home Assistant write. The

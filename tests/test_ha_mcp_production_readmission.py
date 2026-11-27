@@ -2718,16 +2718,17 @@ class SignedGatewayReadmissionTests(
             {generation},
         )
         registered = gateway._registered_tool_registry.snapshot()
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 88)  # HAMCP-501 W6: + native ha_search; HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 89)  # HAMCP-501 W6: + native ha_search; HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts; HAMCP-519: + helper settings
         # HAMCP-290: the delegated ha_get_hacs_info is retired (Josh,
         # 2026-11-08), so 25 matched reads expose 24 (85 + 24 = 109; HAMCP-134: +1 static; HAMCP-297: +1 static).
         # HAMCP-501 W6: ha_search is matched internal-only, so 23 are
-        # exposed and the native ha_search keeps the total at 111.
+        # exposed and the native ha_search keeps the total at 111 (112 with
+        # HAMCP-519 get_helper_settings).
         self.assertEqual(len(registered), 24 - INTERNAL_COUNT)
         self.assertFalse(set(registered) & INTERNAL_ONLY_DELEGATED_READS)
         self.assertEqual(set(gateway._internal), set(INTERNAL_ONLY_DELEGATED_READS))
         self.assertFalse(set(registered) & RETIRED_DELEGATED_READS)
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(registered), 111)  # HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(registered), 112)  # HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts; HAMCP-519: + helper settings
         self.assertNotIn("ha_get_operation_status", registered)
         for policy_entry in self.release.policy.tools:
             if (policy_entry.classification != "automatic_read"
