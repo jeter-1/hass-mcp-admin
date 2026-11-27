@@ -883,7 +883,9 @@ delegated provider or fallback.
   captures are refused at capacity; a watch evicts only its own snapshots
   (at most 20 each), and in `executed` mode a run that is not a failure
   never evicts a failure snapshot (HAMCP-389; refused as
-  `failures_protected` when only failures are left), and watch captures
+  `failures_protected` when only failures are left; a failure is judged from
+  the stored `script_execution` only, so a run whose only failure sign is the
+  trace `error` field is not protected), and watch captures
   together stay inside a
   400-snapshot, 100 MiB reservation (HAMCP-296) that is refused, never
   evicted, when full. The store holds at most 500 snapshots and 128 MiB

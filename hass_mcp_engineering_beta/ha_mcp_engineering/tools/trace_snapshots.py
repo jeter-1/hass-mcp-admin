@@ -134,8 +134,10 @@ async def set_automation_trace_watch(
     field; executed: every run except failed_conditions and not_triggered).
     Each watch keeps at most 20 snapshots and evicts its own oldest past that;
     in executed mode a run that is not a failure never evicts a failure
-    snapshot and, when only failures are left, is not captured
-    (failures_protected, counted in uncaptured_runs). Watch snapshots
+    snapshot (judged from the stored script_execution only, so a run whose
+    only failure sign is an error field is not protected) and, when only
+    failures are left, is not captured (failures_protected, counted in
+    uncaptured_runs). Watch snapshots
     together never exceed 400 (100 MiB), and manual snapshots are never
     evicted. Polling pauses while Core authority is unavailable; missed runs
     are counted, never backfilled. Engineering polls over one held Core
