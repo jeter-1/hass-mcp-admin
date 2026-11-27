@@ -1222,11 +1222,14 @@ class NoWritePathTests(unittest.IsolatedAsyncioTestCase):
             "search/related": frozenset({"type", "item_type", "item_id"}),
             "recorder/entity_options/get": frozenset({"type", "entity_id"}),
             "recorder/info": frozenset({"type"}),
+            "lovelace/config": (frozenset({"type"}), frozenset({"type", "url_path"})),
         })
         self.assertEqual(set(ws._SEARCH_IDENTITY), {"automation", "script", "entity"})
         allowed = [{"type": "recorder/info"},
                    {"type": "recorder/entity_options/get", "entity_id": "light.kitchen"},
-                   {"type": "search/related", "item_type": "entity", "item_id": "sensor.yaml_temp"}]
+                   {"type": "search/related", "item_type": "entity", "item_id": "sensor.yaml_temp"},
+                   {"type": "lovelace/config"},
+                   {"type": "lovelace/config", "url_path": "dashboard-test"}]
         refused = [{"type": "recorder/info", "entity_id": "light.kitchen"},
                    {"type": "recorder/entity_options/get"},
                    {"type": "recorder/entity_options/get", "entity_id": "Light.Kitchen"},
@@ -1236,6 +1239,9 @@ class NoWritePathTests(unittest.IsolatedAsyncioTestCase):
                    {"type": "search/related", "item_type": "entity", "item_id": "light..x"},
                    {"type": "search/related", "item_type": "config_entry", "item_id": "light.kitchen"},
                    {"type": "config/entity_registry/update", "entity_id": "light.kitchen"},
+                   {"type": "lovelace/config", "url_path": "Dashboard Test"},
+                   {"type": "lovelace/config", "force": True},
+                   {"type": "lovelace/config/save", "url_path": "dashboard-test"},
                    ["recorder/info"], None]
         for payload in allowed:
             self.assertTrue(ws.batch_command_allowed(payload), payload)
