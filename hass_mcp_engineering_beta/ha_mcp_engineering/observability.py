@@ -12,6 +12,13 @@ from typing import Iterator
 
 
 _CLASSIFIED_CAPTURE = threading.local()
+# HAMCP-517: who dispatched an upstream read gateway request. A direct
+# delegated tool call; an internal reader running as a child request of
+# another tool; an Engineering tool calling the gateway in its own request;
+# the held read canary; or no request context.
+GATEWAY_CONSUMERS = frozenset({
+    "delegated_tool", "internal_reader", "engineering_tool", "held_read_canary", "unattributed",
+})
 
 
 @contextmanager
@@ -52,6 +59,7 @@ class RuntimeMetrics:
     provider_successes: Counter = field(default_factory=Counter)
     provider_failures: Counter = field(default_factory=Counter)
     provider_partial_results: int = 0
+    gateway_requests_by_consumer: Counter = field(default_factory=Counter)
     inspection_read_count: int = 0
     inspection_partial_count: int = 0
     inspection_refusal_count: int = 0
@@ -247,6 +255,7 @@ class RuntimeMetrics:
         completeness: str,
         *,
         dispatched: bool,
+        consumer: str | None = None,
     ) -> None:
         """Record one provider outcome only after dispatch actually began.
 
@@ -270,6 +279,12 @@ class RuntimeMetrics:
             "none",
         } else "other"
         self.provider_requests[provider] += 1
+        if provider == "upstream_read_gateway":
+            # HAMCP-517: every gateway request is attributed to one consumer
+            # class, so the split always sums to the provider count.
+            self.gateway_requests_by_consumer[
+                consumer if consumer in GATEWAY_CONSUMERS else "unattributed"
+            ] += 1
         if completeness == "complete":
             self.provider_successes[provider] += 1
         elif completeness == "partial":
@@ -663,6 +678,7 @@ class RuntimeMetrics:
         self.provider_successes.clear()
         self.provider_failures.clear()
         self.provider_partial_results = 0
+        self.gateway_requests_by_consumer.clear()
         self.inspection_read_count = 0
         self.inspection_partial_count = 0
         self.inspection_refusal_count = 0
@@ -805,6 +821,7 @@ class RuntimeMetrics:
                 "failures_by_provider": dict(self.provider_failures),
                 "provider_operational_failures": dict(self.provider_failures),
                 "partial_results": self.provider_partial_results,
+                "upstream_read_gateway_requests_by_consumer": dict(self.gateway_requests_by_consumer),
                 "fallback_attempts": self.fallback_attempts,
                 "fallback_successes": self.fallback_successes,
                 "prohibited_fallback_attempts": self.prohibited_fallback_attempts,

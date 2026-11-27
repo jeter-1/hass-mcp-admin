@@ -4,17 +4,6 @@
   "entries": [
     {
       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
-      "symbol": "CAPABILITY_PROVIDER_MATRIX.history_slices.security_justification",
-      "literals": {
-        "8.5.0": 1,
-        "8.6.0": 1
-      },
-      "finding": "F2-5",
-      "reason": "Stale client-visible label: says versions 8.5.0/8.6.0 only, while the route admits 9.2.0",
-      "expiry": "2.9.1 cleanup"
-    },
-    {
-      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py",
       "symbol": "CAPABILITY_PROVIDER_MATRIX.typed_fan_execution.core_applicability",
       "literals": {
         "2026.9.2": 1
@@ -491,52 +480,6 @@
         "8.6.0": 2,
         "9.1.0": 2,
         "9.1.2": 2
-      },
-      "finding": "history",
-      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "Phase 6 (ha-mcp removal)"
-    },
-    {
-      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/history_slices/contracts.py",
-      "symbol": "REVIEWED_VERSIONS",
-      "literals": {
-        "8.5.0": 1,
-        "8.6.0": 1,
-        "9.1.0": 1,
-        "9.1.2": 1
-      },
-      "finding": "history",
-      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "Phase 6 (ha-mcp removal)"
-    },
-    {
-      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/history_slices/service.py",
-      "symbol": "_PARSERS",
-      "literals": {
-        "8.5.0": 1,
-        "8.6.0": 1,
-        "9.1.0": 1,
-        "9.1.2": 1
-      },
-      "finding": "history",
-      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "Phase 6 (ha-mcp removal)"
-    },
-    {
-      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/history_slices/service.py",
-      "symbol": "_parse_9_1",
-      "literals": {
-        "9.1.0": 1
-      },
-      "finding": "history",
-      "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",
-      "expiry": "Phase 6 (ha-mcp removal)"
-    },
-    {
-      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/history_slices/service.py",
-      "symbol": "_parse_9_1_2",
-      "literals": {
-        "9.1.2": 1
       },
       "finding": "history",
       "reason": "Historical per-version reviewed row kept beside the window version (Step 1 F2 sweep: agent-classified as history, not re-checked)",

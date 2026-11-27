@@ -212,7 +212,8 @@ class VersionGateLintTests(unittest.TestCase):
             expiries[entry["finding"]].add(entry["expiry"])
         self.assertEqual(expiries.get("F2-1"), {"R1"})
         self.assertEqual(expiries.get("F2-3"), {"2.9.1 cleanup"})
-        self.assertEqual(expiries.get("F2-5"), {"2.9.1 cleanup"})
+        # F2-5 (the stale history_slices label) closed with the native history read (HAMCP-511).
+        self.assertNotIn("F2-5", expiries)
 
     def test_no_entry_awaits_an_owner_decision(self):
         text = Path(ROOT, ALLOWLIST).read_text(encoding="utf-8")

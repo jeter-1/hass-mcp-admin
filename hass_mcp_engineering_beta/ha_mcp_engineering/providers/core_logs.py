@@ -79,7 +79,8 @@ class CoreLogReader(HomeAssistantRestClient):
             raise _failure(ErrorCode.PROVIDER_UNAVAILABLE, "supervisor_context_unavailable")
         if self._reading:
             # HAMCP-413 (HAAC-E046): busy, retryable; the provider is available.
-            raise _failure(ErrorCode.RATE_LIMIT_EXCEEDED, "core_log_read_in_progress",
+            # HAMCP-513: the shared read_busy (409) code.
+            raise _failure(ErrorCode.READ_BUSY, "core_log_read_in_progress",
                            message="Another Core log read is in progress; retry after it completes.")
         headers = {
             "Authorization": f"Bearer {supervisor_token}",
