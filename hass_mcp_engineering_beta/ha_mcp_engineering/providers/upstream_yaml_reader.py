@@ -37,6 +37,7 @@ from collections import Counter, deque
 from dataclasses import dataclass
 from itertools import groupby
 import json
+import math
 from operator import attrgetter
 import re
 import unicodedata
@@ -1347,11 +1348,21 @@ def _reject_constant(_value: str) -> Any:
     raise ValueError("non_finite_number")
 
 
+def _parse_finite_float(value: str) -> float:
+    # HAMCP-471: an exponent overflow such as 1e999 never reaches
+    # parse_constant; the float parser returns infinity.
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        _reject_constant(value)
+    return parsed
+
+
 def _strict_json(text: str) -> Any:
     return json.loads(
         text,
         object_pairs_hook=_reject_duplicates,
         parse_constant=_reject_constant,
+        parse_float=_parse_finite_float,
     )
 
 

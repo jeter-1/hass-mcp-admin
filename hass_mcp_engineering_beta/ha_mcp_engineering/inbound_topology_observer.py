@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 import ipaddress
 import json
 import logging
+import math
 import os
 from pathlib import Path
 import re
@@ -261,10 +262,20 @@ def _closed_object(pairs):
     return result
 
 
+def _finite_float(value):
+    # HAMCP-471: an exponent overflow such as 1e999 never reaches
+    # parse_constant; the float parser returns infinity.
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        raise ValueError()
+    return parsed
+
+
 def parse_arm(raw, identity, port, now):
     try:
         arm = json.loads(raw, object_pairs_hook=_closed_object,
-                         parse_constant=lambda _: (_ for _ in ()).throw(ValueError()))
+                         parse_constant=lambda _: (_ for _ in ()).throw(ValueError()),
+                         parse_float=_finite_float)
     except (ValueError, UnicodeError, RecursionError):
         raise ObservationRefused("arm_json_invalid") from None
     keys = {"schema_version", "capture_id", "marker", "expected_source",

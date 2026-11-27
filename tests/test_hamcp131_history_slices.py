@@ -927,12 +927,20 @@ try:
 except ImportError:  # pragma: no cover - the modules are in this repository
     yaml_admission = h319 = capture = None
 
+from support.parent_request import enter_authorized_parent  # noqa: E402  (HAMCP-510)
+
 # HAMCP-437: the one reviewed release the gateway tests admit.
 CURRENT = "9.2.0"
 
 
 class HistoryReaderGatewayTests(yaml_admission.Harness):
     """The gateway's fixed ``ha_get_history`` route (``history_reader``)."""
+
+    def setUp(self):
+        super().setUp()
+        # HAMCP-510: production reads run inside a parent request with Core
+        # dispatch authority; the no-parent refusal has its own tests.
+        self.parent = enter_authorized_parent(self)
 
     async def history_gateway(self, version, recorder):
         gateway, transport = await self.gateway(version, tools=capture(version)["tools"])
@@ -1000,7 +1008,7 @@ class HistoryReaderGatewayTests(yaml_admission.Harness):
                 self.assertEqual([e["event"] for e in events], ["history_slice_read"] * 3)
                 self.assertEqual({e["provider"] for e in events}, {"upstream_read_gateway"})
                 self.assertFalse(any(e["fallback_occurred"] for e in events))
-                self.assertIsNone(current_telemetry())
+                self.assertIs(current_telemetry(), self.parent)
 
     async def gateway_read(self, service, **arguments):
         arguments = {"entity_id": ENTITY, "start": START, "end": END, **arguments}
