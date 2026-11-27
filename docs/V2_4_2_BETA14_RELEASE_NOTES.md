@@ -126,6 +126,14 @@ native now does what live does.
   fuzzy and area-filtered) reads `config/entity_registry/get_entries` for
   aliases. No new source is read.
 
+## Process
+
+The release pull request (#522) was re-headed once, with this docs-only
+note. Its first head, ad864297, carried two `validate` checks: one from its
+own pull request CI and one from a full-tier `ci.yml` run on the release
+branch. The merge workflow requires exactly one, so it refused the merge as
+ambiguous. HAMCP-521 reconciles release readiness with that rule in 2.11.
+
 ## Evidence
 
 **Pending.** The final release pull request binds each landed item's
