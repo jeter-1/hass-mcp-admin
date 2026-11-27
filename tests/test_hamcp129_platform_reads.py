@@ -22,6 +22,7 @@ from mcp.server.fastmcp import FastMCP  # noqa: E402
 from ha_mcp_engineering.capabilities import build_capability_catalog  # noqa: E402
 from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
     DELEGATED_CORE_REQUIREMENTS,
+    INTERNAL_ONLY_DELEGATED_READS,
     RETIRED_DELEGATED_READS,
     delegated_requirements,
 )
@@ -593,8 +594,13 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
                 tools = g._registered_tool_registry.snapshot()
                 # HAMCP-290: the retired delegated ha_get_hacs_info is withheld
                 # on every reviewed release (Josh decision 2026-11-08).
-                self.assertEqual(set(tools), EXACT_READS - RETIRED_DELEGATED_READS, g.health_snapshot())
-                self.assertEqual(len(tools), EXACT_READ_COUNT)
+                # HAMCP-501 W6 (G1): the delegated ha_search is admitted
+                # internal-only (the native search sub-call route), never
+                # published.
+                self.assertEqual(set(tools), EXACT_READS - RETIRED_DELEGATED_READS - INTERNAL_ONLY_DELEGATED_READS,
+                                 g.health_snapshot())
+                self.assertEqual(len(tools), EXACT_READ_COUNT - len(INTERNAL_ONLY_DELEGATED_READS))
+                self.assertEqual(set(g._internal), set(INTERNAL_ONLY_DELEGATED_READS))
                 upstream = {item["name"]: item for item in capture(version)["tools"]}
                 for name in TOOLS:
                     self.assertEqual(tools[name].parameters, platform.PUBLIC_SCHEMAS[name])
@@ -1295,7 +1301,11 @@ class AdmissionTests(unittest.IsolatedAsyncioTestCase):
                         g, t = await make_gateway(version, tools)
                         exposed = set(g._registered_tool_registry.snapshot())
                         # HAMCP-290: the retired read is never exposed.
-                        self.assertEqual(exposed, EXACT_READS - RETIRED_DELEGATED_READS - {tool}, g.health_snapshot())
+                        # HAMCP-501 W6 (G1): internal-only reads are never exposed.
+                        self.assertEqual(exposed, EXACT_READS - RETIRED_DELEGATED_READS
+                                         - INTERNAL_ONLY_DELEGATED_READS - {tool}, g.health_snapshot())
+                        # A platform-read drift leaves the internal route admitted.
+                        self.assertEqual(set(g._internal), set(INTERNAL_ONLY_DELEGATED_READS))
                         self.assertIn(tool, {item["upstream_name"] for item in g.health_snapshot()["quarantined_tools"]})
                         self.assertEqual(t.sent, [])
 
@@ -1466,10 +1476,10 @@ class CatalogMetadataTests(unittest.TestCase):
     def test_signed_core_registry_is_read_only_and_covers_supported_cores(self):
         registry = json.loads((ROOT / "upstream-trust/ha-core-release-registry.json").read_text())
         tip = registry["envelopes"][-1]
-        self.assertEqual(tip["sequence"], 18)
+        self.assertEqual(tip["sequence"], 19)
         entries = {entry["version"]: entry for entry in tip["entries"]}
-        self.assertEqual(sorted(entries), ["2026.10.0", "2026.10.1", "2026.10.3", "2026.11.0"])
-        for version in ("2026.10.0", "2026.10.1", "2026.10.3", "2026.11.0"):
+        self.assertEqual(sorted(entries), ["2026.10.0", "2026.10.1", "2026.10.3", "2026.11.0", "2026.11.3"])
+        for version in ("2026.10.0", "2026.10.1", "2026.10.3", "2026.11.0", "2026.11.3"):
             with self.subTest(version=version):
                 capabilities = {item["capability_id"] for item in entries[version]["capabilities"]}
                 self.assertTrue({"core.basic_websocket_read", "core.basic_rest_read"} <= capabilities)

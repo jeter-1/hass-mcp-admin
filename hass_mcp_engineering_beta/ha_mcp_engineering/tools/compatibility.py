@@ -47,6 +47,7 @@ from ..trace_normalization import (
     trace_sanitization_warning,
 )
 from ..tool_framework import run_structured
+from ..version import BUILD_DIRTY, BUILD_SHA
 from ..providers.upstream_dashboard import UPSTREAM_DASHBOARD
 
 # ---------------------------------------------------------------------------
@@ -70,6 +71,12 @@ WEBSOCKET_CLIENT = HomeAssistantWebSocketClient(SETTINGS)
 MAX_CHARS = 60_000
 MAX_ERROR_LOG_ENTRIES = 200
 MAX_ERROR_LOG_PAYLOAD_CHARS = 40_000
+# HAMCP-502 TB-5: Core system_log keeps a ring of DEFAULT_MAX_ENTRIES (50)
+# entries; a full ring means older entries may have been evicted.
+CORE_SYSTEM_LOG_DEFAULT_MAX_ENTRIES = 50
+# HAMCP-508 SI-5: Core 2026.11.3 DEFAULT_STORED_TRACES (``trace/const.py:19``);
+# each automation keeps that many runs and that many not-triggered traces.
+CORE_DEFAULT_STORED_TRACES = 5
 MAX_AUDIT_RECORD_CHARS = 64 * 1024
 LOGGER = get_logger("compatibility")
 
@@ -93,10 +100,6 @@ def dump(data: Any) -> str:
     if len(out) > MAX_CHARS:
         out = out[:MAX_CHARS] + f"\n... [truncated at {MAX_CHARS} chars — narrow the query]"
     return out
-
-
-def _utc(hours_ago: float) -> str:
-    return (datetime.now(timezone.utc) - timedelta(hours=hours_ago)).isoformat()
 
 
 # Preserve the legacy helper name while routing serialization through the v2
@@ -309,6 +312,12 @@ async def get_server_health(
         from ..trace_snapshots.runtime import TRACE_SNAPSHOTS
 
         snapshot["trace_watches"] = TRACE_SNAPSHOTS.watch_health()
+        # HAMCP-497: the build identity server_info reports, so a health
+        # check alone names the running image.
+        server = snapshot.get("server")
+        if isinstance(server, dict):
+            server["build_sha"] = BUILD_SHA
+            server["build_dirty"] = BUILD_DIRTY
         return snapshot
 
     return await run_structured(
@@ -413,11 +422,22 @@ async def get_history(entity_id: str, hours: float = 24, minimal: bool = True) -
             "Chunk the range into multiple calls to stay inside gateway timeouts."
         )
     require_entity_id(entity_id)
-    query = [("filter_entity_id", entity_id)]
+    # HAMCP-502: Core ends a window with no end_time one day after its start,
+    # so a longer read came back as its first 24 hours, reading complete.
+    # Both bounds come from one instant.
+    end = datetime.now(timezone.utc)
+    query = [("end_time", end.isoformat()), ("filter_entity_id", entity_id)]
+    # HAMCP-502 TB-4: Core drops attribute-only changes unless this is "0",
+    # so a full read sends it off and a minimal read sends it on, explicitly.
     if minimal:
-        query += [("minimal_response", None), ("no_attributes", None)]
+        query += [("minimal_response", None), ("no_attributes", None), ("significant_changes_only", "1")]
+    else:
+        query.append(("significant_changes_only", "0"))
     path = rest_path(
-        "/history/period/{}", _utc(hours), kinds=("timestamp",), query=query
+        "/history/period/{}",
+        (end - timedelta(hours=hours)).isoformat(),
+        kinds=("timestamp",),
+        query=query,
     )
     data = await rest("GET", path)
     return _bounded_history(entity_id, data)
@@ -587,11 +607,15 @@ async def get_error_log(tail_lines: int = 200) -> str:
             entries.append(safe_entry)
 
         limit_truncated = len(safe_result) > tail_lines
+        # A full default ring may have evicted entries; a lower configured
+        # max_entries cannot be detected from system_log/list.
+        retention_unknown = len(result) >= CORE_SYSTEM_LOG_DEFAULT_MAX_ENTRIES
         truncated = (
             payload_truncated
             or limit_truncated
             or field_truncated
             or sanitation.failed_closed
+            or retention_unknown
         )
         reasons = []
         if limit_truncated:
@@ -602,6 +626,8 @@ async def get_error_log(tail_lines: int = 200) -> str:
             reasons.append("entry_field_limit")
         if sanitation.failed_closed:
             reasons.append("sanitization_failure")
+        if retention_unknown:
+            reasons.append("system_log_retention_unknown")
         return {
             "source": "home_assistant_system_log",
             "semantics": "deduplicated_warning_and_error_entries",
@@ -646,14 +672,37 @@ async def render_template(template: str) -> str:
 async def list_automation_traces(automation_id: str) -> str:
     """List recent execution traces for an automation. automation_id is the
     internal id (the 'id' attribute, not the entity_id) — get it from
-    list_automations. Returns run_ids, timestamps, and last_step."""
+    list_automations. Returns run_ids, timestamps, and last_step.
+    Returns an object: traces, returned, source_truncated and retention. Core
+    keeps only each automation's newest traces (default 5), so older runs are
+    not listed."""
     normalized = await fetch_normalized_trace_list(
         ws_command,
         automation_id,
         known_secrets=(ACCESS_SECRET, HA_TOKEN),
     )
     slim = [header.public() for header in normalized.headers]
-    return dump(slim)
+    # HAMCP-508 SI-5: the list is Core's stored ring, not every recent run.
+    runs = sum(not header.not_triggered for header in normalized.headers)
+    not_triggered = len(slim) - runs
+    return dump({
+        "traces": slim,
+        "returned": len(slim),
+        "source_truncated": normalized.source_truncated,
+        "retention": {
+            "source": "core_stored_trace_ring",
+            "default_stored_traces": CORE_DEFAULT_STORED_TRACES,
+            "stored_traces_read": False,
+            "runs_ring_returned": runs,
+            "not_triggered_ring_returned": not_triggered,
+            "ring_full": max(runs, not_triggered) >= CORE_DEFAULT_STORED_TRACES,
+            "note": (
+                "Core keeps only the newest traces per ring for each automation "
+                "(default 5; the automation's trace.stored_traces overrides it). "
+                "Older runs are not in this list."
+            ),
+        },
+    })
 
 
 @mcp.tool()
@@ -702,9 +751,14 @@ async def list_automations(query: str = "", limit: int = 100) -> str:
     """Automations with entity_id, friendly_name, state, last_triggered, and
     the internal id needed for config edits and traces. Optional substring
     filter on entity_id/friendly_name — prefer filtering over full dumps to
-    save context."""
+    save context.
+    Returns at most limit rows; total counts every match and truncated is
+    true when more matched than were returned."""
     states = await rest("GET", rest_path("/states"))
     q = query.lower()
+    # HAMCP-508 SI-1: keep counting past the page so a short page says so.
+    page_size = max(1, limit)
+    total = 0
     autos = []
     for s in states:
         if not s["entity_id"].startswith("automation."):
@@ -712,6 +766,9 @@ async def list_automations(query: str = "", limit: int = 100) -> str:
         attrs = s.get("attributes", {})
         name = attrs.get("friendly_name") or ""
         if q and q not in s["entity_id"].lower() and q not in name.lower():
+            continue
+        total += 1
+        if len(autos) >= page_size:
             continue
         autos.append(
             {
@@ -722,9 +779,8 @@ async def list_automations(query: str = "", limit: int = 100) -> str:
                 "id": attrs.get("id"),
             }
         )
-        if len(autos) >= limit:
-            break
-    return dump({"count": len(autos), "automations": autos})
+    return dump({"count": len(autos), "automations": autos,
+                 "returned": len(autos), "total": total, "truncated": total > len(autos)})
 
 
 @mcp.tool()
@@ -856,15 +912,22 @@ async def list_areas() -> str:
 async def list_devices(query: str = "", limit: int = 100) -> str:
     """The device registry (manufacturer, model, area, connections), with
     optional substring filter on name/manufacturer/model. Use this to find
-    orphaned or stale devices."""
+    orphaned or stale devices.
+    Returns at most limit rows; total counts every match and truncated is
+    true when more matched than were returned."""
     devices = await ws_command({"type": "config/device_registry/list"})
     q = query.lower()
+    page_size = max(1, limit)
+    total = 0
     out = []
     for d in devices:
         blob = " ".join(
             str(d.get(k) or "") for k in ("name", "name_by_user", "manufacturer", "model")
         ).lower()
         if q and q not in blob:
+            continue
+        total += 1
+        if len(out) >= page_size:
             continue
         out.append(
             {
@@ -876,22 +939,28 @@ async def list_devices(query: str = "", limit: int = 100) -> str:
                 "disabled_by": d.get("disabled_by"),
             }
         )
-        if len(out) >= limit:
-            break
-    return dump({"count": len(out), "devices": out})
+    return dump({"count": len(out), "devices": out,
+                 "returned": len(out), "total": total, "truncated": total > len(out)})
 
 
 @mcp.tool()
 async def list_entity_registry(query: str = "", limit: int = 100) -> str:
     """The entity registry: platform, device_id, area, disabled/hidden
     status. This is where stale entity references and orphaned entities
-    show up. Optional substring filter on entity_id/name."""
+    show up. Optional substring filter on entity_id/name.
+    Returns at most limit rows; total counts every match and truncated is
+    true when more matched than were returned."""
     entities = await ws_command({"type": "config/entity_registry/list"})
     q = query.lower()
+    page_size = max(1, limit)
+    total = 0
     out = []
     for e in entities:
         blob = f"{e.get('entity_id','')} {e.get('name') or ''} {e.get('original_name') or ''}".lower()
         if q and q not in blob:
+            continue
+        total += 1
+        if len(out) >= page_size:
             continue
         out.append(
             {
@@ -904,9 +973,8 @@ async def list_entity_registry(query: str = "", limit: int = 100) -> str:
                 "hidden_by": e.get("hidden_by"),
             }
         )
-        if len(out) >= limit:
-            break
-    return dump({"count": len(out), "entities": out})
+    return dump({"count": len(out), "entities": out,
+                 "returned": len(out), "total": total, "truncated": total > len(out)})
 
 
 @mcp.tool()

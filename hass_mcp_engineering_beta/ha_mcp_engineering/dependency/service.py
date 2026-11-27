@@ -136,12 +136,14 @@ class EntityDependencyAnalysisService:
             if (x.source_type, x.source_id, x.config_path, x.target_entity_id) not in call_keys) + call_findings
         analysis_dynamic = snapshot.dynamic_references + (diagnostic.dynamic_references if diagnostic else ())
         analysis_coverage = merged_coverage(snapshot.coverage, diagnostic, global_sources)
+        indirect_gaps: list[str] = []
         direct, findings = select_dependency_findings(
             analysis_findings,
             target,
             requested,
             include_indirect=include_indirect,
             max_depth=max_depth,
+            gaps=indirect_gaps,
         )
 
         graph_gaps = list(diagnostic.call_gaps) if diagnostic else []
@@ -185,7 +187,13 @@ class EntityDependencyAnalysisService:
         )
         if graph_requested:
             partial = True
-        dynamic = [item for item in analysis_dynamic if item.source_type in requested][:10]
+        # HAMCP-508 SI-4: count before the warning bound; withheld ones make it partial.
+        dynamic_in_scope = [item for item in analysis_dynamic if item.source_type in requested]
+        dynamic = dynamic_in_scope[:MAX_DYNAMIC_WARNINGS]
+        dynamic_withheld = len(dynamic_in_scope) - len(dynamic)
+        # HAMCP-508 SI-3: a capped group/template walk is not the full indirect set.
+        if dynamic_withheld or indirect_gaps:
+            partial = True
         warnings = [warning for item in coverage for warning in item.warnings]
         if graph_requested:
             warnings.extend(diagnostic.coverage.warnings if diagnostic else [
@@ -193,6 +201,15 @@ class EntityDependencyAnalysisService:
             ])
             warnings.extend(graph_gaps)
         warnings.extend(item.warning + f" Source: {item.source_type}/{item.source_id}, path {item.config_path}." for item in dynamic)
+        if dynamic_withheld:
+            warnings.append(
+                f"{DYNAMIC_WARNING_LIMIT_ID}: {dynamic_withheld} of {len(dynamic_in_scope)} unresolved dynamic "
+                f"reference(s) are not listed beyond the bounded {MAX_DYNAMIC_WARNINGS}."
+            )
+        warnings.extend(
+            f"{gap}: indirect group/template dependencies stopped at the bounded {MAX_INDIRECT_RESULTS}; "
+            "more may exist." for gap in indirect_gaps
+        )
         # HAMCP-226: every requested-scope source that hit a bound is named,
         # whatever the target: any of them could reference it (HAAC-E002a).
         bounded = bounded_source_entries(
@@ -243,7 +260,9 @@ class EntityDependencyAnalysisService:
                 "direct_reference_count": len(direct),
                 "indirect_reference_count": sum(not item.direct for item in findings),
                 "unique_source_count": len({(item.source_type, item.source_id) for item in findings}),
-                "unresolved_dynamic_reference_count": len(dynamic),
+                "unresolved_dynamic_reference_count": len(dynamic_in_scope),
+                "unresolved_dynamic_reference_withheld": dynamic_withheld,
+                "indirect_reference_gaps": list(indirect_gaps),
                 "coverage_complete": not partial,
                 "possible_stale_reference": possible_stale,
             },
@@ -264,6 +283,7 @@ class EntityDependencyAnalysisService:
                 "clamp_reason": "maximum_limit" if effective_limit != requested_limit else None,
                 "returned": len(page),
                 "total": len(findings),
+                "total_complete": not indirect_gaps,
                 "has_more": has_more,
                 "next_cursor": next_cursor,
             },
@@ -381,13 +401,19 @@ def source_selected(item: DependencyFinding, requested: list[str]) -> bool:
     return item.source_type in requested
 
 
+MAX_INDIRECT_RESULTS = 500
+INDIRECT_LIMIT_GAP = "indirect_dependency_limit_exceeded"
+MAX_DYNAMIC_WARNINGS = 10
+DYNAMIC_WARNING_LIMIT_ID = "unresolved_dynamic_reference_limit_exceeded"
+
+
 def traverse_indirect_dependencies(
-    all_findings, target: str, requested: list[str], max_depth: int
+    all_findings, target: str, requested: list[str], max_depth: int, gaps: list[str] | None = None
 ) -> list[DependencyFinding]:
     results = []
     frontier = [(target, 0, tuple())]
     visited = {target}
-    while frontier and len(results) < 500:
+    while frontier and len(results) < MAX_INDIRECT_RESULTS:
         current, depth, path = frontier.pop(0)
         if depth >= max_depth:
             continue
@@ -420,9 +446,12 @@ def traverse_indirect_dependencies(
                     )
                 )
             frontier.append((intermediate, depth + 1, (*path, membership.evidence_id)))
-    if len(results) >= 500:
+    if len(results) >= MAX_INDIRECT_RESULTS:
         METRICS.record_dependency_truncation()
-    return results[:500]
+    # HAMCP-508 SI-3: more results than kept, or a walk left unfinished.
+    if gaps is not None and (len(results) > MAX_INDIRECT_RESULTS or (len(results) >= MAX_INDIRECT_RESULTS and frontier)):
+        gaps.append(INDIRECT_LIMIT_GAP)
+    return results[:MAX_INDIRECT_RESULTS]
 
 
 def select_dependency_findings(
@@ -432,6 +461,7 @@ def select_dependency_findings(
     *,
     include_indirect: bool,
     max_depth: int,
+    gaps: list[str] | None = None,
 ) -> tuple[list[DependencyFinding], list[DependencyFinding]]:
     """Select direct and explicit indirect findings from one shared index.
 
@@ -448,7 +478,7 @@ def select_dependency_findings(
     if include_indirect:
         findings.extend(
             traverse_indirect_dependencies(
-                all_findings, target, requested, max_depth
+                all_findings, target, requested, max_depth, gaps
             )
         )
     return direct, sorted(

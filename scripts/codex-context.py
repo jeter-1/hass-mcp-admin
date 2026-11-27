@@ -721,9 +721,42 @@ def build_context(repo_root_hint: Path) -> dict[str, Any]:
         and isinstance(policy.get("tools"), list)
         else None
     )
+    # HAMCP-501 W6 (G1): an internal-only reviewed read is admitted for
+    # native sub-calls but never listed, so it is subtracted as well.  The
+    # internal-only names are read from source.
+    internal = python_literal(repo_root / routes_path, "INTERNAL_ONLY_DELEGATED_READ_TOOLS")
+    internal_names = (
+        set(internal)
+        if isinstance(internal, (tuple, list)) and all(isinstance(name, str) for name in internal)
+        else None
+    )
+    if internal_names is None:
+        unknowns.append(
+            {
+                "field": "internal_only_delegated_reads",
+                "source_required": routes_path.as_posix(),
+            }
+        )
+    internal_count = (
+        sum(
+            1
+            for item in policy["tools"]
+            if isinstance(item, dict)
+            and item.get("classification") == "automatic_read"
+            and item.get("upstream_name") in internal_names
+            and item.get("upstream_name") not in (retired_names or set())
+        )
+        if internal_names is not None
+        and policy is not None
+        and isinstance(policy.get("tools"), list)
+        else None
+    )
     total_count = (
-        static_count + delegated_count - retired_count
-        if static_count is not None and delegated_count is not None and retired_count is not None
+        static_count + delegated_count - retired_count - internal_count
+        if static_count is not None
+        and delegated_count is not None
+        and retired_count is not None
+        and internal_count is not None
         else None
     )
 
@@ -860,12 +893,14 @@ def build_context(repo_root_hint: Path) -> dict[str, Any]:
                 policy_path.as_posix(),
             ),
             "expected_delegated_reads": known(
-                delegated_count - retired_count
-                if delegated_count is not None and retired_count is not None
+                delegated_count - retired_count - internal_count
+                if delegated_count is not None
+                and retired_count is not None
+                and internal_count is not None
                 else None,
                 "expected_delegated_read_count",
                 f"{policy_path.as_posix()} direct reads plus compiled read projections, "
-                f"less {routes_path.as_posix()} retired reads",
+                f"less {routes_path.as_posix()} retired and internal-only reads",
             ),
             "expected_connector_total": known(
                 total_count,

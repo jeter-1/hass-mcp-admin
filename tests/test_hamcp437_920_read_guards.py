@@ -25,6 +25,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "hass_mcp_engineering_beta"), str(ROOT / "tests")]
 
 from ha_mcp_engineering.providers.upstream_blueprint import completeness  # noqa: E402
+from support import internal_search_page  # noqa: E402
 from support.ha_mcp_920_receipts import receipt, with_content  # noqa: E402
 from support.ha_mcp_captures import RECEIPTS_920, arguments_920, call, capture, gateway_920  # noqa: E402
 import test_core_update_continuity as core_continuity  # noqa: E402
@@ -334,11 +335,22 @@ class Policy920Tests(unittest.TestCase):
 
 
 class SearchDescriptor920Tests(unittest.IsolatedAsyncioTestCase):
-    """A drifted ``ha_search`` descriptor withholds search; siblings stay useful."""
+    """A drifted ``ha_search`` descriptor withholds search; siblings stay useful.
+
+    HAMCP-501 W6 (G1): the delegated ha_search is internal-only, so it is
+    never published; drift withholds its internal route (the native search
+    sub-call route) as well.
+    """
+
+    async def test_the_stock_descriptor_admits_the_internal_route_only(self):
+        g, _t = await gateway_920()
+        self.assertNotIn("ha_search", g._registered_tool_registry.snapshot())
+        self.assertIn("ha_search", g._internal)
 
     async def assert_sibling_only(self, tools):
         g, t = await gateway_920(tools)
         self.assertNotIn("ha_search", g._registered_tool_registry.snapshot())
+        self.assertNotIn("ha_search", g._internal)
         self.assertIn("ha_get_state", g._registered_tool_registry.snapshot())
         result, _ = await call(g, "ha_get_state", arguments_920("ha_get_state"))
         self.assertTrue(result["success"], result)
@@ -365,6 +377,7 @@ class SearchDescriptor920Tests(unittest.IsolatedAsyncioTestCase):
         next(t for t in tools if t["name"] == "ha_search")["name"] = "ha_search_forged"
         g, t = await gateway_920(tools)
         self.assertNotIn("ha_search", g._registered_tool_registry.snapshot())
+        self.assertNotIn("ha_search", g._internal)
         self.assertEqual(t.sent, [])
 
     async def test_missing_or_duplicate_search_is_not_a_full_catalog(self):
@@ -378,6 +391,7 @@ class SearchDescriptor920Tests(unittest.IsolatedAsyncioTestCase):
                     tools.append(deepcopy(target))
                 g, t = await gateway_920(tools)
                 self.assertNotIn("ha_search", g._registered_tool_registry.snapshot())
+                self.assertNotIn("ha_search", g._internal)
                 self.assertEqual(t.sent, [])
 
 
@@ -395,10 +409,15 @@ class SearchCompleteness920Tests(unittest.IsolatedAsyncioTestCase):
         from ha_mcp_engineering.providers import upstream_reads_9_1_entities as entities
 
         g, t = await gateway_920(url="http://qzpeer:9583/qz7synthetic9credential/mcp")
-        base = {"success": True, "entities": [{"entity_id": "light.synthetic"}],
-                "count": 1, "entity_total_matches": 1, "config_total_matches": 0,
+        # HAMCP-501 W6 (G1): the route is reached only as a helper sub-call
+        # page, so the controlled reply is a helper page.
+        base = {"success": True, "entities": [], "helpers": [
+                    {"entity_id": "sensor.synthetic_flow", "helper_type": "template",
+                     "name": "Synthetic flow", "score": 90}],
+                "count": 1, "entity_total_matches": 0, "config_total_matches": 1,
                 "has_more": False, "entity_has_more": False, "config_has_more": False,
                 "partial": False, "errors": [], "warnings": []}
+        unbucketed = {key: value for key, value in base.items() if key != "helpers"}
         scope, partial, warned = entities.VISIBLE_SCOPE, entities.SEARCH_PARTIAL, entities.UPSTREAM_WARNINGS
         unreviewed = "component search path failed; served via legacy path"
         cases = [
@@ -409,12 +428,15 @@ class SearchCompleteness920Tests(unittest.IsolatedAsyncioTestCase):
             ("unreviewed_warning", {**base, "partial": True, "warnings": [unreviewed]}, [scope, partial, warned]),
             ("error", {**base, "partial": True, "errors": ["synthetic unavailable registry"]}, [scope, partial]),
             ("missing", {"success": True, "entities": []}, None),
+            # A page without its bucket is not a page (W4 D1).
+            ("unbucketed", unbucketed, None),
             ("malformed", {**base, "partial": "false"}, None),
         ]
         for label, data, expected in cases:
             with self.subTest(case=label):
                 t.override = {"isError": False, "structuredContent": data}
-                result, telemetry = await call(g, "ha_search", arguments_920("ha_search"))
+                # HAMCP-501 W6 (G1): the internal-only route, as one sub-call page.
+                result, telemetry = await internal_search_page.execute_page(g, with_telemetry=True)
                 if expected is None:
                     self.assertFalse(result["success"], result)
                     self.assertEqual(result["details"]["failure_category"], "invalid_response")

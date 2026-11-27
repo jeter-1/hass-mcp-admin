@@ -1,5 +1,130 @@
 # Changelog
 
+## 2.4.2-beta.14 - 2.10.0 build, in progress (HAMCP-500)
+
+Builds on 2.4.2-beta.13 (2.9.1 build, HAMCP-455, #500). In progress: items
+land through reviewed pull requests into `release/2.10.0`, and the final
+release pull request completes this entry.
+
+- Version materialized on `release/2.10.0`, created from `main` at f48c6fb9,
+  so item pull requests carry no version change. The release transition is
+  from 2.4.2-beta.13 to 2.4.2-beta.14.
+- Landed: `get_history` and the incident activity reads (history and
+  logbook) now send an end time (HAMCP-502, #505). Without one, Core
+  ends the window a day after its start, so a read over 24 hours returned
+  only its first day and read complete. The 168 hour limit is unchanged.
+  The same pull request makes three related reads say what they miss:
+  - `get_history` with `minimal=False` sends `significant_changes_only=0`,
+    so attribute-only changes are returned; a minimal read sends `1`
+    explicitly. The incident history read sends `1`, and its coverage row
+    says so.
+  - The incident `automation_reliability` row is partial when the
+    reliability bundle is partial or the trace read is incomplete, and
+    names the limitations. A missing bundle still reads failed.
+  - `get_error_log` reports `system_log_retention_unknown` when Core's
+    system log holds 50 or more entries (its default ring size), since
+    older entries may have been evicted. A lower configured ring size
+    cannot be detected.
+- Landed: the Core 2026.11.3 must-carry (HAMCP-462, #508). The
+  recorder entity filter, configuration-definition schemas and naming
+  mirrors are pinned to Core 2026.11.3; the signed Core registry trust root
+  is copied at sequence 19, which signs 2026.11.3 with the same 38 profiles
+  as 2026.11.0; and the support window rotates to 2026.11.3 current and
+  2026.11.0 rollback, with the Core candidate empty.
+- Native search (HAMCP-481, built as HAMCP-501; plan approved 2026-11-25).
+  The tool keeps the name `ha_search`.
+  - Landed inert, so at W1 no tool imported it: the scoring port (W1, #506).
+  - Landed inert: the fixed Core reads (W2, #507).
+  - Landed inert: the engine (W3, #513).
+  - Landed inert: the page readers (W4, #516). W6 fixed their page check,
+    which refused every page under the live unified descriptor.
+  - Landed: the `ha_search` cutover (W6, #517). `ha_search` is now a native,
+    read-only Engineering tool with the same name and arguments, plus one
+    sentence appended to the `search_types` description. The delegated 9.2.0
+    `ha_search` is internal-only: it is never listed (no
+    `ha_mcp__ha_search`) and serves only the fixed sub-call pages, under its
+    own Core requirement. Automation, script and scene body matches come from
+    ha-mcp's scrubbed sub-call; native search reads no automation, script
+    or scene configuration.
+    A numeric-like query, or a scrub not shown clean, withholds body matching
+    for that bucket (`body_numeric_query`, `body_scrub_degraded`,
+    `body_scrub_unverified`). A page too large for the reply bound is re-read
+    at a smaller size (150, 30, 6, then 1 rows). The catalog is 114 tools
+    (88 Engineering, 26 delegated).
+  - Landed: component-route parity (W6b, #519). Entity rows carry the
+    composed device and entity `name`; exact and fuzzy matching use the
+    component's scored texts (name, aliases, labels, device texts, area,
+    floor) and tier scorer (100, 80, ratio of at least 70), retiring BM25 and
+    the typo fallback; the state filter runs before paging. Every entity
+    search now reads the device registry. Supersedes #518.
+  - Landed: the native search design doc update (W7, #520). Revision 5 of
+    `docs/HAMCP_481_NATIVE_SEARCH_DESIGN.md` marks native search
+    implemented in 2.10.0 and adds the implementation record (§10). Docs
+    only.
+- Landed: the Core-evidence workflow takes its pull request acceptance
+  target from the support window's current Core, 2026.11.3, instead of a
+  fixed 2026.11.0 (HAMCP-505, #514). CI scripts and tests only; no runtime
+  change.
+- Landed: `configuration_integrity_analysis` gives each dynamic finding its
+  own `finding_id` (HAMCP-490, #510). Two references at one path that differ
+  in evidence used to share one ID, so compact rows repeated. The first
+  finding at a path keeps its old ID. The same pull request labels
+  `unresolved_dynamic_reference_count` in `counter_semantics` as counted
+  before the severities filter (HAMCP-491); its value is unchanged.
+- Added 2026-11-25 (Josh's approval relayed by the architect) and landed:
+  Core trace retention in reliability analysis and the trace watch
+  retention-gap counter (HAMCP-503 TB-1 and TB-3, #509).
+- Landed: summary root causes in `automation_reliability_analysis` and
+  the batch digest carry `affected_step` (HAMCP-493, #511). A concurrency
+  rejection names its step only on its trace evidence, so the summary takes
+  it from there. A disabled automation's group reports `current_state`
+  `disabled` instead of null. Standard and evidence groups are unchanged.
+- Landed: `get_server_health` reports the running build (`server.build_sha`,
+  `server.build_dirty`), and `release_registry` reports `last_refresh_at` and
+  `refresh_interval_seconds` (HAMCP-497, #512). A Core-bound call refused
+  during a Core restart window, while admitted authority is re-verified, is
+  now retryable and names the window (`core_authority_recovering`); every
+  other `CoreCapabilityUnavailable` is unchanged (HAMCP-498, #512).
+- Landed: bounded reads say they are bounded (HAMCP-508 SI-1 to SI-7, #515).
+  SI-1 to SI-4, SI-6 and SI-7 add output keys only; none is removed. SI-5 is
+  a breaking output change.
+  - `list_automations`, `list_devices` and `list_entity_registry` keep their
+    default page of 100 and add `returned`, `total` (every match) and
+    `truncated`.
+  - Incident correlation: history rows past 500 and logbook rows past 300 per
+    entity, trace service calls past 20 and reliability findings past 100
+    make their row partial, with `items_withheld` and a limitation; rows that
+    are not records are counted in `items_malformed`. Coverage rows add
+    `warnings_omitted` and `coverage_limitations_omitted`.
+  - `entity_dependency_analysis`: a group or template walk stopped at 500
+    makes the result partial and names `indirect_dependency_limit_exceeded`
+    (`pagination.total_complete` false); `unresolved_dynamic_reference_count`
+    counts every in-scope reference, with the ones past 10 in
+    `unresolved_dynamic_reference_withheld`.
+  - **Breaking (SI-5):** `list_automation_traces` returns an object, not a
+    bare list: `traces` (the unchanged headers), `returned`,
+    `source_truncated` and `retention`. `retention` says the list is Core's
+    stored trace ring (default 5 per ring, overridable per automation), so
+    older runs are not listed, and `ring_full` is true when a ring holds at
+    least the default cap. Clients that read the list must read `traces`.
+- New in-progress `V2_4_2_BETA14` release notes and acceptance contract
+  (HAMCP-500, #504), and their item rows (HAMCP-509, #521).
+- Not in this build: object lifecycle, response compaction, history paging,
+  plan withdraw, list paging, trace-watch renewal and the dashboard items
+  (planned for 2.11); the ha-mcp visibility filter for native search
+  (HAMCP-499); the HAMCP-293 risk lowering (HAMCP-486); and the HAMCP-474 D1
+  relabel (HAMCP-487). Native search defers: dashboard and helper identity
+  (HAMCP-447); a fail-closed refusal for the other fixed readers with no
+  parent request (HAMCP-510); an engine cleanup after W6b (HAMCP-520); the
+  disclosed body-match residuals (non-scalar and bool secrets, YAML-mode
+  dashboards, no inf/nan arm); and the helper sub-call still opening and
+  aborting options flows upstream, as before (HAMCP-233). The design doc
+  also keeps as later work: native helper reads that replace the helper
+  sub-call (HAMCP-484), an `entity` value for `search_types` (HAMCP-485),
+  and `include_config` bodies, withheld until a redaction design exists
+  (HAMCP-454).
+- Rollback: pending; stated by the final release pull request.
+
 ## 2.4.2-beta.13 - 2.9.1 build, in progress (HAMCP-455)
 
 Builds on 2.4.2-beta.12 (2.9.0.1 hotfix, HAMCP-470, #488). In progress: every

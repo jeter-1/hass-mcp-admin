@@ -214,6 +214,8 @@ DEVICE_REGISTRY = [
         "identifiers": [["fixture", "device"]],
         "connections": [],
         "labels": [],
+        "next_name_part": "area",
+        "parent_device_id": None,
         "via_device_id": None,
     }
 ]

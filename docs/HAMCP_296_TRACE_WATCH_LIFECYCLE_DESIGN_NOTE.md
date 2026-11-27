@@ -369,3 +369,39 @@ Item 21 above is quoted as decided on 2026-11-08. Its measurement procedure is r
 "M1 was resolved by Josh's ruling (option 1): the measurement keeps watch list and list_trace_snapshots, disclosed as reads that also run routine store maintenance (expiry sweep, orphan and temp-file cleanup, load-time repairs, audit rows), with file:line; get_server_health is the read-only part"
 
 Section 7 now uses `get_server_health` as the read-only part (`trace_snapshots/service.py:453-458`) and watch `list` and `list_trace_snapshots` for snapshot counts and stored bytes, described as reads that also run the routine store maintenance. Every effect is listed with `file:line` at `origin/release/2.6.0` `8e19b401`: retention removal (`service.py:318-319`), watch expiry and lapse records (`:320`, `:329-337`), lapsed pruning and cap drop (`:338-342`, `:387-390`), quarantine stubs (`:322`, `:326-328`), index and sidecar rewrites (`:526-527`, `:1062-1063`), which a load-time repair causes at the next of these calls because it marks the state dirty (`store.py:472-474`) and a load-time reset does not, because it sets `lifecycle_reset` without marking the state dirty (`store.py:395-399`, `service.py:462-463`): after a reset the rewrite waits for the next save something else triggers, and that save permanently replaces the damaged or unbound sidecar slots and the lapsed-watch history they held (`store.py:567-577`), deletion of removed, orphaned and `.pending-*` record files regardless of age (`service.py:484-492`), and `trace_watch_expired` audit rows (`:494-502`). Both calls are out of "Never"; snapshot counts and stored bytes are measured again, not `unknown`. That orphan, pending, repair and reset effects normally need a crash or damage is labelled inference. Item 21 as decided on 2026-11-08 is unchanged.
+
+## 13. Retention gap counter (HAMCP-503 TB-3, 2026-11-25)
+
+The decision to add this counter as described here is the architect's, relayed in-session on 2026-11-25 (option C,
+inside Josh's approved file `trace_snapshots/service.py`). It is not a Josh decision.
+
+Core keeps only the newest `trace.stored_traces` run traces per automation, default 5 (Core 2026.11.3
+`homeassistant/components/trace/const.py:19`). A watch that polls every 30 s can still miss runs when an automation
+runs more than 5 times between two listings: Core evicts them before the watch lists them.
+
+Each public watch row (the watch `list` response and every watch action's returned list) now adds two fields:
+
+- `retention_gap_polls`: the number of successful listings in this process whose runs ring was full (at least 5
+  runs) and whose oldest run started after the previous successful listing. Runs between the two listings may never
+  have been listed.
+- `last_retention_gap_at`: the UTC time of the last such listing, or `null`.
+
+The reference for a listing is the previous successful listing in this process. Before the first one, it is the
+stored `last_poll_at` of a baselined watch, else the watch's creation time. A failed or deferred listing neither
+counts nor moves the reference (`trace_snapshots/service.py`, `_note_retention_gap`, called after the poll's commit).
+
+Disclosed limits:
+
+1. **It resets on restart.** The counter is in process only (`TraceSnapshotService.retention_gaps`). It is never
+   written: the store's watch row format and `store.py` are unchanged, so there is no persisted-format change and a
+   rollback has nothing to undo. A removed or ended watch's entry is dropped at the next poll.
+2. **A configured cap other than 5 is not detected.** The watch assumes Core's default. A cap below 5 can hide a gap
+   (the ring is never seen as full); a cap above 5 can over-report one (a ring of 5 that is not full is counted).
+3. **Not-triggered traces are not watched.** Only the runs ring is checked; a full not-triggered ring is never a gap.
+
+The stored `last_poll_at` fallback is also set by a skipped poll, so after a restart the first comparison can only
+under-report, never over-report.
+
+The tool description (`tools/trace_snapshots.py`) is unchanged: that file is a protected path outside this item's
+approval. The config-aware version (the automation's `stored_traces` read through `runtime.py`, and an optional
+persisted counter with a rollback-safe format) is filed as HAMCP-504 (Low).

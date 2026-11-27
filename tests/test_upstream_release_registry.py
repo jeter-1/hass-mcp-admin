@@ -61,7 +61,14 @@ DASHBOARD_ATTESTATIONS = (
     / "contracts"
     / "upstream_dashboard_builtin_attestations.json"
 )
-from ha_mcp_engineering.ha_core_readmission.routes import RETIRED_DELEGATED_READS  # noqa: E402
+from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
+    INTERNAL_ONLY_DELEGATED_READS,
+    RETIRED_DELEGATED_READS,
+)
+# HAMCP-501 W6 (G1, as relayed by the architect): the delegated 9.2.0
+# ha_search is admitted internal-only for the native search page readers;
+# it is matched and routed but never published.
+INTERNAL_COUNT = len(INTERNAL_ONLY_DELEGATED_READS)
 # HAMCP-290: the delegated ha_get_hacs_info is retired on every reviewed
 # release (Josh decision 2026-11-08) and is never exposed.
 
@@ -916,7 +923,7 @@ class DualVersionGatewayTests(unittest.IsolatedAsyncioTestCase):
         # 9.2.0 policy: 27 automatic reads; ha_get_hacs_info is unsupported
         # there, so no retired read is among them (HAMCP-290).
         first = gateway.health_snapshot()
-        self.assertEqual(first["dynamically_exposed_count"], 27)
+        self.assertEqual(first["dynamically_exposed_count"], 27 - INTERNAL_COUNT)  # HAMCP-501 W6
         self.assertEqual(
             first["selected_compatibility_entry_id"],
             "ha-mcp-v9.2.0-9de5bf6c",
@@ -941,7 +948,7 @@ class DualVersionGatewayTests(unittest.IsolatedAsyncioTestCase):
         )
         await gateway.initialize(server)
         candidate = gateway.health_snapshot()
-        self.assertEqual(candidate["dynamically_exposed_count"], 27)
+        self.assertEqual(candidate["dynamically_exposed_count"], 27 - INTERNAL_COUNT)  # HAMCP-501 W6
         self.assertEqual(
             candidate["selected_compatibility_entry_id"],
             "ha-mcp-v9.2.0-9de5bf6c",
@@ -992,7 +999,7 @@ class DualVersionGatewayTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(
             min(second_generation) > max(first_generation)
         )
-        self.assertEqual(len(gateway._registered_names), 27)
+        self.assertEqual(len(gateway._registered_names), 27 - INTERNAL_COUNT)  # HAMCP-501 W6
         self.assertFalse(RETIRED_DELEGATED_READS & gateway._registered_names)
 
     async def test_unknown_version_fails_closed_with_operator_action(self):
@@ -1023,7 +1030,7 @@ class DualVersionGatewayTests(unittest.IsolatedAsyncioTestCase):
             "9.2.0", changed
         )
         health = gateway.health_snapshot()
-        self.assertEqual(health["dynamically_exposed_count"], 26)
+        self.assertEqual(health["dynamically_exposed_count"], 26 - INTERNAL_COUNT)  # HAMCP-501 W6
         self.assertEqual(
             health["quarantined_automatic_read_count"], 1
         )
@@ -1036,7 +1043,7 @@ class DualVersionGatewayTests(unittest.IsolatedAsyncioTestCase):
             "9.2.0", removed
         )
         health = gateway.health_snapshot()
-        self.assertEqual(health["dynamically_exposed_count"], 26)
+        self.assertEqual(health["dynamically_exposed_count"], 26 - INTERNAL_COUNT)  # HAMCP-501 W6
         self.assertEqual(health["missing_automatic_read_count"], 1)
 
         added = [
@@ -1056,7 +1063,7 @@ class DualVersionGatewayTests(unittest.IsolatedAsyncioTestCase):
             "9.2.0", added
         )
         health = gateway.health_snapshot()
-        self.assertEqual(health["dynamically_exposed_count"], 27)
+        self.assertEqual(health["dynamically_exposed_count"], 27 - INTERNAL_COUNT)  # HAMCP-501 W6
         self.assertEqual(health["unreviewed_observed_tool_count"], 1)
         self.assertNotIn(
             "ha_new_unreviewed_read", gateway._registered_names
@@ -1068,7 +1075,7 @@ class DualVersionGatewayTests(unittest.IsolatedAsyncioTestCase):
             "9.2.0"
         )
         # Admitted, so the exclusions below are not vacuous.
-        self.assertEqual(len(gateway._registered_names), 27)
+        self.assertEqual(len(gateway._registered_names), 27 - INTERNAL_COUNT)  # HAMCP-501 W6
         policy = gateway._policy
         self.assertIsNotNone(policy)
         assert policy is not None
@@ -1092,6 +1099,9 @@ class DualVersionGatewayTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertNotIn("ha_call_service", gateway._registered_names)
         self.assertNotIn("ha_set_entity", gateway._registered_names)
+        # HAMCP-501 W6: the internal-only read is routed, never published.
+        self.assertNotIn("ha_search", gateway._registered_names)
+        self.assertEqual(set(gateway._internal), set(INTERNAL_ONLY_DELEGATED_READS))
         self.assertEqual(gateway.health_snapshot()["fallback_count"], 0)
 
     async def test_reviewed_entity_lookup_missing_entry_is_domain_outcome(self):

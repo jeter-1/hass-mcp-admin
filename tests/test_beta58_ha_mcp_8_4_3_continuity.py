@@ -44,7 +44,10 @@ from ha_mcp_engineering.clients.mcp import (  # noqa: E402
     McpDashboardRead,
 )
 from ha_mcp_engineering.f3_dashboard.provider import EXACT_CONTRACTS  # noqa: E402
-from ha_mcp_engineering.ha_core_readmission.routes import RETIRED_DELEGATED_READS  # noqa: E402
+from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
+    INTERNAL_ONLY_DELEGATED_READS,
+    RETIRED_DELEGATED_READS,
+)
 from ha_mcp_engineering.ha_mcp_readmission.registry import (  # noqa: E402
     REGISTRY_URL,
     SignedReleaseRegistry,
@@ -113,7 +116,10 @@ FROZEN_READS = frozenset(
 # HAMCP-290: the delegated ha_get_hacs_info is retired on every reviewed
 # release (Josh decision 2026-11-08); it stays a reviewed policy read but is
 # never exposed, so gateway exposure compares against EXPOSED_READS.
-EXPOSED_READS = FROZEN_READS - RETIRED_DELEGATED_READS
+# HAMCP-501 W6 (G1, as relayed by the architect): with native ha_search
+# registered, the delegated ha_search is internal-only on every version: it
+# stays admitted and routed (gateway._internal), never published.
+EXPOSED_READS = FROZEN_READS - RETIRED_DELEGATED_READS - INTERNAL_ONLY_DELEGATED_READS
 # The synthetic future release that signed reuse admits on the frozen row.
 FUTURE = "8.2.1"
 SHIPPED = "9.2.0"
@@ -275,7 +281,7 @@ class Beta58HaMcp843ContinuityTests(unittest.IsolatedAsyncioTestCase):
         self.assertLess(len(json.dumps(public, indent=2)), 9_000)
         reads = {
             e.exposed_name for e in release.policy.tools if e.is_read_route
-        } - RETIRED_DELEGATED_READS
+        } - RETIRED_DELEGATED_READS - INTERNAL_ONLY_DELEGATED_READS  # HAMCP-501 W6
         self.assertEqual(public["dynamically_exposed_count"], len(reads))
         self.assertEqual(public["fallback_count"], 0)
         self.assertEqual(transport.calls, 0)
@@ -289,6 +295,8 @@ class Beta58HaMcp843ContinuityTests(unittest.IsolatedAsyncioTestCase):
         )
         registered = set(gateway._registered_tool_registry.snapshot())
         self.assertEqual(registered, EXPOSED_READS)
+        # HAMCP-501 W6: D8 still holds; ha_search is kept, internal-only.
+        self.assertEqual(set(gateway._internal), set(INTERNAL_ONLY_DELEGATED_READS))
         self.assertEqual(snapshot["admission_status"], "admitted_exact")
         self.assertEqual(snapshot["readmission_authority_source"], "signed_registry")
         self.assertEqual(snapshot["dynamically_exposed_count"], len(EXPOSED_READS))

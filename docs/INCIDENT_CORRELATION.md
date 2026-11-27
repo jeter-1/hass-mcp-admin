@@ -116,6 +116,28 @@ findings beyond the bounded 200 make that row `partial` with
 `integrity_finding_limit:` warning, and set `timeline_truncated`. The
 disclosure is repeated on every cursor page.
 
+The per-read bounds are disclosed the same way (HAMCP-508). Each one that
+cuts rows makes its row `partial`, counts the cut rows in `items_withheld`,
+adds a limitation, and puts a warning naming kept against available first:
+
+| Bound | Row | Limitation |
+| --- | --- | --- |
+| 500 history rows per entity | `entity_history` | `entity_history_row_limit_exceeded` |
+| 300 logbook rows per entity | `logbook` | `logbook_row_limit_exceeded` |
+| 20 service calls per trace | `automation_traces` | `automation_traces_service_limit_exceeded` |
+| 100 reliability findings | `automation_reliability` | `automation_reliability_finding_limit_exceeded` |
+
+History and logbook rows inside the bound that are not records are counted in
+`items_malformed` and add `entity_history_malformed_rows` or
+`logbook_malformed_rows`; they also make the row `partial`. The history,
+logbook and trace rows are required, so these make `source_partial` true;
+the reliability row is not required, as for the integrity row above. The 50
+trace bound is unchanged and not yet disclosed.
+
+Each coverage row's `warnings` and `coverage_limitations` lists keep at most
+10 entries; `warnings_omitted` and `coverage_limitations_omitted` count what
+was cut (distinct limitations only).
+
 `missing_evidence` means evidence was actually absent or failed. A partial source
 with usable evidence instead appears under `coverage_limitations`. Actual item
 failures may produce both usable supporting evidence and a bounded partial-item

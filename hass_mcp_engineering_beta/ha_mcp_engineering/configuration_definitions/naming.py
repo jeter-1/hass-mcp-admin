@@ -1,7 +1,7 @@
 """Core's entity-ID slug for the name heuristic, on a proven subset only.
 
-Core 2026.10.1 ``homeassistant/util/__init__.py`` ``slugify`` calls
-python-slugify 9.1.2 (``package_constraints.txt``) with ``separator="_"``
+Core 2026.11.3 ``homeassistant/util/__init__.py`` ``slugify`` calls
+python-slugify 9.1.3 (``package_constraints.txt``) with ``separator="_"``
 and the default legacy pipeline (``slugify/_legacy.py``), and returns
 ``"unknown"`` for an empty slug. The port below covers only text that is
 ASCII and has no ``&``: there the pipeline's transliteration, Unicode
@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import re
 
-SLUGIFY_PIN = "python-slugify 9.1.2 legacy pipeline (Core 2026.10.1 package_constraints.txt)"
+SLUGIFY_PIN = "python-slugify 9.1.3 legacy pipeline (Core 2026.11.3 package_constraints.txt)"
 
 _QUOTE = re.compile(r"'+")
 _NUMBERS = re.compile(r"(?<=\d),(?=\d)")

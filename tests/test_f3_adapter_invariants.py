@@ -96,8 +96,9 @@ class F3AdapterIsolationTests(unittest.TestCase):
         # HAMCP-297: +1 control_device_configuration.
         # HAMCP-231: +1 read-only get_thread_matter_topology.
         # HAMCP-476: +1 read-only get_automation_run_counts.
-        self.assertEqual(len(local_tools) - len(CAPABILITIES), 62)
-        self.assertEqual(len(local_tools), 87)
+        # HAMCP-501 W6: +1 read-only native ha_search.
+        self.assertEqual(len(local_tools) - len(CAPABILITIES), 63)
+        self.assertEqual(len(local_tools), 88)
         self.assertEqual(len(PLANNED_CAPABILITIES), 0)
         self.assertEqual(TASK_SCHEMA_VERSION, 1)
         self.assertEqual(

@@ -241,6 +241,13 @@ THREAD_MATTER_TOPOLOGY_RESOURCE_TYPE = "thread_matter_topology"
 # back to them.  A literal tuple so scripts/codex-context.py can read it.
 RETIRED_DELEGATED_READ_TOOLS: tuple[str, ...] = ("ha_get_hacs_info",)
 RETIRED_DELEGATED_READS = frozenset(RETIRED_DELEGATED_READ_TOOLS)
+# HAMCP-501 W6 (G1 = A): reviewed ha-mcp reads that a registered native tool
+# replaces.  The read gateway still admits each one (with its own Core gate
+# below) as an internal route for that native tool's fixed sub-call pages, but
+# never lists, aliases or capability-records it, on any reviewed release.
+# Native ha_search is registered statically in every build.
+INTERNAL_ONLY_DELEGATED_READ_TOOLS: tuple[str, ...] = ("ha_search",)
+INTERNAL_ONLY_DELEGATED_READS = frozenset(INTERNAL_ONLY_DELEGATED_READ_TOOLS)
 # control_helper (HAMCP-311): signed-only, acquired by the typed helper value
 # service itself; never an F3 plan requirement.
 HELPER_VALUE_PROFILE = "core.typed_helper_value_operation"
@@ -318,6 +325,15 @@ STATIC_TOOL_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "get_history_slices": ("core.basic_rest_read",),
     # HAMCP-476: GET /api/logbook and, in all mode, GET /api/states.
     "get_automation_run_counts": ("core.basic_rest_read",),
+    # HAMCP-501 W6: native ha_search reads exactly search.core_contracts.READS
+    # (CORE_REQUIREMENTS; a test pins the equality).  Its automation, script,
+    # scene, dashboard and flow-helper sub-call pages keep the delegated
+    # route's own requirement (DELEGATED_CORE_REQUIREMENTS["ha_search"], G2);
+    # S1 b+ dropped the automation, script and scene configuration reads.
+    "ha_search": (
+        "core.basic_rest_read", "core.basic_websocket_read", "core.non_device_registry_read",
+        "core.direct_device_registry_read",
+    ),
     "get_logbook": ("core.basic_rest_read",),
     "get_error_log": ("core.basic_websocket_read",),
     "list_automations": ("core.automation_configuration_read",),
@@ -1321,6 +1337,8 @@ __all__ = [
     "THREAD_MATTER_TOPOLOGY_TOOL",
     "RETIRED_DELEGATED_READ_TOOLS",
     "RETIRED_DELEGATED_READS",
+    "INTERNAL_ONLY_DELEGATED_READ_TOOLS",
+    "INTERNAL_ONLY_DELEGATED_READS",
     "StaticCoreRoute",
     "StaticToolTargetRefused",
     "static_tool_core_route",

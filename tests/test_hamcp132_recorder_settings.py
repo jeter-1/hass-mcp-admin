@@ -1,6 +1,6 @@
 """HAMCP-132 read-only recorder settings (``get_recorder_settings``).
 
-Fixtures model the pinned Home Assistant Core 2026.10.1 recorder surfaces
+Fixtures model the pinned Home Assistant Core 2026.11.3 recorder surfaces
 (``components/recorder/__init__.py`` ``CONFIG_SCHEMA``,
 ``basic_websocket_api.py`` ``recorder/info``, ``websocket_api.py``
 ``recorder/entity_options/get``) and the reviewed ``ha_config_get_yaml``
@@ -66,7 +66,7 @@ from ha_mcp_engineering.tools import recorder_settings as public  # noqa: E402
 PACKAGE = ROOT / "hass_mcp_engineering_beta/ha_mcp_engineering/recorder_settings"
 TOOL = ROOT / "hass_mcp_engineering_beta/ha_mcp_engineering/tools/recorder_settings.py"
 TRUTH_TABLE = ROOT / "docs/evidence/hamcp132/filter-truth-table.json"
-CORE_SOURCE = Path.home() / ".cache/hamcp209/core-2026.10.1/homeassistant/helpers/entityfilter.py"
+CORE_SOURCE = Path.home() / ".cache/hamcp209/core-2026.11.3/homeassistant/helpers/entityfilter.py"
 NOW = datetime(2026, 10, 20, 12, 0, tzinfo=timezone.utc)
 HA_TOKEN = syn.needle("hatoken")
 ACCESS_SECRET = syn.needle("accesssecret")
@@ -130,7 +130,7 @@ def healthy_ws():
 class SyntheticCore:
     def __init__(self):
         self.available, self.generation = True, 1
-        self.current_observation = SimpleNamespace(version="2026.10.1")
+        self.current_observation = SimpleNamespace(version="2026.11.3")
 
     def route_status(self, requirements):
         assert requirements == c.CORE_REQUIREMENTS
@@ -232,7 +232,7 @@ class SettingsTests(Base):
         report = await self.run_report(entity_ids=["light.kitchen"])
         self.assertTrue(report["complete"], report["omissions"])
         self.assertEqual(report["schema"], c.SCHEMA)
-        self.assertEqual(report["core_pin"], "2026.10.1")
+        self.assertEqual(report["core_pin"], "2026.11.3")
         self.assertEqual(report["packages"], "absent")
         self.assertEqual(report["settings"]["purge_keep_days"], {"value": 7, "origin": "configured"})
         for key, (_validator, default) in c.SCALAR_SETTINGS.items():
@@ -918,7 +918,7 @@ class FilterTruthTableTests(unittest.TestCase):
     def test_truth_table_provenance_binds_the_pin(self):
         provenance = self.table()["provenance"]
         self.assertEqual(provenance["core_version"], f.CORE_PIN)
-        self.assertEqual(provenance["core_commit"], "abe1fdd7cd6b4de1715c87b6fd87d92699514ef9")
+        self.assertEqual(provenance["core_commit"], "92da9f154079459b9e547126f9bd9fce726de16a")
         self.assertEqual(provenance["source_path"], "homeassistant/helpers/entityfilter.py")
         self.assertTrue((ROOT / provenance["generator"]).is_file())
 
@@ -933,6 +933,34 @@ class FilterTruthTableTests(unittest.TestCase):
             subprocess.run([sys.executable, "-I", str(ROOT / self.table()["provenance"]["generator"]),
                             "--core", str(CORE_SOURCE), "--output", str(output)], check=True)
             self.assertEqual(json.loads(output.read_text()), self.table())
+
+
+class Core2026113PortTests(unittest.TestCase):
+    """The two filter changes between Core 2026.10.1 and 2026.11.3."""
+
+    def test_entity_id_with_a_trailing_newline_is_refused(self):
+        # core.py VALID_ENTITY_ID ends in ``\Z`` from 2026.11.3; ``$`` matched before a final newline.
+        self.assertIsNone(f.VALID_ENTITY_ID.match("light.kitchen\n"))
+        with self.assertRaises(f.FilterValueInvalid):
+            f.entity_ids(["light.kitchen\n"])
+        self.assertEqual(f.entity_ids(["Light.Kitchen"]), ["light.kitchen"])
+        # A comma-separated string is stripped per part, as cv.entity_ids does.
+        self.assertEqual(f.entity_ids("light.kitchen\n"), ["light.kitchen"])
+
+    def test_case_4b_entity_in_both_entity_lists_is_recorded(self):
+        none = {"domains": [], "entities": [], "entity_globs": []}
+        for exclude in ({**none, "domains": ["light"], "entities": ["switch.pump", "switch.heater"]},
+                        {**none, "entity_globs": ["light.*"], "entities": ["switch.pump", "switch.heater"]}):
+            with self.subTest(exclude=exclude):
+                recorder_filter = f.RecorderFilter({**none, "entities": ["switch.pump", "light.kitchen"]}, exclude)
+                self.assertEqual(recorder_filter.case, f.EXCLUDE_DOMAIN_OR_GLOB)
+                # Outside the excluded domain or glob, include.entities now beats exclude.entities.
+                self.assertIs(recorder_filter.recorded("switch.pump"), True)
+                self.assertIs(recorder_filter.recorded("switch.heater"), False)
+                # Inside it, include.entities still decides alone.
+                self.assertIs(recorder_filter.recorded("light.kitchen"), True)
+                self.assertIs(recorder_filter.recorded("light.porch"), False)
+                self.assertIs(recorder_filter.recorded("sensor.temperature"), True)
 
 
 class FilterTests(Base):

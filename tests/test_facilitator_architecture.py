@@ -105,7 +105,7 @@ class RoutingPolicyTests(unittest.TestCase):
 
     def test_all_52_tools_have_a_deterministic_routing_policy(self):
         names = {item["tool"] for item in (*CAPABILITIES, *BETA_NATIVE_CAPABILITIES)}
-        self.assertEqual(len(names), 87)  # HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
+        self.assertEqual(len(names), 88)  # HAMCP-501 W6: + native ha_search; HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
         self.assertEqual(set(TOOL_CAPABILITY_POLICY), names)
         self.assertNotIn(
             CapabilityRoute.UNSUPPORTED,

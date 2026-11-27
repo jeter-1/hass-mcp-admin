@@ -143,7 +143,8 @@ class PublicBoundaryTests(unittest.IsolatedAsyncioTestCase):
                           "get_marketplace_inventory",  # + HAMCP-290
                           "get_security_metadata",  # + HAMCP-134
                           "get_thread_matter_topology",  # + HAMCP-231
-                          "get_automation_run_counts"})  # + HAMCP-476
+                          "get_automation_run_counts",  # + HAMCP-476
+                          "ha_search"})  # + HAMCP-501 W6
         current["get_server_health"] = _without_hamcp171_deep_storage_audit(self, current["get_server_health"])
         current["get_server_health"] = _without_hamcp242_health_disclosure(self, current["get_server_health"])
         from hamcp226_228_descriptor_changes import (without_hamcp226_descriptor_change,
@@ -165,6 +166,8 @@ class PublicBoundaryTests(unittest.IsolatedAsyncioTestCase):
         current = without_hamcp475_descriptor_changes(self, current)
         from hamcp298_descriptor_changes import without_hamcp298_descriptor_changes  # + HAMCP-298
         current = without_hamcp298_descriptor_changes(self, current)
+        from hamcp508_descriptor_changes import without_hamcp508_descriptor_changes  # + HAMCP-508
+        current = without_hamcp508_descriptor_changes(self, current)
         self.assertEqual({name: current[name] for name in baseline["descriptors"]}, baseline["descriptors"])
 
     async def test_old_delegated_descriptors_are_identical(self):
@@ -190,10 +193,16 @@ class PublicBoundaryTests(unittest.IsolatedAsyncioTestCase):
         # HAMCP-290: except the retired delegated ha_get_hacs_info, which is
         # never exposed (Josh decision 2026-11-08).
         from ha_mcp_engineering.ha_core_readmission.routes import RETIRED_DELEGATED_READS
-        self.assertTrue(RETIRED_DELEGATED_READS <= set(baseline["descriptors"]))
-        self.assertFalse(RETIRED_DELEGATED_READS & set(descriptors))
-        self.assertEqual(len(descriptors), 28 - len(RETIRED_DELEGATED_READS))
-        kept = {name: value for name, value in baseline["descriptors"].items() if name not in RETIRED_DELEGATED_READS}
+        # HAMCP-501 W6 (G1, as relayed by the architect): the delegated
+        # ha_search is admitted internal-only behind native ha_search, so it
+        # is never listed either; its route stays in gateway._internal.
+        from ha_mcp_engineering.ha_core_readmission.routes import INTERNAL_ONLY_DELEGATED_READS
+        withheld = RETIRED_DELEGATED_READS | INTERNAL_ONLY_DELEGATED_READS
+        self.assertTrue(withheld <= set(baseline["descriptors"]))
+        self.assertFalse(withheld & set(descriptors))
+        self.assertEqual(set(gateway._internal), set(INTERNAL_ONLY_DELEGATED_READS))
+        self.assertEqual(len(descriptors), 28 - len(withheld))
+        kept = {name: value for name, value in baseline["descriptors"].items() if name not in withheld}
         # HAMCP-437: on 9.2.0 the R4 file-only skill guide publishes its
         # reviewed 9.2.0 policy description; every other part of it, and
         # every other descriptor, is still the c82 baseline.

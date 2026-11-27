@@ -32,7 +32,10 @@ sys.path[:0] = [str(ROOT / 'hass_mcp_engineering_beta'), str(ROOT / 'tests')]
 
 from ha_mcp_engineering.clients.upstream_read import McpReadCatalog
 from ha_mcp_engineering.errors import DashboardProviderError
-from ha_mcp_engineering.ha_core_readmission.routes import RETIRED_DELEGATED_READS
+from ha_mcp_engineering.ha_core_readmission.routes import (
+    INTERNAL_ONLY_DELEGATED_READS,
+    RETIRED_DELEGATED_READS,
+)
 from ha_mcp_engineering.providers.upstream_dashboard import EXACT_GETTER_RELEASES
 from ha_mcp_engineering.providers.upstream_fan import REQUIRED_TOOLS
 from ha_mcp_engineering.providers.upstream_yaml_reader import TOOL_NAME as YAML_TOOL
@@ -199,9 +202,21 @@ def gateway_catalog(version):
 
 
 class ReadGatewayExactAdmission(adm.Harness):
+    # HAMCP-501 W6 (G1, as relayed by the architect): the delegated ha_search
+    # is admitted internal-only (gateway._internal) and never published. The
+    # exact-admission checks below compare every routed read, published or
+    # internal, so a drifted, missing or duplicate ha_search still withholds
+    # its route.
+    @staticmethod
+    def routed(gateway):
+        return set(gateway._registered_tool_registry.snapshot()) | set(gateway._internal)
+
     async def baseline(self, version):
         gateway, transport = await self.gateway(version, gateway_catalog(version))
-        exposed = self.exposed(gateway)
+        published = self.exposed(gateway)
+        self.assertFalse(INTERNAL_ONLY_DELEGATED_READS & published)
+        self.assertEqual(set(gateway._internal), set(INTERNAL_ONLY_DELEGATED_READS))
+        exposed = self.routed(gateway)
         for name in used_reads(version):
             self.assertIn(EXPOSED_AS.get(name, name), exposed)
         self.assertFalse(RETIRED_DELEGATED_READS & exposed)
@@ -215,7 +230,7 @@ class ReadGatewayExactAdmission(adm.Harness):
                 with self.subTest(version=version, field=field):
                     gateway, transport = await self.gateway(
                         version, changed(gateway_catalog(version), 'ha_get_state', change))
-                    self.assertEqual(self.exposed(gateway), base - {'ha_get_state'})
+                    self.assertEqual(self.routed(gateway), base - {'ha_get_state'})
                     self.assertEqual(transport.sent, [])
 
     async def test_title_only_change_fails_closed_for_every_used_read(self):
@@ -226,7 +241,7 @@ class ReadGatewayExactAdmission(adm.Harness):
                 with self.subTest(version=version, tool=name):
                     gateway, transport = await self.gateway(
                         version, changed(gateway_catalog(version), name, _set_title))
-                    self.assertEqual(self.exposed(gateway), base - {EXPOSED_AS.get(name, name)})
+                    self.assertEqual(self.routed(gateway), base - {EXPOSED_AS.get(name, name)})
                     self.assertEqual(transport.sent, [])
 
     async def test_missing_used_read_fails_closed(self):
@@ -235,19 +250,19 @@ class ReadGatewayExactAdmission(adm.Harness):
                 with self.subTest(version=version, tool=name):
                     gateway, transport = await self.gateway(
                         version, without(gateway_catalog(version), name))
-                    self.assertNotIn(EXPOSED_AS.get(name, name), self.exposed(gateway))
+                    self.assertNotIn(EXPOSED_AS.get(name, name), self.routed(gateway))
                     self.assertEqual(transport.sent, [])
                     # Codex F1: only the missing used read is withheld; the
                     # rest is not quarantined by its absence.
                     base = await self.baseline(version)
-                    self.assertEqual(self.exposed(gateway), base - {EXPOSED_AS.get(name, name)})
+                    self.assertEqual(self.routed(gateway), base - {EXPOSED_AS.get(name, name)})
 
     async def test_duplicate_used_read_fails_closed(self):
         for version in VERSIONS:
             with self.subTest(version=version):
                 gateway, transport = await self.gateway(
                     version, duplicated(gateway_catalog(version), 'ha_get_state'))
-                self.assertNotIn('ha_get_state', self.exposed(gateway))
+                self.assertNotIn('ha_get_state', self.routed(gateway))
                 self.assertEqual(transport.sent, [])
 
     async def test_extra_unused_tool_is_tolerated_and_not_exposed(self):
@@ -256,8 +271,8 @@ class ReadGatewayExactAdmission(adm.Harness):
             with self.subTest(version=version):
                 gateway, transport = await self.gateway(
                     version, with_extra(gateway_catalog(version)))
-                self.assertEqual(self.exposed(gateway), base)
-                self.assertNotIn(EXTRA, self.exposed(gateway))
+                self.assertEqual(self.routed(gateway), base)
+                self.assertNotIn(EXTRA, self.routed(gateway))
                 self.assertEqual(transport.sent, [])
 
     async def test_changed_unused_reviewed_tool_is_tolerated_and_not_exposed(self):
@@ -266,8 +281,8 @@ class ReadGatewayExactAdmission(adm.Harness):
             with self.subTest(version=version):
                 gateway, _transport = await self.gateway(
                     version, changed(gateway_catalog(version), SETTER, _set_title))
-                self.assertEqual(self.exposed(gateway), base)
-                self.assertNotIn(SETTER, self.exposed(gateway))
+                self.assertEqual(self.routed(gateway), base)
+                self.assertNotIn(SETTER, self.routed(gateway))
 
 
     # Codex F1 (PR #406 verdict 6731785026): on the strict-full releases
@@ -300,7 +315,7 @@ class ReadGatewayExactAdmission(adm.Harness):
                 with self.subTest(version=version, variant=label):
                     self.assertNotEqual([t['name'] for t in reordered], [t['name'] for t in tools])
                     gateway, transport = await self.gateway(version, reordered)
-                    self.assert_exact_exposure(version, self.exposed(gateway), base)
+                    self.assert_exact_exposure(version, self.routed(gateway), base)
                     self.assertEqual(transport.sent, [])
 
     async def test_unused_tool_removal_is_admitted(self):
@@ -313,7 +328,7 @@ class ReadGatewayExactAdmission(adm.Harness):
                 with self.subTest(version=version, removed=name):
                     gateway, transport = await self.gateway(
                         version, without(gateway_catalog(version), name))
-                    self.assert_exact_exposure(version, self.exposed(gateway), base)
+                    self.assert_exact_exposure(version, self.routed(gateway), base)
                     self.assertEqual(transport.sent, [])
 
     async def test_extra_unused_tool_interspersed_is_admitted(self):
@@ -326,7 +341,7 @@ class ReadGatewayExactAdmission(adm.Harness):
                     extra['name'] = EXTRA
                     gateway, transport = await self.gateway(
                         version, tools[:position] + [extra] + tools[position:])
-                    self.assert_exact_exposure(version, self.exposed(gateway), base)
+                    self.assert_exact_exposure(version, self.routed(gateway), base)
                     self.assertEqual(transport.sent, [])
 
     async def test_reordered_catalog_still_refuses_changed_missing_duplicate(self):
@@ -341,7 +356,7 @@ class ReadGatewayExactAdmission(adm.Harness):
             for label, tools in cases.items():
                 with self.subTest(version=version, case=label):
                     gateway, transport = await self.gateway(version, list(reversed(tools)))
-                    exposed = self.exposed(gateway)
+                    exposed = self.routed(gateway)
                     self.assertNotIn('ha_get_state', exposed)
                     self.assertEqual(transport.sent, [])
                     if label == 'duplicate':

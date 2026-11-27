@@ -70,6 +70,10 @@ from ha_mcp_engineering.ha_core_readmission.routes import RETIRED_DELEGATED_READ
 # HAMCP-290: the delegated ha_get_hacs_info is retired on every reviewed
 # release (Josh decision 2026-11-08), so exposure pins drop by one.
 RETIRED_COUNT = len(RETIRED_DELEGATED_READS)
+# HAMCP-501 W6 (G1, as relayed by the architect): the delegated ha_search is
+# admitted internal-only behind native ha_search and never published.
+from ha_mcp_engineering.ha_core_readmission.routes import INTERNAL_ONLY_DELEGATED_READS  # noqa: E402
+INTERNAL_COUNT = len(INTERNAL_ONLY_DELEGATED_READS)
 
 
 def catalog(extra_names=(), *, version='9.2.0', protocol='2025-03-26'):
@@ -369,7 +373,9 @@ class DependencyScopedAdmission(Harness):
         await gateway.initialize(FastMCP('synthetic-investigation'))
         tools = gateway._registered_tool_registry.snapshot()
         # 25 base reads plus the three exact-bound platform reads (HAMCP-129).
-        self.assertEqual(len(tools), 28 - RETIRED_COUNT)  # HAMCP-290
+        self.assertEqual(len(tools), 28 - RETIRED_COUNT - INTERNAL_COUNT)  # HAMCP-290; HAMCP-501 W6
+        self.assertFalse(INTERNAL_ONLY_DELEGATED_READS & set(tools))
+        self.assertEqual(set(gateway._internal), set(INTERNAL_ONLY_DELEGATED_READS))
         self.assertLessEqual({'ha_get_system_health', 'ha_get_app', 'ha_get_integration'}, set(tools))
         self.assertFalse(set(EXTRAS).intersection(tools))
         self.assertNotIn('ha_call_service', tools)

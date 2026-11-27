@@ -110,9 +110,9 @@ class RefusalLifecycle(unittest.TestCase):
 
     def prepare_case(self, directory, *, missing=False, error=None, prior=None, event='schedule', requested=None):
         import core_evidence_workflow as w
-        # HAMCP-437: the signed predecessor is the seq-18 tip 2026.11.0; the fake
+        # HAMCP-437/HAMCP-462: the signed predecessor is the seq-19 tip 2026.11.3; the fake
         # newer release sits above it.
-        before=e.read_json(ROOT/'docs/evidence/hamcp315/core-sources/2026.11.0.json')
+        before=e.read_json(ROOT/'docs/evidence/hamcp315/core-sources/2026.11.3.json')
         # Synthetic workflow fixture covers the current expanded inventory;
         # historical measurements below remain tied to their original 337 paths.
         before['hashes']={p:before['hashes'].get(p,'b'*64) for p in e.manifest()['paths']}
@@ -228,13 +228,13 @@ class ReleaseDiscovery(unittest.TestCase):
         signed, _ = w.journal((ROOT / 'upstream-trust/ha-core-release-registry.json').read_bytes())
         cls.entries = [x.to_mapping() for x in signed.accepted.entries]
         cls.published = {x['version'] for x in cls.entries}
-        assert max(cls.published, key=e.version_key) == '2026.11.0'
+        assert max(cls.published, key=e.version_key) == '2026.11.3'
 
     def large_history(self):
         # Prerelease and draft decoys first, then target, predecessor and >1,000 older releases.
         head = [{'tag_name': '2026.12.0b1', 'prerelease': True}, {'tag_name': '2026.12.0', 'prerelease': True},
-                {'tag_name': '2027.1.0', 'draft': True}, {'tag_name': '2026.11.99'}, {'tag_name': '2026.11.0'}]
-        return head + [{'tag_name': v} for v in tags('2026.11.0', -1250)]
+                {'tag_name': '2027.1.0', 'draft': True}, {'tag_name': '2026.11.99'}, {'tag_name': '2026.11.3'}]
+        return head + [{'tag_name': v} for v in tags('2026.11.3', -1250)]
 
     def api(self, history, calls, tag=None):
         def answer(endpoint, **kwargs):
@@ -269,7 +269,7 @@ class ReleaseDiscovery(unittest.TestCase):
 
     def prepare(self, directory, history, requested=None, tag=None):
         import core_evidence_workflow as w
-        before = e.read_json(ROOT / 'docs/evidence/hamcp315/core-sources/2026.11.0.json'); before['tag_commit'] = before['commit']
+        before = e.read_json(ROOT / 'docs/evidence/hamcp315/core-sources/2026.11.3.json'); before['tag_commit'] = before['commit']
         after = copy.deepcopy(before); after.update(version='2026.11.99', commit='f' * 40, tag_commit='f' * 40)
         after['hashes'][next(iter(after['hashes']))] = 'd' * 64
         calls = []; listing = self.api(history, calls, tag)
@@ -301,33 +301,33 @@ class ReleaseDiscovery(unittest.TestCase):
                 calls, sources = self.prepare(d, self.large_history())
             except ValueError as error:
                 self.fail(f'prepare refused: {error}')
-            self.assertEqual(sources, ['2026.11.0', '2026.11.99'])
+            self.assertEqual(sources, ['2026.11.3', '2026.11.99'])
             self.assertEqual([c[0] for c in calls], ['repos/home-assistant/core/releases?per_page=100&page=1'])
             values = dict(line.split('=', 1) for line in (d / 'outputs').read_text().splitlines())
             self.assertEqual((values['release'], values['refused']), ('2026.11.99', 'true'))
 
     def test_prereleases_and_drafts_never_end_discovery(self):
         decoys = [{'tag_name': f'2026.12.0b{i}', 'prerelease': True} for i in range(97)]
-        decoys += [{'tag_name': '2026.11.0', 'prerelease': True}, {'tag_name': '2026.11.0', 'draft': True},
+        decoys += [{'tag_name': '2026.11.3', 'prerelease': True}, {'tag_name': '2026.11.3', 'draft': True},
                    {'tag_name': 'not-a-version'}]
-        history = decoys + [{'tag_name': '2026.11.99'}, {'tag_name': '2026.11.0'}] + [{'tag_name': v} for v in tags('2026.11.0', -300)]
+        history = decoys + [{'tag_name': '2026.11.99'}, {'tag_name': '2026.11.3'}] + [{'tag_name': v} for v in tags('2026.11.3', -300)]
         releases, calls = self.discover(history)
         self.assertEqual(len(calls), 2)
         self.assertEqual(e.select_release(releases, self.published, []), '2026.11.99')
 
     def test_predecessor_never_reached_within_bound_refused(self):
         import core_evidence_workflow as w
-        history = [{'tag_name': v} for v in tags('2026.11.0', 1100)]
+        history = [{'tag_name': v} for v in tags('2026.11.3', 1100)]
         calls = self.refused('did not reach the signed predecessor', history)
         self.assertEqual([c[0] for c in calls],
                          [f'repos/home-assistant/core/releases?per_page=100&page={n}' for n in range(1, w.RELEASE_PAGE_BOUND + 1)])
         self.assertEqual(w.RELEASE_PAGE_BOUND, 10)
 
     def test_lower_backport_before_higher_release_is_not_a_boundary(self):
-        # Codex M1 counterexample: page 1 ends nothing although 2026.9.9 <= 2026.11.0.
+        # Codex M1 counterexample: page 1 ends nothing although 2026.9.9 <= 2026.11.3.
         history = ([{'tag_name': '2026.9.9'}, {'tag_name': '2026.11.99'}]
                    + [{'tag_name': f'2026.12.0b{i}', 'prerelease': True} for i in range(98)]
-                   + [{'tag_name': '2026.12.0'}, {'tag_name': '2026.11.0'}])
+                   + [{'tag_name': '2026.12.0'}, {'tag_name': '2026.11.3'}])
         releases, calls = self.discover(history)
         self.assertEqual(len(calls), 2)
         self.assertEqual(e.select_release(releases, self.published, []), '2026.12.0')
@@ -336,33 +336,33 @@ class ReleaseDiscovery(unittest.TestCase):
         betas = [{'tag_name': f'2026.12.0b{i}', 'prerelease': True} for i in range(99)]
         for first, second in (('2026.11.99', '2026.12.0'), ('2026.12.0', '2026.11.99')):
             with self.subTest(first=first):
-                history = betas + [{'tag_name': first}, {'tag_name': second}, {'tag_name': '2026.11.0'}]
+                history = betas + [{'tag_name': first}, {'tag_name': second}, {'tag_name': '2026.11.3'}]
                 releases, calls = self.discover(history)
                 self.assertEqual(len(calls), 2)
                 self.assertEqual(e.select_release(releases, self.published, []), '2026.12.0')
 
     def test_records_below_predecessor_without_its_record_refused(self):
         import core_evidence_workflow as w
-        history = [{'tag_name': v} for v in tags('2026.11.0', -1101) if v != '2026.11.0']
-        self.assertEqual((len(history), any(r['tag_name'] == '2026.11.0' for r in history)), (1100, False))
+        history = [{'tag_name': v} for v in tags('2026.11.3', -1101) if v != '2026.11.3']
+        self.assertEqual((len(history), any(r['tag_name'] == '2026.11.3' for r in history)), (1100, False))
         calls = self.refused('did not reach the signed predecessor', history)
         self.assertEqual(len(calls), w.RELEASE_PAGE_BOUND)
 
     def test_listing_order_violation_refused(self):
         newer = '2026-11-05T00:00:00Z'
-        within = [{'tag_name': '2026.11.99'}, {'tag_name': '2026.12.0', 'created_at': newer}, {'tag_name': '2026.11.0'}]
+        within = [{'tag_name': '2026.11.99'}, {'tag_name': '2026.12.0', 'created_at': newer}, {'tag_name': '2026.11.3'}]
         # Part 3: the page-boundary inversion is between official stable records (2026.11.99 ends page 1).
         across = ([{'tag_name': f'2026.12.0b{i}', 'prerelease': True} for i in range(99)] + [{'tag_name': '2026.11.99'}]
-                  + [{'tag_name': '2026.12.0', 'created_at': newer}, {'tag_name': '2026.11.0'}])
+                  + [{'tag_name': '2026.12.0', 'created_at': newer}, {'tag_name': '2026.11.3'}])
         fallback = [{'tag_name': '2026.11.99', 'created_at': None, 'published_at': '2026-11-03T00:00:00Z'},
-                    {'tag_name': '2026.12.0', 'created_at': None, 'published_at': newer}, {'tag_name': '2026.11.0'}]
+                    {'tag_name': '2026.12.0', 'created_at': None, 'published_at': newer}, {'tag_name': '2026.11.3'}]
         for name, history in (('within', within), ('across', across), ('fallback', fallback)):
             with self.subTest(name=name):
                 self.refused('release listing is not newest-first', history)
 
     def test_published_at_used_only_without_created_at(self):
         history = [{'tag_name': '2026.12.0', 'created_at': None, 'published_at': '2026-11-03T00:00:00Z'},
-                   {'tag_name': '2026.11.0', 'created_at': '2026-11-02T00:00:00Z', 'published_at': '2026-11-05T00:00:00Z'}]
+                   {'tag_name': '2026.11.3', 'created_at': '2026-11-02T00:00:00Z', 'published_at': '2026-11-05T00:00:00Z'}]
         releases, _ = self.discover(history)
         self.assertEqual(e.select_release(releases, self.published, []), '2026.12.0')
 
@@ -370,14 +370,14 @@ class ReleaseDiscovery(unittest.TestCase):
         for record in ({'created_at': None, 'published_at': None}, {'created_at': 'yesterday'},
                        {'created_at': 7}, {'created_at': '2026-11-03'}):
             with self.subTest(record=record):
-                history = [{'tag_name': '2026.12.0'}, {'tag_name': '2026.11.99', **record}, {'tag_name': '2026.11.0'}]
+                history = [{'tag_name': '2026.12.0'}, {'tag_name': '2026.11.99', **record}, {'tag_name': '2026.11.3'}]
                 self.refused('release listing (order cannot be established|is not newest-first)', history)
 
     # Round 2 (Codex focused re-review): its eight failing probes, then the explicit contract cases.
     def test_naive_timestamps_alone_or_uniformly_naive_refused(self):
         for history in ([{'tag_name': '2026.12.0', 'created_at': '2026-11-04T00:00:00'}],
                         [{'tag_name': '2026.12.0', 'created_at': '2026-11-04'},
-                         {'tag_name': '2026.11.0', 'created_at': '2026-11-03'}],
+                         {'tag_name': '2026.11.3', 'created_at': '2026-11-03'}],
                         [{'tag_name': '2026.12.0', 'created_at': ABSENT, 'published_at': '2026-11-04T00:00:00'}]):
             with self.subTest(history=history):
                 self.refused('release listing order cannot be established', history)
@@ -399,7 +399,7 @@ class ReleaseDiscovery(unittest.TestCase):
         for absent in (None, ABSENT):
             with self.subTest(created_at=absent):
                 history = [{'tag_name': '2026.12.0', 'created_at': absent, 'published_at': '2026-11-04T06:00:00+06:00'},
-                           {'tag_name': '2026.11.0', 'created_at': '2026-11-04T00:00:00Z', 'published_at': ABSENT}]
+                           {'tag_name': '2026.11.3', 'created_at': '2026-11-04T00:00:00Z', 'published_at': ABSENT}]
                 releases, calls = self.discover(history)
                 self.assertEqual(len(calls), 1)
                 self.assertEqual(e.select_release(releases, self.published, []), '2026.12.0')
@@ -407,7 +407,7 @@ class ReleaseDiscovery(unittest.TestCase):
     def test_one_parser_reads_both_fields(self):
         import core_evidence_workflow as w
         history = [{'tag_name': '2026.12.0', 'created_at': None, 'published_at': '2026-11-03T00:00:00Z'},
-                   {'tag_name': '2026.11.0', 'created_at': '2026-11-02T00:00:00Z'}]
+                   {'tag_name': '2026.11.3', 'created_at': '2026-11-02T00:00:00Z'}]
         with patch.object(w, 'listing_timestamp', wraps=w.listing_timestamp) as parser:
             self.discover(history)
         self.assertEqual([c.args for c in parser.call_args_list], [('2026-11-03T00:00:00Z',), ('2026-11-02T00:00:00Z',)])
@@ -426,8 +426,10 @@ class ReleaseDiscovery(unittest.TestCase):
         # Records excluded from the order comparison are exactly those selection can never choose.
         for record in history + [{'tag_name': '2026.12.0b1'}, {'tag_name': '2026.12.0', 'draft': True}, {'tag_name': 'v2026.12.0'}]:
             self.assertEqual(bool(w.official(record)), e.select_release([record], set(), []) == record['tag_name'])
-        # HAMCP-437: the committed tip is now 2026.11.0; 2026.10.3 stays covered as an explicit predecessor.
-        for predecessor, entries, expected in (('2026.10.3', [{'version': '2026.10.3'}], '2026.11.0'), ('2026.11.0', None, None)):
+        # HAMCP-462: the committed tip is now 2026.11.3, newer than this 2026-11-07 page;
+        # 2026.10.3 and 2026.11.0 stay covered as explicit predecessors.
+        for predecessor, entries, expected in (('2026.10.3', [{'version': '2026.10.3'}], '2026.11.0'),
+                                               ('2026.11.0', [{'version': '2026.11.0'}], None)):
             with self.subTest(predecessor=predecessor):
                 releases, calls = self.discover(history, entries=entries)
                 self.assertEqual([c[0] for c in calls], ['repos/home-assistant/core/releases?per_page=100&page=1'])
@@ -438,7 +440,7 @@ class ReleaseDiscovery(unittest.TestCase):
     def test_nonofficial_order_never_refuses(self):
         older, newer = '2026-01-01T00:00:00Z', '2026-11-06T00:00:00Z'
         pre = lambda tag, at=None: {'tag_name': tag, 'prerelease': True, **({'created_at': at} if at else {})}
-        tail = [{'tag_name': '2026.12.0'}, {'tag_name': '2026.11.0'}]
+        tail = [{'tag_name': '2026.12.0'}, {'tag_name': '2026.11.3'}]
         cases = {
             'prerelease pair before the predecessor': [pre('2027.1.0b1', older), pre('2027.1.0b2', newer)] + tail,
             'prerelease then newer stable': [pre('2027.1.0b1', older)] + tail,
@@ -461,14 +463,14 @@ class ReleaseDiscovery(unittest.TestCase):
         cases = {
             # Compared with the previous official record, never with an intervening non-official one.
             'stable pair around a newer prerelease': [{'tag_name': '2026.11.99'}, pre('2027.1.0b1', newer),
-                                                      {'tag_name': '2026.12.0', 'created_at': middle}, {'tag_name': '2026.11.0'}],
+                                                      {'tag_name': '2026.12.0', 'created_at': middle}, {'tag_name': '2026.11.3'}],
             'stable pair around an older prerelease': [{'tag_name': '2026.11.99'}, pre('2027.1.0b1', older),
-                                                       {'tag_name': '2026.12.0', 'created_at': middle}, {'tag_name': '2026.11.0'}],
+                                                       {'tag_name': '2026.12.0', 'created_at': middle}, {'tag_name': '2026.11.3'}],
             'stable pair across pages around prereleases': ([{'tag_name': '2026.11.99'}] + [pre(f'2027.1.0b{i}') for i in range(99)]
-                                                            + [{'tag_name': '2026.12.0', 'created_at': newer}, {'tag_name': '2026.11.0'}]),
-            'stable newer than the predecessor listed after it': [{'tag_name': '2026.12.0'}, {'tag_name': '2026.11.0'},
+                                                            + [{'tag_name': '2026.12.0', 'created_at': newer}, {'tag_name': '2026.11.3'}]),
+            'stable newer than the predecessor listed after it': [{'tag_name': '2026.12.0'}, {'tag_name': '2026.11.3'},
                                                                  {'tag_name': '2026.11.99', 'created_at': newer}],
-            'stable pair below the predecessor': [{'tag_name': '2026.12.0'}, {'tag_name': '2026.11.0'},
+            'stable pair below the predecessor': [{'tag_name': '2026.12.0'}, {'tag_name': '2026.11.3'},
                                                   {'tag_name': '2026.9.0', 'created_at': older},
                                                   {'tag_name': '2026.9.1', 'created_at': '2026-02-01T00:00:00Z'}],
         }
@@ -481,7 +483,7 @@ class ReleaseDiscovery(unittest.TestCase):
             for record in ({'created_at': 'yesterday'}, {'created_at': '2026-11-04T00:00:00'}, {'created_at': ''},
                            {'created_at': None, 'published_at': None}, {'created_at': ABSENT, 'published_at': '2026-11-04'}):
                 with self.subTest(flags=flags, record=record):
-                    history = [{'tag_name': '2026.12.0'}, {'tag_name': '2027.1.0b1', **flags, **record}, {'tag_name': '2026.11.0'}]
+                    history = [{'tag_name': '2026.12.0'}, {'tag_name': '2027.1.0b1', **flags, **record}, {'tag_name': '2026.11.3'}]
                     self.refused('release listing order cannot be established', history)
 
     def test_complete_short_listing_is_unchanged(self):
@@ -503,7 +505,7 @@ class ReleaseDiscovery(unittest.TestCase):
                 calls, sources = self.prepare(Path(tmp), self.large_history(), '2026.11.99', release)
             except ValueError as error:
                 self.fail(f'prepare refused: {error}')
-            self.assertEqual(sources, ['2026.11.0', '2026.11.99'])
+            self.assertEqual(sources, ['2026.11.3', '2026.11.99'])
             self.assertEqual([c[0] for c in calls], ['repos/home-assistant/core/releases/tags/2026.11.99'])
 
     def test_exact_tag_404_refused(self):
@@ -1141,7 +1143,7 @@ class PrepareWithhold(unittest.TestCase):
 
     def test_dispatch_withhold_reaches_state_and_summary(self):
         import core_evidence_workflow as w
-        before = e.read_json(ROOT / 'docs/evidence/hamcp315/core-sources/2026.11.0.json')
+        before = e.read_json(ROOT / 'docs/evidence/hamcp315/core-sources/2026.11.3.json')
         before['hashes'] = {p: before['hashes'].get(p, 'b' * 64) for p in e.manifest()['paths']}
         before['tag_commit'] = before['commit']
         after = copy.deepcopy(before); after.update(version='2026.11.99', commit='f' * 40, tag_commit='f' * 40)
@@ -1258,6 +1260,105 @@ class PrepareWithhold(unittest.TestCase):
                                      {k: row[k] for k in ('context_sha256', 'core_source_commit', 'core_source_sha256')})
                 self.assertEqual(row['context_sha256'], e.digest((root / 'prepared' / (row['case'] + '.json')).read_bytes()))
 
+
+
+class AcceptanceTarget(unittest.TestCase):
+    """HAMCP-505: pull_request acceptance follows the support window's current Core."""
+
+    @classmethod
+    def setUpClass(cls):
+        (ROOT / '.artifacts').mkdir(exist_ok=True)
+
+    @staticmethod
+    def window(version):
+        return {'core': {'current': {'version': version}}}
+
+    @staticmethod
+    def entries(*versions):
+        return [{'version': v, 'source_commit': 'c' * 40} for v in versions]
+
+    def prepare(self, source=None):
+        import core_evidence_workflow as w
+        def committed(version, *args):
+            return e.read_json(ROOT / 'docs/evidence/hamcp315/core-sources' / (version + '.json'))
+        tmp = tempfile.TemporaryDirectory(dir=ROOT / '.artifacts'); self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        env = {**RUN, 'GITHUB_EVENT_NAME': 'pull_request', 'GITHUB_OUTPUT': str(root / 'out'),
+               'GITHUB_STEP_SUMMARY': str(root / 'summary')}
+        with patch.dict(os.environ, env, clear=True), patch.object(w, 'source', side_effect=source or committed):
+            w.prepare(root / 'prepared', True, None, w.withhold_input(''))
+        values = dict(line.split('=', 1) for line in (root / 'out').read_text().splitlines())
+        return root / 'prepared', values
+
+    def test_committed_window_selects_current_core_over_its_signed_predecessor(self):
+        prepared, values = self.prepare()
+        self.assertEqual(values['release'], '2026.11.3')
+        negative = e.read_json(prepared / 'negative.json')
+        self.assertEqual((negative['predecessor'], negative['release'], negative['inherited']), ('2026.11.0', '2026.11.3', False))
+        self.assertEqual(len(negative['differing_files']), 7)
+        coverage, fixture = e.read_json(prepared / 'coverage.json'), e.read_json(prepared / 'fixture.json')
+        self.assertEqual((coverage['provenance']['version'], coverage['predecessor'], coverage['mode']), ('2026.11.3', '2026.11.3', 'main'))
+        self.assertEqual((fixture['predecessor'], fixture['mode'], fixture['fixture']), ('2026.11.2', 'derived', True))
+        self.assertEqual(fixture['provenance']['version'], '2026.11.3')
+        self.assertEqual(e.read_json(prepared / 'baseline.json')['version'], '2026.11.3')
+        self.assertEqual({r['ha_version'] for r in json.loads(values['matrix'])['include']}, {'2026.11.3'})
+
+    def test_synthetic_version_lies_strictly_between_and_is_unsigned(self):
+        import core_evidence_workflow as w
+        for current, signed, expected in [
+                ('2026.11.3', ('2026.10.3', '2026.11.0', '2026.11.3'), ('2026.11.0', '2026.11.2')),
+                ('2026.11.0', ('2026.10.0', '2026.10.1', '2026.10.3', '2026.11.0'), ('2026.10.3', '2026.10.4')),
+                ('2026.11.3', ('2026.11.1', '2026.11.3'), ('2026.11.1', '2026.11.2')),
+                ('2026.11.2', ('2026.11.0', '2026.11.2'), ('2026.11.0', '2026.11.1')),
+                ('2026.12.0', ('2026.11.3', '2026.12.0'), ('2026.11.3', '2026.11.4'))]:
+            with self.subTest(current=current, signed=signed):
+                target, predecessor, synthetic = w.acceptance_target(self.entries(*signed), self.window(current))
+                self.assertEqual((target['version'], predecessor['version'], synthetic), (current, *expected))
+                self.assertNotIn(synthetic, signed)
+
+    def test_refuses_missing_malformed_unsigned_or_unbracketed_current(self):
+        import core_evidence_workflow as w
+        signed, W = self.entries('2026.10.3', '2026.11.0', '2026.11.3'), "support window's current Core"
+        for window, entries, message in [
+                ([], signed, W), ('core', signed, W), ({}, signed, W),
+                ({'core': None}, signed, W), ({'core': {}}, signed, W),
+                ({'core': {'current': None}}, signed, W), ({'core': {'current': {}}}, signed, W),
+                (self.window('2026.11'), signed, W), (self.window('2026.11.3b0'), signed, W),
+                (self.window(20261103), signed, W),
+                (self.window('2026.12.0'), signed, 'signed current Core'),
+                (self.window('2026.10.3'), signed, 'signed predecessor'),
+                (self.window('2026.11.3'), self.entries('2026.11.2', '2026.11.3'), 'no free synthetic'),
+                (self.window('2026.11.1'), self.entries('2026.11.0', '2026.11.1'), 'no free synthetic')]:
+            with self.subTest(window=window, entries=[x['version'] for x in entries]):
+                with self.assertRaisesRegex(ValueError, message):
+                    w.acceptance_target(entries, window)
+
+    def test_window_load_refusal_propagates_from_prepare(self):
+        import support_window
+        with patch.object(support_window, 'load', side_effect=support_window.Refusal('support window malformed')):
+            with self.assertRaisesRegex(ValueError, 'support window malformed'):
+                self.prepare()
+
+    def test_window_naming_an_unsigned_current_refuses_prepare(self):
+        import support_window
+        with patch.object(support_window, 'load', return_value=self.window('2026.12.0')):
+            with self.assertRaisesRegex(ValueError, 'signed current Core: 2026.12.0'):
+                self.prepare()
+
+    def test_inherited_negative_refuses(self):
+        same = e.read_json(ROOT / 'docs/evidence/hamcp315/core-sources/2026.11.3.json')
+        def source(version, *args):
+            real = e.read_json(ROOT / 'docs/evidence/hamcp315/core-sources' / (version + '.json'))
+            return {**same, **{k: real[k] for k in ('version', 'commit', 'tag_commit')}}
+        with self.assertRaisesRegex(ValueError, 'real negative unexpectedly inherited'):
+            self.prepare(source)
+
+    def test_predecessor_tag_sha_mismatch_refuses(self):
+        def source(version, *args):
+            value = e.read_json(ROOT / 'docs/evidence/hamcp315/core-sources' / (version + '.json'))
+            return {**value, 'commit': 'd' * 40} if version == '2026.11.0' else value
+        with self.assertRaisesRegex(ValueError, 'signed predecessor tag SHA mismatch'):
+            self.prepare(source)
 
 class ManifestAndWorkflow(unittest.TestCase):
     def test_every_signed_profile_has_source_mapping(self):

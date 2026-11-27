@@ -21,6 +21,7 @@ from mcp.server.fastmcp import FastMCP
 from tests import test_ha_core_2026_9_integration as core_tests
 from tests import test_dependency_build_authority as dependency_tests
 from tests.support import ha_mcp_920_receipts
+from tests.support import internal_search_page
 from tests.support.core_gate import reconcile_through_gate
 from ha_mcp_engineering.capabilities import replace_dynamic_upstream_capabilities
 from ha_mcp_engineering.clients.rest import HomeAssistantRestClient
@@ -522,13 +523,15 @@ class PostCoreRegressions(unittest.IsolatedAsyncioTestCase):
             version="9.2.0",
         )
         gateway = core_tests.UpstreamReadGateway()
-        gateway.configure(self.settings, transport=transport,
-                          release_registry=registry, core_runtime=self.core)
+        # HAMCP-501 W6: an endpoint no sub-call page collides with (W4 D2).
+        gateway.configure(internal_search_page.page_settings(self.settings),
+                          transport=transport, release_registry=registry,
+                          core_runtime=self.core)
         server = FastMCP("synthetic-rc3-postcore-catalog")
         static = registered_tools(get_registered_server())
         McpSdkToolRegistry(server).replace({name: static[name]
                                             for name in ENGINEERING_STATIC_TOOL_NAMES})
-        self.assertEqual(len(registered_tools(server)), 87)  # HAMCP-476: +1 automation run counts; HAMCP-290: +1 get_marketplace_inventory; HAMCP-253: +1 inspection read; HAMCP-165 + HAMCP-155: +2 inactive planners; HAMCP-225: +4 trace snapshot tools; HAMCP-228: +1 baseline compare tool; HAMCP-232/145: +2 script trace reads, +2 inactive option planners; HAMCP-106: +1 inactive dashboard metadata planner; HAMCP-071: +1 inactive scene configuration planner; HAMCP-311: +1 control_helper; HAMCP-229: +1 reliability batch read; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
+        self.assertEqual(len(registered_tools(server)), 88)  # HAMCP-501 W6: + native ha_search; HAMCP-476: +1 automation run counts; HAMCP-290: +1 get_marketplace_inventory; HAMCP-253: +1 inspection read; HAMCP-165 + HAMCP-155: +2 inactive planners; HAMCP-225: +4 trace snapshot tools; HAMCP-228: +1 baseline compare tool; HAMCP-232/145: +2 script trace reads, +2 inactive option planners; HAMCP-106: +1 inactive dashboard metadata planner; HAMCP-071: +1 inactive scene configuration planner; HAMCP-311: +1 control_helper; HAMCP-229: +1 reliability batch read; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
         await gateway.initialize(server)
         baseline = {tool.name: tool.model_dump(mode="json") for tool in await server.list_tools()}
         self.assertEqual(len(baseline), 114)  # HAMCP-476: +1 automation run counts; HAMCP-134: +1 security metadata read; HAMCP-253: +1 inspection read; HAMCP-165 + HAMCP-155: +2 inactive planners; HAMCP-225: +4 trace snapshot tools; HAMCP-228: +1 baseline compare tool; HAMCP-232/145: +2 script trace reads, +2 inactive option planners; HAMCP-106: +1 inactive dashboard metadata planner; HAMCP-071: +1 inactive scene configuration planner; HAMCP-311: +1 control_helper; HAMCP-229: +1 reliability batch read; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
@@ -536,10 +539,16 @@ class PostCoreRegressions(unittest.IsolatedAsyncioTestCase):
         self.network.records[0]["name"] = False
         await reconcile_through_gate(self.core)
         await gateway.initialize(server)
-        self.assertEqual(len(registered_tools(server)), 109)  # HAMCP-476: +1; HAMCP-134: +1; HAMCP-253: +1; HAMCP-165 + HAMCP-155: +2 static; HAMCP-225: +4; HAMCP-228: +1 baseline compare tool; HAMCP-232/145: +4; HAMCP-106: +1; HAMCP-071: +1; HAMCP-311: +1; HAMCP-229: +1; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
+        self.assertEqual(len(registered_tools(server)), 110)  # HAMCP-501 W6: + native ha_search (static, stays registered); HAMCP-476: +1; HAMCP-134: +1; HAMCP-253: +1; HAMCP-165 + HAMCP-155: +2 static; HAMCP-225: +4; HAMCP-228: +1 baseline compare tool; HAMCP-232/145: +4; HAMCP-106: +1; HAMCP-071: +1; HAMCP-311: +1; HAMCP-229: +1; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
         # HAMCP-290: ha_get_hacs_info stays retired; the 9.2.0 policy marks it
         # unsupported, so it is never exposed and only the device-dependent
         # reads are Core-withheld (87 + 28 - 6 = 109; HAMCP-297, HAMCP-231, HAMCP-476).
+        # HAMCP-501 W6: the delegated ha_search is internal-only, so its
+        # withdrawal removes only the sub-call route; the native ha_search
+        # (88 static + 22 = 110) stays registered and the route returns on
+        # restoration.
+        self.assertIn("ha_search", registered_tools(server))
+        self.assertNotIn("ha_search", gateway._internal)
         self.assertEqual({x["tool"] for x in gateway.health_snapshot()["core_withheld_tools"]},
                          set(core_tests.DEVICE_DEPENDENT_DELEGATED_TOOLS))
         self.assertNotIn("ha_get_hacs_info", registered_tools(server))
@@ -555,9 +564,15 @@ class PostCoreRegressions(unittest.IsolatedAsyncioTestCase):
         restored = {tool.name: tool.model_dump(mode="json") for tool in await server.list_tools()}
         self.assertEqual(restored, baseline)
         self.assertNotIn("ha_get_operation_status", restored)
+        self.assertIn("ha_search", gateway._internal)
         for name, (args, _receipt, _change) in DEVICE_READ_CASES.items():
             transport.result = device_read_result(name)
-            result = json.loads(await registered_tools(server)[name].run(dict(args)))
+            if internal_search_page.is_internal_only(name):
+                # HAMCP-501 W6 (G1): the restored sub-call route, never a
+                # published read.
+                result = await internal_search_page.execute_page(gateway, name)
+            else:
+                result = json.loads(await registered_tools(server)[name].run(dict(args)))
             self.assertTrue(result["success"], result)
             self.assertEqual(transport.calls[-1][0], name)
         self.assertEqual(gateway.health_snapshot()["fallback_count"], 0)

@@ -133,6 +133,22 @@ path-level finding. Standard and evidence modes retain linked path findings and
 stable pagination. Root-cause severity and counts are based on unique causes,
 not reference multiplicity.
 
+Each summary group also gives the cause's location and state where the evidence
+has them (HAMCP-493):
+
+- `affected_step` is the group's trace step: the failing step of a repeated trace
+  or action failure, or the condition a repeated condition stop ended at. A
+  `mode_concurrency_conflict` finding names no step itself, so the group takes the
+  first trace step cited by its evidence references. It is `null` when no member
+  or evidence reference has a trace step, as for an entity reference or a
+  correlated System Log error.
+- `current_state` is `missing`, `unavailable`, `unknown` or `disabled` for a
+  referenced-entity cause, and `disabled` for `automation_disabled` (the automation
+  is off or disabled). It is `null` for a cause whose evidence carries no state,
+  such as a trace failure or a System Log error.
+- `representative_configuration_paths` lists at most three member configuration
+  paths, and is empty when no member has one.
+
 `home_assistant_ms` remains the shared cumulative duration of all HA attempts for
 compatibility. The unambiguous companion fields are
 `home_assistant_cumulative_attempt_ms`, `home_assistant_wall_clock_span_ms`,
@@ -156,6 +172,21 @@ intervals. Valid starts are converted to UTC instants before comparison. A missi
 finish is allowed; missing, malformed, or naive starts are counted as parsing loss and
 never replaced with the current time. Runs exactly on the cutoff are included.
 
+**Breaking in 2.4.2-beta.14 (HAMCP-508 SI-5).** `list_automation_traces` returns an
+object instead of a bare list. Clients that read the list must read `traces`:
+
+- `traces`: the headers, unchanged (`run_id`, `timestamp`, `started_at`, `finished_at`,
+  `state`, `script_execution`, `last_step`, `error`).
+- `returned`: how many headers are in `traces`.
+- `source_truncated`: true when Core sent more than the normalizer's 100-header bound.
+- `retention`: the list is Core's stored trace ring, not every recent run. Core keeps
+  each automation's newest traces in two rings, runs and not-triggered, of
+  `default_stored_traces` (5) each unless the automation's `trace.stored_traces`
+  overrides it. The tool reads only `trace/list`, so `stored_traces_read` is false and
+  the override is not known. `runs_ring_returned` and `not_triggered_ring_returned`
+  count each ring, and `ring_full` is true when either holds at least the default cap,
+  which means older runs were probably evicted and are not in the list.
+
 Normalized headers are deduplicated by run ID, ordered by instant and run ID, bounded
 before detail retrieval, filtered before `trace/get`, and capped by `trace_limit`.
 Coverage reports `collection_state`, `trustworthy_empty`, the normalized cutoff, and
@@ -173,6 +204,45 @@ Reliability-result caching remains unsupported. A cursor may reuse only a bounde
 sanitized public-output pagination snapshot (maximum 16, five-minute TTL); it cannot
 serve a new analysis and is removed after the final page. This prevents repeated HA
 reads and aggregate counter inflation without concealing new evidence on a new call.
+
+## Core trace retention (HAMCP-503)
+
+Home Assistant Core keeps only the newest `trace.stored_traces` traces per
+automation and evicts the oldest first. The default is 5 (Core 2026.11.3
+`homeassistant/components/trace/const.py:19`, `DEFAULT_STORED_TRACES`), and Core
+validates the setting with `cv.positive_int`, so 0 is allowed. Core keeps two
+separate rings of that size: runs, and not-triggered traces (list items with
+`"not_triggered": true`). Before HAMCP-503, an automation that ran more often than
+its ring held inside the lookback returned a `complete` trace source, although
+older runs inside the lookback had been evicted.
+
+Reliability collection now reads the cap from the automation configuration it
+already fetches, with no extra Home Assistant read
+(`reliability/provider.py`, `_stored_traces_cap` and `_ring_retention`):
+
+- A missing `trace` block or a missing `stored_traces` key means Core's default of 5.
+  A whole-number value, numeric string, float or boolean is coerced as Core
+  coerces it. Anything else, including a negative value, a non-dict `trace`
+  block or an unreadable configuration, makes the cap unknown.
+- A ring is full when it holds at least the cap and its oldest trace starts after
+  the lookback cutoff. Each ring is checked on its own.
+- `collection_state` adds three values. Malformed and truncated lists keep
+  precedence over all three.
+  - `retention_limited`: at least one ring is full. The source is `partial`, its
+    `retention_coverage` is `partial`, and the batch reason is `retention_partial`.
+  - `retention_disabled`: the cap is 0, so Core keeps no traces. The source is
+    `partial`, so an empty list is no longer a trustworthy empty and cannot
+    produce `no_recent_execution_evidence`.
+  - `retention_unknown`: the cap could not be read. The source is `partial` with
+    `retention_coverage` `unknown`, and the batch reason is `retention_unknown`.
+- Each state adds one warning that names `trace.stored_traces`.
+- Coverage counts add `runs_ring_returned`, `not_triggered_ring_returned`,
+  `stored_traces_cap` (when known) and `rings_full_inside_lookback` (when the
+  cap is above 0). The public counts stay within their 20-key bound.
+
+A full ring whose oldest run Core happened not to evict is still reported as
+`retention_limited`. Without the evicted runs, the two cases cannot be told
+apart, so the result fails toward partial.
 
 ## Known limitations
 
@@ -238,8 +308,8 @@ provider, fallback, or write path.
 - Each root-cause summary carries the values the single tool returns for that group at
   `detail_level` `summary` (HAMCP-474 D6): `root_cause_group_id`, `title`,
   `affected_dependency`, `severity`, `reference_count`, `confidence`, `current_state`,
-  `representative_configuration_paths` (at most three), `recommended_investigation` and
-  `governed_change_required`. Finding IDs, evidence references and
+  `representative_configuration_paths` (at most three), `affected_step` (HAMCP-493),
+  `recommended_investigation` and `governed_change_required`. Finding IDs, evidence references and
   `intentional_trigger_context` stay with the single tool.
 - `root_cause_detail` is `full` when every analyzed digest fits the response bound with
   that detail. Otherwise it is `reduced`: every summary keeps only the first five keys

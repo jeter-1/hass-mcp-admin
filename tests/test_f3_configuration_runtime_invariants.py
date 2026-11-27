@@ -68,7 +68,7 @@ class RuntimeInertInvariantTests(unittest.TestCase):
                     decorators.extend(ast.unparse(item) for item in node.decorator_list)
         self.assertFalse(any("tool" in item for item in decorators), decorators)
         # HAMCP-155: +1 inactive create_configuration_delete_plan (after HAMCP-165).
-        self.assertEqual(len(registered_tools(get_registered_server())), 87)  # HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
+        self.assertEqual(len(registered_tools(get_registered_server())), 88)  # HAMCP-501 W6: + native ha_search; HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
 
     def test_task_and_plan_vocabularies_are_unchanged(self):
         self.assertEqual(TASK_SCHEMA_VERSION, 1)

@@ -242,6 +242,37 @@ def admit_withhold(withhold, acceptance, requested):
     return sorted(withhold)
 
 
+def acceptance_target(entries, window=None):
+    """HAMCP-505: pull_request acceptance follows the support window's current Core.
+
+    The target must be a signed entry with a signed predecessor (the newest signed entry
+    below it). The synthetic fixture predecessor is a version strictly between the two,
+    so no signed entry uses it: the target's previous patch, else the predecessor's next.
+    """
+    if window is None:
+        from support_window import load
+        window = load()
+    core = window.get("core") if isinstance(window, dict) else None
+    current = core.get("current") if isinstance(core, dict) else None
+    version = current.get("version") if isinstance(current, dict) else None
+    if not stable_version(version):
+        raise ValueError("acceptance requires the support window's current Core")
+    signed = {e["version"]: e for e in entries}
+    if version not in signed:
+        raise ValueError("acceptance requires a signed current Core: " + version)
+    older = [v for v in signed if version_key(v) < version_key(version)]
+    if not older:
+        raise ValueError("acceptance requires a signed predecessor below " + version)
+    predecessor = max(older, key=version_key)
+    low, high = version_key(predecessor), version_key(version)
+    candidates = ([".".join(map(str, (*high[:2], high[2] - 1)))] if high[2] else []) \
+        + [".".join(map(str, (*low[:2], low[2] + 1)))]
+    synthetic = next((v for v in candidates if low < version_key(v) < high), None)
+    if synthetic is None:
+        raise ValueError("acceptance has no free synthetic version between " + predecessor + " and " + version)
+    return signed[version], signed[predecessor], synthetic
+
+
 def prepare(directory, acceptance, requested, withhold=()):
     withhold = admit_withhold(withhold, acceptance, requested)
     directory.mkdir(parents=True, exist_ok=True)
@@ -255,9 +286,11 @@ def prepare(directory, acceptance, requested, withhold=()):
     entries = [e.to_mapping() for e in signed.accepted.entries]
     (directory / "predecessor.json").write_bytes(raw)
     if acceptance:
-        target = next(e for e in entries if e["version"] == "2026.11.0")
+        target, predecessor, synthetic_version = acceptance_target(entries)
         anchor, binding = bound_entry(target)
-        older = source("2026.10.3", directory); newer = source("2026.11.0", directory)
+        older = source(predecessor["version"], directory); newer = source(target["version"], directory)
+        if older["commit"] != predecessor["source_commit"]:
+            raise ValueError("signed predecessor tag SHA mismatch")
         proof = compare_sources(older, newer)
         if proof["inherited"]:
             raise ValueError("real negative unexpectedly inherited")
@@ -266,17 +299,17 @@ def prepare(directory, acceptance, requested, withhold=()):
         ctx = new_context(anchor, binding, target["version"], "main")
         write(directory / "coverage.json", ctx)
         # Synthetic predecessor source ONLY. The actual target, digest and version
-        # remain 2026.11.0; no fictitious image or fabricated real-tag identity is claimed.
-        identical = {**newer, "version": "2026.10.4"}
+        # remain the target's; no fictitious image or fabricated real-tag identity is claimed.
+        identical = {**newer, "version": synthetic_version}
         fixture_proof = compare_sources(identical, newer)
-        synthetic = copy.deepcopy(binding); synthetic["provenance"]["version"] = "2026.10.4"
+        synthetic = copy.deepcopy(binding); synthetic["provenance"]["version"] = synthetic_version
         derived = derive_binding(synthetic, binding["provenance"], fixture_proof)
-        fixture_ctx = new_context(anchor, derived, "2026.10.4", "derived", fixture_proof, fixture=True)
+        fixture_ctx = new_context(anchor, derived, synthetic_version, "derived", fixture_proof, fixture=True)
         write(directory / "fixture.json", fixture_ctx)
         write(directory / "baseline.json", target)
         write(directory / "state.json", {"registry_exists": False, "acceptance": True, "withhold": []})
         rows = [matrix_row(ctx, "coverage"), matrix_row(fixture_ctx, "fixture")]
-        output(refused=False, run=True, release="2026.11.0", matrix=json.dumps({"include": rows}),
+        output(refused=False, run=True, release=target["version"], matrix=json.dumps({"include": rows}),
                groups=group_matrix(rows, []), registry_exists=False)
         return
     releases = discover_releases(entries, requested)

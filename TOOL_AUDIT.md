@@ -2,6 +2,86 @@
 
 Date: 2026-07-10
 
+## Automation trace list shape (2.4.2-beta.14, HAMCP-508 SI-5)
+
+Breaking output change: `list_automation_traces` returns
+`{"traces", "returned", "source_truncated", "retention"}` instead of a bare
+header list. The headers in `traces` are unchanged, and the input
+(`automation_id`) is unchanged. `retention` says the list is Core's stored
+trace ring (default 5 per ring), so older runs are not listed. The tool still
+sends only `trace/list`. See
+[`docs/AUTOMATION_RELIABILITY_ANALYSIS.md`](docs/AUTOMATION_RELIABILITY_ANALYSIS.md).
+
+## Read changes without a new tool (2.4.2-beta.14)
+
+The items other than native search add no tool, route, permission, option
+or write path. The native search row is the last one below.
+
+- **`get_history` (HAMCP-502).** The same `GET /history/period/{start}` read
+  now sends `end_time` (both bounds from one instant), so a window over 24
+  hours is returned in full rather than as its first day. A full read sends
+  `significant_changes_only=0`, so attribute-only changes are returned; a
+  minimal read sends `1`. The incident history and logbook reads send
+  `end_time` too, and the incident history coverage row says it reads
+  significant changes only.
+- **`get_error_log` (HAMCP-502).** A system log of 50 or more entries (Core's
+  default ring) reports `system_log_retention_unknown`.
+- **`automation_reliability_analysis` and trace watches (HAMCP-503).** A
+  trace source whose ring may have evicted runs inside the lookback reads
+  partial (`retention_limited`), from the `trace.stored_traces` value in the
+  configuration the tool already reads. Trace watch rows add
+  `retention_gap_polls` and `last_retention_gap_at`.
+- **`get_server_health` (HAMCP-497).** Adds `server.build_sha` and
+  `server.build_dirty`, the values `server_info` already reports, and
+  `release_registry.last_refresh_at` and `refresh_interval_seconds`.
+- **Core-bound refusals (HAMCP-498).** A Core-bound call refused while
+  admitted Core authority is withdrawn and not yet restored returns
+  `CoreCapabilityUnavailable` with `retryable` true and `reason_code`
+  `core_authority_recovering`, naming the recovery state and next attempt,
+  with `provider_dispatch_occurred` false. Every other refusal is unchanged.
+- **Bounded reads (HAMCP-508 SI-1 to SI-4, SI-6, SI-7).** `list_automations`,
+  `list_devices` and `list_entity_registry` add `returned`, `total` and
+  `truncated`; incident correlation and `entity_dependency_analysis` report
+  their caps as partial with withheld counts. Output keys only; the reads are
+  unchanged.
+- **`ha_search` (HAMCP-481, W1 to W7).** The provider changes from the
+  delegated ha-mcp 9.2.0 tool to a native Engineering tool
+  (`tools/search.py`, routing `engineering_native`, no fallback;
+  `readOnlyHint` true, `destructiveHint` false). The name, arguments and
+  reply keys are kept; the native schema appends one sentence to the
+  `search_types` description (J3) and has its own pinned fingerprint
+  (`47b15a3e…`), while the 9.2.0 Row 25 fingerprint is unchanged.
+  - Reads (`search/core_contracts.py` `READS`): `GET /states`; the area,
+    floor, label, entity and device registry lists;
+    `config/entity_registry/get_entries` for aliases; `search/related` for
+    graph references; and the storage helpers' `<domain>/list`, through
+    four Core profiles (`core.basic_rest_read`,
+    `core.basic_websocket_read`, `core.non_device_registry_read`,
+    `core.direct_device_registry_read`). No automation, script or scene
+    configuration is read (S1).
+  - Sub-calls: the automation, script, scene, dashboard and flow-helper
+    buckets come from fixed pages of the delegated `ha_search`, which is
+    internal-only (never listed, no `ha_mcp__ha_search`) and keeps its own
+    Core requirement, `core.delegated_device_effective_area`. Pages are 150
+    rows and step down to 30, 6 and 1 only when a page is too large; a scan
+    stops at 20,000 rows, 300 page calls per bucket or 60 seconds. Without
+    ha-mcp admitted those buckets are `subcall_not_admitted`.
+  - A numeric-like query, or a helper probe that does not show a clean
+    scrub, withholds body matching for the body buckets
+    (`body_numeric_query`, `body_scrub_degraded`, `body_scrub_unverified`).
+  - Partial semantics: each bucket reports its own `partial_reasons`, and a
+    failed sub-call affects only its bucket. No visibility filter
+    (HAMCP-499).
+  - Scoring (W6b, #519): the component route's tier scorer over the
+    composed name, aliases, labels, device texts, area and floor; every
+    entity row carries the composed `name`. Every entity search reads the
+    device registry, and every query the area, floor and label registries;
+    no new source (`test_the_reads_are_unchanged`).
+  - Catalog: 114 tools, 88 Engineering and 26 delegated, unchanged by W6b
+    and by W7 (#520, docs only).
+  - Design: `docs/HAMCP_481_NATIVE_SEARCH_DESIGN.md` revision 5 (W7, #520)
+    is the implementation record (§10).
+
 ## Automation run counts (2.9.1, HAMCP-476)
 
 `get_automation_run_counts` is a native, read-only, Engineering-owned evidence

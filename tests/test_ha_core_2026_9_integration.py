@@ -25,6 +25,7 @@ BETA = ROOT / "hass_mcp_engineering_beta"
 sys.path.insert(0, str(BETA))
 
 from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
+    INTERNAL_ONLY_DELEGATED_READS,
     RETIRED_DELEGATED_READS,
 )
 from ha_mcp_engineering.ha_core_readmission import (  # noqa: E402
@@ -95,6 +96,7 @@ from tests.test_ha_core_capability_auto_readmission import (  # noqa: E402
     _snapshot,
 )
 from tests.support import frozen_signed_reuse  # noqa: E402
+from tests.support import internal_search_page  # noqa: E402
 from tests.support.shipped_920_reads import READS_920  # noqa: E402
 from tests.support.core_gate import reconcile_through_gate  # noqa: E402
 from tests.f3_synthetic_adapter import (  # noqa: E402
@@ -3032,7 +3034,7 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         # HAMCP-437 I2a-D: the shipped registry holds only ha-mcp 9.2.0.
         policy = registry.by_version["9.2.0"].policy
         counts = policy.classification_counts
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 87)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 88)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts; HAMCP-501 W6: + native ha_search
         self.assertEqual(counts["automatic_read"], 27)
         self.assertEqual(counts["held_for_canary"], 1)
         self.assertEqual(
@@ -3045,14 +3047,22 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         )
         # HAMCP-290: Engineering retires ha_get_hacs_info (Josh, 2026-11-08);
         # the 9.2.0 policy already classifies it unsupported, so no matched
-        # read is withheld for retirement (87 + 27 - 0 = 114).
+        # read is withheld for retirement. HAMCP-501 W6 (G1): the delegated
+        # ha_search stays an automatic_read but is admitted internal-only, so
+        # it is never published (88 + 27 - 0 - 1 = 114).
         retired = {
             item.upstream_name
             for item in policy.tools
             if item.classification == "automatic_read"
         } & RETIRED_DELEGATED_READS
         self.assertEqual(retired, set())
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + counts["automatic_read"] - len(retired), 114)  # HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
+        internal_only = {
+            item.upstream_name
+            for item in policy.tools
+            if item.classification == "automatic_read"
+        } & INTERNAL_ONLY_DELEGATED_READS
+        self.assertEqual(internal_only, {"ha_search"})
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + counts["automatic_read"] - len(retired) - len(internal_only), 114)  # HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
         # HAMCP-162: the optional ha_config_get_yaml route is mapped but is
         # never a stock policy entry; HAMCP-290 retired ha_get_hacs_info
         # from the mapping (31 -> 30). The ha_manage_blueprints mapping
@@ -3120,7 +3130,9 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         # HAMCP-290: the retired delegated ha_get_hacs_info is subtracted
         # only when the newest policy classifies it automatic_read; 9.1.2
         # already marks it unsupported, so 27 stay and 87 + 27 = 114 (HAMCP-134, HAMCP-297, HAMCP-231, HAMCP-476).
-        self.assertEqual(counts["expected_delegated_reads"], 27)
+        # HAMCP-501 W6 (G1): the delegated ha_search is internal-only and the
+        # native ha_search is static, so 88 + 26 = 114.
+        self.assertEqual(counts["expected_delegated_reads"], 26)
         self.assertEqual(counts["expected_connector_total"], 114)  # HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
 
     async def test_missing_dashboard_evidence_withholds_only_dashboard_resources(self):
@@ -3154,12 +3166,16 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
 
         # HAMCP-437 I2a-D: 9.2.0 marks the retired ha_get_hacs_info
         # unsupported (HAMCP-290), so only the dashboard read is withheld.
+        # HAMCP-501 W6 (G1): the internal-only ha_search is admitted but
+        # never registered.
         self.assertNotIn("ha_get_hacs_info", READS_920)
         self.assertEqual(
             len(registered_tools(server)),
-            len(READS_920) - 1,
+            len(READS_920) - 1 - len(INTERNAL_ONLY_DELEGATED_READS),
             msg=json.dumps(health, sort_keys=True),
         )
+        self.assertIsNone(registered_tools(server).get("ha_search"))
+        self.assertIn("ha_search", gateway._internal)
         self.assertIsNone(
             registered_tools(server).get("ha_config_list_dashboard_resources")
         )
@@ -3209,7 +3225,7 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         # device-dependent reads; 25 matched, 5 Core-withheld, 1 retired.
         self.assertEqual(health["core_withheld_read_count"], 5 + len(RETIRED_DELEGATED_READS))
         self.assertEqual(health["dynamically_exposed_count"], 20 - len(RETIRED_DELEGATED_READS))
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + 19, 106)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + 19, 107)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts; HAMCP-501 W6: + native ha_search
         self.assertEqual(
             {item["tool"] for item in health["core_withheld_tools"]},
             set(DEVICE_DEPENDENT_DELEGATED_TOOLS) | RETIRED_DELEGATED_READS,
@@ -3250,9 +3266,12 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             gateway.health_snapshot()["dynamically_exposed_count"],
             # HAMCP-437 I2a-D: 9.2.0 marks ha_get_hacs_info unsupported, so
-            # its whole shipped read set is exposed.
-            len(READS_920),
+            # its whole shipped read set is exposed. HAMCP-501 W6 (G1): but
+            # the internal-only ha_search, which is never published.
+            len(READS_920) - len(INTERNAL_ONLY_DELEGATED_READS),
         )
+        self.assertIsNone(registered_tools(server).get("ha_search"))
+        self.assertIn("ha_search", gateway._internal)
         self.assertGreater(gateway._admission_generation, upstream_generation)
         counters = runtime.health_snapshot()["counters"]
         # HAMCP-290: the retired read is not a Core catalog withdrawal, so
@@ -3380,7 +3399,9 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         transport = FakeTransport(tools, version="9.2.0")
         gateway = UpstreamReadGateway()
         gateway.configure(
-            settings(),
+            # HAMCP-501 W6: the internal ha_search page fails closed on any
+            # redaction (W4 D2), so the endpoint occurs in no reply.
+            internal_search_page.page_settings(settings()),
             transport=transport,
             release_registry=registry,
             core_runtime=runtime,
@@ -3407,8 +3428,16 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
                 )
                 transport.result = rc3.device_read_result(name)
                 tool = registered_tools(server).get(name)
-                self.assertIsNotNone(tool)
-                value = json.loads(await tool.run(dict(arguments)))
+                if internal_search_page.is_internal_only(name):
+                    # HAMCP-501 W6 (G1): the delegated ha_search is reached
+                    # only as a native sub-call page, never as a published
+                    # read; its own Core requirement still gates it (G2).
+                    self.assertIsNone(tool)
+                    self.assertIsNone(registered_tools(server).get(f"ha_mcp__{name}"))
+                    value = await internal_search_page.execute_page(gateway, name)
+                else:
+                    self.assertIsNotNone(tool)
+                    value = json.loads(await tool.run(dict(arguments)))
                 self.assertTrue(value["success"], value)
                 self.assertEqual(transport.calls[-1][0], name)
                 if name in rc3.DEVICE_PROJECTION_TOOLS:

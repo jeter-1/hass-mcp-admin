@@ -43,6 +43,9 @@ _EVIDENCE_COUNTS = ("redacted_field_count", "category_count", "marker_collision_
 _CATEGORY = re.compile(r"[a-z][a-z_]{0,39}")
 _MAX_CATEGORIES = 32
 _NO_EVIDENCE = object()
+# HAMCP-503 TB-3: Core 2026.11.3 DEFAULT_STORED_TRACES (``trace/const.py:19``).
+CORE_DEFAULT_STORED_TRACES = 5
+_NO_RETENTION_GAP = {"polls": 0, "last_at_ms": None, "listed_at_ms": None}
 # The longest the store worker waits for the event loop to answer the
 # post-lock authority check; no answer refuses the commit.
 _GUARD_SECONDS = 5.0
@@ -159,6 +162,11 @@ class TraceSnapshotService:
         # HAMCP-296: the trace-watch health summary, refreshed by every store
         # transaction; health reads it without disk I/O or the store lock.
         self.summary = None
+        # HAMCP-503 TB-3: watch ID -> {"polls", "last_at_ms", "listed_at_ms"}
+        # for polls whose Core run ring may have evicted runs since the
+        # previous listing. In process only, never written: it resets on
+        # restart, and the store's watch row format is unchanged.
+        self.retention_gaps = {}
 
     # ------------------------------------------------------------------
     # Authority, Core reads and record construction
@@ -948,6 +956,7 @@ class TraceSnapshotService:
 
     def _public_watch(self, watch, index, now_ms):
         held = sum(1 for e in index["snapshots"] if e["watch_id"] == watch["watch_id"])
+        gap = self.retention_gaps.get(watch["watch_id"], _NO_RETENTION_GAP)
         status = ("paused_core_unavailable" if self.paused and watch["baseline_done"] else
                   "watching" if watch["baseline_done"] else "awaiting_first_poll")
         meta = self._meta(index, watch["watch_id"])
@@ -965,6 +974,9 @@ class TraceSnapshotService:
             "skipped_polls": watch["skipped_polls"], "uncaptured_runs": watch["uncaptured_runs"],
             "last_poll_at": (None if watch["last_poll_at_ms"] is None
                              else c.utc_text(watch["last_poll_at_ms"] / 1000)),
+            "retention_gap_polls": gap["polls"],
+            "last_retention_gap_at": (None if gap["last_at_ms"] is None
+                                      else c.utc_text(gap["last_at_ms"] / 1000)),
         }
 
     def _watch_list(self, index, now_ms):
@@ -1186,6 +1198,13 @@ class TraceSnapshotService:
         held = ({w["automation_id"] for w in index["watches"]}
                 | {r["automation_id"] for r in index["lifecycle"]["lapsed"]})
         self.watch_sources = {key: raw for key, raw in self.watch_sources.items() if key in held}
+        # HAMCP-503 TB-3: an ended watch's gap count goes with it, and a
+        # reinstated watch keeps its ID but starts a fresh baseline, so its
+        # count starts again at zero (review M1).
+        active = {w["watch_id"] for w in index["watches"]}
+        fresh = {item["watch_id"] for item in renewed or () if item["outcome"] == "reinstated"}
+        self.retention_gaps = {key: gap for key, gap in self.retention_gaps.items()
+                               if key in active and key not in fresh}
         now_ms = _ms(now)
         result = {
             "action": action,
@@ -1228,6 +1247,8 @@ class TraceSnapshotService:
         authorized = authority is not None
         now = self.clock()
         index = await self._run(self._maintain, _ms(now))
+        current = {w["watch_id"] for w in index["watches"]}
+        self.retention_gaps = {k: v for k, v in self.retention_gaps.items() if k in current}
         lost = [w["watch_id"] for w in index["watches"] if self._source(w["automation_id"]) is None]
         if lost:
             index = await self._run(self._end_watches, lost, _ms(now))
@@ -1321,6 +1342,7 @@ class TraceSnapshotService:
             watch_deadline = time.monotonic() + c.TICK_SECONDS * c.READ_SHARE
         watch_id, automation_id = watch["watch_id"], watch["automation_id"]
         source = self._source(automation_id)
+        listed_at_ms = _ms(self.clock())
         try:
             async with asyncio.timeout_at(self._loop_deadline(watch_deadline)):
                 listing = await self.list_runs(source)
@@ -1418,7 +1440,35 @@ class TraceSnapshotService:
             # Retired while queued: nothing written; the runs are read next time.
             self.paused = True
             return False
+        self._note_retention_gap(watch, listing.headers, listed_at_ms)
         return True
+
+    def _note_retention_gap(self, watch, headers, listed_at_ms):
+        """Count a poll whose run ring may have evicted runs (HAMCP-503 TB-3).
+
+        Core keeps only the newest ``stored_traces`` run traces per
+        automation, oldest evicted first. When this listing's run ring is
+        full and its oldest run started after the previous successful
+        listing, runs between the two may never have been listed. The cap is
+        assumed to be Core's default of 5: a configured cap below 5 can hide
+        a gap and one above 5 can over-report. Not-triggered traces are not
+        watched, so only the runs ring is checked.
+        """
+
+        gap = self.retention_gaps.setdefault(watch["watch_id"], dict(_NO_RETENTION_GAP))
+        # Before this process's first listing of the watch: the stored last
+        # poll (a skipped poll also sets it, so this can only under-report),
+        # else the watch's creation, from which its runs are captured.
+        since_ms = gap["listed_at_ms"]
+        if since_ms is None:
+            since_ms = (watch["last_poll_at_ms"] if watch["baseline_done"]
+                        and watch["last_poll_at_ms"] is not None else watch["created_at_ms"])
+        gap["listed_at_ms"] = listed_at_ms
+        ring = [h for h in headers if not h.not_triggered]
+        if (len(ring) >= CORE_DEFAULT_STORED_TRACES
+                and min(_ms(h.started_instant.timestamp()) for h in ring) > since_ms):
+            gap["polls"] += 1
+            gap["last_at_ms"] = _ms(self.clock())
 
     @staticmethod
     def _loop_deadline(monotonic_deadline):

@@ -566,10 +566,14 @@ class CoreContinuityTests(unittest.IsolatedAsyncioTestCase):
         gateway, server, transport = await self.gateway(runtime)
         tools = registered_tools(server)
         # HAMCP-290: the delegated ha_get_hacs_info is retired (Josh,
-        # 2026-11-08) and never exposed, so 28 matched reads expose 27.
-        self.assertEqual(len(tools), 27)
+        # 2026-11-08) and never exposed. HAMCP-501 W6 (G1, as relayed by the
+        # architect): the delegated ha_search is internal-only, so 28 matched
+        # reads expose 26.
+        self.assertEqual(len(tools), 26)
         self.assertNotIn("ha_get_hacs_info", tools)
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(tools), 114)  # HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
+        self.assertNotIn("ha_search", tools)
+        self.assertIn("ha_search", gateway._internal)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(tools), 114)  # HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts; HAMCP-501 W6: + native ha_search, - delegated ha_search
         self.assertNotIn("ha_get_operation_status", tools)
         result = json.loads(await tools["ha_get_state"].run(dict(STATE_ARGUMENTS)))
         self.assertTrue(result["success"])

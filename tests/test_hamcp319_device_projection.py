@@ -33,6 +33,7 @@ from ha_mcp_engineering.ha_core_readmission.probe_profiles import (  # noqa: E40
 from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
     CHILD_DEVICE_PROBE_PROFILE,
     DEVICE_DEPENDENT_DELEGATED_TOOLS,
+    INTERNAL_ONLY_DELEGATED_READS,
     delegated_provider_compatibility,
 )
 from ha_mcp_engineering.providers import upstream_device_projection as projection  # noqa: E402
@@ -1034,7 +1035,12 @@ class CoreChildDeviceBindingTests(unittest.IsolatedAsyncioTestCase):
         await case.asyncSetUp()
         self.assertEqual((await case.publish())["compatible_count"], 22)
         h = await Harness(self, version, core_runtime=case.core).start()
-        self.assertTrue(DEVICE_DEPENDENT_DELEGATED_TOOLS <= h.snapshot().keys())
+        # HAMCP-501 W6: the delegated ha_search is admitted internal-only.
+        self.assertTrue(DEVICE_DEPENDENT_DELEGATED_TOOLS - INTERNAL_ONLY_DELEGATED_READS
+                        <= h.snapshot().keys())
+        self.assertFalse(INTERNAL_ONLY_DELEGATED_READS & h.snapshot().keys())
+        self.assertTrue(INTERNAL_ONLY_DELEGATED_READS & DEVICE_DEPENDENT_DELEGATED_TOOLS
+                        <= h.gateway._internal.keys())
         result, telemetry = await h.call({"device_id": "synthetic-child-device"}, ok(FIXTURE["single_child"]))
         self.assertTrue(result["success"], result)
         device = result["data"]["device"]
