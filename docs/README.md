@@ -144,6 +144,7 @@ the time; current behavior is in source and the reference documents above.
 - [HAMCP-232 + HAMCP-145 (input_select): governed edits to existing UI helpers and setting an input_select value — design](HAMCP_232_145_HELPER_OPTIONS_AND_SELECT_DESIGN.md)
 - [HAMCP-253: inspect, then acknowledge stuck governance records](HAMCP_253_STUCK_RECORD_ACKNOWLEDGEMENT_DESIGN.md)
 - [HAMCP-269: five-capability disposable Core evidence](HAMCP_269_SEQ15_CORE_EVIDENCE.md)
+- [HAMCP-346: governed configuration edits for more storage-collection helpers — design](HAMCP_346_HELPER_EDITS_DESIGN.md)
 
 ## Evidence
 
