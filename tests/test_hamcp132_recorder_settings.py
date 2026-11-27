@@ -1434,6 +1434,7 @@ except ImportError:  # pragma: no cover - the module is in this repository
 
 
 from support import ha_mcp_920_yaml as yaml920  # noqa: E402  (HAMCP-437)
+from support.parent_request import enter_authorized_parent  # noqa: E402  (HAMCP-510)
 
 # HAMCP-437: the reader binds the 9.2.0 filesystem-on capture; the stock
 # 9.2.0 catalog omits the YAML tool.
@@ -1442,6 +1443,12 @@ READER_VERSIONS = (yaml920.VERSION,)
 
 class YamlConfigReaderTests(yaml920.Harness):
     """The gateway's fixed recorder-path YAML route (``yaml_config_reader``)."""
+
+    def setUp(self):
+        super().setUp()
+        # HAMCP-510: production reads run inside a parent request with Core
+        # dispatch authority; the no-parent refusal has its own tests.
+        self.parent = enter_authorized_parent(self)
 
     async def test_admitted_reader_dispatches_only_contract_paths(self):
         for version in READER_VERSIONS:
@@ -1468,7 +1475,7 @@ class YamlConfigReaderTests(yaml920.Harness):
                 self.assertEqual([e["event"] for e in events], ["recorder_settings_yaml_read"] * 3)
                 self.assertEqual({e["provider"] for e in events}, {"upstream_read_gateway"})
                 self.assertFalse(any(e["fallback_occurred"] for e in events))
-                self.assertIsNone(current_telemetry())
+                self.assertIs(current_telemetry(), self.parent)
 
     async def test_reader_propagates_caller_and_restores_parent_context(self):
         gateway, transport = await self.gateway()

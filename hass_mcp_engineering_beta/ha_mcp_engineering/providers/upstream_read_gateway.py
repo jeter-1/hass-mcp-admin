@@ -4150,12 +4150,15 @@ class UpstreamReadGateway:
             if not current():
                 return {"success": False, "details": {"failure_category": "provider_authority_changed"}}
             parent = current_telemetry()
+            if parent is None or parent.core_dispatch_authorizer is None:
+                # HAMCP-510: no parent request or no authority to inherit:
+                # refused before a request starts, as for search sub-call pages.
+                return {"success": False, "details": {"failure_category": "provider_authority_changed"}}
             telemetry, token = begin_request()
             telemetry.tool_name = "dependency_script_read"
-            if parent is not None:
-                telemetry.caller_id = parent.caller_id
-                telemetry.core_dispatch_authorizer = parent.core_dispatch_authorizer
-                telemetry.audit_context["parent_request_id"] = parent.request_id
+            telemetry.caller_id = parent.caller_id
+            telemetry.core_dispatch_authorizer = parent.core_dispatch_authorizer
+            telemetry.audit_context["parent_request_id"] = parent.request_id
             result: dict[str, Any] = {}
             try:
                 if not telemetry.authorize_core_dispatch():
@@ -4223,12 +4226,15 @@ class UpstreamReadGateway:
             if not current():
                 return {"success": False, "details": {"failure_category": "provider_authority_changed"}}
             parent = current_telemetry()
+            if parent is None or parent.core_dispatch_authorizer is None:
+                # HAMCP-510: no parent request or no authority to inherit:
+                # refused before a request starts, as for search sub-call pages.
+                return {"success": False, "details": {"failure_category": "provider_authority_changed"}}
             telemetry, token = begin_request()
             telemetry.tool_name = event
-            if parent is not None:
-                telemetry.caller_id = parent.caller_id
-                telemetry.core_dispatch_authorizer = parent.core_dispatch_authorizer
-                telemetry.audit_context["parent_request_id"] = parent.request_id
+            telemetry.caller_id = parent.caller_id
+            telemetry.core_dispatch_authorizer = parent.core_dispatch_authorizer
+            telemetry.audit_context["parent_request_id"] = parent.request_id
             result: dict[str, Any] = {}
             try:
                 if not telemetry.authorize_core_dispatch():
@@ -4301,12 +4307,15 @@ class UpstreamReadGateway:
             if not current():
                 return {"success": False, "details": {"failure_category": "provider_authority_changed"}}
             parent = current_telemetry()
+            if parent is None or parent.core_dispatch_authorizer is None:
+                # HAMCP-510: no parent request or no authority to inherit:
+                # refused before a request starts, as for search sub-call pages.
+                return {"success": False, "details": {"failure_category": "provider_authority_changed"}}
             telemetry, token = begin_request()
             telemetry.tool_name = "history_slice_read"
-            if parent is not None:
-                telemetry.caller_id = parent.caller_id
-                telemetry.core_dispatch_authorizer = parent.core_dispatch_authorizer
-                telemetry.audit_context["parent_request_id"] = parent.request_id
+            telemetry.caller_id = parent.caller_id
+            telemetry.core_dispatch_authorizer = parent.core_dispatch_authorizer
+            telemetry.audit_context["parent_request_id"] = parent.request_id
             result: dict[str, Any] = {}
             try:
                 if not telemetry.authorize_core_dispatch():

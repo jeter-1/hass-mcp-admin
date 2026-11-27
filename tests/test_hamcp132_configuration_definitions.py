@@ -1858,10 +1858,17 @@ async def serve_through_gateway(arguments, yaml_values=None, core_values=None, *
 
 
 from support import ha_mcp_920_yaml as yaml920  # noqa: E402  (HAMCP-437)
+from support.parent_request import enter_authorized_parent  # noqa: E402  (HAMCP-510)
 
 
 class DefinitionReaderPurposeTests(yaml920.Harness):
     """The gateway's ``configuration_definitions`` YAML purpose: its own fixed paths only."""
+
+    def setUp(self):
+        super().setUp()
+        # HAMCP-510: production reads run inside a parent request with Core
+        # dispatch authority; the no-parent refusal has its own tests.
+        self.parent = enter_authorized_parent(self)
 
     async def test_purpose_dispatches_only_its_paths(self):
         for version in (yaml920.VERSION,):
