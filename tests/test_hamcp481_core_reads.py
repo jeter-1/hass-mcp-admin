@@ -50,6 +50,9 @@ APPROVED_REQUIREMENTS = frozenset({
     "core.basic_rest_read", "core.basic_websocket_read", "core.non_device_registry_read",
     "core.direct_device_registry_read", "core.automation_configuration_read",
     "core.direct_entity_state_read",
+    # HAMCP-447 (Lane B2, as relayed by the architect): the existing signed
+    # dashboard configuration profile, held only when dashboards are searched.
+    "core.dashboard_configuration_read",
 })
 # Every read: (transport, command, requirement, attested, shape).
 EXPECTED_TABLE = {
@@ -67,6 +70,11 @@ EXPECTED_TABLE = {
                       "input_button")},
     "entity_registry_entries": ("websocket", "config/entity_registry/get_entries",
                                 "core.basic_websocket_read", False, "entries"),
+    # HAMCP-447: native dashboard search.
+    "dashboards": ("websocket", "lovelace/dashboards/list", "core.dashboard_configuration_read", True,
+                   "rows"),
+    "dashboard_config": ("websocket", "lovelace/config", "core.dashboard_configuration_read", True,
+                         "config"),
 }
 # The signed check that pins each attested read's exact command and shape.
 ATTESTING_CHECK = {
@@ -76,6 +84,8 @@ ATTESTING_CHECK = {
     "label_registry": "websocket_label_registry_list",
     "entity_registry": "websocket_entity_registry_list",
     "device_registry": "websocket_device_registry_list",
+    "dashboards": "websocket_lovelace_dashboards_list",
+    "dashboard_config": "websocket_lovelace_config_get",
 }
 # HAMCP-501 W6 S1 b+: the body reads native search no longer has.
 REMOVED_READS = ("automation_config", "script_config", "scene_config")
@@ -125,6 +135,13 @@ def healthy():
         **{f"{domain}/list": [{"id": "guest_mode", "name": "Guest mode", "icon": "mdi:account"}]
            for domain in ("input_boolean", "input_number", "input_select", "input_text", "input_datetime",
                           "input_button")},
+        # Core 2026.11.3 ``lovelace/dashboards/list`` and batched ``lovelace/config``
+        # outcomes (HAMCP-447; synthetic).
+        "lovelace/dashboards/list": [
+            {"id": "synthetic_board", "url_path": "synthetic-board", "mode": "storage",
+             "title": "Synthetic", "icon": None, "require_admin": False, "show_in_sidebar": True}],
+        "lovelace/config": lambda payloads: [(True, {"views": [{"title": "Synthetic"}]})
+                                             for _ in payloads],
     }
 
 
@@ -219,10 +236,19 @@ class ContractTableTests(unittest.TestCase):
         profiles = {profile.capability_id: profile for profile in CORE_CAPABILITY_PROFILES}
         self.assertLessEqual(set(c.CORE_REQUIREMENTS), APPROVED_REQUIREMENTS)
         self.assertLessEqual(set(c.CORE_REQUIREMENTS), set(profiles))
-        self.assertEqual({read.requirement for read in c.READS.values()}, set(c.CORE_REQUIREMENTS))
+        self.assertEqual({read.requirement for read in c.READS.values()}, set(c.REQUIREMENT_ORDER))
+        # HAMCP-447: the dashboard profile follows the four, and only the
+        # dashboard reads need it.
+        self.assertLessEqual(set(c.REQUIREMENT_ORDER), APPROVED_REQUIREMENTS)
+        self.assertLessEqual(set(c.REQUIREMENT_ORDER), set(profiles))
+        self.assertEqual(c.REQUIREMENT_ORDER, (*c.CORE_REQUIREMENTS, "core.dashboard_configuration_read"))
+        self.assertEqual(c.requirements_for(["dashboards", "dashboard_config"]),
+                         ("core.dashboard_configuration_read",))
+        self.assertEqual(c.requirements_for([name for name in c.READS if not name.startswith("dashboard")]),
+                         c.CORE_REQUIREMENTS)
         # The states list is ``rest_states_list``; the single-entity profile is unused.
         self.assertNotIn("core.direct_entity_state_read", c.CORE_REQUIREMENTS)
-        self.assertEqual(c.requirements_for(c.READS), c.CORE_REQUIREMENTS)
+        self.assertEqual(c.requirements_for(c.READS), c.REQUIREMENT_ORDER)
         self.assertEqual(c.requirements_for(["search_related", "states"]),
                          ("core.basic_rest_read", "core.basic_websocket_read"))
         # HAMCP-501 W6 S1 b+: no read needs the automation configuration profile.
@@ -240,7 +266,8 @@ class ContractTableTests(unittest.TestCase):
     def test_every_read_is_read_only(self):
         for read in c.READS.values():
             last = read.command.rsplit("/", 1)[-1]
-            self.assertIn(last, {"states", "list", "related", "get_entries"}, read.name)
+            # HAMCP-447: ``lovelace/config`` reads a dashboard configuration.
+            self.assertIn(last, {"states", "list", "related", "get_entries", "config"}, read.name)
         source = (PACKAGE / "search/core_reads.py").read_text(encoding="utf-8")
         tree = ast.parse(source)
         methods = []
@@ -252,8 +279,19 @@ class ContractTableTests(unittest.TestCase):
         self.assertEqual(set(methods), {"GET"})
 
     def test_batched_payloads_are_ones_the_client_admits(self):
-        # HAMCP-501 W6 S1 b+: ``search/related`` is the only batched read.
-        self.assertEqual(c.BATCH_READS, {"search_related"})
+        # HAMCP-501 W6 S1 b+: ``search/related`` is the only batched read by
+        # entity; HAMCP-447 batches ``lovelace/config`` by dashboard, in the
+        # client's two shapes and never with ``force``.
+        self.assertEqual(c.BATCH_READS, {"search_related", "dashboard_config"})
+        for target, expected in ((None, {"type": "lovelace/config"}),
+                                 ("synthetic-board", {"type": "lovelace/config", "url_path": "synthetic-board"})):
+            config = c.config_payload(target)
+            self.assertEqual(config, expected)
+            self.assertTrue(ws.batch_command_allowed(config), config)
+        for bad in ("Synthetic-Board", "", "a/b", "x" * 257, 7, True):
+            with self.assertRaises(c.CoreReadError) as error:
+                c.config_payload(bad)
+            self.assertEqual(error.exception.reason, "invalid_arguments")
         payload = c.batch_payload("search_related", "light.kitchen")
         self.assertTrue(ws.batch_command_allowed(payload), payload)
         self.assertEqual(payload, {"type": "search/related", "item_type": "entity", "item_id": "light.kitchen"})
@@ -262,7 +300,8 @@ class ContractTableTests(unittest.TestCase):
             self.assertFalse(ws.batch_command_allowed({"type": c.READS[name].command}))
         for name, item in (("automation_config", "automation.morning"), ("script_config", "script.wake"),
                            ("scene_config", "abc_1"), ("search_related", "Light.Kitchen"),
-                           ("search_related", 7), ("states", "light.kitchen"), (7, "light.kitchen")):
+                           ("search_related", 7), ("states", "light.kitchen"), (7, "light.kitchen"),
+                           ("dashboard_config", "synthetic-board")):
             with self.assertRaises(c.CoreReadError) as error:
                 c.batch_payload(name, item)
             self.assertEqual(error.exception.reason, "invalid_arguments")
@@ -277,7 +316,8 @@ class ContractTableTests(unittest.TestCase):
         for attribute in ("project_config", "project_scene_config"):
             self.assertFalse(hasattr(r, attribute), attribute)
         self.assertFalse(hasattr(CoreReadSession, "scene_config"))
-        self.assertEqual({read.shape for read in c.READS.values()}, {"rows", "related", "entries"})
+        # HAMCP-447: a dashboard configuration is scored and dropped, never kept.
+        self.assertEqual({read.shape for read in c.READS.values()}, {"rows", "related", "entries", "config"})
         for read in c.READS.values():
             self.assertNotIn(read.command, {"automation/config", "script/config", "GET /config/scene/config/{}"})
 
@@ -799,6 +839,11 @@ class ReachabilityTests(unittest.TestCase):
             ("ha_mcp_engineering/application.py", (
                 "ha_mcp_engineering.search.core_reads",
                 "ha_mcp_engineering.search.core_reads.CoreReadSession")),
+            # HAMCP-447: the Core route's static requirements take the reads
+            # the engine itself would issue (no I/O).
+            ("ha_mcp_engineering/ha_core_readmission/routes.py", (
+                "ha_mcp_engineering.search", "ha_mcp_engineering.search.core_contracts",
+                "ha_mcp_engineering.search.engine")),
             # HAMCP-519: get_helper_settings reads through the fixed Core read
             # contracts (the entity registry and input_*/list rows) and the
             # session's INVALID marker; it adds no Core command.

@@ -2,10 +2,10 @@
 
 The tool replaces the delegated ``ha_mcp__ha_search`` read. The engine
 (:mod:`..search.engine`) reads Home Assistant Core through one
-``CoreReadSession`` under this request's Core lease, and reaches the
-automation, script, scene, dashboard and flow-helper sub-calls only through
-the gateway's fixed internal-only ``ha_search`` page readers (G1). There is
-no fallback to the delegated route.
+``CoreReadSession`` under this request's Core lease (dashboards among those
+reads, HAMCP-447), and reaches the automation, script, scene and flow-helper
+sub-calls only through the gateway's fixed internal-only ``ha_search`` page
+readers (G1). There is no fallback to the delegated route.
 
 The public schema is ha-mcp 9.2.0's ``ha_search`` schema
 (``upstream_reads_9_2.PUBLIC_SCHEMAS``) with one change: the

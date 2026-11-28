@@ -312,17 +312,27 @@ ROWS: dict = {
     ),
     # Row 25.  HAMCP-441: result_fields enrichment and membership keys on entity
     # records (tools/search/entities.py:59,62,306-314,182-223 at 51e3aac7).
+    # HAMCP-447 (helper ids, option (a), as relayed by the architect): a flow
+    # helper record's entry_id (tools/search/component.py:84-86,
+    # smart_search/_flow_helpers.py:145,200 and the component's
+    # websocket_api/search_config.py:395,415 at 51e3aac7).
+    # HAMCP-447 (dashboard identity, as relayed by the architect): a native
+    # dashboard record's url_path and title, the names 9.2.0 returns
+    # (smart_search/_deep.py:1075-1083,1152-1160 at 51e3aac7). Native search
+    # checks url_path against URL_PATH_PATTERN and bounds the title; a
+    # sub-call row carrying either is drift (search/subcalls.py _ROW_KEYS).
     'ha_search': KeySet(
         admitted=frozenset({
             'aliases', 'area', 'automations', 'config_has_more', 'config_next_offset',
             'config_total_matches', 'count', 'dashboards', 'domain', 'domain_filter',
             'entities', 'entity_has_more', 'entity_id', 'entity_next_offset',
-            'entity_total_matches', 'errors', 'floor', 'friendly_name', 'has_more',
+            'entity_total_matches', 'entry_id', 'errors', 'floor', 'friendly_name',
+            'has_more',
             'helper_type', 'helpers', 'is_group', 'labels', 'limit', 'match_in_config',
             'match_in_name', 'match_in_references', 'match_type', 'member_entity_ids',
             'name', 'next_offset', 'offset', 'partial', 'query', 'scene_id', 'scenes',
             'score', 'script_id', 'scripts', 'search_type', 'search_types', 'state',
-            'success', 'warnings'
+            'success', 'title', 'url_path', 'warnings'
         }),
     ),
 }
@@ -495,7 +505,8 @@ def bucket_withheld_names(payload: Any, bucket: str) -> frozenset:
     HAMCP-501 W4 (decision D1, as relayed by the architect): the native search
     sub-calls disclose the record fields Row 25 withheld from their pages. W6
     S1 b+ (approved by Josh as relayed by the architect) adds the automation,
-    script and scene sub-calls to the dashboard and flow-helper ones. This is
+    script and scene sub-calls to the dashboard and flow-helper ones, and
+    HAMCP-447 makes dashboards native. This is
     :func:`projection`'s distinct-name walk over ``payload[bucket]`` only, so
     page-level names (``partial_reason``) are not record names. A value of a
     type its key does not admit counts under its own key. The names stay in
@@ -505,7 +516,7 @@ def bucket_withheld_names(payload: Any, bucket: str) -> frozenset:
 
     row = ROWS["ha_search"]
     if type(payload) is not dict or bucket not in (
-        "automations", "scripts", "scenes", "dashboards", "helpers",
+        "automations", "scripts", "scenes", "helpers",
     ):
         raise ValueError("invalid_response")
     records = payload.get(bucket)

@@ -330,9 +330,11 @@ STATIC_TOOL_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "get_automation_run_counts": ("core.basic_rest_read",),
     # HAMCP-501 W6: native ha_search reads exactly search.core_contracts.READS
     # (CORE_REQUIREMENTS; a test pins the equality).  Its automation, script,
-    # scene, dashboard and flow-helper sub-call pages keep the delegated
-    # route's own requirement (DELEGATED_CORE_REQUIREMENTS["ha_search"], G2);
-    # S1 b+ dropped the automation, script and scene configuration reads.
+    # scene and flow-helper sub-call pages keep the delegated route's own
+    # requirement (DELEGATED_CORE_REQUIREMENTS["ha_search"], G2); S1 b+
+    # dropped the automation, script and scene configuration reads.
+    # HAMCP-447: a search that reads dashboards also needs
+    # core.dashboard_configuration_read (static_tool_requirements).
     "ha_search": (
         "core.basic_rest_read", "core.basic_websocket_read", "core.non_device_registry_read",
         "core.direct_device_registry_read",
@@ -797,6 +799,21 @@ def static_tool_requirements(
         # use the 069A profile; an invalid request keeps the full set and
         # its target is refused.
         requirements = (LABEL_PROFILE,)
+
+    elif tool_name == "ha_search":
+        # HAMCP-447: the requirements of the reads the engine itself would
+        # issue for these arguments, so a search that reads dashboards also
+        # holds core.dashboard_configuration_read. A call the engine refuses
+        # reads nothing. Imported here: the search package is not needed to
+        # load this module.
+        from ..search import core_contracts, engine
+
+        try:
+            call = engine.parse_call(arguments)
+            reads = engine.reads_for(engine.entity_request(call), engine.config_request(call))
+        except (engine.SearchError, ValueError):
+            reads = ()
+        requirements = (*requirements, *core_contracts.requirements_for(reads))
 
     return tuple(sorted(set(requirements)))
 
