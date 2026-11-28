@@ -10,12 +10,17 @@ A value is sensitive when it is a string or a number and either a key on its
 path is a credential name, or it is a string that carries a credential shape:
 a bearer or basic prefix, or a query parameter (``?``, ``&``, ``#`` or ``;``
 then ``name=``) anywhere in the string, raw or percent-decoded, whose name is a
-credential name, or a URL authority whose userinfo carries a password
-(``//user:password@``). Neither rule requires a recognizable URL, so
-absolute, scheme-relative, relative and unusual URL forms are judged the same
-way. Names are squashed (case, ``+``, ``_``, ``-`` and spaces removed) before
-matching. A string still percent-encoded after three decodings is refused
-rather than judged.
+credential name, or a URL authority whose userinfo carries a non-empty
+password (``//user:password@``, judged at the last ``@`` of the authority as
+URL parsers do, so a user name may itself contain ``@``). Neither rule
+requires a recognizable URL, so absolute, scheme-relative, relative and
+unusual URL forms are judged the same way. Tab, line feed and carriage return
+are deleted before matching, as URL parsers delete them. A name runs back
+from its ``=`` to the nearest separator, and also, as a query parser reads
+it, to the first ``?`` or ``#`` or to an ``&`` or ``;``; names are squashed
+(case and every character but letters and digits removed) before matching.
+A string still percent-encoded after three decodings is refused rather than
+judged.
 """
 
 from __future__ import annotations
@@ -51,10 +56,17 @@ _URL_PARAMETER_NAMES = frozenset({"key", "auth", "sig", "signature"})
 _URL_PARAMETER_FRAGMENTS = ("signature",)
 
 _SQUASH = re.compile(r"[^a-z0-9]+")
-_QUERY_PARAMETER = re.compile(r"[?&#;]([^=&#;?\s]+)=")
-# ``//user:password@``: userinfo with a non-empty password. A user name alone
-# (``//user@host``) and a port (``//host:8123/``) are not credentials.
-_USERINFO_PASSWORD = re.compile(r"//[^/?#@\s:]*:[^/?#@\s]+@")
+# A name runs to ``=``; any character but a separator belongs to it, so a
+# space or other whitespace inside a name cannot hide it from the squash.
+_QUERY_PARAMETER = re.compile(r"[?&#;]([^=&#;?]+)=")
+# Where an authority starts: two or more slashes (either direction), or a
+# special scheme, whose slashes browsers do not require. It ends at the first
+# ``/``, ``?`` or ``#``; ending it nowhere earlier keeps it at least as long as
+# a parser's, and the userinfo before its last ``@`` at least as long too.
+_AUTHORITY_START = re.compile(r"[/\\]{2,}|(?:https?|wss?|ftp):[/\\]*", re.IGNORECASE)
+_AUTHORITY_END = re.compile(r"[/?#]")
+# The characters URL parsers delete wherever they occur.
+_DELETED = str.maketrans("", "", "\t\n\r")
 # Percent-decoding rounds applied to a string and to each parameter name, so
 # ``?%6bey=``, ``%3Fkey%3D`` and ``?api%20key=`` are judged as their plain form.
 # A string that a further round would still change fails closed.
@@ -71,11 +83,15 @@ def _squash(text: str) -> str:
 
 
 def _decoded_forms(text: str) -> Iterator[str]:
-    """``text``, then each further percent-decoding of it that changes it."""
+    """``text``, then each further percent-decoding of it that changes it.
 
+    Every form has tab, line feed and carriage return deleted.
+    """
+
+    text = text.translate(_DELETED)
     yield text
     for _ in range(_DECODE_ROUNDS):
-        decoded = unquote(text)
+        decoded = unquote(text).translate(_DELETED)
         if decoded == text:
             return
         text = decoded
@@ -102,8 +118,8 @@ def sensitive_key(key: Any, *, card_type: Any = None) -> bool:
 
 
 def _sensitive_parameter(name: str) -> bool:
-    # The name is decoded on its own as well: a decoded space (``api%20key``)
-    # would otherwise end the name before the query rule sees it.
+    # The name is decoded on its own as well: a decoded separator
+    # (``api%26key``) would otherwise split the name before it is judged.
     for decoded in _decoded_forms(name):
         squashed = _squash(decoded)
         if (
@@ -115,6 +131,54 @@ def _sensitive_parameter(name: str) -> bool:
     return False
 
 
+def _userinfo_password(form: str) -> bool:
+    """Whether an authority in ``form`` carries a non-empty password.
+
+    A user name alone (``//user@host``), an empty password (``//user:@host``)
+    and a port (``//host:8123/``) are not credentials.
+    """
+
+    position = 0
+    while start := _AUTHORITY_START.search(form, position):
+        begin = start.end()
+        end = _AUTHORITY_END.search(form, begin)
+        stop = end.start() if end else len(form)
+        at = form.rfind("@", begin, stop)
+        colon = form.find(":", begin, at) if at > begin else -1
+        if 0 <= colon < at - 1:
+            return True
+        # A later start inside this authority sees only part of the same
+        # userinfo, so it cannot find a password this one did not.
+        position = max(stop, begin)
+    return False
+
+
+def _parser_names(form: str) -> Iterator[str]:
+    """The names a query parser reads that may hold ``?`` or ``#``.
+
+    For each ``=``, the run back to the previous ``=``, ``&`` or ``;``: the
+    whole run when an ``&`` or ``;`` starts it, and the part after its first
+    ``?``, after its first ``#``, and after the first ``?`` that follows that
+    ``#`` (a query inside a fragment). At most four names per ``=``, so the
+    work stays linear in the string.
+    """
+
+    for piece in form.split("=")[:-1]:
+        cut = max(piece.rfind("&"), piece.rfind(";"))
+        run = piece[cut + 1 :]
+        if cut >= 0:
+            yield run
+        query = run.find("?")
+        if query >= 0:
+            yield run[query + 1 :]
+        fragment = run.find("#")
+        if fragment >= 0:
+            yield run[fragment + 1 :]
+            fragment_query = run.find("?", fragment)
+            if fragment_query >= 0:
+                yield run[fragment_query + 1 :]
+
+
 def sensitive_string(value: str) -> bool:
     """Whether a string carries a credential shape whatever its key."""
 
@@ -123,10 +187,13 @@ def sensitive_string(value: str) -> bool:
         return True
     form = value
     for form in _decoded_forms(value):
-        if _USERINFO_PASSWORD.search(form):
+        if _userinfo_password(form):
             return True
         for match in _QUERY_PARAMETER.finditer(form):
             if _sensitive_parameter(match.group(1)):
+                return True
+        for name in _parser_names(form):
+            if _sensitive_parameter(name):
                 return True
     # Encoded more deeply than the rounds judge: refuse rather than guess.
     return unquote(form) != form

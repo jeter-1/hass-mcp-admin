@@ -14,12 +14,14 @@ Synthetic values only; secret-shaped text is assembled at runtime.
 from __future__ import annotations
 
 from copy import deepcopy
+from itertools import product
 import json
 from pathlib import Path
 import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
+from urllib.parse import parse_qsl, quote, unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
@@ -146,6 +148,39 @@ URL_FORMS = (
     ("userinfo password", "https" + synthetic.SCHEME_SEPARATOR + "user:" + RAW + "@example.invalid/view"),
     ("scheme-relative userinfo", "//user:" + RAW + "@example.invalid/view"),
     ("encoded userinfo", "https%3A%2F%2Fuser%3A" + RAW + "%40example.invalid"),
+    # Cursor r2 F3 and F4 (PR #543): a user name holding "@", and tab, line
+    # feed, carriage return or a space inside a name or a password.
+    ("user name holding @", "https" + synthetic.SCHEME_SEPARATOR + "x@user:" + RAW + "@example.invalid/view"),
+    ("scheme-relative user name holding @", "//x@user:" + RAW + "@example.invalid/view"),
+    ("encoded user name holding @", "https%3A%2F%2Fx%40user%3A" + RAW + "%40example.invalid/view"),
+    ("tab inside a name", URL + "?ke\ty=" + RAW),
+    ("tab ending a name", URL + "?key\t=" + RAW),
+    ("line break inside a name", URL + "?ke\r\ny=" + RAW),
+    ("tab inside a password", "https" + synthetic.SCHEME_SEPARATOR + "user:" + RAW[:8] + "\t" + RAW[8:] + "@example.invalid"),
+    ("space inside a password", "https" + synthetic.SCHEME_SEPARATOR + "user:" + RAW[:8] + " " + RAW[8:] + "@example.invalid"),
+    ("space inside a name", URL + "?api key=" + RAW),
+    ("encoded separator inside a name", URL + "?ap%26i_key=" + RAW),
+    ("question mark inside a name", URL + "?k?ey=" + RAW),
+    ("hash inside a fragment name", URL + "#k#ey=" + RAW),
+    ("question mark inside a later name", URL + "?mode=dark&k?ey=" + RAW),
+    # Broader than the parser, which reads the names ``a?key``, ``a#key``,
+    # ``a?ke y`` and ``a?ke\x0by`` and no separator in the last form: the scan
+    # also judges each name after its nearest separator, and deletes a line
+    # break that a decoding produces.
+    ("name after a second question mark", "view?a?key=" + RAW),
+    ("name after a second hash", "view#a#key=" + RAW),
+    ("space inside a name after a second question mark", "view?a?ke y=" + RAW),
+    ("control character inside a name after a second question mark", "view?a?ke\x0by=" + RAW),
+    ("line break encoded inside an encoded separator", "view%3%0AFkey%3D" + RAW),
+    ("tab between the authority slashes", "/\t/user:" + RAW + "@example.invalid"),
+    ("tab inside the scheme", "ht\ttps:user:" + RAW + "@example.invalid"),
+    ("line break inside an encoded separator", "view%3\nFkey%3D" + RAW),
+    ("space ending a name", URL + "?key =" + RAW),
+    # The same class in browser URL parsing: a special scheme needs no
+    # slashes, and a backslash or a third slash stands for one.
+    ("special scheme without slashes", "https:user:" + RAW + "@example.invalid"),
+    ("backslashes for slashes", "https:\\\\user:" + RAW + "@example.invalid"),
+    ("three slashes", "https:///user:" + RAW + "@example.invalid"),
 )
 # The same forms with an ordinary parameter must still plan.
 ORDINARY_URL_FORMS = (
@@ -160,7 +195,10 @@ ORDINARY_URL_FORMS = (
     URL + "?q=a+b&page=2",
     "https" + synthetic.SCHEME_SEPARATOR + "example.invalid:8123/view?mode=dark",
     "https" + synthetic.SCHEME_SEPARATOR + "user@example.invalid/view",
+    "https" + synthetic.SCHEME_SEPARATOR + "x@user@example.invalid/view",
+    "https" + synthetic.SCHEME_SEPARATOR + "user:@example.invalid/view",
     "mailto:someone@example.invalid",
+    URL + "?mode=dark mode&theme=1",
 )
 # Codex r1 F2 (PR #543): custom cards may nest data whose ``type`` is not a
 # string; it is no card type, and it must not break the guard.
@@ -212,6 +250,138 @@ title top_margin type types unit url url_path user value variant vertical
 vertical_opening_direction view view_index view_layout views visibility visible
 yellow
 """.split()
+
+
+# The differential class guard (architect, after Cursor r2 on PR #543): a
+# generated corpus of URL shapes, judged by Python's own URL parser. Whatever
+# the parser reads as a userinfo password or a credential-named parameter,
+# the rule must refuse; the rule may be broader than the parser, never
+# narrower.
+CREDENTIAL_PARAMETER_NAMES = frozenset({"key", "auth", "sig", "signature"})
+DIFFERENTIAL_NAMES = (
+    "key", "apikey", "api_key", "token", "access_token", "auth", "sig",
+    "signature", "password", "X-API-Key", "mode", "monkey", "keyboard",
+)
+# Each control and whitespace character, and each character a URL gives a
+# meaning to, inserted at the start, middle and end (encoded, a separator
+# becomes part of a name or password).
+DIFFERENTIAL_INSERTS = (
+    "\t", "\n", "\r", "\r\n", " ", "\x0b", "\x0c", "\x00", "\x1f", "\x7f",
+    "\u00a0", "\u2028", "+", "@", ":", "&", "=", ";", "#", "?", "%",
+)
+DIFFERENTIAL_PREFIXES = (URL, "//example.invalid/view", "view", "")
+DIFFERENTIAL_SEPARATORS = (
+    "?",
+    "?mode=dark&",
+    "#",
+    "#/route?",
+    "?mode=dark#/route?",
+    "?debug#/route?",
+    ";",
+    "?mode=dark;",
+)
+DIFFERENTIAL_USERS = ("user", "x@user", "us:er", "", "a b")
+DIFFERENTIAL_AUTHORITIES = (
+    "https" + synthetic.SCHEME_SEPARATOR + "{}@example.invalid/view",
+    "HTTPS" + synthetic.SCHEME_SEPARATOR + "{}@example.invalid:8123/view?mode=dark",
+    "//{}@example.invalid/view",
+    "view/{}@example.invalid",
+)
+
+
+def _squashed(name):
+    return "".join(character for character in name.lower() if character.isascii() and character.isalnum())
+
+
+def _credential_name(name):
+    squashed = _squashed(name)
+    return (
+        sensitive_key(name)
+        or squashed in CREDENTIAL_PARAMETER_NAMES
+        or "signature" in squashed
+    )
+
+
+def _parser_finds_credential(value):
+    """Whether ``urlsplit`` and ``parse_qsl`` read a credential in ``value``.
+
+    Each of the string and its first three percent-decodings is split; the
+    query, the fragment, a query inside the fragment and the ``;`` parameters
+    of the path are each parsed with both ``&`` and ``;`` as separators. A
+    parameter counts when its name is a credential name and its value is not
+    empty (``?key&=value`` gives ``key`` no value and ``value`` no name).
+    """
+
+    form = value
+    for _ in range(4):
+        split = urlsplit(form)
+        if split.password:
+            return True
+        parts = [split.query, split.fragment, split.fragment.partition("?")[2]]
+        parts.extend(split.path.split(";")[1:])
+        for part in parts:
+            for piece in part.split(";"):
+                for name, value in parse_qsl(piece, keep_blank_values=True):
+                    if value and _credential_name(name):
+                        return True
+        form = unquote(form)
+    return False
+
+
+def _variants(text):
+    """``text`` with each insert at its start, middle and end, and case mixes."""
+
+    middle = len(text) // 2
+    yield text
+    yield text.upper()
+    yield "".join(c.upper() if i % 2 else c for i, c in enumerate(text))
+    for insert in DIFFERENTIAL_INSERTS:
+        for at in (0, middle, len(text)):
+            yield text[:at] + insert + text[at:]
+
+
+def _encodings(assemble, component):
+    """The string with no, one, two and three levels of percent-encoding, of
+    the whole string and of the component alone."""
+
+    for level in range(4):
+        whole = assemble(component)
+        encoded = component
+        for _ in range(level):
+            whole = quote(whole, safe="")
+            encoded = quote(encoded, safe="")
+        yield whole
+        if level:
+            yield assemble(encoded)
+
+
+def differential_corpus():
+    for name in DIFFERENTIAL_NAMES:
+        for variant in _variants(name):
+            for prefix, separator in product(DIFFERENTIAL_PREFIXES, DIFFERENTIAL_SEPARATORS):
+                yield from _encodings(
+                    lambda part: prefix + separator + part + "=" + RAW, variant
+                )
+    for password in _variants(RAW[:8] + RAW[-4:]):
+        for user, authority in product(DIFFERENTIAL_USERS, DIFFERENTIAL_AUTHORITIES):
+            yield from _encodings(
+                lambda part: authority.format(user + ":" + part), password
+            )
+        # Look-alikes: a user alone, an empty password, a port.
+        for authority in DIFFERENTIAL_AUTHORITIES:
+            yield authority.format(password)
+            yield authority.format(password + ":")
+    # The characters URL parsers delete, at every position of a whole
+    # credential-carrying string, raw and encoded once.
+    carriers = [
+        prefix + separator + "key=" + RAW
+        for prefix, separator in product(DIFFERENTIAL_PREFIXES, DIFFERENTIAL_SEPARATORS)
+    ]
+    carriers += [authority.format("user:" + RAW) for authority in DIFFERENTIAL_AUTHORITIES]
+    carriers += [quote(carrier, safe="") for carrier in carriers]
+    for carrier, deleted in product(carriers, ("\t", "\n", "\r")):
+        for at in range(len(carrier) + 1):
+            yield carrier[:at] + deleted + carrier[at:]
 
 
 class SensitivityRuleTests(unittest.TestCase):
@@ -286,6 +456,30 @@ class SensitivityRuleTests(unittest.TestCase):
                     ("/views/0/cards/0/options/apiKey",),
                 )
         self.assertTrue(sensitive_key("code", card_type="alarm-panel"))
+
+    def test_the_rule_refuses_whatever_the_url_parser_reads_as_a_credential(self):
+        flagged = missed = total = 0
+        misses = []
+        for value in differential_corpus():
+            total += 1
+            if not _parser_finds_credential(value):
+                continue
+            flagged += 1
+            if not sensitive_string(value):
+                missed += 1
+                if len(misses) < 5:
+                    misses.append(value)
+        self.assertEqual((missed, misses), (0, []))
+        # The corpus has teeth: the parser reads a credential in most strings.
+        self.assertGreater(total, 50000)
+        self.assertGreater(flagged, total // 2)
+
+    def test_the_parser_reads_no_credential_in_the_look_alikes(self):
+        # The parser is no stricter than the rule on ordinary URLs, so the
+        # differential test is not passing on an oracle that flags everything.
+        for value in (*ORDINARY_URL_FORMS, URL + "?mode=dark", URL + "?monkey=1&keyboard=2"):
+            with self.subTest(value=value):
+                self.assertFalse(_parser_finds_credential(value))
 
     def test_pointers_never_carry_a_value_or_an_unusual_key(self):
         value = {"headers": {"X-API-Key": RAW}, RAW + "-token": "x", "a b token": "y"}
