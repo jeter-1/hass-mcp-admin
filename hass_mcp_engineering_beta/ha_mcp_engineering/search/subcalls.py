@@ -1,9 +1,10 @@
 """The configuration sub-calls of native ``ha_search`` (HAMCP-481 W3, design
 sections 2.4 to 2.6; HAMCP-501 W6 S1).
 
-Automations, scripts, scenes, dashboards and flow helpers come from the
-delegated ha-mcp route. Under S1 = b+ (approved by Josh as relayed by the
-architect, 2026-11-26), automation, script and scene body matching is the
+Automations, scripts, scenes and flow helpers come from the delegated
+ha-mcp route; dashboards are native (HAMCP-447, :mod:`.dashboards`).
+Under S1 = b+ (approved by Josh as relayed by the architect, 2026-11-26),
+automation, script and scene body matching is the
 route's own: on the component route ha-mcp scrubs resolved ``!secret`` values
 before it scores a body, and on the legacy route a secret-bearing file fails
 that item closed (a name-only row, and the page is ``partial``). Native search
@@ -44,10 +45,10 @@ SCAN_DEADLINE_SECONDS = 60.0
 # The row bound of one scan (``MAX_CORE_PROBE_ITEMS``, design section 6.3).
 MAX_SCAN_ROWS = c.MAX_ITEMS
 
-SUBCALL_TYPES = ("automation", "script", "scene", "dashboard", "helper")
+SUBCALL_TYPES = ("automation", "script", "scene", "helper")
 BUCKETS = {
     "automation": "automations", "script": "scripts", "scene": "scenes",
-    "dashboard": "dashboards", "helper": "helpers",
+    "helper": "helpers",
 }
 # Native serves these helper types; their sub-call rows are dropped.
 STORAGE_HELPER_TYPES = frozenset(c.INPUT_DOMAINS)
@@ -86,19 +87,20 @@ PAGE_BUDGET_BYTES = 60_000 - 8_000 - 13_000 - 2_000
 # is not checked as strict), a 21-character score (9.2.0's are at most 100)
 # and every flag false. A test pins each figure. A page of a type's largest
 # rows fits at ``PAGE_BUDGET_BYTES // ROW_BYTES`` rows (10 automation, 5
-# script, 5 scene, 150 dashboard or 3 helper rows). The largest ladder size
-# within that is 6 automation, 1 script, 1 scene, 150 dashboard or 1 helper
-# rows; the budget is conservative, so a scan of such rows steps down until
-# a page fits, at that size or a larger one. One such row fits a page of one.
+# script, 5 scene or 2 helper rows; a helper row's ``entry_id`` since
+# HAMCP-447). The largest ladder size within that is 6 automation, 1 script,
+# 1 scene or 1 helper row; the budget is conservative, so a scan of such
+# rows steps down until a page fits, at that size or a larger one. One such
+# row fits a page of one.
 ROW_BYTES = MappingProxyType({
-    "automation": 3_470, "script": 6_560, "scene": 6_560, "dashboard": 90, "helper": 9_360,
+    "automation": 3_470, "script": 6_560, "scene": 6_560, "helper": 12_440,
 })
 
 # Row 25 admitted configuration-record keys and their kinds.
 _ROW_KINDS = {
     "entity_id": str, "friendly_name": str, "script_id": str, "scene_id": str,
     "helper_type": str, "name": str, "match_in_name": bool, "match_in_config": bool,
-    "match_in_references": bool,
+    "match_in_references": bool, "entry_id": str,
 }
 # ha-mcp 9.2.0's component route sets these from the item's unique id or
 # configuration ``id``, which may be absent (``search_config.py``
@@ -113,12 +115,11 @@ _ROW_KEYS = MappingProxyType({
                          "match_in_config", "match_in_references"}),
     "scene": frozenset({"entity_id", "scene_id", "friendly_name", "score", "match_in_name",
                         "match_in_config", "match_in_references"}),
-    # A 9.2.0 dashboard row: Row 25 withholds its url_path, title and config.
-    "dashboard": frozenset({"score", "match_in_config", "match_in_references"}),
     # A 9.2.0 storage-helper or flow-helper row: Row 25 withholds a storage
-    # helper's config and a flow helper's entry_id.
-    "helper": frozenset({"entity_id", "helper_type", "name", "score", "match_in_name",
-                         "match_in_config", "match_in_references"}),
+    # helper's config and a flow helper's ``options_withheld``, and admits a
+    # flow helper's ``entry_id`` (HAMCP-447).
+    "helper": frozenset({"entity_id", "entry_id", "helper_type", "name", "score",
+                         "match_in_name", "match_in_config", "match_in_references"}),
 })
 
 COMPLETE = "complete"
@@ -163,9 +164,8 @@ class PageResult:
 class SubcallOutcome:
     """A finished scan.
 
-    ``total`` is what the scan adds to ``config_total_matches``: the first
-    page's total for dashboards, and the rows held for every other type (a
-    helper scan holds its flow-helper rows only). ``scrub`` is the worst
+    ``total`` is what the scan adds to ``config_total_matches``: the rows
+    it holds (a helper scan holds its flow-helper rows only). ``scrub`` is the worst
     scrub state of the scan's valid pages.
     """
 
@@ -255,14 +255,12 @@ async def scan(
     *,
     query: str,
     exact_match: bool,
-    needed: int,
     monotonic: Callable[[], float] = time.monotonic,
     deadline_seconds: float = SCAN_DEADLINE_SECONDS,
 ) -> SubcallOutcome:
     """Page one sub-call until a design section 2.6 stop condition.
 
-    The dashboard scan also stops once it holds ``needed`` rows (the caller's
-    ``offset + limit``); every other type is scanned whole. Pages follow
+    Every type is scanned whole. Pages follow
     ``PAGE_SIZE_LADDER``: a page too large for the reply bound is read again in
     smaller pages, which neither skip nor repeat a row. A failed page, a row
     too large for a page of one, the row bound, the call bound, the deadline
@@ -289,11 +287,7 @@ async def scan(
     started = monotonic()
 
     def finished(status: str) -> SubcallOutcome:
-        if search_type == "dashboard":
-            total = first_total if first_total is not None else 0
-        else:
-            total = len(rows)
-        return SubcallOutcome(search_type, status, tuple(rows), total, upstream_partial,
+        return SubcallOutcome(search_type, status, tuple(rows), len(rows), upstream_partial,
                               frozenset(withheld), calls, worst)
 
     while True:
@@ -340,8 +334,6 @@ async def scan(
         else:
             rows.extend(dict(row) for row in page.rows)
         if not page.has_more:
-            return finished(COMPLETE)
-        if search_type == "dashboard" and len(rows) >= needed:
             return finished(COMPLETE)
         # The page is full (``_page_valid``), so the next starts after it.
         offset += size

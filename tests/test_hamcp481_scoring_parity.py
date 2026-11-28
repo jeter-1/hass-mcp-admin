@@ -398,6 +398,11 @@ class ReachabilityTests(unittest.TestCase):
             ("ha_mcp_engineering/application.py", (
                 "ha_mcp_engineering.search.core_reads",
                 "ha_mcp_engineering.search.core_reads.CoreReadSession")),
+            # HAMCP-447: the Core route's static requirements take the reads
+            # the engine itself would issue (no I/O).
+            ("ha_mcp_engineering/ha_core_readmission/routes.py", (
+                "ha_mcp_engineering.search", "ha_mcp_engineering.search.core_contracts",
+                "ha_mcp_engineering.search.engine")),
             ("ha_mcp_engineering/providers/upstream_read_gateway.py", (
                 subcalls, f"{subcalls}.BUCKETS", f"{subcalls}.MAX_SCAN_ROWS",
                 f"{subcalls}.PAGE_SIZE_LADDER", f"{subcalls}.PageResult",

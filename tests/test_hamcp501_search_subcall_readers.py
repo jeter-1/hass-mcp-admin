@@ -100,6 +100,18 @@ def flow(index, score=90, **changes):
             "match_in_config": False, "match_in_references": False, **changes}
 
 
+def native_dashboards(values, text="Kitchen synthview"):
+    """HAMCP-447: Core lists one synthetic storage dashboard, whose
+    configuration holds ``text``; the default dashboard's holds no view."""
+
+    values["lovelace/dashboards/list"] = [
+        {"id": "synthetic_board", "url_path": "synthetic-board", "mode": "storage", "title": "Synthetic",
+         "icon": None, "require_admin": False, "show_in_sidebar": True}]
+    values["lovelace/config"] = lambda payloads: [
+        (True, {"views": [{"title": text}]} if payload.get("url_path") else {"views": []})
+        for payload in payloads]
+
+
 def arguments(search_type="helper", page=0, query="kitchen", exact_match=True, size=PAGE):
     return subcalls.page_arguments(search_type, query, exact_match, page, size)
 
@@ -243,25 +255,21 @@ class ReaderShapeTests(Readers):
         self.assertEqual(self.transport.calls, 0)
 
     async def test_a_page_is_the_projected_row_25_page(self):
-        self.serve("helper", [reply_of(body("helper", [flow(0), flow(1, entry_id="01JSYNTHETIC")]))])
+        # HAMCP-447 (helper ids, as relayed by the architect): Row 25 admits a
+        # flow helper's entry_id, so the row keeps it.
+        self.serve("helper", [reply_of(body("helper", [flow(0), flow(1, entry_id="01JSYNTHETIC",
+                                                                        config="Kitchen body")]))])
         page = await self.readers["helper"](arguments())
         self.assertIsInstance(page, subcalls.PageResult)
-        self.assertEqual(page.rows, (flow(0), flow(1)))
+        self.assertEqual(page.rows, (flow(0), flow(1, entry_id="01JSYNTHETIC")))
         self.assertEqual((page.partial, page.has_more, page.config_total_matches), (False, False, 2))
         # D1: the names Row 25 withholds, held in memory; never their values.
-        self.assertEqual(page.withheld_names, frozenset({"entry_id"}))
-        self.assertNotIn("01JSYNTHETIC", repr(page))
+        self.assertEqual(page.withheld_names, frozenset({"config"}))
+        self.assertNotIn("Kitchen body", repr(page))
         self.assertTrue(subcalls._page_valid("helper", page, PAGE))
-        self.serve("dashboard", [reply_of(body("dashboard", [board(0), board(1)]))])
-        page = await self.readers["dashboard"](arguments("dashboard"))
-        # Row 25 withholds a 9.2.0 dashboard's url_path and title (disclosed
-        # for W6): a row keeps its score and match flags only.
-        self.assertEqual(page.rows, tuple({"score": 80, "match_in_config": True,
-                                           "match_in_references": False} for _ in range(2)))
-        self.assertEqual(page.withheld_names, frozenset({"url_path", "title"}))
-        self.assertNotIn("dash-0", repr(page))
-        self.assertTrue(subcalls._page_valid("dashboard", page, PAGE))
-        self.assertEqual(self.sent(), [("ha_search", arguments()), ("ha_search", arguments("dashboard"))])
+        # Dashboards are native (HAMCP-447): no dashboard sub-call reader.
+        self.assertNotIn("dashboard", self.readers)
+        self.assertEqual(self.sent(), [("ha_search", arguments())])
 
     async def test_withheld_names_are_bucket_record_names_only(self):
         # A top-level name Row 25 does not admit is dropped by the projection,
@@ -276,8 +284,10 @@ class ReaderShapeTests(Readers):
                                 ({"entities": []}, "entities")):
             with self.subTest(payload=payload, bucket=bucket), self.assertRaises(ValueError):
                 k.bucket_withheld_names(payload, bucket)
-        self.assertEqual(k.bucket_withheld_names({"helpers": [{**flow(0), "entry_id": "x"}]}, "helpers"),
-                         frozenset({"entry_id"}))
+        # HAMCP-447: Row 25 admits a flow helper's entry_id.
+        self.assertEqual(k.bucket_withheld_names({"helpers": [{**flow(0), "entry_id": "x", "config": None}]},
+                                                 "helpers"),
+                         frozenset({"config"}))
         # HAMCP-501 W6 S1 b+ (approved by Josh as relayed by the architect):
         # the automation, script and scene buckets count the same way.
         for bucket in ("automations", "scripts", "scenes"):
@@ -381,26 +391,15 @@ class EngineTests(Readers):
     async def test_storage_rows_are_dropped_and_withheld_names_counted(self):
         storage = flow(0, entity_id="input_boolean.kitchen_mode", helper_type="input_boolean",
                        name="Kitchen mode")
-        self.serve("helper", [reply_of(body("helper", [storage, flow(1, entry_id="01JSYNTHETIC")]))])
+        self.serve("helper", [reply_of(body("helper", [storage, flow(1, entry_id="01JSYNTHETIC",
+                                                                    config="Kitchen body")]))])
         result = await self.go(query="kitchen", search_types=["helper"])
         self.assertEqual([row["entity_id"] for row in result["helpers"]], ["sensor.kitchen_flow_1"])
+        # HAMCP-447: the flow helper's entry_id is served; its withheld
+        # configuration is counted, never shown.
+        self.assertEqual(result["helpers"][0]["entry_id"], "01JSYNTHETIC")
         self.assertEqual(result["fields_withheld"], 1)
-        self.assertNotIn("01JSYNTHETIC", json.dumps(result))
-
-    async def test_the_dashboard_scan_stops_once_it_holds_the_page(self):
-        rows = [board(index, score=99 - index % 90) for index in range(400)]
-        self.serve("dashboard", pages_of("dashboard", rows))
-        result = await self.go(query="kitchen", search_types=["dashboard"])
-        self.assertEqual(self.sent(), [("ha_search", arguments("dashboard"))])
-        self.assertEqual(len(result["dashboards"]), 10)
-        self.assertEqual(result["config_total_matches"], 400)
-        self.assertEqual(result["fields_withheld"], 2)
-        encoded = json.dumps(result)
-        for withheld in ("dash-", "Kitchen board", "url_path", "title"):
-            self.assertNotIn(withheld, encoded)
-        self.transport.sent.clear()
-        await self.go(query="kitchen", search_types=["dashboard"], offset=200, limit=10)
-        self.assertEqual(self.sent(), [("ha_search", arguments("dashboard", page)) for page in range(2)])
+        self.assertNotIn("Kitchen body", json.dumps(result))
 
     async def test_a_type_not_searched_sends_nothing(self):
         # HAMCP-501 W6 S1 b+: every configuration type pages through the
@@ -421,20 +420,21 @@ class EngineTests(Readers):
             ("ha_search", arguments(search_type))
             for search_type in ("automation", "script", "scene", "helper")), ("ha_search", probe_arguments())])
 
-    async def test_a_failed_page_is_incomplete_and_the_other_sub_call_is_served(self):
-        self.served[("dashboard", 0)] = {"isError": True, "content": [{"type": "text", "text": MARKER}]}
-        self.serve("helper", [reply_of(body("helper", [flow(0)]))])
+    async def test_a_failed_page_is_incomplete_and_native_dashboards_are_served(self):
+        # HAMCP-447: a failed helper page leaves that sub-call incomplete; the
+        # native dashboard search is served.
+        native_dashboards(self.values)
+        self.served[("helper", 0)] = {"isError": True, "content": [{"type": "text", "text": MARKER}]}
         result = await self.go(query="kitchen", search_types=["dashboard", "helper"])
         self.assertEqual(reasons_of(result),
-                         {("source_unavailable", "dashboard", "dashboard_subcall_incomplete"): None})
-        self.assertEqual([row["entity_id"] for row in result["helpers"]], ["sensor.kitchen_flow_0"])
-        self.assertEqual(result["dashboards"], [])
+                         {("source_unavailable", "helper", "helper_subcall_incomplete"): None})
+        self.assertEqual(result["helpers"], [])
+        self.assertEqual([row["url_path"] for row in result["dashboards"]], ["synthetic-board"])
         self.assertNotIn(MARKER, json.dumps(result))
         self.assertNotIn(MARKER, json.dumps(self.audits()))
         statuses = {record["search_type"]: (record["result_status"], record["failure_category"])
                     for record in self.audits()}
-        self.assertEqual(statuses, {"dashboard": ("failed_or_cancelled", "upstream_error"),
-                                    "helper": ("success", None)})
+        self.assertEqual(statuses, {"helper": ("failed_or_cancelled", "upstream_error")})
 
     async def test_a_page_too_large_is_read_again_in_smaller_pages(self):
         # HAMCP-501 W6 S1 (an architect decision): six rows too large together
@@ -445,7 +445,7 @@ class EngineTests(Readers):
             rows[index] = flow(index, name="N" * 9_000, score=10)
         self.table["helper"] = rows
         outcome = await subcalls.scan("helper", self.readers["helper"], query="kitchen",
-                                      exact_match=True, needed=1)
+                                      exact_match=True)
         spans = [(0, PAGE), (PAGE, PAGE), (PAGE, 30), (PAGE, 6), (PAGE + 6, 6),
                  *[(PAGE + 6 + index, 1) for index in range(6)],
                  (PAGE + 12, 6), (PAGE + 18, 6), (PAGE + 24, 6),
@@ -463,7 +463,7 @@ class EngineTests(Readers):
         self.assertEqual([row["entity_id"] for row in outcome.rows], [row["entity_id"] for row in rows])
         self.table["helper"] = [flow(index) for index in range(2 * PAGE + 40)]
         single = await subcalls.scan("helper", self.readers["helper"], query="kitchen",
-                                     exact_match=True, needed=1)
+                                     exact_match=True)
         self.assertEqual((single.status, single.pages), (subcalls.COMPLETE, 3))
         self.assertEqual([row["entity_id"] for row in single.rows],
                          [row["entity_id"] for row in outcome.rows])
@@ -486,22 +486,6 @@ class EngineTests(Readers):
                           for record in self.audits()],
                          [(0, PAGE, None)] + [(PAGE, size, "page_too_large") for size in LADDER])
         self.assertEqual(self.transport.calls, 1 + len(LADDER))
-
-    async def test_a_page_too_large_at_every_size_is_incomplete(self):
-        # Row 25 keeps about 60 bytes of a dashboard row: only a row count far
-        # past the page size exceeds the gateway's size check. Served at every
-        # size, the page is read once at each ladder size; the helper sub-call
-        # is served.
-        self.served[("dashboard", 0)] = reply_of(body("dashboard", [board(i) for i in range(2_000)]))
-        self.serve("helper", [reply_of(body("helper", [flow(0)]))])
-        result = await self.go(query="kitchen", search_types=["dashboard", "helper"])
-        self.assertEqual(reasons_of(result),
-                         {("source_unavailable", "dashboard", "dashboard_subcall_incomplete"): None})
-        self.assertEqual([row["entity_id"] for row in result["helpers"]], ["sensor.kitchen_flow_0"])
-        records = [record for record in self.audits() if record["search_type"] == "dashboard"]
-        self.assertEqual([(record["offset"], record["limit"], record["failure_category"]) for record in records],
-                         [(0, size, "page_too_large") for size in LADDER])
-        self.assertNotIn("dash-", json.dumps(result) + json.dumps(self.audits()))
 
     async def test_the_escaped_reply_bound_is_a_page_too_large(self):
         # A row inside the UTF-8 check whose ASCII-escaped reply exceeds the
@@ -595,7 +579,7 @@ class EngineTests(Readers):
                     await self.readers[search_type](
                         arguments(search_type, page=page, query=query, size=larger))
                 self.assertEqual(raised.exception.category, "page_too_large")
-        self.assertEqual(sizes, {"automation": 6, "script": 1, "scene": 1, "dashboard": PAGE, "helper": 1})
+        self.assertEqual(sizes, {"automation": 6, "script": 1, "scene": 1, "helper": 1})
 
     async def test_upstream_partial_is_disclosed(self):
         self.serve("helper", [reply_of(body("helper", [flow(0)], partial=True))])
@@ -616,18 +600,20 @@ class EngineTests(Readers):
         self.assertEqual([row["entity_id"] for row in result["helpers"]], ["sensor.kitchen_flow_0"])
         self.assertNotIn("custom helper integration", json.dumps(result))
 
-    async def test_every_dashboard_page_failure_is_incomplete_and_never_retried(self):
-        # Design section 8, items 9 and 14: each way the gateway fails a dashboard page
-        # leaves that sub-call incomplete; the helper sub-call is served.
+    async def test_every_helper_page_failure_is_incomplete_and_never_retried(self):
+        # Design section 8, items 9 and 14: each way the gateway fails a page
+        # leaves that sub-call incomplete. HAMCP-447: dashboards are native, so
+        # the helper sub-call carries the cases; the native dashboards are
+        # served.
+        native_dashboards(self.values)
         state = {}
         inner = self.transport.execute_read
 
         async def failing(tool, value, **kwargs):
-            dashboard = value.get("search_types") == ["dashboard"]
-            if dashboard and state["before"]:
+            if state["before"]:
                 raise DashboardTransportError(state["before"])
             exchange = await inner(tool, value, **kwargs)
-            if dashboard and state["after"]:
+            if state["after"]:
                 raise DashboardTransportError(state["after"])
             return exchange
 
@@ -641,7 +627,7 @@ class EngineTests(Readers):
             # size bound: the page fails with no step-down.
             ("response_too_large", None, "response_too_large", None, 1),
             ("invalid_response", None, None,
-             reply_of({**body("dashboard", [board(0)]), "has_more": True, "next_offset": 1}), 1),
+             reply_of({**body("helper", [flow(0)]), "has_more": True, "next_offset": 1}), 1),
             ("upstream_error", None, None, {"isError": True, "content": [{"type": "text", "text": MARKER}]}, 1),
             # Enforce mode refuses, or conceals a hidden id as not found: no
             # reviewed domain outcome maps either code, so both are
@@ -649,31 +635,27 @@ class EngineTests(Readers):
             ("upstream_error", None, None, refused(ENFORCED), 1),
             ("upstream_error", None, None, refused(CONCEALED), 1),
         ]
-        self.serve("helper", [reply_of(body("helper", [flow(0)]))])
         for category, before, after, raw, dispatched in cases:
             with self.subTest(category=category, before=before, after=after):
                 state.update(before=before, after=after)
-                self.served[("dashboard", 0)] = raw or reply_of(body("dashboard", [board(0)]))
+                self.served[("helper", 0)] = raw or reply_of(body("helper", [flow(0)]))
                 self.audit.reset_mock()
                 result = await self.go(query="kitchen", search_types=["dashboard", "helper"])
                 self.assertEqual(reasons_of(result),
-                                 {("source_unavailable", "dashboard", "dashboard_subcall_incomplete"): None})
-                self.assertEqual([row["entity_id"] for row in result["helpers"]], ["sensor.kitchen_flow_0"])
-                self.assertEqual(result["dashboards"], [])
+                                 {("source_unavailable", "helper", "helper_subcall_incomplete"): None})
+                self.assertEqual(result["helpers"], [])
+                self.assertEqual([row["url_path"] for row in result["dashboards"]], ["synthetic-board"])
                 encoded = json.dumps(result) + json.dumps(self.audits())
-                for withheld in (MARKER, "dash-", "Kitchen board", "ENTITY_"):
+                for withheld in (MARKER, "Kitchen flow", "ENTITY_"):
                     self.assertNotIn(withheld, encoded)
-                records = {record["search_type"]: record for record in self.audits()}
-                self.assertEqual(set(records), {"dashboard", "helper"})
-                self.assertEqual({key: records["dashboard"][key] for key in
-                                  ("result_status", "failure_category", "provider_dispatch_count")},
-                                 {"result_status": "failed_or_cancelled", "failure_category": category,
-                                  "provider_dispatch_count": dispatched})
-                self.assertEqual((records["helper"]["result_status"], records["helper"]["failure_category"]),
-                                 ("success", None))
+                (record,) = self.audits()
+                self.assertEqual({key: record[key] for key in
+                                  ("search_type", "result_status", "failure_category", "provider_dispatch_count")},
+                                 {"search_type": "helper", "result_status": "failed_or_cancelled",
+                                  "failure_category": category, "provider_dispatch_count": dispatched})
         # One attempt per case: a failed page is never retried.
-        dashboards = [value for _, value in self.sent() if value["search_types"] == ["dashboard"]]
-        self.assertEqual(dashboards, [arguments("dashboard")] * (len(cases) - 1))
+        helpers = [value for _, value in self.sent() if value["search_types"] == ["helper"]]
+        self.assertEqual(helpers, [arguments()] * (len(cases) - 1))
         for child in self.children:
             self.assertEqual(child.upstream_active_requests, 0)
 
@@ -712,21 +694,6 @@ class EngineTests(Readers):
                 self.assertEqual(self.audits()[-1]["failure_category"], "upstream_error")
                 self.assertNotIn(MARKER, json.dumps(result) + json.dumps(self.audits()))
         self.assertEqual(self.transport.calls, 5)
-
-    async def test_a_full_page_of_the_largest_dashboard_rows_passes_the_gateway(self):
-        # Design section 2.6 (P): the policy limit W3 sized its page by.
-        self.assertEqual(w3.PageSizeTests.gateway_limit(), 60_000)
-        # The 9.2.0 dashboard record (``smart_search/_deep.py``) with long
-        # names; Row 25 withholds both, so the projected page is small.
-        row = {"url_path": "d" * 255, "title": "T" * 255, "score": 100, "match_in_config": True,
-               "match_in_references": False}
-        query, page, size = "q" * reply.QUERY_ECHO_MAX, 132, PAGE
-        offset = page * size
-        self.served[("dashboard", offset)] = reply_of(body("dashboard", [row] * size, offset=offset,
-                                                           total=offset + 2 * size, query=query))
-        result = await self.readers["dashboard"](arguments("dashboard", page=page, query=query))
-        self.assertEqual((len(result.rows), result.has_more), (size, True))
-        self.assertEqual(result.withheld_names, frozenset({"url_path", "title"}))
 
     async def test_a_moved_total_is_incomplete(self):
         rows = [flow(index) for index in range(2 * PAGE)]
@@ -778,22 +745,17 @@ class RefusalTests(Readers):
             {**good, "include_config": 0}, {**good, "search_types": ["dashboard"]},
             {**good, "search_types": "helper"}, {**good, "search_types": ("helper",)},
             {**good, "search_types": ["helper", "helper"]}, {**good, "search_types": []},
-            arguments("dashboard"),
         ]
         for value in bad:
             with self.subTest(value=value):
                 with self.assertRaises(Failure) as raised:
                     await self.readers["helper"](value)
                 self.assertEqual(raised.exception.category, "argument_validation")
-        with self.assertRaises(Failure):
-            await self.readers["dashboard"](good)
-        dashboard = arguments("dashboard")
-        for value in ({**dashboard, "offset": 6, "limit": 30}, {**dashboard, "offset": 30},
-                      {**dashboard, "limit": 7}, {**dashboard, "limit": False}):
-            with self.subTest(value=value):
-                with self.assertRaises(Failure) as raised:
-                    await self.readers["dashboard"](value)
-                self.assertEqual(raised.exception.category, "argument_validation")
+        # HAMCP-447: dashboards are native; there is no dashboard sub-call
+        # reader, and no dashboard page arguments.
+        self.assertNotIn("dashboard", self.readers)
+        with self.assertRaises(ValueError):
+            arguments("dashboard")
         self.assertEqual(self.transport.calls, 0)
         self.audit.write.assert_not_called()
         self.assertEqual(self.children, [])
@@ -1062,10 +1024,13 @@ class AdmissionTests(Readers):
         gateway, transport = await gateway_920(tools=tools, url=URL)
         self.assertIsNone(gateway.search_subcall_reader())
         self.readers = {}
+        # HAMCP-447: dashboards are native, so only the helper sub-call is
+        # not admitted; Core serves the dashboards.
+        native_dashboards(self.values)
         result = await self.go(query="kitchen", search_types=["helper", "dashboard"])
         self.assertEqual(reasons_of(result),
-                         {("source_unavailable", "helper", "subcall_not_admitted"): None,
-                          ("source_unavailable", "dashboard", "subcall_not_admitted"): None})
+                         {("source_unavailable", "helper", "subcall_not_admitted"): None})
+        self.assertEqual([row["url_path"] for row in result["dashboards"]], ["synthetic-board"])
         self.assertEqual(transport.calls, 0)
 
     def swap_entry(self, entry):
@@ -1154,7 +1119,8 @@ class AdmissionTests(Readers):
             ("ha_search", capture_, {**arguments(), "offset": 6, "limit": 30}, None),
             ("ha_search", flagged, arguments(), None),
             ("ha_search", unset, arguments(), None),
-            ("ha_search", capture_, arguments(search_type="dashboard"), None),
+            # HAMCP-447: no dashboard page exists; a dashboard type is refused.
+            ("ha_search", capture_, {**arguments(), "search_types": ["dashboard"]}, None),
             ("ha_search", gw._SearchPageCapture("dashboards"), arguments(), None),
             ("ha_search", gw._SearchPageCapture("entities"), arguments(), None),
             ("ha_search", gw._SearchPageCapture(["helpers"]), arguments(), None),
