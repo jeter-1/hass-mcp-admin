@@ -9811,6 +9811,33 @@ class F3RuntimeIntegration:
                 revision = self._readiness_revision
             if initial or faults:
                 self._validate_readiness_storage()
+            if trigger == "startup" and initial:
+                # HAMCP-542: remove plan records written before the helper
+                # effect-data credential fix. Only counts reach the audit.
+                try:
+                    retired = (
+                        self.service.repository.retire_pre_fix_effect_records()
+                    )
+                except Exception:
+                    self._readiness_fault("effect_record_upgrade")
+                else:
+                    if retired["failed"]:
+                        self._readiness_fault("effect_record_upgrade")
+                    if self.service.audit is not None and any(
+                        count for key, count in retired.items()
+                        if key != "scanned"
+                    ):
+                        self.service.audit.write(
+                            {
+                                "event": "governance_effect_record_upgrade",
+                                "access": "write",
+                                "operation_class": "governance_storage_upgrade",
+                                **{
+                                    f"records_{key}": count
+                                    for key, count in retired.items()
+                                },
+                            }
+                        )
             token = _RECOVERY_READINESS.set((self, revision))
             try:
                 result = await self._recover_once(trigger)
