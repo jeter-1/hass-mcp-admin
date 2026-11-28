@@ -470,6 +470,25 @@ class EngineTests(e3.World):
         self.assertEqual((self.batches(CONFIG), result["dashboards"]), ([], []))
         self.assertEqual(e3.reasons_of(result), {("not_searched", "dashboard", "yaml_dashboards_skipped"): 1})
 
+    async def test_a_yaml_dashboard_body_is_never_read_or_matched(self):
+        # Core resolves a YAML dashboard's includes when it loads the body, so
+        # native search never asks for it: no lovelace/config call names it,
+        # nothing in it can match, and it is counted with the closed code. A
+        # storage dashboard beside it, and the default, are still read.
+        self.boards(("synthetic-board", "storage", "Synthetic"), ("yaml-board", "yaml", "Yaml"),
+                    bodies={None: {}, "synthetic-board": {},
+                            "yaml-board": {"views": [{"title": f"kitchen {e3.MARKER}"}]}})
+        for include_config in (False, True):
+            with self.subTest(include_config=include_config):
+                self.calls.clear()
+                result = await self.go(query="kitchen", search_types=["dashboard"],
+                                       include_config=include_config)
+                read = [payload.get("url_path") for batch in self.batches(CONFIG) for payload in batch]
+                self.assertEqual(read, [None, "synthetic-board"])
+                self.assertEqual(result["dashboards"], [])
+                self.assertEqual(e3.reasons_of(result)[("not_searched", "dashboard", "yaml_dashboards_skipped")], 1)
+                self.assertNotIn(e3.MARKER, json.dumps(result))
+
     async def test_an_unreadable_list_reads_no_configuration(self):
         self.values[LIST] = HomeAssistantApiError()
         self.values[CONFIG] = AssertionError("no configuration read")
