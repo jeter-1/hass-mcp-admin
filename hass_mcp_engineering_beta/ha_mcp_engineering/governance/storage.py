@@ -44,10 +44,6 @@ QUARANTINED_RECORD_NAME = re.compile(r"^([a-f0-9]{32})\.([0-9]{1,20})\.corrupt$"
 MAX_QUARANTINE_RESTORE_ENTRIES = 4096
 MAX_QUARANTINE_RESTORE_BYTES = 16 * 1024 * 1024
 MAX_QUARANTINE_RESTORE_REPORTED = 32
-# HAMCP-542: bounds of the startup pass over records written before the
-# helper effect-data credential fix.
-MAX_EFFECT_UPGRADE_ENTRIES = 16384
-MAX_EFFECT_UPGRADE_BYTES = 256 * 1024 * 1024
 # A dispatched plan keeps its record until recovery settles it.
 EFFECT_UPGRADE_DEFERRED_STATUSES = frozenset(
     {
@@ -1543,8 +1539,13 @@ class ChangePlanRepository:
         startup; a pre-fix plan fails closed at dispatch either way. A record
         that cannot be parsed or removed is quarantined. Parseable pre-fix
         copies in quarantine are removed; unparseable ones stay. The pass is
-        bounded and idempotent: a later run finds nothing to do. It returns
-        counts only.
+        idempotent: a later run finds nothing to do. It returns counts only.
+
+        Every live record is read, one at a time, as the navigation index
+        rebuild already does, so no prefix of unaffected or deferred records
+        can keep a later one from being reached. A quarantine copy larger
+        than the restoration bound is never restored or served; it is left
+        in place and counted as retained.
         """
 
         counts = {
@@ -1552,11 +1553,10 @@ class ChangePlanRepository:
             "removed": 0,
             "quarantined": 0,
             "quarantine_removed": 0,
+            "quarantine_retained": 0,
             "deferred": 0,
             "failed": 0,
-            "truncated": 0,
         }
-        budget = MAX_EFFECT_UPGRADE_BYTES
         with self._lock:
             live = [(path, True) for path in self._record_paths()]
             held = []
@@ -1569,26 +1569,22 @@ class ChangePlanRepository:
                 except OSError:
                     counts["failed"] += 1
             for path, is_live in live + held:
-                if counts["scanned"] >= MAX_EFFECT_UPGRADE_ENTRIES:
-                    counts["truncated"] = 1
-                    break
                 try:
                     with open(path, "rb", buffering=0) as handle:
-                        size = os.fstat(handle.fileno()).st_size
-                        if size > budget:
-                            counts["truncated"] = 1
-                            break
-                        raw = handle.read(budget + 1)
+                        if is_live:
+                            raw = handle.read()
+                        else:
+                            size = os.fstat(handle.fileno()).st_size
+                            raw = handle.read(MAX_QUARANTINE_RESTORE_BYTES + 1)
+                            if max(size, len(raw)) > MAX_QUARANTINE_RESTORE_BYTES:
+                                counts["quarantine_retained"] += 1
+                                continue
                 except FileNotFoundError:
                     continue
                 except OSError:
                     counts["failed"] += 1
                     continue
                 counts["scanned"] += 1
-                budget -= len(raw)
-                if budget < 0:
-                    counts["truncated"] = 1
-                    break
                 if _EFFECT_PROFILE_MARKER not in raw:
                     continue
                 try:

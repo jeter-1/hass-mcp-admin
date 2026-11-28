@@ -26,6 +26,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
+import hmac
 from copy import deepcopy
 from dataclasses import asdict
 import json
@@ -68,7 +69,10 @@ from ha_mcp_engineering.governance.entity_metadata_disclosure import (  # noqa: 
     build_consumer_disclosure,
 )
 from ha_mcp_engineering.governance.helper_dependency import HelperDependencyRiskService  # noqa: E402
-from ha_mcp_engineering.governance.risk import effect_digest_key  # noqa: E402
+from ha_mcp_engineering.governance.risk import (  # noqa: E402
+    effect_digest_key,
+    withheld_effect_digest_key,
+)
 from ha_mcp_engineering.handoff.provider import EngineeringHandoffProvider  # noqa: E402
 from ha_mcp_engineering.handoff.service import HandoffGenerationService  # noqa: E402
 from ha_mcp_engineering.impact.provider import DirectHaImpactProvider  # noqa: E402
@@ -1369,6 +1373,7 @@ class EffectDisplayAllowlistTests(unittest.TestCase):
         return _EffectDisplayFilter(
             config, secret=SECRET, registry=_display_registry(**values),
             digest_key=effect_digest_key(SECRET),
+            withheld_digest_key=withheld_effect_digest_key(),
         )
 
     def assert_digested(self, token, value):
@@ -1548,6 +1553,7 @@ class EffectDisplayAllowlistTests(unittest.TestCase):
                 display = _EffectDisplayFilter(
                     config, secret=known, registry=_display_registry(**_ORDINARY_REGISTRY),
                     digest_key=effect_digest_key(known),
+                    withheld_digest_key=withheld_effect_digest_key(),
                 )
                 shown = display.data(token)
                 self.assertNotIn("=" + known, shown)
@@ -1557,6 +1563,7 @@ class EffectDisplayAllowlistTests(unittest.TestCase):
         display = _EffectDisplayFilter(
             config, secret="all", registry=_display_registry(**_ORDINARY_REGISTRY),
             digest_key=effect_digest_key("all"),
+            withheld_digest_key=withheld_effect_digest_key(),
         )
         self.assert_digested(
             display.target("action[0].target.entity_id[0]|entity_id|all"), "|all",
@@ -1578,6 +1585,7 @@ class EffectDisplayAllowlistTests(unittest.TestCase):
                 display = _EffectDisplayFilter(
                     config, secret=SECRET, registry=_display_registry(**values),
                     digest_key=effect_digest_key(SECRET),
+                    withheld_digest_key=withheld_effect_digest_key(),
                 )
                 if name == "services":
                     self.assertIn("redacted_sha256:", display.service("light.turn_on"))
@@ -1589,7 +1597,8 @@ class EffectDisplayAllowlistTests(unittest.TestCase):
         # An incomplete registry never shows a value it does not hold.
         display = _EffectDisplayFilter(config, secret=SECRET, registry=_display_registry(
             **{**_ORDINARY_REGISTRY, "complete": False},
-        ), digest_key=effect_digest_key(SECRET))
+        ), digest_key=effect_digest_key(SECRET),
+            withheld_digest_key=withheld_effect_digest_key())
         self.assertEqual(
             display.target("action[0].target.entity_id|entity_id|light.synthetic_kitchen"),
             "action[0].target.entity_id|entity_id|light.synthetic_kitchen",
@@ -2232,6 +2241,33 @@ def _hamcp542_home(gate, codes=None):
     return ha
 
 
+def _keypad_entry_home(gate, value):
+    """One password-selector field whose name is no credential name.
+
+    Only the provider's schema rule withholds ``keypad_entry``.
+    """
+
+    ha = SyntheticHomeAssistant([
+        record("automation.synthetic_keypad_entry", None, automation_id="synthetic_keypad_entry",
+               loaded={
+                   "id": "synthetic_keypad_entry", "alias": "Synthetic keypad entry",
+                   "trigger": [{"platform": "state", "entity_id": gate}],
+                   "action": [{"service": "synthetic_keypad.enter",
+                               "data": {"keypad_entry": value}}],
+               }),
+    ])
+    base = ha.services
+    ha.services = lambda: _hamcp542_services(base)
+    return ha
+
+
+# Every emitted profile digest that covers the action data.
+_VALUE_BINDINGS = (
+    "effect_data_fingerprint", "effect_structure_fingerprint",
+    "effect_projection_fingerprint", "evidence_fingerprint",
+)
+
+
 def _code_hits(text, codes=None):
     """Names of codes whose value appears in ``text`` (as a number or string)."""
 
@@ -2270,6 +2306,31 @@ def _brute_force(text):
         plain = b"%06d" % number
         for form in (plain, b'"' + plain + b'"'):
             if sha256(form).hexdigest() in found:
+                recovered.append(plain.decode("ascii"))
+    return recovered
+
+
+def _unkeyed_hasher(data=b"", **_):
+    """A mutant ``_effect_hasher``: plain sha256 for every key choice."""
+
+    return hashlib.sha256(data)
+
+
+def _keyed_brute_force(text, key):
+    """Recover a six-digit code from HMAC(key, ...) digests in ``text``.
+
+    The attacker of Codex #546 R1-H1: every connector client knows the
+    installation secret, so it can derive ``effect_digest_key``.
+    """
+
+    found = set(re.findall(r"[0-9a-f]{64}", text))
+    recovered = []
+    if not found:
+        return recovered
+    for number in range(1_000_000):
+        plain = b"%06d" % number
+        for form in (plain, b'"' + plain + b'"', str(number).encode("ascii")):
+            if hmac.new(key, form, hashlib.sha256).hexdigest() in found:
                 recovered.append(plain.decode("ascii"))
     return recovered
 
@@ -2402,10 +2463,186 @@ class NumericEffectSecretTests(unittest.IsolatedAsyncioTestCase):
     async def test_mutant_with_an_unkeyed_digest_is_brute_forced(self):
         from ha_mcp_engineering.governance import risk
 
-        with patch.object(risk, "_effect_hasher", side_effect=hashlib.sha256):
+        with patch.object(risk, "_effect_hasher", side_effect=_unkeyed_hasher):
             profiles = await self.scan()
         text = _serialized([asdict(p) for p in profiles.values()])
         self.assertIn("552911", _brute_force(text))
+
+    def test_a_caller_who_knows_the_secret_cannot_recover_a_code(self):
+        """Codex #546 R1-H1: the attacker knows access_secret.
+
+        The digest of a withheld value, and the fingerprint over its binding,
+        are keyed with the per-process key, so neither is rebuilt from the
+        caller-known key; the mutant that keys them with it is recovered.
+        """
+
+        from ha_mcp_engineering.governance import risk
+
+        config = {"action": [{
+            "service": "alarm_control_panel.alarm_disarm",
+            "target": {"entity_id": "alarm_control_panel.synthetic_panel"},
+            "data": {"code": 860317},
+        }]}
+        key = effect_digest_key(SECRET)
+
+        def recover(profile):
+            self.assertEqual(profile["effect_data"], ["action[0].data.code=withheld"])
+            wanted = profile["effect_data_fingerprint"]
+            for number in range(1_000_000):
+                inner = hmac.new(key, str(number).encode("ascii"), hashlib.sha256).hexdigest()
+                material = '["action[0].data.code=withheld:' + inner + '"]'
+                if hmac.new(key, material.encode("ascii"), hashlib.sha256).hexdigest() == wanted:
+                    return number
+            return None
+
+        profile = risk.automation_action_consequence_profile(config, digest_key=key)
+        text = _serialized(profile)
+        self.assertIsNone(recover(profile))
+        self.assertEqual(_keyed_brute_force(text, key), [])
+        for secret in (risk.withheld_effect_digest_key().hex(), key.hex()):
+            self.assertNotIn(secret, text)
+        with patch.object(risk, "_PROCESS_WITHHELD_DIGEST_KEY", key):
+            mutant = risk.automation_action_consequence_profile(config, digest_key=key)
+        self.assertEqual(recover(mutant), 860317)
+
+    async def test_no_code_is_recoverable_with_the_caller_known_key(self):
+        from ha_mcp_engineering.governance import risk
+
+        key = effect_digest_key(SECRET)
+        text = _serialized([asdict(p) for p in (await self.scan()).values()])
+        # The select-field value is not withheld (decision B keeps its
+        # digest under the installation key; the PR's class sweep lists it).
+        # Every withheld code stays unrecoverable; the fingerprint mutant is
+        # test_a_caller_who_knows_the_secret_cannot_recover_a_code.
+        self.assertEqual(set(_keyed_brute_force(text, key)), {"552911"})
+        self.assertNotIn(risk.withheld_effect_digest_key().hex(), text)
+
+    def test_a_schema_withheld_field_is_bound_under_the_withheld_key(self):
+        """A field withheld only by its selector, not by its name.
+
+        The attacker knows access_secret and so can rebuild, in its own
+        process, any digest under the caller-known key: a match confirms a
+        guessed code.  With the predicate nothing the profile emits is
+        rebuilt; without it (the mutant) every binding is.
+        """
+
+        from ha_mcp_engineering.governance import risk
+
+        config = {"action": [{"service": "synthetic_keypad.enter",
+                              "data": {"keypad_entry": "418813"}}]}
+        key = effect_digest_key(SECRET)
+
+        def withheld(service, field):
+            return (service, field) == ("synthetic_keypad.enter", "keypad_entry")
+
+        def profile(predicate, attacker=False):
+            # The attacker's process has its own withheld key.
+            withheld_key = secrets.token_bytes(32) if attacker else risk.withheld_effect_digest_key()
+            with patch.object(risk, "_PROCESS_WITHHELD_DIGEST_KEY", withheld_key):
+                return risk.automation_action_consequence_profile(
+                    config, digest_key=key, withheld_field=predicate
+                )
+
+        fixed = profile(withheld)
+        self.assertEqual(fixed["effect_data"], ["action[0].data.keypad_entry=withheld"])
+        self.assertEqual(_keyed_brute_force(_serialized(fixed), key), [])
+        self.assertEqual(fixed, profile(withheld))
+        rebuilt = profile(withheld, attacker=True)
+        for field in _VALUE_BINDINGS:
+            with self.subTest(field=field):
+                self.assertNotEqual(fixed[field], rebuilt[field])
+        mutant = profile(None)
+        self.assertEqual(set(_keyed_brute_force(_serialized(mutant), key)), {"418813"})
+        self.assertEqual(mutant, profile(None, attacker=True))
+
+    def test_a_coverage_overflow_at_a_schema_withheld_field_is_withheld(self):
+        """The effect-node limit stops on the withheld field itself.
+
+        The coverage overflow digest covers that field's value, so it is keyed
+        with the withheld key; the mutant (no predicate) is rebuilt by the
+        attacker.
+        """
+
+        from ha_mcp_engineering.governance import risk
+
+        config = {"action": [{"service": "synthetic_keypad.enter",
+                              "data": {"a_level": 1, "keypad_entry": "418813"}}]}
+        key = effect_digest_key(SECRET)
+
+        def withheld(service, field):
+            return (service, field) == ("synthetic_keypad.enter", "keypad_entry")
+
+        def overflow(predicate, attacker=False):
+            withheld_key = secrets.token_bytes(32) if attacker else risk.withheld_effect_digest_key()
+            # The data dict and a_level fill the limit; keypad_entry overflows.
+            with patch.object(risk, "_PROCESS_WITHHELD_DIGEST_KEY", withheld_key), \
+                    patch.object(risk, "_HELPER_EFFECT_ANALYSIS_NODE_LIMIT", 2):
+                reset_key = risk._EFFECT_DIGEST_KEY.set(key)
+                reset_field = risk._EFFECT_WITHHELD_FIELD.set(predicate)
+                try:
+                    coverage = risk._bounded_action_analysis_coverage(config)
+                finally:
+                    risk._EFFECT_WITHHELD_FIELD.reset(reset_field)
+                    risk._EFFECT_DIGEST_KEY.reset(reset_key)
+            self.assertEqual(coverage["reason"], "effect_data_node_limit_exceeded")
+            return coverage["overflow_fingerprint"]
+
+        fixed = overflow(withheld)
+        self.assertEqual(fixed, overflow(withheld))
+        self.assertNotEqual(fixed, overflow(withheld, attacker=True))
+        self.assertEqual(overflow(None), overflow(None, attacker=True))
+
+    async def test_scan_binds_a_schema_withheld_field_under_the_withheld_key(self):
+        from ha_mcp_engineering.dependency import provider as provider_module
+        from ha_mcp_engineering.governance import risk
+
+        async def scan(attacker=False):
+            ha = _keypad_entry_home("input_boolean.synthetic_gate", "418813")
+            provider = DirectHaDependencyProvider(
+                _AnalysisRest(ha), _AnalysisWebSocket(ha), secret=SECRET,
+            )
+            withheld_key = secrets.token_bytes(32) if attacker else risk.withheld_effect_digest_key()
+            with patch.object(risk, "_PROCESS_WITHHELD_DIGEST_KEY", withheld_key):
+                result = await provider.scan()
+            (profile,) = result.automation_action_profiles
+            return profile
+
+        fixed = await scan()
+        self.assertEqual(list(fixed.effect_data), ["action[0].data.keypad_entry=withheld"])
+        self.assertEqual(_keyed_brute_force(_serialized(asdict(fixed)), effect_digest_key(SECRET)), [])
+        same, rebuilt = await scan(), await scan(attacker=True)
+        for field in _VALUE_BINDINGS:
+            with self.subTest(field=field):
+                self.assertEqual(getattr(fixed, field), getattr(same, field))
+                self.assertNotEqual(getattr(fixed, field), getattr(rebuilt, field))
+        # Mutant: the provider passes no schema predicate.
+        with patch.object(provider_module, "_has_schema_withheld_field", return_value=False):
+            mutant, mutant_rebuilt = await scan(), await scan(attacker=True)
+        self.assertEqual(mutant.effect_data, fixed.effect_data)
+        for field in _VALUE_BINDINGS:
+            with self.subTest(mutant=field):
+                self.assertEqual(getattr(mutant, field), getattr(mutant_rebuilt, field))
+
+    def test_an_unknown_schema_withholds_by_default(self):
+        from ha_mcp_engineering.dependency import provider as provider_module
+
+        unavailable = provider_module._schema_withheld_field(None)
+        self.assertTrue(unavailable("light.turn_on", "brightness"))
+        self.assertFalse(unavailable("light.turn_on", "entity_id"))
+        registry = SimpleNamespace(
+            services={"light.turn_on": frozenset({"brightness"}),
+                      "synthetic_keypad.enter": frozenset({"keypad_entry"})},
+            withheld_fields={"synthetic_keypad.enter": frozenset({"keypad_entry"})},
+        )
+        known = provider_module._schema_withheld_field(registry)
+        self.assertTrue(known("synthetic_keypad.enter", "keypad_entry"))
+        # No withheld-field facts for the service: fail closed.
+        self.assertTrue(known("light.turn_on", "brightness"))
+        self.assertTrue(known("{{ service }}", "brightness"))
+        self.assertTrue(known(["light.turn_on"], "brightness"))
+        registry.withheld_fields["light.turn_on"] = frozenset()
+        self.assertFalse(known("light.turn_on", "brightness"))
+        self.assertFalse(known("light.turn_on", "not_in_schema"))
 
     def test_fingerprint_does_not_reveal_a_withheld_code(self):
         """A caller who sees the withheld tokens cannot rebuild the fingerprint.
@@ -2436,7 +2673,7 @@ class NumericEffectSecretTests(unittest.IsolatedAsyncioTestCase):
 
         key = effect_digest_key(SECRET)
         self.assertIsNone(recover(risk.automation_action_consequence_profile(config, digest_key=key)))
-        with patch.object(risk, "_effect_hasher", side_effect=hashlib.sha256):
+        with patch.object(risk, "_effect_hasher", side_effect=_unkeyed_hasher):
             unkeyed = risk.automation_action_consequence_profile(config, digest_key=key)
         self.assertEqual(recover(unkeyed), 860317)
 
@@ -2551,6 +2788,13 @@ class NumericEffectSecretTests(unittest.IsolatedAsyncioTestCase):
                     for digest in _unkeyed_digests(code):
                         self.assertNotIn(digest, text, name)
         self.assertEqual(_brute_force("\n".join(emitted)), [])
+        # Decision B: the per-process withheld key reaches no reply or file.
+        withheld_key = withheld_effect_digest_key()
+        for text in emitted:
+            self.assertNotIn(withheld_key.hex(), text)
+            self.assertNotIn(base64.b64encode(withheld_key).decode("ascii"), text)
+        for name, raw in files.items():
+            self.assertNotIn(withheld_key, raw, name)
         downstream = _serialized(outputs["get_change_plan downstream_profiles"])
         self.assertIn("action[0].data.code=withheld", downstream)
         self.assertIn("action[7].data.value=39177", downstream)
@@ -2843,22 +3087,63 @@ class PreFixEffectRecordUpgradeTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(path.exists())
         self.assertTrue(list(self.namespace.glob("quarantine/*.corrupt")))
 
-    def test_the_pass_is_bounded(self):
+    def test_every_live_record_is_reached_in_one_pass(self):
+        """Codex #546 R1-H2: no prefix of unaffected, deferred or large
+        records keeps a later pre-fix record from being removed, and the
+        restoration bound applies only to quarantine copies."""
+
         from ha_mcp_engineering.governance import storage
 
-        paths = [self.write_pre_fix("expired")[1] for _ in range(3)]
-        repository = self.repository()
-        with patch.object(storage, "MAX_EFFECT_UPGRADE_ENTRIES", 2):
-            counts = repository.retire_pre_fix_effect_records()
-        self.assertEqual(counts["scanned"], 2)
-        self.assertEqual(counts["truncated"], 1)
-        with patch.object(storage, "MAX_EFFECT_UPGRADE_BYTES", len(self.current_bytes) // 2):
-            counts = repository.retire_pre_fix_effect_records()
-        self.assertEqual(counts["truncated"], 1)
-        # A later startup continues where the bound stopped.
-        repository.retire_pre_fix_effect_records()
-        for path in paths:
-            self.assertFalse(path.exists())
+        def write(value, plan_id):
+            value["plan_id"] = plan_id
+            path = self.namespace / f"{plan_id}.json"
+            path.write_text(json.dumps(value, sort_keys=True), encoding="utf-8")
+            return path
+
+        unaffected = [
+            write(deepcopy(self.record), f"{index:032x}") for index in range(1, 41)
+        ]
+        deferred = write(
+            _forge_pre_fix(self.record, "verification_required"), "a" * 32
+        )
+        large = _forge_pre_fix(self.record, "awaiting_approval")
+        padding = "action[2].data.note=" + "x" * (4 * len(self.current_bytes))
+        held = _forge_pre_fix(self.record, "expired")
+        for value in (large, held):
+            for profile in _effect_profiles(value):
+                if profile["effect_data"]:
+                    profile["effect_data"].append(padding)
+        large = write(large, "e" * 32)
+        last = write(_forge_pre_fix(self.record, "expired"), "f" * 32)
+        held_path = self.namespace / "quarantine" / f"{'b' * 32}.1700000000.corrupt"
+        held_path.parent.mkdir(exist_ok=True)
+        held_path.write_text(json.dumps(held), encoding="utf-8")
+        before = {path: path.read_bytes() for path in unaffected}
+        with patch.object(
+            storage, "MAX_QUARANTINE_RESTORE_BYTES", 2 * len(self.current_bytes)
+        ):
+            counts = self.repository().retire_pre_fix_effect_records()
+            self.assertEqual(
+                self.changed(counts),
+                {"removed": 2, "deferred": 1, "quarantine_retained": 1},
+            )
+            self.assertFalse(large.exists())
+            self.assertFalse(last.exists())
+            self.assertTrue(deferred.exists())
+            self.assertTrue(held_path.exists())
+            self.assertEqual(
+                before, {path: path.read_bytes() for path in unaffected}
+            )
+            again = self.repository().retire_pre_fix_effect_records()
+        self.assertEqual(
+            self.changed(again), {"deferred": 1, "quarantine_retained": 1}
+        )
+        # Within the restoration bound the quarantine copy is removed.
+        final = self.repository().retire_pre_fix_effect_records()
+        self.assertEqual(
+            self.changed(final), {"deferred": 1, "quarantine_removed": 1}
+        )
+        self.assertFalse(held_path.exists())
 
     def test_mutant_without_the_model_guard_keeps_the_code_at_rest(self):
         from ha_mcp_engineering.governance.storage import ChangePlanRepository
@@ -2968,3 +3253,91 @@ class PreFixEffectRecordUpgradeTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+from tests.hamcp285_fixtures import (  # noqa: E402
+    ENTITY as _HAMCP285_ENTITY,
+    InputBooleanServiceTestCase as _InputBooleanServiceTestCase,
+    consumer as _consumer,
+)
+
+
+class WithheldBindingRestartTests(_InputBooleanServiceTestCase):
+    """HAMCP-542 decision B: the withheld key does not survive a restart.
+
+    A binding that covers a withheld value is keyed with a per-process key,
+    so after a restart (simulated by a new key) its plan is refused before
+    dispatch with ``dependency_risk_drift`` and must be replanned.  A plan
+    with no withheld value is unaffected.
+    """
+
+    # Core 2026.11.3 light.turn_on brightness, and a synthetic password field.
+    SERVICES = [
+        {"domain": "light", "services": {"turn_on": {"fields": {
+            "brightness": {"selector": {"number": {"min": 0, "max": 255}}},
+        }}}},
+        {"domain": "synthetic_keypad", "services": {"enter": {"fields": {
+            "keypad_entry": {"selector": {"text": {"type": "password"}}},
+        }}}},
+    ]
+
+    def install(self, *, services=True, **install):
+        super().install(**install)
+        inner = self.rest.request
+
+        async def request(method, path, **kwargs):
+            if services and method == "GET" and path == "/services":
+                return deepcopy(self.SERVICES)
+            return await inner(method, path, **kwargs)
+
+        self.rest.request = request
+
+    def gated(self, data, service="light.turn_on"):
+        return {"gated": _consumer(
+            "Synthetic gated", triggers=[{"trigger": "state", "entity_id": _HAMCP285_ENTITY}],
+            actions=[{"action": service,
+                      "target": {"entity_id": "light.synthetic_porch"}, "data": data}],
+        )}
+
+    async def restarted_apply(self, data, service="light.turn_on", services=True):
+        plan = (await self.planned(
+            "on", extra=self.gated(data, service), noise=False, services=services,
+        ))["plan"]
+        await self.grant(plan)
+        from ha_mcp_engineering.governance import risk
+
+        with patch.object(risk, "_PROCESS_WITHHELD_DIGEST_KEY", secrets.token_bytes(32)):
+            return plan, await self.apply(plan)
+
+    async def test_a_withheld_binding_must_be_replanned_after_a_restart(self):
+        plan, result = await self.restarted_apply({"code": 418813})
+        self.assertNotIn("418813", _serialized(self.stored_binding(plan)))
+        self.assertEqual(result["task_state"], "failed_pre_dispatch", result)
+        self.assertFalse(result["provider_dispatch_occurred"])
+        self.assertIn("dependency_risk_drift", self.child_codes(result["task_id"]))
+        self.assertEqual(self.helper.dispatch_count, 0)
+        from ha_mcp_engineering.f3_runtime import pre_dispatch_reasons as reasons
+
+        check = reasons.REASON_CHECKS["dependency_risk_drift"]
+        self.assertEqual(check, "target_state")
+        self.assertIn("fresh plan", reasons._CHECK_DETAILS[check])
+
+    async def test_a_binding_without_a_withheld_value_survives_a_restart(self):
+        _plan, result = await self.restarted_apply({"brightness": 10})
+        self.assertNotIn("dependency_risk_drift", self.child_codes(result["task_id"]), result)
+        self.assertTrue(result["provider_dispatch_occurred"], result)
+        self.assertEqual(self.helper.dispatch_count, 1)
+
+    async def test_a_schema_withheld_binding_must_be_replanned(self):
+        plan, result = await self.restarted_apply(
+            {"keypad_entry": "418813"}, service="synthetic_keypad.enter"
+        )
+        self.assertNotIn("418813", _serialized(self.stored_binding(plan)))
+        self.assertIn("dependency_risk_drift", self.child_codes(result["task_id"]))
+        self.assertEqual(self.helper.dispatch_count, 0)
+
+    async def test_an_unknown_schema_binding_must_be_replanned(self):
+        # No service registry: the schema cannot show a field is not free-form.
+        _plan, result = await self.restarted_apply({"brightness": 10}, services=False)
+        self.assertIn("dependency_risk_drift", self.child_codes(result["task_id"]))
+        self.assertEqual(self.helper.dispatch_count, 0)

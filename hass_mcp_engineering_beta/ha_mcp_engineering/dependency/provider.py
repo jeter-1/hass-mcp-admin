@@ -543,6 +543,59 @@ def _effect_step_paths(config: Any) -> dict[str, dict[str, Any]]:
     }
 
 
+def _schema_withheld_field(registry: _EffectDisplayRegistry | None):
+    """The (service, key) predicate for fields withheld by schema (HAMCP-542).
+
+    It is true where ``_EffectDisplayFilter`` shows a registered field only as
+    withheld, and fails closed where the schema is unknown: no service
+    registry, or a service it does not list (a template, say).  The
+    consequence profile then keys every digest over such a field with the
+    withheld key.
+    """
+
+    def withheld(service: Any, key: str) -> bool:
+        if key in _EFFECT_TARGET_SELECTORS:
+            return False
+        services = registry.services if registry is not None else None
+        fields = (
+            services.get(service)
+            if services is not None and isinstance(service, str)
+            else None
+        )
+        if fields is None:
+            return True
+        if key not in fields:
+            return False
+        facts = (registry.withheld_fields or {}).get(service)
+        return facts is None or key in facts
+
+    return withheld
+
+
+def _has_schema_withheld_field(config: Any, withheld) -> bool:
+    """Whether any action-like node's data holds a field the predicate withholds.
+
+    Every node with an ``action`` or ``service`` key counts, as in the
+    structure fingerprint, not only the steps the projection emits.
+    """
+
+    from ..governance.risk import _walk
+
+    for step in _walk(config):
+        if not isinstance(step, dict) or (
+            "action" not in step and "service" not in step
+        ):
+            continue
+        service = step.get("action") or step.get("service")
+        for container in ("data", "data_template"):
+            data = step.get(container)
+            if isinstance(data, dict) and any(
+                withheld(service, str(key)) for key in data
+            ):
+                return True
+    return False
+
+
 class _EffectDisplayFilter:
     """Allowlist for automation values shown verbatim in an effect projection.
 
@@ -568,8 +621,10 @@ class _EffectDisplayFilter:
         secret: str,
         registry: _EffectDisplayRegistry,
         digest_key: bytes,
+        withheld_digest_key: bytes,
     ):
         self._digest_key = digest_key
+        self._withheld_digest_key = withheld_digest_key
         self._leaves = _string_leaves_by_folded_text(config)
         self._literals = {
             spelling for spellings in self._leaves.values() for spelling in spellings
@@ -610,7 +665,15 @@ class _EffectDisplayFilter:
         return None
 
     def _digest(self, value: str) -> str:
-        return _effect_digest(value, self._digest_key)
+        # HAMCP-542: ``digest_key`` derives from the connector-known secret.
+        # A value the sanitizer flags is credential-like, so it is digested
+        # under the per-process withheld key no caller holds.
+        key = (
+            self._digest_key
+            if self._clean(value)
+            else self._withheld_digest_key
+        )
+        return _effect_digest(value, key)
 
     def _data_path(self, path: str) -> str | None:
         """``None`` for a path that is not admitted, else how its value shows.
@@ -838,6 +901,7 @@ class DirectHaDependencyProvider(DependencySourceProvider):
         from ..governance.risk import (
             automation_action_consequence_profile,
             effect_digest_key,
+            withheld_effect_digest_key,
         )
         from .authority import current_semantic_evidence
 
@@ -1509,12 +1573,34 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                     for token in consequence["effect_targets"]
                 ),
             )
+        # HAMCP-542: a field withheld by its service schema must be bound
+        # under the withheld key too, which needs the registry read above.
+        # Targets do not depend on it, so the registry read is unchanged.
+        withheld_field = _schema_withheld_field(effect_display_registry)
+        profile_inputs = [
+            (
+                internal_id,
+                source_entity_id,
+                action_config,
+                automation_action_consequence_profile(
+                    action_config,
+                    digest_key=digest_key,
+                    withheld_field=withheld_field,
+                )
+                if _has_schema_withheld_field(action_config, withheld_field)
+                else consequence,
+            )
+            for internal_id, source_entity_id, action_config, consequence in (
+                profile_inputs
+            )
+        ]
         for internal_id, source_entity_id, action_config, consequence in profile_inputs:
             effect_display = _EffectDisplayFilter(
                 action_config,
                 secret=self.secret,
                 registry=effect_display_registry,
                 digest_key=digest_key,
+                withheld_digest_key=withheld_effect_digest_key(),
             )
             displayed_domains = tuple(
                 effect_display.domain(str(item))

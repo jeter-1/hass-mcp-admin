@@ -744,7 +744,10 @@ def _unkeyed_effect_digests():
         return "redacted_sha256:" + hashlib.sha256(value.encode("utf-8")).hexdigest()
 
     stack = ExitStack()
-    stack.enter_context(patch.object(risk, "_effect_hasher", side_effect=hashlib.sha256))
+    def hasher(data=b"", *, withheld=False):
+        return hashlib.sha256(data)
+
+    stack.enter_context(patch.object(risk, "_effect_hasher", side_effect=hasher))
     stack.enter_context(patch.object(provider, "_effect_digest", side_effect=digest))
     stack.enter_context(patch.object(
         risk, "_HELPER_EFFECT_PROJECTION_MODEL", "automation-action-effect-v2",
