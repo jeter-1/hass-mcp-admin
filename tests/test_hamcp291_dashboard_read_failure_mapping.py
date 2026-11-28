@@ -17,6 +17,7 @@ Every test is plan-only against offline fakes; all data is synthetic.
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import replace
 import json
 from pathlib import Path
 import sys
@@ -38,6 +39,7 @@ from ha_mcp_engineering.errors import (  # noqa: E402
 from ha_mcp_engineering.f3_dashboard.gateway import (  # noqa: E402
     DashboardExecutionGateway,
 )
+from ha_mcp_engineering.f3_dashboard.errors import RawEvidenceError  # noqa: E402
 from ha_mcp_engineering.governance import service as governance_service  # noqa: E402
 from ha_mcp_engineering.governance.service import (  # noqa: E402
     ChangeGovernanceService,
@@ -399,10 +401,96 @@ class ReadBackBoundTests(_ServiceHarness):
         gateway = _DashboardGateway(version="9.2.0")
         gateway.configuration = notes_dashboard(3)
         created = await self.create(
-            self.service_for(gateway), RETITLE, url_path="home-admin-dashboard"
+            self.service_for(gateway), RETITLE, url_path="operations"
         )
         self.assertIsNotNone(self.repository.get(created["plan_id"]))
         self.assertEqual(gateway.write_count, 0)
+
+
+_MISSING = object()
+_KEEP = object()
+
+
+class _SizeOverrideProvider(UpstreamDashboardProvider):
+    """The real provider, with one reply's reported size replaced."""
+
+    def __init__(self, size) -> None:
+        super().__init__()
+        self.size = size
+
+    async def get_dashboard_config(self, **kwargs):
+        result = await super().get_dashboard_config(**kwargs)
+        if self.size is _KEEP:
+            return result
+        data = dict(result.data)
+        if self.size is _MISSING:
+            del data["estimated_serialized_size"]
+        else:
+            data["estimated_serialized_size"] = self.size
+        return replace(result, data=data)
+
+
+class PrereadSizeFailClosedTests(_ServiceHarness):
+    """HAMCP-273: a complete pre-read without a usable size fails closed.
+
+    Without its envelope a pre-read would skip the read-back bound, so the
+    gateway refuses it as invalid raw evidence instead.
+    """
+
+    # Missing, a bool, a string, and an int that makes the envelope negative.
+    UNAVAILABLE = {"missing": _MISSING, "bool": True, "string": "4096"}
+    MALFORMED = {"negative envelope": 1}
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.transport = _ExactProviderTransport(version="9.2.0")
+        self.transport.configuration = notes_dashboard(3)
+
+    def gateway(self, size) -> DashboardExecutionGateway:
+        provider = _SizeOverrideProvider(size)
+        provider._transport = self.transport
+        return DashboardExecutionGateway(provider, response_limit=60_000)
+
+    async def test_the_unchanged_size_plans(self):
+        # Control: the same wrapper, keeping the real size, plans normally.
+        created = await self.create(self.service_for(self.gateway(_KEEP)), RETITLE)
+        self.assertIsNotNone(self.repository.get(created["plan_id"]))
+        self.assertEqual(self.transport.write_count, 0)
+
+    async def test_the_gateway_refuses_a_preread_without_a_usable_size(self):
+        cases = [
+            *((label, size, "Dashboard configuration size is unavailable")
+              for label, size in self.UNAVAILABLE.items()),
+            *((label, size, "Dashboard configuration size is malformed")
+              for label, size in self.MALFORMED.items()),
+        ]
+        for label, size, message in cases:
+            with self.subTest(size=label):
+                with self.assertRaises(RawEvidenceError) as caught:
+                    await self.gateway(size).preread(url_path="operations")
+                self.assertEqual(caught.exception.code, "invalid_raw_dashboard_evidence")
+                self.assertEqual(str(caught.exception), message)
+        self.assertEqual(self.transport.write_count, 0)
+        self.assertEqual(self.transport.guide_count, 0)
+
+    async def test_plan_creation_refuses_a_preread_without_a_usable_size(self):
+        for label, size in {**self.UNAVAILABLE, **self.MALFORMED}.items():
+            with self.subTest(size=label):
+                reads = self.transport.read_count
+                service = self.service_for(self.gateway(size))
+                with self.assertRaises(GovernanceError) as caught:
+                    await self.create(service, RETITLE)
+                refusal = caught.exception
+                self.assertEqual(refusal.code, ErrorCode.CONFIGURATION_VALIDATION_FAILED)
+                self.assertFalse(refusal.retryable)
+                self.assertEqual(
+                    refusal.details, {"reason": "invalid_raw_dashboard_evidence"}
+                )
+                self.assert_no_plan()
+                # One inventory read and one configuration read, never a write.
+                self.assertEqual(self.transport.read_count - reads, 2)
+                self.assertEqual(self.transport.write_count, 0)
+                self.assertEqual(self.transport.guide_count, 0)
 
 
 if __name__ == "__main__":

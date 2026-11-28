@@ -5801,8 +5801,12 @@ class ChangeGovernanceService:
                 },
             )
         # HAMCP-273: the apply reads the resulting configuration back through
-        # the same response limit. Refuse a plan whose read-back the limit
-        # must refuse, so it can never be applied and then end unverified.
+        # the same response limit. Refuse a plan whose read-back, measured at
+        # plan time, the limit would refuse. This is the plan-time measure: the
+        # apply-time read can be larger by the request-id length difference
+        # (at most 120 characters) plus the upstream-warning, withheld-count
+        # and redaction differences disclosed for HAMCP-273, so a plan near
+        # the limit can still be applied and then end unverified.
         response_limit = getattr(self.dashboard_gateway, "response_limit", None)
         envelope_size = getattr(reader.preread_result, "response_envelope_size", None)
         if type(response_limit) is int and type(envelope_size) is int:
