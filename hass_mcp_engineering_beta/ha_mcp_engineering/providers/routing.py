@@ -148,6 +148,9 @@ TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
     "get_thread_matter_topology": ProviderCapability.THREAD_MATTER_TOPOLOGY,
     "get_unregistered_entities": ProviderCapability.UNREGISTERED_ENTITIES,
     "get_configuration_definitions": ProviderCapability.CONFIGURATION_DEFINITIONS,
+    # HAMCP-519: helper settings are configuration definitions of storage
+    # helpers; the existing capability is reused, so no model changes.
+    "get_helper_settings": ProviderCapability.CONFIGURATION_DEFINITIONS,
     "capture_automation_baseline": ProviderCapability.AUTOMATION_BASELINE_CAPTURE,
     "capture_automation_trace": ProviderCapability.TRACE_SNAPSHOTS,
     "list_trace_snapshots": ProviderCapability.TRACE_SNAPSHOTS,
@@ -342,6 +345,11 @@ ANALYTICAL_PROVIDER_POLICIES = {
     "get_configuration_definitions": {
         "policy_id": "configuration_definitions_read_v1", "access": "read", "orchestrator": "engineering",
         "scope": "admitted YAML reader at fixed definition paths, GET /api/states and /api/config, entity registry, entity/source, config_entries/get for closed domains and manifest/get ha_mcp_tools; db_url and secrets withheld",
+        "writes_allowed": "none", "fallback_policy": "none",
+    },
+    "get_helper_settings": {
+        "policy_id": "helper_settings_read_v1", "access": "read", "orchestrator": "engineering",
+        "scope": "config/entity_registry/list and the selected input_*/list collection reads in search.core_contracts.READS only, under the request's Core lease; allowlist projection, input_text initial as presence and length only, shared sanitizer, PC-1 cursor paging",
         "writes_allowed": "none", "fallback_policy": "none",
     },
     "automation_reliability_analysis": {
@@ -594,6 +602,18 @@ def native_search_policy_allows_read() -> bool:
     decision = routing_for_tool("ha_search")
     return (
         decision.capability == ProviderCapability.NATIVE_SEARCH
+        and decision.route == CapabilityRoute.ENGINEERING_NATIVE
+        and decision.preferred_provider == "engineering"
+        and not decision.fallback_providers
+        and not decision.explicit_direct_fallback_allowed
+    )
+
+
+def helper_settings_policy_allows_read() -> bool:
+    """HAMCP-519: fixed Core helper collection and registry reads only; no fallback."""
+    decision = routing_for_tool("get_helper_settings")
+    return (
+        decision.capability == ProviderCapability.CONFIGURATION_DEFINITIONS
         and decision.route == CapabilityRoute.ENGINEERING_NATIVE
         and decision.preferred_provider == "engineering"
         and not decision.fallback_providers

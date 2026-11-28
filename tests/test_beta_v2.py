@@ -587,7 +587,7 @@ class ToolParityTests(unittest.TestCase):
 
     def test_all_25_tools_are_registered(self):
         self.assertEqual(len(self.production_tools), 25)
-        self.assertEqual(len(self.beta_tools), 88)  # HAMCP-501 W6: + native ha_search; HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
+        self.assertEqual(len(self.beta_tools), 89)  # HAMCP-501 W6: + native ha_search; HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts; HAMCP-519: + helper settings
         self.assertEqual(
             set(self.production_tools),
             set(self.beta_tools)
@@ -655,6 +655,7 @@ class ToolParityTests(unittest.TestCase):
                 "get_security_metadata",  # HAMCP-134: Engineering-native read
                 "get_thread_matter_topology",  # HAMCP-231: Engineering-native read
                 "get_automation_run_counts",  # HAMCP-476: Engineering-native read
+                "get_helper_settings",  # HAMCP-519: Engineering-native read
             },
         )
 
@@ -738,7 +739,7 @@ class ToolParityTests(unittest.TestCase):
         self.assertEqual(result["data"]["server"]["id"], "hass-mcp-engineering-beta")
         self.assertEqual(result["data"]["server"]["name"], "HA MCP Engineering Server Beta")
         self.assertEqual(result["data"]["server"]["version"], SERVER_VERSION)
-        self.assertEqual(result["data"]["tool_count"], 88)  # HAMCP-501 W6: + native ha_search; HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
+        self.assertEqual(result["data"]["tool_count"], 89)  # HAMCP-501 W6: + native ha_search; HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts; HAMCP-519: + helper settings
         self.assertEqual(result["data"]["canonical_tool_count"], 25)
 
     def test_list_capabilities_reports_expected_catalog(self):
@@ -748,7 +749,7 @@ class ToolParityTests(unittest.TestCase):
         self.assertTrue(result["success"])
         catalog = result["data"]
         self.assertEqual(catalog["count"], 25)
-        self.assertEqual(catalog["registered_count"], 88)  # HAMCP-501 W6: + native ha_search; HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
+        self.assertEqual(catalog["registered_count"], 89)  # HAMCP-501 W6: + native ha_search; HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts; HAMCP-519: + helper settings
         self.assertEqual(len(catalog["planned"]), 0)
         self.assertEqual(
             [item["tool"] for item in catalog["beta_native"]],
@@ -766,6 +767,7 @@ class ToolParityTests(unittest.TestCase):
                 "get_recorder_settings",
                 "get_unregistered_entities",
                 "get_configuration_definitions",
+                "get_helper_settings",  # HAMCP-519
                 "get_core_log_history",
                 "get_incident_logs",
                 "get_history_slices",
@@ -831,7 +833,7 @@ class ToolParityTests(unittest.TestCase):
             {"native": 8, "transitional": 14, "deprecated": 3},
         )
         provider_matrix = section("provider_matrix")
-        self.assertEqual(len(provider_matrix), 37)  # + HAMCP-501 W6 native ha_search; + HAMCP-311 control_helper, HAMCP-297 control_device_configuration, HAMCP-476 get_automation_run_counts
+        self.assertEqual(len(provider_matrix), 38)  # + HAMCP-501 W6 native ha_search; + HAMCP-311 control_helper, HAMCP-297 control_device_configuration, HAMCP-476 get_automation_run_counts; HAMCP-519: + helper settings
         self.assertEqual(
             {item["selected_provider"] for item in provider_matrix},
             {"direct_ha_api", "supervisor_core_logs", "supervisor_incident_logs", "engineering", "upstream_dashboard", "upstream_typed_fan", "upstream_typed_power",
@@ -957,7 +959,7 @@ class BetaApplicationTests(unittest.TestCase):
         )
         names = [tool["name"] for tool in listing["result"]["tools"]]
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(names), 88)  # HAMCP-501 W6: + native ha_search; HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
+        self.assertEqual(len(names), 89)  # HAMCP-501 W6: + native ha_search; HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts; HAMCP-519: + helper settings
         dashboard_descriptors = {
             tool["name"]: tool
             for tool in listing["result"]["tools"]

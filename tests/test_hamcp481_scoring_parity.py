@@ -403,6 +403,16 @@ class ReachabilityTests(unittest.TestCase):
             ("ha_mcp_engineering/ha_core_readmission/routes.py", (
                 "ha_mcp_engineering.search", "ha_mcp_engineering.search.core_contracts",
                 "ha_mcp_engineering.search.engine")),
+            # HAMCP-519: get_helper_settings reads through the fixed Core read
+            # contracts (the entity registry and input_*/list rows) and the
+            # session's INVALID marker; it adds no Core command.
+            ("ha_mcp_engineering/helper_settings/contracts.py", (
+                "ha_mcp_engineering.search", "ha_mcp_engineering.search.core_contracts")),
+            ("ha_mcp_engineering/helper_settings/service.py", (
+                "ha_mcp_engineering.search", "ha_mcp_engineering.search.core_contracts")),
+            ("ha_mcp_engineering/helper_settings/service.py", (
+                "ha_mcp_engineering.search.core_reads",
+                "ha_mcp_engineering.search.core_reads.INVALID")),
             ("ha_mcp_engineering/providers/upstream_read_gateway.py", (
                 subcalls, f"{subcalls}.BUCKETS", f"{subcalls}.MAX_SCAN_ROWS",
                 f"{subcalls}.PAGE_SIZE_LADDER", f"{subcalls}.PageResult",
