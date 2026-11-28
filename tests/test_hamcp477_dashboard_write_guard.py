@@ -119,6 +119,28 @@ ORDINARY = (
     ("markdown with a monkey", {"type": "markdown", "content": "keyboard and monkey"}),
 )
 
+# Codex r1 F1 (PR #543): URL forms the first query rule missed (an encoded
+# parameter name, a parenthesized path, a relative URL with no slash, an
+# encoded separator, a doubly encoded name), each with the pointer to name.
+URL_FORMS = (
+    ("encoded name %6bey", URL + "?%6bey=" + RAW),
+    ("parenthesized path", "https" + synthetic.SCHEME_SEPARATOR + "example.invalid/(view)?key=" + RAW),
+    ("relative without a slash", "view?key=" + RAW),
+    ("encoded separators", "view%3Fkey%3D" + RAW),
+    ("doubly encoded name", URL + "?%256bey=" + RAW),
+)
+# The same forms with an ordinary parameter must still plan.
+ORDINARY_URL_FORMS = (
+    "https" + synthetic.SCHEME_SEPARATOR + "example.invalid/(view)?mode=dark",
+    "view?mode=dark&theme=1",
+    URL + "?%6dode=dark",
+    "view%3Fmode%3Ddark",
+)
+# Codex r1 F2 (PR #543): custom cards may nest data whose ``type`` is not a
+# string; it is no card type, and it must not break the guard.
+NON_STRING_TYPES = ({"mode": "text"}, ["a", "b"])
+
+
 # Config keys of the built-in cards, rows, elements, features, badges, views
 # and sections of the pinned frontend (home-assistant/frontend 380e9b5a81ad,
 # the dashboard_analysis pin): the interface field names of its lovelace
@@ -203,6 +225,7 @@ class SensitivityRuleTests(unittest.TestCase):
             URL + "#access_token=" + RAW,
             "/local/view?sig=" + RAW,
             "see " + URL + "?apiKey=" + RAW + " here",
+            *(value for _label, value in URL_FORMS),
             synthetic.bearer(RAW),
             "Basic " + RAW,
         ):
@@ -214,9 +237,29 @@ class SensitivityRuleTests(unittest.TestCase):
             "Token: 5",
             "a key to the door",
             "sensor.synthetic_token_balance",
+            *ORDINARY_URL_FORMS,
         ):
             with self.subTest(value=value):
                 self.assertFalse(sensitive_string(value))
+
+    def test_a_type_that_is_not_a_string_is_no_card_type(self):
+        for holder in NON_STRING_TYPES:
+            with self.subTest(holder=type(holder).__name__):
+                self.assertFalse(sensitive_key("code", card_type=holder))
+                self.assertEqual(
+                    sensitive_paths(
+                        {"type": holder, "code": "4821", "label": "x"},
+                        path="/views/0/cards/0/options",
+                    ),
+                    (),
+                )
+                self.assertEqual(
+                    sensitive_paths(
+                        {"type": holder, "apiKey": RAW}, path="/views/0/cards/0/options"
+                    ),
+                    ("/views/0/cards/0/options/apiKey",),
+                )
+        self.assertTrue(sensitive_key("code", card_type="alarm-panel"))
 
     def test_pointers_never_carry_a_value_or_an_unusual_key(self):
         value = {"headers": {"X-API-Key": RAW}, RAW + "-token": "x", "a b token": "y"}
@@ -480,6 +523,58 @@ class DashboardWriteGuardTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(created["status"], "awaiting_approval")
         self.assertEqual(len(self.repository.list()), len(ORDINARY))
         self.assertEqual(self.dashboard.write_count, 0)
+
+    async def test_url_forms_refuse_before_persistence(self):
+        for label, url in URL_FORMS:
+            with self.subTest(label=label):
+                await self._assert_refused(
+                    add_card({"type": "iframe", "url": url}), "/views/0/cards/1/url"
+                )
+        self.assertEqual(self.dashboard.preread_count, len(URL_FORMS))
+        for url in ORDINARY_URL_FORMS:
+            with self.subTest(url=url):
+                created = await self._create(add_card({"type": "iframe", "url": url}))
+                self.assertEqual(created["status"], "awaiting_approval")
+        self.assertEqual(len(self.repository.list()), len(ORDINARY_URL_FORMS))
+        self.assertEqual(self.dashboard.write_count, 0)
+
+    async def test_a_nested_type_that_is_not_a_string_still_plans(self):
+        for holder in NON_STRING_TYPES:
+            with self.subTest(holder=type(holder).__name__):
+                self.dashboard.configuration = {
+                    "title": "Synthetic",
+                    "views": [{"cards": [{
+                        "type": "custom:x",
+                        "options": {"type": holder, "label": "before", "code": "python"},
+                    }]}],
+                }
+                for operation in (
+                    {"operation_id": "r", "operation": "replace",
+                     "path": "/views/0/cards/0/options/label", "value": "after"},
+                    {"operation_id": "c", "operation": "replace",
+                     "path": "/views/0/cards/0/options/code", "value": "yaml"},
+                    {"operation_id": "a", "operation": "add",
+                     "path": "/views/0/cards/0/options/extra", "value": {"type": holder}},
+                ):
+                    created = await self._create([operation])
+                    self.assertEqual(created["status"], "awaiting_approval")
+                # A credential key under that holder still refuses.
+                await self._assert_refused_keeping_plans(
+                    [{"operation_id": "k", "operation": "add",
+                      "path": "/views/0/cards/0/options/apiKey", "value": RAW}],
+                    "/views/0/cards/0/options/apiKey",
+                )
+        self.assertEqual(self.dashboard.write_count, 0)
+
+    async def _assert_refused_keeping_plans(self, operations, pointer):
+        before = len(self.repository.list())
+        with self.assertRaises(GovernanceError) as raised:
+            await self._create(operations)
+        self.assertEqual(raised.exception.details["reason"], REASON)
+        self.assertIn(pointer, raised.exception.details["sensitive_paths"])
+        self.assertNotIn(RAW, json.dumps(raised.exception.details))
+        self.assertEqual(len(self.repository.list()), before)
+        self.assertNotIn(RAW.encode(), self._persisted_bytes())
 
     async def test_the_shared_detector_refusals_are_unchanged(self):
         # Pre-read refusals keep their reason and carry no pointer list.

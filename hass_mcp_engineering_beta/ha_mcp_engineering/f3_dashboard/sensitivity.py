@@ -8,13 +8,17 @@ applies only to the values a dashboard operation adds, replaces or removes.
 
 A value is sensitive when it is a string or a number and either a key on its
 path is a credential name, or it is a string that carries a credential shape:
-a bearer or basic prefix, or a URL whose query names a credential parameter.
+a bearer or basic prefix, or a query parameter (``?``, ``&``, ``#`` or ``;``
+then ``name=``) anywhere in the string, raw or percent-decoded, whose name is a
+credential name. The query rule does not require a recognizable URL, so
+relative and unusual URL forms are judged the same way.
 """
 
 from __future__ import annotations
 
 import re
 from typing import Any, Iterator
+from urllib.parse import unquote
 
 from .models import PatchEffect, PatchKind
 
@@ -43,8 +47,10 @@ _URL_PARAMETER_NAMES = frozenset({"key", "auth", "sig", "signature"})
 _URL_PARAMETER_FRAGMENTS = ("signature",)
 
 _SQUASH = re.compile(r"[^a-z0-9]+")
-_URL = re.compile(r"(?i)(?:[a-z][a-z0-9+.-]*://|/)[^\s<>\"'()\[\]{}`]*")
 _QUERY_PARAMETER = re.compile(r"[?&#;]([^=&#;?\s]+)(?:=|%3[dD])")
+# Percent-decoding rounds applied to a string before the query rule, so
+# ``?%6bey=`` and ``%3Fkey%3D`` are judged as ``?key=``.
+_DECODE_ROUNDS = 3
 # A pointer segment a refusal may name: a list index, or a short name with no
 # digits (key material almost always has some). Any other segment is ``*``.
 _SHOWN_SEGMENT = re.compile(r"[0-9]{1,6}|[A-Za-z_-]{1,40}")
@@ -56,6 +62,24 @@ def _squash(text: str) -> str:
     return _SQUASH.sub("", text.lower())
 
 
+def _decoded_forms(text: str) -> Iterator[str]:
+    """``text``, then each further percent-decoding of it that changes it."""
+
+    yield text
+    for _ in range(_DECODE_ROUNDS):
+        decoded = unquote(text)
+        if decoded == text:
+            return
+        text = decoded
+        yield text
+
+
+def _holder_type(value: Any) -> str | None:
+    """A mapping's ``type`` when it is a string; any other value is no type."""
+
+    return value if isinstance(value, str) else None
+
+
 def sensitive_key(key: Any, *, card_type: Any = None) -> bool:
     """Whether a mapping key, or a JSON pointer segment, names a credential."""
 
@@ -64,16 +88,15 @@ def sensitive_key(key: Any, *, card_type: Any = None) -> bool:
         return False
     if squashed in _KEY_NAMES:
         return True
-    if squashed == "code" and card_type in _CODE_CARD_TYPES:
+    if squashed == "code" and _holder_type(card_type) in _CODE_CARD_TYPES:
         return True
     return any(fragment in squashed for fragment in _KEY_FRAGMENTS)
 
 
 def _sensitive_parameter(name: str) -> bool:
-    decoded = re.sub(r"(?i)%5f", "_", re.sub(r"(?i)%2d", "-", name))
-    squashed = _squash(decoded)
+    squashed = _squash(name)
     return (
-        sensitive_key(decoded)
+        sensitive_key(name)
         or squashed in _URL_PARAMETER_NAMES
         or any(fragment in squashed for fragment in _URL_PARAMETER_FRAGMENTS)
     )
@@ -85,8 +108,8 @@ def sensitive_string(value: str) -> bool:
     lowered = value.lower()
     if lowered.startswith("bearer ") or lowered.startswith("basic "):
         return True
-    for url in _URL.finditer(value):
-        for match in _QUERY_PARAMETER.finditer(url.group(0)):
+    for form in _decoded_forms(value):
+        for match in _QUERY_PARAMETER.finditer(form):
             if _sensitive_parameter(match.group(1)):
                 return True
     return False
@@ -139,7 +162,8 @@ def sensitive_leaf(
 def container_type(configuration: Any, path: str) -> Any:
     """The ``type`` of the mapping that directly holds the node at ``path``.
 
-    Returns ``None`` when the parent is missing or is not a mapping.
+    Returns ``None`` when the parent is missing, is not a mapping, or has a
+    ``type`` that is not a string (custom cards may nest arbitrary data).
     """
 
     node = configuration
@@ -151,7 +175,7 @@ def container_type(configuration: Any, path: str) -> Any:
         else:
             return None
     if isinstance(node, dict):
-        return node.get("type")
+        return _holder_type(node.get("type"))
     return None
 
 
