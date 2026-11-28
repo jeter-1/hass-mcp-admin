@@ -197,6 +197,13 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
         "fallback": "none", "policy": "configuration_definitions_read_v1", "direct_write_allowed": False,
     },
     {
+        "tool": "get_helper_settings", "category": "evidence",
+        "status": "beta_native", "risk": "read", "additive": True,
+        "operation_class": "read", "routing": "engineering_native",
+        "provider": "engineering", "data_providers": ["direct_ha_api"],
+        "fallback": "none", "policy": "helper_settings_read_v1", "direct_write_allowed": False,
+    },
+    {
         "tool": "get_core_log_history", "category": "evidence",
         "status": "beta_native", "risk": "read", "additive": True,
         "operation_class": "read", "routing": "engineering_native",
@@ -1062,6 +1069,15 @@ CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (
         "completeness": "partial_with_reasons_when_any_source_unreadable_or_definition_unaddressable",
         "security_justification": "Fixed reads: the admitted YAML reader at fixed definition paths, GET /api/states (availability only), GET /api/config (components), config/entity_registry/list, entity/source, config_entries/get for a closed domain set and manifest/get ha_mcp_tools; allowlist projection; db_url, credentials and secret references never returned; no component command, flow, reload or fallback.",
         "trust_mode": "reviewed_native_read", "trust_profile": "configuration-definitions-read-v1",
+    },
+    {
+        "tool": "get_helper_settings", "capability": "configuration_definitions",
+        "required_semantics": "Each storage (UI) input helper's entity id, name, icon, initial value and allowlisted settings; input_text initial as presence and length only; YAML helpers not listed; PC-1 cursor pages; partial when any source is unreadable or a field drifts.",
+        "standard_ha_mcp_coverage": "semantically_unsuitable", "direct_ha_coverage": "reviewed_fixed_reads",
+        "selected_provider": "engineering", "fallback_policy": "none",
+        "completeness": "partial_with_reasons_when_any_source_unreadable_or_field_drifts",
+        "security_justification": "Fixed non-admin reads from search.core_contracts.READS: the selected input_*/list collections and config/entity_registry/list; allowlist projection; input_text initial text never returned; shared sanitizer; no create, update, delete, reload, service call or fallback.",
+        "trust_mode": "reviewed_native_read", "trust_profile": "helper-settings-read-v1",
     },
     {
         "tool": "get_core_log_history", "capability": "core_log_history",

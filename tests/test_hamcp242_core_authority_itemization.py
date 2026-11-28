@@ -279,6 +279,7 @@ EXPECTED_AFFECTED_TOOLS = {
         "get_backup_inventory",
         "get_configuration_definitions",
         "get_error_log",
+        "get_helper_settings",  # HAMCP-519
         "get_integration_inspection",
         "get_recorder_settings",
         "get_unregistered_entities",
@@ -343,6 +344,7 @@ EXPECTED_AFFECTED_TOOLS = {
         "capture_automation_baseline",
         "dashboard_integrity_analysis",
         "get_configuration_definitions",
+        "get_helper_settings",  # HAMCP-519
         "get_unregistered_entities",
         "ha_search",  # HAMCP-501 W6
         "list_areas",

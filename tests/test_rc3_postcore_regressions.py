@@ -531,21 +531,21 @@ class PostCoreRegressions(unittest.IsolatedAsyncioTestCase):
         static = registered_tools(get_registered_server())
         McpSdkToolRegistry(server).replace({name: static[name]
                                             for name in ENGINEERING_STATIC_TOOL_NAMES})
-        self.assertEqual(len(registered_tools(server)), 88)  # HAMCP-501 W6: + native ha_search; HAMCP-476: +1 automation run counts; HAMCP-290: +1 get_marketplace_inventory; HAMCP-253: +1 inspection read; HAMCP-165 + HAMCP-155: +2 inactive planners; HAMCP-225: +4 trace snapshot tools; HAMCP-228: +1 baseline compare tool; HAMCP-232/145: +2 script trace reads, +2 inactive option planners; HAMCP-106: +1 inactive dashboard metadata planner; HAMCP-071: +1 inactive scene configuration planner; HAMCP-311: +1 control_helper; HAMCP-229: +1 reliability batch read; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
+        self.assertEqual(len(registered_tools(server)), 89)  # HAMCP-501 W6: + native ha_search; HAMCP-476: +1 automation run counts; HAMCP-290: +1 get_marketplace_inventory; HAMCP-253: +1 inspection read; HAMCP-165 + HAMCP-155: +2 inactive planners; HAMCP-225: +4 trace snapshot tools; HAMCP-228: +1 baseline compare tool; HAMCP-232/145: +2 script trace reads, +2 inactive option planners; HAMCP-106: +1 inactive dashboard metadata planner; HAMCP-071: +1 inactive scene configuration planner; HAMCP-311: +1 control_helper; HAMCP-229: +1 reliability batch read; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-519: + helper settings
         await gateway.initialize(server)
         baseline = {tool.name: tool.model_dump(mode="json") for tool in await server.list_tools()}
-        self.assertEqual(len(baseline), 114)  # HAMCP-476: +1 automation run counts; HAMCP-134: +1 security metadata read; HAMCP-253: +1 inspection read; HAMCP-165 + HAMCP-155: +2 inactive planners; HAMCP-225: +4 trace snapshot tools; HAMCP-228: +1 baseline compare tool; HAMCP-232/145: +2 script trace reads, +2 inactive option planners; HAMCP-106: +1 inactive dashboard metadata planner; HAMCP-071: +1 inactive scene configuration planner; HAMCP-311: +1 control_helper; HAMCP-229: +1 reliability batch read; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
+        self.assertEqual(len(baseline), 115)  # HAMCP-519: +1 helper settings; HAMCP-476: +1 automation run counts; HAMCP-134: +1 security metadata read; HAMCP-253: +1 inspection read; HAMCP-165 + HAMCP-155: +2 inactive planners; HAMCP-225: +4 trace snapshot tools; HAMCP-228: +1 baseline compare tool; HAMCP-232/145: +2 script trace reads, +2 inactive option planners; HAMCP-106: +1 inactive dashboard metadata planner; HAMCP-071: +1 inactive scene configuration planner; HAMCP-311: +1 control_helper; HAMCP-229: +1 reliability batch read; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
 
         self.network.records[0]["name"] = False
         await reconcile_through_gate(self.core)
         await gateway.initialize(server)
-        self.assertEqual(len(registered_tools(server)), 110)  # HAMCP-501 W6: + native ha_search (static, stays registered); HAMCP-476: +1; HAMCP-134: +1; HAMCP-253: +1; HAMCP-165 + HAMCP-155: +2 static; HAMCP-225: +4; HAMCP-228: +1 baseline compare tool; HAMCP-232/145: +4; HAMCP-106: +1; HAMCP-071: +1; HAMCP-311: +1; HAMCP-229: +1; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology
+        self.assertEqual(len(registered_tools(server)), 111)  # HAMCP-501 W6: + native ha_search (static, stays registered); HAMCP-476: +1; HAMCP-134: +1; HAMCP-253: +1; HAMCP-165 + HAMCP-155: +2 static; HAMCP-225: +4; HAMCP-228: +1 baseline compare tool; HAMCP-232/145: +4; HAMCP-106: +1; HAMCP-071: +1; HAMCP-311: +1; HAMCP-229: +1; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-519: + helper settings
         # HAMCP-290: ha_get_hacs_info stays retired; the 9.2.0 policy marks it
         # unsupported, so it is never exposed and only the device-dependent
         # reads are Core-withheld (87 + 28 - 6 = 109; HAMCP-297, HAMCP-231, HAMCP-476).
         # HAMCP-501 W6: the delegated ha_search is internal-only, so its
         # withdrawal removes only the sub-call route; the native ha_search
-        # (88 static + 22 = 110) stays registered and the route returns on
+        # (89 static + 22 = 111; HAMCP-519) stays registered and the route returns on
         # restoration.
         self.assertIn("ha_search", registered_tools(server))
         self.assertNotIn("ha_search", gateway._internal)

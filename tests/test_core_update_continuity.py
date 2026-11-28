@@ -573,7 +573,7 @@ class CoreContinuityTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("ha_get_hacs_info", tools)
         self.assertNotIn("ha_search", tools)
         self.assertIn("ha_search", gateway._internal)
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(tools), 114)  # HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts; HAMCP-501 W6: + native ha_search, - delegated ha_search
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(tools), 115)  # HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts; HAMCP-501 W6: + native ha_search, - delegated ha_search; HAMCP-519: + helper settings
         self.assertNotIn("ha_get_operation_status", tools)
         result = json.loads(await tools["ha_get_state"].run(dict(STATE_ARGUMENTS)))
         self.assertTrue(result["success"])

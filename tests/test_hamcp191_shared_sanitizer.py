@@ -610,6 +610,8 @@ SANITIZER_SITES = {
     ("handoff/provider.py", "EngineeringHandoffProvider._automation_configs.one", "sanitize_untrusted_data"): (1, "analysis"),
     ("handoff/provider.py", "EngineeringHandoffProvider._states.one", "sanitize_untrusted_data"): (1, "analysis"),
     ("handoff/service.py", "HandoffGenerationService.generate", "sanitize_untrusted_data"): (1, "analysis"),
+    # HAMCP-519: the native get_helper_settings stored helper rows (ids, then each page).
+    ("helper_settings/service.py", "_Cleaner.__call__", "sanitize_untrusted_data"): (1, "analysis"),
     # HAMCP-511: history slices read Core natively; the reader sanitizes each
     # state and the service sanitizes the page at its one exit.
     ("history_slices/native.py", "NativeHistoryReader._sanitize", "sanitize_untrusted_data"): (1, "analysis"),
