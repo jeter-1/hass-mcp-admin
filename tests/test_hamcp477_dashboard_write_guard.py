@@ -181,6 +181,18 @@ URL_FORMS = (
     ("special scheme without slashes", "https:user:" + RAW + "@example.invalid"),
     ("backslashes for slashes", "https:\\\\user:" + RAW + "@example.invalid"),
     ("three slashes", "https:///user:" + RAW + "@example.invalid"),
+    # Cursor r3 F5 (PR #543): every special scheme, in either case, with no
+    # slash or with one. Python's ``urlsplit`` reads no password in these, so
+    # only these forms lock the scheme list, the optional slashes and the
+    # case-insensitive match.
+    *(
+        (
+            f"{scheme} with {count} slash before userinfo",
+            scheme + ":" + slashes + "user:" + RAW + "@example.invalid/view",
+        )
+        for scheme in ("http", "https", "ws", "wss", "ftp", "HTTP", "HTTPS", "WS", "WSS", "FTP")
+        for count, slashes in (("no", ""), ("one", "/"))
+    ),
 )
 # The same forms with an ordinary parameter must still plan.
 ORDINARY_URL_FORMS = (
@@ -199,6 +211,12 @@ ORDINARY_URL_FORMS = (
     "https" + synthetic.SCHEME_SEPARATOR + "user:@example.invalid/view",
     "mailto:someone@example.invalid",
     URL + "?mode=dark mode&theme=1",
+    # Special schemes with no slash or one: a user name alone, an empty
+    # password and a port are no credential.
+    "http:user@example.invalid/view",
+    "WSS:/user:@example.invalid/view",
+    "FTP:example.invalid:21/view",
+    "ws:/example.invalid:8123/view",
 )
 # Codex r1 F2 (PR #543): custom cards may nest data whose ``type`` is not a
 # string; it is no card type, and it must not break the guard.
