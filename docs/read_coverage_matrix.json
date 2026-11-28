@@ -45,7 +45,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 339,
+       "line": 341,
        "anchor": "\"list_automations\""
       }
      ]
@@ -70,7 +70,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 340,
+       "line": 342,
        "anchor": "\"get_automation_config\""
       },
       {
@@ -160,17 +160,17 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4262,
+       "line": 4263,
        "anchor": "def search_subcall_reader"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_2_keys.py",
-       "line": 492,
+       "line": 502,
        "anchor": "def bucket_withheld_names"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/search/subcalls.py",
-       "line": 65,
+       "line": 66,
        "anchor": "PAGE_SIZE_LADDER = (150, 30, 6, 1)"
       },
       {
@@ -199,7 +199,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 352,
+       "line": 354,
        "anchor": "\"create_change_plan\""
       },
       {
@@ -264,7 +264,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 1135,
+       "line": 1152,
        "anchor": "def f3_requirements"
       },
       {
@@ -366,7 +366,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4185,
+       "line": 4186,
        "anchor": "def yaml_config_reader(self, *, audit=None"
       }
      ]
@@ -445,7 +445,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4158,
+       "line": 4159,
        "anchor": "require_unmodified_script"
       }
      ]
@@ -490,17 +490,17 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4262,
+       "line": 4263,
        "anchor": "def search_subcall_reader"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_2_keys.py",
-       "line": 492,
+       "line": 502,
        "anchor": "def bucket_withheld_names"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/search/subcalls.py",
-       "line": 65,
+       "line": 66,
        "anchor": "PAGE_SIZE_LADDER = (150, 30, 6, 1)"
       },
       {
@@ -562,7 +562,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 1135,
+       "line": 1152,
        "anchor": "def f3_requirements"
       },
       {
@@ -704,17 +704,17 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4262,
+       "line": 4263,
        "anchor": "def search_subcall_reader"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_2_keys.py",
-       "line": 492,
+       "line": 502,
        "anchor": "def bucket_withheld_names"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/search/subcalls.py",
-       "line": 65,
+       "line": 66,
        "anchor": "PAGE_SIZE_LADDER = (150, 30, 6, 1)"
       },
       {
@@ -781,7 +781,7 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 1135,
+       "line": 1152,
        "anchor": "def f3_requirements"
       },
       {
@@ -1072,7 +1072,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4185,
+       "line": 4186,
        "anchor": "def yaml_config_reader(self, *, audit=None"
       }
      ]
@@ -1120,7 +1120,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 432,
+       "line": 434,
        "anchor": "mounted_read_only_source"
       },
       {
@@ -1150,7 +1150,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 348,
+       "line": 350,
        "anchor": "\"list_blueprints\""
       },
       {
@@ -1421,7 +1421,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4185,
+       "line": 4186,
        "anchor": "def yaml_config_reader(self, *, audit=None"
       }
      ]
@@ -1543,7 +1543,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4185,
+       "line": 4186,
        "anchor": "def yaml_config_reader(self, *, audit=None"
       }
      ]
@@ -2507,17 +2507,17 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4262,
+       "line": 4263,
        "anchor": "def search_subcall_reader"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_2_keys.py",
-       "line": 492,
+       "line": 502,
        "anchor": "def bucket_withheld_names"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/search/subcalls.py",
-       "line": 65,
+       "line": 66,
        "anchor": "PAGE_SIZE_LADDER = (150, 30, 6, 1)"
       },
       {
@@ -2777,17 +2777,17 @@
      "refs": [
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4262,
+       "line": 4263,
        "anchor": "def search_subcall_reader"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_2_keys.py",
-       "line": 492,
+       "line": 502,
        "anchor": "def bucket_withheld_names"
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/search/subcalls.py",
-       "line": 65,
+       "line": 66,
        "anchor": "PAGE_SIZE_LADDER = (150, 30, 6, 1)"
       },
       {
@@ -2976,7 +2976,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 349,
+       "line": 351,
        "anchor": "\"list_dashboards\""
       }
      ]
@@ -3117,32 +3117,42 @@
      ]
     },
     {
-     "tool": "internal:native_search_dashboard_subcall_pages",
-     "provider": "upstream_read_gateway search_subcall_reader [gateway_reader:search_subcall_reader]",
-     "purpose_binding": "HAMCP-501 fixed ha_search dashboard sub-call pages, wired to native ha_search (W6)",
-     "admission": "upstream:ha_search 9.2.0 Row 25 (reads_9_2 adapter) only, internal-only (never exposed or aliased); the native ha_search request's Core lease is passed as core_dispatch_authorizer and checked before, at and after each page's dispatch; the route's own Core requirement core.delegated_device_effective_area is acquired per page; no parent request refuses; no fallback",
+     "tool": "ha_search",
+     "provider": "engineering native search (direct_ha_api Core reads)",
+     "purpose_binding": "native-search-read-v1: HAMCP-447 native dashboard search",
+     "admission": "Engineering-native (BETA_NATIVE ha_search); a search that reads dashboards also holds core.dashboard_configuration_read under the request's Core lease (static_tool_requirements takes the engine's own reads); lovelace/config only through the WebSocket batch allowlist, in two shapes ({type} for the default dashboard, {type, url_path} with url_path checked against URL_PATH_PATTERN), never force; no sub-call page and no fallback",
      "completeness": "partial",
-     "detail": "Fixed page arguments (search_types [dashboard], include_config false, limit one of the page-size ladder (150, 30, 6, 1), offset a multiple of the limit below 20,000); each page passes the gateway's validation, Row 25 projection, sanitizer and size check; a redacted or bounded page fails (D2) and config_has_more must equal has_more (D3); Row 25 withholds every 9.2.0 dashboard name (url_path, title), counted by name only (D1). A page the reply size bound alone refuses (page_too_large) is read again in pages of the next ladder size, which neither skip nor repeat a row; no other failure is retried. The W3 scan reads at most 20,000 rows in at most 300 page calls and marks the dashboards incomplete on any failed page.",
+     "detail": "Only when search_types names dashboard. Storage dashboards only: a listed YAML dashboard is never read and is counted not_searched yaml_dashboards_skipped. The default dashboard is read first only when the list was read whole and lists no lovelace dashboard (Core then serves the default); then at most 500 listed storage dashboards (MAX_DASHBOARDS) in Core's order, pipelined 8 per batch under one 60-second deadline. Each configuration is scored as it is read (a case-insensitive substring of any key or non-null leaf, or under exact_match false the fuzzy leaf score at 70) and then dropped; a record carries url_path, title, score and the match flags, never the configuration, and include_config discloses each matched body as withheld. A failed, timed-out, unusable or over-bound row counts read_failed; config_not_found is a clean no-match.",
      "refs": [
       {
-       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 4262,
-       "anchor": "def search_subcall_reader"
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/search/dashboards.py",
+       "line": 123,
+       "anchor": "def plan("
       },
       {
-       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_reads_9_2_keys.py",
-       "line": 492,
-       "anchor": "def bucket_withheld_names"
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/search/dashboards.py",
+       "line": 158,
+       "anchor": "async def search_dashboards("
       },
       {
-       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/search/subcalls.py",
-       "line": 65,
-       "anchor": "PAGE_SIZE_LADDER = (150, 30, 6, 1)"
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/search/core_reads.py",
+       "line": 395,
+       "anchor": "async def dashboard_configs("
       },
       {
-       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/search/subcalls.py",
-       "line": 194,
-       "anchor": "def page_arguments"
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/search/core_contracts.py",
+       "line": 80,
+       "anchor": "MAX_DASHBOARDS = 500"
+      },
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/clients/websocket.py",
+       "line": 46,
+       "anchor": "\"lovelace/config\": (frozenset({\"type\"}), frozenset({\"type\", \"url_path\"})),"
+      },
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
+       "line": 813,
+       "anchor": "requirements = (*requirements, *core_contracts.requirements_for(reads))"
       }
      ]
     }
@@ -3320,6 +3330,26 @@
        "anchor": "_dashboard_content_fingerprint_reader"
       }
      ]
+    },
+    {
+     "tool": "ha_search",
+     "provider": "engineering native search (direct_ha_api Core reads)",
+     "purpose_binding": "native-search-read-v1: HAMCP-447 native dashboard search",
+     "admission": "Engineering-native (BETA_NATIVE ha_search); lovelace/dashboards/list under core.dashboard_configuration_read, held only when a search reads dashboards",
+     "completeness": "partial",
+     "detail": "The dashboard list chooses which configurations are read (each row's url_path, mode and title; the display fields and a YAML row's filename are dropped). A matched dashboard's url_path and title are returned; an unmatched one is not reported. A dropped or malformed row counts read_failed.",
+     "refs": [
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/search/core_contracts.py",
+       "line": 139,
+       "anchor": "_rows(\"dashboards\", \"lovelace/dashboards/list\", DASHBOARD, True, \"url_path\"),"
+      },
+      {
+       "path": "hass_mcp_engineering_beta/ha_mcp_engineering/search/dashboards.py",
+       "line": 123,
+       "anchor": "def plan("
+      }
+     ]
     }
    ],
    "write_paths": [
@@ -3359,7 +3389,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 384,
+       "line": 386,
        "anchor": "DASHBOARD_METADATA_TOOL: ("
       }
      ]
@@ -3563,7 +3593,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 342,
+       "line": 344,
        "anchor": "\"list_entity_registry\""
       }
      ]
@@ -3746,7 +3776,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 341,
+       "line": 343,
        "anchor": "\"list_devices\""
       }
      ]
@@ -3846,7 +3876,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py",
-       "line": 347,
+       "line": 349,
        "anchor": "\"list_areas\""
       },
       {
@@ -4265,7 +4295,7 @@
       },
       {
        "path": "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_read_gateway.py",
-       "line": 1780,
+       "line": 1781,
        "anchor": "\"disposition\": \"retired_delegated_read\""
       }
      ]
@@ -4402,9 +4432,9 @@
     },
     {
      "tool": "ha_search",
-     "provider": "engineering native search (direct_ha_api Core reads + upstream_read_gateway search_subcall_reader pages)",
+     "provider": "engineering native search (direct_ha_api Core reads, dashboards among them + upstream_read_gateway search_subcall_reader pages)",
      "purpose_binding": "native-search-read-v1",
-     "admission": "Engineering-native (BETA_NATIVE ha_search); static Core route with the four search.core_contracts profiles under the request's Core lease; automation, script, scene, dashboard and flow-helper pages only through the internal-only ha_search 9.2.0 Row 25 route (never exposed or aliased); no delegated ha_mcp__ha_search and no fallback",
+     "admission": "Engineering-native (BETA_NATIVE ha_search); static Core route with the four search.core_contracts profiles, and core.dashboard_configuration_read when dashboards are searched (HAMCP-447), under the request's Core lease; automation, script, scene and flow-helper pages only through the internal-only ha_search 9.2.0 Row 25 route (never exposed or aliased); no delegated ha_mcp__ha_search and no fallback",
      "completeness": "partial",
      "detail": "Entity search (name, domain, area, state) and automation, script, scene, helper and dashboard configuration search in one call; 9.2.0 ha_search schema plus the search_types sentence; limit/offset paging; partial and partial_reasons report unsearched, truncated, filtered or unavailable sources; an unreadable source refuses instead of returning an empty result.",
      "refs": [
@@ -7307,11 +7337,10 @@
     "automations",
     "scripts",
     "scenes",
-    "dashboards_content",
     "helpers_options_supported",
     "helpers_options_other"
    ],
-   "note": "HAMCP-501: fixed ha_search automation, script, scene, dashboard and flow-helper sub-call pages on the internal-only 9.2.0 Row 25 route, read only by native ha_search (W6; S1 b+ adds the automation, script and scene pages)."
+   "note": "HAMCP-501: fixed ha_search automation, script, scene and flow-helper sub-call pages on the internal-only 9.2.0 Row 25 route, read only by native ha_search (W6; S1 b+ adds the automation, script and scene pages; HAMCP-447 made dashboards native)."
   },
   "gateway_reader:yaml_config_reader": {
    "used_by": [
@@ -7600,7 +7629,7 @@
    }
   },
   "provider_registry": {
-   "fingerprint": "ca6115e03eb3619dd0df83139995655450e0ffab38ba866aba34a387fbd188fc",
+   "fingerprint": "c9e3f8d85299a53c276960f162b0032a36d2f8ceef7265a31e2a08d0716d03d5",
    "items": {
     "analytical_policy:automation_reliability_analysis": "94c8a4aabfe06038",
     "analytical_policy:automation_reliability_batch_analysis": "7233c3d17334b3e6",
@@ -7620,7 +7649,7 @@
     "analytical_policy:get_security_metadata": "77ed729169da7643",
     "analytical_policy:get_thread_matter_topology": "3bcb9754a1ba2abb",
     "analytical_policy:get_unregistered_entities": "b401c4783f904deb",
-    "analytical_policy:ha_search": "df91c6352460dba2",
+    "analytical_policy:ha_search": "76678c3461107017",
     "analytical_policy:handoff_generation": "56fedd8926eb442c",
     "analytical_policy:incident_correlation": "294ec14845704317",
     "analytical_policy:list_script_traces": "91923db13fc390cc",
@@ -7669,7 +7698,7 @@
     "provider_matrix:ha_get_app": "a413244a16901b27",
     "provider_matrix:ha_get_integration": "2957899469f2bc3a",
     "provider_matrix:ha_get_system_health": "a1ce0ad9dd644c25",
-    "provider_matrix:ha_search": "089312f1aed60185",
+    "provider_matrix:ha_search": "7fd99fb6af9fcbba",
     "provider_matrix:handoff_generation": "a09ba7747e029885",
     "provider_matrix:incident_correlation": "333171d6247e731f",
     "provider_matrix:list_areas": "8f0fa6b1d409eabd",
