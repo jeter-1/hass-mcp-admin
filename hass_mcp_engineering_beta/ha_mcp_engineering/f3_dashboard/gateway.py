@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..models.responses import _compact_json
 from ..providers.upstream_dashboard import UpstreamDashboardProvider
 from .errors import ProviderAuthorityUnavailableError, RawEvidenceError
 from .identity import (
@@ -88,6 +89,16 @@ class DashboardExecutionGateway:
                     dashboard_id=dashboard_id,
                 )
             )
+        # HAMCP-273: keep the reply's envelope, so plan creation can size the
+        # read-back of the resulting configuration in the same measure.
+        estimated_size = configuration.data.get("estimated_serialized_size")
+        if type(estimated_size) is not int:
+            raise RawEvidenceError("Dashboard configuration size is unavailable")
+        envelope_size = (
+            estimated_size - len(_compact_json(config)) - len(str(estimated_size))
+        )
+        if envelope_size < 0:
+            raise RawEvidenceError("Dashboard configuration size is malformed")
         canonical_path = configuration.data.get("url_path")
         config_hash = configuration.data.get("config_hash")
         engineering_hash = configuration.data.get("engineering_config_hash")
@@ -124,6 +135,7 @@ class DashboardExecutionGateway:
             compatibility_entry=compatibility_entry,
             dashboard_contract_model=contract_model,
             operational_identity=operational_identity,
+            response_envelope_size=envelope_size,
         )
 
     async def best_practice_key(

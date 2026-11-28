@@ -34,6 +34,7 @@ from ..errors import (
     HomeAssistantApiError,
 )
 from ..logging_config import get_logger, log_event
+from ..models.responses import _compact_json
 from ..observability import METRICS, capture_classified_outcomes
 from ..request_context import (
     REQUEST_ID_PATTERN,
@@ -672,6 +673,34 @@ def _sanitize_configuration_caller_context(
         # Preserve the established bounded scalar-only caller-context contract.
         safe.update(sanitize_context({key: value}, known_secrets))
     return safe
+
+
+class _MeasuredDashboardReader:
+    """Pass one dashboard pre-read through and keep it (HAMCP-273)."""
+
+    def __init__(self, gateway: Any) -> None:
+        self._gateway = gateway
+        self.preread_result: Any = None
+
+    async def preread(self, *, url_path: str) -> Any:
+        self.preread_result = await self._gateway.preread(url_path=url_path)
+        return self.preread_result
+
+
+def _dashboard_read_back_size(envelope_size: int, configuration: Any) -> int:
+    """The HAMCP-306 measure of a read reply holding ``configuration``.
+
+    ``envelope_size`` is the pre-read reply without its configuration and
+    without the digits of its own size field; the size counts those digits,
+    so this reaches the same fixed point the provider's measure does.
+    """
+
+    size = envelope_size + len(_compact_json(configuration))
+    while True:
+        measured = envelope_size + len(_compact_json(configuration)) + len(str(size))
+        if measured == size:
+            return size
+        size = measured
 
 
 class AutomationGateway:
@@ -5674,9 +5703,10 @@ class ChangeGovernanceService:
                 ErrorCode.CONFIGURATION_VALIDATION_FAILED,
                 details={"reason": "dashboard_contains_prohibited_sensitive_data"},
             )
+        reader = _MeasuredDashboardReader(self.dashboard_gateway)
         try:
             proposal = await build_dashboard_update(
-                reader=self.dashboard_gateway,
+                reader=reader,
                 url_path=url_path,
                 operations=patch_operations,
                 title=title,
@@ -5712,18 +5742,33 @@ class ChangeGovernanceService:
         except GovernanceError:
             raise
         except DashboardProviderError as exc:
-            if (
-                exc.details.get("failure_category")
-                in DASHBOARD_ADMISSION_REFUSAL_CATEGORIES
-            ):
+            category = exc.details.get("failure_category")
+            if category in DASHBOARD_ADMISSION_REFUSAL_CATEGORIES:
                 # Not admitted: not a transient outage, so not retryable.
                 raise GovernanceError(
                     ErrorCode.PROVIDER_UNAVAILABLE,
                     details={"reason": "dashboard_provider_not_admitted"},
                 ) from None
+            if category == "response_too_large":
+                # HAMCP-291: the pre-read itself exceeds the response limit.
+                # Name that exact refusal and its sizes; a retry of the same
+                # plan cannot succeed.
+                details = {"reason": "dashboard_read_exceeds_response_limit"}
+                for key in ("estimated_serialized_size", "response_limit"):
+                    if type(exc.details.get(key)) is int:
+                        details[key] = exc.details[key]
+                raise GovernanceError(
+                    ErrorCode.UPSTREAM_DASHBOARD_RESPONSE_TOO_LARGE,
+                    details=details,
+                ) from None
+            # HAMCP-291: any other provider failure keeps its closed
+            # category, so the refusal no longer hides the real cause.
+            details = {"reason": "dashboard_provider_identity_unavailable"}
+            if isinstance(category, str):
+                details["failure_category"] = category
             raise GovernanceError(
                 ErrorCode.OPERATIONAL_PROVIDER_UNAVAILABLE,
-                details={"reason": "dashboard_provider_identity_unavailable"},
+                details=details,
             ) from exc
         except Exception as exc:
             raise GovernanceError(
@@ -5755,6 +5800,28 @@ class ChangeGovernanceService:
                     "sensitive_paths": flagged,
                 },
             )
+        # HAMCP-273: the apply reads the resulting configuration back through
+        # the same response limit. Refuse a plan whose read-back, measured at
+        # plan time, the limit would refuse. This is the plan-time measure: the
+        # apply-time read can be larger by the request-id length difference
+        # (at most 120 characters) plus the upstream-warning, withheld-count
+        # and redaction differences disclosed for HAMCP-273, so a plan near
+        # the limit can still be applied and then end unverified.
+        response_limit = getattr(self.dashboard_gateway, "response_limit", None)
+        envelope_size = getattr(reader.preread_result, "response_envelope_size", None)
+        if type(response_limit) is int and type(envelope_size) is int:
+            read_back_size = _dashboard_read_back_size(
+                envelope_size, proposal.compilation.resulting_configuration
+            )
+            if read_back_size > response_limit:
+                raise GovernanceError(
+                    ErrorCode.UPSTREAM_DASHBOARD_RESPONSE_TOO_LARGE,
+                    details={
+                        "reason": "dashboard_read_back_exceeds_response_limit",
+                        "estimated_serialized_size": read_back_size,
+                        "response_limit": response_limit,
+                    },
+                )
         try:
             approval_projection = build_dashboard_approval_projection(
                 proposal.compilation,
