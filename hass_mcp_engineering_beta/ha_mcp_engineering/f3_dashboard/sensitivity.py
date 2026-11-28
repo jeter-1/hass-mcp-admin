@@ -1,0 +1,363 @@
+"""The one dashboard sensitivity rule (HAMCP-477).
+
+The semantic-diff preview redacts exactly what this rule calls sensitive, and
+governed dashboard plan creation refuses a changed value this rule calls
+sensitive, so the preview and the write guard cannot disagree. The shared
+sanitizer stays the detector for every other surface; this rule is wider and
+applies only to the values a dashboard operation adds, replaces or removes.
+
+A value is sensitive when it is a string or a number and either a key on its
+path is a credential name, or it is a string that carries a credential shape:
+a bearer or basic prefix, or a query parameter (``?``, ``&``, ``#`` or ``;``
+then ``name=``) anywhere in the string, raw or percent-decoded, whose name is a
+credential name, or a URL authority whose userinfo carries a non-empty
+password (``//user:password@``, judged at the last ``@`` of the authority as
+URL parsers do, so a user name may itself contain ``@``). Neither rule
+requires a recognizable URL, so absolute, scheme-relative, relative and
+unusual URL forms are judged the same way. Tab, line feed and carriage return
+are deleted before matching, as URL parsers delete them. A name runs back
+from its ``=`` to the nearest separator, and also, as a query parser reads
+it, to the first ``?`` or ``#`` or to an ``&`` or ``;``; names are squashed
+(case and every character but letters and digits removed) before matching.
+A string still percent-encoded after three decodings is refused rather than
+judged.
+"""
+
+from __future__ import annotations
+
+import re
+from typing import Any, Iterator
+from urllib.parse import unquote
+
+from .models import PatchEffect, PatchKind
+
+# Substring fragments, matched against a key with every non-alphanumeric
+# character removed, so ``apiKey``, ``api-key`` and ``API_KEY`` all match.
+_KEY_FRAGMENTS = (
+    "token",
+    "password",
+    "passwd",
+    "passphrase",
+    "secret",
+    "authorization",
+    "apikey",
+    "accesskey",
+    "privatekey",
+    "credential",
+)
+# Whole names, matched against the same squashed key.
+_KEY_NAMES = frozenset({"pin", "passcode", "otp", "totp", "xapikey"})
+# ``code`` is a credential only directly inside a card of these types.
+_CODE_CARD_TYPES = frozenset({"alarm-panel"})
+# URL query parameter names that are credentials in addition to the key rule
+# (which covers the shared sanitizer's token, password, api key, client
+# secret and credential parameters).
+_URL_PARAMETER_NAMES = frozenset({"key", "auth", "sig", "signature"})
+_URL_PARAMETER_FRAGMENTS = ("signature",)
+
+_SQUASH = re.compile(r"[^a-z0-9]+")
+# A name runs to ``=``; any character but a separator belongs to it, so a
+# space or other whitespace inside a name cannot hide it from the squash.
+_QUERY_PARAMETER = re.compile(r"[?&#;]([^=&#;?]+)=")
+# Where an authority starts: two or more slashes (either direction), or a
+# special scheme, whose slashes browsers do not require. It ends at the first
+# ``/``, ``?`` or ``#``; ending it nowhere earlier keeps it at least as long as
+# a parser's, and the userinfo before its last ``@`` at least as long too.
+_AUTHORITY_START = re.compile(r"[/\\]{2,}|(?:https?|wss?|ftp):[/\\]*", re.IGNORECASE)
+_AUTHORITY_END = re.compile(r"[/?#]")
+# The characters URL parsers delete wherever they occur.
+_DELETED = str.maketrans("", "", "\t\n\r")
+# Percent-decoding rounds applied to a string and to each parameter name, so
+# ``?%6bey=``, ``%3Fkey%3D`` and ``?api%20key=`` are judged as their plain form.
+# A string that a further round would still change fails closed.
+_DECODE_ROUNDS = 3
+# A pointer segment a refusal may name: a list index, or a short name with no
+# digits (key material almost always has some). Any other segment is ``*``.
+_SHOWN_SEGMENT = re.compile(r"[0-9]{1,6}|[A-Za-z_-]{1,40}")
+
+MAX_SENSITIVE_PATHS = 16
+
+
+def _squash(text: str) -> str:
+    return _SQUASH.sub("", text.lower())
+
+
+def _decoded_forms(text: str) -> Iterator[str]:
+    """``text``, then each further percent-decoding of it that changes it.
+
+    Every form has tab, line feed and carriage return deleted.
+    """
+
+    text = text.translate(_DELETED)
+    yield text
+    for _ in range(_DECODE_ROUNDS):
+        decoded = unquote(text).translate(_DELETED)
+        if decoded == text:
+            return
+        text = decoded
+        yield text
+
+
+def _holder_type(value: Any) -> str | None:
+    """A mapping's ``type`` when it is a string; any other value is no type."""
+
+    return value if isinstance(value, str) else None
+
+
+def sensitive_key(key: Any, *, card_type: Any = None) -> bool:
+    """Whether a mapping key, or a JSON pointer segment, names a credential."""
+
+    squashed = _squash(str(key))
+    if not squashed:
+        return False
+    if squashed in _KEY_NAMES:
+        return True
+    if squashed == "code" and _holder_type(card_type) in _CODE_CARD_TYPES:
+        return True
+    return any(fragment in squashed for fragment in _KEY_FRAGMENTS)
+
+
+def _sensitive_parameter(name: str) -> bool:
+    # The name is decoded on its own as well: a decoded separator
+    # (``api%26key``) would otherwise split the name before it is judged.
+    for decoded in _decoded_forms(name):
+        squashed = _squash(decoded)
+        if (
+            sensitive_key(decoded)
+            or squashed in _URL_PARAMETER_NAMES
+            or any(fragment in squashed for fragment in _URL_PARAMETER_FRAGMENTS)
+        ):
+            return True
+    return False
+
+
+def _userinfo_password(form: str) -> bool:
+    """Whether an authority in ``form`` carries a non-empty password.
+
+    A user name alone (``//user@host``), an empty password (``//user:@host``)
+    and a port (``//host:8123/``) are not credentials.
+    """
+
+    position = 0
+    while start := _AUTHORITY_START.search(form, position):
+        begin = start.end()
+        end = _AUTHORITY_END.search(form, begin)
+        stop = end.start() if end else len(form)
+        at = form.rfind("@", begin, stop)
+        colon = form.find(":", begin, at) if at > begin else -1
+        if 0 <= colon < at - 1:
+            return True
+        # A later start inside this authority sees only part of the same
+        # userinfo, so it cannot find a password this one did not.
+        position = max(stop, begin)
+    return False
+
+
+def _parser_names(form: str) -> Iterator[str]:
+    """The names a query parser reads that may hold ``?`` or ``#``.
+
+    For each ``=``, the run back to the previous ``=``, ``&`` or ``;``: the
+    whole run when an ``&`` or ``;`` starts it, and the part after its first
+    ``?``, after its first ``#``, and after the first ``?`` that follows that
+    ``#`` (a query inside a fragment). At most four names per ``=``, so the
+    work stays linear in the string.
+    """
+
+    for piece in form.split("=")[:-1]:
+        cut = max(piece.rfind("&"), piece.rfind(";"))
+        run = piece[cut + 1 :]
+        if cut >= 0:
+            yield run
+        query = run.find("?")
+        if query >= 0:
+            yield run[query + 1 :]
+        fragment = run.find("#")
+        if fragment >= 0:
+            yield run[fragment + 1 :]
+            fragment_query = run.find("?", fragment)
+            if fragment_query >= 0:
+                yield run[fragment_query + 1 :]
+
+
+def sensitive_string(value: str) -> bool:
+    """Whether a string carries a credential shape whatever its key."""
+
+    lowered = value.lower()
+    if lowered.startswith("bearer ") or lowered.startswith("basic "):
+        return True
+    form = value
+    for form in _decoded_forms(value):
+        if _userinfo_password(form):
+            return True
+        for match in _QUERY_PARAMETER.finditer(form):
+            if _sensitive_parameter(match.group(1)):
+                return True
+        for name in _parser_names(form):
+            if _sensitive_parameter(name):
+                return True
+    # Encoded more deeply than the rounds judge: refuse rather than guess.
+    return unquote(form) != form
+
+
+def pointer_segments(path: str) -> tuple[str, ...]:
+    """The decoded segments of an RFC 6901 JSON pointer."""
+
+    if not path:
+        return ()
+    return tuple(
+        segment.replace("~1", "/").replace("~0", "~")
+        for segment in path[1:].split("/")
+    )
+
+
+def _pointer(segments: tuple[str, ...]) -> str:
+    return "".join(
+        "/" + segment.replace("~", "~0").replace("/", "~1") for segment in segments
+    )
+
+
+def _shown_pointer(segments: tuple[str, ...]) -> str:
+    return "".join(
+        "/" + (segment if _SHOWN_SEGMENT.fullmatch(segment) else "*")
+        for segment in segments
+    )
+
+
+def sensitive_leaf(
+    segments: tuple[str, ...], value: Any, *, card_type: Any = None
+) -> bool:
+    """Whether one scalar at ``segments`` is sensitive.
+
+    ``card_type`` is the ``type`` of the mapping that directly holds the
+    value; it decides only the last segment's ``code`` rule.
+    """
+
+    if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+        return False
+    last = len(segments) - 1
+    if any(
+        sensitive_key(segment, card_type=card_type if index == last else None)
+        for index, segment in enumerate(segments)
+    ):
+        return True
+    return isinstance(value, str) and sensitive_string(value)
+
+
+def container_type(configuration: Any, path: str) -> Any:
+    """The ``type`` of the mapping that directly holds the node at ``path``.
+
+    Returns ``None`` when the parent is missing, is not a mapping, or has a
+    ``type`` that is not a string (custom cards may nest arbitrary data).
+    """
+
+    node = configuration
+    for segment in pointer_segments(path)[:-1]:
+        if isinstance(node, dict):
+            node = node.get(segment)
+        elif isinstance(node, list) and segment.isdigit() and int(segment) < len(node):
+            node = node[int(segment)]
+        else:
+            return None
+    if isinstance(node, dict):
+        return _holder_type(node.get("type"))
+    return None
+
+
+def _walk(
+    node: Any, segments: tuple[str, ...], holder_type: Any
+) -> Iterator[tuple[str, ...]]:
+    if isinstance(node, dict):
+        node_type = node.get("type")
+        for key, child in node.items():
+            yield from _walk(child, (*segments, str(key)), node_type)
+    elif isinstance(node, list):
+        for index, child in enumerate(node):
+            yield from _walk(child, (*segments, str(index)), None)
+    elif sensitive_leaf(segments, node, card_type=holder_type):
+        yield segments
+
+
+def sensitive_paths(
+    value: Any,
+    *,
+    path: str,
+    holder_type: Any = None,
+    limit: int = MAX_SENSITIVE_PATHS,
+) -> tuple[str, ...]:
+    """JSON pointers of the sensitive scalars in the subtree at ``path``.
+
+    ``holder_type`` is :func:`container_type` for ``path``. Pointers name
+    structure only, never a value: a segment other than a short plain name or
+    index is shown as ``*``. At most ``limit`` are returned.
+    """
+
+    found: list[str] = []
+    for segments in _walk(value, pointer_segments(path), holder_type):
+        found.append(_shown_pointer(segments))
+        if len(found) >= limit:
+            break
+    return tuple(found)
+
+
+def _suffix_start(effect: PatchEffect, side: str) -> int | None:
+    """The list index a side's value starts at when it is a list suffix.
+
+    An array add that displaces items, and an array remove, carry the
+    affected suffix of the list (every shifted item) on both sides; the
+    approval projection shows each of those items.
+    """
+
+    last = pointer_segments(effect.path)[-1:] or ("",)
+    if not last[0].isdigit():
+        return None
+    value = effect.previous_value if side == "previous" else effect.proposed_value
+    if not isinstance(value, list):
+        return None
+    if effect.operation is PatchKind.ADD and effect.previous_present:
+        return int(last[0])
+    if effect.operation is PatchKind.REMOVE:
+        return int(last[0])
+    return None
+
+
+def effect_sensitive_paths(
+    effect: PatchEffect,
+    *,
+    current: Any,
+    resulting: Any,
+    limit: int = MAX_SENSITIVE_PATHS,
+) -> tuple[str, ...]:
+    """Pointers of the sensitive values one effect adds, replaces or removes.
+
+    Both sides are judged, each with the holder type from the current and
+    from the resulting configuration (an earlier operation of the same plan
+    can change a card's type).
+    """
+
+    found: list[str] = []
+    holder_types = {container_type(current, effect.path), container_type(resulting, effect.path)}
+    parent = pointer_segments(effect.path)[:-1]
+    for side, present, value in (
+        ("previous", effect.previous_present, effect.previous_value),
+        ("proposed", effect.proposed_present, effect.proposed_value),
+    ):
+        if not present:
+            continue
+        start = _suffix_start(effect, side)
+        if start is None:
+            roots = [(effect.path, value, holder_types)]
+        else:
+            roots = [
+                (_pointer(parent + (str(start + offset),)), item, {None})
+                for offset, item in enumerate(value)
+            ]
+        for path, node, types in roots:
+            for holder_type in types:
+                for pointer in sensitive_paths(
+                    node, path=path, holder_type=holder_type, limit=limit
+                ):
+                    if pointer not in found:
+                        found.append(pointer)
+                    if len(found) >= limit:
+                        return tuple(found)
+    return tuple(found)
