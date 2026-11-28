@@ -1498,7 +1498,10 @@ Core command: its reads are rows already in native search's fixed table
   built from its sanitized id, so ordering, the cursor's set digest and
   omitted ids never carry withheld text. Two ids the sanitizer makes equal
   are both dropped (`duplicate_rows`), never guessed between. Redaction
-  counts are for the returned page. A sanitizer failure fails the call.
+  counts, and the `redacted_by_policy` and `truncated_text` reasons, cover
+  only what the page shows: each returned helper, id included, and the id
+  of an oversized helper named in `omitted_ids`. A sanitizer failure fails
+  the call.
 - **Paging.** The shared PC-1 cursor: at most 200 helpers a page, in
   `helper_key` order, bound to the domains and to the helper set, which
   every page re-reads; a changed set refuses the cursor.

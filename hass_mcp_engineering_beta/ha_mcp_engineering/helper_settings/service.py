@@ -9,8 +9,8 @@ Untrusted Core text passes the shared sanitizer before it is returned. Each
 helper's identity (``helper_key``, ``<domain>/<id>``) is built from its
 sanitized id, so the digest, the order and ``omitted_ids`` never carry text
 the sanitizer withheld. The rest of a row is projected and sanitized only for
-the page's window, so redaction counts and their partial reasons describe the
-returned page.
+the page's window. Sanitizer counts are kept per helper, so redaction counts
+and their partial reasons describe only the rows the page returns.
 """
 
 from __future__ import annotations
@@ -114,22 +114,33 @@ def entity_index(registry) -> dict[tuple[str, str], list[str]]:
     return index
 
 
-class _Cleaner:
-    def __init__(self, known_secrets: tuple) -> None:
-        self.known_secrets = tuple(known_secrets)
-        self.registry = ReferenceMarkerRegistry()
+class _Tally:
+    """Sanitizer counts for one helper, so a page reports only its own rows."""
+
+    def __init__(self) -> None:
         self.redacted = 0
         self.truncated = 0
         self.categories: set[str] = set()
 
-    def __call__(self, value: Any, kind: type) -> Any:
+    def add(self, other: "_Tally") -> None:
+        self.redacted += other.redacted
+        self.truncated += other.truncated
+        self.categories |= other.categories
+
+
+class _Cleaner:
+    def __init__(self, known_secrets: tuple) -> None:
+        self.known_secrets = tuple(known_secrets)
+        self.registry = ReferenceMarkerRegistry()
+
+    def __call__(self, value: Any, kind: type, tally: _Tally) -> Any:
         result = sanitize_untrusted_data(value, known_secrets=self.known_secrets,
                                          max_string=c.MAX_TEXT, registry=self.registry)
         if result.failed_closed or type(result.value) is not kind:
             raise c.HelperSettingsError("sanitization_failed")
-        self.redacted += result.redacted_field_count
-        self.truncated += result.truncated_field_count
-        self.categories.update(result.redaction_categories)
+        tally.redacted += result.redacted_field_count
+        tally.truncated += result.truncated_field_count
+        tally.categories.update(result.redaction_categories)
         return result.value
 
 
@@ -175,12 +186,13 @@ async def report(
     stored = [(domain, helper_id, row)
               for domain, result in lists.items() if result.status != core.UNAVAILABLE
               for helper_id, row in result.value.items()]
-    clean_ids = clean([helper_id for _, helper_id, _ in stored], list)
-    if len(clean_ids) != len(stored) or not all(type(item) is str for item in clean_ids):
-        raise c.HelperSettingsError("sanitization_failed")
+    # Each id is sanitized on its own so its redaction counts only on the
+    # page that returns that helper.
     by_key: dict[str, list] = {}
-    for (domain, helper_id, row), clean_id in zip(stored, clean_ids):
-        by_key.setdefault(f"{domain}/{clean_id}", []).append((domain, helper_id, clean_id, row))
+    for domain, helper_id, row in stored:
+        id_tally = _Tally()
+        clean_id = clean(helper_id, str, id_tally)
+        by_key.setdefault(f"{domain}/{clean_id}", []).append((domain, helper_id, clean_id, row, id_tally))
     entries = []
     for key in sorted(by_key):
         claims = by_key[key]
@@ -192,8 +204,8 @@ async def report(
 
     digest = paging.set_digest(codec, [entry[0] for entry in entries])
     offset = position.require_set(codec, digest, len(entries))
-    window = []
-    for key, domain, helper_id, clean_id, row in entries[offset: offset + request.limit]:
+    window, tallies = [], {}
+    for key, domain, helper_id, clean_id, row, id_tally in entries[offset: offset + request.limit]:
         fields, invalid, options_truncated = project(domain, row)
         if invalid:
             reasons.add("field_drift")
@@ -211,40 +223,54 @@ async def report(
                 entity_id, status = None, "unresolved"
             else:
                 entity_id, status = None, "not_registered"
-        fields = clean({**fields, "entity_id": entity_id}, dict)
+        field_tally = _Tally()
+        fields = clean({**fields, "entity_id": entity_id}, dict, field_tally)
+        tallies[key] = (id_tally, field_tally)
         window.append({
             "helper_key": key, "domain": domain, "id": clean_id,
             "entity_id": fields["entity_id"], "entity_id_status": status,
             "name": fields["name"], "icon": fields["icon"], "initial": fields["initial"],
             "settings": fields["settings"], "invalid_fields": invalid,
         })
-    if clean.redacted:
-        reasons.add("redacted_by_policy")
-    if clean.truncated:
-        reasons.add("truncated_text")
 
-    reasons &= c.PARTIAL_REASONS
-    completeness = "partial" if reasons else "complete"
-    head = {
-        "schema": c.SCHEMA,
-        "completeness": completeness,
-        "partial_reasons": sorted(reasons),
-        "domains": list(request.domains),
-        "unavailable_domains": unavailable,
-        "coverage": c.COVERAGE,
-        "redaction": {
-            "redacted_field_count": clean.redacted,
-            "categories": sorted(clean.categories),
-            "truncated_field_count": clean.truncated,
-        },
-        "sources": [dict(source) for source in session.sources],
-    }
+    def head_for(kept, omitted=()) -> dict:
+        # A kept row counts its id and fields; an oversized row omitted from
+        # the page shows only its sanitized id in ``omitted_ids``.
+        counted = _Tally()
+        for key in kept:
+            for tally in tallies[key]:
+                counted.add(tally)
+        for key in omitted:
+            counted.add(tallies[key][0])
+        page_reasons = set(reasons)
+        if counted.redacted:
+            page_reasons.add("redacted_by_policy")
+        if counted.truncated:
+            page_reasons.add("truncated_text")
+        page_reasons &= c.PARTIAL_REASONS
+        return {
+            "schema": c.SCHEMA,
+            "completeness": "partial" if page_reasons else "complete",
+            "partial_reasons": sorted(page_reasons),
+            "domains": list(request.domains),
+            "unavailable_domains": unavailable,
+            "coverage": c.COVERAGE,
+            "redaction": {
+                "redacted_field_count": counted.redacted,
+                "categories": sorted(counted.categories),
+                "truncated_field_count": counted.truncated,
+            },
+            "sources": [dict(source) for source in session.sources],
+        }
+
+    # The page is sized against the whole window's head; the returned head
+    # counts only what the page shows, so it is never longer.
     page = paging.fill_page(
         window, codec=codec, query=fingerprint, digest=digest, offset=offset,
         total=len(entries), row_key="helpers", identity="helper_key",
-        budget=budget - len(_compact(head)),
+        budget=budget - len(_compact(head_for(tallies))),
     )
-    reply = {**head, **page}
+    reply = {**head_for([row["helper_key"] for row in page["helpers"]], page.get("omitted_ids", ())), **page}
     if len(_compact(reply)) > budget:
         raise paging.page_exceeds_limit(codec.feature)
     return reply

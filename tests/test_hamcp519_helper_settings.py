@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import ast
 import copy
+import dataclasses
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -422,13 +423,58 @@ class SanitizationTests(Base):
 
         # The id pass maps both secret-bearing ids to one sanitized id.
         def collapsing(value, **kwargs):
-            if type(value) is list:
-                value = ["same" if SECRET in item else item for item in value]
+            if type(value) is str and SECRET in value:
+                value = "same"
             return original(value, **kwargs)
         with patch.object(service, "sanitize_untrusted_data", collapsing):
             reply = await self.report(domains=["input_button"])
         self.assertEqual([row["helper_key"] for row in reply["helpers"]], ["input_button/plain"])
         self.assertIn("duplicate_rows", reply["partial_reasons"])
+
+    async def test_an_id_redaction_counts_only_on_the_page_that_returns_it(self):
+        rows = [{"id": f"synthetic_{index:02d}", "name": f"B{index}"} for index in range(12)]
+        self.set_rows("input_button", [*rows, {"id": f"zz_{SECRET}", "name": "Last"}])
+        pages, cursor = [], ""
+        while True:
+            reply = await self.report(domains=["input_button"], limit=5, cursor=cursor)
+            pages.append(reply)
+            if not reply["has_more"]:
+                break
+            cursor = reply["next_cursor"]
+        self.assertEqual([len(page["helpers"]) for page in pages], [5, 5, 3])
+        for page in pages[:2]:
+            self.assertEqual(page["completeness"], "complete")
+            self.assertEqual(page["partial_reasons"], [])
+            self.assertEqual(page["redaction"], {"redacted_field_count": 0, "categories": [],
+                                                 "truncated_field_count": 0})
+        last = pages[-1]
+        self.assertNotIn(SECRET, json.dumps(last))
+        self.assertTrue(last["helpers"][-1]["helper_key"].startswith("input_button/zz_"))
+        self.assertIn("redacted_by_policy", last["partial_reasons"])
+        self.assertEqual(last["redaction"]["redacted_field_count"], 1)
+
+    async def test_a_row_the_size_budget_leaves_for_the_next_page_is_not_counted(self):
+        rows = [{"id": f"synthetic_{index:02d}", "name": "N" * 200} for index in range(4)]
+        rows.append({"id": "synthetic_04", "name": f"Last {SECRET}"})
+        self.set_rows("input_button", rows)
+        first = await self.report(domains=["input_button"], limit=5, budget=2_500)
+        self.assertEqual(first["page_limit_reason"], "response_size_limit")
+        self.assertNotIn("input_button/synthetic_04", [row["helper_key"] for row in first["helpers"]])
+        self.assertEqual(first["redaction"]["redacted_field_count"], 0)
+        self.assertNotIn("redacted_by_policy", first["partial_reasons"])
+
+    async def test_an_omitted_oversized_row_counts_only_its_id(self):
+        options = [f"{index:03d}" + "o" * 900 for index in range(contracts.MAX_OPTIONS)]
+        self.set_rows("input_select", [
+            {"id": "aa_plain", "name": "Plain", "options": ["a"]},
+            {"id": f"bb_{SECRET}", "name": f"Big {SECRET}", "options": options},
+        ])
+        reply = await self.report(domains=["input_select"])
+        self.assertEqual([row["helper_key"] for row in reply["helpers"]], ["input_select/aa_plain"])
+        self.assertEqual(len(reply["omitted_ids"]), 1)
+        self.assertNotIn(SECRET, json.dumps(reply))
+        self.assertEqual(reply["redaction"]["redacted_field_count"], 1)
+        self.assertIn("redacted_by_policy", reply["partial_reasons"])
 
     async def test_long_text_is_truncated_and_counted(self):
         self.collections["input_text"][0]["pattern"] = "p" * 2000
@@ -619,6 +665,32 @@ class RegistrationTests(unittest.TestCase):
         [matrix] = [row for row in capabilities.CAPABILITY_PROVIDER_MATRIX if row["tool"] == "get_helper_settings"]
         self.assertEqual((matrix["fallback_policy"], matrix["trust_profile"]),
                          ("none", "helper-settings-read-v1"))
+
+    def test_policy_gate_refuses_every_weakened_decision(self):
+        allowed = routing.routing_for_tool("get_helper_settings")
+        self.assertEqual((allowed.capability, allowed.route, allowed.preferred_provider,
+                          allowed.fallback_providers, allowed.explicit_direct_fallback_allowed),
+                         (routing.ProviderCapability.CONFIGURATION_DEFINITIONS,
+                          routing.CapabilityRoute.ENGINEERING_NATIVE, "engineering", (), False))
+        other_capability = next(capability for capability in routing.ProviderCapability
+                                if capability != routing.ProviderCapability.CONFIGURATION_DEFINITIONS)
+        weakened = {
+            "other_capability": {"capability": other_capability},
+            "delegated_route": {"route": routing.CapabilityRoute.STANDARD_MCP_PREFERRED},
+            "direct_route": {"route": routing.CapabilityRoute.DIRECT_HA_REQUIRED},
+            "other_provider": {"preferred_provider": "ha_mcp"},
+            "no_provider": {"preferred_provider": None},
+            "fallback_provider": {"fallback_providers": ("ha_mcp",)},
+            "direct_fallback": {"explicit_direct_fallback_allowed": True},
+        }
+        for label, change in weakened.items():
+            decision = dataclasses.replace(allowed, **change)
+            with self.subTest(label), patch.object(routing, "routing_for_tool", return_value=decision) as routed:
+                self.assertFalse(routing.helper_settings_policy_allows_read())
+                routed.assert_called_once_with("get_helper_settings")
+        with patch.object(routing, "routing_for_tool", return_value=allowed) as routed:
+            self.assertTrue(routing.helper_settings_policy_allows_read())
+            routed.assert_called_once_with("get_helper_settings")
 
     def test_no_write_or_delegated_reachability(self):
         # Only CoreReadSession.inventory reaches Home Assistant.
