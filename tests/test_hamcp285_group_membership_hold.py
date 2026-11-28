@@ -724,10 +724,50 @@ NONMEMBER_DIGESTS = {
 }
 
 
+def _unkeyed_effect_digests():
+    """Restore the unkeyed effect digests and model that 2630d901 emitted.
+
+    HAMCP-542 keys every effect digest and fingerprint and names the new
+    effect model, so the pinned bytes are reproduced only with the old digest
+    function and model name.  Equality here proves that these two are the
+    only changes on these non-member cases.
+    """
+
+    import hashlib
+    from contextlib import ExitStack
+    from unittest.mock import patch
+
+    from ha_mcp_engineering.dependency import provider
+    from ha_mcp_engineering.governance import risk
+
+    def digest(value, _key):
+        return "redacted_sha256:" + hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+    stack = ExitStack()
+    def hasher(data=b"", *, withheld=False):
+        return hashlib.sha256(data)
+
+    stack.enter_context(patch.object(risk, "_effect_hasher", side_effect=hasher))
+    stack.enter_context(patch.object(provider, "_effect_digest", side_effect=digest))
+    stack.enter_context(patch.object(
+        risk, "_HELPER_EFFECT_PROJECTION_MODEL", "automation-action-effect-v2",
+    ))
+    return stack
+
+
 class NonMemberDigestTests(unittest.IsolatedAsyncioTestCase):
     async def test_non_member_reader_output_matches_2630d901(self):
         self.assertEqual(len(NONMEMBER_DIGESTS), 20)
-        self.assertEqual(await nonmember_digests(), NONMEMBER_DIGESTS)
+        with _unkeyed_effect_digests():
+            self.assertEqual(await nonmember_digests(), NONMEMBER_DIGESTS)
+
+    async def test_keyed_digests_change_the_non_member_output(self):
+        # HAMCP-542: the keyed digests are what changes these bytes.
+        digests = await nonmember_digests()
+        self.assertEqual(set(digests), set(NONMEMBER_DIGESTS))
+        for key, digest in digests.items():
+            with self.subTest(case=key):
+                self.assertNotEqual(digest, NONMEMBER_DIGESTS[key])
 
 
 if __name__ == "__main__":

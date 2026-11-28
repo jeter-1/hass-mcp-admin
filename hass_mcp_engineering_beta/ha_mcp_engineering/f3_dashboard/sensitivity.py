@@ -8,13 +8,26 @@ applies only to the values a dashboard operation adds, replaces or removes.
 
 A value is sensitive when it is a string or a number and either a key on its
 path is a credential name, or it is a string that carries a credential shape:
-a bearer or basic prefix, or a URL whose query names a credential parameter.
+a bearer or basic prefix, or a query parameter (``?``, ``&``, ``#`` or ``;``
+then ``name=``) anywhere in the string, raw or percent-decoded, whose name is a
+credential name, or a URL authority whose userinfo carries a non-empty
+password (``//user:password@``, judged at the last ``@`` of the authority as
+URL parsers do, so a user name may itself contain ``@``). Neither rule
+requires a recognizable URL, so absolute, scheme-relative, relative and
+unusual URL forms are judged the same way. Tab, line feed and carriage return
+are deleted before matching, as URL parsers delete them. A name runs back
+from its ``=`` to the nearest separator, and also, as a query parser reads
+it, to the first ``?`` or ``#`` or to an ``&`` or ``;``; names are squashed
+(case and every character but letters and digits removed) before matching.
+A string still percent-encoded after three decodings is refused rather than
+judged.
 """
 
 from __future__ import annotations
 
 import re
 from typing import Any, Iterator
+from urllib.parse import unquote
 
 from .models import PatchEffect, PatchKind
 
@@ -43,8 +56,21 @@ _URL_PARAMETER_NAMES = frozenset({"key", "auth", "sig", "signature"})
 _URL_PARAMETER_FRAGMENTS = ("signature",)
 
 _SQUASH = re.compile(r"[^a-z0-9]+")
-_URL = re.compile(r"(?i)(?:[a-z][a-z0-9+.-]*://|/)[^\s<>\"'()\[\]{}`]*")
-_QUERY_PARAMETER = re.compile(r"[?&#;]([^=&#;?\s]+)(?:=|%3[dD])")
+# A name runs to ``=``; any character but a separator belongs to it, so a
+# space or other whitespace inside a name cannot hide it from the squash.
+_QUERY_PARAMETER = re.compile(r"[?&#;]([^=&#;?]+)=")
+# Where an authority starts: two or more slashes (either direction), or a
+# special scheme, whose slashes browsers do not require. It ends at the first
+# ``/``, ``?`` or ``#``; ending it nowhere earlier keeps it at least as long as
+# a parser's, and the userinfo before its last ``@`` at least as long too.
+_AUTHORITY_START = re.compile(r"[/\\]{2,}|(?:https?|wss?|ftp):[/\\]*", re.IGNORECASE)
+_AUTHORITY_END = re.compile(r"[/?#]")
+# The characters URL parsers delete wherever they occur.
+_DELETED = str.maketrans("", "", "\t\n\r")
+# Percent-decoding rounds applied to a string and to each parameter name, so
+# ``?%6bey=``, ``%3Fkey%3D`` and ``?api%20key=`` are judged as their plain form.
+# A string that a further round would still change fails closed.
+_DECODE_ROUNDS = 3
 # A pointer segment a refusal may name: a list index, or a short name with no
 # digits (key material almost always has some). Any other segment is ``*``.
 _SHOWN_SEGMENT = re.compile(r"[0-9]{1,6}|[A-Za-z_-]{1,40}")
@@ -56,6 +82,28 @@ def _squash(text: str) -> str:
     return _SQUASH.sub("", text.lower())
 
 
+def _decoded_forms(text: str) -> Iterator[str]:
+    """``text``, then each further percent-decoding of it that changes it.
+
+    Every form has tab, line feed and carriage return deleted.
+    """
+
+    text = text.translate(_DELETED)
+    yield text
+    for _ in range(_DECODE_ROUNDS):
+        decoded = unquote(text).translate(_DELETED)
+        if decoded == text:
+            return
+        text = decoded
+        yield text
+
+
+def _holder_type(value: Any) -> str | None:
+    """A mapping's ``type`` when it is a string; any other value is no type."""
+
+    return value if isinstance(value, str) else None
+
+
 def sensitive_key(key: Any, *, card_type: Any = None) -> bool:
     """Whether a mapping key, or a JSON pointer segment, names a credential."""
 
@@ -64,19 +112,71 @@ def sensitive_key(key: Any, *, card_type: Any = None) -> bool:
         return False
     if squashed in _KEY_NAMES:
         return True
-    if squashed == "code" and card_type in _CODE_CARD_TYPES:
+    if squashed == "code" and _holder_type(card_type) in _CODE_CARD_TYPES:
         return True
     return any(fragment in squashed for fragment in _KEY_FRAGMENTS)
 
 
 def _sensitive_parameter(name: str) -> bool:
-    decoded = re.sub(r"(?i)%5f", "_", re.sub(r"(?i)%2d", "-", name))
-    squashed = _squash(decoded)
-    return (
-        sensitive_key(decoded)
-        or squashed in _URL_PARAMETER_NAMES
-        or any(fragment in squashed for fragment in _URL_PARAMETER_FRAGMENTS)
-    )
+    # The name is decoded on its own as well: a decoded separator
+    # (``api%26key``) would otherwise split the name before it is judged.
+    for decoded in _decoded_forms(name):
+        squashed = _squash(decoded)
+        if (
+            sensitive_key(decoded)
+            or squashed in _URL_PARAMETER_NAMES
+            or any(fragment in squashed for fragment in _URL_PARAMETER_FRAGMENTS)
+        ):
+            return True
+    return False
+
+
+def _userinfo_password(form: str) -> bool:
+    """Whether an authority in ``form`` carries a non-empty password.
+
+    A user name alone (``//user@host``), an empty password (``//user:@host``)
+    and a port (``//host:8123/``) are not credentials.
+    """
+
+    position = 0
+    while start := _AUTHORITY_START.search(form, position):
+        begin = start.end()
+        end = _AUTHORITY_END.search(form, begin)
+        stop = end.start() if end else len(form)
+        at = form.rfind("@", begin, stop)
+        colon = form.find(":", begin, at) if at > begin else -1
+        if 0 <= colon < at - 1:
+            return True
+        # A later start inside this authority sees only part of the same
+        # userinfo, so it cannot find a password this one did not.
+        position = max(stop, begin)
+    return False
+
+
+def _parser_names(form: str) -> Iterator[str]:
+    """The names a query parser reads that may hold ``?`` or ``#``.
+
+    For each ``=``, the run back to the previous ``=``, ``&`` or ``;``: the
+    whole run when an ``&`` or ``;`` starts it, and the part after its first
+    ``?``, after its first ``#``, and after the first ``?`` that follows that
+    ``#`` (a query inside a fragment). At most four names per ``=``, so the
+    work stays linear in the string.
+    """
+
+    for piece in form.split("=")[:-1]:
+        cut = max(piece.rfind("&"), piece.rfind(";"))
+        run = piece[cut + 1 :]
+        if cut >= 0:
+            yield run
+        query = run.find("?")
+        if query >= 0:
+            yield run[query + 1 :]
+        fragment = run.find("#")
+        if fragment >= 0:
+            yield run[fragment + 1 :]
+            fragment_query = run.find("?", fragment)
+            if fragment_query >= 0:
+                yield run[fragment_query + 1 :]
 
 
 def sensitive_string(value: str) -> bool:
@@ -85,11 +185,18 @@ def sensitive_string(value: str) -> bool:
     lowered = value.lower()
     if lowered.startswith("bearer ") or lowered.startswith("basic "):
         return True
-    for url in _URL.finditer(value):
-        for match in _QUERY_PARAMETER.finditer(url.group(0)):
+    form = value
+    for form in _decoded_forms(value):
+        if _userinfo_password(form):
+            return True
+        for match in _QUERY_PARAMETER.finditer(form):
             if _sensitive_parameter(match.group(1)):
                 return True
-    return False
+        for name in _parser_names(form):
+            if _sensitive_parameter(name):
+                return True
+    # Encoded more deeply than the rounds judge: refuse rather than guess.
+    return unquote(form) != form
 
 
 def pointer_segments(path: str) -> tuple[str, ...]:
@@ -139,7 +246,8 @@ def sensitive_leaf(
 def container_type(configuration: Any, path: str) -> Any:
     """The ``type`` of the mapping that directly holds the node at ``path``.
 
-    Returns ``None`` when the parent is missing or is not a mapping.
+    Returns ``None`` when the parent is missing, is not a mapping, or has a
+    ``type`` that is not a string (custom cards may nest arbitrary data).
     """
 
     node = configuration
@@ -151,7 +259,7 @@ def container_type(configuration: Any, path: str) -> Any:
         else:
             return None
     if isinstance(node, dict):
-        return node.get("type")
+        return _holder_type(node.get("type"))
     return None
 
 
