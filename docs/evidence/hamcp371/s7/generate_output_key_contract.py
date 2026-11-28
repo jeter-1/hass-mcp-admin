@@ -122,6 +122,13 @@ SEARCH_ENRICHMENT_SOURCE = ('9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/too
 SEARCH_MEMBERSHIP_SOURCE = ('9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/search/entities.py:62, :131-136, '
                             ':182-223; search/response.py:570-577; custom_components/ha_mcp_tools/websocket_api/'
                             'search.py:578-579, :606-614 (result_fields entities[] is_group: bool, member entity ids)')
+# HAMCP-447 (helper ids, option (a), as relayed by the architect): no r25 receipt held a flow helper.
+SEARCH_FLOW_HELPER_ID_SOURCE = ('9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/search/component.py:84-86; '
+                                'smart_search/_flow_helpers.py:145, :200; custom_components/ha_mcp_tools/'
+                                'websocket_api/search_config.py:395, :415 (helpers[] flow-helper entry_id)')
+# HAMCP-447 (dashboard identity, as relayed by the architect): no r25 receipt held a dashboard hit.
+SEARCH_DASHBOARD_IDENTITY_SOURCE = ('9.2.0 source review, ha-mcp 51e3aac7 src/ha_mcp/tools/smart_search/'
+                                    '_deep.py:1075-1083, :1152-1160 (dashboards[] url_path and title)')
 
 # Per read: number, upstream tool, projection kind, the reviewed specification.
 # "named": keys the shipped 9.1 projection requires or type-checks (file:line).
@@ -226,8 +233,13 @@ READS = {
         'partial', 'errors', 'warnings', 'entities', 'automations', 'scripts', 'scenes', 'helpers', 'dashboards')),
         ruled={'name': 'research G ruling 2c',
                **dict.fromkeys(('area', 'floor', 'labels', 'aliases'), SEARCH_ENRICHMENT_SOURCE),
-               **dict.fromkeys(('is_group', 'member_entity_ids'), SEARCH_MEMBERSHIP_SOURCE)},
-        notes=('result_fields enrichment and membership keys are admitted by source review (HAMCP-441); no receipt passed result_fields',)),
+               **dict.fromkeys(('is_group', 'member_entity_ids'), SEARCH_MEMBERSHIP_SOURCE),
+               'entry_id': SEARCH_FLOW_HELPER_ID_SOURCE,
+               **dict.fromkeys(('url_path', 'title'), SEARCH_DASHBOARD_IDENTITY_SOURCE)},
+        notes=('result_fields enrichment and membership keys are admitted by source review (HAMCP-441); no receipt passed result_fields',
+               'the flow-helper entry_id is admitted by source review (HAMCP-447); no receipt held a flow helper',
+               'the dashboard url_path and title are admitted by source review for native dashboard records '
+               '(HAMCP-447); no receipt held a dashboard hit')),
     'ha_get_integration': dict(n=26, upstream='ha_get_integration', kind='rebuild', rebuild=(f'{PL}:674-744', (
         '_ENTRY',)), closed_rebuild=True, extra_consumed=('success', 'entries', 'has_more', 'warnings'),
         recomputed=('total_count', 'offset', 'limit', 'count', 'next_offset', 'state_summary', 'query'),

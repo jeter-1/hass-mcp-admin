@@ -92,7 +92,16 @@ or write path. The native search row is the last one below.
     `core.basic_websocket_read`, `core.non_device_registry_read`,
     `core.direct_device_registry_read`). No automation, script or scene
     configuration is read (S1).
-  - Sub-calls: the automation, script, scene, dashboard and flow-helper
+  - Dashboards (HAMCP-447, 2.11.0 Lane B2): searched natively when
+    `search_types` asks for them. The engine reads
+    `lovelace/dashboards/list` and each chosen storage dashboard's
+    `lovelace/config` (the default dashboard's under a fixed rule) through
+    `core.dashboard_configuration_read`, which only such a search holds.
+    It scores each body, then drops it. A YAML dashboard is never read
+    (`not_searched` `yaml_dashboards_skipped`). A record carries
+    `url_path`, `title`, the score and the match flags, never a body. A
+    flow-helper record carries its `entry_id`.
+  - Sub-calls: the automation, script, scene and flow-helper
     buckets come from fixed pages of the delegated `ha_search`, which is
     internal-only (never listed, no `ha_mcp__ha_search`) and keeps its own
     Core requirement, `core.delegated_device_effective_area`. Pages are 150

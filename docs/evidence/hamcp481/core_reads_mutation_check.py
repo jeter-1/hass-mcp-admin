@@ -13,6 +13,12 @@ any_error_is_not_found, scene_reply_unchecked, scene_id_unchecked,
 scene_404_not_expected, scene_id_widened and rest_scene_any_arity.
 batch_argument_unchecked is re-anchored to the split batch-payload check.
 
+HAMCP-447 (2.11.0 Lane B2) adds the dashboard configuration batch, with its
+own payload and item-failure rule, so batch_item_failure_silent is anchored
+to ``batch``'s line and batch_read_unlisted to the batch payload's
+``search_related`` check. The dashboard reads' mutants are in
+``docs/evidence/hamcp447/dashboard_mutation_check.py``.
+
 Usage, from the repository root::
 
     python -I docs/evidence/hamcp481/core_reads_mutation_check.py
@@ -122,7 +128,9 @@ MUTANTS = {
         "core_reads", "if type(raw) is not list or len(raw) != len(items):", "if type(raw) is not list:"),
     "batch_all_failed_is_complete": ("core_reads", "        if failed == len(items):", "        if False:"),
     "batch_item_failure_silent": (
-        "core_reads", 'partial = {"item_failures"} if failed else set()', "partial = set()"),
+        "core_reads", '_unavailable(name, "command_failed"))\n'
+                      '        partial = {"item_failures"} if failed else set()',
+        '_unavailable(name, "command_failed"))\n        partial = set()'),
     "timeout_misreported": (
         "core_reads", '        except HomeAssistantTimeoutError:\n            reason = "timeout"',
         '        except HomeAssistantTimeoutError:\n            reason = "command_failed"'),
@@ -136,7 +144,7 @@ MUTANTS = {
         "core_contracts", '    if read.argument.fullmatch(item) is None:\n        raise CoreReadError("invalid_arguments")\n',
         ""),
     "batch_read_unlisted": (
-        "core_contracts", "    if name not in BATCH_READS or type(item) is not str:",
+        "core_contracts", '    if name != "search_related" or type(item) is not str:',
         "    if type(item) is not str:"),
     "entries_chunk_unbounded": (
         "core_contracts", "not 1 <= len(entity_ids) <= GET_ENTRIES_CHUNK", "not 1 <= len(entity_ids)"),

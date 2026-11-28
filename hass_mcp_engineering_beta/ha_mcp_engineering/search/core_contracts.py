@@ -1,5 +1,5 @@
 """Fixed Home Assistant Core reads for native ``ha_search`` (HAMCP-481 W2;
-HAMCP-501 W6 S1).
+HAMCP-501 W6 S1; HAMCP-447 dashboards).
 
 This is the closed table of every Core read native search may issue: the
 reads in design section 2.2, plus ``config/entity_registry/get_entries`` for
@@ -19,6 +19,13 @@ shape. Every other read uses ``core.basic_rest_read`` or
 projects its reply through the fixed shape below, which fails closed: drift
 is a partial or unavailable result, never silent success.
 
+HAMCP-447 (2.11.0 Lane B2, approved by Josh as relayed by the architect,
+2026-11-27): dashboards are searched natively. The dashboard list and
+configuration reads use ``core.dashboard_configuration_read``, the signed
+profile that pins both commands (``websocket_lovelace_dashboards_list`` and
+``websocket_lovelace_config_get``). A search needs it only when dashboards
+are searched (``REQUIREMENT_ORDER``; ``ha_core_readmission/routes.py``).
+
 Core 2026.11.3 (92da9f154079459b9e547126f9bd9fce726de16a) facts this table
 relies on:
 
@@ -30,6 +37,18 @@ relies on:
   ``has_entity_name``; ``has_entity_name`` is therefore optional here.
 - The six ``input_*/list`` collection commands are not admin-only and reply
   with the stored item dicts.
+- ``lovelace/dashboards/list`` is not admin-only. It replies with each
+  dashboard whose configuration is set (``lovelace/dashboard.py``
+  ``ws_list_item``): a storage row's ``id``, ``url_path``, ``mode``,
+  ``title`` and display fields; a YAML row also has its ``filename``. The
+  default dashboard Core always holds (``dashboards[None]``) is never
+  listed.
+- ``lovelace/config`` is not admin-only, and its ``url_path`` is optional. It
+  replies with the stored configuration, or ``config_not_found`` for an
+  unknown ``url_path`` or a dashboard with no saved configuration. With no
+  ``url_path`` it reads the ``lovelace`` dashboard when one is listed, else
+  the default (``lovelace/websocket.py``). A YAML dashboard's configuration
+  load resolves ``!secret``, so native search never reads one.
 """
 
 from __future__ import annotations
@@ -44,6 +63,10 @@ from ..errors import ErrorCode, GovernanceError
 # A registry or collection row identity: non-empty, bounded, no control
 # character (``ha_core_readmission/device_registry.py`` ``_identifier``).
 ROW_ID = re.compile(r"[^\x00-\x1f\x7f]{1,255}\Z")
+# A dashboard ``url_path`` native search sends to ``lovelace/config``
+# (``governance/dashboard_metadata.py`` ``URL_PATH_PATTERN``; a test binds
+# the two). A listed row outside it is not read.
+URL_PATH = re.compile(r"[a-z0-9_-]{1,256}\Z")
 
 # ``ha_core_readmission/source.py`` ``MAX_CORE_PROBE_ITEMS``: an inventory
 # longer than this fails closed (design section 6.3).
@@ -52,16 +75,26 @@ MAX_ITEMS = 20_000
 MAX_BATCH_ITEMS = 4_096
 # ha-mcp 9.2.0 ``_GET_ENTRIES_CHUNK_SIZE`` (``tools/smart_search/_entities.py:27``).
 GET_ENTRIES_CHUNK = 500
+# ``governance/dashboard_metadata.py`` ``MAX_DASHBOARDS``: one search reads
+# at most this many listed dashboards' configurations and discloses the rest.
+MAX_DASHBOARDS = 500
+# Configurations per pipelined batch, so at most this many replies are held
+# at once; each is matched, then dropped.
+CONFIG_CHUNK = 8
 
 BASIC_REST = "core.basic_rest_read"
 BASIC_WEBSOCKET = "core.basic_websocket_read"
 NON_DEVICE_REGISTRY = "core.non_device_registry_read"
 DEVICE_REGISTRY = "core.direct_device_registry_read"
+DASHBOARD = "core.dashboard_configuration_read"
 
 # Canonical order. ``core.direct_entity_state_read`` is not used: it attests
 # a single-entity read, and the states list is ``rest_states_list`` under
 # ``core.basic_rest_read``.
 CORE_REQUIREMENTS = (BASIC_REST, BASIC_WEBSOCKET, NON_DEVICE_REGISTRY, DEVICE_REGISTRY)
+# HAMCP-447: the dashboard reads' profile follows, required only when
+# dashboards are searched.
+REQUIREMENT_ORDER = (*CORE_REQUIREMENTS, DASHBOARD)
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,7 +109,7 @@ class CoreRead:
     command: str
     requirement: str
     attested: bool
-    shape: str  # "rows", "related" or "entries"
+    shape: str  # "rows", "related", "entries" or "config"
     key: str | None = None  # the identity field of a row
     argument: re.Pattern[str] | None = None  # the grammar of one argument
 
@@ -103,11 +136,14 @@ READS = MappingProxyType({
           for domain in INPUT_DOMAINS),
         CoreRead("entity_registry_entries", "websocket", "config/entity_registry/get_entries",
                  BASIC_WEBSOCKET, False, "entries", argument=STRICT_ENTITY_ID),
+        _rows("dashboards", "lovelace/dashboards/list", DASHBOARD, True, "url_path"),
+        CoreRead("dashboard_config", "websocket", "lovelace/config", DASHBOARD, True, "config",
+                 argument=URL_PATH),
     )
 })
 
-# Reads dispatched as one pipelined ``command_batch``, one payload per item.
-BATCH_READS = frozenset({"search_related"})
+# Reads dispatched as pipelined ``command_batch`` calls, one payload per item.
+BATCH_READS = frozenset({"search_related", "dashboard_config"})
 
 # Field kinds. A required field that is absent, or any field present with the
 # wrong kind, is drift. ``OPTIONAL_FIELDS`` may be absent.
@@ -125,6 +161,9 @@ ROW_FIELDS = MappingProxyType({
     }),
     "floor_registry": MappingProxyType({"name": STR, "aliases": STR_LIST, "level": OPTIONAL_INT}),
     "label_registry": MappingProxyType({"name": STR}),
+    # Core requires both on every row; the display fields and a YAML row's
+    # ``filename`` are dropped.
+    "dashboards": MappingProxyType({"mode": STR, "title": STR}),
     "entity_registry": MappingProxyType({
         "name": OPTIONAL_STR, "original_name": OPTIONAL_STR, "has_entity_name": BOOL,
         "platform": STR, "unique_id": STR, "area_id": OPTIONAL_STR, "device_id": OPTIONAL_STR,
@@ -193,13 +232,13 @@ def requirements_for(names) -> tuple[str, ...]:
     """The Core requirements of the named reads, in canonical order."""
 
     needed = {READS[name].requirement for name in names}
-    return tuple(requirement for requirement in CORE_REQUIREMENTS if requirement in needed)
+    return tuple(requirement for requirement in REQUIREMENT_ORDER if requirement in needed)
 
 
 def batch_payload(name: str, item: str) -> dict:
     """The exact payload of one batched read; refuses an unknown item."""
 
-    if name not in BATCH_READS or type(item) is not str:
+    if name != "search_related" or type(item) is not str:
         raise CoreReadError("invalid_arguments")
     read = READS[name]
     if read.argument.fullmatch(item) is None:
@@ -214,3 +253,16 @@ def entries_payload(entity_ids) -> dict:
             or not all(type(item) is str and STRICT_ENTITY_ID.fullmatch(item) for item in entity_ids)):
         raise CoreReadError("invalid_arguments")
     return {"type": READS["entity_registry_entries"].command, "entity_ids": list(entity_ids)}
+
+
+def config_payload(url_path) -> dict:
+    """One ``lovelace/config`` read: the default dashboard for ``None``, else
+    the listed dashboard at ``url_path``. ``force`` is never sent; a
+    malformed ``url_path`` is refused."""
+
+    read = READS["dashboard_config"]
+    if url_path is None:
+        return {"type": read.command}
+    if type(url_path) is not str or read.argument.fullmatch(url_path) is None:
+        raise CoreReadError("invalid_arguments")
+    return {"type": read.command, "url_path": url_path}

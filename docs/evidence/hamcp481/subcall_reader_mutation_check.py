@@ -20,6 +20,12 @@ and the ``page_too_large`` signal, the scan's only step-down trigger. The
 per-type size's mutants (argument_size_one_type and result_size_one_type)
 went with the per-type size.
 
+HAMCP-447 (2.11.0 Lane B2): dashboards are searched natively, so the keys
+helper admits four buckets; keys_bucket_unchecked and
+keys_entity_buckets_refused are re-anchored to them.
+missing_authorizer_allowed is re-anchored to the page read's indented check:
+HAMCP-510 added the same check to the fixed reads.
+
 The suite's AST reachability tests parse the files on disk, so a mutant does
 not reach them; every mutant in ``MUTANTS`` is killed by a behavior test.
 ``EQUIVALENT`` holds the edit that changes no observable outcome, with the
@@ -121,7 +127,8 @@ MUTANTS = {
         GATEWAY, "                if parent is None or parent.core_dispatch_authorizer is None:\n",
         "                if False:\n"),
     "missing_authorizer_allowed": (
-        GATEWAY, "if parent is None or parent.core_dispatch_authorizer is None:", "if parent is None:"),
+        GATEWAY, "                if parent is None or parent.core_dispatch_authorizer is None:\n",
+        "                if parent is None:\n"),
     "caller_not_inherited": (
         GATEWAY, '                telemetry.tool_name = "search_subcall_page_read"\n'
                  "                telemetry.caller_id = parent.caller_id\n",
@@ -183,11 +190,11 @@ MUTANTS = {
     # bucket_withheld_names.
     "keys_bucket_unchecked": (
         KEYS, 'if type(payload) is not dict or bucket not in (\n'
-              '        "automations", "scripts", "scenes", "dashboards", "helpers",\n    ):',
+              '        "automations", "scripts", "scenes", "helpers",\n    ):',
         "if type(payload) is not dict:"),
     # HAMCP-501 W6 S1: the entity-type buckets are admitted.
     "keys_entity_buckets_refused": (
-        KEYS, '"automations", "scripts", "scenes", "dashboards", "helpers",', '"dashboards", "helpers",'),
+        KEYS, '"automations", "scripts", "scenes", "helpers",', '"helpers",'),
     "keys_records_unchecked": (
         KEYS, "    records = payload.get(bucket)\n    if type(records) is not list:\n        raise ValueError",
         "    records = payload.get(bucket) or []\n    if False:\n        raise ValueError"),
