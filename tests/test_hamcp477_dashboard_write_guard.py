@@ -128,6 +128,24 @@ URL_FORMS = (
     ("relative without a slash", "view?key=" + RAW),
     ("encoded separators", "view%3Fkey%3D" + RAW),
     ("doubly encoded name", URL + "?%256bey=" + RAW),
+    # Architect class sweep (same batch).
+    ("scheme-relative", "//example.invalid/view?key=" + RAW),
+    ("bare query", "?key=" + RAW),
+    ("fragment parameter", URL + "#key=" + RAW),
+    ("fragment route query", URL + "#/route?key=" + RAW),
+    ("semicolon parameter", URL + ";key=" + RAW),
+    ("html-escaped ampersand", URL + "?mode=dark&amp;key=" + RAW),
+    ("triply encoded name", URL + "?%25256bey=" + RAW),
+    ("triply encoded separators", "view%25253Fkey%25253D" + RAW),
+    ("encoded more deeply than three rounds", "view%2525253Fkey%2525253D" + RAW),
+    ("uppercase percent hex", URL + "?%6B%45%59=" + RAW),
+    ("encoded equals", URL + "?key%3D" + RAW),
+    ("plus inside a name", URL + "?api+key=" + RAW),
+    ("encoded space inside a name", URL + "?api%20key=" + RAW),
+    ("mixed case name", URL + "?ApI_KeY=" + RAW),
+    ("userinfo password", "https" + synthetic.SCHEME_SEPARATOR + "user:" + RAW + "@example.invalid/view"),
+    ("scheme-relative userinfo", "//user:" + RAW + "@example.invalid/view"),
+    ("encoded userinfo", "https%3A%2F%2Fuser%3A" + RAW + "%40example.invalid"),
 )
 # The same forms with an ordinary parameter must still plan.
 ORDINARY_URL_FORMS = (
@@ -135,6 +153,14 @@ ORDINARY_URL_FORMS = (
     "view?mode=dark&theme=1",
     URL + "?%6dode=dark",
     "view%3Fmode%3Ddark",
+    "view%25253Fmode%25253Ddark",
+    URL + "?q=100%25",
+    "//example.invalid/view?mode=dark",
+    URL + "#/route?mode=dark",
+    URL + "?q=a+b&page=2",
+    "https" + synthetic.SCHEME_SEPARATOR + "example.invalid:8123/view?mode=dark",
+    "https" + synthetic.SCHEME_SEPARATOR + "user@example.invalid/view",
+    "mailto:someone@example.invalid",
 )
 # Codex r1 F2 (PR #543): custom cards may nest data whose ``type`` is not a
 # string; it is no card type, and it must not break the guard.
@@ -525,12 +551,25 @@ class DashboardWriteGuardTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.dashboard.write_count, 0)
 
     async def test_url_forms_refuse_before_persistence(self):
+        # A form the shared detector already refuses is refused at the
+        # pre-check (no pointer list); every other form by this rule, which
+        # the unit test shows covers each form on its own.
         for label, url in URL_FORMS:
             with self.subTest(label=label):
-                await self._assert_refused(
-                    add_card({"type": "iframe", "url": url}), "/views/0/cards/1/url"
-                )
-        self.assertEqual(self.dashboard.preread_count, len(URL_FORMS))
+                with self.assertRaises(GovernanceError) as raised:
+                    await self._create(add_card({"type": "iframe", "url": url}))
+                error = raised.exception
+                self.assertEqual(error.code, ErrorCode.CONFIGURATION_VALIDATION_FAILED)
+                self.assertEqual(error.details["reason"], REASON)
+                if "sensitive_paths" in error.details:
+                    self.assertEqual(error.details["sensitive_paths"], ["/views/0/cards/1/url"])
+                else:
+                    self.assertEqual(error.details, {"reason": REASON})
+                self.assertNotIn(RAW, json.dumps(error.details))
+                self.assertNotIn(RAW, str(error))
+                self.assertEqual(self.dashboard.write_count, 0)
+                self.assertEqual(self.repository.list(), [])
+                self.assertNotIn(RAW.encode(), self._persisted_bytes())
         for url in ORDINARY_URL_FORMS:
             with self.subTest(url=url):
                 created = await self._create(add_card({"type": "iframe", "url": url}))

@@ -10,8 +10,12 @@ A value is sensitive when it is a string or a number and either a key on its
 path is a credential name, or it is a string that carries a credential shape:
 a bearer or basic prefix, or a query parameter (``?``, ``&``, ``#`` or ``;``
 then ``name=``) anywhere in the string, raw or percent-decoded, whose name is a
-credential name. The query rule does not require a recognizable URL, so
-relative and unusual URL forms are judged the same way.
+credential name, or a URL authority whose userinfo carries a password
+(``//user:password@``). Neither rule requires a recognizable URL, so
+absolute, scheme-relative, relative and unusual URL forms are judged the same
+way. Names are squashed (case, ``+``, ``_``, ``-`` and spaces removed) before
+matching. A string still percent-encoded after three decodings is refused
+rather than judged.
 """
 
 from __future__ import annotations
@@ -47,9 +51,13 @@ _URL_PARAMETER_NAMES = frozenset({"key", "auth", "sig", "signature"})
 _URL_PARAMETER_FRAGMENTS = ("signature",)
 
 _SQUASH = re.compile(r"[^a-z0-9]+")
-_QUERY_PARAMETER = re.compile(r"[?&#;]([^=&#;?\s]+)(?:=|%3[dD])")
-# Percent-decoding rounds applied to a string before the query rule, so
-# ``?%6bey=`` and ``%3Fkey%3D`` are judged as ``?key=``.
+_QUERY_PARAMETER = re.compile(r"[?&#;]([^=&#;?\s]+)=")
+# ``//user:password@``: userinfo with a non-empty password. A user name alone
+# (``//user@host``) and a port (``//host:8123/``) are not credentials.
+_USERINFO_PASSWORD = re.compile(r"//[^/?#@\s:]*:[^/?#@\s]+@")
+# Percent-decoding rounds applied to a string and to each parameter name, so
+# ``?%6bey=``, ``%3Fkey%3D`` and ``?api%20key=`` are judged as their plain form.
+# A string that a further round would still change fails closed.
 _DECODE_ROUNDS = 3
 # A pointer segment a refusal may name: a list index, or a short name with no
 # digits (key material almost always has some). Any other segment is ``*``.
@@ -94,12 +102,17 @@ def sensitive_key(key: Any, *, card_type: Any = None) -> bool:
 
 
 def _sensitive_parameter(name: str) -> bool:
-    squashed = _squash(name)
-    return (
-        sensitive_key(name)
-        or squashed in _URL_PARAMETER_NAMES
-        or any(fragment in squashed for fragment in _URL_PARAMETER_FRAGMENTS)
-    )
+    # The name is decoded on its own as well: a decoded space (``api%20key``)
+    # would otherwise end the name before the query rule sees it.
+    for decoded in _decoded_forms(name):
+        squashed = _squash(decoded)
+        if (
+            sensitive_key(decoded)
+            or squashed in _URL_PARAMETER_NAMES
+            or any(fragment in squashed for fragment in _URL_PARAMETER_FRAGMENTS)
+        ):
+            return True
+    return False
 
 
 def sensitive_string(value: str) -> bool:
@@ -108,11 +121,15 @@ def sensitive_string(value: str) -> bool:
     lowered = value.lower()
     if lowered.startswith("bearer ") or lowered.startswith("basic "):
         return True
+    form = value
     for form in _decoded_forms(value):
+        if _USERINFO_PASSWORD.search(form):
+            return True
         for match in _QUERY_PARAMETER.finditer(form):
             if _sensitive_parameter(match.group(1)):
                 return True
-    return False
+    # Encoded more deeply than the rounds judge: refuse rather than guess.
+    return unquote(form) != form
 
 
 def pointer_segments(path: str) -> tuple[str, ...]:
