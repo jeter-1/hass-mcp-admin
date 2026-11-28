@@ -144,7 +144,8 @@ class PublicBoundaryTests(unittest.IsolatedAsyncioTestCase):
                           "get_security_metadata",  # + HAMCP-134
                           "get_thread_matter_topology",  # + HAMCP-231
                           "get_automation_run_counts",  # + HAMCP-476
-                          "ha_search"})  # + HAMCP-501 W6
+                          "ha_search",  # + HAMCP-501 W6
+                          "get_helper_settings"})  # + HAMCP-519
         current["get_server_health"] = _without_hamcp171_deep_storage_audit(self, current["get_server_health"])
         current["get_server_health"] = _without_hamcp242_health_disclosure(self, current["get_server_health"])
         # HAMCP-425 and HAMCP-492 are undone first: their lines follow 473's and 508's.

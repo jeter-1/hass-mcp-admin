@@ -141,6 +141,7 @@ STATIC_CORE_TABLE = {
     "get_security_metadata": MAPPED,  # HAMCP-134: dormant core.security_metadata_read
     "get_thread_matter_topology": MAPPED,  # HAMCP-231: dormant core.thread_matter_topology_read
     "ha_search": MAPPED,  # HAMCP-501 W6: native, search.core_contracts.READS
+    "get_helper_settings": MAPPED,  # HAMCP-519: native, search.core_contracts entity_registry + input_*/list
     "get_server_health": CONDITIONAL,
     "get_trace_snapshot": LOCAL,
     "handoff_generation": MAPPED,
@@ -267,7 +268,7 @@ class StaticCoreTableTests(unittest.TestCase):
     """The complete reviewed inventory is pinned."""
 
     def test_every_static_tool_is_classified_exactly(self):
-        self.assertEqual(len(ENGINEERING_STATIC_TOOL_NAMES), 88)  # HAMCP-501 W6: + native ha_search; HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts
+        self.assertEqual(len(ENGINEERING_STATIC_TOOL_NAMES), 89)  # HAMCP-501 W6: + native ha_search; HAMCP-229 + HAMCP-290 + HAMCP-134: + reliability batch, marketplace inventory, security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts; HAMCP-519: + helper settings
         self.assertEqual(set(STATIC_CORE_TABLE), set(ENGINEERING_STATIC_TOOL_NAMES))
         for name, expected in sorted(STATIC_CORE_TABLE.items()):
             route = static_tool_core_route(name, {})

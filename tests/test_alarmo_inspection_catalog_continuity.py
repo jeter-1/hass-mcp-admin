@@ -99,7 +99,8 @@ class CatalogTests(unittest.IsolatedAsyncioTestCase):
                                                           "get_security_metadata",  # + HAMCP-134
                                                           "get_thread_matter_topology",  # + HAMCP-231
                                                           "get_automation_run_counts",  # + HAMCP-476
-                                                          "ha_search"})  # + HAMCP-501 W6 (native search)
+                                                          "ha_search",  # + HAMCP-501 W6 (native search)
+                                                          "get_helper_settings"})  # + HAMCP-519
         self.assertEqual(set(expected) - set(actual), set())
         actual["get_server_health"] = _without_hamcp171_deep_storage_audit(self, actual["get_server_health"])
         actual["get_server_health"] = _without_hamcp242_health_disclosure(self, actual["get_server_health"])
@@ -127,7 +128,7 @@ class CatalogTests(unittest.IsolatedAsyncioTestCase):
         actual = without_hamcp508_descriptor_changes(self, actual)
         for name, digest in expected.items():
             self.assertEqual(hashlib.sha256(c.canonical(actual[name])).hexdigest(), digest, name)
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 88)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts; HAMCP-501 W6: + native ha_search
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 89)  # HAMCP-229 + HAMCP-290: + reliability batch, marketplace inventory; HAMCP-134: + security metadata; HAMCP-297: + device configuration; HAMCP-231: + thread/matter topology; HAMCP-476: + automation run counts; HAMCP-501 W6: + native ha_search; HAMCP-519: + helper settings
         tool = actual["get_integration_inspection"]
         self.assertFalse(tool["inputSchema"]["additionalProperties"])
         self.assertEqual(set(tool["inputSchema"]["properties"]), {"alarm_entity_id", "integration", "limit", "cursor"})
