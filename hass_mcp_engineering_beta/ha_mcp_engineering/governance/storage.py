@@ -34,6 +34,7 @@ from .models import (
     StepExecutionStatus,
 )
 from .resources import persistence_safety_errors
+from .risk import HELPER_EFFECT_PROJECTION_MODEL
 
 
 PLAN_ID = re.compile(r"^[a-f0-9]{32}$")
@@ -43,6 +44,20 @@ QUARANTINED_RECORD_NAME = re.compile(r"^([a-f0-9]{32})\.([0-9]{1,20})\.corrupt$"
 MAX_QUARANTINE_RESTORE_ENTRIES = 4096
 MAX_QUARANTINE_RESTORE_BYTES = 16 * 1024 * 1024
 MAX_QUARANTINE_RESTORE_REPORTED = 32
+# HAMCP-542: bounds of the startup pass over records written before the
+# helper effect-data credential fix.
+MAX_EFFECT_UPGRADE_ENTRIES = 16384
+MAX_EFFECT_UPGRADE_BYTES = 256 * 1024 * 1024
+# A dispatched plan keeps its record until recovery settles it.
+EFFECT_UPGRADE_DEFERRED_STATUSES = frozenset(
+    {
+        PlanStatus.APPLYING.value,
+        PlanStatus.VERIFICATION_REQUIRED.value,
+        PlanStatus.ROLLBACK_PENDING.value,
+    }
+)
+_EFFECT_PROFILE_TOKEN_FIELDS = ("effect_data", "effect_targets")
+_EFFECT_PROFILE_MARKER = b'"effect_projection_model"'
 _LOGGER = logging.getLogger(__name__)
 OPERATIONAL_NAMESPACE = "operational-administration-v3"
 OPERATIONAL_OPERATIONS = frozenset(
@@ -1492,6 +1507,138 @@ class ChangePlanRepository:
                 except OSError:
                     self.write_failures += 1
         return removed
+
+    @staticmethod
+    def _holds_pre_fix_effect_tokens(value: Any) -> bool:
+        """HAMCP-542: whether a parsed record holds a pre-fix effect token.
+
+        A consequence profile written before the credential fix carries
+        effect tokens under an older ``effect_projection_model``; such a token
+        can be a verbatim code or an unkeyed digest of one.
+        """
+
+        stack = [value]
+        while stack:
+            node = stack.pop()
+            if isinstance(node, dict):
+                if node.get(
+                    "effect_projection_model", HELPER_EFFECT_PROJECTION_MODEL
+                ) != HELPER_EFFECT_PROJECTION_MODEL and any(
+                    node.get(field) for field in _EFFECT_PROFILE_TOKEN_FIELDS
+                ):
+                    return True
+                stack.extend(node.values())
+            elif isinstance(node, list):
+                stack.extend(node)
+        return False
+
+    def retire_pre_fix_effect_records(self) -> dict[str, int]:
+        """HAMCP-542: remove records written before the effect-data fix.
+
+        Such a record can hold a verbatim credential or an unkeyed digest of
+        one. It cannot be rewritten in place, because its plan hash, which
+        approvals, receipts and audit bind, covers the stored baseline. So
+        the record is removed, and a pending or approved plan must be made
+        again. A plan in dispatch or recovery is deferred until a later
+        startup; a pre-fix plan fails closed at dispatch either way. A record
+        that cannot be parsed or removed is quarantined. Parseable pre-fix
+        copies in quarantine are removed; unparseable ones stay. The pass is
+        bounded and idempotent: a later run finds nothing to do. It returns
+        counts only.
+        """
+
+        counts = {
+            "scanned": 0,
+            "removed": 0,
+            "quarantined": 0,
+            "quarantine_removed": 0,
+            "deferred": 0,
+            "failed": 0,
+            "truncated": 0,
+        }
+        budget = MAX_EFFECT_UPGRADE_BYTES
+        with self._lock:
+            live = [(path, True) for path in self._record_paths()]
+            held = []
+            for quarantine in (self.quarantine, self.operational_quarantine):
+                try:
+                    held.extend(
+                        (path, False)
+                        for path in sorted(quarantine.glob("*.corrupt"))
+                    )
+                except OSError:
+                    counts["failed"] += 1
+            for path, is_live in live + held:
+                if counts["scanned"] >= MAX_EFFECT_UPGRADE_ENTRIES:
+                    counts["truncated"] = 1
+                    break
+                try:
+                    with open(path, "rb", buffering=0) as handle:
+                        size = os.fstat(handle.fileno()).st_size
+                        if size > budget:
+                            counts["truncated"] = 1
+                            break
+                        raw = handle.read(budget + 1)
+                except FileNotFoundError:
+                    continue
+                except OSError:
+                    counts["failed"] += 1
+                    continue
+                counts["scanned"] += 1
+                budget -= len(raw)
+                if budget < 0:
+                    counts["truncated"] = 1
+                    break
+                if _EFFECT_PROFILE_MARKER not in raw:
+                    continue
+                try:
+                    value = json.loads(raw.decode("utf-8"))
+                except (UnicodeDecodeError, ValueError):
+                    if is_live:
+                        self._quarantine_effect_record(path, counts)
+                    continue
+                if not self._holds_pre_fix_effect_tokens(value):
+                    continue
+                if not is_live:
+                    try:
+                        path.unlink()
+                    except FileNotFoundError:
+                        continue
+                    except OSError:
+                        counts["failed"] += 1
+                        continue
+                    counts["quarantine_removed"] += 1
+                    continue
+                if (
+                    isinstance(value, dict)
+                    and value.get("status") in EFFECT_UPGRADE_DEFERRED_STATUSES
+                ):
+                    counts["deferred"] += 1
+                    continue
+                try:
+                    path.unlink()
+                except FileNotFoundError:
+                    continue
+                except OSError:
+                    self._quarantine_effect_record(path, counts)
+                    continue
+                self._remove_entry(path.stem)
+                self.health_record_memo.forget(str(path))
+                self.generation += 1
+                self.index_update_count += 1
+                counts["removed"] += 1
+        return counts
+
+    def _quarantine_effect_record(
+        self, path: Path, counts: dict[str, int]
+    ) -> None:
+        failed = self.quarantine_outcomes["failed"]
+        self._quarantine(path)
+        self.health_record_memo.forget(str(path))
+        if self.quarantine_outcomes["failed"] != failed:
+            counts["failed"] += 1
+        else:
+            counts["quarantined"] += 1
 
     def recover_incomplete(self, timestamp: str) -> int:
         recovered = 0

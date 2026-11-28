@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
+import secrets
+from contextvars import ContextVar
 from typing import Any, Iterable
 
 from jinja2 import Environment, TemplateSyntaxError, nodes
@@ -131,7 +134,11 @@ _HELPER_TRANSITIVE_ACTION_FAMILIES = frozenset({"event", "scene"})
 # projected for one automation.  It is not a structural traversal budget.
 _HELPER_PROFILE_LIMIT = 32
 _HELPER_PROFILE_VALUE_BYTES = 256
-_HELPER_EFFECT_PROJECTION_MODEL = "automation-action-effect-v2"
+# HAMCP-542: v3 withholds credentials and keys every digest.  A stored
+# profile with effect tokens under any other model was written before that
+# fix; ``ChangePlanRepository.retire_pre_fix_effect_records`` removes it.
+_HELPER_EFFECT_PROJECTION_MODEL = "automation-action-effect-v3"
+HELPER_EFFECT_PROJECTION_MODEL = _HELPER_EFFECT_PROJECTION_MODEL
 _HELPER_EFFECT_STRUCTURE_NODE_LIMIT = 512
 _HELPER_EFFECT_STRUCTURE_DEPTH_LIMIT = 16
 _HELPER_ACTION_ANALYSIS_STEP_LIMIT = 512
@@ -180,7 +187,53 @@ _HELPER_EFFECT_SENSITIVE_TERMS = frozenset(
         "webhook",
     }
 )
+# HAMCP-542: exact leaf names whose value is a credential whatever its type
+# or selector.  Matched per path segment, never as a substring, so zip_code,
+# country_code and color_code stay ordinary fields.
+_HELPER_EFFECT_CREDENTIAL_FIELDS = frozenset(
+    {"access_code", "code", "passcode", "password", "pin"}
+)
+# A sensitive value is shown as this fixed marker.  Its binding carries only a
+# keyed digest, so no reply, plan body, receipt or audit record holds text
+# derived from the value that a caller could brute-force.
+HELPER_EFFECT_WITHHELD = "withheld"
+_EFFECT_DIGEST_KEY_LABEL = b"hass-mcp-engineering/effect-digest/v1"
+# Used when no installation secret is configured (tests, an unconfigured
+# provider).  It is random per process, so no digest is ever unkeyed; a plan
+# bound under it simply no longer matches after a restart and must be
+# replanned.
+_PROCESS_EFFECT_DIGEST_KEY = secrets.token_bytes(32)
+_EFFECT_DIGEST_KEY: ContextVar[bytes | None] = ContextVar(
+    "_EFFECT_DIGEST_KEY", default=None
+)
 _HELPER_TEMPLATE_PARSER = Environment(autoescape=False)
+
+
+def effect_digest_key(secret: str) -> bytes:
+    """Derive the effect-digest HMAC key from the installation secret."""
+
+    if not secret:
+        return _PROCESS_EFFECT_DIGEST_KEY
+    return hmac.new(
+        secret.encode("utf-8"), _EFFECT_DIGEST_KEY_LABEL, hashlib.sha256
+    ).digest()
+
+
+def _effect_hasher(data: bytes = b"") -> Any:
+    """Return a keyed digest for effect tokens and fingerprints (HAMCP-542).
+
+    Effect values can carry resolved credentials, and a plain sha256 of a
+    short code is recovered by brute force in seconds.  Every digest in the
+    effect projection and consequence profile is an HMAC under the current
+    scan's key, so a changed value still changes its binding but cannot be
+    recovered by a caller without the key.
+    """
+
+    return hmac.new(
+        _EFFECT_DIGEST_KEY.get() or _PROCESS_EFFECT_DIGEST_KEY,
+        data,
+        hashlib.sha256,
+    )
 
 
 def _walk(value: Any) -> Iterable[Any]:
@@ -313,7 +366,7 @@ def _bounded_action_analysis_coverage(config: dict[str, Any]) -> dict[str, Any]:
         "effect_node_count": 0,
         "limit_exceeded": False,
         "reason": None,
-        "overflow": hashlib.sha256(),
+        "overflow": _effect_hasher(),
     }
 
     def fail(reason: str, path: str, value: Any) -> None:
@@ -838,7 +891,7 @@ def _bounded_helper_profile_values(
         encoded = value.encode("utf-8")
         if len(encoded) > _HELPER_PROFILE_VALUE_BYTES:
             clipped = True
-            value = "oversized_sha256:" + hashlib.sha256(encoded).hexdigest()
+            value = "oversized_sha256:" + _effect_hasher(encoded).hexdigest()
         bounded.add(value)
     ordered = sorted(bounded)
     return (
@@ -865,7 +918,7 @@ def _effect_value_hash(value: Any) -> str:
         # an already over-depth value with repr().  The corresponding profile
         # is non-actionable, so this diagnostic fingerprint is not presented
         # as complete material evidence.
-        digest = hashlib.sha256(b"bounded-overflow-v1")
+        digest = _effect_hasher(b"bounded-overflow-v1")
         pending: list[tuple[str, Any, int]] = [("$", value, 0)]
         seen: set[int] = set()
         visited = 0
@@ -918,34 +971,56 @@ def _effect_value_hash(value: Any) -> str:
         return digest.hexdigest()
     except (TypeError, ValueError):
         encoded = repr(value)
-    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+    return _effect_hasher(encoded.encode("utf-8")).hexdigest()
 
 
 def _effect_path_is_sensitive(path: str) -> bool:
     lowered = path.lower()
-    return any(term in lowered for term in _HELPER_EFFECT_SENSITIVE_TERMS)
+    if any(term in lowered for term in _HELPER_EFFECT_SENSITIVE_TERMS):
+        return True
+    # HAMCP-542: an exact credential leaf anywhere on the path, so nested
+    # notify data (data.data.pin) and a structured value (data.code.value)
+    # are withheld too.  Exact segments only: data.zip_code is not a code.
+    return any(
+        segment.split("[", 1)[0] in _HELPER_EFFECT_CREDENTIAL_FIELDS
+        for segment in lowered.split(".")
+    )
 
 
 def _bounded_effect_projection_values(
-    values: Iterable[str],
+    values: Iterable[str | tuple[str, str]],
 ) -> tuple[list[str], bool, int, str]:
-    """Bound effect details while retaining every omitted value in a hash."""
+    """Bound effect details while retaining every omitted value in a hash.
 
-    normalized: set[str] = set()
-    clipped = False
-    for value in values:
+    A value is a token, or a (display, binding) pair for a withheld value
+    (HAMCP-542).  Only displays are returned; the fingerprint and the
+    overflow tail cover the bindings, so a changed withheld value still
+    changes them.
+    """
+
+    def bounded(value: str) -> tuple[str, bool]:
         encoded = value.encode("utf-8")
         if len(encoded) > _HELPER_PROFILE_VALUE_BYTES:
-            clipped = True
-            value = "oversized_sha256:" + hashlib.sha256(encoded).hexdigest()
-        normalized.add(value)
-    ordered = sorted(normalized)
-    total_count = len(ordered)
-    full_set_fingerprint = _effect_value_hash(ordered)
-    if len(ordered) > _HELPER_EFFECT_PROJECTION_VALUE_LIMIT:
+            return "oversized_sha256:" + _effect_hasher(encoded).hexdigest(), True
+        return value, False
+
+    normalized: set[tuple[str, str]] = set()
+    clipped = False
+    for value in values:
+        display, binding = (value, value) if isinstance(value, str) else value
+        display, display_clipped = bounded(display)
+        binding, binding_clipped = bounded(binding)
+        clipped = clipped or display_clipped or binding_clipped
+        normalized.add((display, binding))
+    pairs = sorted(normalized)
+    total_count = len(pairs)
+    bindings = [binding for _display, binding in pairs]
+    full_set_fingerprint = _effect_value_hash(bindings)
+    ordered = [display for display, _binding in pairs]
+    if len(pairs) > _HELPER_EFFECT_PROJECTION_VALUE_LIMIT:
         clipped = True
         overflow = _effect_value_hash(
-            ordered[_HELPER_EFFECT_PROJECTION_VALUE_LIMIT - 1 :]
+            bindings[_HELPER_EFFECT_PROJECTION_VALUE_LIMIT - 1 :]
         )
         ordered = [
             *ordered[: _HELPER_EFFECT_PROJECTION_VALUE_LIMIT - 1],
@@ -954,19 +1029,26 @@ def _bounded_effect_projection_values(
     return ordered, clipped, total_count, full_set_fingerprint
 
 
-def _effect_scalar_token(path: str, value: Any) -> str:
+def _effect_scalar_token(path: str, value: Any) -> tuple[str, str]:
+    """Return the (display, binding) tokens for one effect-data leaf.
+
+    They are equal except for a sensitive value (HAMCP-542), which is shown
+    as the fixed withheld marker and bound by a keyed digest of the value.
+    """
+
     leaf = path.rsplit(".", 1)[-1].split("[", 1)[0]
     if _effect_path_is_sensitive(path):
-        rendered = "sha256:" + _effect_value_hash(value)
-    elif isinstance(value, str):
+        withheld = f"{path}={HELPER_EFFECT_WITHHELD}"
+        return withheld, f"{withheld}:{_effect_value_hash(value)}"
+    if isinstance(value, str):
         encoded = value.encode("utf-8")
         if _has_template(value):
-            rendered = "dynamic_sha256:" + hashlib.sha256(encoded).hexdigest()
+            rendered = "dynamic_sha256:" + _effect_hasher(encoded).hexdigest()
         elif (
             leaf not in _HELPER_EFFECT_SAFE_DATA_FIELDS
             or len(encoded) > _HELPER_PROFILE_VALUE_BYTES
         ):
-            rendered = "sha256:" + hashlib.sha256(encoded).hexdigest()
+            rendered = "sha256:" + _effect_hasher(encoded).hexdigest()
         else:
             rendered = value
     elif value is None or isinstance(value, (bool, int, float)):
@@ -976,13 +1058,14 @@ def _effect_scalar_token(path: str, value: Any) -> str:
             rendered = "sha256:" + _effect_value_hash(value)
     else:
         rendered = "sha256:" + _effect_value_hash(value)
-    return f"{path}={rendered}"
+    token = f"{path}={rendered}"
+    return token, token
 
 
 def _flatten_effect_data(
     value: Any,
     path: str,
-    output: list[str],
+    output: list[tuple[str, str]],
     state: dict[str, Any],
     *,
     depth: int = 0,
@@ -1015,11 +1098,11 @@ def _flatten_effect_data(
             )
         return
     state["total_count"] += 1
-    token = _effect_scalar_token(path, value)
+    display, binding = _effect_scalar_token(path, value)
     if len(output) < _HELPER_EFFECT_PROJECTION_VALUE_LIMIT:
-        output.append(token)
+        output.append((display, binding))
     else:
-        state["overflow"].update(token.encode("utf-8"))
+        state["overflow"].update(binding.encode("utf-8"))
         state["clipped"] = True
 
 
@@ -1073,14 +1156,14 @@ def _normalize_effect_structure(
     if isinstance(value, str):
         encoded = value.encode("utf-8")
         if _has_template(value):
-            return "dynamic_sha256:" + hashlib.sha256(encoded).hexdigest()
+            return "dynamic_sha256:" + _effect_hasher(encoded).hexdigest()
         if (
             _effect_path_is_sensitive(path)
             or (".data." in path and path.rsplit(".", 1)[-1]
                 not in _HELPER_EFFECT_SAFE_DATA_FIELDS)
             or len(encoded) > _HELPER_PROFILE_VALUE_BYTES
         ):
-            return "sha256:" + hashlib.sha256(encoded).hexdigest()
+            return "sha256:" + _effect_hasher(encoded).hexdigest()
     return value
 
 
@@ -1088,9 +1171,9 @@ def _automation_effect_projection(
     config: dict[str, Any],
 ) -> dict[str, Any]:
     targets: list[str] = []
-    data: list[str] = []
+    data: list[str | tuple[str, str]] = []
     data_state = {
-        "overflow": hashlib.sha256(),
+        "overflow": _effect_hasher(),
         "clipped": False,
         "processing_limit_exceeded": False,
         "total_count": 0,
@@ -1522,7 +1605,7 @@ def _processing_failure_action_profile(
     )
     return {
         **normalized,
-        "evidence_fingerprint": hashlib.sha256(
+        "evidence_fingerprint": _effect_hasher(
             encoded.encode("utf-8")
         ).hexdigest(),
     }
@@ -1530,14 +1613,31 @@ def _processing_failure_action_profile(
 
 def automation_action_consequence_profile(
     config: dict[str, Any],
+    *,
+    digest_key: bytes | None = None,
 ) -> dict[str, Any]:
     """Project bounded downstream consequence evidence using the F2 parser.
 
     This is not a second automation parser or approval model. It reuses the
     structure-first F2 action analysis and returns only the normalized facts
     needed to assess an exact helper dependency.
+
+    ``digest_key`` keys every digest and fingerprint in the profile
+    (HAMCP-542); the provider derives it from the installation secret with
+    ``effect_digest_key``.  Without one a per-process key is used, never an
+    unkeyed digest.
     """
 
+    reset = _EFFECT_DIGEST_KEY.set(digest_key or _PROCESS_EFFECT_DIGEST_KEY)
+    try:
+        return _automation_action_consequence_profile(config)
+    finally:
+        _EFFECT_DIGEST_KEY.reset(reset)
+
+
+def _automation_action_consequence_profile(
+    config: dict[str, Any],
+) -> dict[str, Any]:
     action_coverage = _bounded_action_analysis_coverage(config)
     if not action_coverage["complete"]:
         return _processing_failure_action_profile(action_coverage)
@@ -1787,7 +1887,7 @@ def automation_action_consequence_profile(
     )
     return {
         **normalized,
-        "evidence_fingerprint": hashlib.sha256(
+        "evidence_fingerprint": _effect_hasher(
             encoded.encode("utf-8")
         ).hexdigest(),
     }

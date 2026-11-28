@@ -280,32 +280,46 @@ class SyntheticHomeAssistant:
         return rows
 
     def services(self) -> list[dict[str, Any]]:
-        """``GET /services``: registered services and their schema fields."""
+        """``GET /services``: registered services and their schema fields.
 
-        def fields(*keys):
-            return {key: {"selector": {"text": None}} for key in keys}
+        Selector kinds follow Home Assistant Core 2026.11.3 (92da9f15)
+        ``services.yaml`` for each component (HAMCP-542 reads them).
+        """
+
+        def fields(*keys, kind="text"):
+            return {key: {"selector": {kind: None}} for key in keys}
 
         return [
             {"domain": "light", "services": {
                 "turn_on": {"fields": {
-                    **fields("brightness", "transition"),
+                    **fields("brightness", "transition", kind="number"),
                     # A collapsible section groups keys; it is not one.
-                    "advanced_fields": {"collapsed": True, "fields": fields("rgb_color", "flash")},
+                    "advanced_fields": {"collapsed": True, "fields": {
+                        **fields("rgb_color", kind="color_rgb"),
+                        **fields("flash", kind="select"),
+                    }},
                 }},
-                "turn_off": {"fields": fields("transition", "flash")},
-                "toggle": {"fields": fields("transition")},
+                "turn_off": {"fields": {
+                    **fields("transition", kind="number"),
+                    **fields("flash", kind="select"),
+                }},
+                "toggle": {"fields": fields("transition", kind="number")},
             }},
             {"domain": "climate", "services": {
-                "set_temperature": {"fields": fields("temperature", "hvac_mode")},
-                "set_hvac_mode": {"fields": fields("hvac_mode")},
+                "set_temperature": {"fields": {
+                    **fields("temperature", kind="number"),
+                    **fields("hvac_mode", kind="state"),
+                }},
+                "set_hvac_mode": {"fields": fields("hvac_mode", kind="state")},
             }},
             {"domain": "input_boolean", "services": {
                 "turn_on": {"fields": {}}, "turn_off": {"fields": {}},
             }},
-            {"domain": "input_number", "services": {"set_value": {"fields": fields("value")}}},
-            {"domain": "input_select", "services": {"select_option": {"fields": fields("option")}}},
+            {"domain": "input_number", "services": {"set_value": {"fields": fields("value", kind="number")}}},
+            {"domain": "number", "services": {"set_value": {"fields": fields("value")}}},
+            {"domain": "input_select", "services": {"select_option": {"fields": fields("option", kind="state")}}},
             {"domain": "rest_command", "services": {"synthetic": {"fields": {}}}},
-            {"domain": "automation", "services": {"trigger": {"fields": fields("skip_condition")}}},
+            {"domain": "automation", "services": {"trigger": {"fields": fields("skip_condition", kind="boolean")}}},
         ]
 
     def device_registry(self) -> list[dict[str, Any]]:

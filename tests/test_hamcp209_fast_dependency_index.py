@@ -68,6 +68,7 @@ from ha_mcp_engineering.governance.entity_metadata_disclosure import (  # noqa: 
     build_consumer_disclosure,
 )
 from ha_mcp_engineering.governance.helper_dependency import HelperDependencyRiskService  # noqa: E402
+from ha_mcp_engineering.governance.risk import effect_digest_key  # noqa: E402
 from ha_mcp_engineering.handoff.provider import EngineeringHandoffProvider  # noqa: E402
 from ha_mcp_engineering.handoff.service import HandoffGenerationService  # noqa: E402
 from ha_mcp_engineering.impact.provider import DirectHaImpactProvider  # noqa: E402
@@ -1327,18 +1328,21 @@ _UNREGISTERED_WORDS = "porch_lantern_glow"
 
 def _display_registry(
     *, entities=(), devices=(), areas=(), floors=(), labels=(),
-    services=None, domains=(), complete=True,
+    services=None, domains=(), complete=True, withheld_fields=None,
 ):
     members = {
         "entity": frozenset(entities), "device": frozenset(devices),
         "area": frozenset(areas), "floor": frozenset(floors), "label": frozenset(labels),
     }
+    if withheld_fields is None and services is not None:
+        withheld_fields = {service: frozenset() for service in services}
     return _EffectDisplayRegistry(
         members=members,
         complete={kind: complete for kind in members},
         services=services,
         domains=frozenset(domains),
         sources={},
+        withheld_fields=withheld_fields,
     )
 
 
@@ -1362,7 +1366,10 @@ class EffectDisplayAllowlistTests(unittest.TestCase):
 
     def filter_for(self, config, **registry):
         values = {**_ORDINARY_REGISTRY, **registry}
-        return _EffectDisplayFilter(config, secret=SECRET, registry=_display_registry(**values))
+        return _EffectDisplayFilter(
+            config, secret=SECRET, registry=_display_registry(**values),
+            digest_key=effect_digest_key(SECRET),
+        )
 
     def assert_digested(self, token, value):
         self.assertNotIn(value, token)
@@ -1540,6 +1547,7 @@ class EffectDisplayAllowlistTests(unittest.TestCase):
             with self.subTest(known=known):
                 display = _EffectDisplayFilter(
                     config, secret=known, registry=_display_registry(**_ORDINARY_REGISTRY),
+                    digest_key=effect_digest_key(known),
                 )
                 shown = display.data(token)
                 self.assertNotIn("=" + known, shown)
@@ -1548,6 +1556,7 @@ class EffectDisplayAllowlistTests(unittest.TestCase):
                                  "action[0].data.brightness=10")
         display = _EffectDisplayFilter(
             config, secret="all", registry=_display_registry(**_ORDINARY_REGISTRY),
+            digest_key=effect_digest_key("all"),
         )
         self.assert_digested(
             display.target("action[0].target.entity_id[0]|entity_id|all"), "|all",
@@ -1568,6 +1577,7 @@ class EffectDisplayAllowlistTests(unittest.TestCase):
                 values = {**_ORDINARY_REGISTRY, **override}
                 display = _EffectDisplayFilter(
                     config, secret=SECRET, registry=_display_registry(**values),
+                    digest_key=effect_digest_key(SECRET),
                 )
                 if name == "services":
                     self.assertIn("redacted_sha256:", display.service("light.turn_on"))
@@ -1579,7 +1589,7 @@ class EffectDisplayAllowlistTests(unittest.TestCase):
         # An incomplete registry never shows a value it does not hold.
         display = _EffectDisplayFilter(config, secret=SECRET, registry=_display_registry(
             **{**_ORDINARY_REGISTRY, "complete": False},
-        ))
+        ), digest_key=effect_digest_key(SECRET))
         self.assertEqual(
             display.target("action[0].target.entity_id|entity_id|light.synthetic_kitchen"),
             "action[0].target.entity_id|entity_id|light.synthetic_kitchen",
@@ -1589,14 +1599,16 @@ class EffectDisplayAllowlistTests(unittest.TestCase):
     def test_service_registry_schema_is_validated_and_bounded(self):
         from ha_mcp_engineering.dependency import provider as module
 
-        domains, services = module._service_registry_schema([
+        domains, services, withheld = module._service_registry_schema([
             {"domain": "light", "services": {"turn_on": {"fields": {
-                "brightness": {},
+                "brightness": {"selector": {"number": {}}},
                 "advanced_fields": {"collapsed": True, "fields": {"flash": {}}},
             }}}},
         ])
         self.assertEqual(domains, frozenset({"light"}))
         self.assertEqual(services, {"light.turn_on": frozenset({"brightness", "flash"})})
+        # HAMCP-542: a field with no selector is withheld; a number selector is not.
+        self.assertEqual(withheld, {"light.turn_on": frozenset({"flash"})})
         for rows in (
             {"domain": "light"},
             [{"domain": "light", "services": []}],
@@ -2060,6 +2072,898 @@ class RealHomeAssistantReadCaptureTests(unittest.IsolatedAsyncioTestCase):
             await capture.request("POST", "/services/automation/reload", {})
         self.assertEqual(len(capture.violations), 6)
         self.assertEqual(capture.calls, [])
+
+
+# HAMCP-542: credential values in the effect projection.  Synthetic codes
+# only; each is unmistakable and none is a real credential.
+_CODES = {
+    "alarm code int": 860317,
+    "alarm code str": "552907",
+    "lock code int": 731946,
+    "pin int (number selector)": 470219,
+    "pin str (number selector)": "470220",
+    "passcode (password selector)": 615283,
+    "keypad entry (password selector)": 615284,
+    "notify top-level code": 284615,
+    "notify nested pin": 931842,
+    "script field code": 118204,
+    "script variables code": 118205,
+    "blueprint input code": 860318,
+    "keypad code (number selector)": 470221,
+    # Not a credential name or a free-form field: still digested, so the
+    # digest must be keyed (a plain sha256 of a short string is recovered).
+    "string under a select field": "552911",
+}
+# Ordinary numbers stay readable where they are today.
+_VERBATIM_TOKENS = (
+    "action[7].data.value=39177",
+    "action[8].data.value=21.75",
+    "action[9].data.value=42",
+    "action[10].data.brightness=10",
+    "action[11].data.zip_code=73301",
+    "action[11].data.country_code=49",
+    "action[11].data.color_code=255",
+)
+_WITHHELD_TOKENS = (
+    "action[0].data.code=withheld",
+    "action[1].data.code=withheld",
+    "action[2].data.code=withheld",
+    "action[3].data.pin=withheld",
+    "action[4].data.pin=withheld",
+    "action[5].data.passcode=withheld",
+    "action[5].data.keypad_entry=withheld",
+    "action[6].data.code=withheld",
+    "action[12].data.code=withheld",
+    "action[14].data.code=withheld",
+)
+
+
+def _hamcp542_fields(kind, *keys, options=None):
+    return {key: {"selector": {kind: options}} for key in keys}
+
+
+def _hamcp542_services(base):
+    """Core 2026.11.3 (92da9f15) selectors for the services the codes use.
+
+    alarm_control_panel ``code`` and lock ``code`` are ``text`` selectors in
+    their ``services.yaml``; script ``turn_on`` ``variables`` is ``object``.
+    The keypad and weather services are synthetic: the keypad ``code`` uses
+    a ``number`` selector so the credential leaf rule is the only guard.
+    """
+
+    return [
+        *base(),
+        {"domain": "alarm_control_panel", "services": {
+            "alarm_disarm": {"fields": _hamcp542_fields("text", "code")},
+            "alarm_arm_away": {"fields": _hamcp542_fields("text", "code")},
+        }},
+        {"domain": "lock", "services": {"unlock": {"fields": _hamcp542_fields("text", "code")}}},
+        {"domain": "synthetic_keypad", "services": {"enter": {"fields": {
+            **_hamcp542_fields("number", "pin", "code", options={}),
+            **_hamcp542_fields("text", "passcode", "keypad_entry", options={"type": "password"}),
+        }}}},
+        {"domain": "notify", "services": {"synthetic_phone": {"fields": {
+            **_hamcp542_fields("text", "message", "title", "code"),
+            **_hamcp542_fields("object", "data"),
+        }}}},
+        {"domain": "synthetic_weather", "services": {"lookup": {"fields": _hamcp542_fields(
+            "number", "zip_code", "country_code", "color_code", options={},
+        )}}},
+        {"domain": "script", "services": {
+            "turn_on": {"fields": _hamcp542_fields("object", "variables")},
+            "synthetic_disarm": {"fields": _hamcp542_fields("text", "code")},
+        }},
+    ]
+
+
+def _hamcp542_actions(codes):
+    panel = {"entity_id": "alarm_control_panel.synthetic_panel"}
+    setpoint = {"entity_id": "input_number.synthetic_setpoint"}
+    return [
+        {"service": "alarm_control_panel.alarm_disarm", "target": panel,
+         "data": {"code": codes["alarm code int"]}},
+        {"service": "alarm_control_panel.alarm_arm_away", "target": panel,
+         "data": {"code": codes["alarm code str"]}},
+        {"service": "lock.unlock", "target": {"entity_id": "lock.synthetic_front"},
+         "data": {"code": codes["lock code int"]}},
+        {"service": "synthetic_keypad.enter", "data": {"pin": codes["pin int (number selector)"]}},
+        {"service": "synthetic_keypad.enter", "data": {"pin": codes["pin str (number selector)"]}},
+        {"service": "synthetic_keypad.enter",
+         "data": {"passcode": codes["passcode (password selector)"],
+                  "keypad_entry": codes["keypad entry (password selector)"]}},
+        {"service": "notify.synthetic_phone",
+         "data": {"message": "synthetic", "code": codes["notify top-level code"],
+                  "data": {"pin": codes["notify nested pin"]}}},
+        {"service": "input_number.set_value", "target": setpoint, "data": {"value": 39177}},
+        {"service": "input_number.set_value", "target": setpoint, "data": {"value": 21.75}},
+        {"service": "number.set_value", "target": {"entity_id": "number.synthetic_level"},
+         "data": {"value": 42}},
+        {"service": "light.turn_on", "target": {"entity_id": "light.synthetic_kitchen"},
+         "data": {"brightness": 10}},
+        {"service": "synthetic_weather.lookup",
+         "data": {"zip_code": 73301, "country_code": 49, "color_code": 255}},
+        {"service": "script.synthetic_disarm", "data": {"code": codes["script field code"]}},
+        {"service": "script.turn_on", "target": {"entity_id": "script.synthetic_disarm"},
+         "data": {"variables": {"code": codes["script variables code"]}}},
+        {"service": "synthetic_keypad.enter", "data": {"code": codes["keypad code (number selector)"]}},
+        {"service": "light.turn_on", "target": {"entity_id": "light.synthetic_kitchen"},
+         "data": {"flash": codes["string under a select field"]}},
+    ]
+
+
+def _hamcp542_blueprint(path):
+    if path != "synthetic/keypad_disarm.yaml":
+        return None, "blueprint_source_unavailable"
+    return {
+        "blueprint": {"name": "Synthetic keypad disarm", "domain": "automation",
+                      "input": {"gate": {}, "alarm_code": {}}},
+        "trigger": [{"platform": "state", "entity_id": {"__blueprint_input__": "gate"}}],
+        "action": [{"service": "alarm_control_panel.alarm_disarm",
+                    "target": {"entity_id": "alarm_control_panel.synthetic_panel"},
+                    "data": {"code": {"__blueprint_input__": "alarm_code"}}}],
+    }, None
+
+
+def _hamcp542_home(gate, codes=None):
+    codes = dict(codes or _CODES)
+    blueprint_input = {"gate": gate, "alarm_code": codes["blueprint input code"]}
+    ha = SyntheticHomeAssistant([
+        record("automation.synthetic_keypad", None, automation_id="synthetic_keypad", loaded={
+            "id": "synthetic_keypad", "alias": "Synthetic keypad",
+            "trigger": [{"platform": "state", "entity_id": gate}],
+            "action": _hamcp542_actions(codes),
+        }),
+        record(
+            "automation.synthetic_keypad_blueprint",
+            {"id": "synthetic_keypad_blueprint", "alias": "Synthetic keypad blueprint",
+             "use_blueprint": {"path": "synthetic/keypad_disarm.yaml", "input": blueprint_input}},
+            loaded={
+                "id": "synthetic_keypad_blueprint", "alias": "Synthetic keypad blueprint",
+                "trigger": [{"platform": "state", "entity_id": gate}],
+                "action": [{"service": "alarm_control_panel.alarm_disarm",
+                            "target": {"entity_id": "alarm_control_panel.synthetic_panel"},
+                            "data": {"code": codes["blueprint input code"]}}],
+            },
+            blueprint="synthetic/keypad_disarm.yaml",
+        ),
+    ])
+    base = ha.services
+    ha.services = lambda: _hamcp542_services(base)
+    return ha
+
+
+def _code_hits(text, codes=None):
+    """Names of codes whose value appears in ``text`` (as a number or string)."""
+
+    return sorted(
+        name for name, value in (codes or _CODES).items()
+        if (str(value) if not isinstance(value, str) else value) in text
+    )
+
+
+def _unkeyed_digests(value):
+    """Every plain digest an unkeyed builder could have emitted for a code.
+
+    Bare and JSON forms (risk.py hashed the JSON value) and ``path=value``
+    forms for each data path in the matrix (provider.py hashed the token).
+    """
+
+    forms = {str(value), json.dumps(value), json.dumps(str(value))}
+    paths = [
+        f"action[{step}].data.{key}"
+        for step in range(16)
+        for key in ("code", "pin", "passcode", "keypad_entry", "data", "variables", "flash")
+    ]
+    forms |= {f"{path}={form}" for path in paths for form in tuple(forms)}
+    return {hashlib.sha256(form.encode("utf-8")).hexdigest() for form in forms}
+
+
+def _brute_force(text):
+    """Recover any six-digit code from plain sha256 digests in ``text``."""
+
+    found = set(re.findall(r"[0-9a-f]{64}", text))
+    recovered = []
+    if not found:
+        return recovered
+    sha256 = hashlib.sha256
+    for number in range(1_000_000):
+        plain = b"%06d" % number
+        for form in (plain, b'"' + plain + b'"'):
+            if sha256(form).hexdigest() in found:
+                recovered.append(plain.decode("ascii"))
+    return recovered
+
+
+class NumericEffectSecretTests(unittest.IsolatedAsyncioTestCase):
+    """HAMCP-542: a credential in action data is withheld on every surface.
+
+    A value is withheld when its registered field has a free-form selector
+    (Core 2026.11.3 ``text``/``template``/``object``, or none), or when its
+    exact leaf name is a credential name.  A withheld value is shown as the
+    fixed marker and is bound only by a keyed digest.
+    """
+
+    async def scan(self, gate="input_boolean.synthetic_gate", *, secret=SECRET, codes=None):
+        ha = _hamcp542_home(gate, codes)
+        provider = DirectHaDependencyProvider(
+            _AnalysisRest(ha), _AnalysisWebSocket(ha), secret=secret,
+        )
+        with patch(BLUEPRINT_READER, side_effect=_hamcp542_blueprint):
+            scan = await provider.scan()
+        return {
+            profile.source_entity_id: profile for profile in scan.automation_action_profiles
+        }
+
+    async def test_provider_scan_withholds_codes_and_keeps_ordinary_numbers(self):
+        profiles = await self.scan()
+        profile = profiles["automation.synthetic_keypad"]
+        tokens = set(profile.effect_data)
+        self.assertEqual(_code_hits(_serialized([asdict(p) for p in profiles.values()])), [])
+        for token in _WITHHELD_TOKENS:
+            self.assertIn(token, tokens)
+        for token in _VERBATIM_TOKENS:
+            self.assertIn(token, tokens)
+        # A nested value (notify data.data.pin, script variables.code) is not
+        # a top-level data key, so it is folded into a step-level keyed digest.
+        for prefix in ("action[6].data.data", "action[13].data.variables"):
+            self.assertFalse(any(t.startswith(prefix) for t in tokens), tokens)
+        self.assertTrue(any(t.startswith("action[15].data.flash=sha256:") for t in tokens), tokens)
+        for token in tokens:
+            self.assertNotIn("withheld:", token)
+        blueprint = profiles["automation.synthetic_keypad_blueprint"]
+        self.assertIn("action[0].data.code=withheld", blueprint.effect_data)
+
+    async def test_changed_code_changes_bindings_under_one_key_only(self):
+        changed = {**_CODES, "alarm code int": 860399, "notify nested pin": 931899}
+        first = (await self.scan())["automation.synthetic_keypad"]
+        same = (await self.scan())["automation.synthetic_keypad"]
+        other = (await self.scan(codes=changed))["automation.synthetic_keypad"]
+        rekeyed = (await self.scan(secret=SECRET + "-other-installation"))[
+            "automation.synthetic_keypad"
+        ]
+        # The displayed tokens do not move with the code ...
+        self.assertEqual(first.effect_data, other.effect_data)
+        # ... but the bindings do, and they are stable under one key.
+        for field in ("effect_data_fingerprint", "evidence_fingerprint"):
+            with self.subTest(field=field):
+                self.assertEqual(getattr(first, field), getattr(same, field))
+                self.assertNotEqual(getattr(first, field), getattr(other, field))
+                self.assertNotEqual(getattr(first, field), getattr(rekeyed, field))
+
+    async def test_no_code_is_recoverable_from_any_digest(self):
+        profiles = await self.scan()
+        text = _serialized([asdict(p) for p in profiles.values()])
+        for name, value in _CODES.items():
+            with self.subTest(code=name):
+                for digest in _unkeyed_digests(value):
+                    self.assertNotIn(digest, text)
+        self.assertEqual(_brute_force(text), [])
+
+    def test_credential_leaf_names_are_exact(self):
+        from ha_mcp_engineering.governance import risk
+
+        for path in (
+            "action[0].data.code", "action[0].data.pin", "action[0].data.passcode",
+            "action[0].data.password", "action[0].data.access_code",
+            "action[0].data.data.pin", "action[0].data.variables.code",
+            "action[0].data.codes[0].code", "action[0].data.CODE",
+        ):
+            with self.subTest(path=path):
+                self.assertTrue(risk._effect_path_is_sensitive(path))
+        for path in (
+            "action[0].data.zip_code", "action[0].data.country_code",
+            "action[0].data.color_code", "action[0].data.brightness",
+            "action[0].data.value", "action[0].data.codec",
+        ):
+            with self.subTest(path=path):
+                self.assertFalse(risk._effect_path_is_sensitive(path))
+
+    def test_provider_and_risk_share_the_withheld_marker(self):
+        from ha_mcp_engineering.dependency import provider as module
+        from ha_mcp_engineering.governance import risk
+
+        self.assertEqual(module._EFFECT_WITHHELD, risk.HELPER_EFFECT_WITHHELD)
+        self.assertEqual(module._EFFECT_WITHHELD, "withheld")
+
+    def test_selector_decides_withholding(self):
+        from ha_mcp_engineering.dependency.provider import _effect_field_withheld
+
+        for selector, withheld in (
+            ({"number": {}}, False), ({"boolean": None}, False), ({"state": {}}, False),
+            ({"select": {"options": ["a"]}}, False), ({"color_rgb": None}, False),
+            ({"text": None}, True), ({"text": {"type": "password"}}, True),
+            ({"template": None}, True), ({"object": None}, True),
+            ({}, True), (None, True), ("text", True),
+        ):
+            with self.subTest(selector=selector):
+                field = {"selector": selector} if selector is not None else {}
+                self.assertIs(_effect_field_withheld("synthetic.service", "x", field), withheld)
+        # Core 2026.11.3 number.set_value value is a text selector holding a
+        # number; it is the one reviewed exception.
+        self.assertFalse(_effect_field_withheld("number.set_value", "value", {"selector": {"text": None}}))
+        self.assertTrue(_effect_field_withheld("number.set_value", "code", {"selector": {"text": None}}))
+
+    async def test_mutant_without_the_credential_leaf_rule_leaks(self):
+        from ha_mcp_engineering.governance import risk
+
+        with patch.object(risk, "_HELPER_EFFECT_CREDENTIAL_FIELDS", frozenset()):
+            profiles = await self.scan()
+        text = _serialized([asdict(p) for p in profiles.values()])
+        self.assertIn("keypad code (number selector)", _code_hits(text))
+
+    async def test_mutant_without_the_selector_rule_leaks(self):
+        from ha_mcp_engineering.dependency import provider as module
+
+        with patch.object(module, "_effect_field_withheld", return_value=False):
+            profiles = await self.scan()
+        text = _serialized([asdict(p) for p in profiles.values()])
+        self.assertIn("keypad entry (password selector)", _code_hits(text))
+
+    async def test_mutant_with_an_unkeyed_digest_is_brute_forced(self):
+        from ha_mcp_engineering.governance import risk
+
+        with patch.object(risk, "_effect_hasher", side_effect=hashlib.sha256):
+            profiles = await self.scan()
+        text = _serialized([asdict(p) for p in profiles.values()])
+        self.assertIn("552911", _brute_force(text))
+
+    def test_fingerprint_does_not_reveal_a_withheld_code(self):
+        """A caller who sees the withheld tokens cannot rebuild the fingerprint.
+
+        ``effect_data_fingerprint`` covers ``path=withheld:<digest of value>``.
+        Unkeyed, every six-digit candidate rebuilds it in seconds; keyed, none
+        does.
+        """
+
+        from ha_mcp_engineering.governance import risk
+
+        config = {"action": [{
+            "service": "alarm_control_panel.alarm_disarm",
+            "target": {"entity_id": "alarm_control_panel.synthetic_panel"},
+            "data": {"code": 860317},
+        }]}
+
+        def recover(profile):
+            self.assertEqual(profile["effect_data"], ["action[0].data.code=withheld"])
+            wanted = profile["effect_data_fingerprint"]
+            sha256 = hashlib.sha256
+            for number in range(1_000_000):
+                inner = sha256(str(number).encode("ascii")).hexdigest()
+                material = '["action[0].data.code=withheld:' + inner + '"]'
+                if sha256(material.encode("ascii")).hexdigest() == wanted:
+                    return number
+            return None
+
+        key = effect_digest_key(SECRET)
+        self.assertIsNone(recover(risk.automation_action_consequence_profile(config, digest_key=key)))
+        with patch.object(risk, "_effect_hasher", side_effect=hashlib.sha256):
+            unkeyed = risk.automation_action_consequence_profile(config, digest_key=key)
+        self.assertEqual(recover(unkeyed), 860317)
+
+    async def test_mutant_with_an_unkeyed_provider_digest_is_detected(self):
+        from ha_mcp_engineering.dependency import provider as module
+
+        # The panel is not in the registry, so its target id is digested.
+        plain = hashlib.sha256(b"alarm_control_panel.synthetic_panel").hexdigest()
+        keyed = _serialized([asdict(p) for p in (await self.scan()).values()])
+        self.assertNotIn(plain, keyed)
+
+        def unkeyed(value, key):
+            return "redacted_sha256:" + hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+        with patch.object(module, "_effect_digest", side_effect=unkeyed):
+            profiles = await self.scan()
+        self.assertIn(plain, _serialized([asdict(p) for p in profiles.values()]))
+
+    async def test_every_helper_binding_withholds_codes(self):
+        from ha_mcp_engineering.governance.helper_dependency import (
+            build_helper_dependency_risk_binding,
+        )
+        from ha_mcp_engineering.governance.input_boolean_dependency import (
+            build_input_boolean_dependency_binding,
+        )
+        from ha_mcp_engineering.governance.input_select_dependency import (
+            build_input_select_dependency_binding,
+        )
+
+        emitted = []
+        for gate, build in (
+            ("input_boolean.synthetic_gate", build_input_boolean_dependency_binding),
+            ("input_select.synthetic_mode", build_input_select_dependency_binding),
+            ("input_number.synthetic_level", lambda snapshot, **values: (
+                build_helper_dependency_risk_binding(snapshot, target_scoped=True, **values)
+            )),
+        ):
+            with self.subTest(gate=gate):
+                ha = _hamcp542_home(gate)
+                index = DependencyIndex(DirectHaDependencyProvider(
+                    _AnalysisRest(ha), _AnalysisWebSocket(ha), secret=SECRET,
+                ))
+                with patch(BLUEPRINT_READER, side_effect=_hamcp542_blueprint):
+                    snapshot, _, _ = await index.get(refresh=True)
+                    assessed = await HelperDependencyRiskService(index).assess(gate, refresh=False)
+                binding = build(
+                    snapshot, entity_id=gate, index_metadata=index.evidence_metadata(snapshot),
+                )
+                for label, value in (("binding", binding), ("assess", assessed)):
+                    text = _serialized(value)
+                    emitted.append(text)
+                    self.assertEqual(_code_hits(text), [], label)
+                    self.assertIn("action[0].data.code=withheld", text, label)
+                    self.assertIn("action[10].data.brightness=10", text, label)
+        self.assertEqual(_brute_force("\n".join(emitted)), [])
+
+    async def test_helper_plan_surfaces_withhold_codes(self):
+        from ha_mcp_engineering.audit import AuditLogger
+        from ha_mcp_engineering.governance.service import ChangeGovernanceService
+        from ha_mcp_engineering.governance.storage import ChangePlanRepository
+        from tests.test_beta37_exact_helper_state import (
+            Clock, FakeHelperStateGateway, UnusedLegacyGateway,
+        )
+
+        gateway = FakeHelperStateGateway()
+        ha = _hamcp542_home(gateway.entity_id)
+        index = DependencyIndex(DirectHaDependencyProvider(
+            _AnalysisRest(ha), _AnalysisWebSocket(ha), secret=SECRET,
+        ))
+        outputs = {}
+        with tempfile.TemporaryDirectory(prefix="hamcp542-plan-") as directory, \
+                patch(BLUEPRINT_READER, side_effect=_hamcp542_blueprint):
+            root = Path(directory)
+            service = ChangeGovernanceService(
+                ChangePlanRepository(root / "plans"),
+                UnusedLegacyGateway(),
+                AuditLogger(str(root / "audit.jsonl"), "synthetic-audit-key"),
+                now=Clock(),
+                helper_state_gateway=gateway,
+                helper_dependency_risk_reader=HelperDependencyRiskService(index).assess,
+                plan_observability_cursor_key=b"synthetic-plan-key" * 2,
+            )
+            created = await service.create_helper_state_plan(
+                entity_id=gateway.entity_id, desired_state="on",
+            )
+            outputs["create_helper_state_plan"] = created
+            plan = created["plan"]
+            outputs["get_plan"] = service.get_plan(plan["plan_id"])
+            for section in ("summary", "obligation_evidence", "downstream_profiles"):
+                outputs[f"get_change_plan {section}"] = service.get_plan_observability(
+                    plan["plan_id"], detail_section=section, cursor="", page_size=100,
+                    response_limit=60_000,
+                )
+            try:
+                outputs["approve"] = service.approve(plan["plan_id"], plan["plan_hash"])
+            except Exception as error:  # noqa: BLE001 - the refusal text is a surface too
+                outputs["approve refusal"] = f"{type(error).__name__}: {error} {getattr(error, 'details', '')}"
+            files = {
+                str(path.relative_to(root)): path.read_bytes()
+                for path in sorted(root.rglob("*")) if path.is_file()
+            }
+        self.assertEqual(gateway.dispatch_count, 0)
+        self.assertTrue(any(name.endswith(".json") for name in files), files)
+        self.assertIn("audit.jsonl", files)
+        emitted = []
+        for label, value in [*outputs.items(), *files.items()]:
+            text = value.decode("utf-8") if isinstance(value, bytes) else _serialized(value)
+            emitted.append(text)
+            with self.subTest(surface=label):
+                self.assertEqual(_code_hits(text), [])
+                for name, code in _CODES.items():
+                    for digest in _unkeyed_digests(code):
+                        self.assertNotIn(digest, text, name)
+        self.assertEqual(_brute_force("\n".join(emitted)), [])
+        downstream = _serialized(outputs["get_change_plan downstream_profiles"])
+        self.assertIn("action[0].data.code=withheld", downstream)
+        self.assertIn("action[7].data.value=39177", downstream)
+        self.assertIn("action[10].data.brightness=10", downstream)
+
+    async def test_plan_bound_under_another_key_drifts(self):
+        """A binding made before the upgrade (another key) cannot pass dispatch.
+
+        The pre-dispatch check compares ``evidence_fingerprint``
+        (``f3/operational_strategies.py``: ``dependency_risk_drift``), so a
+        changed digest key is a drift, never a silent accept.
+        """
+
+        bindings = {}
+        for name, secret in (("before", SECRET), ("after", SECRET + "-rekeyed")):
+            ha = _hamcp542_home("input_boolean.synthetic_gate")
+            index = DependencyIndex(DirectHaDependencyProvider(
+                _AnalysisRest(ha), _AnalysisWebSocket(ha), secret=secret,
+            ))
+            with patch(BLUEPRINT_READER, side_effect=_hamcp542_blueprint):
+                assessed = await HelperDependencyRiskService(index).assess(
+                    "input_boolean.synthetic_gate", refresh=True,
+                )
+            bindings[name] = assessed["binding"]
+        self.assertNotEqual(
+            bindings["before"]["evidence_fingerprint"], bindings["after"]["evidence_fingerprint"],
+        )
+
+
+
+_PRE_FIX_MODEL = "automation-action-effect-v2"
+_PRE_FIX_CODE = "418207"
+_PRE_FIX_DIGEST = hashlib.sha256(json.dumps(_PRE_FIX_CODE).encode()).hexdigest()
+
+
+def _effect_profiles(value):
+    stack, found = [value], []
+    while stack:
+        node = stack.pop()
+        if isinstance(node, dict):
+            if "effect_projection_model" in node:
+                found.append(node)
+            stack.extend(node.values())
+        elif isinstance(node, list):
+            stack.extend(node)
+    return found
+
+
+def _forge_pre_fix(record, status, plan_id=None):
+    """A synthetic record as the pre-fix (v2) projection stored it."""
+
+    value = deepcopy(record)
+    value["plan_id"] = plan_id or secrets.token_hex(16)
+    value["status"] = status
+    profiles = [p for p in _effect_profiles(value) if p["effect_data"]]
+    assert profiles, "the source plan has no effect tokens"
+    for profile in profiles:
+        profile["effect_projection_model"] = _PRE_FIX_MODEL
+        profile["effect_data"] = [
+            *profile["effect_data"],
+            f"action[0].data.code={_PRE_FIX_CODE}",
+            f"action[1].data.code=sha256:{_PRE_FIX_DIGEST}",
+        ]
+    return value
+
+
+def _store_bytes(root):
+    return b"\n".join(
+        path.read_bytes() for path in sorted(Path(root).rglob("*")) if path.is_file()
+    )
+
+
+class PreFixEffectRecordUpgradeTests(unittest.IsolatedAsyncioTestCase):
+    """HAMCP-542 item 5: the startup pass over records written before the fix.
+
+    A rewrite would change the plan hash (it covers the stored baseline), so
+    each affected record is removed, counted, and must be planned again.
+    """
+
+    async def asyncSetUp(self):
+        from ha_mcp_engineering.audit import AuditLogger
+        from ha_mcp_engineering.governance.service import ChangeGovernanceService
+        from ha_mcp_engineering.governance.storage import ChangePlanRepository
+        from tests.test_beta37_exact_helper_state import (
+            Clock, FakeHelperStateGateway, UnusedLegacyGateway,
+        )
+
+        self.temporary = tempfile.TemporaryDirectory(prefix="hamcp542-upgrade-")
+        self.root = Path(self.temporary.name)
+        self.plans = self.root / "plans"
+        gateway = FakeHelperStateGateway()
+        ha = _hamcp542_home(gateway.entity_id)
+        index = DependencyIndex(DirectHaDependencyProvider(
+            _AnalysisRest(ha), _AnalysisWebSocket(ha), secret=SECRET,
+        ))
+        with patch(BLUEPRINT_READER, side_effect=_hamcp542_blueprint):
+            service = ChangeGovernanceService(
+                ChangePlanRepository(self.plans),
+                UnusedLegacyGateway(),
+                AuditLogger(str(self.root / "audit.jsonl"), "synthetic-audit-key"),
+                now=Clock(),
+                helper_state_gateway=gateway,
+                helper_dependency_risk_reader=HelperDependencyRiskService(index).assess,
+                plan_observability_cursor_key=b"synthetic-plan-key" * 2,
+            )
+            created = await service.create_helper_state_plan(
+                entity_id=gateway.entity_id, desired_state="on",
+            )
+        self.current = next(self.plans.rglob(f"{created['plan']['plan_id']}.json"))
+        self.current_bytes = self.current.read_bytes()
+        self.record = json.loads(self.current_bytes)
+        self.assertTrue(any(p["effect_data"] for p in _effect_profiles(self.record)))
+        self.assertEqual(
+            {p["effect_projection_model"] for p in _effect_profiles(self.record)},
+            {"automation-action-effect-v3"},
+        )
+        self.namespace = self.current.parent
+        self.assertNotIn(_PRE_FIX_CODE.encode(), _store_bytes(self.root))
+
+    async def asyncTearDown(self):
+        self.temporary.cleanup()
+
+    def write_pre_fix(self, status, *, quarantined=False):
+        value = _forge_pre_fix(self.record, status)
+        if quarantined:
+            path = self.namespace / "quarantine" / f"{value['plan_id']}.1700000000.corrupt"
+            if not path.parent.is_dir():
+                path = self.plans / "quarantine" / path.name
+        else:
+            path = self.namespace / f"{value['plan_id']}.json"
+        path.write_text(json.dumps(value, sort_keys=True), encoding="utf-8")
+        return value["plan_id"], path
+
+    def repository(self):
+        from ha_mcp_engineering.governance.storage import ChangePlanRepository
+
+        return ChangePlanRepository(self.plans)
+
+    @staticmethod
+    def changed(counts):
+        return {key: value for key, value in counts.items() if key != "scanned" and value}
+
+    def test_pending_approved_and_terminal_records_are_removed(self):
+        forged = {
+            status: self.write_pre_fix(status)
+            for status in ("awaiting_approval", "approved", "expired", "applied")
+        }
+        _, held = self.write_pre_fix("awaiting_approval", quarantined=True)
+        self.assertIn(_PRE_FIX_CODE.encode(), _store_bytes(self.root))
+        repository = self.repository()
+        for plan_id, _ in forged.values():
+            self.assertIsNotNone(repository.get(plan_id))
+
+        counts = repository.retire_pre_fix_effect_records()
+
+        self.assertEqual(self.changed(counts), {"removed": 4, "quarantine_removed": 1})
+        for plan_id, path in forged.values():
+            self.assertFalse(path.exists())
+            self.assertIsNone(repository.get(plan_id))
+        self.assertFalse(held.exists())
+        self.assertEqual(self.current.read_bytes(), self.current_bytes)
+        self.assertIsNotNone(repository.get(self.record["plan_id"]))
+        stored = _store_bytes(self.root)
+        self.assertNotIn(_PRE_FIX_CODE.encode(), stored)
+        self.assertNotIn(_PRE_FIX_DIGEST.encode(), stored)
+        self.assertEqual(_code_hits(stored.decode("utf-8")), [])
+        # Idempotent: a second run (and a restart) changes nothing.
+        self.assertEqual(self.changed(repository.retire_pre_fix_effect_records()), {})
+        self.assertEqual(
+            self.changed(self.repository().retire_pre_fix_effect_records()), {}
+        )
+        self.assertEqual(stored, _store_bytes(self.root))
+
+    def test_records_in_dispatch_or_recovery_are_deferred(self):
+        deferred = [
+            self.write_pre_fix(status)
+            for status in ("applying", "verification_required", "rollback_pending")
+        ]
+        counts = self.repository().retire_pre_fix_effect_records()
+        self.assertEqual(self.changed(counts), {"deferred": 3})
+        for _, path in deferred:
+            self.assertTrue(path.exists())
+
+    def test_post_fix_and_profile_free_records_are_untouched(self):
+        empty = deepcopy(self.record)
+        empty["plan_id"] = secrets.token_hex(16)
+        for profile in _effect_profiles(empty):
+            profile["effect_projection_model"] = _PRE_FIX_MODEL
+            profile["effect_data"] = []
+            profile["effect_targets"] = []
+        path = self.namespace / f"{empty['plan_id']}.json"
+        path.write_text(json.dumps(empty, sort_keys=True), encoding="utf-8")
+        before = _store_bytes(self.root)
+        counts = self.repository().retire_pre_fix_effect_records()
+        self.assertEqual(self.changed(counts), {})
+        self.assertGreaterEqual(counts["scanned"], 2)
+        self.assertEqual(before, _store_bytes(self.root))
+
+    def test_committed_historical_stores_are_handled_by_shape(self):
+        """Beta 6 contract-v2 records hold no effect data and stay byte-exact;
+        the HAMCP-304 beta.3 helper plans that hold effect tokens are removed,
+        and the one without them stays."""
+        import shutil
+
+        from ha_mcp_engineering.governance.storage import ChangePlanRepository
+
+        fixtures = ROOT / "tests" / "fixtures"
+        legacy = sorted(fixtures.glob("beta6_*contract_v2_[ab].json")) + sorted(
+            fixtures.glob("beta6_legacy_*_[ab].json")
+        )
+        self.assertGreaterEqual(len(legacy), 4)
+        with tempfile.TemporaryDirectory(prefix="hamcp542-legacy-") as scratch:
+            plans = Path(scratch) / "plans"
+            plans.mkdir()
+            for source in legacy:
+                record = json.loads(source.read_text(encoding="utf-8"))
+                shutil.copyfile(source, plans / f"{record['plan_id']}.json")
+            before = _store_bytes(plans)
+            counts = ChangePlanRepository(plans).retire_pre_fix_effect_records()
+            self.assertEqual(self.changed(counts), {})
+            self.assertEqual(before, _store_bytes(plans))
+
+        expected = {
+            "expired_elevated_input_boolean": 1,
+            "prohibited_input_boolean_acknowledged": 1,
+            "prohibited_input_boolean_unacknowledged": 1,
+            "prohibited_input_select_acknowledged": 0,
+        }
+        for name, removed in expected.items():
+            with self.subTest(fixture=name), tempfile.TemporaryDirectory(
+                prefix="hamcp542-304-"
+            ) as scratch:
+                plans = Path(scratch) / "plans"
+                shutil.copytree(
+                    fixtures / "hamcp304_beta3_prohibited_plans" / name / "plans", plans
+                )
+                counts = ChangePlanRepository(plans).retire_pre_fix_effect_records()
+                self.assertEqual(
+                    self.changed(counts), {"removed": removed} if removed else {}
+                )
+                remaining = sorted((plans / "operational-administration-v3").glob("*.json"))
+                self.assertEqual(len(remaining), 1 - removed)
+
+    def test_a_record_that_cannot_be_removed_is_quarantined(self):
+        plan_id, path = self.write_pre_fix("awaiting_approval")
+        repository = self.repository()
+        original = Path.unlink
+
+        def refuse(target, *args, **kwargs):
+            if target == path:
+                raise PermissionError("synthetic")
+            return original(target, *args, **kwargs)
+
+        with patch.object(Path, "unlink", refuse):
+            counts = repository.retire_pre_fix_effect_records()
+        self.assertEqual(self.changed(counts), {"quarantined": 1})
+        self.assertFalse(path.exists())
+        self.assertIsNone(repository.get(plan_id))
+        # The quarantined copy is parseable and pre-fix: the next startup
+        # removes it rather than restoring it.
+        counts = self.repository().retire_pre_fix_effect_records()
+        self.assertEqual(self.changed(counts), {"quarantine_removed": 1})
+        self.assertNotIn(_PRE_FIX_CODE.encode(), _store_bytes(self.root))
+
+    def test_a_record_that_can_be_neither_removed_nor_moved_is_failed(self):
+        _, path = self.write_pre_fix("approved")
+        repository = self.repository()
+        original_unlink = Path.unlink
+
+        def refuse(target, *args, **kwargs):
+            if target == path:
+                raise PermissionError("synthetic")
+            return original_unlink(target, *args, **kwargs)
+
+        with patch.object(Path, "unlink", refuse), patch(
+            "ha_mcp_engineering.governance.storage.os.replace",
+            side_effect=PermissionError("synthetic"),
+        ):
+            counts = repository.retire_pre_fix_effect_records()
+        self.assertEqual(self.changed(counts), {"failed": 1})
+        self.assertTrue(path.exists())
+
+    def test_unparseable_record_with_effect_marker_is_quarantined(self):
+        repository = self.repository()
+        # Written after the index rebuild, so only the pass can meet it.
+        path = self.namespace / f"{secrets.token_hex(16)}.json"
+        path.write_bytes(b'{"effect_projection_model": "automation-action-effect-v2", ')
+        counts = repository.retire_pre_fix_effect_records()
+        self.assertEqual(self.changed(counts), {"quarantined": 1})
+        self.assertFalse(path.exists())
+        self.assertTrue(list(self.namespace.glob("quarantine/*.corrupt")))
+
+    def test_the_pass_is_bounded(self):
+        from ha_mcp_engineering.governance import storage
+
+        paths = [self.write_pre_fix("expired")[1] for _ in range(3)]
+        repository = self.repository()
+        with patch.object(storage, "MAX_EFFECT_UPGRADE_ENTRIES", 2):
+            counts = repository.retire_pre_fix_effect_records()
+        self.assertEqual(counts["scanned"], 2)
+        self.assertEqual(counts["truncated"], 1)
+        with patch.object(storage, "MAX_EFFECT_UPGRADE_BYTES", len(self.current_bytes) // 2):
+            counts = repository.retire_pre_fix_effect_records()
+        self.assertEqual(counts["truncated"], 1)
+        # A later startup continues where the bound stopped.
+        repository.retire_pre_fix_effect_records()
+        for path in paths:
+            self.assertFalse(path.exists())
+
+    def test_mutant_without_the_model_guard_keeps_the_code_at_rest(self):
+        from ha_mcp_engineering.governance.storage import ChangePlanRepository
+
+        self.write_pre_fix("awaiting_approval")
+        with patch.object(
+            ChangePlanRepository, "_holds_pre_fix_effect_tokens",
+            staticmethod(lambda value: False),
+        ):
+            counts = self.repository().retire_pre_fix_effect_records()
+        self.assertEqual(self.changed(counts), {})
+        self.assertIn(_PRE_FIX_CODE.encode(), _store_bytes(self.root))
+
+    def test_mutant_without_the_deferral_removes_an_in_flight_record(self):
+        from ha_mcp_engineering.governance import storage
+
+        _, path = self.write_pre_fix("applying")
+        with patch.object(storage, "EFFECT_UPGRADE_DEFERRED_STATUSES", frozenset()):
+            self.repository().retire_pre_fix_effect_records()
+        self.assertFalse(path.exists())
+
+    def compose_runtime(self):
+        from ha_mcp_engineering.audit import AuditLogger
+        from ha_mcp_engineering.f3_runtime.runtime import F3RuntimeIntegration
+        from ha_mcp_engineering.governance.service import ChangeGovernanceService
+        from tests.test_beta37_exact_helper_state import (
+            Clock, FakeHelperStateGateway, UnusedLegacyGateway,
+        )
+        from tests.test_f3_runtime_integration import _ExactFakeConfigurationGateway
+        import test_dashboard_update_mvp as dashboard_suite
+
+        helper = FakeHelperStateGateway()
+        service = ChangeGovernanceService(
+            self.repository(),
+            UnusedLegacyGateway(),
+            AuditLogger(str(self.root / "audit.jsonl"), "synthetic-audit-key"),
+            now=Clock(),
+            helper_state_gateway=helper,
+            helper_dependency_risk_reader=None,
+            plan_observability_cursor_key=b"synthetic-plan-key" * 2,
+        )
+        runtime = F3RuntimeIntegration(
+            service=service,
+            storage_root=str(self.plans),
+            configuration_gateway=_ExactFakeConfigurationGateway(UnusedLegacyGateway()),
+            backup_gateway=None,
+            lifecycle_gateway=None,
+            helper_state_gateway=helper,
+            provider_identity_reader=dashboard_suite._unrelated_lifecycle_provider_identity,
+            retention_days=90,
+        )
+        service.f3_runtime = runtime
+        return service, runtime
+
+    def upgrade_audit_records(self):
+        path = self.root / "audit.jsonl"
+        lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+        return [
+            record for record in map(json.loads, lines)
+            if record.get("event") == "governance_effect_record_upgrade"
+        ]
+
+    async def test_startup_writes_one_count_only_audit_record(self):
+        forged = [self.write_pre_fix(s)[1] for s in ("awaiting_approval", "approved", "expired")]
+        _, runtime = self.compose_runtime()
+        await runtime.recover_once("startup")
+        for path in forged:
+            self.assertFalse(path.exists())
+        records = self.upgrade_audit_records()
+        self.assertEqual(len(records), 1)
+        record = records[0]
+        counts = {k: v for k, v in record.items() if k.startswith("records_")}
+        self.assertEqual(counts["records_removed"], 3)
+        self.assertEqual(
+            {k for k in record if not k.startswith("records_")} - {"timestamp", "server_version"},
+            {"event", "access", "operation_class"},
+        )
+        self.assertTrue(all(isinstance(v, int) for v in counts.values()))
+        text = json.dumps(record)
+        for path in forged:
+            self.assertNotIn(path.stem, text)
+        self.assertNotIn(_PRE_FIX_CODE, text)
+        self.assertNotIn("effect_record_upgrade", runtime.readiness_state()["faults"])
+        # A periodic pass does not run it; a restart finds nothing to do.
+        late = self.write_pre_fix("approved")[1]
+        await runtime.recover_once("periodic")
+        self.assertTrue(late.exists())
+        late.unlink()
+        _, restarted = self.compose_runtime()
+        await restarted.recover_once("startup")
+        self.assertEqual(len(self.upgrade_audit_records()), 1)
+        self.assertNotIn(_PRE_FIX_CODE.encode(), _store_bytes(self.root))
+
+    async def test_a_failed_pass_faults_readiness(self):
+        from ha_mcp_engineering.governance.storage import ChangePlanStorageError
+
+        service, runtime = self.compose_runtime()
+        with patch.object(
+            service.repository, "retire_pre_fix_effect_records",
+            side_effect=ChangePlanStorageError("synthetic"),
+        ):
+            await runtime.recover_once("startup")
+        state = runtime.readiness_state()
+        self.assertIn("effect_record_upgrade", state["faults"])
+        self.assertFalse(state["execution_ready"])
 
 
 if __name__ == "__main__":

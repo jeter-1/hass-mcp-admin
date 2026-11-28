@@ -8,6 +8,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 import hashlib
 import heapq
+import hmac
 import json
 import math
 from pathlib import Path
@@ -204,6 +205,14 @@ def _bounded_provider_identity(
 # profile and index fingerprints are computed upstream from the raw values and
 # are unchanged; the helper's aggregate evidence fingerprint covers the
 # displayed values and so changes when a value is digested.
+#
+# HAMCP-542: a value under a free-form field (a text, template or object
+# selector, or no selector; Core 2026.11.3 gives alarm_control_panel and lock
+# ``code`` a text selector) is a possible credential and is shown only as the
+# fixed withheld marker, whatever its type. governance/risk.py withholds exact
+# credential leaf names (code, pin, passcode, password, access_code) the same
+# way. Every digest shown here, and every fingerprint upstream, is keyed with
+# the installation secret, so a short value cannot be recovered by brute force.
 _GENERATED_EFFECT_DIGEST = re.compile(
     r"(?:sha256|dynamic_sha256|oversized_sha256|overflow_sha256):[0-9a-f]{64}",
     re.ASCII,
@@ -279,8 +288,34 @@ def _string_leaves_by_folded_text(value: Any) -> dict[str, set[str]]:
     return leaves
 
 
-def _effect_digest(value: str) -> str:
-    return "redacted_sha256:" + hashlib.sha256(value.encode("utf-8")).hexdigest()
+# Must equal governance.risk.HELPER_EFFECT_WITHHELD (asserted by the tests).
+_EFFECT_WITHHELD = "withheld"
+# Selector kinds whose value is free text, so a number there may be a code.
+_EFFECT_FREEFORM_SELECTORS = frozenset({"object", "template", "text"})
+# Reviewed exceptions: a text selector that holds an ordinary number. Core
+# 2026.11.3 (92da9f15) homeassistant/components/number/services.yaml declares
+# ``set_value.value`` with ``selector: text:`` and ``example: 42``.
+_EFFECT_NUMERIC_TEXT_FIELDS = frozenset({("number.set_value", "value")})
+
+
+def _effect_digest(value: str, key: bytes) -> str:
+    return "redacted_sha256:" + hmac.new(
+        key, value.encode("utf-8"), hashlib.sha256
+    ).hexdigest()
+
+
+def _effect_field_withheld(service: str, key: str, field: Any) -> bool:
+    """Whether a registered data field's value is shown only as withheld."""
+
+    if (service, key) in _EFFECT_NUMERIC_TEXT_FIELDS:
+        return False
+    selector = field.get("selector") if isinstance(field, dict) else None
+    if not isinstance(selector, dict) or not selector:
+        return True
+    return any(
+        not isinstance(kind, str) or kind in _EFFECT_FREEFORM_SELECTORS
+        for kind in selector
+    )
 
 
 @dataclass(frozen=True)
@@ -292,6 +327,8 @@ class _EffectDisplayRegistry:
     that is not a member cannot be shown and is reported as unverified.
     ``services`` maps each registered ``domain.service`` to its schema data
     keys, or is ``None`` when the service registry could not be read.
+    ``withheld_fields`` maps a service to the keys whose values are shown
+    only as withheld (HAMCP-542).
     """
 
     members: dict[str, frozenset[str]]
@@ -299,17 +336,25 @@ class _EffectDisplayRegistry:
     services: dict[str, frozenset[str]] | None
     domains: frozenset[str]
     sources: dict[str, Any]
+    withheld_fields: dict[str, frozenset[str]] | None = None
 
 
 def _service_registry_schema(
     rows: Any,
-) -> tuple[frozenset[str], dict[str, frozenset[str]]] | None:
-    """Validate and bound ``GET /services``; ``None`` means unavailable."""
+) -> tuple[
+    frozenset[str], dict[str, frozenset[str]], dict[str, frozenset[str]]
+] | None:
+    """Validate and bound ``GET /services``; ``None`` means unavailable.
+
+    Returns the domains, each service's data keys, and each service's keys
+    whose values are withheld (``_effect_field_withheld``).
+    """
 
     if not isinstance(rows, list) or len(rows) > MAX_EFFECT_DISPLAY_SERVICES:
         return None
     domains: set[str] = set()
     services: dict[str, frozenset[str]] = {}
+    withheld: dict[str, frozenset[str]] = {}
     field_total = 0
     for row in rows:
         if not isinstance(row, dict):
@@ -321,7 +366,9 @@ def _service_registry_schema(
         for name, schema in entries.items():
             if not isinstance(name, str) or not isinstance(schema, dict):
                 return None
+            service = f"{domain}.{name}"
             keys: set[str] = set()
+            withheld_keys: set[str] = set()
             pending = [schema.get("fields") or {}]
             while pending:
                 fields = pending.pop()
@@ -336,10 +383,13 @@ def _service_registry_schema(
                         pending.append(field["fields"])
                     else:
                         keys.add(key)
-            services[f"{domain}.{name}"] = frozenset(keys)
+                        if _effect_field_withheld(service, key, field):
+                            withheld_keys.add(key)
+            services[service] = frozenset(keys)
+            withheld[service] = frozenset(withheld_keys)
             if len(services) > MAX_EFFECT_DISPLAY_SERVICES:
                 return None
-    return frozenset(domains), services
+    return frozenset(domains), services, withheld
 
 
 def _registry_identifiers(rows: Any, key: str) -> frozenset[str] | None:
@@ -461,8 +511,9 @@ async def _read_effect_display_registry(
         }
     domains = {key.split(".", 1)[0] for key in members["entity"]} | platforms
     services = None
+    withheld_fields = None
     if service_schema is not None:
-        registered_domains, services = service_schema
+        registered_domains, services, withheld_fields = service_schema
         domains |= registered_domains
     sources["service"] = {
         "sources": ["GET /services"],
@@ -474,6 +525,7 @@ async def _read_effect_display_registry(
         services=services,
         domains=frozenset(domains),
         sources=sources,
+        withheld_fields=withheld_fields,
     )
 
 
@@ -509,7 +561,15 @@ class _EffectDisplayFilter:
     presentation-truncated (display partial).
     """
 
-    def __init__(self, config: Any, *, secret: str, registry: _EffectDisplayRegistry):
+    def __init__(
+        self,
+        config: Any,
+        *,
+        secret: str,
+        registry: _EffectDisplayRegistry,
+        digest_key: bytes,
+    ):
+        self._digest_key = digest_key
         self._leaves = _string_leaves_by_folded_text(config)
         self._literals = {
             spelling for spellings in self._leaves.values() for spelling in spellings
@@ -549,48 +609,68 @@ class _EffectDisplayFilter:
                 return selector
         return None
 
-    def _data_path(self, path: str) -> bool:
+    def _digest(self, value: str) -> str:
+        return _effect_digest(value, self._digest_key)
+
+    def _data_path(self, path: str) -> str | None:
+        """``None`` for a path that is not admitted, else how its value shows.
+
+        ``"withheld"`` means a free-form field (HAMCP-542); ``"value"`` means
+        the value may be shown when it passes the value checks.
+        """
+
         match = _EFFECT_DATA_PATH.fullmatch(path)
         step = self._steps.get(match["step"]) if match else None
         if step is None:
-            return False
+            return None
         key = match["key"]
         if match["container"] == "event_data":
-            return False
+            return None
         if key in _EFFECT_TARGET_SELECTORS:
-            return self._clean(key)
+            return "value" if self._clean(key) else None
         services = self._registry.services
         if services is None:
             self.unverified = True
-            return False
+            return None
         service = step.get("action") or step.get("service")
         fields = services.get(service) if isinstance(service, str) else None
-        return fields is not None and key in fields and self._clean(key)
+        if fields is None or key not in fields or not self._clean(key):
+            return None
+        withheld = (self._registry.withheld_fields or {}).get(service)
+        # Fail closed: a schema without withheld-field facts withholds all.
+        if withheld is None or key in withheld:
+            return "withheld"
+        return "value"
 
     def target(self, token: str) -> str:
         parts = token.split("|", 2)
         if len(parts) != 3 or self._target_selector(parts[0]) != parts[1]:
-            return _effect_digest(token)
+            return self._digest(token)
         path, selector, value = parts
         prefix = f"{path}|{selector}|"
         if self._generated(value):
             return token
         if selector in _EFFECT_DIGEST_ONLY_SELECTORS:
-            return prefix + _effect_digest(value)
+            return prefix + self._digest(value)
         kind = _EFFECT_TARGET_KIND[selector]
         if kind == "entity" and value in _EFFECT_TARGET_ENUM:
             if value in self._literals and self._clean(value):
                 return token
         elif self._member(kind, value):
             return token
-        return prefix + _effect_digest(value)
+        return prefix + self._digest(value)
 
     def data(self, token: str) -> str:
         if self._generated(token):
             return token
         path, found, value = token.partition("=")
-        if not found or not self._data_path(path):
-            return _effect_digest(token)
+        admitted = self._data_path(path) if found else None
+        if admitted is None:
+            return self._digest(token)
+        # HAMCP-542: before any value check, so no digest of a free-form
+        # value is shown either.
+        if admitted == "withheld" or value == _EFFECT_WITHHELD:
+            return f"{path}={_EFFECT_WITHHELD}"
         if self._generated(value):
             return token
         if (
@@ -599,7 +679,7 @@ class _EffectDisplayFilter:
             or (value in _EFFECT_DATA_ENUM and value in self._literals)
         ) and self._clean(value):
             return token
-        return f"{path}=" + _effect_digest(value)
+        return f"{path}=" + self._digest(value)
 
     def service(self, value: str) -> str:
         if self._generated(value):
@@ -609,7 +689,7 @@ class _EffectDisplayFilter:
             self.unverified = True
         elif value in services and self._clean(value):
             return value
-        return _effect_digest(value)
+        return self._digest(value)
 
     def domain(self, value: str) -> str:
         if self._generated(value):
@@ -619,7 +699,7 @@ class _EffectDisplayFilter:
                 return value
         elif self._registry.services is None:
             self.unverified = True
-        return _effect_digest(value)
+        return self._digest(value)
 
 
 class DependencySourceProvider(EngineeringEvidenceProvider):
@@ -757,6 +837,7 @@ class DirectHaDependencyProvider(DependencySourceProvider):
         # package initialization cycle.
         from ..governance.risk import (
             automation_action_consequence_profile,
+            effect_digest_key,
         )
         from .authority import current_semantic_evidence
 
@@ -1202,6 +1283,8 @@ class DirectHaDependencyProvider(DependencySourceProvider):
         self._settle_pending_writes(pending_snapshot, verified_pending)
         unreconciled_writes = pending_not_loaded
 
+        # HAMCP-542: one keyed-digest key per scan, from the installation secret.
+        digest_key = effect_digest_key(self.secret)
         profile_inputs: list[tuple[str, str | None, Any, dict[str, Any]]] = []
         state_trigger_values: list[Any] = []
         failed = 0
@@ -1402,7 +1485,7 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                 )
             )
             consequence = automation_action_consequence_profile(
-                action_config
+                action_config, digest_key=digest_key
             )
             profile_inputs.append(
                 (internal_id, source_entity_id, action_config, consequence)
@@ -1431,6 +1514,7 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                 action_config,
                 secret=self.secret,
                 registry=effect_display_registry,
+                digest_key=digest_key,
             )
             displayed_domains = tuple(
                 effect_display.domain(str(item))
